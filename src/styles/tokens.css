@@ -1,0 +1,50 @@
+/* ─── Overload v2 design tokens ──────────────────────────────────────────────
+   Single source of truth for all colour values.
+   Imported once in main.tsx — no component imports this file directly.
+   All accent usage must reference --accent; never hardcode colour values.
+   Structured for a future [data-theme="light"] override with zero component changes.
+──────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────── */
+  --base:            #060607;   /* page background   */
+  --surface:         #08080a;   /* card / panel      */
+  --surface-raised:  #0d0d10;   /* elevated element  */
+  --surface-overlay: #141418;   /* modal / sheet     */
+
+  /* ── Borders ─────────────────────────────────────── */
+  --border-subtle:  #141418;
+  --border:         #1a1a1e;
+  --border-strong:  #26262c;
+
+  /* ── Text ────────────────────────────────────────── */
+  --text-primary:   #f4f3ef;
+  --text-secondary: #8a8a90;
+  --text-muted:     #5a5a61;
+  --text-dim:       #3a3a40;
+
+  /* ── Accent (user-switchable — always use var(--accent)) ── */
+  --accent:         #FF8C42;
+  --accent-muted:   rgba(255, 140, 66, 0.15);
+
+  /* ── Semantic ────────────────────────────────────── */
+  --error:          #f87171;
+  --success:        #4ade80;
+}
+
+/* Light mode — applies when JS sets data-theme="light" on <html>. */
+[data-theme="light"] {
+  --base:            #f9f9f8;
+  --surface:         #ffffff;
+  --surface-raised:  #f2f2f0;
+  --surface-overlay: #e8e8e6;
+  --border-subtle:   #e8e8e6;
+  --border:          #d8d8d5;
+  --border-strong:   #b8b8b4;
+  --text-primary:    #0d0d0c;
+  --text-secondary:  #4a4a47;
+  --text-muted:      #6a6a66;
+  --text-dim:        #9a9a96;
+  --accent-muted:    rgba(255, 140, 66, 0.18);
+  color-scheme:      light;
+}

@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+/* ─── Font tokens ─────────────────────────────────────────────────────────────
+   Defined in @theme (not inline) so Tailwind generates font-sans / font-display
+   / font-mono utilities AND CSS variables usable in inline styles.
+──────────────────────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans:    'Archivo', sans-serif;
+  --font-display: 'Archivo Expanded', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+}
+
+/* ─── Colour utilities ────────────────────────────────────────────────────────
+   @theme inline maps CSS custom properties from tokens.css to Tailwind utilities
+   WITHOUT re-declaring CSS variables. Changing --accent on :root (e.g. from
+   useAccentColour) automatically updates every utility that references it.
+
+   Naming avoids Tailwind built-in conflicts (text-base = font-size, etc.).
+   Use: bg-bg, bg-surface, bg-raised, text-ink, text-ink-2, border-wire, etc.
+──────────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  /* Backgrounds */
+  --color-bg:              var(--base);
+  --color-surface:         var(--surface);
+  --color-raised:          var(--surface-raised);
+  --color-overlay:         var(--surface-overlay);
+
+  /* Borders */
+  --color-wire-faint:      var(--border-subtle);
+  --color-wire:            var(--border);
+  --color-wire-strong:     var(--border-strong);
+
+  /* Text — "ink" namespace avoids text-base / text-sm font-size conflicts */
+  --color-ink:             var(--text-primary);
+  --color-ink-2:           var(--text-secondary);
+  --color-ink-3:           var(--text-muted);
+  --color-ink-4:           var(--text-dim);
+
+  /* Accent */
+  --color-accent:          var(--accent);
+  --color-accent-ghost:    var(--accent-muted);
+
+  /* Semantic */
+  --color-danger:          var(--error);
+  --color-ok:              var(--success);
+}
+
+/* ─── Base layer ──────────────────────────────────────────────────────────────
+   Structural and typographic defaults only. No hardcoded colour values — all
+   colour references use CSS custom properties from tokens.css.
+──────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  html,
+  body {
+    height: 100%;
+    background-color: var(--base);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+
+  #root {
+    height: 100%;
+  }
+
+  input,
+  button,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+
+  input::placeholder {
+    color: var(--text-dim);
+  }
+
+  input:focus {
+    outline: none;
+  }
+}
+
+/* ─── Utilities ───────────────────────────────────────────────────────────── */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
