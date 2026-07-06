@@ -128,7 +128,7 @@ export default function LoginPage() {
               opacity: loading ? 0.5 : 1,
             }}
           >
-            {loading ? '…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+            {loading ? '...' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
         </form>
 
