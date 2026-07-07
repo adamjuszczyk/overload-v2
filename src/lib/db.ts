@@ -56,6 +56,9 @@ interface CachedSetLog {
   isSkipped: boolean
   loggedAt: string
   restSeconds: number | null
+  // Status of the session this log belongs to, at time of caching — lets the
+  // offline "last session" fallback exclude the current in-progress session.
+  sessionStatus: string
 }
 
 interface SyncQueueItem {
@@ -64,6 +67,7 @@ interface SyncQueueItem {
   operation: 'upsert' | 'delete'
   payload: unknown
   createdAt: string
+  attempts?: number // failed replay attempts — dead-lettered after 3
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────

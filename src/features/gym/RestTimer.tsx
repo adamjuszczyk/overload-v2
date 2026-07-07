@@ -15,6 +15,7 @@ export default function RestTimer() {
   const buzzOnRestComplete = useSettingsStore((s) => s.buzzOnRestComplete)
 
   const [elapsed, setElapsed] = useState(0)
+  const [flash, setFlash] = useState(false)
   const buzzedRef = useRef(false)
 
   useEffect(() => {
@@ -30,7 +31,15 @@ export default function RestTimer() {
 
       if (!buzzedRef.current && buzzOnRestComplete && s >= targetRestSeconds) {
         buzzedRef.current = true
-        navigator.vibrate?.(400)
+        // iOS Safari has no Vibration API — navigator.vibrate is simply
+        // absent there, so the "buzz" would silently do nothing. Fall back
+        // to a brief visual flash so the setting still has an effect.
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate(400)
+        } else {
+          setFlash(true)
+          setTimeout(() => setFlash(false), 600)
+        }
       }
     }
 
@@ -69,8 +78,11 @@ export default function RestTimer() {
 
   return (
     <div
-      className="mx-4 mb-3 rounded-xl overflow-hidden"
-      style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+      className="mx-4 mb-3 rounded-xl overflow-hidden transition-colors duration-300"
+      style={{
+        backgroundColor: flash ? 'var(--accent-muted)' : 'var(--surface)',
+        border: `1px solid ${flash ? 'var(--accent)' : 'var(--border)'}`,
+      }}
     >
       {/* Progress bar */}
       <div

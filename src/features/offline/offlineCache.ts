@@ -87,6 +87,8 @@ export async function primeOfflineCache(params: {
             isSkipped: row.is_skipped,
             loggedAt: row.logged_at,
             restSeconds: row.rest_seconds,
+            // prevSessionId was selected above by status === 'completed'.
+            sessionStatus: 'completed',
           }),
         ),
       )

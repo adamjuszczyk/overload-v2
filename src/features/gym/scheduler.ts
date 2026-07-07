@@ -21,6 +21,7 @@ export function schedule(
     currentWeekPlans,
     allWeekPlans,
     sessions,
+    dismissMissed = false,
   }: {
     activeMeso: Mesocycle | null
     programs: Program[]
@@ -29,6 +30,9 @@ export function schedule(
     allWeekPlans: WeekPlan[]
     // All sessions in the lookback window (today included)
     sessions: Session[]
+    // When true, skip straight to today's suggestion even if missed sessions
+    // exist — the user closed the missed-sessions prompt without acting on it.
+    dismissMissed?: boolean
   },
 ): SchedulerResult {
   if (programs.length === 0) return { type: 'no_program' }
@@ -94,7 +98,7 @@ export function schedule(
     cursor = addDays(cursor, 1)
   }
 
-  if (missed.length > 0) return { type: 'missed_sessions', queue: missed }
+  if (missed.length > 0 && !dismissMissed) return { type: 'missed_sessions', queue: missed }
 
   // Today's scheduled workout
   const todayDow = format(todayDate, 'EEEE').toLowerCase() as DayOfWeek

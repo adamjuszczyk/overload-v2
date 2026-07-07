@@ -45,7 +45,12 @@ export function useSetDeload(mesoId: string, weekNumber: number) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      // Scheduler's missed-session detection reads useAllWeekPlans — without
+      // this it keeps deload/plan data stale until an unrelated refetch.
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 
@@ -71,7 +76,10 @@ export function useAddSet(mesoId: string, weekNumber: number) {
       }
       return addSet(user!.id, planId, programExerciseId, setNumber)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 

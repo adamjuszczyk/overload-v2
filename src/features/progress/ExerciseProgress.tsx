@@ -167,7 +167,7 @@ function ExercisePicker({ onSelect }: { onSelect: (ex: Exercise) => void }) {
                 className="text-xs ml-3 flex-none"
                 style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
               >
-                {ex.muscleGroup.toUpperCase()}
+                {ex.muscleGroup?.toUpperCase() ?? 'OTHER'}
               </span>
             </button>
           ))}
@@ -224,7 +224,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             className="text-xs"
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
-            {exercise.muscleGroup.toUpperCase()}
+            {exercise.muscleGroup?.toUpperCase() ?? 'OTHER'}
           </p>
         </div>
       </div>

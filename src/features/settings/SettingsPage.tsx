@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSettings, useUpdateSettings } from './useSettings'
+import { useAuth } from '../auth/useAuth'
 import type { UserSettings } from '../../types'
 
 const ACCENT_SWATCHES: { colour: string; label: string }[] = [
@@ -34,9 +35,16 @@ function parseSeconds(raw: string): number | null {
 export default function SettingsPage() {
   const { data: settings } = useSettings()
   const { mutate: update } = useUpdateSettings()
+  const { signOut } = useAuth()
 
   const [restInput, setRestInput] = useState('')
   const [restEditing, setRestEditing] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    await signOut()
+  }
 
   function set(patch: Partial<UserSettings>) {
     update(patch)
@@ -241,6 +249,27 @@ export default function SettingsPage() {
               settings.weightUnit,
               (weightUnit) => set({ weightUnit }),
             )}
+          </div>
+        </section>
+
+        {/* ── Account ──────────────────────────────────────────────────── */}
+        <section>
+          {sectionTitle('ACCOUNT')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            <button
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="w-full py-3 rounded-xl text-xs font-bold"
+              style={{
+                backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                color: 'var(--error)',
+                fontFamily: 'var(--font-mono)',
+                letterSpacing: '0.08em',
+                opacity: signingOut ? 0.6 : 1,
+              }}
+            >
+              {signingOut ? 'SIGNING OUT…' : 'SIGN OUT'}
+            </button>
           </div>
         </section>
       </div>

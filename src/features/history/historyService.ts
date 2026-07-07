@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase'
+import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { MuscleGroup, SessionStatus } from '../../types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ export interface HistoryDetail extends HistoryRow {
 type RawLogMinimal = {
   id: string
   is_skipped: boolean
-  exercises: { id: string; muscle_group: string } | null
+  exercises: { id: string; muscle_group: string | null } | null
 }
 
 type RawSessionRow = {
@@ -72,7 +73,7 @@ type RawLogFull = {
   is_skipped: boolean
   is_dropset: boolean
   logged_at: string
-  exercises: { id: string; name: string; muscle_group: string } | null
+  exercises: { id: string; name: string; muscle_group: string | null } | null
 }
 
 type RawSessionFull = {
@@ -198,7 +199,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       exerciseMap.set(log.exercise_id, {
         exerciseId: log.exercise_id,
         exerciseName: log.exercises.name,
-        muscleGroup: log.exercises.muscle_group as MuscleGroup,
+        muscleGroup: toMuscleGroup(log.exercises.muscle_group),
         position:
           log.exercise_id in positionMap ? positionMap[log.exercise_id] : 9999 + fallbackPos++,
         sets: [],

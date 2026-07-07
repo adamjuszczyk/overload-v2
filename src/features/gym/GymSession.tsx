@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog } from '../../types'
-import { useActiveSession, useLogSet, useLastSessionLogs } from './useSession'
+import { useActiveSession, useLogSet, useLastSessionLogs, useUpdateSetLog, useDeleteSetLog } from './useSession'
 import { useProgramExercises } from '../programs/usePrograms'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
@@ -25,6 +25,8 @@ function ExerciseSection({
   allCurrentLogs,
   sessionId,
   onLog,
+  onUpdateSet,
+  onDeleteSet,
 }: {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
@@ -41,8 +43,13 @@ function ExerciseSection({
     isSkipped: boolean
     restSeconds: number | null
   }) => void
+  onUpdateSet: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; setNumber?: number }) => void
+  onDeleteSet: (id: string) => void
 }) {
-  const { data: lastLogs = [] } = useLastSessionLogs(programExercise.exerciseId, sessionId)
+  const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
+    programExercise.exerciseId,
+    sessionId,
+  )
   const currentLogs = allCurrentLogs.filter((l) => l.exerciseId === programExercise.exerciseId)
 
   return (
@@ -51,7 +58,10 @@ function ExerciseSection({
       plannedSets={plannedSets}
       currentLogs={currentLogs}
       lastLogs={lastLogs}
+      lastLogsLoading={lastLogsLoading}
       onLog={onLog}
+      onUpdateSet={onUpdateSet}
+      onDeleteSet={onDeleteSet}
     />
   )
 }
@@ -66,6 +76,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const { data: session } = useActiveSession(sessionId)
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
   const logSet = useLogSet(sessionId)
+  const updateSetLog = useUpdateSetLog(sessionId)
+  const deleteSetLog = useDeleteSetLog(sessionId)
 
   // Prime the Dexie cache once exercises are loaded and we're online
   useEffect(() => {
@@ -133,6 +145,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               allCurrentLogs={allCurrentLogs}
               sessionId={sessionId}
               onLog={(params) => logSet.mutate({ ...params, note: null, parentSetId: null })}
+              onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
+              onDeleteSet={(id) => deleteSetLog.mutate(id)}
             />
           )
         })}

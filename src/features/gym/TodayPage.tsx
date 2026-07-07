@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { format } from 'date-fns'
+import { useState, useEffect } from 'react'
+import { format, parseISO } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useScheduler } from './useScheduler'
 import { useCreateSession, useActiveSession, useReopenSession, useSkipSession } from './useSession'
@@ -7,11 +7,47 @@ import GymSession from './GymSession'
 import MissedSessionPrompt from './MissedSessionPrompt'
 import type { Session, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
 
-const today = format(new Date(), 'yyyy-MM-dd')
-const todayLabel = format(new Date(), 'EEEE, MMM d').toUpperCase()
+// A PWA left open on the home screen keeps its JS context across midnight —
+// module-level "today" would go stale silently. Refresh on tab focus and at
+// the next local midnight so the date never drifts behind the real clock.
+function useToday(): string {
+  const [today, setToday] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+
+  useEffect(() => {
+    const refresh = () => setToday(format(new Date(), 'yyyy-MM-dd'))
+
+    let timeoutId: ReturnType<typeof setTimeout>
+    function scheduleMidnightRefresh() {
+      const now = new Date()
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5)
+      timeoutId = setTimeout(() => {
+        refresh()
+        scheduleMidnightRefresh()
+      }, nextMidnight.getTime() - now.getTime())
+    }
+    scheduleMidnightRefresh()
+
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      clearTimeout(timeoutId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
+
+  return today
+}
 
 export default function TodayPage() {
-  const scheduler = useScheduler(today)
+  const today = useToday()
+  const todayLabel = format(parseISO(today), 'EEEE, MMM d').toUpperCase()
+  // Dismissing the missed-sessions prompt shouldn't block today's workout —
+  // re-run the scheduler as if the missed queue were already handled.
+  const [dismissMissed, setDismissMissed] = useState(false)
+  const scheduler = useScheduler(today, dismissMissed)
   const createSession = useCreateSession()
   const navigate = useNavigate()
 
@@ -56,12 +92,16 @@ export default function TodayPage() {
     return (
       <>
         <div className="px-4 pt-8 pb-4">
-          <TodayHeader />
+          <TodayHeader label={todayLabel} />
         </div>
         <div className="px-4">
           <RestDayCard label="Catch up on missed sessions before today's workout" />
         </div>
-        <MissedSessionPrompt queue={result.queue} activeMeso={activeMeso!} />
+        <MissedSessionPrompt
+          queue={result.queue}
+          activeMeso={activeMeso!}
+          onDismiss={() => setDismissMissed(true)}
+        />
       </>
     )
   }
@@ -90,7 +130,7 @@ export default function TodayPage() {
 
     return (
       <div className="px-4 pt-8 pb-6">
-        <TodayHeader />
+        <TodayHeader label={todayLabel} />
         <div
           className="mt-4 rounded-xl overflow-hidden"
           style={{ border: '1px solid var(--border)', borderTop: '3px solid var(--accent)' }}
@@ -152,6 +192,8 @@ export default function TodayPage() {
         workoutDay={workoutDay}
         weekPlan={weekPlan}
         weekNumber={currentWeek}
+        today={today}
+        todayLabel={todayLabel}
       />
     )
   }
@@ -161,7 +203,7 @@ export default function TodayPage() {
   if (result.type === 'rest_day') {
     return (
       <div className="px-4 pt-8 pb-6">
-        <TodayHeader />
+        <TodayHeader label={todayLabel} />
         <div className="mt-4">
           <RestDayCard label="Rest day — enjoy the recovery" />
         </div>
@@ -173,7 +215,7 @@ export default function TodayPage() {
 
   return (
     <div className="px-4 pt-8 pb-6">
-      <TodayHeader />
+      <TodayHeader label={todayLabel} />
       <div
         className="mt-6 rounded-xl p-6 text-center"
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -205,12 +247,16 @@ function CompletedTodayScreen({
   workoutDay,
   weekPlan,
   weekNumber,
+  today,
+  todayLabel,
 }: {
   session: Session
   activeMeso: Mesocycle
   workoutDay: WorkoutDay | null
   weekPlan: WeekPlan | null
   weekNumber: number
+  today: string
+  todayLabel: string
 }) {
   const [confirmAction, setConfirmAction] = useState<'continue' | 'redo' | null>(null)
 
@@ -243,7 +289,7 @@ function CompletedTodayScreen({
 
   return (
     <div className="px-4 pt-8 pb-6">
-      <TodayHeader />
+      <TodayHeader label={todayLabel} />
 
       {/* Session summary card */}
       <div
@@ -369,14 +415,14 @@ function CompletedTodayScreen({
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
-function TodayHeader() {
+function TodayHeader({ label }: { label: string }) {
   return (
     <>
       <p
         className="text-xs font-bold tracking-widest mb-1"
         style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
       >
-        {todayLabel}
+        {label}
       </p>
       <h1
         className="text-3xl font-black tracking-tight"

@@ -1,11 +1,12 @@
 import { supabase } from '../../lib/supabase'
+import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { Exercise, MuscleGroup } from '../../types'
 
 type DbExercise = {
   id: string
   user_id: string
   name: string
-  muscle_group: string
+  muscle_group: string | null
   is_archived: boolean
   created_at: string
 }
@@ -15,7 +16,7 @@ function toExercise(row: DbExercise): Exercise {
     id: row.id,
     userId: row.user_id,
     name: row.name,
-    muscleGroup: row.muscle_group as MuscleGroup,
+    muscleGroup: toMuscleGroup(row.muscle_group),
     isArchived: row.is_archived,
     createdAt: row.created_at,
   }

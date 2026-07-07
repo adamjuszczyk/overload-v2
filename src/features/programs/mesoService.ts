@@ -1,3 +1,4 @@
+import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import type { Mesocycle, MesocycleStatus, WeeklySchedule } from '../../types'
 
@@ -70,7 +71,10 @@ export async function createMeso(
 }
 
 export async function completeAllActiveMesos(userId: string): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]
+  // Local date, matching every other "today" computation in the app
+  // (e.g. useCreateMeso, TodayPage) — UTC would give the wrong end_date
+  // for users west of UTC late in the evening.
+  const today = format(new Date(), 'yyyy-MM-dd')
   const { error } = await supabase
     .from('v2_mesocycles')
     .update({ status: 'completed', end_date: today })
@@ -80,7 +84,7 @@ export async function completeAllActiveMesos(userId: string): Promise<void> {
 }
 
 export async function completeMeso(id: string): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]
+  const today = format(new Date(), 'yyyy-MM-dd')
   const { error } = await supabase
     .from('v2_mesocycles')
     .update({ status: 'completed', end_date: today })

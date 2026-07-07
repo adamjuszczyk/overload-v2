@@ -34,7 +34,14 @@ export function useUpdateSettings() {
   const hydrate = useSettingsStore((s) => s.hydrate)
 
   return useMutation({
-    mutationFn: (patch: Partial<UserSettings>) => upsertSettings(user!.id, patch),
+    // Send the full merged settings object, never a raw partial — see
+    // upsertSettings for why a partial upsert corrupts unset fields.
+    mutationFn: (patch: Partial<UserSettings>) => {
+      const current =
+        queryClient.getQueryData<UserSettings | null>(SETTINGS_KEY) ?? DEFAULT_SETTINGS
+      const merged: UserSettings = { ...current, ...patch }
+      return upsertSettings(user!.id, merged)
+    },
     onMutate: (patch) => {
       const current =
         queryClient.getQueryData<UserSettings | null>(SETTINGS_KEY) ?? DEFAULT_SETTINGS

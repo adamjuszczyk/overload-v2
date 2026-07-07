@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase'
+import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { Session, SetLog } from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -6,7 +7,7 @@ import type { Session, SetLog } from '../../types'
 type DbExercise = {
   id: string
   name: string
-  muscle_group: string
+  muscle_group: string | null
   user_id: string
   is_archived: boolean
   created_at: string
@@ -59,7 +60,7 @@ function toSetLog(row: DbSetLog): SetLog {
           id: row.exercises.id,
           userId: row.exercises.user_id,
           name: row.exercises.name,
-          muscleGroup: row.exercises.muscle_group as SetLog['exercise'] extends { muscleGroup: infer M } ? M : never,
+          muscleGroup: toMuscleGroup(row.exercises.muscle_group),
           isArchived: row.exercises.is_archived,
           createdAt: row.exercises.created_at,
         }
@@ -231,6 +232,32 @@ export async function logSet(params: {
     .single()
   if (error) throw error
   return toSetLog(data as DbSetLog)
+}
+
+export async function updateSetLog(
+  id: string,
+  changes: {
+    weight?: number | null
+    reps?: number | null
+    rir?: number | null
+    note?: string | null
+    setNumber?: number
+  },
+): Promise<void> {
+  const patch: Record<string, unknown> = {}
+  if ('weight' in changes) patch.weight = changes.weight
+  if ('reps' in changes) patch.reps = changes.reps
+  if ('rir' in changes) patch.rir = changes.rir
+  if ('note' in changes) patch.note = changes.note
+  if ('setNumber' in changes) patch.set_number = changes.setNumber
+
+  const { error } = await supabase.from('v2_set_logs').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteSetLog(id: string): Promise<void> {
+  const { error } = await supabase.from('v2_set_logs').delete().eq('id', id)
+  if (error) throw error
 }
 
 // Fetches the most recent previous session's set logs for a given exercise.

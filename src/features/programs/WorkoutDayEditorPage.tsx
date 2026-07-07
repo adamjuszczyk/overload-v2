@@ -24,6 +24,7 @@ export default function WorkoutDayEditorPage() {
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState('')
   const [showPicker, setShowPicker] = useState(false)
+  const [confirmDeleteExercise, setConfirmDeleteExercise] = useState<{ id: string; name: string } | null>(null)
 
   const updateName = useUpdateWorkoutDayName(programId ?? '')
   const updateReps = useUpdateProgramExerciseReps(dayId ?? '')
@@ -122,7 +123,7 @@ export default function WorkoutDayEditorPage() {
               total={exercises.length}
               onMoveUp={() => moveExercise(index, 'up')}
               onMoveDown={() => moveExercise(index, 'down')}
-              onDelete={() => deleteExercise.mutate(pe.id)}
+              onDelete={() => setConfirmDeleteExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
               onStepper={(delta) => handleRepsStepper(pe, delta)}
             />
           ))}
@@ -143,6 +144,41 @@ export default function WorkoutDayEditorPage() {
           existingExerciseIds={exercises.map((e) => e.exerciseId)}
           onClose={() => setShowPicker(false)}
         />
+      )}
+
+      {/* Delete exercise confirmation sheet */}
+      {confirmDeleteExercise && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,6,7,0.88)', zIndex: 50, display: 'flex', alignItems: 'flex-end' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmDeleteExercise(null) }}
+        >
+          <div style={{ background: 'var(--surface-raised)', borderRadius: '20px 20px 0 0', width: '100%', padding: '24px 20px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', border: '1px solid var(--border)', borderBottom: 'none' }}>
+            <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Remove "{confirmDeleteExercise.name}"?
+            </p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+              This also deletes every planned set for this exercise across every week of every mesocycle that uses this program. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setConfirmDeleteExercise(null)}
+                style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  deleteExercise.mutate(confirmDeleteExercise.id)
+                  setConfirmDeleteExercise(null)
+                }}
+                disabled={deleteExercise.isPending}
+                style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: deleteExercise.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
+              >
+                {deleteExercise.isPending ? '…' : 'REMOVE'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -173,7 +209,7 @@ function ExerciseRow({ pe, index, total, onMoveUp, onMoveDown, onDelete, onStepp
             {pe.exercise?.name ?? '—'}
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
-            {pe.exercise?.muscleGroup.toUpperCase() ?? ''}
+            {pe.exercise?.muscleGroup?.toUpperCase() ?? ''}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>

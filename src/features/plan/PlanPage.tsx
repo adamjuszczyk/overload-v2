@@ -324,7 +324,7 @@ function ExerciseSection({ pe, sets, isPast, isLast, onAddSet, onRemoveSet, onUp
             {pe.exercise?.name ?? '—'}
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
-            {pe.exercise?.muscleGroup.toUpperCase()}
+            {pe.exercise?.muscleGroup?.toUpperCase()}
             {pe.targetReps !== null && (
               <span style={{ color: 'var(--text-dim)' }}> · {pe.targetReps} REPS</span>
             )}

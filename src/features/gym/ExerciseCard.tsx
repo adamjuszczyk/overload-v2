@@ -9,6 +9,7 @@ interface ExerciseCardProps {
   plannedSets: WeekPlanSet[]
   currentLogs: SetLog[]      // set logs already recorded in the current session
   lastLogs: SetLog[]         // set logs from previous session for this exercise
+  lastLogsLoading: boolean   // true until the previous-session query resolves
   onLog: (params: {
     exerciseId: string
     weekPlanSetId: string | null
@@ -20,6 +21,8 @@ interface ExerciseCardProps {
     isSkipped: boolean
     restSeconds: number | null
   }) => void
+  onUpdateSet: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; setNumber?: number }) => void
+  onDeleteSet: (id: string) => void
 }
 
 export default function ExerciseCard({
@@ -27,7 +30,10 @@ export default function ExerciseCard({
   plannedSets,
   currentLogs,
   lastLogs,
+  lastLogsLoading,
   onLog,
+  onUpdateSet,
+  onDeleteSet,
 }: ExerciseCardProps) {
   const [extraSets, setExtraSets] = useState(0)
   const { startedAt, start: startTimer } = useRestTimerStore()
@@ -63,6 +69,24 @@ export default function ExerciseCard({
     })
   }
 
+  // Deleting a set leaves a gap in the stored set_number sequence (History /
+  // Progress views display that raw value) — shift every later set down by 1.
+  function handleDeleteSet(log: SetLog) {
+    onDeleteSet(log.id)
+    currentLogs
+      .filter((l) => l.id !== log.id && l.setNumber > log.setNumber)
+      .sort((a, b) => a.setNumber - b.setNumber)
+      .forEach((l, i) => {
+        onUpdateSet(l.id, {
+          weight: l.weight,
+          reps: l.reps,
+          rir: l.rir,
+          note: l.note,
+          setNumber: log.setNumber + i,
+        })
+      })
+  }
+
   return (
     <div
       className="rounded-xl overflow-hidden"
@@ -93,7 +117,7 @@ export default function ExerciseCard({
           className="text-xs font-bold tracking-widest"
           style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
         >
-          {ex?.muscleGroup.toUpperCase()}
+          {ex?.muscleGroup?.toUpperCase()}
         </span>
       </div>
 
@@ -207,8 +231,11 @@ export default function ExerciseCard({
             setNumber={i + 1}
             plannedSet={plannedSets[i] ?? null}
             lastLog={lastLogs[i] ?? null}
+            lastLogsLoading={false}
             currentLog={log}
             onLog={() => {}}
+            onUpdate={(changes) => onUpdateSet(log.id, changes)}
+            onDelete={() => handleDeleteSet(log)}
             restElapsed={null}
           />
         ))}
@@ -220,8 +247,11 @@ export default function ExerciseCard({
             setNumber={loggedCount + i + 1}
             plannedSet={ps}
             lastLog={lastLogs[loggedCount + i] ?? null}
+            lastLogsLoading={lastLogsLoading}
             currentLog={null}
             onLog={(params) => handleLog(i, ps, { ...params, exerciseId: programExercise.exerciseId })}
+            onUpdate={() => {}}
+            onDelete={() => {}}
             restElapsed={startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null}
           />
         ))}
@@ -233,6 +263,7 @@ export default function ExerciseCard({
             setNumber={Math.max(plannedCount, loggedCount) + i + 1}
             plannedSet={null}
             lastLog={lastLogs[Math.max(plannedCount, loggedCount) + i] ?? null}
+            lastLogsLoading={lastLogsLoading}
             currentLog={null}
             onLog={(params) =>
               handleLog(
@@ -241,6 +272,8 @@ export default function ExerciseCard({
                 { ...params, exerciseId: programExercise.exerciseId },
               )
             }
+            onUpdate={() => {}}
+            onDelete={() => {}}
             restElapsed={startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null}
           />
         ))}

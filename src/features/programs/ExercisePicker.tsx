@@ -99,7 +99,7 @@ export default function ExercisePicker({ workoutDayId, existingExerciseIds, onCl
                   {ex.name}
                 </div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 3 }}>
-                  {ex.muscleGroup.toUpperCase()}
+                  {ex.muscleGroup?.toUpperCase() ?? 'OTHER'}
                 </div>
               </div>
               <Plus size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />

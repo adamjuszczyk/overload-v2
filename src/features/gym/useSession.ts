@@ -15,6 +15,8 @@ import {
   skipSession,
   skipMissedSession,
   logSet,
+  updateSetLog,
+  deleteSetLog,
   fetchLastSessionLogs,
 } from './sessionService'
 
@@ -46,7 +48,8 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
     queryFn: async () => {
       try {
         const logs = await fetchLastSessionLogs(user!.id, exerciseId, currentSessionId)
-        // Cache in Dexie so offline sessions can pre-fill weights
+        // Cache in Dexie so offline sessions can pre-fill weights.
+        // fetchLastSessionLogs only ever returns logs from a completed session.
         await Promise.all(
           logs.map((log) =>
             db.set_logs.put({
@@ -64,22 +67,30 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               isSkipped: log.isSkipped,
               loggedAt: log.loggedAt,
               restSeconds: log.restSeconds,
+              sessionStatus: 'completed',
             }),
           ),
         )
         return logs
       } catch {
-        // Offline fallback — return most recent cached logs for this exercise
+        // Offline fallback — most recent COMPLETED session that isn't the
+        // one currently being logged into (excluded before picking "most
+        // recent", not after — a same-session in-progress log would
+        // otherwise win on loggedAt and then get filtered to nothing).
         const cached = await db.set_logs
           .where('exerciseId')
           .equals(exerciseId)
           .sortBy('loggedAt')
 
-        if (!cached.length) return []
-        // Most recent session (last item after ascending sort)
-        const lastSessionId = cached[cached.length - 1].sessionId
-        return cached
-          .filter((l) => l.sessionId === lastSessionId && l.sessionId !== (currentSessionId ?? ''))
+        const eligible = cached.filter(
+          (l) => l.sessionStatus === 'completed' && l.sessionId !== (currentSessionId ?? ''),
+        )
+        if (!eligible.length) return []
+
+        const lastSessionId = eligible[eligible.length - 1].sessionId
+        return eligible
+          .filter((l) => l.sessionId === lastSessionId)
+          .sort((a, b) => a.setNumber - b.setNumber)
           .map(
             (l): SetLog => ({
               id: l.id,
@@ -109,10 +120,38 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
+// Finds a session already sitting in the TanStack cache — used to reconstruct
+// a well-formed offline upsert row even when we only have an id + a status
+// change (completing/skipping a session that may itself still be unsynced).
+function findCachedSession(id: string): Session | undefined {
+  const single = queryClient.getQueryData<Session>(['v2_session', id])
+  if (single) return single
+  return queryClient
+    .getQueriesData<Session[]>({ queryKey: ['v2_sessions'] })
+    .flatMap(([, data]) => data ?? [])
+    .find((s) => s.id === id)
+}
+
+function cachedSessionToDbRow(cached: Session) {
+  return {
+    user_id: cached.userId,
+    mesocycle_id: cached.mesocycleId,
+    week_plan_id: cached.weekPlanId,
+    workout_day_id: cached.workoutDayId,
+    date: cached.date,
+    started_at: cached.startedAt,
+    created_at: cached.createdAt,
+  }
+}
+
 export function useCreateSession() {
   const { user } = useAuth()
+  const isOnline = useOnlineStatus()
+  const addPending = useOfflineStore((s) => s.addPending)
+
   return useMutation({
-    mutationFn: ({
+    networkMode: 'always',
+    mutationFn: async ({
       mesoId,
       weekPlanId,
       workoutDayId,
@@ -122,20 +161,115 @@ export function useCreateSession() {
       weekPlanId: string | null
       workoutDayId: string
       date: string
-    }) => createSession(user!.id, mesoId, weekPlanId, workoutDayId, date),
-    onSuccess: () => {
+    }) => {
+      if (!isOnline) {
+        const id = crypto.randomUUID()
+        const startedAt = new Date().toISOString()
+        const session: Session = {
+          id,
+          userId: user!.id,
+          mesocycleId: mesoId,
+          weekPlanId,
+          workoutDayId,
+          date,
+          status: 'in_progress',
+          note: null,
+          startedAt,
+          completedAt: null,
+          createdAt: startedAt,
+          setLogs: [],
+        }
+
+        await db.sessions.put({
+          id,
+          userId: user!.id,
+          date,
+          status: 'in_progress',
+          mesocycleId: mesoId,
+          weekPlanId,
+          workoutDayId,
+          note: null,
+          startedAt,
+          completedAt: null,
+        })
+
+        await db.sync_queue.add({
+          table: 'v2_sessions',
+          operation: 'upsert',
+          payload: {
+            id,
+            user_id: user!.id,
+            mesocycle_id: mesoId,
+            week_plan_id: weekPlanId,
+            workout_day_id: workoutDayId,
+            date,
+            status: 'in_progress',
+            started_at: startedAt,
+          },
+          createdAt: startedAt,
+        })
+
+        addPending(id)
+        return session
+      }
+
+      return createSession(user!.id, mesoId, weekPlanId, workoutDayId, date)
+    },
+    onSuccess: (session) => {
+      queryClient.setQueryData(['v2_session', session.id], session)
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) => (old ? [...old, session] : old),
+      )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
     },
   })
 }
 
 export function useCompleteSession() {
+  const isOnline = useOnlineStatus()
+  const addPending = useOfflineStore((s) => s.addPending)
+
   return useMutation({
-    mutationFn: ({ id, note }: { id: string; note: string | null }) =>
-      completeSession(id, note),
+    networkMode: 'always',
+    mutationFn: async ({ id, note }: { id: string; note: string | null }) => {
+      if (!isOnline) {
+        const completedAt = new Date().toISOString()
+        const cached = findCachedSession(id)
+        await db.sync_queue.add({
+          table: 'v2_sessions',
+          operation: 'upsert',
+          payload: {
+            id,
+            ...(cached ? cachedSessionToDbRow(cached) : {}),
+            status: 'completed',
+            completed_at: completedAt,
+            note,
+          },
+          createdAt: completedAt,
+        })
+        addPending(id)
+        return
+      }
+      return completeSession(id, note)
+    },
     onSuccess: (_, { id }) => {
+      queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
+        old ? { ...old, status: 'completed' as const } : old,
+      )
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) =>
+          old?.map((s) => (s.id === id ? { ...s, status: 'completed' as const } : s)),
+      )
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      // Completing a session changes history and progress data too — without
+      // this those screens keep showing pre-completion state until refetched
+      // for an unrelated reason.
+      queryClient.invalidateQueries({ queryKey: ['v2_history'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
     },
   })
 }
@@ -151,9 +285,41 @@ export function useReopenSession() {
 }
 
 export function useSkipSession() {
+  const isOnline = useOnlineStatus()
+  const addPending = useOfflineStore((s) => s.addPending)
+
   return useMutation({
-    mutationFn: (id: string) => skipSession(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_sessions'] }),
+    networkMode: 'always',
+    mutationFn: async (id: string) => {
+      if (!isOnline) {
+        const cached = findCachedSession(id)
+        const now = new Date().toISOString()
+        await db.sync_queue.add({
+          table: 'v2_sessions',
+          operation: 'upsert',
+          payload: {
+            id,
+            ...(cached ? cachedSessionToDbRow(cached) : {}),
+            status: 'skipped',
+          },
+          createdAt: now,
+        })
+        addPending(id)
+        return
+      }
+      return skipSession(id)
+    },
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
+        old ? { ...old, status: 'skipped' as const } : old,
+      )
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) =>
+          old?.map((s) => (s.id === id ? { ...s, status: 'skipped' as const } : s)),
+      )
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+    },
   })
 }
 
@@ -203,7 +369,9 @@ export function useLogSet(sessionId: string) {
       restSeconds: number | null
     }) => {
       if (!isOnline) {
-        const tempId = offlineTempIdRef.current ?? `temp_${crypto.randomUUID()}`
+        // Plain UUID — v2_set_logs.id is a Postgres uuid column, so no prefix.
+        // "Pending" state is tracked separately via useOfflineStore.pendingIds.
+        const tempId = offlineTempIdRef.current ?? crypto.randomUUID()
         const loggedAt = new Date().toISOString()
 
         await db.set_logs.put({
@@ -221,6 +389,9 @@ export function useLogSet(sessionId: string) {
           isSkipped: params.isSkipped,
           loggedAt,
           restSeconds: params.restSeconds,
+          // The session currently being logged into is always in progress —
+          // must not be mistaken for a completed "last session" reference.
+          sessionStatus: 'in_progress',
         })
 
         await db.sync_queue.add({
@@ -274,7 +445,7 @@ export function useLogSet(sessionId: string) {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
 
-      const tempId = `temp_${crypto.randomUUID()}`
+      const tempId = crypto.randomUUID()
       offlineTempIdRef.current = tempId
 
       const optimisticLog: SetLog = {
@@ -313,5 +484,55 @@ export function useLogSet(sessionId: string) {
       // Only invalidate (re-fetch from Supabase) when online
       if (isOnline) queryClient.invalidateQueries({ queryKey: qk })
     },
+  })
+}
+
+type SetLogChanges = {
+  weight?: number | null
+  reps?: number | null
+  rir?: number | null
+  note?: string | null
+  setNumber?: number
+}
+
+export function useUpdateSetLog(sessionId: string) {
+  const qk = ['v2_session', sessionId] as const
+
+  return useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: SetLogChanges }) =>
+      updateSetLog(id, changes),
+    onMutate: async ({ id, changes }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData(qk)
+      queryClient.setQueryData(qk, (old: Session | undefined) => {
+        if (!old) return old
+        return {
+          ...old,
+          setLogs: old.setLogs?.map((l) => (l.id === id ? { ...l, ...changes } : l)),
+        }
+      })
+      return { prev }
+    },
+    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
+export function useDeleteSetLog(sessionId: string) {
+  const qk = ['v2_session', sessionId] as const
+
+  return useMutation({
+    mutationFn: (id: string) => deleteSetLog(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData(qk)
+      queryClient.setQueryData(qk, (old: Session | undefined) => {
+        if (!old) return old
+        return { ...old, setLogs: old.setLogs?.filter((l) => l.id !== id) }
+      })
+      return { prev }
+    },
+    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
   })
 }

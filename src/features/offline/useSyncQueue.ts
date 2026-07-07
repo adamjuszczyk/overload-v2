@@ -18,22 +18,29 @@ export function useSyncQueueInit() {
   }, []) // run once on mount
 }
 
+const MAX_SYNC_ATTEMPTS = 3
+
 export function useSyncQueueRunner() {
   const isOnline = useOnlineStatus()
   const removePending = useOfflineStore((s) => s.removePending)
+  const addFailed = useOfflineStore((s) => s.addFailed)
   const prevOnline = useRef(isOnline)
 
   useEffect(() => {
     if (isOnline && !prevOnline.current) {
-      flushSyncQueue(removePending)
+      flushSyncQueue(removePending, addFailed)
     }
     prevOnline.current = isOnline
-  }, [isOnline, removePending])
+  }, [isOnline, removePending, addFailed])
 }
 
-async function flushSyncQueue(removePending: (id: string) => void) {
+async function flushSyncQueue(
+  removePending: (id: string) => void,
+  addFailed: (id: string) => void,
+) {
   const items = await db.sync_queue.orderBy('createdAt').toArray()
   for (const item of items) {
+    const payload = item.payload as { id?: string }
     try {
       if (item.operation === 'upsert') {
         const { error } = await supabase
@@ -42,10 +49,22 @@ async function flushSyncQueue(removePending: (id: string) => void) {
         if (error) throw error
       }
       await db.sync_queue.delete(item.id!)
-      const payload = item.payload as { id?: string }
       if (payload?.id) removePending(payload.id)
     } catch (err) {
-      console.error('[sync] failed for item', item.id, err)
+      const attempts = (item.attempts ?? 0) + 1
+      if (attempts >= MAX_SYNC_ATTEMPTS) {
+        // Dead-letter: stop retrying and surface the failure instead of
+        // silently spinning forever on an item that will never sync.
+        console.error('[sync] giving up on item after', attempts, 'attempts', item.id, err)
+        await db.sync_queue.delete(item.id!)
+        if (payload?.id) {
+          removePending(payload.id)
+          addFailed(payload.id)
+        }
+      } else {
+        await db.sync_queue.update(item.id!, { attempts })
+        console.error('[sync] attempt', attempts, 'failed for item', item.id, err)
+      }
     }
   }
 

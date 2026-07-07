@@ -18,7 +18,7 @@ export interface SchedulerData {
   currentWeek: number
 }
 
-export function useScheduler(today: string): SchedulerData {
+export function useScheduler(today: string, dismissMissed = false): SchedulerData {
   const { data: mesos } = useMesos()
   const { data: programs } = usePrograms()
 
@@ -70,6 +70,7 @@ export function useScheduler(today: string): SchedulerData {
     currentWeekPlans: currentWeekPlans ?? [],
     allWeekPlans: allWeekPlans ?? [],
     sessions: sessions ?? [],
+    dismissMissed,
   })
 
   return {

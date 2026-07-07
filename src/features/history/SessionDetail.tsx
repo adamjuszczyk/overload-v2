@@ -179,7 +179,7 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
                     letterSpacing: '0.06em',
                   }}
                 >
-                  {MUSCLE_LABEL[group.muscleGroup] ?? group.muscleGroup.toUpperCase()}
+                  {MUSCLE_LABEL[group.muscleGroup] ?? group.muscleGroup?.toUpperCase() ?? 'OTHER'}
                 </span>
               </div>
 

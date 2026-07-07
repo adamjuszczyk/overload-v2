@@ -1,3 +1,4 @@
+import { X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import type { MissedSession, Mesocycle } from '../../types'
 import { useCreateSession, useSkipMissedSession } from './useSession'
@@ -5,9 +6,10 @@ import { useCreateSession, useSkipMissedSession } from './useSession'
 interface MissedSessionPromptProps {
   queue: MissedSession[]
   activeMeso: Mesocycle
+  onDismiss: () => void
 }
 
-export default function MissedSessionPrompt({ queue, activeMeso }: MissedSessionPromptProps) {
+export default function MissedSessionPrompt({ queue, activeMeso, onDismiss }: MissedSessionPromptProps) {
   const createSession = useCreateSession()
   const skipMissed = useSkipMissedSession()
 
@@ -37,6 +39,9 @@ export default function MissedSessionPrompt({ queue, activeMeso }: MissedSession
     <div
       className="fixed inset-0 z-50 flex items-end"
       style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onDismiss()
+      }}
     >
       <div
         className="w-full rounded-t-2xl px-4 pt-4 pb-10"
@@ -47,12 +52,28 @@ export default function MissedSessionPrompt({ queue, activeMeso }: MissedSession
           style={{ width: 36, height: 4, backgroundColor: 'var(--border-strong)' }}
         />
 
-        <p
-          className="text-xs font-bold tracking-widest mb-1"
-          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
-        >
-          MISSED SESSIONS
-        </p>
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <p
+            className="text-xs font-bold tracking-widest"
+            style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+          >
+            MISSED SESSIONS
+          </p>
+          <button
+            onClick={onDismiss}
+            className="flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              backgroundColor: 'var(--surface-overlay)',
+              color: 'var(--text-secondary)',
+            }}
+            aria-label="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
         <h2
           className="text-xl font-black tracking-tight mb-4"
           style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}

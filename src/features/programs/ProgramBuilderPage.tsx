@@ -22,6 +22,7 @@ export default function ProgramBuilderPage() {
   const [nameValue, setNameValue] = useState('')
   const [showAddDay, setShowAddDay] = useState(false)
   const [newDayName, setNewDayName] = useState('')
+  const [confirmDeleteDay, setConfirmDeleteDay] = useState<{ id: string; name: string } | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
   const updateName = useUpdateProgramName()
@@ -166,7 +167,7 @@ export default function ProgramBuilderPage() {
                   <div style={{ height: 1, background: 'var(--border-subtle)' }} />
 
                   <button
-                    onClick={() => deleteDay.mutate({ id: day.id, schedule: program.schedule })}
+                    onClick={() => setConfirmDeleteDay({ id: day.id, name: day.name })}
                     disabled={deleteDay.isPending}
                     style={{ width: '100%', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: deleteDay.isPending ? 'not-allowed' : 'pointer', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px' }}
                   >
@@ -210,6 +211,41 @@ export default function ProgramBuilderPage() {
                 {createDay.isPending ? '…' : 'ADD DAY'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete day confirmation sheet */}
+      {confirmDeleteDay && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,6,7,0.88)', zIndex: 50, display: 'flex', alignItems: 'flex-end' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmDeleteDay(null) }}
+        >
+          <div style={{ background: 'var(--surface-raised)', borderRadius: '20px 20px 0 0', width: '100%', padding: '24px 20px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', border: '1px solid var(--border)', borderBottom: 'none' }}>
+            <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Delete "{confirmDeleteDay.name}"?
+            </p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+              This removes the day and every exercise in it — including all planned sets across every week of every mesocycle that uses this program. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setConfirmDeleteDay(null)}
+                style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  deleteDay.mutate({ id: confirmDeleteDay.id, schedule: program.schedule })
+                  setConfirmDeleteDay(null)
+                }}
+                disabled={deleteDay.isPending}
+                style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: deleteDay.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
+              >
+                {deleteDay.isPending ? '…' : 'DELETE DAY'}
+              </button>
+            </div>
           </div>
         </div>
       )}
