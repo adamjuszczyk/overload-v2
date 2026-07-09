@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { useScheduler } from './useScheduler'
 import { useCreateSession, useActiveSession, useReopenSession, useSkipSession } from './useSession'
 import GymSession from './GymSession'
+import SessionPreview from './SessionPreview'
+import RestDayScreen from './RestDayScreen'
 import MissedSessionPrompt from './MissedSessionPrompt'
 import type { Session, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
 
@@ -47,6 +49,7 @@ export default function TodayPage() {
   // Dismissing the missed-sessions prompt shouldn't block today's workout —
   // re-run the scheduler as if the missed queue were already handled.
   const [dismissMissed, setDismissMissed] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const scheduler = useScheduler(today, dismissMissed)
   const createSession = useCreateSession()
   const navigate = useNavigate()
@@ -82,6 +85,7 @@ export default function TodayPage() {
         workoutDay={workoutDay}
         weekPlan={weekPlan}
         weekNumber={currentWeek}
+        today={today}
       />
     )
   }
@@ -128,6 +132,20 @@ export default function TodayPage() {
       })
     }
 
+    if (showPreview) {
+      return (
+        <SessionPreview
+          workoutDay={workoutDay}
+          weekPlan={weekPlan}
+          weekNumber={currentWeek}
+          today={today}
+          isStarting={createSession.isPending}
+          onBack={() => setShowPreview(false)}
+          onStart={handleStart}
+        />
+      )
+    }
+
     return (
       <div className="px-4 pt-8 pb-6">
         <TodayHeader label={todayLabel} />
@@ -157,7 +175,18 @@ export default function TodayPage() {
               </p>
             )}
           </div>
-          <div className="px-4 pb-4">
+          <div className="px-4 pb-4 space-y-3">
+            <button
+              onClick={() => setShowPreview(true)}
+              className="w-full py-3 rounded-xl font-bold tracking-widest text-sm"
+              style={{
+                border: '1px solid var(--border-strong)',
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              PREVIEW SESSION
+            </button>
             <button
               onClick={handleStart}
               disabled={createSession.isPending}
@@ -201,14 +230,7 @@ export default function TodayPage() {
   // ─── Rest day ───────────────────────────────────────────────────────────────
 
   if (result.type === 'rest_day') {
-    return (
-      <div className="px-4 pt-8 pb-6">
-        <TodayHeader label={todayLabel} />
-        <div className="mt-4">
-          <RestDayCard label="Rest day — enjoy the recovery" />
-        </div>
-      </div>
-    )
+    return <RestDayScreen activeMeso={activeMeso!} currentWeek={currentWeek} today={today} />
   }
 
   // ─── No meso / no program ───────────────────────────────────────────────────

@@ -181,6 +181,21 @@ export async function fetchProgramExercises(workoutDayId: string): Promise<Progr
   return (data as DbProgramExercise[]).map(toProgramExercise)
 }
 
+// Every program_exercise row across a set of workout days — used to count how
+// many times a given exercise appears across the whole program (LAST WEEK vs
+// LAST TIME reference logic).
+export async function fetchAllProgramExercisesForDays(
+  workoutDayIds: string[],
+): Promise<ProgramExercise[]> {
+  if (workoutDayIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('v2_program_exercises')
+    .select('*, exercises(*)')
+    .in('workout_day_id', workoutDayIds)
+  if (error) throw error
+  return (data as DbProgramExercise[]).map(toProgramExercise)
+}
+
 export async function addProgramExercise(
   userId: string,
   workoutDayId: string,

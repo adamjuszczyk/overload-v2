@@ -96,7 +96,7 @@ export default function SetRow({
 
     if (isEditing) {
       function saveEdit() {
-        const w = editWeight.trim() === '' ? null : parseFloat(editWeight)
+        const w = editWeight.trim() === '' ? null : parseFloat(editWeight.replace(',', '.'))
         const r = editReps.trim() === '' ? null : parseInt(editReps, 10)
         const rv = editRir.trim() === '' ? null : parseInt(editRir, 10)
         onUpdate({
@@ -120,7 +120,7 @@ export default function SetRow({
 
             <div className="flex-1 relative">
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 autoFocus
                 value={editWeight}
@@ -271,7 +271,7 @@ export default function SetRow({
           <span
             className="text-xs font-bold px-1.5 py-0.5 rounded"
             style={{
-              backgroundColor: 'rgba(248, 113, 113, 0.15)',
+              backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
               color: 'var(--error)',
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
@@ -317,7 +317,7 @@ export default function SetRow({
               className="flex-shrink-0 text-xs font-bold px-2 rounded"
               style={{
                 height: 28,
-                backgroundColor: 'rgba(248, 113, 113, 0.15)',
+                backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
                 color: 'var(--error)',
                 fontFamily: 'var(--font-mono)',
               }}
@@ -359,7 +359,7 @@ export default function SetRow({
   const targetRir = plannedSet?.targetRir
 
   function handleLog() {
-    const w = weight.trim() === '' ? null : parseFloat(weight)
+    const w = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
     const r = reps.trim() === '' ? null : parseInt(reps, 10)
     if (w === null || r === null || Number.isNaN(w) || Number.isNaN(r)) {
       setLogError('Enter weight and reps, or tap SKIP')
@@ -407,7 +407,7 @@ export default function SetRow({
         {/* Weight input */}
         <div className="flex-1 relative">
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
             placeholder={lastLogsLoading ? '···' : '0'}
             disabled={lastLogsLoading}

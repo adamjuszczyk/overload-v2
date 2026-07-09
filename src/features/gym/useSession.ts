@@ -18,6 +18,8 @@ import {
   updateSetLog,
   deleteSetLog,
   fetchLastSessionLogs,
+  fetchLastCompletedSessionForExercise,
+  type ReferenceSession,
 } from './sessionService'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -115,6 +117,24 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
     enabled: !!user && !!exerciseId,
     staleTime: Infinity,
     networkMode: 'offlineFirst',
+  })
+}
+
+// Most recent completed session for this exercise — optionally restricted to
+// a specific program workout day (the LAST WEEK / LAST TIME split behind the
+// smart reference component). `enabled` lets callers skip the same-slot
+// query entirely when the exercise only appears once in the program.
+export function useLastCompletedSession(
+  exerciseId: string,
+  currentSessionId: string | null,
+  opts: { workoutDayId?: string; enabled?: boolean } = {},
+): { data: ReferenceSession | null | undefined; isLoading: boolean } {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_lastCompletedSession', exerciseId, currentSessionId, opts.workoutDayId ?? 'any'],
+    queryFn: () =>
+      fetchLastCompletedSessionForExercise(user!.id, exerciseId, currentSessionId, opts.workoutDayId),
+    enabled: (opts.enabled ?? true) && !!user && !!exerciseId,
   })
 }
 

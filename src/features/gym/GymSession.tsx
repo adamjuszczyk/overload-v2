@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog } from '../../types'
 import { useActiveSession, useLogSet, useLastSessionLogs, useUpdateSetLog, useDeleteSetLog } from './useSession'
-import { useProgramExercises } from '../programs/usePrograms'
+import { useProgramExercises, useExerciseOccurrenceCounts } from '../programs/usePrograms'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { db } from '../../lib/db'
@@ -15,6 +15,7 @@ interface GymSessionProps {
   workoutDay: WorkoutDay
   weekPlan: WeekPlan | null
   weekNumber: number
+  today: string
 }
 
 // Wrapper that loads per-exercise history and renders ExerciseCard.
@@ -24,6 +25,9 @@ function ExerciseSection({
   plannedSets,
   allCurrentLogs,
   sessionId,
+  workoutDayId,
+  occurrenceCount,
+  today,
   onLog,
   onUpdateSet,
   onDeleteSet,
@@ -32,6 +36,9 @@ function ExerciseSection({
   plannedSets: WeekPlanSet[]
   allCurrentLogs: SetLog[]
   sessionId: string
+  workoutDayId: string
+  occurrenceCount: number
+  today: string
   onLog: (params: {
     exerciseId: string
     weekPlanSetId: string | null
@@ -59,6 +66,10 @@ function ExerciseSection({
       currentLogs={currentLogs}
       lastLogs={lastLogs}
       lastLogsLoading={lastLogsLoading}
+      currentSessionId={sessionId}
+      workoutDayId={workoutDayId}
+      occurrenceCount={occurrenceCount}
+      today={today}
       onLog={onLog}
       onUpdateSet={onUpdateSet}
       onDeleteSet={onDeleteSet}
@@ -66,7 +77,7 @@ function ExerciseSection({
   )
 }
 
-export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber }: GymSessionProps) {
+export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber, today }: GymSessionProps) {
   const [showComplete, setShowComplete] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
 
@@ -75,6 +86,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
   const { data: session } = useActiveSession(sessionId)
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
+  const occurrenceCounts = useExerciseOccurrenceCounts(workoutDay.programId)
   const logSet = useLogSet(sessionId)
   const updateSetLog = useUpdateSetLog(sessionId)
   const deleteSetLog = useDeleteSetLog(sessionId)
@@ -144,6 +156,9 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               plannedSets={plannedSets}
               allCurrentLogs={allCurrentLogs}
               sessionId={sessionId}
+              workoutDayId={workoutDay.id}
+              occurrenceCount={occurrenceCounts.get(pe.exerciseId) ?? 1}
+              today={today}
               onLog={(params) => logSet.mutate({ ...params, note: null, parentSetId: null })}
               onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
               onDeleteSet={(id) => deleteSetLog.mutate(id)}

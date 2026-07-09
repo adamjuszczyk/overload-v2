@@ -292,3 +292,52 @@ export async function fetchLastSessionLogs(
     .map((r) => toSetLog(r as DbSetLog))
     .sort((a, b) => a.setNumber - b.setNumber)
 }
+
+export interface ReferenceSession {
+  sessionId: string
+  date: string        // v2_sessions.date — the session's calendar date, not a log timestamp
+  logs: SetLog[]
+}
+
+// Most recent COMPLETED session (excluding the current one) with a logged set
+// for this exercise. Pass workoutDayId to restrict to the same program slot
+// (drives the "LAST WEEK" panel); omit it for the most recent occurrence on
+// any day (drives the "LAST TIME" panel).
+export async function fetchLastCompletedSessionForExercise(
+  userId: string,
+  exerciseId: string,
+  currentSessionId: string | null,
+  workoutDayId?: string,
+): Promise<ReferenceSession | null> {
+  let query = supabase
+    .from('v2_set_logs')
+    .select('*, exercises(*), v2_sessions!inner(id, status, date, workout_day_id)')
+    .eq('user_id', userId)
+    .eq('exercise_id', exerciseId)
+    .eq('v2_sessions.status', 'completed')
+    .order('logged_at', { ascending: false })
+    .limit(50)
+
+  if (workoutDayId) {
+    query = query.eq('v2_sessions.workout_day_id', workoutDayId)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+
+  type Row = DbSetLog & { v2_sessions: { id: string; status: string; date: string } | null }
+  const rows = data as Row[]
+
+  const match = rows.find((r) => r.session_id !== currentSessionId)
+  if (!match?.v2_sessions) return null
+
+  const sessionId = match.session_id
+  return {
+    sessionId,
+    date: match.v2_sessions.date,
+    logs: rows
+      .filter((r) => r.session_id === sessionId)
+      .map((r) => toSetLog(r as DbSetLog))
+      .sort((a, b) => a.setNumber - b.setNumber),
+  }
+}
