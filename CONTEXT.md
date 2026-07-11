@@ -72,13 +72,9 @@ exercises table RLS inherited from v1 — verify if issues arise.
 
 v2_user_settings.auto_finish_minutes (nullable integer, default 5) 
 added in supabase/migrations/003_v2_auto_finish_minutes.sql — 
-**not yet applied to the live Supabase project as of end of 
-2026-07-10 session.** Must be run manually in the Supabase SQL 
-Editor (same workflow as 001/002) before the auto-finish toggle 
-in Settings will work — until then, saving settings with the 
-toggle off (auto_finish_minutes = null) fails with a Postgres 
-400 (column does not exist), confirmed live against production 
-during this session.
+applied to the live Supabase project on 2026-07-11. Confirmed live: 
+toggling AUTO-FINISH SESSION off/on in Settings now persists cleanly 
+with no Postgres errors.
 
 ---
 
@@ -129,11 +125,9 @@ during this session.
 ---
 
 ## Active work
-**Blocking:** run supabase/migrations/003_v2_auto_finish_minutes.sql 
-in the Supabase SQL Editor — the auto-finish feature (Settings 
-toggle + background completion) will 400 on every settings save 
-until this column exists. Everything else from the 2026-07-10 
-session works against production as-is.
+Nothing active. The 003 migration has been applied and the 
+auto-finish toggle confirmed working end-to-end against production 
+(see "2026-07-10 session" below).
 
 ---
 
@@ -241,19 +235,18 @@ Full typecheck (`npm run typecheck`) is clean. Interactively verified
 against live production data: rest-time formatting confirmed in 
 History (session detail, e.g. "5min 41s", "2min 19s") and in the 
 Meso Overview AVG REST TIME/WEEK chart (Y-axis ticks render "0s", 
-"1min 40s", "3min 20s", etc.). **The auto-finish migration has not 
-been run against production** (see "Active work" above) — confirmed 
-this live: toggling the Settings switch produces a real Postgres 400 
-("column auto_finish_minutes does not exist") until the SQL in 
-003_v2_auto_finish_minutes.sql is applied via the Supabase SQL 
-Editor. settingsService.ts has a defensive fallback so the app 
-doesn't show "undefined" in the meantime (falls back to the column's 
-own default of 5), but the toggle-off path won't persist until the 
-migration runs. Session-note autofill and the auto-finish polling 
-logic itself were verified by code review + typecheck only — 
-exercising them live would mean completing/reopening a real tracked 
-session or waiting out a real inactivity window against production 
-data.
+"1min 40s", "3min 20s", etc.). The 003 migration was applied on 
+2026-07-11 (manually, via the Supabase SQL Editor); re-verified live 
+afterward that toggling AUTO-FINISH SESSION off then back on in 
+Settings saves cleanly with zero failed requests (previously a 
+Postgres 400 — "column auto_finish_minutes does not exist" — before 
+the migration ran). settingsService.ts's defensive `undefined → 5` 
+fallback (for the pre-migration gap) is now dead in practice but 
+harmless to leave in place. Session-note autofill and the auto-finish 
+polling logic itself remain verified by code review + typecheck 
+only — exercising them live would mean completing/reopening a real 
+tracked session or waiting out a real inactivity window against 
+production data.
 
 ---
 
