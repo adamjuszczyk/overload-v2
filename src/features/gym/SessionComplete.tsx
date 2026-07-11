@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { CheckCircle } from 'lucide-react'
 import { useCompleteSession, useActiveSession } from './useSession'
 
@@ -11,6 +11,16 @@ export default function SessionComplete({ sessionId, onBack }: SessionCompletePr
   const [note, setNote] = useState('')
   const { data: session } = useActiveSession(sessionId)
   const completeSession = useCompleteSession()
+
+  // Prefills from a note saved on a previous completion (e.g. after
+  // continuing a session that was already completed once) — but only
+  // once, so it never clobbers what the user is actively typing.
+  const noteInitialisedRef = useRef(false)
+  useEffect(() => {
+    if (noteInitialisedRef.current || session?.note == null) return
+    noteInitialisedRef.current = true
+    setNote(session.note)
+  }, [session?.note])
 
   const totalSets = session?.setLogs?.filter((l) => !l.isSkipped).length ?? 0
   const skipped = session?.setLogs?.filter((l) => l.isSkipped).length ?? 0

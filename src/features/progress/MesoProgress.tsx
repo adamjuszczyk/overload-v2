@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 import { useMesos } from '../programs/useMesos'
 import { useMesoWeeklyProgress } from './useProgress'
+import { formatRestTime } from '../../lib/formatRestTime'
 
 // ─── Shared chart constants ───────────────────────────────────────────────────
 
@@ -36,9 +37,10 @@ interface MesoTip {
   payload?: Array<{ value?: number | null }>
   label?: string | number
   unit: string
+  formatValue?: (v: number) => string
 }
 
-function MesoTooltip({ active, payload, label, unit }: MesoTip) {
+function MesoTooltip({ active, payload, label, unit, formatValue }: MesoTip) {
   if (!active || !payload?.length) return null
   const val = payload[0]?.value
   if (val === undefined || val === null) return null
@@ -46,8 +48,9 @@ function MesoTooltip({ active, payload, label, unit }: MesoTip) {
     <div style={TT_STYLE}>
       <p style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 4 }}>{label}</p>
       <p style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 700 }}>
-        {typeof val === 'number' ? Math.round(val * 10) / 10 : val}
-        {unit ? ` ${unit}` : ''}
+        {formatValue && typeof val === 'number'
+          ? formatValue(val)
+          : `${typeof val === 'number' ? Math.round(val * 10) / 10 : val}${unit ? ` ${unit}` : ''}`}
       </p>
     </div>
   )
@@ -118,6 +121,7 @@ function MetricLineChart({
   unit,
   color = 'var(--text-secondary)',
   tickFormatter,
+  formatValue,
 }: {
   title: string
   data: Record<string, unknown>[]
@@ -126,6 +130,7 @@ function MetricLineChart({
   unit: string
   color?: string
   tickFormatter?: (v: number) => string
+  formatValue?: (v: number) => string
 }) {
   return (
     <div>
@@ -150,7 +155,7 @@ function MetricLineChart({
           />
           <Tooltip
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            content={(p: any) => <MesoTooltip active={p.active} payload={p.payload} label={p.label} unit={unit} />}
+            content={(p: any) => <MesoTooltip active={p.active} payload={p.payload} label={p.label} unit={unit} formatValue={formatValue} />}
             cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
           />
           <Line
@@ -333,7 +338,8 @@ export default function MesoProgress() {
               deloadWeeks={deloadWeeks}
               unit="s"
               color="var(--text-muted)"
-              tickFormatter={(v) => `${v}s`}
+              tickFormatter={formatRestTime}
+              formatValue={formatRestTime}
             />
           )}
         </div>

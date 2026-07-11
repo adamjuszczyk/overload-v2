@@ -181,4 +181,5 @@ export interface UserSettings {
   buzzOnRestComplete: boolean
   targetRestSeconds: number
   weightUnit: WeightUnit
+  autoFinishMinutes: number | null  // null = auto-finish disabled
 }

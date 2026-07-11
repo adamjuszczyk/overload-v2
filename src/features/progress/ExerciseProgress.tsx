@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { useExercises } from '../library/useExercises'
 import { useExerciseProgress } from './useProgress'
+import { formatRestTime } from '../../lib/formatRestTime'
 import type { Exercise, MuscleGroup } from '../../types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -59,7 +60,13 @@ function WeightTooltip({ active, payload, label }: ChartTip) {
   )
 }
 
-function SimpleTooltip({ active, payload, label, unit }: ChartTip & { unit: string }) {
+function SimpleTooltip({
+  active,
+  payload,
+  label,
+  unit,
+  formatValue,
+}: ChartTip & { unit: string; formatValue?: (v: number) => string }) {
   if (!active || !payload?.length) return null
   const val = payload[0]?.value
   return (
@@ -67,7 +74,7 @@ function SimpleTooltip({ active, payload, label, unit }: ChartTip & { unit: stri
       <p style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 4 }}>{label}</p>
       {val !== undefined && val !== null && (
         <p style={{ color: 'var(--text-primary)', fontSize: 12 }}>
-          {val} {unit}
+          {formatValue ? formatValue(val) : `${val} ${unit}`}
         </p>
       )}
     </div>
@@ -377,11 +384,11 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
                     axisLine={false}
                     tickLine={false}
                     width={36}
-                    tickFormatter={(v: number) => `${v}s`}
+                    tickFormatter={formatRestTime}
                   />
                   <Tooltip
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    content={(p: any) => <SimpleTooltip active={p.active} payload={p.payload} label={p.label} unit="s" />}
+                    content={(p: any) => <SimpleTooltip active={p.active} payload={p.payload} label={p.label} unit="s" formatValue={formatRestTime} />}
                     cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
                   />
                   <Line

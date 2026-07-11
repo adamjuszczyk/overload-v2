@@ -9,6 +9,7 @@ import { primeOfflineCache } from '../offline/offlineCache'
 import ExerciseCard from './ExerciseCard'
 import RestTimer from './RestTimer'
 import SessionComplete from './SessionComplete'
+import { useAutoFinishSession } from './useAutoFinishSession'
 
 interface GymSessionProps {
   sessionId: string
@@ -90,6 +91,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const logSet = useLogSet(sessionId)
   const updateSetLog = useUpdateSetLog(sessionId)
   const deleteSetLog = useDeleteSetLog(sessionId)
+
+  useAutoFinishSession(session, weekPlan)
 
   // Prime the Dexie cache once exercises are loaded and we're online
   useEffect(() => {

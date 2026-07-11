@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useHistoryDetail, useDeleteSession } from './useHistory'
+import { formatRestTime } from '../../lib/formatRestTime'
 import type { MuscleGroup } from '../../types'
 
 const MUSCLE_LABEL: Record<MuscleGroup, string> = {
@@ -236,7 +237,7 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
                           className="text-xs ml-auto shrink-0"
                           style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
                         >
-                          {set.restSeconds}s
+                          {formatRestTime(set.restSeconds)}
                         </span>
                       )}
                     </div>

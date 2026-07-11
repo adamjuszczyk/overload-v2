@@ -14,6 +14,7 @@ import WorkoutDayEditorPage from './features/programs/WorkoutDayEditorPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import Nav from './components/Nav'
+import Toast from './features/notifications/Toast'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
@@ -91,6 +92,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>
+      <Toast />
       <Nav />
     </div>
   )

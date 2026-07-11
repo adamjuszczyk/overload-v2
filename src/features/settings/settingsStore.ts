@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   buzzOnRestComplete: true,
   targetRestSeconds: 120,
   weightUnit: 'kg',
+  autoFinishMinutes: 5,
 }
 
 interface SettingsStoreState extends UserSettings {

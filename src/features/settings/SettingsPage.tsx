@@ -39,6 +39,8 @@ export default function SettingsPage() {
 
   const [restInput, setRestInput] = useState('')
   const [restEditing, setRestEditing] = useState(false)
+  const [autoFinishInput, setAutoFinishInput] = useState('')
+  const [autoFinishEditing, setAutoFinishEditing] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
 
   async function handleSignOut() {
@@ -234,6 +236,52 @@ export default function SettingsPage() {
                   (v) => set({ buzzOnRestComplete: v }),
                   'Vibrate when rest ends',
                 )}
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* ── Auto-finish ──────────────────────────────────────────────── */}
+        <section>
+          {sectionTitle('AUTO-FINISH SESSION')}
+          <div className="rounded-xl p-4 space-y-4" style={cardStyle}>
+            {toggle(
+              settings.autoFinishMinutes !== null,
+              (v) => set({ autoFinishMinutes: v ? 5 : null }),
+              'Auto-finish session',
+            )}
+
+            {settings.autoFinishMinutes !== null && (
+              <>
+                <div
+                  style={{ height: 1, backgroundColor: 'var(--border)' }}
+                />
+
+                <div>
+                  <p className="text-xs mb-2" style={labelStyle}>AFTER X MINUTES OF INACTIVITY</p>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={autoFinishEditing ? autoFinishInput : String(settings.autoFinishMinutes)}
+                    onFocus={() => {
+                      setAutoFinishEditing(true)
+                      setAutoFinishInput(String(settings.autoFinishMinutes))
+                    }}
+                    onChange={(e) => setAutoFinishInput(e.target.value)}
+                    onBlur={() => {
+                      setAutoFinishEditing(false)
+                      const n = parseInt(autoFinishInput, 10)
+                      if (!Number.isNaN(n)) set({ autoFinishMinutes: Math.min(60, Math.max(1, n)) })
+                    }}
+                    className="w-24 px-3 py-3 rounded-xl text-sm font-bold text-center"
+                    style={{
+                      backgroundColor: 'var(--surface-raised)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  />
+                </div>
               </>
             )}
           </div>

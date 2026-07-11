@@ -9,6 +9,7 @@ type DbSettings = {
   buzz_on_rest_complete: boolean
   target_rest_seconds: number
   weight_unit: string
+  auto_finish_minutes: number | null
 }
 
 function toUserSettings(row: DbSettings): UserSettings {
@@ -19,6 +20,10 @@ function toUserSettings(row: DbSettings): UserSettings {
     buzzOnRestComplete: row.buzz_on_rest_complete,
     targetRestSeconds: row.target_rest_seconds,
     weightUnit: row.weight_unit as UserSettings['weightUnit'],
+    // Falls back to the column default until the auto_finish_minutes
+    // migration has been run — the key is absent from the row entirely
+    // rather than null, since the column doesn't exist yet.
+    autoFinishMinutes: row.auto_finish_minutes === undefined ? 5 : row.auto_finish_minutes,
   }
 }
 
@@ -49,6 +54,7 @@ export async function upsertSettings(
     buzz_on_rest_complete: settings.buzzOnRestComplete,
     target_rest_seconds: settings.targetRestSeconds,
     weight_unit: settings.weightUnit,
+    auto_finish_minutes: settings.autoFinishMinutes,
   }
 
   const { error } = await supabase

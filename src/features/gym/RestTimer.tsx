@@ -1,12 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRestTimerStore } from './restTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
-
-function fmt(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = seconds % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
+import { formatRestTime } from '../../lib/formatRestTime'
 
 export default function RestTimer() {
   const { startedAt, isVisible, hide, show } = useRestTimerStore()
@@ -69,7 +64,7 @@ export default function RestTimer() {
             fontFamily: 'var(--font-mono)',
           }}
         >
-          REST {fmt(elapsed)}
+          REST {formatRestTime(elapsed)}
           {isOver && ' · GO'}
         </button>
       </div>
@@ -108,7 +103,7 @@ export default function RestTimer() {
               fontFamily: 'var(--font-mono)',
             }}
           >
-            {fmt(elapsed)}
+            {formatRestTime(elapsed)}
           </span>
           {isOver && (
             <span

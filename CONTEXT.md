@@ -38,6 +38,9 @@ All core features built and working:
 - 2026-07-09 session: ADD SET infinite loop fix, comma/period 
   decimal fix, preview session, smart reference component, 
   rest day screen (see "2026-07-09 session" below)
+- 2026-07-10 session: rest time display formatting everywhere, 
+  session note autofill on continue, auto-finish session after 
+  inactivity (see "2026-07-10 session" below)
 
 ---
 
@@ -66,6 +69,16 @@ v2_sessions, v2_set_logs, v2_user_settings
 
 RLS enabled and verified on all v2_ tables.
 exercises table RLS inherited from v1 — verify if issues arise.
+
+v2_user_settings.auto_finish_minutes (nullable integer, default 5) 
+added in supabase/migrations/003_v2_auto_finish_minutes.sql — 
+**not yet applied to the live Supabase project as of end of 
+2026-07-10 session.** Must be run manually in the Supabase SQL 
+Editor (same workflow as 001/002) before the auto-finish toggle 
+in Settings will work — until then, saving settings with the 
+toggle off (auto_finish_minutes = null) fails with a Postgres 
+400 (column does not exist), confirmed live against production 
+during this session.
 
 ---
 
@@ -100,14 +113,27 @@ exercises table RLS inherited from v1 — verify if issues arise.
 - src/features/gym/RestDayScreen.tsx — rest day screen
 - src/features/gym/ExerciseHeader.tsx + PlanTargetsPanel.tsx — shared 
   pieces used by both ExerciseCard and PreviewExerciseCard
+- src/lib/formatRestTime.ts — single source of truth for "45s" / 
+  "1min 32s" rest-time formatting, used in History, Progress 
+  (both charts), and RestTimer
+- src/features/gym/useAutoFinishSession.ts — client-side polling 
+  hook (30s interval) that auto-completes a session once every 
+  planned set has a set_log row and the last one is older than 
+  the user's auto_finish_minutes setting
+- src/features/notifications/toastStore.ts + Toast.tsx — minimal 
+  global toast (Zustand + component mounted in App.tsx), added 
+  for the "Session completed automatically" notification; no 
+  toast library existed before this
 - tokens.css — all CSS custom properties
 
 ---
 
 ## Active work
-Nothing active. All 5 items from the 2026-07-09 session are built 
-and typecheck clean; user is doing an interactive pass to verify 
-against real data before/after pushing.
+**Blocking:** run supabase/migrations/003_v2_auto_finish_minutes.sql 
+in the Supabase SQL Editor — the auto-finish feature (Settings 
+toggle + background completion) will 400 on every settings save 
+until this column exists. Everything else from the 2026-07-10 
+session works against production as-is.
 
 ---
 
@@ -175,6 +201,59 @@ standalone SVG render for the rest day moon glyph. Did not exercise
 the ADD SET fix or comma/period fix live (would require logging real 
 sets into production data) — those are covered by static trace-through 
 and typecheck only.
+
+---
+
+## 2026-07-10 session
+1. **FIX — rest time display formatting**: new `formatRestTime()` in 
+   src/lib/formatRestTime.ts (`<60s` → "45s", `≥60s` → "1min 32s"), 
+   applied everywhere rest time was previously shown as a raw number 
+   of seconds — SessionDetail.tsx (history), ExerciseProgress.tsx and 
+   MesoProgress.tsx (both the chart tooltip and the Y-axis tick 
+   formatter for the AVG REST TIME charts), and RestTimer.tsx (the 
+   live active-session timer, which previously used its own m:ss 
+   `fmt()` — replaced, not duplicated).
+2. **FIX — session note autofill on continue**: SessionComplete.tsx's 
+   note textarea previously always started blank. It now seeds from 
+   `session.note` (already present in the `useActiveSession` payload) 
+   the first time it resolves, via a one-shot ref guard — mirrors the 
+   `userEditedRef` pattern already used in SetRow.tsx so a later 
+   refetch never clobbers text the user is mid-typing. No separate 
+   fetch was needed since reopenSession never clears the note column.
+3. **FEATURE — auto-finish session after inactivity**: 
+   useAutoFinishSession.ts polls every 30s; once every WeekPlanSet id 
+   has a matching set_log (by weekPlanSetId) and the newest log's 
+   loggedAt is older than `auto_finish_minutes`, it calls the same 
+   `useCompleteSession` mutation FINISH SESSION uses (so it queues 
+   offline identically) and shows a new global toast ("Session 
+   completed automatically" — src/features/notifications/, no toast 
+   library existed before this). Settings gained an AUTO-FINISH 
+   SESSION card (on/off + minutes 1–60, default 5).
+   - **Schema note**: the task spec's migration text said 
+     `auto_finish_minutes integer not null default 5` but also "null 
+     = disabled" — those two clauses conflict (`not null` can't hold 
+     null). Shipped the column as nullable instead 
+     (supabase/migrations/003_v2_auto_finish_minutes.sql) so the 
+     disabled state is representable; kept default 5 so existing 
+     rows and NOT NULL are not required together.
+
+Full typecheck (`npm run typecheck`) is clean. Interactively verified 
+against live production data: rest-time formatting confirmed in 
+History (session detail, e.g. "5min 41s", "2min 19s") and in the 
+Meso Overview AVG REST TIME/WEEK chart (Y-axis ticks render "0s", 
+"1min 40s", "3min 20s", etc.). **The auto-finish migration has not 
+been run against production** (see "Active work" above) — confirmed 
+this live: toggling the Settings switch produces a real Postgres 400 
+("column auto_finish_minutes does not exist") until the SQL in 
+003_v2_auto_finish_minutes.sql is applied via the Supabase SQL 
+Editor. settingsService.ts has a defensive fallback so the app 
+doesn't show "undefined" in the meantime (falls back to the column's 
+own default of 5), but the toggle-off path won't persist until the 
+migration runs. Session-note autofill and the auto-finish polling 
+logic itself were verified by code review + typecheck only — 
+exercising them live would mean completing/reopening a real tracked 
+session or waiting out a real inactivity window against production 
+data.
 
 ---
 
