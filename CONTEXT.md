@@ -41,6 +41,9 @@ All core features built and working:
 - 2026-07-10 session: rest time display formatting everywhere, 
   session note autofill on continue, auto-finish session after 
   inactivity (see "2026-07-10 session" below)
+- 2026-07-11 session: meso week numbering fixed to flip on Monday 
+  instead of on whatever weekday the meso happened to start 
+  (see "2026-07-11 session" below)
 
 ---
 
@@ -88,6 +91,13 @@ with no Postgres errors.
 - Offline: useLogSet, useCreateSession, useCompleteSession, 
   useSkipSession all queue offline via sync queue
 - Set logs: weight and reps are nullable (null when is_skipped = true)
+- Meso week numbers are calendar weeks, Monday-anchored: always compute 
+  them with `differenceInCalendarWeeks(date, mesoStartDate, 
+  { weekStartsOn: 1 }) + 1` (or `startOfWeek(date, { weekStartsOn: 1 })` 
+  for a week-window boundary), never `differenceInWeeks` — that function 
+  has no weekStartsOn option and instead counts raw 7-day periods from 
+  the meso's exact start date, which drifts off Monday whenever the 
+  meso didn't start on one (see "2026-07-11 session" below)
 
 ---
 
@@ -247,6 +257,46 @@ polling logic itself remain verified by code review + typecheck
 only — exercising them live would mean completing/reopening a real 
 tracked session or waiting out a real inactivity window against 
 production data.
+
+---
+
+## 2026-07-11 session
+1. **FIX — meso week numbering flips on Sunday instead of Monday (AUDIT.md 
+   A4, now resolved)**: every "which meso week is this" calculation used 
+   `differenceInWeeks(date, mesoStartDate) + 1` — date-fns's raw 7-day-period 
+   counter, anchored to the meso's exact start date rather than to calendar 
+   weeks. A meso started on a Sunday (the normal case per the SPEC's "plan 
+   Sunday night" workflow) flipped "Week N" on Sundays, one day before the 
+   Monday a training week is meant to start. `differenceInWeeks` has no 
+   `weekStartsOn` option at all — passing one is a type error — so the fix 
+   is a function swap to `differenceInCalendarWeeks(date, mesoStartDate, 
+   { weekStartsOn: 1 })`, which is calendar-week-aware. Six call sites 
+   fixed (the task's own suggested file list — src/features/scheduling/ 
+   and src/features/meso/ — doesn't match this codebase's actual layout, 
+   which moved during Phase 1; the real call sites are 
+   src/features/gym/useScheduler.ts's `currentWeek` — the single source 
+   most other screens consume, src/features/gym/scheduler.ts's missed-session 
+   backfill loop, src/features/plan/PlanPage.tsx and 
+   src/features/programs/ProgramPage.tsx's local `weekNumber()` helpers, 
+   and src/features/progress/progressService.ts's per-session week bucketing 
+   for the meso progress chart). Also fixed 
+   src/features/gym/RestDayScreen.tsx's "N of M sessions this week" window, 
+   which derived its own week boundary via `mesoStart + (currentWeek-1)*7 
+   days` — no longer valid once `currentWeek` is calendar-anchored — 
+   replaced with a direct `startOfWeek(today, { weekStartsOn: 1 })`.
+   AUDIT.md A4 moved from Deferred to Fixed (FIX 14).
+
+Full typecheck (`npm run typecheck`) is clean. Verified the fix logic in 
+isolation with a small node script comparing old vs. new week numbers 
+across a Sunday-start meso's first two weeks — confirms the exact 
+reported symptom (old: Sunday 06-21 already shows week 2; new: week 2 
+starts Monday 06-15 and holds through Sunday 06-21, flipping to week 3 
+on Monday 06-22). Did not verify live against the production meso — no 
+stored login session on the dev server port used this session, and 
+credentials weren't available to sign in. This fix changes what "Week 
+N" displays across Plan, Program, Progress, Today, and the rest day 
+screen for the currently active meso — worth an eyes-on check against 
+the real meso next time the app is open.
 
 ---
 

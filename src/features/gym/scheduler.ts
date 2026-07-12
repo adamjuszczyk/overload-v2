@@ -1,4 +1,4 @@
-import { differenceInWeeks, parseISO, format, subDays, isAfter, isBefore, addDays } from 'date-fns'
+import { differenceInCalendarWeeks, parseISO, format, subDays, isAfter, isBefore, addDays } from 'date-fns'
 import type {
   SchedulerResult,
   MissedSession,
@@ -79,7 +79,7 @@ export function schedule(
             daySession.status === 'skipped')
 
         if (!isHandled) {
-          const weekNum = differenceInWeeks(cursor, mesoStart) + 1
+          const weekNum = differenceInCalendarWeeks(cursor, mesoStart, { weekStartsOn: 1 }) + 1
           const weekPlan =
             allWeekPlans.find(
               (wp) => wp.workoutDayId === wdId && wp.weekNumber === weekNum,

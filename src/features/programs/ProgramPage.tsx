@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Trash2, X, CheckCircle } from 'lucide-react'
-import { differenceInWeeks, parseISO, format } from 'date-fns'
+import { differenceInCalendarWeeks, parseISO, format } from 'date-fns'
 import type { Mesocycle } from '../../types'
 import { usePrograms, useCreateProgram } from './usePrograms'
 import { useMesos, useCreateMeso, useCompleteMeso, useDeleteMeso } from './useMesos'
 
 function weekNumber(startDate: string): number {
-  return differenceInWeeks(new Date(), parseISO(startDate)) + 1
+  return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
 }
 
 function fmtDate(iso: string): string {

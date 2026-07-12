@@ -1,4 +1,4 @@
-import { addDays, parseISO, format } from 'date-fns'
+import { startOfWeek, parseISO, format } from 'date-fns'
 import { usePrograms } from '../programs/usePrograms'
 import { useSessionsInRange } from './useSession'
 import type { Mesocycle } from '../../types'
@@ -29,7 +29,7 @@ export default function RestDayScreen({ activeMeso, currentWeek, today }: RestDa
     ? Object.values(program.schedule).filter((workoutDayId) => workoutDayId != null).length
     : 0
 
-  const weekStart = format(addDays(parseISO(activeMeso.startDate), (currentWeek - 1) * 7), 'yyyy-MM-dd')
+  const weekStart = format(startOfWeek(parseISO(today), { weekStartsOn: 1 }), 'yyyy-MM-dd')
   const { data: weekSessions = [] } = useSessionsInRange(weekStart, today)
   const completedThisWeek = weekSessions.filter((s) => s.status === 'completed').length
 

@@ -1,4 +1,4 @@
-import { format, subDays, isAfter, parseISO, differenceInWeeks } from 'date-fns'
+import { format, subDays, isAfter, parseISO, differenceInCalendarWeeks } from 'date-fns'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays } from '../programs/usePrograms'
 import { useWeekPlans, useAllWeekPlans } from '../plan/useWeekPlan'
@@ -26,7 +26,7 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
   const programId = activeMeso?.programId ?? ''
 
   const currentWeek = activeMeso
-    ? differenceInWeeks(parseISO(today), parseISO(activeMeso.startDate)) + 1
+    ? differenceInCalendarWeeks(parseISO(today), parseISO(activeMeso.startDate), { weekStartsOn: 1 }) + 1
     : 1
 
   // Lookback window — never earlier than meso start date

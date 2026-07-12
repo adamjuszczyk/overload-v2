@@ -1,4 +1,4 @@
-import { differenceInWeeks, parseISO } from 'date-fns'
+import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ export async function fetchMesoWeeklyProgress(
   // Group set_logs by week number, computed from session date vs meso start
   const weekMap = new Map<number, RawSession['v2_set_logs']>()
   for (const session of (sessions ?? []) as RawSession[]) {
-    const wk = differenceInWeeks(parseISO(session.date), parseISO(mesoStartDate)) + 1
+    const wk = differenceInCalendarWeeks(parseISO(session.date), parseISO(mesoStartDate), { weekStartsOn: 1 }) + 1
     const existing = weekMap.get(wk) ?? []
     weekMap.set(wk, [...existing, ...session.v2_set_logs])
   }

@@ -17,6 +17,9 @@ Source: Fable 5 technical audit, July 2026
 - FIX 11: A5 — mutations invalidate related caches consistently (July 7)
 - FIX 12: M6 — iOS vibration fallback to visual flash (July 7)
 - FIX 13: Q7 — timezone standardised to local time in mesoService.ts (July 7)
+- FIX 14: A4 — meso week numbers now calendar weeks anchored to Monday
+  (differenceInCalendarWeeks / startOfWeek with weekStartsOn: 1), not raw
+  7-day periods from the meso's exact start date (July 11)
 
 ---
 
@@ -31,7 +34,6 @@ Source: Fable 5 technical audit, July 2026
 ### Architecture
 - A2: positional-matching model in gym UI structurally fragile — needs identity matching via weekPlanSetId
 - A3: no uniqueness constraints on v2_sessions(user_id, date) or v2_set_logs(session_id, exercise_id, set_number)
-- A4: meso weeks anchored to start date — plan/calendar weeks disagree mid-week start
 - A6: programs can never be deleted
 - A7: toMesocycle fabricates half-real Program with empty schedule
 

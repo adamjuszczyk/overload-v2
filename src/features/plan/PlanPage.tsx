@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, Trash2, Copy } from 'lucide-react'
-import { differenceInWeeks, parseISO } from 'date-fns'
+import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises } from '../programs/usePrograms'
@@ -26,7 +26,7 @@ const DOW_LABEL: Record<DayOfWeek, string> = {
 }
 
 function computeWeekNumber(startDate: string): number {
-  return differenceInWeeks(new Date(), parseISO(startDate)) + 1
+  return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
