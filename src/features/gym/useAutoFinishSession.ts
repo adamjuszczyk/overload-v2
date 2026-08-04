@@ -16,9 +16,13 @@ export function useAutoFinishSession(session: Session | undefined, weekPlan: Wee
   const completeSession = useCompleteSession()
   const showToast = useToastStore((s) => s.show)
   const triggeredRef = useRef(false)
+  // Mount time (i.e. the moment this session was last armed as in_progress —
+  // GymSession fully unmounts/remounts when a session flips completed <-> reopened).
+  const armedAtRef = useRef(Date.now())
 
   useEffect(() => {
     triggeredRef.current = false
+    armedAtRef.current = Date.now()
   }, [session?.id])
 
   useEffect(() => {
@@ -30,6 +34,12 @@ export function useAutoFinishSession(session: Session | undefined, weekPlan: Wee
 
     const check = () => {
       if (triggeredRef.current) return
+      // Grace window since (re)arming — without this, reopening a session where
+      // every set was already logged (the common "reopen to edit" case) passes
+      // the staleness check below on the very first tick and gets immediately
+      // re-finished, since that staleness is exactly why it was finishable.
+      if (Date.now() - armedAtRef.current < autoFinishMinutes * 60_000) return
+
       const logs = session.setLogs ?? []
       const allLogged = plannedSetIds.every((id) => logs.some((l) => l.weekPlanSetId === id))
       if (!allLogged) return

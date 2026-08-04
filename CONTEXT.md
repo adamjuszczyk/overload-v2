@@ -44,6 +44,8 @@ All core features built and working:
 - 2026-07-11 session: meso week numbering fixed to flip on Monday 
   instead of on whatever weekday the meso happened to start 
   (see "2026-07-11 session" below)
+- 2026-08-04 session: fixed reopening a finished session immediately 
+  re-finishing it (see "2026-08-04 session" below)
 
 ---
 
@@ -125,7 +127,9 @@ with no Postgres errors.
 - src/features/gym/useAutoFinishSession.ts — client-side polling 
   hook (30s interval) that auto-completes a session once every 
   planned set has a set_log row and the last one is older than 
-  the user's auto_finish_minutes setting
+  the user's auto_finish_minutes setting. Also gates on a grace 
+  window since the hook last (re)armed, to avoid immediately 
+  re-finishing a reopened session (see "2026-08-04 session" below)
 - src/features/notifications/toastStore.ts + Toast.tsx — minimal 
   global toast (Zustand + component mounted in App.tsx), added 
   for the "Session completed automatically" notification; no 
@@ -297,6 +301,45 @@ credentials weren't available to sign in. This fix changes what "Week
 N" displays across Plan, Program, Progress, Today, and the rest day 
 screen for the currently active meso — worth an eyes-on check against 
 the real meso next time the app is open.
+
+---
+
+## 2026-08-04 session
+1. **FIX — reopening a finished session immediately re-finished it**: 
+   `GymSession` fully unmounts when a session completes (`TodayPage` 
+   switches from rendering `GymSession` to `CompletedTodayScreen` once 
+   the scheduler sees `status: 'completed'`) and fully remounts when 
+   the user hits Continue (`useReopenSession` flips it back to 
+   `in_progress`, scheduler switches back to `active_session`, 
+   `GymSession` mounts fresh). `useAutoFinishSession`'s `triggeredRef` 
+   only reset on `session.id` change, so a fresh mount always starts 
+   armed. Its `check()` also ran synchronously on mount, before the 
+   30s interval. For a session reopened with every planned set already 
+   logged (the common "reopen to edit/continue" case), the existing 
+   staleness check — last log older than `auto_finish_minutes` — was 
+   already true the instant the poller re-armed, since that staleness 
+   is exactly why the session was finishable in the first place. Net 
+   effect: reopen, then within one tick the session silently 
+   auto-completed again, blocking any further logging or editing. 
+   Fix: added `armedAtRef` (reset alongside `triggeredRef`, on mount 
+   and on `session.id` change) and gate `check()` on 
+   `Date.now() - armedAtRef.current >= autoFinishMinutes * 60_000` in 
+   addition to the existing last-log staleness check. For a normal 
+   (non-reopened) session this is a no-op — mount always precedes the 
+   last log, so by the time the log becomes stale the arm-time grace 
+   window has already elapsed too. For a reopened session it forces a 
+   full `auto_finish_minutes` wait after reopen before the poller can 
+   fire again, giving the user a real window to log or edit.
+
+Full typecheck (`npm run typecheck`) is clean. Not verified live — this 
+is a timing-dependent client-side hook that requires a real logged-in 
+session, real production set-log data, and waiting out the poll/grace 
+window to exercise meaningfully; no stored credentials were available 
+in this environment to sign in and reproduce the original repro steps 
+(reopen a finished session, confirm it stays open past one 30s poll 
+tick). Worth an eyes-on check against the real app next time it's open: 
+finish a session, hit Continue, and confirm it doesn't silently 
+re-finish within the next `auto_finish_minutes`.
 
 ---
 
