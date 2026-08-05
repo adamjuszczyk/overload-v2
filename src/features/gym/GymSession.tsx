@@ -162,7 +162,21 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               workoutDayId={workoutDay.id}
               occurrenceCount={occurrenceCounts.get(pe.exerciseId) ?? 1}
               today={today}
-              onLog={(params) => logSet.mutate({ ...params, note: null, parentSetId: null })}
+              onLog={(params) => {
+                // AUDIT M5 fix: a dropset row must point back to the nearest
+                // preceding main (non-dropset) set for this exercise in this
+                // session — the same inference rule 007's backfill uses for
+                // historical rows (TASKS.md §2.1), so newly-written rows stay
+                // consistent with how the backfill would have grouped them.
+                // A non-dropset log is always a head: parentSetId null.
+                const exerciseLogs = allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId)
+                const parentSetId = params.isDropset
+                  ? ([...exerciseLogs]
+                      .sort((a, b) => b.setNumber - a.setNumber)
+                      .find((l) => !l.isDropset)?.id ?? null)
+                  : null
+                logSet.mutate({ ...params, note: null, parentSetId })
+              }}
               onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
               onDeleteSet={(id) => deleteSetLog.mutate(id)}
             />
