@@ -133,6 +133,18 @@ All core features built and working:
   scripts, not application code — and were deliberately left as they
   were; **not** claiming an empty `git status`. See "2026-08-06 session
   (verification + Phase 3.0 fully committed)" below.
+- 2026-08-06 session (final — everything committed): the four items left
+  outside version control — `TASKS.md`'s diff, `SPEC.md`, `TASKS-v2.md`,
+  and migrations 004–007 — are now each committed on their own
+  (`74ccde6`, `608dfe3`, `dbdbe73`, `35aa2dc`). Content confirmed current
+  before each commit, not assumed: `TASKS.md`/`SPEC.md`/`TASKS-v2.md`
+  checked for corruption/truncation (none found); the four migration
+  files cross-checked against the actual production results already
+  recorded in this file (the 9-column `information_schema` listing,
+  007's Step 3 verify queries, the backfill's inference logic vs. the
+  independently re-derived correctness check) — no drift found anywhere.
+  **`git status` is now empty.** See "2026-08-06 session (everything
+  committed)" below.
 
 ---
 
@@ -269,7 +281,8 @@ session" below.
 ## Key files
 - SPEC.md — **v3** product source of truth
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
-  Awaiting approval as of 2026-08-05; no code written against it yet
+  Phase 3.0 (§4 steps 1–5) is implemented against it, formally verified,
+  and fully committed as of 2026-08-06; Phase 3.1 onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -308,8 +321,9 @@ session" below.
 ## Active work
 **Phase 3.0 (migration foundation) is complete, formally verified, and
 fully committed** — schema, audit, backfill on both sides, both
-directions of AUDIT M5, and the remaining application code. Status,
-precisely:
+directions of AUDIT M5, the remaining application code, and every
+previously-uncommitted planning document and migration file.
+`git status` is empty as of 2026-08-06. Status, precisely:
 
 1. **Migrations 004, 005, 006 — applied to production, confirmed.**
    Verified via `information_schema` listing all 9 new columns with
@@ -405,20 +419,36 @@ that's history now, not a live gap.
    session — zero difference found. `npm run typecheck` clean on the
    full batch. Pushed to `origin/master`.
 
-**Git status check before treating this as fully clean:** `TASKS.md`
-still carries an uncommitted diff (the v3 plan document itself, written
-during the 2026-08-05 planning session — content, not code) and
-`SPEC.md`, `TASKS-v2.md`, and `supabase/migrations/004`–`007` remain
-untracked (planning docs and migration scripts that were applied to
-production by hand via the SQL Editor, never through a git-tracked
-migration runner). These are a different category from "Phase 3.0
-application code" and were deliberately left alone this session — `git
-status` is not empty, and this file does not claim it is.
+7. **The remaining four non-code items — fully committed 2026-08-06,
+   same session as item 6.** `TASKS.md`'s own uncommitted diff (the v3
+   plan document, written during the 2026-08-05 planning session),
+   `SPEC.md` and `TASKS-v2.md` (both previously untracked), and
+   migrations 004–007 (previously untracked SQL files, applied to
+   production by hand via the SQL Editor across earlier sessions but
+   never committed as files) are now each committed on their own —
+   `74ccde6`, `608dfe3`, `dbdbe73`, `35aa2dc` respectively. Content was
+   confirmed current before each commit: `TASKS.md`/`SPEC.md`/
+   `TASKS-v2.md` checked for conflict markers and truncation (found
+   none); the four migration files cross-checked against the actual
+   production results already recorded elsewhere in this file — the
+   9-column `information_schema` listing (Database tables, above),
+   007's Step 3 verify queries (byte-identical to what's quoted in
+   "2026-08-05 session (Phase 3.0 — backfill formally verified)"), and
+   the backfill's inference logic matching the independently re-derived
+   correctness check that found 0 mismatches on both sides. No drift
+   found anywhere. See "2026-08-06 session (everything committed)"
+   below for the full verification detail and all four hashes.
+
+**`git status` is now empty. Nothing in this project exists only in the
+working tree anymore** — schema, backfill, both M5 fixes, the rest of
+Phase 3.0's application code, and every planning/spec document are all
+committed.
 
 **Phase 3.0's schema and data work (migrations, backfill), both
-directions of AUDIT M5 (log-side and plan-side), and the rest of Phase
-3.0's application code are now all formally done AND committed.** See
-the ADD STAGE / inference-heuristic note under "Known issues" before
+directions of AUDIT M5 (log-side and plan-side), the rest of Phase
+3.0's application code, and every previously-uncommitted planning
+document and migration file are now all formally done AND committed.**
+See the ADD STAGE / inference-heuristic note under "Known issues" before
 starting Phase 3.1.
 
 ---
@@ -1340,6 +1370,65 @@ exactly as they were; this session did not touch them, and does not
 claim `git status` is empty — only that Phase 3.0's application code
 specifically is fully committed. See "Active work" above for the
 precise breakdown.
+
+---
+
+## 2026-08-06 session (everything committed)
+Same day as the prior two 2026-08-06 sessions. Closed out the last four
+items sitting outside version control — same underlying reasoning as
+the M5 fixes and the application-code commit: content that only exists
+in the working tree isn't safe, and this exact gap (uncommitted
+CONTEXT.md drift) already caused a self-contradictory file earlier in
+this build.
+
+**Verified content was current before committing each, not assumed:**
+
+- `TASKS.md`, `SPEC.md`, `TASKS-v2.md` — read head and tail of each and
+  grepped all three plus all four migration files for merge-conflict
+  markers (`<<<<<<<`, `=======`, `>>>>>>>`). None found in any file; no
+  truncation, no corruption.
+- The four migration files — cross-checked against the actual production
+  results already recorded elsewhere in this file, since there's no way
+  in this environment to literally diff against what was typed into the
+  Supabase SQL Editor (that session's browser state doesn't persist):
+  - 004–006's 9 added columns (`parent_week_plan_set_id` +
+    `stage_index` on `v2_week_plan_sets`; `stage_index`, `set_seconds`,
+    `entered_unit`, `is_warmup` on `v2_set_logs`; `weight_unit` on
+    `v2_program_exercises`; `measure_set_time` on `v2_user_settings`)
+    match the `information_schema` listing recorded under "Database
+    tables" exactly — same columns, same file (004 vs. 005 vs. 006).
+  - 007's Step 3 verify queries
+    (`select count(*) from v2_set_logs where is_dropset and
+    parent_set_id is null;` and the `not is_dropset` counterpart) are
+    byte-identical to the queries quoted in "2026-08-05 session (Phase
+    3.0 — backfill formally verified)", which recorded both returning 0.
+  - 007's Step 1(c) scope query's column names (`drop_rows`,
+    `sessions_touched`) match the documented result (8 drop rows / 4
+    sessions) from the same session log.
+  - 007's backfill CTE (nearest preceding non-dropset row; partitioned
+    by `session_id, exercise_id` ordered by `set_number, logged_at` on
+    the log side; by `week_plan_id, program_exercise_id` ordered by
+    `set_number` only — no `logged_at` column exists on that table — on
+    the plan side) matches the independently re-derived correctness
+    check documented in the same session log, which found 0 mismatches
+    on both sides (8/8 log-side, 7/7 plan-side).
+  - **No discrepancy found anywhere.** Nothing was rewritten before
+    committing — the on-disk content matched what was documented as
+    actually run.
+
+**Four separate commits, in order, per explicit instruction (same
+reasoning as keeping the M5 fixes independently revertable):**
+
+1. `TASKS.md` — `74ccde6`
+2. `SPEC.md` — `608dfe3`
+3. `TASKS-v2.md` — `dbdbe73`
+4. Migrations 004, 005, 006, 007 (one commit, one item per the
+   instruction) — `35aa2dc`
+
+`git status --porcelain` after the fourth commit produced no output —
+confirmed with an explicit exit-code check, not just eyeballing empty
+output. **Nothing in this project exists only in the working tree
+anymore.**
 
 ---
 
