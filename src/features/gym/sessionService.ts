@@ -30,6 +30,11 @@ type DbSetLog = {
   is_skipped: boolean
   logged_at: string
   rest_seconds: number | null
+  // Absent until migration 004/005/006 has been applied.
+  stage_index?: number
+  is_warmup?: boolean
+  set_seconds?: number | null
+  entered_unit?: string | null
 }
 
 type DbSession = {
@@ -73,6 +78,11 @@ function toSetLog(row: DbSetLog): SetLog {
     note: row.note,
     isDropset: row.is_dropset,
     parentSetId: row.parent_set_id,
+    // Same "column may not exist yet" fallback as autoFinishMinutes.
+    stageIndex: row.stage_index ?? 0,
+    isWarmup: row.is_warmup ?? false,
+    setSeconds: row.set_seconds ?? null,
+    enteredUnit: (row.entered_unit ?? null) as SetLog['enteredUnit'],
     isSkipped: row.is_skipped,
     loggedAt: row.logged_at,
     restSeconds: row.rest_seconds,

@@ -37,6 +37,7 @@ type DbProgramExercise = {
   exercise_id: string
   position: number
   target_reps: number | null
+  weight_unit?: string | null  // absent until migration 006 has been applied
   exercises: DbExerciseJoin | null
 }
 
@@ -79,6 +80,10 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
     exerciseId: row.exercise_id,
     position: row.position,
     targetReps: row.target_reps,
+    // Falls back to inherit (null) until migration 006 has been applied — the
+    // key is absent from the row entirely rather than null, since the column
+    // doesn't exist yet (same pattern as autoFinishMinutes in settingsService).
+    weightUnit: (row.weight_unit ?? null) as ProgramExercise['weightUnit'],
     exercise: ex
       ? {
           id: ex.id,

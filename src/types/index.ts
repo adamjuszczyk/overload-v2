@@ -38,6 +38,7 @@ export interface ProgramExercise {
   exercise?: Exercise        // joined when loading the full day
   position: number           // 0-based
   targetReps: number | null  // suggestion only — never enforced
+  weightUnit: WeightUnit | null  // null = inherit v2_user_settings.weightUnit (v3 §2.4)
 }
 
 export interface WorkoutDay {
@@ -152,6 +153,11 @@ export interface SetLog {
   // A spontaneous dropset:  isDropset=true, weekPlanSetId=null, parentSetId set
   isDropset: boolean
   parentSetId: string | null
+  stageIndex: number         // 0 = head (main stage), 1.. = stage order (v3 §2.1)
+
+  isWarmup: boolean          // never enters e1RM/volume/reference; no logging UI yet (v3 §2.5)
+  setSeconds: number | null  // duration of the set itself; null = not measured (v3 §2.2)
+  enteredUnit: WeightUnit | null  // what the user actually typed at log time (v3 §2.4)
 
   isSkipped: boolean
   loggedAt: string           // ISO timestamp — source of truth for rest time
@@ -188,4 +194,5 @@ export interface UserSettings {
   targetRestSeconds: number
   weightUnit: WeightUnit
   autoFinishMinutes: number | null  // null = auto-finish disabled
+  measureSetTime: boolean    // global Start Set toggle (v3 §2.2 / SPEC §4.2)
 }

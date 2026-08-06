@@ -53,6 +53,10 @@ interface CachedSetLog {
   note: string | null
   isDropset: boolean
   parentSetId: string | null
+  stageIndex: number
+  isWarmup: boolean
+  setSeconds: number | null
+  enteredUnit: string | null
   isSkipped: boolean
   loggedAt: string
   restSeconds: number | null
@@ -89,6 +93,15 @@ class OverloadV2DB extends Dexie {
       sessions:     'id, userId, date, status, mesocycleId, weekPlanId',
       set_logs:     'id, sessionId, exerciseId, loggedAt',
       sync_queue:   '++id, createdAt',
+    })
+    // v3 §2.1 — dropset grouping needs to look rows up by parentSetId (the
+    // reference-panel offline fallback groups stages under their head).
+    // stageIndex/isWarmup/setSeconds/enteredUnit are new plain fields, not
+    // indexes — no schema bump needed for those, just the added columns.
+    // Rows cached by the v2 client before this bump won't have them; readers
+    // must treat stageIndex === undefined as 0, not crash.
+    this.version(2).stores({
+      set_logs: 'id, sessionId, exerciseId, loggedAt, parentSetId',
     })
   }
 }

@@ -18,6 +18,11 @@ type RawSetLogRow = {
   logged_at: string
   rest_seconds: number | null
   v2_sessions: { id: string; status: string } | null
+  // Absent until migration 004/005/006 has been applied.
+  stage_index?: number
+  is_warmup?: boolean
+  set_seconds?: number | null
+  entered_unit?: string | null
 }
 
 export async function primeOfflineCache(params: {
@@ -84,6 +89,10 @@ export async function primeOfflineCache(params: {
             note: row.note,
             isDropset: row.is_dropset,
             parentSetId: row.parent_set_id,
+            stageIndex: row.stage_index ?? 0,
+            isWarmup: row.is_warmup ?? false,
+            setSeconds: row.set_seconds ?? null,
+            enteredUnit: row.entered_unit ?? null,
             isSkipped: row.is_skipped,
             loggedAt: row.logged_at,
             restSeconds: row.rest_seconds,

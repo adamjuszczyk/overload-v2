@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   targetRestSeconds: 120,
   weightUnit: 'kg',
   autoFinishMinutes: 5,
+  measureSetTime: false,
 }
 
 interface SettingsStoreState extends UserSettings {
