@@ -84,6 +84,38 @@ All core features built and working:
   verified complete on both sides**, not just diagnostically likely. See 
   "2026-08-05 session (Phase 3.0 — backfill formally verified)" below 
   for the exact queries and results
+- 2026-08-05 session (M5 deploy + plan-side investigation): **AUDIT
+  M5's `GymSession.tsx` fix deployed to production on its own**
+  (commit `ee83c68`, isolated from the rest of Phase 3.0's uncommitted
+  code by stashing it, confirming a clean typecheck with only this
+  change applied, then committing/pushing/verifying the Vercel deploy
+  independently). Separately, read-only investigation found
+  `parent_week_plan_set_id` is never written anywhere in
+  `weekPlanService.ts` — not hardcoded null like the old M5 bug, just
+  absent from every insert/update path — so plan-side dropsets still
+  don't get grouped. Not fixed; reported under "Known issues". See
+  "2026-08-05 session (M5 deploy + plan-side parent_week_plan_set_id
+  investigation)" below
+- 2026-08-06 session: **M5's plan-side twin fixed and deployed**
+  (commit `f3d684b`). `updateSet()` now infers and writes
+  `parent_week_plan_set_id` when a set is toggled into a dropset, and
+  clears it when toggled back out; `copyFromPreviousWeek()` re-infers
+  grouping for the freshly-copied batch instead of trying to remap old
+  ids. `addSet()` confirmed (not assumed) to need no fix — every dropset
+  is created via add-then-toggle, no direct-creation path exists.
+  Isolating this deploy was more involved than the log-side M5 fix:
+  `weekPlanService.ts` depends on `WeekPlanSet`'s type extension, which
+  lives in the same `types/index.ts` as three unrelated Phase 3.0
+  extensions (SetLog, ProgramExercise, UserSettings) — so a genuinely
+  standalone deploy meant committing a version of `types/index.ts` with
+  only the `WeekPlanSet` fields, verified via isolated typecheck, then
+  restoring the rest of Phase 3.0's type work as uncommitted afterward.
+  Re-ran the plan-side completion check against production before
+  deploying (`still_unlinked=0, already_linked=7, total=7` — unchanged
+  from two sessions ago, confirmed nothing drifted) and confirmed the
+  actual deploy the same way as the log-side fix (`vercel ls` /
+  `vercel inspect`, not just a successful push). See "2026-08-06
+  session" below
 
 ---
 
@@ -155,6 +187,16 @@ scoped to the plan side: **7 total, 0 mismatches.**
 See "2026-08-05 session (Phase 3.0 — backfill formally verified)" below
 for the exact queries run.
 
+**Going forward, both write paths now correctly populate their parent
+column (as of 2026-08-06, commit `f3d684b`):** `GymSession.tsx` for
+`v2_set_logs.parent_set_id` (since `ee83c68`) and
+`weekPlanService.ts`'s `updateSet()`/`copyFromPreviousWeek()` for
+`v2_week_plan_sets.parent_week_plan_set_id`. Re-checked scope
+immediately before this deploy — still `still_unlinked=0,
+already_linked=7, total=7`, unchanged from the last check — so nothing
+in production drifted while this was in progress. See "2026-08-06
+session" below.
+
 ---
 
 ## Key architectural rules
@@ -195,14 +237,15 @@ for the exact queries run.
   backfill uses and confirmed to match the stored value, 8/8 on the log
   side and 7/7 on the plan side, 0 mismatches either way. See "2026-08-05
   session (Phase 3.0 — backfill formally verified)" below for the exact
-  queries. Separately, `GymSession.tsx`'s write-path fix for
-  `parent_set_id` on *new* rows (AUDIT M5) has been written but not
-  deployed — nothing has been committed or pushed — so a dropset logged
-  through the live app today would still get `parent_set_id: null`; only
-  historical rows are covered by the backfill. The stage-exclusion rule
-  itself still has no enforcement anywhere in the app regardless of any
-  of this — that's Phase 3.1's job, not something either the migrations
-  or the backfill provide on their own.
+  queries. Going forward, both write paths are deployed and correct:
+  `GymSession.tsx` for `parent_set_id` on new log-side rows (AUDIT M5,
+  commit `ee83c68`), and `weekPlanService.ts`'s `updateSet()` /
+  `copyFromPreviousWeek()` for `parent_week_plan_set_id` on the plan
+  side (M5's plan-side twin, commit `f3d684b`, 2026-08-06) — see "Known
+  issues" for what each fix does. The stage-exclusion rule itself still
+  has no enforcement anywhere in the app regardless of any of this —
+  that's Phase 3.1's job, not something the migrations, the backfill, or
+  either M5 fix provide on their own.
 
 ---
 
@@ -266,11 +309,38 @@ schema, audit, and backfill on both sides.** Status, precisely:
    correctness check also found 0 mismatches across all 7. See
    "2026-08-05 session (Phase 3.0 — backfill formally verified)" below
    for the exact queries and raw results.
-4. **AUDIT M5's `GymSession.tsx` write-path fix is written but not
-   deployed** — nothing has been committed or pushed. A dropset logged
-   through the live app right now would still get `parent_set_id: null`.
-   This is the one remaining gap: historical data is fully backfilled,
-   but new writes won't carry a real `parentSetId` until this fix ships.
+4. **AUDIT M5's `GymSession.tsx` write-path fix is deployed to production
+   (2026-08-05, commit `ee83c68`).** Committed on its own — isolated from
+   the rest of Phase 3.0's uncommitted work by stashing everything else
+   and confirming `npm run typecheck` was clean with only this change
+   applied, proving it has no dependency on the type/schema work — then
+   pushed to `origin/master` and confirmed via `vercel ls` /
+   `vercel inspect` as a fresh Production deployment (`Ready`, built in
+   20s, ~20s after the push). New dropsets logged through the live app
+   now get a real `parentSetId` instead of hardcoded `null`. Historical
+   data was already covered by the 007 backfill (item 3) — this closes
+   the going-forward half, so **both directions of M5 are now closed**.
+5. **M5's plan-side twin — found 2026-08-05, fixed and deployed to
+   production 2026-08-06, commit `f3d684b`.** `weekPlanService.ts`'s
+   `updateSet()` now infers `parent_week_plan_set_id` (nearest preceding
+   non-dropset sibling, same rule as the backfill and the log-side fix)
+   when a set is toggled into a dropset, and clears it back to `null`
+   when toggled out. `copyFromPreviousWeek()` re-infers grouping for the
+   newly-inserted batch (new ids, so old parent ids can't be copied
+   forward) via a new `reparentCopiedDropsets()` helper, the same
+   from-scratch-re-infer trick 007's backfill used. `addSet()` was
+   checked, not assumed, and needs no fix: it hardcodes `is_dropset:
+   false` and has no `isDropset` parameter — its one call site
+   (`PlanPage.tsx`) never creates a dropset directly, only via
+   add-then-toggle. Deployed standalone: isolated via `git stash
+   push --keep-index`, verified with a clean isolated typecheck, pushed,
+   and confirmed live via `vercel ls` / `vercel inspect`. Re-checked the
+   plan-side completion query immediately before deploying —
+   `still_unlinked=0, already_linked=7, total=7`, unchanged from the
+   prior check, confirming no production drift. **Both directions of
+   M5's plan-side twin are now closed too.** See "2026-08-06 session"
+   below for the full fix, the isolation methodology, and a
+   self-caught-and-fixed bug along the way.
 
 **The DB-access blocker hit earlier in this work is resolved, but not
 durably** — each time, a live session got in only because you logged
@@ -294,15 +364,26 @@ belong to Phase 3.4 and 3.8 respectively, not 3.0.
 
 **The settingsService.ts deploy-ordering risk flagged earlier no longer
 applies** — `measure_set_time` exists in `v2_user_settings` now, so
-`upsertSettings()` sending it on every save is safe. The application code
-(TypeScript/React) itself has still not been deployed — nothing has been
-committed or pushed — but there is no longer a specific reason it would
-break Settings if it were.
+`upsertSettings()` sending it on every save would be safe whenever
+`settingsService.ts` itself actually deploys. **It hasn't yet** —
+`GymSession.tsx`'s M5 fix (item 4) and `weekPlanService.ts`'s M5
+plan-side fix (item 5) were each deployed in isolation, standalone from
+the rest of Phase 3.0; the rest of Phase 3.0's code — `types/index.ts`
+(3 of its 4 extensions; the `WeekPlanSet` one shipped with item 5),
+`db.ts`, `sessionService.ts`, `useSession.ts`, `offlineCache.ts`,
+`programService.ts`, `settingsService.ts`, `settingsStore.ts` — remains
+uncommitted and undeployed. `weekPlanService.ts` itself is now fully
+committed (item 5 took the rest of its earlier Phase 3.0 mapper work
+with it). Don't assume one deploy means the rest shipped too; check
+`git log` / `git status` if it matters for what you're about to do.
 
-**Phase 3.0 is formally done.** Phase 3.1 (dropset-as-one-unit UI) can
-start — see the ADD STAGE / inference-heuristic note under "Known
-issues" first, since that's a piece of 3.0's fix Phase 3.1 needs to
-retire, independent of the backfill's now-confirmed status.
+**Phase 3.0's schema and data work (migrations, backfill) and both
+directions of AUDIT M5 (log-side and plan-side) are all formally done.**
+The remaining Phase 3.0 application code (everything listed just above)
+is still sitting uncommitted, to be deployed together with — or ahead
+of — Phase 3.1 (dropset-as-one-unit UI) as makes sense at that point.
+See the ADD STAGE / inference-heuristic note under "Known issues" before
+starting Phase 3.1 either way.
 
 ---
 
@@ -318,25 +399,70 @@ Most impactful deferred items:
 - P2: history downloads all set logs ever (performance at scale). 
   Scoped for a fix in v3 Phase 3.4 — three Postgres views replace the 
   client-side aggregation (TASKS.md §2.6)
-- M5 (spontaneous dropsets never get parentSetId): **historical data
-  side fully resolved and formally verified; code fix for new writes
-  still not deployed.** On historical data: the 007 backfill is
-  confirmed complete on both `v2_set_logs` (8/8 rows correctly linked,
-  0 mismatches on independent re-derivation) and `v2_week_plan_sets`
-  (7/7, 0 mismatches) — see "2026-08-05 session (Phase 3.0 — backfill
-  formally verified)". On new writes: `GymSession.tsx`'s hardcoded
-  `parentSetId: null` was replaced 2026-08-05 with a real computation
-  (nearest preceding non-dropset log for that exercise in the current
-  session — the same inference rule 007's backfill uses, so new writes
-  would stay internally consistent with how old rows are grouped) — see
-  the ADD STAGE / inference-heuristic note directly below for a
-  limitation in that fix worth knowing before Phase 3.1. That fix has
-  not been committed or deployed, so **every dropset logged through the
-  live app today still gets `parent_set_id: null`**, exactly as before
-  M5 was "fixed" in the working tree — only historical rows benefit from
-  the backfill until this ships. The "set notes unwritable" half of M5
-  is untouched regardless; `GymSession.tsx` still hardcodes `note: null`
-  on every log call.
+- M5 (spontaneous dropsets never get parentSetId, log side): **CLOSED,
+  both directions, as of 2026-08-05.** Historical data: the 007 backfill
+  is confirmed complete on `v2_set_logs` (8/8 rows correctly linked, 0
+  mismatches on independent re-derivation) — see "2026-08-05 session
+  (Phase 3.0 — backfill formally verified)". New writes:
+  `GymSession.tsx`'s hardcoded `parentSetId: null` was replaced with a
+  real computation (nearest preceding non-dropset log for that exercise
+  in the current session — the same inference rule 007's backfill uses)
+  and **this fix is deployed to production** (commit `ee83c68`, pushed
+  and confirmed live via `vercel inspect` — see the dated session log).
+  See the ADD STAGE / inference-heuristic note directly below for a
+  known limitation in this fix worth reading before Phase 3.1 — it's
+  correct for today's UI but will need to change shape once ADD STAGE
+  ships. The "set notes unwritable" half of M5 remains untouched;
+  `GymSession.tsx` still hardcodes `note: null` on every log call.
+- M5's plan-side twin (`parent_week_plan_set_id` never written, plan
+  side): **found 2026-08-05, CLOSED as of 2026-08-06, commit
+  `f3d684b`.** Originally: `parent_week_plan_set_id` was never written
+  on any create or update path in `weekPlanService.ts` — a different
+  failure mode from M5's original log-side bug (that one hardcoded
+  `null`; this one had no code path touching the column at all) — across
+  three functions, `addSet()`, `updateSet()`, `copyFromPreviousWeek()`.
+  Fixed as follows:
+  - `addSet()` — investigated, not assumed: **needs no fix.** It
+    hardcodes `is_dropset: false` and has no `isDropset` parameter at
+    all, so a plan set can never be created as a dropset directly. Its
+    only call site, `PlanPage.tsx`'s `handleAddSet`, never passes
+    `isDropset`. Every plan-side dropset is created via add-then-toggle,
+    so `updateSet()` is the only path that ever needs to set a parent.
+  - `updateSet()` — now infers `parent_week_plan_set_id` the same way
+    `GymSession.tsx`'s M5 fix does (nearest preceding non-dropset
+    sibling — same `week_plan_id` + `program_exercise_id`, ordered by
+    `set_number`; no timestamp tiebreaker exists on the plan side, but
+    none is needed since `set_number` is unique per exercise per plan)
+    whenever a patch sets `isDropset: true`, by fetching the target
+    row's `week_plan_id`/`program_exercise_id`/`set_number` and querying
+    for the nearest qualifying sibling. When a patch sets `isDropset:
+    false`, it now clears `parent_week_plan_set_id` back to `null` —
+    the toggle is symmetric in both directions, which the log side
+    never needed to handle (a log's `isDropset` is set once, at log
+    time, never toggled back off).
+  - `copyFromPreviousWeek()` — parent ids can't be copied forward (the
+    new week's rows get new ids), so instead of remapping old→new ids,
+    a new `reparentCopiedDropsets()` helper re-infers grouping from
+    scratch against the freshly-inserted batch, grouped by
+    `program_exercise_id` and ordered by `set_number` — the same
+    from-scratch re-infer approach 007's backfill used for historical
+    rows, applied here to newly-copied ones.
+
+  Deliberately **not** shared with `GymSession.tsx`'s copy of this same
+  inference logic (per explicit instruction, to keep this fix narrow and
+  independently deployable, same as the log-side M5 fix was) — both
+  sites carry a comment flagging consolidation into a future
+  `setGroupLogic.ts` when Phase 3.1 builds it for real. Deployed
+  standalone: isolated via `git stash push --keep-index`, typechecked
+  clean in isolation, committed, pushed, and confirmed live via
+  `vercel ls` / `vercel inspect`. Pre-deploy drift check confirmed
+  `still_unlinked=0, already_linked=7, total=7` — unchanged from the
+  last check, so nothing in production moved while this was in
+  progress. See "2026-08-06 session" below for the full code and the
+  isolation methodology, including a self-caught-and-fixed bug along
+  the way (`types/index.ts` losing its full extension after a
+  `git stash pop`, caught by a failing typecheck before it was
+  committed anywhere).
 - **ADD STAGE / inference-heuristic limitation (new, 2026-08-05,
   read before starting Phase 3.1):** `GymSession.tsx`'s `parentSetId`
   assignment for a newly logged dropset is **inference-based** — it
@@ -368,6 +494,16 @@ Most impactful deferred items:
   inference indefinitely — it has no other option for historical data.)
   Flagging this here, not just in a chat reply, so whichever session
   builds 3.1 sees it without being told again.
+
+  **The same limitation now applies to `weekPlanService.ts`'s
+  `updateSet()` too (2026-08-06)**, for the identical reason, verified
+  the same way: `PlanPage.tsx`'s DROP toggle is the only entry point
+  for `isDropset` on the plan side, and `addSet()` was confirmed (see
+  the M5 plan-side twin entry above) to have no direct-creation path —
+  so inference is the only option there as well, not a shortcut. When
+  Phase 3.1's plan-side authoring UI gains a real "tap to attach this
+  stage to that set" interaction, `updateSet()` should read the parent
+  id directly the same way `GymSession.tsx` should stop inferring.
 - E4: REDO is lossy without warning user
 - Q1 (hardcoded colours): still present in History, Settings, 
   Program builder, and a few modal backdrops — out of scope for the 
@@ -922,6 +1058,196 @@ historical data that existed at the time it ran. This file was committed
 after this update (CONTEXT.md only — the rest of the working tree,
 including that fix, migrations 004–007, and all other Phase 3.0 code
 changes, remains uncommitted, as it has throughout this work).
+
+---
+
+## 2026-08-05 session (M5 deploy + plan-side parent_week_plan_set_id investigation)
+Two things, in the order asked.
+
+**1. Deployed `GymSession.tsx`'s M5 fix on its own, not bundled with the
+rest of Phase 3.0.** First confirmed it has no dependency on anything
+else uncommitted: `git diff src/features/gym/GymSession.tsx` showed the
+entire change is the `onLog` callback rewrite (already described in the
+"2026-08-05 session (Phase 3.0)" entry above) — it only reads
+pre-existing `SetLog` fields (`exerciseId`, `setNumber`, `isDropset`,
+`id`) and writes to `parent_set_id`, a column that has existed since
+migration 001, not anything added this phase. To verify rather than
+assume: staged only `GymSession.tsx`, ran
+`git stash push --keep-index` to stash every other uncommitted file,
+and ran `npm run typecheck` against that isolated state — clean, no
+errors. That confirms the fix genuinely stands alone. Then:
+
+1. Committed `GymSession.tsx` alone (`ee83c68`).
+2. `git stash pop` to restore the rest of Phase 3.0's uncommitted work
+   exactly as it was.
+3. `git push origin master` — succeeded (`281fd2b..ee83c68`).
+4. Verified the deploy actually happened rather than assuming push
+   implies it: the Vercel CLI already had a live authenticated session
+   (`vercel whoami` → `adamjuszczyk`, pre-existing on this machine, not
+   something this session logged into). `vercel ls` showed a fresh
+   Production deployment 2 minutes old, `● Ready`, 20s build.
+   `vercel inspect` on that deployment confirmed target `production`,
+   status `Ready`, created at a timestamp ~20s after the commit itself
+   — i.e., this is the deployment of `ee83c68`, not a coincidentally
+   recent unrelated one.
+
+New dropsets logged through the live app now get a real `parentSetId`.
+The rest of Phase 3.0's code (types, Dexie, migrations 004–007 as SQL
+files, the other service-layer changes) remains uncommitted and
+undeployed — only this one isolated fix shipped.
+
+**2. Read-only investigation: does the plan side write
+`parent_week_plan_set_id` for a newly created dropset-flagged row?**
+Read `weekPlanService.ts` fresh (not from memory) and traced every place
+a `v2_week_plan_sets` row is created or updated. Finding: **the column is
+never referenced anywhere in the file** — not hardcoded to `null` the
+way `GymSession.tsx` was, just entirely absent from every write path:
+
+- `addSet()`'s insert omits it (falls through to the column's implicit
+  `NULL` default) and also hardcodes `is_dropset: false` with no
+  parameter to set it otherwise — a new planned set can't be created as
+  a dropset directly through this function at all.
+- `updateSet()` — the function PlanPage.tsx's DROP toggle actually calls
+  to flip a set to `is_dropset: true` — builds its patch by checking
+  `targetRir` and `isDropset` individually and never checks for
+  `parent_week_plan_set_id`. Traced up through `useWeekPlan.ts`'s
+  `useUpdateSet`: its mutationFn `changes` type is exactly
+  `{ targetRir?: number | null; isDropset?: boolean }` — no parent-id
+  field exists anywhere in the client mutation layer either.
+- `copyFromPreviousWeek()` copies `is_dropset` forward when duplicating
+  a week's sets but omits `parent_week_plan_set_id` from the insert —
+  so copying an already-correctly-grouped dropset into a new week drops
+  the grouping.
+
+Reported under "Known issues" with the exact code quoted; **not fixed**,
+per this task's scope — it's a report, not a repair. Whoever addresses
+it will need to decide whether `updateSet()` should infer a parent the
+same way `GymSession.tsx` does (nearest preceding non-dropset sibling by
+`set_number`) or whether this waits for Phase 3.1's plan-side authoring
+UI to supply a real id directly, the same open question the ADD STAGE
+note already raises for the log side.
+
+---
+
+## 2026-08-06 session
+Fixed and deployed M5's plan-side twin, found read-only last session.
+Same reasoning as `GymSession.tsx`'s M5 fix, deliberately not shared
+with it.
+
+**1. `addSet()` — investigated first, before writing any fix.** Read
+`weekPlanService.ts` and its one call site (`PlanPage.tsx`'s
+`handleAddSet`) fresh. Confirmed `addSet()` hardcodes `is_dropset:
+false` and has no `isDropset` parameter in its signature at all — there
+is no code path anywhere that creates a plan set as a dropset directly.
+`handleAddSet` never passes anything resembling `isDropset`. Conclusion,
+stated explicitly per the instruction: **`addSet()` needs no fix** —
+every plan-side dropset is created via add-then-toggle (add a plain
+set, then flip it with the DROP toggle, which calls `updateSet()`), so
+`updateSet()` is the only function that ever needs to compute a parent.
+
+**2. `updateSet()` — added inference in both directions.** When a patch
+sets `isDropset: true`, the function now fetches the target row's
+`week_plan_id`, `program_exercise_id`, and `set_number`, then queries
+for the nearest preceding sibling in the same `week_plan_id` +
+`program_exercise_id` with `is_dropset = false` and a lower
+`set_number`, ordered descending and limited to 1 — the same
+nearest-preceding-non-dropset rule 007's backfill and `GymSession.tsx`'s
+M5 fix both use. That id (or `null` if none exists) is written to
+`parent_week_plan_set_id`. When a patch sets `isDropset: false`, the
+function now clears `parent_week_plan_set_id` to `null` — a direction
+the log side never needed (a set log's `isDropset` is fixed at log
+time and never un-toggled), but the plan side's DROP toggle is
+symmetric, so leaving a stale parent id behind on untoggle would be
+wrong. Both directions confirmed by reading `PlanPage.tsx`'s `SetRow`:
+its only caller is `onUpdate={() => !isPast && onUpdate({ isDropset:
+!set.isDropset })}` — the same toggle flips both ways.
+
+**3. `copyFromPreviousWeek()` — re-infer instead of remap.** The old
+week's `parent_week_plan_set_id` values reference ids that don't exist
+in the new week (every copied row gets a fresh id), so remapping
+old-id→new-id isn't an option without carrying a lookup table through
+the insert. Instead, changed the insert to `.select()` its results and
+added a new helper, `reparentCopiedDropsets()`, that groups the
+newly-inserted batch by `program_exercise_id` (every row already shares
+one `week_plan_id`, being one insert batch), sorts each group by
+`set_number`, and for each `is_dropset` row finds the nearest preceding
+non-dropset sibling within that same group — re-deriving the grouping
+from scratch against the new batch, the identical trick 007's backfill
+used for historical data, applied here to freshly-copied data instead.
+
+**4. Comments, not a shared function, per explicit instruction.** Left
+a comment at both inference sites — `weekPlanService.ts`'s `updateSet()`
+/ `reparentCopiedDropsets()` and `GymSession.tsx`'s `onLog` callback —
+noting the duplication is deliberate and both should be consolidated
+into a future `setGroupLogic.ts` when Phase 3.1 builds real
+dropset-as-one-unit grouping logic. Did not refactor either site now;
+the instruction was explicit that keeping this fix narrow and
+independently deployable (matching how the M5 log-side fix shipped)
+outweighs removing the duplication today.
+
+**5. Isolating this deploy was more involved than the log-side fix.**
+`weekPlanService.ts` genuinely depends on `WeekPlanSet`'s type
+extension (`parentWeekPlanSetId`, `stageIndex`, `isWarmup`), which lives
+in `types/index.ts` alongside three unrelated Phase 3.0 extensions
+(`ProgramExercise.weightUnit`, `SetLog`'s extensions,
+`UserSettings.measureSetTime`) — so `git stash push --keep-index`
+staging only `weekPlanService.ts` and `GymSession.tsx` wouldn't
+typecheck in isolation; `types/index.ts` itself had to be part of the
+isolated commit. Built a minimal version of `types/index.ts` containing
+only the `WeekPlanSet` extension, with the other three interfaces
+restored to their pre-Phase-3.0 shape (fetched via
+`git show 281fd2b:src/types/index.ts`), staged it alongside the two
+service/component files, and confirmed `npm run typecheck` was clean
+against that minimal isolated state before committing. Committed as
+`f3d684b`, pushed (`ee83c68..f3d684b`).
+
+**Self-caught bug:** after `git stash pop` to restore the rest of Phase
+3.0's uncommitted work, `types/index.ts` came back in its *minimal*
+form, not the full 4-extension form — because the file had already been
+directly overwritten and committed before the stash was taken, so the
+stash had nothing to restore for it (there was no unstaged diff against
+it at stash time). `npm run typecheck` immediately caught this: roughly
+15 "property does not exist" errors across `sessionService.ts`,
+`useSession.ts`, `programService.ts`, `settingsService.ts`,
+`settingsStore.ts`, all referencing the three extensions that had gone
+missing. Fixed by re-writing the full 4-extension version of
+`types/index.ts` (preserved from an earlier `Read` in this same
+session) back into the working tree — a working-tree-only change, not
+touching the already-made `f3d684b` commit, which still only contains
+the `WeekPlanSet` portion. Re-ran `npm run typecheck` clean afterward.
+Caught and fixed within this session, before anything wrong was pushed
+or deployed.
+
+**6. Pre-deploy drift check.** Immediately before deploying, re-ran the
+plan-side completion query from the prior verification session against
+production: `still_unlinked=0, already_linked=7, total=7` — identical
+to the result two sessions ago, confirming nothing in production moved
+while this fix was in progress.
+
+**7. Deploy confirmation**, same method as the log-side fix: `vercel ls`
+showed a fresh Production deployment
+(`https://overload-v2-5xoecfeay-adamjuszczyks-projects.vercel.app`),
+`● Ready`, 21s build, ~1 minute old at check time. `vercel inspect` on
+that deployment confirmed `target: production`, status `● Ready`, and a
+created timestamp consistent with the push — i.e. this is genuinely the
+deployment of `f3d684b`, not a coincidentally recent unrelated one.
+
+**Net effect:** both directions of M5's plan-side twin are now closed.
+Plan-side dropsets created or copied from today onward get a real
+`parent_week_plan_set_id` the same way log-side dropsets have since
+`ee83c68`. `weekPlanService.ts` is now fully committed (this fix plus
+its earlier uncommitted Phase 3.0 mapper work, which rode along in the
+same commit since isolating just the fix wasn't possible without also
+including that file's other changes). The rest of Phase 3.0's code —
+`types/index.ts`'s other three extensions, `db.ts`, `sessionService.ts`,
+`useSession.ts`, `offlineCache.ts`, `programService.ts`,
+`settingsService.ts`, `settingsStore.ts` — remains uncommitted, as it
+has throughout this work.
+
+Per the new standing instruction from this session ("commit CONTEXT.md
+at the end of every session by default"), this file is committed at the
+end of this update, on its own, same as the pattern already established
+for it.
 
 ---
 
