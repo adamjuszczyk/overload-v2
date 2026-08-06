@@ -116,6 +116,23 @@ All core features built and working:
   actual deploy the same way as the log-side fix (`vercel ls` /
   `vercel inspect`, not just a successful push). See "2026-08-06
   session" below
+- 2026-08-06 session (verification + Phase 3.0 fully committed):
+  confirmed the `f3d684b` CONTEXT.md update actually landed (commit
+  `2db69ea`), byte-diffed the working-tree `types/index.ts` against the
+  exact content this session's own history read it as (not just a
+  passing typecheck) and found **zero difference**, then committed the
+  remaining Phase 3.0 application code — `types/index.ts`'s other three
+  extensions, `db.ts`, `sessionService.ts`, `useSession.ts`,
+  `offlineCache.ts`, `programService.ts`, `settingsService.ts`,
+  `settingsStore.ts` — as one commit (`3eed51d`). **Phase 3.0's
+  application code is now fully committed.** `TASKS.md`'s own uncommitted
+  diff (the v3 plan document itself, from the 2026-08-05 planning
+  session) and the untracked `SPEC.md`, `TASKS-v2.md`, and
+  `supabase/migrations/004`–`007` SQL files are a separate, pre-existing
+  category — planning docs and already-applied-by-hand migration
+  scripts, not application code — and were deliberately left as they
+  were; **not** claiming an empty `git status`. See "2026-08-06 session
+  (verification + Phase 3.0 fully committed)" below.
 
 ---
 
@@ -289,8 +306,10 @@ session" below.
 ---
 
 ## Active work
-**Phase 3.0 (migration foundation) is complete and formally verified —
-schema, audit, and backfill on both sides.** Status, precisely:
+**Phase 3.0 (migration foundation) is complete, formally verified, and
+fully committed** — schema, audit, backfill on both sides, both
+directions of AUDIT M5, and the remaining application code. Status,
+precisely:
 
 1. **Migrations 004, 005, 006 — applied to production, confirmed.**
    Verified via `information_schema` listing all 9 new columns with
@@ -364,26 +383,43 @@ belong to Phase 3.4 and 3.8 respectively, not 3.0.
 
 **The settingsService.ts deploy-ordering risk flagged earlier no longer
 applies** — `measure_set_time` exists in `v2_user_settings` now, so
-`upsertSettings()` sending it on every save would be safe whenever
-`settingsService.ts` itself actually deploys. **It hasn't yet** —
-`GymSession.tsx`'s M5 fix (item 4) and `weekPlanService.ts`'s M5
-plan-side fix (item 5) were each deployed in isolation, standalone from
-the rest of Phase 3.0; the rest of Phase 3.0's code — `types/index.ts`
-(3 of its 4 extensions; the `WeekPlanSet` one shipped with item 5),
-`db.ts`, `sessionService.ts`, `useSession.ts`, `offlineCache.ts`,
-`programService.ts`, `settingsService.ts`, `settingsStore.ts` — remains
-uncommitted and undeployed. `weekPlanService.ts` itself is now fully
-committed (item 5 took the rest of its earlier Phase 3.0 mapper work
-with it). Don't assume one deploy means the rest shipped too; check
-`git log` / `git status` if it matters for what you're about to do.
+`upsertSettings()` sending it on every save is safe. `GymSession.tsx`'s
+M5 fix (item 4) and `weekPlanService.ts`'s M5 plan-side fix (item 5)
+were each deployed in isolation, standalone, ahead of the rest —
+that's history now, not a live gap.
 
-**Phase 3.0's schema and data work (migrations, backfill) and both
-directions of AUDIT M5 (log-side and plan-side) are all formally done.**
-The remaining Phase 3.0 application code (everything listed just above)
-is still sitting uncommitted, to be deployed together with — or ahead
-of — Phase 3.1 (dropset-as-one-unit UI) as makes sense at that point.
-See the ADD STAGE / inference-heuristic note under "Known issues" before
-starting Phase 3.1 either way.
+6. **Phase 3.0's remaining application code — fully committed
+   2026-08-06, commit `3eed51d`.** `types/index.ts`'s other three
+   extensions (`ProgramExercise.weightUnit`, `SetLog`'s stage/warmup/
+   timing/unit fields, `UserSettings.measureSetTime` — the
+   `WeekPlanSet` extension already shipped with item 5), `db.ts`'s
+   Dexie schema bump, and every mapper reading the new columns
+   (`sessionService.ts`, `useSession.ts`, `offlineCache.ts`,
+   `programService.ts`, `settingsService.ts`, `settingsStore.ts`) are
+   now committed as one batch — not deployed standalone like items 4
+   and 5, since this is closing out Phase 3.0 as a whole rather than
+   shipping an isolated fix. Verified before committing: the
+   working-tree `types/index.ts` was byte-diffed (not just
+   typechecked) against the exact content this same session's history
+   had read it as, before the self-caught stash-pop bug from the prior
+   session — zero difference found. `npm run typecheck` clean on the
+   full batch. Pushed to `origin/master`.
+
+**Git status check before treating this as fully clean:** `TASKS.md`
+still carries an uncommitted diff (the v3 plan document itself, written
+during the 2026-08-05 planning session — content, not code) and
+`SPEC.md`, `TASKS-v2.md`, and `supabase/migrations/004`–`007` remain
+untracked (planning docs and migration scripts that were applied to
+production by hand via the SQL Editor, never through a git-tracked
+migration runner). These are a different category from "Phase 3.0
+application code" and were deliberately left alone this session — `git
+status` is not empty, and this file does not claim it is.
+
+**Phase 3.0's schema and data work (migrations, backfill), both
+directions of AUDIT M5 (log-side and plan-side), and the rest of Phase
+3.0's application code are now all formally done AND committed.** See
+the ADD STAGE / inference-heuristic note under "Known issues" before
+starting Phase 3.1.
 
 ---
 
@@ -1248,6 +1284,62 @@ Per the new standing instruction from this session ("commit CONTEXT.md
 at the end of every session by default"), this file is committed at the
 end of this update, on its own, same as the pattern already established
 for it.
+
+---
+
+## 2026-08-06 session (verification + Phase 3.0 fully committed)
+Three things, in the order asked.
+
+**1. Confirmed the prior session's CONTEXT.md commit actually landed.**
+`git log --oneline -- CONTEXT.md` shows the last commit touching this
+file is `2db69ea` ("docs: CONTEXT.md — M5 plan-side twin fixed and
+deployed (f3d684b)"), authored 2026-08-06 09:10:21 +0200. The commit
+referenced in the previous session's own log entry is confirmed real,
+not a paste artifact — whatever "cuts off mid-sentence" appearance was
+seen was in how the file was pasted elsewhere, not in the actual
+committed (or working-tree) content: reading the full file start to
+finish this session, it ends cleanly at the "How to start a Claude Code
+session" section, no truncation found.
+
+**2. Verified the restored `types/index.ts` by diff, not by re-asserting
+typecheck.** This session's own context contained the exact content of
+an earlier `Read` of `types/index.ts` from before the prior session's
+self-caught stash-pop bug was fixed — the full 4-extension version that
+was written back into the working tree as the fix. Wrote that exact
+content to a scratch file and ran `diff -u` against the current
+`src/types/index.ts`, then independently cross-checked with `md5sum` on
+both files. **Result: zero difference, identical `md5sum`
+(`c01c7fb9927edea1a88f1274100bdd36`) on both.** The working-tree file is
+byte-for-byte what it's supposed to be — the stash-pop bug fix from the
+prior session held, and nothing further drifted since.
+
+**3. Committed the remainder of Phase 3.0's uncommitted application
+code.** `git status` before this step showed exactly 8 modified files
+matching the ones named for this task
+(`src/types/index.ts`, `src/lib/db.ts`, `src/features/gym/
+sessionService.ts`, `src/features/gym/useSession.ts`,
+`src/features/offline/offlineCache.ts`,
+`src/features/programs/programService.ts`,
+`src/features/settings/settingsService.ts`,
+`src/features/settings/settingsStore.ts`), plus a modified `TASKS.md`
+and four untracked files (`SPEC.md`, `TASKS-v2.md`,
+`supabase/migrations/004`–`007`) that were **not** part of this task —
+staged only the 8 named files, confirmed via `git status --porcelain`
+that exactly and only those 8 were staged, ran `npm run typecheck`
+clean against the full working tree, then committed (`3eed51d`) and
+pushed to `origin/master`. Not deployed standalone — per this task's
+own framing, this closes out Phase 3.0 as a whole ahead of Phase 3.1
+building on top of it, so the surgical stash-isolation the two M5 fixes
+needed wasn't warranted here.
+
+**Net effect:** Phase 3.0's application code is now fully committed —
+`3eed51d` on top of `f3d684b` on top of `ee83c68`. `TASKS.md`'s own
+uncommitted diff (the v3 plan document, unrelated content from the
+2026-08-05 planning session) and the four untracked files remain
+exactly as they were; this session did not touch them, and does not
+claim `git status` is empty — only that Phase 3.0's application code
+specifically is fully committed. See "Active work" above for the
+precise breakdown.
 
 ---
 
