@@ -101,6 +101,12 @@ export interface WeekPlanSet {
   setNumber: number          // 1-based, per exercise within this plan
   targetRir: number | null
   isDropset: boolean
+
+  // Dropset grouping (v3 §2.1) — same relational shape as SetLog below.
+  parentWeekPlanSetId: string | null
+  stageIndex: number         // 0 = head (main stage), 1.. = stage order
+
+  isWarmup: boolean          // never enters e1RM/volume/reference; no authoring UI yet (v3 §2.5)
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────

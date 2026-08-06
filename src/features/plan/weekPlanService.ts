@@ -11,6 +11,10 @@ type DbWeekPlanSet = {
   set_number: number
   target_rir: number | null
   is_dropset: boolean
+  // Absent until migration 004/006 has been applied.
+  parent_week_plan_set_id?: string | null
+  stage_index?: number
+  is_warmup?: boolean
 }
 
 type DbWeekPlan = {
@@ -36,6 +40,11 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     setNumber: row.set_number,
     targetRir: row.target_rir,
     isDropset: row.is_dropset,
+    // Same "column may not exist yet" fallback as autoFinishMinutes — safe
+    // regardless of whether 004/006 have been applied when this code deploys.
+    parentWeekPlanSetId: row.parent_week_plan_set_id ?? null,
+    stageIndex: row.stage_index ?? 0,
+    isWarmup: row.is_warmup ?? false,
   }
 }
 
@@ -124,7 +133,45 @@ export async function updateSet(
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('targetRir' in changes) patch.target_rir = changes.targetRir
-  if ('isDropset' in changes) patch.is_dropset = changes.isDropset
+
+  if ('isDropset' in changes) {
+    patch.is_dropset = changes.isDropset
+
+    // AUDIT M5 plan-side fix: PlanPage.tsx's DROP toggle can only ever
+    // apply to the set currently being edited — the same reasoning as
+    // GymSession.tsx's M5 fix — so nearest-preceding-non-dropset
+    // inference (same week_plan_id + program_exercise_id, ordered by
+    // set_number) is provably correct here too, not a guess. Deliberately
+    // NOT shared with GymSession.tsx's copy of this logic; consolidate
+    // both into setGroupLogic.ts when Phase 3.1 builds it for real.
+    if (changes.isDropset) {
+      const { data: target, error: eTarget } = await supabase
+        .from('v2_week_plan_sets')
+        .select('week_plan_id, program_exercise_id, set_number')
+        .eq('id', id)
+        .single()
+      if (eTarget) throw eTarget
+
+      const { data: parent, error: eParent } = await supabase
+        .from('v2_week_plan_sets')
+        .select('id')
+        .eq('week_plan_id', target.week_plan_id)
+        .eq('program_exercise_id', target.program_exercise_id)
+        .eq('is_dropset', false)
+        .lt('set_number', target.set_number)
+        .order('set_number', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (eParent) throw eParent
+
+      patch.parent_week_plan_set_id = parent?.id ?? null
+    } else {
+      // Un-toggling — this set is no longer a stage, so it must not keep
+      // pointing at a parent.
+      patch.parent_week_plan_set_id = null
+    }
+  }
+
   const { error } = await supabase.from('v2_week_plan_sets').update(patch).eq('id', id)
   if (error) throw error
 }
@@ -184,17 +231,62 @@ export async function copyFromPreviousWeek(
 
     const prevSets = (prev.v2_week_plan_sets ?? []) as DbWeekPlanSet[]
     if (prevSets.length > 0) {
-      const { error: e3 } = await supabase.from('v2_week_plan_sets').insert(
-        prevSets.map((s) => ({
-          week_plan_id: (newPlan as { id: string }).id,
-          user_id: userId,
-          program_exercise_id: s.program_exercise_id,
-          set_number: s.set_number,
-          target_rir: s.target_rir,
-          is_dropset: s.is_dropset,
-        })),
-      )
+      const { data: newSets, error: e3 } = await supabase
+        .from('v2_week_plan_sets')
+        .insert(
+          prevSets.map((s) => ({
+            week_plan_id: (newPlan as { id: string }).id,
+            user_id: userId,
+            program_exercise_id: s.program_exercise_id,
+            set_number: s.set_number,
+            target_rir: s.target_rir,
+            is_dropset: s.is_dropset,
+          })),
+        )
+        .select()
       if (e3) throw e3
+
+      // AUDIT M5 plan-side fix: parent_week_plan_set_id can't be copied
+      // forward — the old week's ids don't exist in this one — so
+      // grouping is re-inferred from scratch against the newly-created
+      // batch instead of remapping old-id → new-id, the same trick 007's
+      // backfill already uses successfully for historical data. Correct
+      // here for the same reason: grouping only ever depends on sibling
+      // is_dropset/set_number within (week_plan_id, program_exercise_id),
+      // never on row identity.
+      await reparentCopiedDropsets((newSets ?? []) as DbWeekPlanSet[])
+    }
+  }
+}
+
+// Re-infers parent_week_plan_set_id for a freshly-inserted batch of plan
+// sets by grouping on program_exercise_id (every row already shares one
+// week_plan_id, being one insert batch) and applying the same
+// nearest-preceding-non-dropset rule as updateSet() above. Deliberately
+// NOT shared with GymSession.tsx's copy of this logic; consolidate into
+// setGroupLogic.ts when Phase 3.1 builds it for real.
+async function reparentCopiedDropsets(rows: DbWeekPlanSet[]): Promise<void> {
+  const byExercise = new Map<string, DbWeekPlanSet[]>()
+  for (const row of rows) {
+    const group = byExercise.get(row.program_exercise_id) ?? []
+    group.push(row)
+    byExercise.set(row.program_exercise_id, group)
+  }
+
+  for (const group of byExercise.values()) {
+    const sorted = [...group].sort((a, b) => a.set_number - b.set_number)
+    for (const row of sorted) {
+      if (!row.is_dropset) continue
+      const parent = [...sorted]
+        .filter((s) => s.set_number < row.set_number)
+        .sort((a, b) => b.set_number - a.set_number)
+        .find((s) => !s.is_dropset)
+      if (!parent) continue
+      const { error } = await supabase
+        .from('v2_week_plan_sets')
+        .update({ parent_week_plan_set_id: parent.id })
+        .eq('id', row.id)
+      if (error) throw error
     }
   }
 }

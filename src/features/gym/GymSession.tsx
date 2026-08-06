@@ -169,6 +169,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 // historical rows (TASKS.md §2.1), so newly-written rows stay
                 // consistent with how the backfill would have grouped them.
                 // A non-dropset log is always a head: parentSetId null.
+                // weekPlanService.ts's updateSet()/copyFromPreviousWeek() carry
+                // a deliberate duplicate of this same inference for the plan
+                // side — not shared on purpose (see that file). Consolidate
+                // both into setGroupLogic.ts when Phase 3.1 builds it for real.
                 const exerciseLogs = allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId)
                 const parentSetId = params.isDropset
                   ? ([...exerciseLogs]
