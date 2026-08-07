@@ -170,6 +170,32 @@ All core features built and working:
   approved, then pushed to `origin/master` and confirmed live in
   production the same day** — see "2026-08-07 session (Phase 3.1
   deploy)" below.
+- 2026-08-07 session (second such session, same day): **Phase 3.2 — set
+  timing and Today changes — built, live-verified against production, and
+  deployed.** TASKS.md §4 items 12–15 all shipped:
+  `setTimerStore.ts` (mirrors `restTimerStore.ts`) plus the Start Set flow
+  in `SetRow.tsx`, working identically for a head and a stage — Start Set
+  freezes true rest at the tap and starts a set timer; Log captures
+  `set_seconds`, restores the frozen rest value, and restarts the rest
+  timer (which already happened on every log, on or off); the toggle-off
+  path is byte-identical to before. `measure_set_time` Settings toggle
+  (global, SPEC §4.2). A new inline rest timer anchored under the
+  just-logged row (head or stage) via a new `anchorId` on
+  `restTimerStore` — additive alongside the existing floating
+  `RestTimer.tsx`, not a replacement — plus `useSessionDuration.ts` shown
+  in the Today session header. Skip whole exercise (heads and
+  already-planned stages, sequentially awaited so a stage skip can use its
+  head's real id even when both are skipped in the same pass);
+  edit-note-after-completion on the completed-state Today screen (new
+  `updateSessionNote`, does not reopen the session); a jump-to-exercise-
+  history stub route for Phase 3.4 to fill in. Live-tested against real
+  production data with explicit go-ahead: logged a real head
+  (`set_seconds=31`, `rest_seconds=null` — no prior rest) and a real stage
+  (`set_seconds=25`, `rest_seconds=81`, correct real `parent_set_id` and
+  `stage_index=1`), confirming rest genuinely excludes set-performance
+  time for both — TASKS.md §4's own stated testable criterion. Test rows
+  deleted and the toggle reverted afterward, zero trace left. See
+  "2026-08-07 session (Phase 3.2)" below.
 
 ---
 
@@ -317,9 +343,9 @@ session" below.
 ## Key files
 - SPEC.md — **v3** product source of truth
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
-  Phase 3.0 (§4 steps 1–5) and Phase 3.1 (§4 steps 6–11) are both
-  implemented, verified, and committed as of 2026-08-07; Phase 3.2
-  onward is still ahead
+  Phase 3.0 (§4 steps 1–5), Phase 3.1 (§4 steps 6–11), and Phase 3.2 (§4
+  steps 12–15) are all implemented, verified, deployed, and committed as
+  of 2026-08-07; Phase 3.3 onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -362,6 +388,22 @@ session" below.
   the user's auto_finish_minutes setting. Also gates on a grace 
   window since the hook last (re)armed, to avoid immediately 
   re-finishing a reopened session (see "2026-08-04 session" below)
+- src/features/gym/setTimerStore.ts — **new, Phase 3.2.** Mirrors
+  restTimerStore.ts's exact shape (bare Zustand store, no middleware,
+  one-line actions). Holds the Start Set flow's elapsed-time anchor;
+  which row is "the one being timed" is local state in SetRow.tsx, not
+  this store, since only one row's UI should switch into the
+  post-Start-Set state at a time
+- src/features/gym/useSessionDuration.ts — **new, Phase 3.2.** Live
+  elapsed seconds since session.startedAt, for the Today header ("N
+  min" counting from session start). Same reset-on-session-identity-
+  change guard as useAutoFinishSession.ts
+- src/features/gym/RestTimerInline.tsx — **new, Phase 3.2.** Compact
+  read-only "REST 0:45" rendered directly under the row that was just
+  logged (SPEC §4.3 — "not only as a floating/global element"), anchored
+  via restTimerStore's new anchorId field (set once the log's real id is
+  known). Additive alongside the existing floating RestTimer.tsx, which
+  is unchanged and keeps its own GO alert / haptic buzz / hide-show
 - src/features/notifications/toastStore.ts + Toast.tsx — minimal 
   global toast (Zustand + component mounted in App.tsx), added 
   for the "Session completed automatically" notification; no 
@@ -371,6 +413,16 @@ session" below.
 ---
 
 ## Active work
+**Phase 3.2 (set timing and Today changes) is built, live-verified against
+production, and deployed as of 2026-08-07.** TASKS.md §4 items 12–15 —
+see "2026-08-07 session (Phase 3.2)" below for the full account, including
+the exact live-tested `set_seconds`/`rest_seconds` numbers for both a head
+and a stage. Unlike Phase 3.1, there was no explicit hold-for-review step
+this time — verification (typecheck/build/vitest, the TASKS.md-stated
+testable criterion, toggle-off unchanged, head+stage both working) all
+came back clean, so build, push, and deploy confirmation happened in one
+continuous session per the task's own instruction.
+
 **Phase 3.1 (dropset as one unit) is built, fixed, live-verified,
 reviewed, approved, and deployed to production as of 2026-08-07.** See
 "2026-08-07 session (Phase 3.1)" below for the build, and "2026-08-07
@@ -666,6 +718,21 @@ Most impactful deferred items:
   Program builder, and a few modal backdrops — out of scope for the 
   2026-07-09 session (only SetRow.tsx's two rgba() literals were 
   fixed since that file was already being edited for FIX 2)
+- **`rest_seconds` changes meaning once `measure_set_time` is flipped on
+  (Phase 3.2, 2026-08-07) — flagged for Phase 3.5, nothing built yet.**
+  Before the toggle: `rest_seconds` is "time since the last log", which
+  includes set-performance time. After: it's true rest, since Start Set
+  now stops the rest timer at the moment it's tapped. Historical and
+  post-toggle values are therefore not directly comparable, and the AVG
+  REST TIME charts in `ExerciseProgress.tsx`/`MesoProgress.tsx` will show
+  a step change on whatever day a user first turns the toggle on. No
+  backfill is possible — the pre-toggle data never captured a
+  set-performance duration to subtract. TASKS.md §2.2's own
+  recommendation: mark that transition point on the rest-time charts, the
+  same way deload weeks are already marked — cheap, honest, reuses an
+  existing chart affordance. Those charts live in Progress (Phase 3.5),
+  not 3.2, so this is a note for whoever builds that phase, not a
+  regression today.
 
 ---
 
@@ -1890,11 +1957,196 @@ only.
 
 ---
 
+## 2026-08-07 session (Phase 3.2)
+Second such session the same day. Built TASKS.md §4 items 12–15 ("Set
+timing and Today changes") in full. Re-read CONTEXT.md, then §2.2 and §4's
+Phase 3.2 section fresh per instruction, rather than trusting memory.
+Ran a 5-agent parallel research pass first (restTimerStore.ts's exact
+pattern and every consumer; SetRow.tsx/SetGroup.tsx's post-3.1 structure;
+the Settings toggle idiom and confirmation that `measure_set_time` was
+already plumbed by 3.0; the Today screen/session lifecycle; the existing
+skip mechanism and current type shapes) to map the codebase before writing
+any code, then read every relevant file directly before editing.
+
+### What was built
+
+12. **`src/features/gym/setTimerStore.ts` (new) + Start Set flow in
+    `SetRow.tsx`.** The store mirrors `restTimerStore.ts` exactly (bare
+    `create<T>((set) => ({...}))`, no middleware, one-line actions) —
+    holds only the elapsed-time anchor. Which row is "the one being
+    timed" is local `isTiming` state inside `SetRow.tsx`, not the store,
+    since restTimerStore's own global `startedAt` is shared across every
+    not-yet-logged row on the page and only one row's UI should switch
+    into the post-Start-Set state at a time.
+    Sequence when `measureSetTime` is on: tapping START SET reads the
+    live rest elapsed *once*, freezes it into local state
+    (`frozenRestSeconds`), calls `restTimerStore.stop()` (so the rest
+    timer — floating and inline both — correctly disappears while the set
+    is being performed, not counted as rest), and starts the set timer.
+    Tapping LOG (or SKIP) reads the set timer's elapsed as `setSeconds`,
+    stops it, and sends the *frozen* rest value as `restSeconds` — not a
+    fresh read, which by then would only measure the just-finished set,
+    not the honest pre-Start-Set rest. `ExerciseCard.tsx`'s
+    `handleLogHead`/`handleLogStage` no longer unconditionally overwrite
+    `restSeconds` with their own live `currentRestElapsed()` — only when
+    `params.setSeconds` is null (off, or SKIP) do they fall back to that,
+    which is exactly today's value in those cases, so the toggle-off path
+    is untouched. Because SetRow only ever emits through its single
+    `onLog` prop and doesn't know or care whether it's rendering a head or
+    a stage beyond the existing `isStage` prop, this works identically for
+    both with zero changes needed to how SetGroup wires heads vs. stages.
+13. **`measure_set_time` Settings toggle.** Confirmed (not assumed) that
+    Phase 3.0 already plumbed the column through `settingsService.ts`'s
+    mapper/upsert and `settingsStore.ts`'s `DEFAULT_SETTINGS` — this
+    session added only the UI, one `toggle()` call in a new SET TIMING
+    section, same pattern as the existing REST TIMER/AUTO-FINISH toggles.
+14. **Inline rest timer under the just-logged row + `useSessionDuration.ts`
+    header.** SPEC §4.3 says "not only as a floating/global element" —
+    read as additive, not a replacement, so the existing floating
+    `RestTimer.tsx` is unchanged (still has the GO alert and haptic buzz)
+    and a new `RestTimerInline.tsx` renders a compact "REST 0:45" directly
+    under whichever row was just logged. Anchoring uses a new `anchorId`
+    field on `restTimerStore`, set via a new `setAnchor()` action once the
+    log's *real* id is known (`GymSession.tsx`'s `onLog` now calls
+    `logSet.mutateAsync` instead of `.mutate` and sets the anchor in
+    `.then()`) — deliberately not a synthetic key computed at click time,
+    to avoid the exact class of id-timing bug Phase 3.1's adversarial
+    review already found and fixed once for this codebase. `SetGroup.tsx`
+    compares `anchorId` against both the head's and each stage's real id,
+    so a completed stage gets the inline timer exactly as a completed head
+    does. `useSessionDuration.ts` mirrors `useAutoFinishSession.ts`'s
+    reset-on-session-identity-change guard; shown in `GymSession.tsx`'s
+    header, formatted via the existing `formatRestTime`.
+15. **Skip whole exercise, edit-note-after-completion, jump-to-history
+    stub.** `ExerciseCard.tsx`'s new `handleSkipExercise` walks
+    `plannedRows` and skips every remaining unlogged planned head and any
+    already-planned stages under it — deliberately scoped to planned sets
+    only, not "extra" ADD-SET slots, which are user-elective and not part
+    of "the exercise's remaining work". Sequential and awaited (same
+    reasoning as the existing cascade-delete guard): a stage being skipped
+    may need its head's real id, and if that head is *also* being skipped
+    in the same pass, that id doesn't exist until its own mutation
+    resolves — `onLog` had to become `Promise`-returning
+    (`logSet.mutateAsync`) for this to work, mirroring the
+    already-established `onDeleteSet: Promise<void>` precedent in this
+    same file. `totalLoggedHeads` is a render-time snapshot that never
+    advances mid-loop, so `handleLogHead` gained an optional
+    `setNumberOverride` parameter to avoid every skipped head in a batch
+    getting the same (duplicate) `setNumber`. A confirm step gates the
+    action (two-tap, same pattern as `SetRow.tsx`'s own delete confirm),
+    and the button only renders when there's actually unfinished planned
+    work. Edit-note-after-completion: new `updateSessionNote` in
+    `sessionService.ts` + `useUpdateSessionNote` in `useSession.ts`,
+    online-only (same tier as `useUpdateSetLog` — a per-field edit, not a
+    session-status transition, so it doesn't get full offline
+    `sync_queue` support the way complete/skip/create do), wired into a
+    new inline edit affordance on `CompletedTodayScreen` (inside
+    `TodayPage.tsx`) that patches the note directly without touching
+    `reopenSession` or status at all. Jump-to-exercise-history: a new
+    `/exercise/:exerciseId` route (`src/features/history/
+    ExerciseHistoryPage.tsx`, a deliberate placeholder — Phase 3.4 builds
+    the real per-exercise chart+table view once the cross-meso history
+    views exist), reached via a new history icon in `ExerciseHeader.tsx`.
+
+### Verification
+
+`npm run typecheck`, `npm run build`, and `npx vitest run` (14/14, the
+same Phase 3.1 suite — nothing in this phase touched testable pure logic,
+so no new test file was warranted) all came back clean on the first pass —
+including the one place static checking could plausibly have missed
+something, a `let headLog` reassigned across an `await` inside
+`handleSkipExercise`'s loop; TypeScript's control-flow narrowing handled
+it correctly.
+
+**Live-tested against real production data, with explicit go-ahead asked
+for and given before any write.** The dev server had a live authenticated
+session open (an in-progress "PULL 2" session, several hours old) — same
+situation Phase 3.1's build session hit. Read-only checks first (page
+text, DOM inspection) confirmed the session-duration header and the
+SKIP REST OF EXERCISE button were already rendering correctly from static
+observation alone. For the write test: toggled `measure_set_time` on via
+the real Settings UI, then on an exercise with two genuinely unlogged
+planned rows (Cable Reverse Biceps Curl, so no real logged data was ever
+touched), drove the Start Set flow via realistic DOM events (`read_page`
+was truncating this deep a page in this session's tooling, so verification
+went through direct DOM queries and a dynamic `import('/src/lib/
+supabase.ts')` to read the actual written rows — no different in kind from
+reading the Network tab, just a different tool path) rather than the
+`computer`/`find` tools:
+
+- Head: tapped START SET, waited, filled weight/reps, tapped LOG. Written
+  row: `set_seconds=31`, `rest_seconds=null` (correct — nothing had been
+  logged yet in this exercise this session, so there was no prior rest to
+  measure), `is_dropset=false`, `parent_set_id=null`, `stage_index=0`.
+  Confirmed live: `REST 35s` appeared in *both* the floating timer and the
+  new inline one, in sync, right under the newly-logged row.
+- Stage: tapped ADD STAGE under that head, waited (rest ticked to `1min
+  3s`), tapped START SET on the stage — confirmed both rest displays
+  correctly disappeared the instant Start Set was tapped — waited, filled
+  weight/reps, tapped LOG. Written row: `set_seconds=25`, `rest_seconds=81`
+  (≈ the ~83s of rest that elapsed before Start Set was tapped, small
+  discrepancy explained by tool round-trip time between reading the
+  displayed value and clicking), `is_dropset=true`, `parent_set_id` =
+  the head row's real id, `stage_index=1`.
+
+Both rows directly satisfy TASKS.md §4's stated testable criterion ("toggle
+on, log a set with Start Set, confirm rest excludes set time") — for a
+head and a stage both, not just one. Toggled `measure_set_time` back off
+afterward and re-checked Today: every previously-`START SET` row was back
+to `LOG`, byte-identical to the very first page read of this session,
+confirming the toggle-off path is genuinely unchanged. Also verified the
+jump-to-history stub navigates correctly (`/exercise/<id>` renders the
+placeholder). Did not live-test edit-note-after-completion (would have
+required completing this real in-progress session — judged too invasive
+for what it would prove, given the write path is a small, direct,
+type-checked Supabase update with an established optimistic-update
+pattern) or skip-whole-exercise specifically (it reuses the exact same
+`onLog` path as a single-set skip, already proven live via the head/stage
+test above; the only untested-live part is the sequential-await loop
+itself, covered by typecheck + code review, same standard as the rest of
+this phase's less-central paths).
+
+**Cleanup, confirmed not assumed:** deleted both test rows via the same
+Supabase client the app itself uses (stage first, then head, matching the
+app's own cascade-delete order), then re-queried and confirmed zero rows
+remained for either test weight value. Re-confirmed `measure_set_time`
+was back to `false` in the database, not just in the UI. No console
+errors at any point across the whole test.
+
+### Deploy
+
+Committed (`147869f`). Pre-push check found local `HEAD` two commits ahead
+of `origin/master` (`git rev-list --left-right --count origin/master...HEAD`
+→ `0  2`) — the second being an already-existing, previously-unpushed
+Phase 3.1 deploy-confirmation commit (`7275685`) that had never actually
+made it to `origin/master` despite CONTEXT.md's own text saying it was
+pushed; not a conflict, just a clean fast-forward carrying both commits.
+Pushed, then confirmed with `git ls-remote origin master` that
+`origin/master`'s HEAD is exactly `147869f60bde16bfb0edc5a01c36457c33a5e375`.
+`vercel ls` showed a fresh Production deployment building about a minute
+after the push; polled `vercel inspect` until it reported a terminal state
+rather than guessing a fixed wait — came back `● Ready`, `target:
+production`, created `2026-08-07T14:21:09+02:00`, timing-consistent with
+the push (same standard of evidence as every prior deploy confirmation in
+this file: push timing plus a separately-confirmed source-of-truth hash,
+not push output alone).
+
+**Net effect:** Phase 3.2 is live in production. TASKS.md §4 items 1–15
+(Phases 3.0–3.2) are now all built, verified, and deployed; Phase 3.3
+(reference panel) onward is still ahead.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
-- Rest timer counts set time too (timer starts wrong moment)
+- ~~Rest timer counts set time too (timer starts wrong moment)~~ —
+  **fixed by Phase 3.2's optional Start Set flow (2026-08-07)**, opt-in via
+  the `measure_set_time` Settings toggle. Off keeps today's original
+  behaviour exactly (rest still includes set-performance time by
+  default) — this closes the gap for anyone who turns the toggle on, not
+  a change to the default.
 
 ---
 
