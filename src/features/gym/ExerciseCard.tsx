@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
-import SetRow from './SetRow'
+import SetGroup, { type LogParams } from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import { useRestTimerStore } from './restTimerStore'
+import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex, type SetGroup as Group } from './setGroupLogic'
 
 interface ExerciseCardProps {
   programExercise: ProgramExercise
@@ -27,9 +28,14 @@ interface ExerciseCardProps {
     isDropset: boolean
     isSkipped: boolean
     restSeconds: number | null
+    // Direct, not inferred (v3 §2.1 / Phase 3.1) — null for a head, the
+    // head's own id for a stage. The ADD STAGE tap that produces this
+    // already knows which head it belongs to.
+    parentSetId: string | null
+    stageIndex: number
   }) => void
-  onUpdateSet: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; setNumber?: number }) => void
-  onDeleteSet: (id: string) => void
+  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
+  onDeleteSet: (id: string) => Promise<void>
 }
 
 export default function ExerciseCard({
@@ -48,81 +54,182 @@ export default function ExerciseCard({
 }: ExerciseCardProps) {
   const { startedAt, start: startTimer } = useRestTimerStore()
 
-  const totalLogged = currentLogs.length
+  // Heads currently mid-cascade-delete — gates ADD STAGE on that group (see
+  // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
+  // second concurrent invocation for the same head.
+  const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
+
+  // A head is a set with no parent — the stage-exclusion rule (TASKS.md
+  // §2.1 / CONTEXT.md "Key architectural rules"): a drop stage is never
+  // counted as an independent set. Every count below goes through this
+  // grouping instead of raw currentLogs.length (§2.7 item 1).
+  const logGroups = groupSetLogs(currentLogs)
+  const lastLogGroups = groupSetLogs(lastLogs)
+  const totalLoggedHeads = logGroups.length
 
   // A logged set either targets a planned slot (weekPlanSetId set) or is an
   // extra, on-demand set (weekPlanSetId null) — identity, not array
   // position, decides which section it belongs to and whether that slot
-  // still needs an input row.
-  const plannedLogs = currentLogs.filter((l) => l.weekPlanSetId != null)
-  const extraLogs = currentLogs
-    .filter((l) => l.weekPlanSetId == null)
-    .sort((a, b) => a.setNumber - b.setNumber)
+  // still needs an input row. Only heads are matched here; a group's stages
+  // travel with their head and are never matched independently.
+  const plannedLogGroups = logGroups.filter((g) => g.head.weekPlanSetId != null)
+  const extraLogGroups = logGroups
+    .filter((g) => g.head.weekPlanSetId == null)
+    .sort((a, b) => a.head.setNumber - b.head.setNumber)
 
   // Number of extra-set input slots to show. Starts at (and never drops
   // below) the number of extra sets already logged, so already-logged extra
   // sets keep rendering after a remount/refresh. Otherwise it only grows
   // when the user taps ADD SET — logging a set never adds another slot.
-  const [extraSlotCount, setExtraSlotCount] = useState(extraLogs.length)
+  const [extraSlotCount, setExtraSlotCount] = useState(extraLogGroups.length)
   useEffect(() => {
-    setExtraSlotCount((n) => Math.max(n, extraLogs.length))
-  }, [extraLogs.length])
+    setExtraSlotCount((n) => Math.max(n, extraLogGroups.length))
+  }, [extraLogGroups.length])
 
-  const plannedRows = plannedSets.map((ps) => ({
-    plannedSet: ps,
-    log: plannedLogs.find((l) => l.weekPlanSetId === ps.id) ?? null,
-  }))
+  // Planned heads only — a planned dropset's stage rows are never their own
+  // top-level slot (§2.7 item 7); they're pulled in per-head via
+  // plannedGroups below, for stage prefill/target-RIR when ADD STAGE is used.
+  const plannedHeads = headsOnly(plannedSets, (s) => s.parentWeekPlanSetId)
+  const plannedGroups = groupWeekPlanSets(plannedSets)
+
+  // The plan side's head/stage structure isn't authoritative for what a log
+  // actually turned out to be — the log's OWN parentSetId is (a log-side
+  // head is always its own top-level set, never hidden, regardless of which
+  // plan slot its weekPlanSetId happens to reference). This matters for real
+  // data: a set logged against what the plan now calls a stage slot, but
+  // that was itself logged as a plain working set (parentSetId null — common
+  // in pre-3.1 history, where the log-side DROP toggle was independent of
+  // the plan's own structure), must still get its own row. So the set of
+  // "planned" slots to render is planned heads (for the empty/unlogged
+  // affordance) UNIONED with every weekPlanSetId that's actually a
+  // logged-side head, even if the plan considers that slot a stage.
+  const loggedHeadSlotIds = new Set(
+    plannedLogGroups.map((g) => g.head.weekPlanSetId).filter((id): id is string => id != null),
+  )
+  const plannedSlotIds = new Set([...plannedHeads.map((ps) => ps.id), ...loggedHeadSlotIds])
+  const plannedSetById = new Map(plannedSets.map((ps) => [ps.id, ps]))
+
+  const plannedRows = [...plannedSlotIds]
+    .map((id) => plannedSetById.get(id))
+    .filter((ps): ps is WeekPlanSet => ps != null)
+    .sort((a, b) => a.setNumber - b.setNumber)
+    .map((ps) => ({
+      plannedSet: ps,
+      // Only meaningful when ps is itself a plan-side head — a plan-side
+      // stage has no stages of its own to prefill from.
+      plannedStages: plannedGroups.find((g) => g.head.id === ps.id)?.stages ?? [],
+      group: plannedLogGroups.find((g) => g.head.weekPlanSetId === ps.id) ?? null,
+    }))
 
   const extraRows = Array.from({ length: extraSlotCount }, (_, i) => ({
-    log: extraLogs[i] ?? null,
+    group: extraLogGroups[i] ?? null,
   }))
 
-  function handleLog(
-    plannedSet: WeekPlanSet | null,
-    params: Parameters<ExerciseCardProps['onLog']>[0],
-  ) {
-    const restElapsed = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
+  function currentRestElapsed() {
+    return startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
+  }
+
+  function handleLogHead(plannedSet: WeekPlanSet | null, params: LogParams) {
+    const restElapsed = currentRestElapsed()
     startTimer()
     onLog({
       ...params,
       exerciseId: programExercise.exerciseId,
       weekPlanSetId: plannedSet?.id ?? null,
-      setNumber: currentLogs.length + 1,
+      setNumber: totalLoggedHeads + 1,
       restSeconds: restElapsed,
+      parentSetId: null,
+      stageIndex: 0,
     })
   }
 
-  // Deleting a set leaves a gap in the stored set_number sequence (History /
-  // Progress views display that raw value) — shift every later set down by 1.
-  function handleDeleteSet(log: SetLog) {
-    onDeleteSet(log.id)
-    currentLogs
-      .filter((l) => l.id !== log.id && l.setNumber > log.setNumber)
-      .sort((a, b) => a.setNumber - b.setNumber)
-      .forEach((l, i) => {
-        onUpdateSet(l.id, {
-          weight: l.weight,
-          reps: l.reps,
-          rir: l.rir,
-          note: l.note,
-          setNumber: log.setNumber + i,
-        })
+  // weekPlanSetId is already correct in params — SetGroup's stage-input row
+  // resolves it internally (its own plannedSet prop) via the same identity
+  // matching SetRow has always used; only the group-level fields need adding.
+  function handleLogStage(headLog: SetLog, stageIndex: number, params: LogParams) {
+    const restElapsed = currentRestElapsed()
+    startTimer()
+    onLog({
+      ...params,
+      exerciseId: programExercise.exerciseId,
+      setNumber: headLog.setNumber,
+      restSeconds: restElapsed,
+      parentSetId: headLog.id,
+      stageIndex,
+    })
+  }
+
+  // Client-side cascade guard (TASKS.md §2.1 "The guard — cascade
+  // client-side, stages first"): deletes stage rows first, in descending
+  // stage_index order, then the head last — deliberately the less obvious
+  // order. Head-first would leave orphaned stages permanently if this
+  // (non-transactional) mutation fails partway through; stages-first fails
+  // into a head with fewer stages, which is visible, harmless, and
+  // re-deletable. Renumbering (heads only — §2.7 item 3) only runs once the
+  // whole cascade has actually succeeded.
+  //
+  // Two races closed here, found via an independent adversarial review of
+  // this exact guard: (1) each delete is a real, separately-awaited network
+  // round trip (plus its mutation's own refetch), so the cascade can span
+  // several seconds — during that window the head is still live, and
+  // without deletingHeadIds gating SetGroup's ADD STAGE (see that prop),
+  // a stage logged mid-cascade would never be in `order` and, once the head
+  // goes, would be silently orphaned by the log-side FK's ON DELETE SET
+  // NULL (CASCADE is deferred to a not-yet-written migration 009) — exactly
+  // the corruption this guard exists to prevent. (2) the renumbering step
+  // below sends only `setNumber`, not the head's full captured weight/reps/
+  // rir/note — those were snapshotted before the (now genuinely multi-step)
+  // cascade and would silently clobber a concurrent edit to that set made
+  // while the cascade was in flight.
+  async function handleDeleteHead(group: Group<SetLog>) {
+    if (deletingHeadIds.has(group.head.id)) return // already in progress
+    const order = cascadeDeleteOrder(group, (l) => l.stageIndex)
+    setDeletingHeadIds((prev) => new Set(prev).add(group.head.id))
+    try {
+      for (const row of order) {
+        await onDeleteSet(row.id)
+      }
+    } catch (err) {
+      // Fails safe: whatever didn't get deleted stays put, and — because we
+      // stop here — no renumbering happens for a delete that didn't
+      // actually complete.
+      console.error('Failed to delete set group', err)
+      return
+    } finally {
+      setDeletingHeadIds((prev) => {
+        const next = new Set(prev)
+        next.delete(group.head.id)
+        return next
       })
+    }
+
+    logGroups
+      .filter((g) => g.head.id !== group.head.id && g.head.setNumber > group.head.setNumber)
+      .sort((a, b) => a.head.setNumber - b.head.setNumber)
+      .forEach((g, i) => {
+        onUpdateSet(g.head.id, { setNumber: group.head.setNumber + i })
+      })
+  }
+
+  // A lone stage has no descendants — a plain delete is safe, no cascade,
+  // no renumbering (stages don't occupy their own slot in the head sequence).
+  function handleDeleteStage(stageId: string) {
+    onDeleteSet(stageId).catch((err) => console.error('Failed to delete stage', err))
   }
 
   // Display numbers run sequentially top-to-bottom (planned section first,
   // then extra) purely for the row badge — the setNumber actually sent on
-  // log is computed fresh from currentLogs.length at click time.
+  // a head log is computed fresh from totalLoggedHeads at click time.
   let unloggedSeen = 0
   const plannedDisplay = plannedRows.map((row) => {
-    if (row.log) return { ...row, displayNumber: row.log.setNumber }
-    const displayNumber = totalLogged + unloggedSeen + 1
+    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
+    const displayNumber = totalLoggedHeads + unloggedSeen + 1
     unloggedSeen += 1
     return { ...row, displayNumber }
   })
   const extraDisplay = extraRows.map((row) => {
-    if (row.log) return { ...row, displayNumber: row.log.setNumber }
-    const displayNumber = totalLogged + unloggedSeen + 1
+    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
+    const displayNumber = totalLoggedHeads + unloggedSeen + 1
     unloggedSeen += 1
     return { ...row, displayNumber }
   })
@@ -158,66 +265,48 @@ export default function ExerciseCard({
       {/* Set rows */}
       <div className="px-3 py-3 space-y-3">
         {/* Planned sets — one row per plan slot, logged or not, in plan order */}
-        {plannedDisplay.map(({ plannedSet, log, displayNumber }) =>
-          log ? (
-            <SetRow
-              key={plannedSet.id}
-              setNumber={displayNumber}
-              plannedSet={plannedSet}
-              lastLog={null}
-              lastLogsLoading={false}
-              currentLog={log}
-              onLog={() => {}}
-              onUpdate={(changes) => onUpdateSet(log.id, changes)}
-              onDelete={() => handleDeleteSet(log)}
-              restElapsed={null}
-            />
-          ) : (
-            <SetRow
-              key={plannedSet.id}
-              setNumber={displayNumber}
-              plannedSet={plannedSet}
-              lastLog={lastLogs[displayNumber - 1] ?? null}
-              lastLogsLoading={lastLogsLoading}
-              currentLog={null}
-              onLog={(params) => handleLog(plannedSet, { ...params, exerciseId: programExercise.exerciseId })}
-              onUpdate={() => {}}
-              onDelete={() => {}}
-              restElapsed={startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null}
-            />
-          ),
-        )}
+        {plannedDisplay.map(({ plannedSet, plannedStages, group, displayNumber }) => (
+          <SetGroup
+            key={plannedSet.id}
+            displayNumber={displayNumber}
+            plannedSet={plannedSet}
+            plannedStages={plannedStages}
+            lastLog={lastLogGroups[displayNumber - 1]?.head ?? null}
+            lastLogsLoading={lastLogsLoading}
+            group={group}
+            isDeleting={group != null && deletingHeadIds.has(group.head.id)}
+            onLogHead={(params) => handleLogHead(plannedSet, params)}
+            onLogStage={(headLog, params) =>
+              handleLogStage(headLog, group ? nextStageIndex(group, (l) => l.stageIndex) : 1, params)
+            }
+            onUpdate={(id, changes) => onUpdateSet(id, changes)}
+            onDeleteHead={handleDeleteHead}
+            onDeleteStage={handleDeleteStage}
+            restElapsed={currentRestElapsed()}
+          />
+        ))}
 
         {/* Extra sets — added on demand via ADD SET, shown separately below the plan */}
-        {extraDisplay.map(({ log, displayNumber }, i) =>
-          log ? (
-            <SetRow
-              key={log.id}
-              setNumber={displayNumber}
-              plannedSet={null}
-              lastLog={null}
-              lastLogsLoading={false}
-              currentLog={log}
-              onLog={() => {}}
-              onUpdate={(changes) => onUpdateSet(log.id, changes)}
-              onDelete={() => handleDeleteSet(log)}
-              restElapsed={null}
-            />
-          ) : (
-            <SetRow
-              key={`extra-${i}`}
-              setNumber={displayNumber}
-              plannedSet={null}
-              lastLog={lastLogs[displayNumber - 1] ?? null}
-              lastLogsLoading={lastLogsLoading}
-              currentLog={null}
-              onLog={(params) => handleLog(null, { ...params, exerciseId: programExercise.exerciseId })}
-              onUpdate={() => {}}
-              onDelete={() => {}}
-              restElapsed={startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null}
-            />
-          ),
-        )}
+        {extraDisplay.map(({ group, displayNumber }, i) => (
+          <SetGroup
+            key={group?.head.id ?? `extra-${i}`}
+            displayNumber={displayNumber}
+            plannedSet={null}
+            plannedStages={[]}
+            lastLog={lastLogGroups[displayNumber - 1]?.head ?? null}
+            lastLogsLoading={lastLogsLoading}
+            group={group}
+            isDeleting={group != null && deletingHeadIds.has(group.head.id)}
+            onLogHead={(params) => handleLogHead(null, params)}
+            onLogStage={(headLog, params) =>
+              handleLogStage(headLog, group ? nextStageIndex(group, (l) => l.stageIndex) : 1, params)
+            }
+            onUpdate={(id, changes) => onUpdateSet(id, changes)}
+            onDeleteHead={handleDeleteHead}
+            onDeleteStage={handleDeleteStage}
+            restElapsed={currentRestElapsed()}
+          />
+        ))}
 
         {/* Add set button — adds exactly one extra slot on demand */}
         <button

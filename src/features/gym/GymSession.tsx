@@ -50,9 +50,11 @@ function ExerciseSection({
     isDropset: boolean
     isSkipped: boolean
     restSeconds: number | null
+    parentSetId: string | null
+    stageIndex: number
   }) => void
-  onUpdateSet: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; setNumber?: number }) => void
-  onDeleteSet: (id: string) => void
+  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
+  onDeleteSet: (id: string) => Promise<void>
 }) {
   const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
     programExercise.exerciseId,
@@ -163,26 +165,18 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               occurrenceCount={occurrenceCounts.get(pe.exerciseId) ?? 1}
               today={today}
               onLog={(params) => {
-                // AUDIT M5 fix: a dropset row must point back to the nearest
-                // preceding main (non-dropset) set for this exercise in this
-                // session — the same inference rule 007's backfill uses for
-                // historical rows (TASKS.md §2.1), so newly-written rows stay
-                // consistent with how the backfill would have grouped them.
-                // A non-dropset log is always a head: parentSetId null.
-                // weekPlanService.ts's updateSet()/copyFromPreviousWeek() carry
-                // a deliberate duplicate of this same inference for the plan
-                // side — not shared on purpose (see that file). Consolidate
-                // both into setGroupLogic.ts when Phase 3.1 builds it for real.
-                const exerciseLogs = allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId)
-                const parentSetId = params.isDropset
-                  ? ([...exerciseLogs]
-                      .sort((a, b) => b.setNumber - a.setNumber)
-                      .find((l) => !l.isDropset)?.id ?? null)
-                  : null
-                logSet.mutate({ ...params, note: null, parentSetId })
+                // Phase 3.1 retires AUDIT M5's inference heuristic on this
+                // write path: ExerciseCard/SetGroup's ADD STAGE tap already
+                // knows which head it belongs to and passes parentSetId (and
+                // stageIndex) directly — no more guessing from ordering. See
+                // CONTEXT.md's "ADD STAGE / inference-heuristic limitation"
+                // note for why this was inference-only before this phase.
+                // 007's historical backfill keeps using inference — it has
+                // no other option for data written before this shipped.
+                logSet.mutate({ ...params, note: null })
               }}
               onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
-              onDeleteSet={(id) => deleteSetLog.mutate(id)}
+              onDeleteSet={(id) => deleteSetLog.mutateAsync(id)}
             />
           )
         })}

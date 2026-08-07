@@ -145,6 +145,28 @@ All core features built and working:
   independently re-derived correctness check) — no drift found anywhere.
   **`git status` is now empty.** See "2026-08-06 session (everything
   committed)" below.
+- 2026-08-07 session: **Phase 3.1 — dropset as one unit — built, fixed,
+  and live-verified; not deployed.** TASKS.md §4 items 6–11 all shipped:
+  `setGroupLogic.ts` (new pure grouping module, with Vitest — Vitest
+  itself is new this session too), `SetGroup.tsx` + `ExerciseCard.tsx`
+  render dropsets as one head-plus-stages unit, the client-side cascade
+  delete guard (stages first descending, head last), the three sharpest
+  gym-UI stage-exclusion bugs (§2.7 items 1–3), plan-side ADD STAGE
+  authoring (`weekPlanService.ts` + `PlanPage.tsx`, §2.7 items 7–8), and
+  grouped read-only rendering in `SessionDetail.tsx` / `PlanTargetsPanel.tsx`
+  / `PreviewExerciseCard.tsx` (§2.7 item 6). Both inference call sites
+  flagged in the ADD STAGE / inference-heuristic "Known issues" note
+  (`GymSession.tsx`'s `onLog`, `weekPlanService.ts`'s `updateSet()`) are
+  **fully retired** — direct id-passing only, no fallback — closing that
+  note out. Live testing against the real account (with explicit
+  go-ahead, fully cleaned up afterward) found and fixed two real bugs
+  typecheck/tests couldn't catch, and an independent adversarial-review
+  workflow found and fixed two more — including one high-severity race
+  in the delete guard itself. See "2026-08-07 session (Phase 3.1)" below
+  for the full account, including the TASKS.md §2.7/§4 citation
+  inconsistency this session had to resolve by reading the section fresh
+  rather than trusting the cross-references as written. **Not deployed —
+  explicitly held back pending your review of this report.**
 
 ---
 
@@ -245,54 +267,81 @@ session" below.
   has no weekStartsOn option and instead counts raw 7-day periods from 
   the meso's exact start date, which drifts off Monday whenever the 
   meso didn't start on one (see "2026-07-11 session" below)
-- **Stage-exclusion rule (v3, takes effect in Phase 3.1 — NOT yet true 
-  in code).** Once the dropset restructure lands, a `v2_set_logs` row 
-  with `parent_set_id` set (or a `v2_week_plan_sets` row with 
-  `parent_week_plan_set_id` set) is a **drop stage**, and must never be 
-  counted as an independent set. Every count, average or set list goes 
-  through a named view (v2_history_session_summary, 
-  v2_exercise_set_history, v2_session_type_history) or a pure function 
-  (e1rm.ts, setGroupLogic.ts) that applies the filter — never an ad-hoc 
-  aggregate against v2_set_logs. **The one deliberate exception is 
-  volume:** a drop stage is real work performed, so volume sums include 
-  stages. Everything else excludes them.
-  Until Phase 3.1 ships, no filter for this rule exists anywhere in the 
-  app — do not assume the rule is enforced when reading current code. 
-  TASKS.md §2.7 lists all 10 existing sites that violate it today.
-  **On `parent_set_id` / `parent_week_plan_set_id` specifically:** as of
-  2026-08-05 (final same-day session), both are **formally verified
-  correctly populated for every historical dropset row** — not just
-  present, but individually re-derived via the same inference rule the
-  backfill uses and confirmed to match the stored value, 8/8 on the log
-  side and 7/7 on the plan side, 0 mismatches either way. See "2026-08-05
-  session (Phase 3.0 — backfill formally verified)" below for the exact
-  queries. Going forward, both write paths are deployed and correct:
-  `GymSession.tsx` for `parent_set_id` on new log-side rows (AUDIT M5,
-  commit `ee83c68`), and `weekPlanService.ts`'s `updateSet()` /
-  `copyFromPreviousWeek()` for `parent_week_plan_set_id` on the plan
-  side (M5's plan-side twin, commit `f3d684b`, 2026-08-06) — see "Known
-  issues" for what each fix does. The stage-exclusion rule itself still
-  has no enforcement anywhere in the app regardless of any of this —
-  that's Phase 3.1's job, not something the migrations, the backfill, or
-  either M5 fix provide on their own.
+- **Stage-exclusion rule (v3) — enforced in code as of Phase 3.1
+  (2026-08-07), not yet backed by the named Postgres views.** A
+  `v2_set_logs` row with `parent_set_id` set (or a `v2_week_plan_sets`
+  row with `parent_week_plan_set_id` set) is a **drop stage**, and is
+  never counted as an independent set. **The one deliberate exception is
+  volume:** a drop stage is real work performed, so volume sums include
+  stages (unchanged — nothing in the app sums volume yet; that's Phase
+  3.5). Everything else excludes them.
+  Enforcement now lives in `src/features/gym/setGroupLogic.ts`
+  (`groupSetLogs`/`groupWeekPlanSets`/`groupByParent`/`headsOnly` — a
+  row with a null parent id is a head, everything else nests under its
+  head) and every site TASKS.md §2.7 named as violating the rule now
+  goes through it: `ExerciseCard.tsx` (set numbering, prefill indexing,
+  delete renumbering — items 1–3), `historyService.ts` (`setCount` on
+  both the list and detail queries — item 6, extended to
+  `fetchHistorySessions` too since it had the identical bug),
+  `PlanTargetsPanel.tsx` / `PreviewExerciseCard.tsx` (planned-set lists
+  — item 7), `PlanPage.tsx` (add-set numbering — item 8). The named
+  Postgres views (`v2_history_session_summary`, `v2_exercise_set_history`,
+  `v2_session_type_history`) and `e1rm.ts` **do not exist yet** — those
+  are Phase 3.4/3.5. `historyService.ts`'s client-side query is what
+  enforces the rule for History today; when the views land, they become
+  the enforcement point instead, per TASKS.md's original design — this
+  is not a contradiction, just which phase built which half first.
+  **Orphan dropsets** (a row with `is_dropset = true` but a null parent
+  — the backfill's documented outcome for a drop with no preceding main
+  set) render as their own independent head, exactly as TASKS.md §2.1's
+  migration-risk section recommended. Confirmed live: a real production
+  session logged 2026-08-06 (before this phase's fixes existed) has two
+  such orphans, and they display as ordinary numbered sets with no stage
+  badge — see "2026-08-07 session (Phase 3.1)" below.
+  **On `parent_set_id` / `parent_week_plan_set_id` specifically:** both
+  are formally verified correctly populated for every *historical*
+  dropset row (2026-08-05, see that session's entry below for the exact
+  queries) — 8/8 log-side, 7/7 plan-side, 0 mismatches. Going forward,
+  every write path is now direct, not inferred: `GymSession.tsx`'s
+  `onLog` and `weekPlanService.ts`'s `addStage()`/`updateSet()` all take
+  a caller-supplied parent id from Phase 3.1's ADD STAGE affordance —
+  see "Known issues" below, where the ADD STAGE / inference-heuristic
+  note this section used to point to is now closed out rather than
+  still open.
 
 ---
 
 ## Key files
 - SPEC.md — **v3** product source of truth
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
-  Phase 3.0 (§4 steps 1–5) is implemented against it, formally verified,
-  and fully committed as of 2026-08-06; Phase 3.1 onward is still ahead
+  Phase 3.0 (§4 steps 1–5) and Phase 3.1 (§4 steps 6–11) are both
+  implemented, verified, and committed as of 2026-08-07; Phase 3.2
+  onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
 - AUDIT.md — Fable 5 audit findings, fixed and deferred items
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
+- src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
+  logic for the head-plus-stages dropset model: `groupSetLogs`/
+  `groupWeekPlanSets`/`groupByParent` (a row with no parent id is a
+  head; everything else nests under its head), `headsOnly`,
+  `cascadeDeleteOrder` (stages descending, head last), `nextStageIndex`
+  (max existing + 1, not count + 1 — see setGroupLogic.test.ts for why
+  those diverge). Has real Vitest coverage; independently testable, no
+  React dependency, same precedent as referenceLogic.ts
+- src/features/gym/SetGroup.tsx — **new, Phase 3.1.** One set: a head
+  row, its ordered stages nested beneath it, an ADD STAGE affordance
+  tied directly to the head. Gated by an `isDeleting` prop while its
+  head is mid-cascade-delete (see ExerciseCard.tsx's handleDeleteHead)
 - src/features/gym/scheduler.ts — pure scheduling function, 
   8 SchedulerResult variants
 - src/features/gym/ExerciseCard.tsx — active-session exercise row, 
-  identity-matches SetLogs to planned/extra slots via weekPlanSetId
+  identity-matches SetLogs to planned/extra slots via weekPlanSetId.
+  Since Phase 3.1, also owns the cascade delete guard
+  (handleDeleteHead/handleDeleteStage) and groups sets via
+  setGroupLogic.ts before rendering
 - src/features/gym/ExerciseReference.tsx + referenceLogic.ts — smart 
   LAST WEEK / LAST TIME / FIRST TIME reference panel (pure resolver 
   logic is in referenceLogic.ts, testable independent of the component)
@@ -319,6 +368,17 @@ session" below.
 ---
 
 ## Active work
+**Phase 3.1 (dropset as one unit) is built, fixed, and live-verified as
+of 2026-08-07 — see "2026-08-07 session (Phase 3.1)" below for the full
+account.** Not deployed: committed to `master` locally but not pushed to
+`origin/master`, deliberately held back pending your review of that
+session's report (it touches the delete path directly and changes
+gym-screen behaviour app-wide, and a push here would trigger a Vercel
+production deploy same as every prior push in this project's history).
+Everything below this point is Phase 3.0's status, kept as written at
+the time — still accurate, just no longer the newest thing in this
+file.
+
 **Phase 3.0 (migration foundation) is complete, formally verified, and
 fully committed** — schema, audit, backfill on both sides, both
 directions of AUDIT M5, the remaining application code, and every
@@ -529,47 +589,78 @@ Most impactful deferred items:
   the way (`types/index.ts` losing its full extension after a
   `git stash pop`, caught by a failing typecheck before it was
   committed anywhere).
-- **ADD STAGE / inference-heuristic limitation (new, 2026-08-05,
-  read before starting Phase 3.1):** `GymSession.tsx`'s `parentSetId`
-  assignment for a newly logged dropset is **inference-based** — it
-  guesses the parent as the nearest preceding non-dropset log for that
-  exercise in the session, exactly mirroring 007's backfill heuristic.
-  Confirmed by reading the actual code (not describing from memory) that
-  this is correct for the *current* UI: `SetRow.tsx`'s DROP toggle is the
-  **only** entry point for `isDropset`, and it only ever applies to
-  the set currently being submitted — enforced in three independent
-  places, not just convention. (1) The already-logged branch
-  (`if (currentLog) { ... }`) early-returns into a completely different
-  render tree before the DROP button's JSX is ever reached, so it's not
-  just hidden, it's unreachable. (2) The edit path's type signature
-  (`onUpdate: (changes: { weight, reps, rir, note }) => void`) excludes
-  `isDropset` entirely — there is no data channel to send it through
-  even if a UI existed. (3) `sessionService.ts`'s `updateSetLog` builds
-  its Postgres patch by checking each field name individually and never
-  checks for `is_dropset`, so it would be silently dropped even if
-  somehow present. Given that, there is no live UI signal today for
-  "this specific set is a stage of that specific prior set" — inference
-  is the only option, not a shortcut taken instead of an available direct
-  reference.
-  **This must change once Phase 3.1 ships ADD STAGE.** TASKS.md §3
-  describes `SetRow.tsx`'s DROP toggle becoming ADD STAGE, tied to a
-  specific already-logged set. At that point the user's tap directly
-  identifies the parent set — Phase 3.1 should read that id straight
-  from the interaction and stop inferring it, retiring this heuristic for
-  the live-write path. (007's backfill can and should keep using
-  inference indefinitely — it has no other option for historical data.)
-  Flagging this here, not just in a chat reply, so whichever session
-  builds 3.1 sees it without being told again.
-
-  **The same limitation now applies to `weekPlanService.ts`'s
-  `updateSet()` too (2026-08-06)**, for the identical reason, verified
-  the same way: `PlanPage.tsx`'s DROP toggle is the only entry point
-  for `isDropset` on the plan side, and `addSet()` was confirmed (see
-  the M5 plan-side twin entry above) to have no direct-creation path —
-  so inference is the only option there as well, not a shortcut. When
-  Phase 3.1's plan-side authoring UI gains a real "tap to attach this
-  stage to that set" interaction, `updateSet()` should read the parent
-  id directly the same way `GymSession.tsx` should stop inferring.
+- **ADD STAGE / inference-heuristic limitation: CLOSED as of Phase 3.1
+  (2026-08-07).** Historical context, kept because it explains why the
+  fix looks the way it does: `GymSession.tsx`'s `parentSetId` assignment
+  for a newly logged dropset used to be **inference-based** — nearest
+  preceding non-dropset log for that exercise in the session, mirroring
+  007's backfill heuristic — because the pre-3.1 UI's DROP toggle only
+  ever applied to the set currently being submitted, with no live signal
+  for "this specific set is a stage of that specific prior set." Verified
+  at the time (not assumed) via three independent enforcement points in
+  the old code: the already-logged branch's early return, the edit
+  path's type signature excluding `isDropset`, and `updateSetLog`'s
+  field-by-field patch builder never checking for it.
+  Phase 3.1 built the real ADD STAGE affordance this note said would be
+  needed (`SetGroup.tsx` on the gym side, tied to a specific
+  already-logged head; `PlanSetGroup` in `PlanPage.tsx` on the plan
+  side) and retired both inference call sites completely — no fallback
+  kept. `GymSession.tsx`'s `onLog` now takes `parentSetId`/`stageIndex`
+  straight from the tap that produced them (see `ExerciseCard.tsx`'s
+  `handleLogStage`); `weekPlanService.ts`'s `updateSet()` no longer
+  touches `isDropset`/`parent_week_plan_set_id` at all — that's now
+  `addStage()`'s job, called with a direct parent id from `PlanPage.tsx`.
+  007's backfill and `copyFromPreviousWeek()`'s from-scratch batch
+  reconstruction both still use derivation, as expected — neither has a
+  UI tap to read a parent id from, and that was never in question.
+  See "2026-08-07 session (Phase 3.1)" below for the full build and the
+  two bugs live testing found in this exact area.
+- **Delete-cascade race, found and fixed 2026-08-07 (Phase 3.1
+  adversarial review).** Before the fix: `ExerciseCard.tsx`'s
+  `handleDeleteHead` computed its deletion order once at click time and
+  had nothing stopping ADD STAGE from being tapped on that same head
+  while the (now genuinely multi-step, sequentially-awaited) cascade was
+  still in flight — a stage logged in that window was never in the
+  precomputed order, and once the head was deleted the log-side FK's
+  `ON DELETE SET NULL` (CASCADE is still deferred to an unwritten
+  migration 009) would silently orphan it into an independent head.
+  Fixed by tracking in-progress head deletions (`deletingHeadIds`) and
+  disabling `SetGroup.tsx`'s ADD STAGE affordance while the group's head
+  is mid-delete; `handleDeleteHead` also now guards against a second
+  concurrent call for the same head. Found by an independent
+  workflow-based adversarial review (not by this session's own live
+  testing) — two separate reviewer agents confirmed the mechanism by
+  reading the code, neither could refute it.
+- **Offline delete could hang the cascade guard forever, found and fixed
+  2026-08-07.** `useDeleteSetLog` had no `networkMode: 'always'`, unlike
+  every other write mutation in `useSession.ts` — under the default
+  networkMode, TanStack Query pauses an offline mutation indefinitely
+  rather than running or rejecting it. That was harmless before Phase
+  3.1 (delete was fire-and-forget `.mutate()`, never awaited), but the
+  cascade guard now sequentially `await`s `mutateAsync` per row and
+  relies on a stalled delete rejecting for its fail-safe catch block to
+  engage. Fixed by adding `networkMode: 'always'`, so an offline attempt
+  now fails fast with a normal network error instead of hanging.
+- **Residual, deliberately not fully closed (2026-08-07):** two lower-
+  severity concurrency edges the adversarial review also raised, judged
+  not worth the larger fix they'd need in this phase — flagging rather
+  than pretending they don't exist. (1) The post-cascade renumbering
+  step still reads `logGroups`, the render-time snapshot from when
+  delete was clicked — a head logged via ADD SET during the now-longer
+  cascade window won't be seen by that pass and could end up with a
+  duplicate/gapped `set_number`. `set_number` already has no uniqueness
+  constraint and this exact class of collision is already an accepted,
+  documented risk elsewhere (TASKS.md's migration-risk section) — not
+  something this phase was asked to newly solve. (2) `useLogSet`'s
+  optimistic id is stored in a single `offlineTempIdRef` shared across
+  every exercise in a session (one hook instance, called from many UI
+  sites); two `mutate()` calls fired close enough together could still
+  race on that ref before either's `mutationFn` reads it, pre-dating
+  Phase 3.1 for the offline path and now also reachable online. Fully
+  closing it means generating the id in the caller and threading it
+  through as an explicit argument instead of a ref side-channel — a
+  bigger change than this fix-up round. `onMutate` now sets the ref
+  before its first `await` to narrow (not eliminate) the window.
 - E4: REDO is lossy without warning user
 - Q1 (hardcoded colours): still present in History, Settings, 
   Program builder, and a few modal backdrops — out of scope for the 
@@ -1429,6 +1520,315 @@ reasoning as keeping the M5 fixes independently revertable):**
 confirmed with an explicit exit-code check, not just eyeballing empty
 output. **Nothing in this project exists only in the working tree
 anymore.**
+
+---
+
+## 2026-08-07 session (Phase 3.1)
+Built TASKS.md §4 items 6–11 ("Dropset as one unit") in full, in the
+dependency order §4 itself specifies. Re-read §2.1, §2.7, and §4's
+Phase 3.1 section fresh per instruction, rather than trusting memory —
+one of them turned out to have a real stale cross-reference (see below).
+**Not deployed** — committed, but held back deliberately since this
+phase touches the delete path directly and changes gym-screen behaviour
+across the board; the instruction was to produce the report first.
+
+### What was built
+
+6. **`src/features/gym/setGroupLogic.ts` (new).** Pure, no React
+   dependency — `groupByParent<T>` (generic: a row with a null parent id
+   is a head, everything else nests under its head, sorted by
+   stage_index) plus thin `groupSetLogs`/`groupWeekPlanSets` wrappers,
+   `headsOnly`, `cascadeDeleteOrder`, and `nextStageIndex`. Exported
+   `groupByParent` itself (not just the two wrappers) so
+   `historyService.ts` could reuse the same algorithm for its own
+   `HistorySetRow` shape instead of a third hand-rolled copy.
+7. **`src/features/gym/SetGroup.tsx` (new) + `ExerciseCard.tsx`
+   rewritten to render groups.** A group is a head `SetRow` plus its
+   ordered stages nested beneath it (dashed left border, "↳" marker, a
+   "STAGE" badge on already-logged stage rows), with an ADD STAGE
+   button under the head once it's logged. `SetRow.tsx`'s old DROP
+   toggle is gone entirely — no more per-row `isDropset` state; a new
+   `isStage` prop (set by the caller, not the user) drives both the
+   visual treatment and what `isDropset` gets sent on log.
+8. **Client-side cascade delete guard, in the same step as group
+   rendering — not after, per instruction.** `ExerciseCard.tsx`'s
+   `handleDeleteHead`: stages deleted first, in descending
+   `stage_index` order (`cascadeDeleteOrder`), head last, each `await`ed
+   in sequence via `mutateAsync` (changed from GymSession.tsx's old
+   fire-and-forget `.mutate()`). Renumbering of later heads' setNumber
+   only runs after the whole cascade actually succeeds — a caught error
+   returns early, leaves whatever didn't get deleted in place, and skips
+   renumbering, which is deliberately the fail-safe outcome: partial
+   failure under stages-first leaves a head with fewer stages (visible,
+   harmless, re-deletable), never an orphaned stage promoted to a
+   working set. A lone stage (not a head) deletes directly with no
+   cascade and no renumbering — it never occupied its own slot in the
+   head sequence. Confirmed the assumption behind "the plan side needs
+   no guard" by reading the migration file, not just citing the old
+   note: `supabase/migrations/004_v3_dropset_stages.sql` really does put
+   `on delete cascade` on `parent_week_plan_set_id`, so
+   `weekPlanService.ts`'s `removeSet()` needed no client-side guard.
+9. **Gym-UI stage-exclusion fixes (§2.7 items 1–3), alongside item 8 per
+   instruction.** `ExerciseCard.tsx`: `totalLoggedHeads` (heads-only
+   count) replaces `currentLogs.length` for the next head's setNumber;
+   `lastLogGroups[displayNumber - 1]?.head` (heads-only, from a grouped
+   previous-session array) replaces the flat `lastLogs[displayNumber -
+   1]` prefill index, so a drop stage's weight can no longer bleed into
+   a real set's prefill; delete renumbering now filters/sorts
+   `logGroups` (heads only) instead of the flat log array.
+10. **Plan-side stage authoring — `weekPlanService.ts` + `PlanPage.tsx`
+    (§2.7 items 7, 8).** New `addStage()` inserts a stage row directly
+    (`is_dropset: true`, given `parent_week_plan_set_id`/`stage_index`
+    as parameters, no lookup) — this is Phase 3.1's real stage-authoring
+    interaction the retirement below needed to exist before it could
+    happen. `updateSet()`'s old DROP-toggle inference branch is gone
+    completely (see "Known issues"). `PlanPage.tsx`: the old DROP toggle
+    is replaced with an ADD STAGE button under each head row (mirrors
+    the gym side's `SetGroup.tsx`); `handleAddSet`'s next-set-number
+    calculation now counts heads only (`headsOnly`), closing item 8.
+11. **Grouped display in the read-only surfaces (§2.7 item 6, extended
+    — see "resolving a stale cross-reference" below).**
+    `historyService.ts`'s `fetchHistoryDetail` now selects
+    `parent_set_id`/`stage_index`, groups via `groupByParent`, and
+    `HistoryExerciseGroup.sets` is `SetGroup<HistorySetRow>[]` instead
+    of a flat array; `SessionDetail.tsx` renders each group's head then
+    its nested "STAGE" rows instead of a flat list with a "DS" label.
+    `setCount` fixed to heads-only in *both* `fetchHistoryDetail` and
+    `fetchHistorySessions` (the list view had the identical bug —
+    TASKS.md's audit only named the detail query, but the list's "N
+    SETS" badge would otherwise have kept showing the old, wrong,
+    stages-included number right next to a now-correct detail page).
+    `PlanTargetsPanel.tsx` and `PreviewExerciseCard.tsx` now group via
+    `groupWeekPlanSets` too — heads only, with a "+N"/"N STAGE(S)" badge
+    summarising stage count instead of listing each stage as its own
+    numbered row.
+
+### Resolving a stale cross-reference in TASKS.md, not copying it blind
+
+§4 item 10 cites "§2.7 items 7, 8" (PlanTargetsPanel.tsx/
+PreviewExerciseCard.tsx's inflated planned-set list, and PlanPage.tsx's
+add-set numbering) — correct, and matches what item 10's own file list
+says. §4 item 11 then also lists PlanTargetsPanel.tsx and
+PreviewExerciseCard.tsx by name but cites "§2.7 item 6", which is
+actually about `historyService.ts`/`SessionDetail.tsx` — those two
+components don't appear anywhere in item 6's row. Read fresh rather than
+assumed correct (per instruction), and it's a genuine stale
+cross-reference, not a misreading: item 6's site is only historyService/
+SessionDetail. Resolved by building PlanTargetsPanel.tsx/
+PreviewExerciseCard.tsx's grouping once, in the item 11 step, since
+"grouped display" is what both components actually needed regardless of
+which numbered row technically named them — this also happens to close
+item 7's inflated-count bug as a byproduct, so nothing was left
+half-fixed by picking one citation over the other.
+
+### The two inference retirements, done as instructed
+
+**Log side.** `GymSession.tsx`'s `onLog` no longer computes
+`parentSetId` by scanning `allCurrentLogs` for "the highest-setNumber
+entry that isn't itself a dropset" — that whole block is deleted.
+`ExerciseCard.tsx`'s `handleLogHead`/`handleLogStage` now supply
+`parentSetId`/`stageIndex` directly: `null`/`0` for a head, the tapped
+head's own `id` and `nextStageIndex(group, ...)` for a stage, sourced
+from `SetGroup.tsx`'s ADD STAGE tap, which by construction already
+knows which head it belongs to. `stageIndex` is now threaded all the
+way to the DB write on both the online path (`sessionService.ts`'s
+`logSet()`) and the offline/Dexie path (`useSession.ts`'s
+`db.set_logs.put`/`sync_queue` payload) — previously hardcoded to `0`
+"no authoring UI yet" on the offline branch; now it carries the real
+value on both.
+
+**Plan side.** `weekPlanService.ts`'s `updateSet()` no longer has an
+`isDropset` branch at all — its `changes` parameter type dropped
+`isDropset` entirely, since there's no more "toggle this set into a
+dropset" interaction to infer a parent for. `addStage()` is the only
+thing that ever sets `parent_week_plan_set_id`/`is_dropset: true` on
+the plan side now, and it takes the parent id as a direct parameter
+from `PlanPage.tsx`'s ADD STAGE tap.
+
+**`copyFromPreviousWeek()` — not asked for, fixed anyway, and explained
+why.** Its `reparentCopiedDropsets()` helper re-inferred grouping from
+set_number ordering after copying a week forward — a different problem
+from the two retirements above (a bulk system-triggered copy, not a
+single user interaction, so there's no tap to read a parent id from).
+But its specific inference rule (`set_number < row.set_number` finds
+the parent) assumed a stage's set_number is always *strictly greater*
+than its head's — true for legacy rows, no longer true for anything
+authored through Phase 3.1's `addStage()`, which writes stages sharing
+their head's exact set_number. Copying a week containing an
+`addStage()`-created dropset would have silently failed to reattach it.
+Since Phase 3.0's backfill + both M5 fixes mean every existing row's
+`parent_week_plan_set_id` is now known-correct (verified 2026-08-05),
+re-inference from ordering is no longer necessary at all — replaced
+with a direct old-id-to-new-id map (`copySetsWithGrouping`, heads
+inserted first so each stage's new parent id is already resolvable).
+More correct than what it replaced, not just equivalent; noted here as
+a scope call, per instruction to say so explicitly when a design choice
+gets made along the way.
+
+### Testing (Section 1's original Vitest argument, acted on for real)
+
+Vitest was not yet added in any earlier session — added now
+(`vitest` devDependency, `vitest.config.ts`, `npm test`). Real tests
+only for the two pieces flagged as the target, not the whole codebase:
+`setGroupLogic.test.ts` — grouping correctness (multi-stage, out-of-
+order input, undefined `stageIndex` treated as 0, independent groups
+kept separate), `cascadeDeleteOrder` (stages-descending-head-last for
+0/1/5-stage groups, head always last), and `nextStageIndex` (max + 1,
+specifically the case where deleting a non-last stage would make
+`length + 1` collide with a survivor — see "live testing" below for how
+this test came to exist). 14 tests, all passing.
+
+### Live testing against the real account — found two real bugs
+
+The dev server unexpectedly had a live, already-authenticated session
+against production data. Asked before using it for anything beyond
+read-only checks; given the go-ahead to do a full write test and clean
+up afterward.
+
+**Read-only, fully safe:** History's Jul 9 session (a genuine
+pre-Phase-3.1 dropset, backfilled by 007) renders correctly — head
+"7.5×11" with two nested "STAGE" rows ("7.5×10", "5×8") underneath,
+matching the raw DB rows (`parent_set_id` pointing at the head,
+`stage_index` 1/2) queried directly. `setCount` shown ("14 SETS")
+matches heads-only by hand-count. Zero console errors.
+
+**A second, unplanned finding:** today's (2026-08-06) real session,
+logged through the *already-deployed* M5 fix (`ee83c68`), has two
+dropset rows with `is_dropset: true` but `parent_set_id: null` —
+unparented, despite the fix supposedly inferring a parent. Not a bug in
+this session's code (that fix predates this session); read as evidence
+that inference-from-recently-mutated-cache-state is genuinely fragile
+under rapid sequential taps (the two rows are 11 seconds apart with a
+SKIP in between) — concrete, real-world justification for why this
+phase's direct-id retirement matters, not just a theoretical
+improvement. Confirmed the app's orphan-handling (§2.1's documented
+recommendation: leave unparented, render as an independent head) works
+correctly for these two real rows — no crash, no wrong grouping, just
+no stage badge (see the bug below for why that badge was briefly wrong
+too).
+
+**Bug 1 (found live) — a logged set could vanish entirely.**
+`ExerciseCard.tsx`'s planned-row list originally only iterated planned
+*heads*. One of today's real logs had a `weekPlanSetId` pointing at
+what the *plan* considers a stage slot, but the *log itself* was a
+head (`parent_set_id: null` — logged as a plain set, independent of
+what the plan's own dropset structure said that slot was, which the
+pre-3.1 DROP toggle always allowed). That log satisfied
+`plannedLogGroups` (has a non-null `weekPlanSetId`) but had nowhere to
+render — not in `plannedRows` (its slot wasn't a planned head) and not
+in `extraRows` (it has a `weekPlanSetId`, so it isn't "extra" either).
+It disappeared from the UI with real weight/reps data attached and no
+error. Fixed by unioning planned heads with "any weekPlanSetId that's
+actually a logged-side head" when building the planned-row list — a
+log's own parent id decides whether it's a head, never the plan's
+structural labels.
+**Bug 2 (found live) — a contradictory badge.** `SetRow.tsx`'s
+already-logged "STAGE" badge was keyed off `currentLog.isDropset`
+(the raw flag) instead of the structural `isStage` prop. An orphaned
+row (flag true, no parent, rendered as its own head per the documented
+policy) showed *both* its own head number *and* a "STAGE" badge at
+once. Fixed by switching the condition to `isStage`, matching what
+`SessionDetail.tsx` already did correctly.
+
+**Full write-test, cleaned up after:** logged a real 3-row dropset
+(head `999×1` + stages `888×2`, `777×3`) into today's reopened session,
+confirmed via direct DB query that `parent_set_id`/`stage_index` were
+exactly right (no inference — direct ids), confirmed it displayed and
+counted as one set ("02", not "02/03/04"), deleted the head, confirmed
+via DB query that **all three rows were gone** in one action, then
+re-completed the session (`status: 'completed'`, `note: null`,
+`completed_at` set) to restore it exactly as it was. Also tested plan-
+side ADD STAGE on Week 7's Dips (a future, untouched week): confirmed
+the created stage row had a direct `parent_week_plan_set_id` and
+correct `stage_index`, then removed it — the DB-level `ON DELETE
+CASCADE` confirmed to still apply on the plan side, matching item 8's
+verification above.
+
+### Independent adversarial review — a Workflow-based review
+
+Ran a 4-dimension review (delete guard; stage-exclusion counting;
+inference-retirement completeness; general code/React quality), each
+with its own reviewer agent, findings then adversarially verified by
+separate agents instructed to try to refute them. **The workflow hit
+its session token limit partway through** (13 of 24 agent calls failed
+with "session limit" errors, mid-verification) — reporting this
+plainly rather than treating a partial run as complete. Two findings
+made it through full adversarial verification (two independent
+refutation attempts each, neither succeeded):
+
+- **High severity, confirmed: the delete-cascade race** (ADD STAGE
+  tappable on a head mid-cascade-delete, orphaning the new stage). See
+  "Known issues" for the fix.
+- **Medium severity, confirmed: `useDeleteSetLog` could hang forever
+  offline**, breaking the cascade guard's fail-safe assumption that a
+  stalled delete rejects. See "Known issues" for the fix.
+
+Several more findings surfaced but never reached adversarial
+verification before the budget ran out (`votes: []`, not "refuted" —
+an important distinction acted on: unverified is not the same as
+false). Assessed each by hand rather than discarding them for lack of
+a vote:
+- **Confirmed real, fixed:** `nextStageIndex` bug — both the gym and
+  plan sides computed a new stage's `stage_index` as
+  `stages.length + 1`, which collides with a surviving stage's index
+  once a *non-last* stage has been individually deleted (stages
+  [1,2,3], delete 2, next add computes 3 again). Fixed with the
+  `nextStageIndex` helper (max existing + 1) described above.
+- **Confirmed real, fixed:** the post-cascade renumbering call sent the
+  head's full captured `weight`/`reps`/`rir`/`note` alongside the new
+  `setNumber` — harmless when synchronous (the old code), a real risk
+  now that the cascade genuinely spans several awaited round trips, since
+  those values were snapshotted before the wait and could clobber a
+  concurrent edit to that set. Fixed to send only `{ setNumber }` (the
+  underlying mutation type already supported partial updates; only
+  `ExerciseCard.tsx`'s own prop type had made all four fields
+  mandatory).
+- **Confirmed real, fixed:** ADD STAGE tapped immediately after logging
+  its own head (very plausible — a drop is meant to be logged fast)
+  could reference an id that would never exist server-side, because the
+  online insert let Postgres assign its own id, different from the
+  client's optimistic `tempId`. Fixed at the root: `useSession.ts`'s
+  `useLogSet` now generates one id in `onMutate` and passes it through
+  explicitly to `sessionService.ts`'s `logSet()` insert (a new required
+  `id` param) for both the online and offline paths, so the optimistic
+  id *is* the real id from the first render, not eventually-consistent
+  with it. Verified live: logged a head then immediately tapped ADD
+  STAGE and logged a stage in the same breath — the stage's
+  `parent_set_id` matched the head's real stored id exactly.
+- **Assessed, not fixed, flagged instead:** two lower-severity
+  concurrency edges judged to need a larger fix than this pass
+  warranted. See "Known issues" for both, with the specific reasoning
+  for leaving each open.
+- **Refuted on review (by two independent verifiers each) — not
+  acted on:** two findings about `ExerciseCard.tsx`'s planned/logged
+  matching using `.find()` (returns only the first match for a given
+  `weekPlanSetId`). Both confirmed to be pre-existing patterns
+  inherited from before this phase, not reachable via any current write
+  path (once a slot's head is logged, `SetGroup.tsx` replaces the input
+  row entirely — there's no way to log a second head into the same
+  slot), and — for the second one specifically — not actually wrong
+  behaviour given the model's own rule that a plan slot's "logged"
+  status is decided by log-side head identity, not plan structure.
+
+### Final verification
+
+`npm run typecheck`, `npx vitest run` (14/14 passing), and `npm run
+build` all clean after every fix above, including the adversarial-
+review round. Re-verified live specifically because the id-generation
+fix touches the single most frequently exercised write path in the
+app (every set log): logged a real set through the new explicit-id
+path, confirmed success, tapped ADD STAGE immediately after (the exact
+scenario the fix targets) and confirmed the stage's parent id matched
+the head's real id, deleted the head and confirmed the guard still
+removes both rows atomically, then deleted the entire test session via
+History to leave zero trace — today's real, not-yet-started session
+(Friday, Pull 2) was back to a fresh "START SESSION" prompt afterward,
+confirmed by reloading Today.
+
+**Not deployed.** Committed to `master` locally, not pushed to
+`origin/master`, per explicit instruction to hold this phase back for
+review given the delete-path and gym-UI-wide scope — this report is
+that review artifact.
 
 ---
 

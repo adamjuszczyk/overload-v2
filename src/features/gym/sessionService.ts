@@ -206,6 +206,7 @@ export async function skipMissedSession(
 // ─── Set Logs ─────────────────────────────────────────────────────────────────
 
 export async function logSet(params: {
+  id: string
   userId: string
   sessionId: string
   exerciseId: string
@@ -217,12 +218,19 @@ export async function logSet(params: {
   note: string | null
   isDropset: boolean
   parentSetId: string | null
+  stageIndex: number
   isSkipped: boolean
   restSeconds: number | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
     .insert({
+      // Set explicitly (matches useSession.ts's optimistic-update id)
+      // rather than left to the column's default — see useLogSet's
+      // mutationFn for why: a stage logged via ADD STAGE before this
+      // insert round-trips must be able to reference this row's real,
+      // final id immediately, not one Postgres only assigns afterward.
+      id: params.id,
       user_id: params.userId,
       session_id: params.sessionId,
       exercise_id: params.exerciseId,
@@ -234,6 +242,7 @@ export async function logSet(params: {
       note: params.note,
       is_dropset: params.isDropset,
       parent_set_id: params.parentSetId,
+      stage_index: params.stageIndex,
       is_skipped: params.isSkipped,
       logged_at: new Date().toISOString(),
       rest_seconds: params.restSeconds,

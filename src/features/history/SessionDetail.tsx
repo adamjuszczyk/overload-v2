@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useHistoryDetail, useDeleteSession } from './useHistory'
+import type { HistorySetRow } from './historyService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import type { MuscleGroup } from '../../types'
 
@@ -184,64 +185,14 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
                 </span>
               </div>
 
-              {/* Set rows */}
-              {group.sets.map((set, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 px-4 py-2.5"
-                  style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}
-                >
-                  {/* Set label */}
-                  <span
-                    className="w-7 text-xs font-bold shrink-0"
-                    style={{
-                      color: set.isSkipped ? 'var(--text-dim)' : 'var(--text-muted)',
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    {set.isDropset ? 'DS' : `${set.setNumber}`}
-                  </span>
-
-                  {set.isSkipped ? (
-                    <span
-                      className="flex-1 text-xs"
-                      style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-                    >
-                      SKIPPED
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {/* Weight × reps — no underline */}
-                      <span
-                        className="text-sm font-bold"
-                        style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
-                      >
-                        {set.weight !== null ? set.weight : '—'}
-                        <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{' × '}</span>
-                        {set.reps !== null ? set.reps : '—'}
-                      </span>
-
-                      {/* RIR */}
-                      {set.rir !== null && (
-                        <span
-                          className="text-xs shrink-0"
-                          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-                        >
-                          RIR {set.rir}
-                        </span>
-                      )}
-
-                      {/* Rest (right-aligned) */}
-                      {set.restSeconds !== null && (
-                        <span
-                          className="text-xs ml-auto shrink-0"
-                          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-                        >
-                          {formatRestTime(set.restSeconds)}
-                        </span>
-                      )}
-                    </div>
-                  )}
+              {/* Set groups — each head, then its stages nested beneath it
+                  (§2.7 item 6): a drop stage is never its own top-level row. */}
+              {group.sets.map((setGroup, i) => (
+                <div key={setGroup.head.id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+                  <HistorySetRowView set={setGroup.head} />
+                  {setGroup.stages.map((stage) => (
+                    <HistorySetRowView key={stage.id} set={stage} isStage />
+                  ))}
                 </div>
               ))}
             </div>
@@ -311,6 +262,71 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Set row ──────────────────────────────────────────────────────────────────
+// A single historical row — a head (numbered) or a nested stage (indented,
+// STAGE label, no number of its own — it shares its head's set_number).
+
+function HistorySetRowView({ set, isStage = false }: { set: HistorySetRow; isStage?: boolean }) {
+  return (
+    <div
+      className="flex items-center gap-3 px-4 py-2.5"
+      style={{ paddingLeft: isStage ? 40 : undefined }}
+    >
+      {/* Set label */}
+      <span
+        className="w-7 text-xs font-bold shrink-0"
+        style={{
+          color: set.isSkipped ? 'var(--text-dim)' : 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
+        }}
+      >
+        {isStage ? 'STAGE' : set.setNumber}
+      </span>
+
+      {set.isSkipped ? (
+        <span
+          className="flex-1 text-xs"
+          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+        >
+          SKIPPED
+        </span>
+      ) : (
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Weight × reps — no underline */}
+          <span
+            className="text-sm font-bold"
+            style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
+          >
+            {set.weight !== null ? set.weight : '—'}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{' × '}</span>
+            {set.reps !== null ? set.reps : '—'}
+          </span>
+
+          {/* RIR */}
+          {set.rir !== null && (
+            <span
+              className="text-xs shrink-0"
+              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+            >
+              RIR {set.rir}
+            </span>
+          )}
+
+          {/* Rest (right-aligned) */}
+          {set.restSeconds !== null && (
+            <span
+              className="text-xs ml-auto shrink-0"
+              style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+            >
+              {formatRestTime(set.restSeconds)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

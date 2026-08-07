@@ -9,10 +9,12 @@ import {
   useWeekPlans,
   useSetDeload,
   useAddSet,
+  useAddStage,
   useUpdateSet,
   useRemoveSet,
   useCopyFromPreviousWeek,
 } from './useWeekPlan'
+import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -228,6 +230,7 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
 
   const addSet = useAddSet(mesoId, weekNumber)
+  const addStage = useAddStage(mesoId, weekNumber)
   const removeSet = useRemoveSet(mesoId, weekNumber)
   const updateSet = useUpdateSet(mesoId, weekNumber)
   const toggleDeload = useSetDeload(mesoId, weekNumber)
@@ -235,12 +238,31 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const sets = weekPlan?.sets ?? []
 
   function handleAddSet(pe: ProgramExercise) {
-    const existingForEx = sets.filter((s) => s.programExerciseId === pe.id)
+    // Count heads only — a dropset's stage rows must not inflate the next
+    // set's number (§2.7 item 8).
+    const existingHeadsForEx = headsOnly(
+      sets.filter((s) => s.programExerciseId === pe.id),
+      (s) => s.parentWeekPlanSetId,
+    )
     addSet.mutate({
       workoutDayId: workoutDay.id,
       weekPlanId: weekPlan?.id,
       programExerciseId: pe.id,
-      setNumber: existingForEx.length + 1,
+      setNumber: existingHeadsForEx.length + 1,
+    })
+  }
+
+  function handleAddStage(pe: ProgramExercise, group: Group<WeekPlanSet>) {
+    if (!weekPlan) return
+    addStage.mutate({
+      weekPlanId: weekPlan.id,
+      programExerciseId: pe.id,
+      parentId: group.head.id,
+      setNumber: group.head.setNumber,
+      // max(existing) + 1, not length + 1 — those diverge once a non-last
+      // stage has been individually deleted (setGroupLogic.ts's
+      // nextStageIndex explains the collision this avoids).
+      stageIndex: nextStageIndex(group, (s) => s.stageIndex),
     })
   }
 
@@ -279,18 +301,20 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
           </div>
         ) : (
           programExercises.map((pe, idx) => {
-            const exerciseSets = sets
-              .filter((s) => s.programExerciseId === pe.id)
-              .sort((a, b) => a.setNumber - b.setNumber)
+            const exerciseSets = sets.filter((s) => s.programExerciseId === pe.id)
+            const groups = groupWeekPlanSets(exerciseSets).sort(
+              (a, b) => a.head.setNumber - b.head.setNumber,
+            )
 
             return (
               <ExerciseSection
                 key={pe.id}
                 pe={pe}
-                sets={exerciseSets}
+                groups={groups}
                 isPast={isPast}
                 isLast={idx === programExercises.length - 1}
                 onAddSet={() => handleAddSet(pe)}
+                onAddStage={(group) => handleAddStage(pe, group)}
                 onRemoveSet={(id) => removeSet.mutate(id)}
                 onUpdateSet={(id, changes) => updateSet.mutate({ id, changes })}
               />
@@ -306,15 +330,16 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
 
 interface ExerciseSectionProps {
   pe: ProgramExercise
-  sets: WeekPlanSet[]
+  groups: Group<WeekPlanSet>[]
   isPast: boolean
   isLast: boolean
   onAddSet: () => void
+  onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
-  onUpdateSet: (id: string, changes: { targetRir?: number | null; isDropset?: boolean }) => void
+  onUpdateSet: (id: string, changes: { targetRir?: number | null }) => void
 }
 
-function ExerciseSection({ pe, sets, isPast, isLast, onAddSet, onRemoveSet, onUpdateSet }: ExerciseSectionProps) {
+function ExerciseSection({ pe, groups, isPast, isLast, onAddSet, onAddStage, onRemoveSet, onUpdateSet }: ExerciseSectionProps) {
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
@@ -340,17 +365,19 @@ function ExerciseSection({ pe, sets, isPast, isLast, onAddSet, onRemoveSet, onUp
         )}
       </div>
 
-      {/* Set rows */}
-      {sets.length > 0 && (
+      {/* Set groups — one row per head, its stages nested beneath it */}
+      {groups.length > 0 && (
         <div style={{ paddingBottom: 10 }}>
-          {sets.map((set, idx) => (
-            <SetRow
-              key={set.id}
-              set={set}
+          {groups.map((group, idx) => (
+            <PlanSetGroup
+              key={group.head.id}
+              group={group}
               displayNumber={idx + 1}
               isPast={isPast}
-              onRemove={() => onRemoveSet(set.id)}
-              onUpdate={(changes) => onUpdateSet(set.id, changes)}
+              onRemoveHead={() => onRemoveSet(group.head.id)}
+              onRemoveStage={(id) => onRemoveSet(id)}
+              onUpdate={(id, changes) => onUpdateSet(id, changes)}
+              onAddStage={() => onAddStage(group)}
             />
           ))}
         </div>
@@ -359,46 +386,103 @@ function ExerciseSection({ pe, sets, isPast, isLast, onAddSet, onRemoveSet, onUp
   )
 }
 
+// ─── Set Group ────────────────────────────────────────────────────────────────
+// One planned set: a head row, its ordered stages nested beneath it, and an
+// ADD STAGE affordance tied directly to that head (TASKS.md §4 item 10) —
+// replaces the old DROP toggle, which could only ever flag the row being
+// edited. See weekPlanService.ts's addStage() for the write path this feeds.
+
+function PlanSetGroup({
+  group,
+  displayNumber,
+  isPast,
+  onRemoveHead,
+  onRemoveStage,
+  onUpdate,
+  onAddStage,
+}: {
+  group: Group<WeekPlanSet>
+  displayNumber: number
+  isPast: boolean
+  onRemoveHead: () => void
+  onRemoveStage: (id: string) => void
+  onUpdate: (id: string, changes: { targetRir?: number | null }) => void
+  onAddStage: () => void
+}) {
+  const { head, stages } = group
+  return (
+    <div>
+      <SetRow
+        displayNumber={displayNumber}
+        targetRir={head.targetRir}
+        isPast={isPast}
+        onRemove={onRemoveHead}
+        onUpdate={(changes) => onUpdate(head.id, changes)}
+      />
+
+      {(stages.length > 0 || !isPast) && (
+        <div style={{ paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }}>
+          {stages.map((stage) => (
+            <SetRow
+              key={stage.id}
+              isStage
+              targetRir={stage.targetRir}
+              isPast={isPast}
+              onRemove={() => onRemoveStage(stage.id)}
+              onUpdate={(changes) => onUpdate(stage.id, changes)}
+            />
+          ))}
+
+          {!isPast && (
+            <button
+              onClick={onAddStage}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px 0 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)' }}
+            >
+              <Plus size={11} />
+              ADD STAGE
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Set Row ──────────────────────────────────────────────────────────────────
+// A single row: either a head (numbered) or a stage (↳ marker, no number of
+// its own — it shares its head's set_number by convention, TASKS.md §2.1).
 
 function SetRow({
-  set,
   displayNumber,
+  isStage = false,
+  targetRir,
   isPast,
   onRemove,
   onUpdate,
 }: {
-  set: WeekPlanSet
-  displayNumber: number
+  displayNumber?: number
+  isStage?: boolean
+  targetRir: number | null
   isPast: boolean
   onRemove: () => void
-  onUpdate: (changes: { targetRir?: number | null; isDropset?: boolean }) => void
+  onUpdate: (changes: { targetRir?: number | null }) => void
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 8 }}>
       {/* Set number */}
       <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
-        {String(displayNumber).padStart(2, '0')}
+        {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
       </span>
 
       {/* RIR stepper */}
       <RirStepper
-        value={set.targetRir}
+        value={targetRir}
         disabled={isPast}
         onChange={(v) => onUpdate({ targetRir: v })}
       />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
-
-      {/* Dropset toggle */}
-      <button
-        disabled={isPast}
-        onClick={() => !isPast && onUpdate({ isDropset: !set.isDropset })}
-        style={{ height: 28, padding: '0 9px', background: set.isDropset ? 'var(--accent-muted)' : 'transparent', border: `1px solid ${set.isDropset ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: isPast ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '0.5px', color: set.isDropset ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}
-      >
-        DROP
-      </button>
 
       {/* Remove */}
       {isPast ? (

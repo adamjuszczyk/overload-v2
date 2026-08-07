@@ -127,50 +127,46 @@ export async function addSet(
   return toSet(data as DbWeekPlanSet)
 }
 
+// Phase 3.1's real stage-authoring interaction (TASKS.md §4 item 10):
+// PlanPage.tsx's ADD STAGE is tied to a specific existing set, so the parent
+// id is given directly here — same reasoning as GymSession.tsx's ADD STAGE
+// (see setGroupLogic.ts). This retires the nearest-preceding-non-dropset
+// inference updateSet() used to need for this: there is no more "toggle
+// this set into a dropset" interaction to infer a parent for. Stages share
+// their head's set_number by convention (TASKS.md §2.1); stageIndex is the
+// caller's count of that head's existing stages + 1.
+export async function addStage(
+  userId: string,
+  weekPlanId: string,
+  programExerciseId: string,
+  parentId: string,
+  setNumber: number,
+  stageIndex: number,
+): Promise<WeekPlanSet> {
+  const { data, error } = await supabase
+    .from('v2_week_plan_sets')
+    .insert({
+      week_plan_id: weekPlanId,
+      user_id: userId,
+      program_exercise_id: programExerciseId,
+      set_number: setNumber,
+      target_rir: null,
+      is_dropset: true,
+      parent_week_plan_set_id: parentId,
+      stage_index: stageIndex,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return toSet(data as DbWeekPlanSet)
+}
+
 export async function updateSet(
   id: string,
-  changes: { targetRir?: number | null; isDropset?: boolean },
+  changes: { targetRir?: number | null },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('targetRir' in changes) patch.target_rir = changes.targetRir
-
-  if ('isDropset' in changes) {
-    patch.is_dropset = changes.isDropset
-
-    // AUDIT M5 plan-side fix: PlanPage.tsx's DROP toggle can only ever
-    // apply to the set currently being edited — the same reasoning as
-    // GymSession.tsx's M5 fix — so nearest-preceding-non-dropset
-    // inference (same week_plan_id + program_exercise_id, ordered by
-    // set_number) is provably correct here too, not a guess. Deliberately
-    // NOT shared with GymSession.tsx's copy of this logic; consolidate
-    // both into setGroupLogic.ts when Phase 3.1 builds it for real.
-    if (changes.isDropset) {
-      const { data: target, error: eTarget } = await supabase
-        .from('v2_week_plan_sets')
-        .select('week_plan_id, program_exercise_id, set_number')
-        .eq('id', id)
-        .single()
-      if (eTarget) throw eTarget
-
-      const { data: parent, error: eParent } = await supabase
-        .from('v2_week_plan_sets')
-        .select('id')
-        .eq('week_plan_id', target.week_plan_id)
-        .eq('program_exercise_id', target.program_exercise_id)
-        .eq('is_dropset', false)
-        .lt('set_number', target.set_number)
-        .order('set_number', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (eParent) throw eParent
-
-      patch.parent_week_plan_set_id = parent?.id ?? null
-    } else {
-      // Un-toggling — this set is no longer a stage, so it must not keep
-      // pointing at a parent.
-      patch.parent_week_plan_set_id = null
-    }
-  }
 
   const { error } = await supabase.from('v2_week_plan_sets').update(patch).eq('id', id)
   if (error) throw error
@@ -231,62 +227,67 @@ export async function copyFromPreviousWeek(
 
     const prevSets = (prev.v2_week_plan_sets ?? []) as DbWeekPlanSet[]
     if (prevSets.length > 0) {
-      const { data: newSets, error: e3 } = await supabase
-        .from('v2_week_plan_sets')
-        .insert(
-          prevSets.map((s) => ({
-            week_plan_id: (newPlan as { id: string }).id,
-            user_id: userId,
-            program_exercise_id: s.program_exercise_id,
-            set_number: s.set_number,
-            target_rir: s.target_rir,
-            is_dropset: s.is_dropset,
-          })),
-        )
-        .select()
-      if (e3) throw e3
-
-      // AUDIT M5 plan-side fix: parent_week_plan_set_id can't be copied
-      // forward — the old week's ids don't exist in this one — so
-      // grouping is re-inferred from scratch against the newly-created
-      // batch instead of remapping old-id → new-id, the same trick 007's
-      // backfill already uses successfully for historical data. Correct
-      // here for the same reason: grouping only ever depends on sibling
-      // is_dropset/set_number within (week_plan_id, program_exercise_id),
-      // never on row identity.
-      await reparentCopiedDropsets((newSets ?? []) as DbWeekPlanSet[])
+      await copySetsWithGrouping(userId, (newPlan as { id: string }).id, prevSets)
     }
   }
 }
 
-// Re-infers parent_week_plan_set_id for a freshly-inserted batch of plan
-// sets by grouping on program_exercise_id (every row already shares one
-// week_plan_id, being one insert batch) and applying the same
-// nearest-preceding-non-dropset rule as updateSet() above. Deliberately
-// NOT shared with GymSession.tsx's copy of this logic; consolidate into
-// setGroupLogic.ts when Phase 3.1 builds it for real.
-async function reparentCopiedDropsets(rows: DbWeekPlanSet[]): Promise<void> {
-  const byExercise = new Map<string, DbWeekPlanSet[]>()
-  for (const row of rows) {
-    const group = byExercise.get(row.program_exercise_id) ?? []
-    group.push(row)
-    byExercise.set(row.program_exercise_id, group)
+// Copies a week's sets forward via a direct old-id → new-id map, instead of
+// re-inferring grouping from set_number ordering the way this used to work
+// (AUDIT M5's plan-side fix, pre-Phase-3.1). That re-inference assumed every
+// stage's set_number was strictly greater than its head's — true for legacy
+// rows, but no longer true for Phase 3.1's ADD STAGE, which writes stages
+// sharing their head's set_number (TASKS.md §2.1). It would silently fail
+// to reattach any dropset authored through ADD STAGE. A direct map works
+// for both: Phase 3.0's backfill + M5 fixes mean parent_week_plan_set_id is
+// now correctly populated on every existing row (log side 8/8, plan side
+// 7/7, independently verified — see CONTEXT.md), so there's no longer a
+// reason to re-derive it here at all. Heads are inserted first so each
+// stage's new parent id is already resolvable when its own row is created.
+async function copySetsWithGrouping(
+  userId: string,
+  newWeekPlanId: string,
+  prevSets: DbWeekPlanSet[],
+): Promise<void> {
+  const idMap = new Map<string, string>()
+  const heads = prevSets.filter((s) => s.parent_week_plan_set_id == null)
+  const stages = prevSets.filter((s) => s.parent_week_plan_set_id != null)
+
+  for (const s of heads) {
+    const { data: newRow, error } = await supabase
+      .from('v2_week_plan_sets')
+      .insert({
+        week_plan_id: newWeekPlanId,
+        user_id: userId,
+        program_exercise_id: s.program_exercise_id,
+        set_number: s.set_number,
+        target_rir: s.target_rir,
+        is_dropset: s.is_dropset,
+        stage_index: s.stage_index ?? 0,
+      })
+      .select()
+      .single()
+    if (error) throw error
+    idMap.set(s.id, (newRow as DbWeekPlanSet).id)
   }
 
-  for (const group of byExercise.values()) {
-    const sorted = [...group].sort((a, b) => a.set_number - b.set_number)
-    for (const row of sorted) {
-      if (!row.is_dropset) continue
-      const parent = [...sorted]
-        .filter((s) => s.set_number < row.set_number)
-        .sort((a, b) => b.set_number - a.set_number)
-        .find((s) => !s.is_dropset)
-      if (!parent) continue
-      const { error } = await supabase
-        .from('v2_week_plan_sets')
-        .update({ parent_week_plan_set_id: parent.id })
-        .eq('id', row.id)
-      if (error) throw error
-    }
+  for (const s of stages) {
+    const newParentId = s.parent_week_plan_set_id ? idMap.get(s.parent_week_plan_set_id) : undefined
+    const { data: newRow, error } = await supabase
+      .from('v2_week_plan_sets')
+      .insert({
+        week_plan_id: newWeekPlanId,
+        user_id: userId,
+        program_exercise_id: s.program_exercise_id,
+        set_number: s.set_number,
+        target_rir: s.target_rir,
+        is_dropset: s.is_dropset,
+        parent_week_plan_set_id: newParentId ?? null,
+        stage_index: s.stage_index ?? 0,
+      })
+      .select()
+      .single()
+    if (error) throw error
+    idMap.set(s.id, (newRow as DbWeekPlanSet).id)
   }
 }

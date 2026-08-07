@@ -1,6 +1,14 @@
 import type { WeekPlanSet } from '../../types'
+import { groupWeekPlanSets } from './setGroupLogic'
 
+// Heads only, one row per set — a dropset's stage rows are never their own
+// top-level entry (§2.7 item 7); a "+N" badge summarises how many stages the
+// set has instead of listing each one, since this panel is a compact
+// side-by-side column, not a full walkthrough (see PreviewExerciseCard.tsx
+// for the fuller nested rendering).
 export default function PlanTargetsPanel({ plannedSets }: { plannedSets: WeekPlanSet[] }) {
+  const groups = groupWeekPlanSets(plannedSets).sort((a, b) => a.head.setNumber - b.head.setNumber)
+
   return (
     <div className="px-3 py-2" style={{ borderRight: '1px solid var(--border)' }}>
       <p
@@ -9,29 +17,29 @@ export default function PlanTargetsPanel({ plannedSets }: { plannedSets: WeekPla
       >
         THIS WEEK
       </p>
-      {plannedSets.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
           NO PLAN
         </p>
       ) : (
         <div className="space-y-0.5">
-          {plannedSets.map((ps) => (
-            <div key={ps.id} className="flex items-center gap-1">
+          {groups.map(({ head, stages }) => (
+            <div key={head.id} className="flex items-center gap-1">
               <span
                 className="text-xs tabular-nums"
                 style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', minWidth: 16 }}
               >
-                {ps.setNumber}
+                {head.setNumber}
               </span>
               <span className="text-xs" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
-                {ps.targetRir != null ? `RIR ${ps.targetRir}` : '—'}
+                {head.targetRir != null ? `RIR ${head.targetRir}` : '—'}
               </span>
-              {ps.isDropset && (
+              {stages.length > 0 && (
                 <span
                   className="text-xs px-1 rounded"
                   style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
                 >
-                  D
+                  +{stages.length}
                 </span>
               )}
             </div>

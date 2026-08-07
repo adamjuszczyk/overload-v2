@@ -393,13 +393,27 @@ export function useLogSet(sessionId: string) {
       note: string | null
       isDropset: boolean
       parentSetId: string | null
+      stageIndex: number
       isSkipped: boolean
       restSeconds: number | null
     }) => {
+      // Same id for the optimistic entry (set in onMutate, which always runs
+      // before this) and whatever actually gets written — online or
+      // offline. Phase 3.1's ADD STAGE passes a head's id directly as the
+      // next stage's parentSetId (setGroupLogic.ts) the moment the head
+      // renders as logged, which can be before its own insert has actually
+      // round-tripped. If the online insert let Postgres assign its own id
+      // (the pre-3.1 behaviour), a stage logged in that window would carry
+      // a parentSetId that never matches any real row — found via
+      // independent review. Fixing the id at onMutate time and using it for
+      // the real write too (both branches) makes it correct from the first
+      // render, not just eventually consistent.
+      const id = offlineTempIdRef.current ?? crypto.randomUUID()
+
       if (!isOnline) {
         // Plain UUID — v2_set_logs.id is a Postgres uuid column, so no prefix.
         // "Pending" state is tracked separately via useOfflineStore.pendingIds.
-        const tempId = offlineTempIdRef.current ?? crypto.randomUUID()
+        const tempId = id
         const loggedAt = new Date().toISOString()
 
         await db.set_logs.put({
@@ -414,9 +428,7 @@ export function useLogSet(sessionId: string) {
           note: params.note,
           isDropset: params.isDropset,
           parentSetId: params.parentSetId,
-          // No authoring UI for these yet (Phase 3.1/3.2) — always the DB
-          // default until then, same as what an online insert would get.
-          stageIndex: 0,
+          stageIndex: params.stageIndex,
           isWarmup: false,
           setSeconds: null,
           enteredUnit: null,
@@ -444,6 +456,7 @@ export function useLogSet(sessionId: string) {
             note: params.note,
             is_dropset: params.isDropset,
             parent_set_id: params.parentSetId,
+            stage_index: params.stageIndex,
             is_skipped: params.isSkipped,
             logged_at: loggedAt,
             rest_seconds: params.restSeconds,
@@ -466,7 +479,7 @@ export function useLogSet(sessionId: string) {
           note: params.note,
           isDropset: params.isDropset,
           parentSetId: params.parentSetId,
-          stageIndex: 0,
+          stageIndex: params.stageIndex,
           isWarmup: false,
           setSeconds: null,
           enteredUnit: null,
@@ -476,15 +489,20 @@ export function useLogSet(sessionId: string) {
         } satisfies SetLog
       }
 
-      return logSet({ userId: user!.id, sessionId, ...params })
+      return logSet({ id, userId: user!.id, sessionId, ...params })
     },
 
     onMutate: async (params) => {
-      await queryClient.cancelQueries({ queryKey: qk })
-      const prev = queryClient.getQueryData(qk)
-
+      // Set before the first await — this hook instance is shared across
+      // every exercise in the session, so offlineTempIdRef is a single ref
+      // multiple in-flight mutations could otherwise race on. Assigning it
+      // synchronously, before yielding to cancelQueries, narrows that
+      // window as far as this function can on its own.
       const tempId = crypto.randomUUID()
       offlineTempIdRef.current = tempId
+
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData(qk)
 
       const optimisticLog: SetLog = {
         id: tempId,
@@ -499,7 +517,7 @@ export function useLogSet(sessionId: string) {
         note: params.note,
         isDropset: params.isDropset,
         parentSetId: params.parentSetId,
-        stageIndex: 0,
+        stageIndex: params.stageIndex,
         isWarmup: false,
         setSeconds: null,
         enteredUnit: null,
@@ -564,6 +582,15 @@ export function useDeleteSetLog(sessionId: string) {
   const qk = ['v2_session', sessionId] as const
 
   return useMutation({
+    // The cascade guard (ExerciseCard.tsx's handleDeleteHead) sequentially
+    // awaits mutateAsync per row and relies on a stalled delete rejecting
+    // (its catch block is how a partial cascade fails safe). Under the
+    // default networkMode 'online', TanStack Query pauses an offline
+    // mutation indefinitely instead of running it — the promise would never
+    // settle, and the cascade would hang forever rather than fail safely.
+    // 'always' makes it attempt the request regardless of connectivity, so
+    // a real offline attempt fails fast with a normal network error instead.
+    networkMode: 'always',
     mutationFn: (id: string) => deleteSetLog(id),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: qk })

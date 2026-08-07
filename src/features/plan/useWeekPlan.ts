@@ -9,6 +9,7 @@ import {
   createWeekPlan,
   setDeload,
   addSet,
+  addStage,
   updateSet,
   removeSet,
   copyFromPreviousWeek,
@@ -91,7 +92,7 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
       changes,
     }: {
       id: string
-      changes: { targetRir?: number | null; isDropset?: boolean }
+      changes: { targetRir?: number | null }
     }) => updateSet(id, changes),
     onMutate: async ({ id, changes }) => {
       await queryClient.cancelQueries({ queryKey: qk })
@@ -104,7 +105,6 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
               ? {
                   ...s,
                   ...('targetRir' in changes ? { targetRir: changes.targetRir } : {}),
-                  ...('isDropset' in changes ? { isDropset: changes.isDropset } : {}),
                 }
               : s,
           ),
@@ -114,6 +114,34 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
+// Phase 3.1's stage-authoring mutation — ADD STAGE on a specific existing
+// set, passing its id directly as the new stage's parent (TASKS.md §4 item
+// 10). See weekPlanService.ts's addStage() for why this retires the old
+// DROP-toggle inference entirely rather than keeping it as a fallback.
+export function useAddStage(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: ({
+      weekPlanId,
+      programExerciseId,
+      parentId,
+      setNumber,
+      stageIndex,
+    }: {
+      weekPlanId: string
+      programExerciseId: string
+      parentId: string
+      setNumber: number
+      stageIndex: number
+    }) => addStage(user!.id, weekPlanId, programExerciseId, parentId, setNumber, stageIndex),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 

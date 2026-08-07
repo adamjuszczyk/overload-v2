@@ -10,6 +10,10 @@ interface SetRowProps {
   lastLog: SetLog | null       // from previous session — for prefill + reference
   lastLogsLoading: boolean     // true until the previous-session query resolves
   currentLog: SetLog | null    // already logged in current session
+  // True for a stage-input row rendered by SetGroup.tsx under ADD STAGE — the
+  // caller already knows which head this stage belongs to (v3 §2.1), so
+  // isDropset is fixed by the caller rather than user-toggled here.
+  isStage?: boolean
   onLog: (params: {
     weekPlanSetId: string | null
     setNumber: number
@@ -31,6 +35,7 @@ export default function SetRow({
   lastLog,
   lastLogsLoading,
   currentLog,
+  isStage = false,
   onLog,
   onUpdate,
   onDelete,
@@ -40,7 +45,6 @@ export default function SetRow({
   const [reps, setReps] = useState('')
   const [rir, setRir] = useState('')
   const [showExtra, setShowExtra] = useState(false)
-  const [isDropset, setIsDropset] = useState(plannedSet?.isDropset ?? false)
   const [logError, setLogError] = useState('')
 
   // Guards against overwriting what the user has already typed once the
@@ -238,13 +242,13 @@ export default function SetRow({
         className="flex items-center gap-3 px-3 rounded-lg"
         style={{
           backgroundColor: 'var(--surface)',
-          borderLeft: '3px solid var(--accent)',
+          borderLeft: isStage ? '3px dashed var(--accent)' : '3px solid var(--accent)',
           minHeight: 44,
         }}
       >
         <span
           className="text-xs font-bold w-5 text-center"
-          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+          style={{ color: isStage ? 'var(--text-muted)' : 'var(--accent)', fontFamily: 'var(--font-mono)' }}
         >
           {String(setNumber).padStart(2, '0')}
         </span>
@@ -258,12 +262,19 @@ export default function SetRow({
           {currentLog.rir != null && (
             <span style={{ color: 'var(--text-muted)' }}> @ RIR {currentLog.rir}</span>
           )}
-          {currentLog.isDropset && (
+          {/* Structural (isStage), not currentLog.isDropset — an orphaned
+              dropset-flagged row with no parent renders as a normal head
+              (TASKS.md §2.1's documented orphan handling), so the badge
+              must track "is this being rendered as a stage", not the raw
+              flag, or the two would disagree (found via live verification
+              against real data: an unparented row logged today showed both
+              its own head number and a STAGE badge at once). */}
+          {isStage && (
             <span
               className="ml-2 text-xs px-1 rounded"
               style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
             >
-              DROP
+              STAGE
             </span>
           )}
         </span>
@@ -373,7 +384,7 @@ export default function SetRow({
       weight: w,
       reps: r,
       rir: rirVal,
-      isDropset,
+      isDropset: isStage,
       isSkipped: false,
       restSeconds: restElapsed,
     })
@@ -396,12 +407,12 @@ export default function SetRow({
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        {/* Set number */}
+        {/* Set number — stage-input rows share the head's number (v3 §2.1) */}
         <span
           className="text-xs font-bold w-5 text-center flex-shrink-0"
           style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
         >
-          {String(setNumber).padStart(2, '0')}
+          {isStage ? '↳' : String(setNumber).padStart(2, '0')}
         </span>
 
         {/* Weight input */}
@@ -555,34 +566,24 @@ export default function SetRow({
             />
           </div>
 
-          {/* Dropset toggle — 44px touch target */}
-          <button
-            onClick={() => setIsDropset((v) => !v)}
-            className="flex items-center justify-center text-xs px-3 rounded font-bold"
-            style={{
-              minHeight: 44,
-              backgroundColor: isDropset ? 'var(--accent)' : 'var(--surface)',
-              color: isDropset ? 'var(--base)' : 'var(--text-muted)',
-              border: `1px solid ${isDropset ? 'var(--accent)' : 'var(--border)'}`,
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            DROP
-          </button>
-
-          {/* Skip — 44px touch target */}
-          <button
-            onClick={handleSkip}
-            className="flex items-center justify-center text-xs px-3 rounded"
-            style={{
-              minHeight: 44,
-              color: 'var(--text-muted)',
-              border: '1px solid var(--border)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            SKIP
-          </button>
+          {/* Skip — 44px touch target. Not offered for a stage-input row: a
+              stage only exists because ADD STAGE was tapped, so there's
+              nothing planned to skip — SetGroup's own cancel affordance
+              covers "changed my mind". */}
+          {!isStage && (
+            <button
+              onClick={handleSkip}
+              className="flex items-center justify-center text-xs px-3 rounded"
+              style={{
+                minHeight: 44,
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              SKIP
+            </button>
+          )}
         </div>
       )}
     </div>

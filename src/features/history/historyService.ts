@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { MuscleGroup, SessionStatus } from '../../types'
+import { groupByParent, type SetGroup } from '../gym/setGroupLogic'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export interface HistoryRow {
 }
 
 export interface HistorySetRow {
+  id: string
   setNumber: number
   weight: number | null
   reps: number | null
@@ -27,6 +29,8 @@ export interface HistorySetRow {
   restSeconds: number | null
   isSkipped: boolean
   isDropset: boolean
+  parentSetId: string | null
+  stageIndex: number
 }
 
 export interface HistoryExerciseGroup {
@@ -34,7 +38,9 @@ export interface HistoryExerciseGroup {
   exerciseName: string
   muscleGroup: MuscleGroup
   position: number
-  sets: HistorySetRow[]
+  // Grouped, not flat (§2.7 item 6) — a drop stage nests under its head
+  // instead of appearing as its own row.
+  sets: SetGroup<HistorySetRow>[]
 }
 
 export interface HistoryDetail extends HistoryRow {
@@ -46,6 +52,7 @@ export interface HistoryDetail extends HistoryRow {
 type RawLogMinimal = {
   id: string
   is_skipped: boolean
+  parent_set_id: string | null
   exercises: { id: string; muscle_group: string | null } | null
 }
 
@@ -72,6 +79,8 @@ type RawLogFull = {
   rest_seconds: number | null
   is_skipped: boolean
   is_dropset: boolean
+  parent_set_id: string | null
+  stage_index: number
   logged_at: string
   exercises: { id: string; name: string; muscle_group: string | null } | null
 }
@@ -97,7 +106,7 @@ export async function fetchHistorySessions(userId: string): Promise<HistoryRow[]
     .select(`
       id, date, status, note, started_at, completed_at,
       workout_day_id, mesocycle_id,
-      v2_set_logs(id, is_skipped, exercises(id, muscle_group)),
+      v2_set_logs(id, is_skipped, parent_set_id, exercises(id, muscle_group)),
       v2_mesocycles(id, name)
     `)
     .eq('user_id', userId)
@@ -136,7 +145,10 @@ export async function fetchHistorySessions(userId: string): Promise<HistoryRow[]
       workoutDayName: r.workout_day_id ? (dayNameMap[r.workout_day_id] ?? null) : null,
       mesocycleId: r.mesocycle_id,
       mesocycleName: r.v2_mesocycles?.name ?? null,
-      setCount: activeLogs.length,
+      // Heads only — a drop stage is never counted as an independent set
+      // (stage-exclusion rule, TASKS.md §2.1). Same class of bug as §2.7
+      // item 6, just on the list view instead of the detail view.
+      setCount: activeLogs.filter((l) => l.parent_set_id == null).length,
       muscleGroups,
     }
   })
@@ -152,7 +164,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       workout_day_id, mesocycle_id,
       v2_set_logs(
         id, exercise_id, set_number, weight, reps, rir,
-        rest_seconds, is_skipped, is_dropset, logged_at,
+        rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at,
         exercises(id, name, muscle_group)
       ),
       v2_mesocycles(id, name)
@@ -190,22 +202,29 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     return d !== 0 ? d : a.set_number - b.set_number
   })
 
-  // Group by exercise; program position for ordering, first-appearance as fallback
-  const exerciseMap = new Map<string, HistoryExerciseGroup>()
+  // Group by exercise; program position for ordering, first-appearance as fallback.
+  // Rows are collected flat per exercise first, then grouped into head+stages
+  // at the end (§2.7 item 6) — a drop stage nests under its head instead of
+  // appearing as its own row.
+  const exerciseMeta = new Map<
+    string,
+    { exerciseName: string; muscleGroup: MuscleGroup; position: number }
+  >()
+  const flatSetsByExercise = new Map<string, HistorySetRow[]>()
   let fallbackPos = 0
   for (const log of sortedLogs) {
     if (!log.exercises) continue
-    if (!exerciseMap.has(log.exercise_id)) {
-      exerciseMap.set(log.exercise_id, {
-        exerciseId: log.exercise_id,
+    if (!exerciseMeta.has(log.exercise_id)) {
+      exerciseMeta.set(log.exercise_id, {
         exerciseName: log.exercises.name,
         muscleGroup: toMuscleGroup(log.exercises.muscle_group),
         position:
           log.exercise_id in positionMap ? positionMap[log.exercise_id] : 9999 + fallbackPos++,
-        sets: [],
       })
+      flatSetsByExercise.set(log.exercise_id, [])
     }
-    exerciseMap.get(log.exercise_id)!.sets.push({
+    flatSetsByExercise.get(log.exercise_id)!.push({
+      id: log.id,
       setNumber: log.set_number,
       weight: log.weight,
       reps: log.reps,
@@ -213,10 +232,25 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       restSeconds: log.rest_seconds,
       isSkipped: log.is_skipped,
       isDropset: log.is_dropset,
+      parentSetId: log.parent_set_id,
+      stageIndex: log.stage_index,
     })
   }
 
-  const exerciseGroups = [...exerciseMap.values()].sort((a, b) => a.position - b.position)
+  const exerciseGroups: HistoryExerciseGroup[] = [...exerciseMeta.entries()]
+    .map(([exerciseId, meta]) => ({
+      exerciseId,
+      exerciseName: meta.exerciseName,
+      muscleGroup: meta.muscleGroup,
+      position: meta.position,
+      sets: groupByParent(
+        flatSetsByExercise.get(exerciseId) ?? [],
+        (s) => s.id,
+        (s) => s.parentSetId,
+        (s) => s.stageIndex,
+      ),
+    }))
+    .sort((a, b) => a.position - b.position)
 
   const activeLogs = sortedLogs.filter(l => !l.is_skipped)
   const muscleGroups = [
@@ -234,7 +268,8 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     workoutDayName,
     mesocycleId: session.mesocycle_id,
     mesocycleName: session.v2_mesocycles?.name ?? null,
-    setCount: activeLogs.length,
+    // Heads only (stage-exclusion rule, TASKS.md §2.1 / §2.7 item 6).
+    setCount: activeLogs.filter((l) => l.parent_set_id == null).length,
     muscleGroups,
     exerciseGroups,
   }
