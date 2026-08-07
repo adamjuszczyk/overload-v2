@@ -28,12 +28,13 @@ interface ExerciseCardProps {
     isDropset: boolean
     isSkipped: boolean
     restSeconds: number | null
+    setSeconds: number | null
     // Direct, not inferred (v3 §2.1 / Phase 3.1) — null for a head, the
     // head's own id for a stage. The ADD STAGE tap that produces this
     // already knows which head it belongs to.
     parentSetId: string | null
     stageIndex: number
-  }) => void
+  }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
   onDeleteSet: (id: string) => Promise<void>
 }
@@ -58,6 +59,11 @@ export default function ExerciseCard({
   // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
   // second concurrent invocation for the same head.
   const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
+
+  // "Skip whole exercise" (SPEC §4.3) — heads and, per explicit instruction,
+  // any already-planned stages under them, both.
+  const [isSkippingExercise, setIsSkippingExercise] = useState(false)
+  const [showSkipConfirm, setShowSkipConfirm] = useState(false)
 
   // A head is a set with no parent — the stage-exclusion rule (TASKS.md
   // §2.1 / CONTEXT.md "Key architectural rules"): a drop stage is never
@@ -129,15 +135,28 @@ export default function ExerciseCard({
     return startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
   }
 
-  function handleLogHead(plannedSet: WeekPlanSet | null, params: LogParams) {
+  // setNumberOverride lets handleSkipExercise assign sequential numbers to
+  // several heads skipped in one batch — totalLoggedHeads is a render-time
+  // snapshot that never changes mid-loop, so relying on it there would give
+  // every skipped head in the batch the same (duplicate) setNumber.
+  async function handleLogHead(
+    plannedSet: WeekPlanSet | null,
+    params: LogParams,
+    setNumberOverride?: number,
+  ): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
     startTimer()
-    onLog({
+    return onLog({
       ...params,
       exerciseId: programExercise.exerciseId,
       weekPlanSetId: plannedSet?.id ?? null,
-      setNumber: totalLoggedHeads + 1,
-      restSeconds: restElapsed,
+      setNumber: setNumberOverride ?? totalLoggedHeads + 1,
+      // A non-null setSeconds means SetRow's Start Set flow already froze
+      // the honest rest value at the moment Start Set was tapped — trust it
+      // rather than overwrite with a fresh read, which by then would only
+      // measure set-performance time, not rest. Otherwise (off, or skip)
+      // this is unconditionally restElapsed, exactly as before.
+      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
       parentSetId: null,
       stageIndex: 0,
     })
@@ -146,14 +165,14 @@ export default function ExerciseCard({
   // weekPlanSetId is already correct in params — SetGroup's stage-input row
   // resolves it internally (its own plannedSet prop) via the same identity
   // matching SetRow has always used; only the group-level fields need adding.
-  function handleLogStage(headLog: SetLog, stageIndex: number, params: LogParams) {
+  async function handleLogStage(headLog: SetLog, stageIndex: number, params: LogParams): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
     startTimer()
-    onLog({
+    return onLog({
       ...params,
       exerciseId: programExercise.exerciseId,
       setNumber: headLog.setNumber,
-      restSeconds: restElapsed,
+      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
       parentSetId: headLog.id,
       stageIndex,
     })
@@ -216,6 +235,68 @@ export default function ExerciseCard({
   function handleDeleteStage(stageId: string) {
     onDeleteSet(stageId).catch((err) => console.error('Failed to delete stage', err))
   }
+
+  // Skip whole exercise: every remaining unlogged PLANNED set — heads and
+  // any already-planned stages under them, both (SPEC §4.3 / TASKS.md §4
+  // item 15). Deliberately scoped to plannedRows only: "extra" (ADD SET)
+  // slots are user-elective on-demand rows, not part of the plan's
+  // remaining work, so they're left untouched.
+  //
+  // Sequential and awaited, same reasoning as handleDeleteHead's cascade:
+  // a stage being skipped may need its head's real id, and if that head is
+  // itself being skipped in the same pass, that id doesn't exist until its
+  // own mutation resolves. totalLoggedHeads is a render-time snapshot that
+  // never advances mid-loop, so skipped heads get an explicit, manually
+  // incremented setNumber instead (handleLogHead's setNumberOverride).
+  async function handleSkipExercise() {
+    let nextHeadNumber = totalLoggedHeads + 1
+    for (const row of plannedRows) {
+      let headLog = row.group?.head ?? null
+      if (!headLog) {
+        headLog = await handleLogHead(
+          row.plannedSet,
+          {
+            weekPlanSetId: row.plannedSet.id,
+            setNumber: 0,
+            weight: null,
+            reps: null,
+            rir: null,
+            isDropset: false,
+            isSkipped: true,
+            restSeconds: null,
+            setSeconds: null,
+          },
+          nextHeadNumber,
+        )
+        nextHeadNumber += 1
+      }
+
+      const loggedStages = row.group?.stages ?? []
+      const remainingCount = row.plannedStages.length - loggedStages.length
+      let nextStageIdx = loggedStages.reduce((max, s) => Math.max(max, s.stageIndex), 0) + 1
+      for (let i = 0; i < remainingCount; i++) {
+        await handleLogStage(headLog, nextStageIdx, {
+          weekPlanSetId: row.plannedStages[loggedStages.length + i]?.id ?? null,
+          setNumber: 0,
+          weight: null,
+          reps: null,
+          rir: null,
+          isDropset: true,
+          isSkipped: true,
+          restSeconds: null,
+          setSeconds: null,
+        })
+        nextStageIdx += 1
+      }
+    }
+  }
+
+  // Whether there's anything left for "skip whole exercise" to actually do —
+  // hides/disables the affordance once every planned head and stage is
+  // already logged, avoiding a confusing no-op action.
+  const hasUnfinishedPlannedWork = plannedRows.some(
+    (row) => !row.group || row.group.stages.length < row.plannedStages.length,
+  )
 
   // Display numbers run sequentially top-to-bottom (planned section first,
   // then extra) purely for the row badge — the setNumber actually sent on
@@ -322,6 +403,62 @@ export default function ExerciseCard({
           <Plus size={12} />
           ADD SET
         </button>
+
+        {/* Skip whole exercise — planned sets only, see handleSkipExercise */}
+        {hasUnfinishedPlannedWork && (
+          showSkipConfirm ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSkipConfirm(false)}
+                disabled={isSkippingExercise}
+                className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
+                style={{
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={async () => {
+                  setShowSkipConfirm(false)
+                  setIsSkippingExercise(true)
+                  try {
+                    await handleSkipExercise()
+                  } catch (err) {
+                    console.error('Failed to skip exercise', err)
+                  } finally {
+                    setIsSkippingExercise(false)
+                  }
+                }}
+                disabled={isSkippingExercise}
+                className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                  color: 'var(--error)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CONFIRM SKIP
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowSkipConfirm(true)}
+              disabled={isSkippingExercise}
+              className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
+              style={{
+                minHeight: 44,
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                opacity: isSkippingExercise ? 0.6 : 1,
+              }}
+            >
+              {isSkippingExercise ? 'SKIPPING…' : 'SKIP REST OF EXERCISE'}
+            </button>
+          )
+        )}
       </div>
     </div>
   )

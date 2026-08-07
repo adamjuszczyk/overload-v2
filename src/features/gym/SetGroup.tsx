@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { Plus } from 'lucide-react'
 import type { WeekPlanSet, SetLog } from '../../types'
 import SetRow from './SetRow'
+import RestTimerInline from './RestTimerInline'
+import { useRestTimerStore } from './restTimerStore'
 import type { SetGroup as Group } from './setGroupLogic'
 
 export interface LogParams {
@@ -13,6 +15,7 @@ export interface LogParams {
   isDropset: boolean
   isSkipped: boolean
   restSeconds: number | null
+  setSeconds: number | null
 }
 
 interface SetGroupProps {
@@ -59,6 +62,13 @@ export default function SetGroup({
 }: SetGroupProps) {
   const [addingStage, setAddingStage] = useState(false)
 
+  // Which row (head or stage id) the shared rest timer is currently anchored
+  // to — used to render RestTimerInline directly under that one row (SPEC
+  // §4.3), in addition to the existing floating RestTimer. Reads anchorId
+  // only while a rest period is actually running, so a stale anchor from a
+  // previous period never lingers once startedAt is cleared.
+  const timerAnchorId = useRestTimerStore((s) => (s.startedAt ? s.anchorId : null))
+
   // If a delete cascade starts on this group while a stage was mid-entry,
   // close that input rather than let it log into a head that's going away.
   useEffect(() => {
@@ -96,22 +106,25 @@ export default function SetGroup({
         onDelete={() => onDeleteHead(group)}
         restElapsed={null}
       />
+      {timerAnchorId === headLog.id && <RestTimerInline />}
 
       <div className="pl-4 space-y-1.5" style={{ borderLeft: '1px dashed var(--border)' }}>
         {stages.map((stage) => (
-          <SetRow
-            key={stage.id}
-            setNumber={headLog.setNumber}
-            plannedSet={null}
-            lastLog={null}
-            lastLogsLoading={false}
-            currentLog={stage}
-            isStage
-            onLog={() => {}}
-            onUpdate={(changes) => onUpdate(stage.id, changes)}
-            onDelete={() => onDeleteStage(stage.id)}
-            restElapsed={null}
-          />
+          <Fragment key={stage.id}>
+            <SetRow
+              setNumber={headLog.setNumber}
+              plannedSet={null}
+              lastLog={null}
+              lastLogsLoading={false}
+              currentLog={stage}
+              isStage
+              onLog={() => {}}
+              onUpdate={(changes) => onUpdate(stage.id, changes)}
+              onDelete={() => onDeleteStage(stage.id)}
+              restElapsed={null}
+            />
+            {timerAnchorId === stage.id && <RestTimerInline />}
+          </Fragment>
         ))}
 
         {!isDeleting && (

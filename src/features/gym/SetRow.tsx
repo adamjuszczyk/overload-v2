@@ -3,6 +3,9 @@ import { Check, Pencil, Trash2 } from 'lucide-react'
 import type { WeekPlanSet, SetLog } from '../../types'
 import { useOfflineStore } from '../offline/offlineStore'
 import { useSettingsStore } from '../settings/settingsStore'
+import { useRestTimerStore } from './restTimerStore'
+import { useSetTimerStore } from './setTimerStore'
+import { formatRestTime } from '../../lib/formatRestTime'
 
 interface SetRowProps {
   setNumber: number
@@ -23,6 +26,7 @@ interface SetRowProps {
     isDropset: boolean
     isSkipped: boolean
     restSeconds: number | null
+    setSeconds: number | null
   }) => void
   onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null }) => void
   onDelete: () => void
@@ -62,6 +66,40 @@ export default function SetRow({
   const pendingIds  = useOfflineStore((s) => s.pendingIds)
   const failedIds   = useOfflineStore((s) => s.failedIds)
   const weightUnit  = useSettingsStore((s) => s.weightUnit)
+  const measureSetTime = useSettingsStore((s) => s.measureSetTime)
+
+  // Start Set flow (v3 §2.2) — only meaningful while measureSetTime is on and
+  // this row hasn't been logged yet. isTiming is local (not read from the
+  // global setTimerStore) since only THIS specific row's UI should switch to
+  // the post-Start-Set state; the store just holds the shared elapsed-time
+  // anchor, same as restTimerStore does for rest.
+  const [isTiming, setIsTiming] = useState(false)
+  // Captured the instant Start Set is tapped — true rest ends there, not at
+  // Log (TASKS.md §2.2: "the rest timer starts at LOG and stops at START
+  // SET"). restTimerStore.startedAt is cleared by then, so this is the only
+  // record of what the honest rest value was.
+  const [frozenRestSeconds, setFrozenRestSeconds] = useState<number | null>(null)
+  const setTimerStartedAt = useSetTimerStore((s) => s.startedAt)
+  const [setElapsed, setSetElapsed] = useState(0)
+
+  useEffect(() => {
+    if (!isTiming || !setTimerStartedAt) {
+      setSetElapsed(0)
+      return
+    }
+    const tick = () => setSetElapsed(Math.floor((Date.now() - setTimerStartedAt) / 1000))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [isTiming, setTimerStartedAt])
+
+  function handleStartSet() {
+    const rest = useRestTimerStore.getState()
+    setFrozenRestSeconds(rest.startedAt ? Math.floor((Date.now() - rest.startedAt) / 1000) : null)
+    rest.stop()
+    useSetTimerStore.getState().start()
+    setIsTiming(true)
+  }
 
   // Prefill from the previous session only once it has actually loaded —
   // never from an in-flight/undetermined lastLog (fixes fake-prefill bug).
@@ -369,6 +407,20 @@ export default function SetRow({
   // ── Input row ────────────────────────────────────────────────────────────
   const targetRir = plannedSet?.targetRir
 
+  // Resolves the final restSeconds/setSeconds pair and tears down the set
+  // timer — shared by handleLog and handleSkip so both honour the Start Set
+  // flow identically when it was used. When measureSetTime is off, or the
+  // user never tapped Start Set, this is a no-op and restSeconds falls back
+  // to today's exact behaviour (the live restElapsed prop).
+  function resolveTiming(): { restSeconds: number | null; setSeconds: number | null } {
+    if (!measureSetTime || !isTiming) return { restSeconds: restElapsed, setSeconds: null }
+    const setStore = useSetTimerStore.getState()
+    const setSeconds = setStore.startedAt ? Math.floor((Date.now() - setStore.startedAt) / 1000) : null
+    setStore.stop()
+    setIsTiming(false)
+    return { restSeconds: frozenRestSeconds, setSeconds }
+  }
+
   function handleLog() {
     const w = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
     const r = reps.trim() === '' ? null : parseInt(reps, 10)
@@ -378,6 +430,7 @@ export default function SetRow({
     }
     setLogError('')
     const rirVal = rir.trim() === '' ? null : parseInt(rir, 10)
+    const { restSeconds, setSeconds } = resolveTiming()
     onLog({
       weekPlanSetId: plannedSet?.id ?? null,
       setNumber,
@@ -386,12 +439,14 @@ export default function SetRow({
       rir: rirVal,
       isDropset: isStage,
       isSkipped: false,
-      restSeconds: restElapsed,
+      restSeconds,
+      setSeconds,
     })
   }
 
   function handleSkip() {
     setLogError('')
+    const { restSeconds } = resolveTiming()
     onLog({
       weekPlanSetId: plannedSet?.id ?? null,
       setNumber,
@@ -400,7 +455,8 @@ export default function SetRow({
       rir: null,
       isDropset: false,
       isSkipped: true,
-      restSeconds: restElapsed,
+      restSeconds,
+      setSeconds: null,
     })
   }
 
@@ -473,20 +529,47 @@ export default function SetRow({
           />
         </div>
 
-        {/* LOG button — 44px touch target */}
-        <button
-          onClick={handleLog}
-          className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
-          style={{
-            height: 44,
-            backgroundColor: 'var(--accent)',
-            color: 'var(--base)',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          LOG
-        </button>
+        {/* LOG / START SET button — 44px touch target */}
+        {measureSetTime && !isTiming ? (
+          <button
+            onClick={handleStartSet}
+            className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+            style={{
+              height: 44,
+              backgroundColor: 'var(--accent)',
+              color: 'var(--base)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            START SET
+          </button>
+        ) : (
+          <button
+            onClick={handleLog}
+            className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+            style={{
+              height: 44,
+              backgroundColor: 'var(--accent)',
+              color: 'var(--base)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            LOG
+          </button>
+        )}
       </div>
+
+      {/* Set timer running (measureSetTime on, Start Set already tapped) */}
+      {isTiming && (
+        <div className="pl-7">
+          <span
+            className="text-xs font-bold"
+            style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+          >
+            TIMING SET · {formatRestTime(setElapsed)}
+          </span>
+        </div>
+      )}
 
       {/* Loading last session */}
       {lastLogsLoading && (

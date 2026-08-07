@@ -12,6 +12,7 @@ import {
   createSession,
   completeSession,
   reopenSession,
+  updateSessionNote,
   skipSession,
   skipMissedSession,
   logSet,
@@ -312,6 +313,33 @@ export function useReopenSession() {
   })
 }
 
+// Patches the note directly — the completed-state Today screen's "edit note"
+// action (SPEC §4.3). Deliberately does not reopen the session or go through
+// useCompleteSession; status is untouched. Online-only for now, same as
+// useUpdateSetLog (a per-field edit, not a session status transition — those
+// are the mutations that get full offline sync_queue support).
+export function useUpdateSessionNote() {
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string | null }) => updateSessionNote(id, note),
+    onMutate: async ({ id, note }) => {
+      const qk = ['v2_session', id] as const
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData(qk)
+      queryClient.setQueryData(qk, (old: Session | undefined) => (old ? { ...old, note } : old))
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) => old?.map((s) => (s.id === id ? { ...s, note } : s)),
+      )
+      return { prev }
+    },
+    onError: (_, { id }, ctx) => queryClient.setQueryData(['v2_session', id], ctx?.prev),
+    onSettled: (_, __, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+    },
+  })
+}
+
 export function useSkipSession() {
   const isOnline = useOnlineStatus()
   const addPending = useOfflineStore((s) => s.addPending)
@@ -396,6 +424,7 @@ export function useLogSet(sessionId: string) {
       stageIndex: number
       isSkipped: boolean
       restSeconds: number | null
+      setSeconds: number | null
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -430,7 +459,7 @@ export function useLogSet(sessionId: string) {
           parentSetId: params.parentSetId,
           stageIndex: params.stageIndex,
           isWarmup: false,
-          setSeconds: null,
+          setSeconds: params.setSeconds,
           enteredUnit: null,
           isSkipped: params.isSkipped,
           loggedAt,
@@ -460,6 +489,7 @@ export function useLogSet(sessionId: string) {
             is_skipped: params.isSkipped,
             logged_at: loggedAt,
             rest_seconds: params.restSeconds,
+            set_seconds: params.setSeconds,
           },
           createdAt: loggedAt,
         })
@@ -481,7 +511,7 @@ export function useLogSet(sessionId: string) {
           parentSetId: params.parentSetId,
           stageIndex: params.stageIndex,
           isWarmup: false,
-          setSeconds: null,
+          setSeconds: params.setSeconds,
           enteredUnit: null,
           isSkipped: params.isSkipped,
           loggedAt,
@@ -519,7 +549,7 @@ export function useLogSet(sessionId: string) {
         parentSetId: params.parentSetId,
         stageIndex: params.stageIndex,
         isWarmup: false,
-        setSeconds: null,
+        setSeconds: params.setSeconds,
         enteredUnit: null,
         isSkipped: params.isSkipped,
         loggedAt: new Date().toISOString(),

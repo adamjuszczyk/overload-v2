@@ -241,6 +241,14 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* ── Set Timing ───────────────────────────────────────────────── */}
+        <section>
+          {sectionTitle('SET TIMING')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            {toggle(settings.measureSetTime, (v) => set({ measureSetTime: v }), 'Measure set time')}
+          </div>
+        </section>
+
         {/* ── Auto-finish ──────────────────────────────────────────────── */}
         <section>
           {sectionTitle('AUTO-FINISH SESSION')}

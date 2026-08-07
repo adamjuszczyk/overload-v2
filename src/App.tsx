@@ -8,6 +8,7 @@ import TodayPage from './features/gym/TodayPage'
 import PlanPage from './features/plan/PlanPage'
 import ProgressPage from './features/progress/ProgressPage'
 import HistoryPage from './features/history/HistoryPage'
+import ExerciseHistoryPage from './features/history/ExerciseHistoryPage'
 import ProgramPage from './features/programs/ProgramPage'
 import ProgramBuilderPage from './features/programs/ProgramBuilderPage'
 import WorkoutDayEditorPage from './features/programs/WorkoutDayEditorPage'
@@ -84,6 +85,7 @@ function AppRoutes() {
           <Route path="/plan"     element={<PlanPage />}     />
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/history"  element={<HistoryPage />}  />
+          <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
           <Route path="/program"                           element={<ProgramPage />}         />
           <Route path="/program/:programId"             element={<ProgramBuilderPage />}   />
           <Route path="/program/:programId/day/:dayId"  element={<WorkoutDayEditorPage />} />

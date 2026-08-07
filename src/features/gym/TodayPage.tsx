@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useScheduler } from './useScheduler'
-import { useCreateSession, useActiveSession, useReopenSession, useSkipSession } from './useSession'
+import { useCreateSession, useActiveSession, useReopenSession, useSkipSession, useUpdateSessionNote } from './useSession'
 import GymSession from './GymSession'
 import SessionPreview from './SessionPreview'
 import RestDayScreen from './RestDayScreen'
@@ -281,12 +281,15 @@ function CompletedTodayScreen({
   todayLabel: string
 }) {
   const [confirmAction, setConfirmAction] = useState<'continue' | 'redo' | null>(null)
+  const [isEditingNote, setIsEditingNote] = useState(false)
+  const [noteInput, setNoteInput] = useState(basicSession.note ?? '')
 
   // Fetch full session so setLogs are present (fetchSessionsInRange omits them)
   const { data: fullSession } = useActiveSession(basicSession.id)
   const reopenSession = useReopenSession()
   const skipSession = useSkipSession()
   const createSession = useCreateSession()
+  const updateNote = useUpdateSessionNote()
 
   const totalSets = fullSession?.setLogs?.filter((l) => !l.isSkipped).length ?? 0
   const skippedSets = fullSession?.setLogs?.filter((l) => l.isSkipped).length ?? 0
@@ -340,10 +343,73 @@ function CompletedTodayScreen({
         >
           {totalSets} sets logged{skippedSets > 0 ? ` · ${skippedSets} skipped` : ''}
         </p>
-        {basicSession.note && (
-          <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {basicSession.note}
-          </p>
+        {isEditingNote ? (
+          <div className="mt-2">
+            <textarea
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              rows={3}
+              placeholder="How did it feel?"
+              className="w-full px-3 py-2 rounded-xl text-sm resize-none"
+              style={{
+                backgroundColor: 'var(--surface-raised)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border)',
+                fontFamily: 'var(--font-sans)',
+              }}
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={async () => {
+                  await updateNote.mutateAsync({ id: basicSession.id, note: noteInput.trim() || null })
+                  setIsEditingNote(false)
+                }}
+                disabled={updateNote.isPending}
+                className="flex-1 py-2 rounded-lg text-xs font-bold tracking-wider"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--base)',
+                  fontFamily: 'var(--font-mono)',
+                  opacity: updateNote.isPending ? 0.6 : 1,
+                }}
+              >
+                {updateNote.isPending ? 'SAVING…' : 'SAVE'}
+              </button>
+              <button
+                onClick={() => {
+                  setNoteInput(basicSession.note ?? '')
+                  setIsEditingNote(false)
+                }}
+                disabled={updateNote.isPending}
+                className="flex-1 py-2 rounded-lg text-xs font-bold tracking-wider"
+                style={{
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {basicSession.note && (
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                {basicSession.note}
+              </p>
+            )}
+            <button
+              onClick={() => {
+                setNoteInput(basicSession.note ?? '')
+                setIsEditingNote(true)
+              }}
+              className="mt-2 text-xs font-bold tracking-widest"
+              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+            >
+              {basicSession.note ? 'EDIT NOTE' : 'ADD NOTE'}
+            </button>
+          </>
         )}
       </div>
 

@@ -8,8 +8,11 @@ import { db } from '../../lib/db'
 import { primeOfflineCache } from '../offline/offlineCache'
 import ExerciseCard from './ExerciseCard'
 import RestTimer from './RestTimer'
+import { useRestTimerStore } from './restTimerStore'
 import SessionComplete from './SessionComplete'
 import { useAutoFinishSession } from './useAutoFinishSession'
+import { useSessionDuration } from './useSessionDuration'
+import { formatRestTime } from '../../lib/formatRestTime'
 
 interface GymSessionProps {
   sessionId: string
@@ -50,9 +53,10 @@ function ExerciseSection({
     isDropset: boolean
     isSkipped: boolean
     restSeconds: number | null
+    setSeconds: number | null
     parentSetId: string | null
     stageIndex: number
-  }) => void
+  }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
   onDeleteSet: (id: string) => Promise<void>
 }) {
@@ -95,6 +99,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const deleteSetLog = useDeleteSetLog(sessionId)
 
   useAutoFinishSession(session, weekPlan)
+  const duration = useSessionDuration(session)
 
   // Prime the Dexie cache once exercises are loaded and we're online
   useEffect(() => {
@@ -142,6 +147,12 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
         >
           IN PROGRESS
         </p>
+        <p
+          className="mt-1 text-xs font-bold tracking-widest"
+          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+        >
+          {formatRestTime(duration)}
+        </p>
       </div>
 
       {/* Rest timer */}
@@ -173,7 +184,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 // note for why this was inference-only before this phase.
                 // 007's historical backfill keeps using inference — it has
                 // no other option for data written before this shipped.
-                logSet.mutate({ ...params, note: null })
+                //
+                // mutateAsync (not mutate) so ExerciseCard can await the
+                // resulting real id — needed both for "skip whole exercise"
+                // to chain a head's real id into its stages' parentSetId,
+                // and to anchor the inline rest timer (SPEC §4.3) to the
+                // specific row that was just logged.
+                return logSet.mutateAsync({ ...params, note: null }).then((log) => {
+                  useRestTimerStore.getState().setAnchor(log.id)
+                  return log
+                })
               }}
               onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
               onDeleteSet={(id) => deleteSetLog.mutateAsync(id)}

@@ -171,6 +171,14 @@ export async function reopenSession(id: string): Promise<void> {
   if (error) throw error
 }
 
+// Patches the note directly, independent of status — the completed-state
+// Today screen's "edit note" action (SPEC §4.3) must not reopen the session
+// or touch anything auto-finish related.
+export async function updateSessionNote(id: string, note: string | null): Promise<void> {
+  const { error } = await supabase.from('v2_sessions').update({ note }).eq('id', id)
+  if (error) throw error
+}
+
 export async function skipSession(id: string): Promise<void> {
   const { error } = await supabase
     .from('v2_sessions')
@@ -221,6 +229,7 @@ export async function logSet(params: {
   stageIndex: number
   isSkipped: boolean
   restSeconds: number | null
+  setSeconds: number | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -246,6 +255,7 @@ export async function logSet(params: {
       is_skipped: params.isSkipped,
       logged_at: new Date().toISOString(),
       rest_seconds: params.restSeconds,
+      set_seconds: params.setSeconds,
     })
     .select('*, exercises(*)')
     .single()
