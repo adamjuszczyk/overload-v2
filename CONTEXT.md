@@ -146,7 +146,8 @@ All core features built and working:
   **`git status` is now empty.** See "2026-08-06 session (everything
   committed)" below.
 - 2026-08-07 session: **Phase 3.1 — dropset as one unit — built, fixed,
-  and live-verified; not deployed.** TASKS.md §4 items 6–11 all shipped:
+  live-verified, reviewed, and now deployed to production.** TASKS.md §4
+  items 6–11 all shipped:
   `setGroupLogic.ts` (new pure grouping module, with Vitest — Vitest
   itself is new this session too), `SetGroup.tsx` + `ExerciseCard.tsx`
   render dropsets as one head-plus-stages unit, the client-side cascade
@@ -165,8 +166,10 @@ All core features built and working:
   in the delete guard itself. See "2026-08-07 session (Phase 3.1)" below
   for the full account, including the TASKS.md §2.7/§4 citation
   inconsistency this session had to resolve by reading the section fresh
-  rather than trusting the cross-references as written. **Not deployed —
-  explicitly held back pending your review of this report.**
+  rather than trusting the cross-references as written. **Reviewed and
+  approved, then pushed to `origin/master` and confirmed live in
+  production the same day** — see "2026-08-07 session (Phase 3.1
+  deploy)" below.
 
 ---
 
@@ -368,16 +371,13 @@ session" below.
 ---
 
 ## Active work
-**Phase 3.1 (dropset as one unit) is built, fixed, and live-verified as
-of 2026-08-07 — see "2026-08-07 session (Phase 3.1)" below for the full
-account.** Not deployed: committed to `master` locally but not pushed to
-`origin/master`, deliberately held back pending your review of that
-session's report (it touches the delete path directly and changes
-gym-screen behaviour app-wide, and a push here would trigger a Vercel
-production deploy same as every prior push in this project's history).
-Everything below this point is Phase 3.0's status, kept as written at
-the time — still accurate, just no longer the newest thing in this
-file.
+**Phase 3.1 (dropset as one unit) is built, fixed, live-verified,
+reviewed, approved, and deployed to production as of 2026-08-07.** See
+"2026-08-07 session (Phase 3.1)" below for the build, and "2026-08-07
+session (Phase 3.1 deploy)" below that for the push and deploy
+confirmation. Everything below this point is Phase 3.0's status, kept
+as written at the time — still accurate, just no longer the newest
+thing in this file.
 
 **Phase 3.0 (migration foundation) is complete, formally verified, and
 fully committed** — schema, audit, backfill on both sides, both
@@ -1528,9 +1528,12 @@ Built TASKS.md §4 items 6–11 ("Dropset as one unit") in full, in the
 dependency order §4 itself specifies. Re-read §2.1, §2.7, and §4's
 Phase 3.1 section fresh per instruction, rather than trusting memory —
 one of them turned out to have a real stale cross-reference (see below).
-**Not deployed** — committed, but held back deliberately since this
-phase touches the delete path directly and changes gym-screen behaviour
-across the board; the instruction was to produce the report first.
+**Not deployed at the time this entry was written** — committed, but
+held back deliberately since this phase touches the delete path
+directly and changes gym-screen behaviour across the board; the
+instruction was to produce the report first. Reviewed, approved, and
+deployed later the same day — see "2026-08-07 session (Phase 3.1
+deploy)" below.
 
 ### What was built
 
@@ -1825,10 +1828,65 @@ History to leave zero trace — today's real, not-yet-started session
 (Friday, Pull 2) was back to a fresh "START SESSION" prompt afterward,
 confirmed by reloading Today.
 
-**Not deployed.** Committed to `master` locally, not pushed to
-`origin/master`, per explicit instruction to hold this phase back for
-review given the delete-path and gym-UI-wide scope — this report is
-that review artifact.
+**Not deployed at the time this entry was written.** Committed to
+`master` locally, not pushed to `origin/master`, per explicit
+instruction to hold this phase back for review given the delete-path
+and gym-UI-wide scope — this report is that review artifact. **Update:**
+reviewed, approved, pushed, and confirmed live the same day — see
+"2026-08-07 session (Phase 3.1 deploy)" immediately below.
+
+---
+
+## 2026-08-07 session (Phase 3.1 deploy)
+Same day as the build session above. Phase 3.1 reviewed and approved;
+pushed to production and confirmed live the same way earlier fixes in
+this build were confirmed — `vercel ls` / `vercel inspect`, not just a
+successful push.
+
+**1. Pre-push state check.** `git status --porcelain` on `CONTEXT.md`
+came back empty (no uncommitted drift since the last commit) and
+`git log --oneline -1 -- CONTEXT.md` confirmed the last commit touching
+it was `677ce47`, the Phase 3.1 commit itself — nothing had silently
+changed between the build session ending and this one starting.
+`git fetch origin master` then `git rev-list --left-right --count
+origin/master...HEAD` showed `0  9`: origin was a strict ancestor of
+local `HEAD`, 9 commits behind (the four previously-uncommitted docs
+commits, Phase 3.0's remaining application code, and Phase 3.1 — none
+of that had been pushed since it landed across earlier sessions). A
+clean fast-forward, no merge/conflict risk.
+
+**2. Pushed.** `git push origin master` → `f3d684b..677ce47
+master -> master`. `git ls-remote origin master` immediately after
+confirmed `origin/master`'s HEAD is exactly
+`677ce47839a8c6973b53d59de38b66fea95e05db`, the full hash of the local
+commit — not assumed from the push output alone.
+
+**3. Deploy confirmed, not assumed from the push.** `vercel ls` showed a
+fresh Production deployment
+(`https://overload-v2-bf5ew9kxj-adamjuszczyks-projects.vercel.app`)
+already `● Building` about a minute after the push — consistent with
+this project's established GitHub-push-triggers-Vercel-build pattern.
+Polled `vercel inspect` until it reported a terminal state rather than
+guessing a fixed wait: came back `● Ready`, `target: production`,
+build (`bld_nq09d9pfq`) also `readyState: READY`, created
+`2026-08-07T12:32:26+02:00` (`vercel inspect ... -F json`'s
+`createdAt: 1786098746000`, cross-checked against the human-readable
+timestamp in the plain-text `vercel inspect` output — both agree).
+`vercel inspect`'s JSON output doesn't expose a git-commit field in
+this CLI version (checked — no `--meta` flag exists on `vercel inspect`
+in CLI 54.20.1, and the JSON payload has no `gitSource`/commit key), so
+deploy-to-commit correspondence rests on the push-to-build timing
+(seconds, not the multi-hour age gap to the *previous* Production
+deployment shown in the same `vercel ls` listing) plus the confirmed
+`origin/master` hash from step 2, the same standard of evidence used
+for `ee83c68` and `f3d684b`'s deploy confirmations — timing correlation
+plus a separately-confirmed source-of-truth hash, not a single signal
+alone.
+
+**Net effect:** Phase 3.1 — dropset as one unit, the full account in
+the entry above this one — is live in production. Nothing about the
+build itself changed in this session; this entry is the deploy record
+only.
 
 ---
 
