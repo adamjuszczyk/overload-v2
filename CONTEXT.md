@@ -655,24 +655,37 @@ migration, Phase 3.8) remains unwritten.
 
 ## Active work
 **Phase 3.5 (Progress headline) is built, before/after-verified against a
-real historical meso, live-verified, and deployed as of 2026-08-09.**
-TASKS.md §4 items 23–26 are all closed out. See "2026-08-09 session (Phase
-3.5)" below for the full account — `e1rm.ts` (new pure module, 25 Vitest
+real historical meso, live-verified, and deployed as of 2026-08-09 —
+and, as of a same-day follow-up, the H4 pagination fix is live-verified
+against real data too, not just reasoned about from the code.** TASKS.md
+§4 items 23–26 are all closed out. See "2026-08-09 session (Phase 3.5)"
+below for the build account — `e1rm.ts` (new pure module, 25 Vitest
 tests covering every §2.5 edge case individually), the §2.7 items 4–5
 stage-exclusion fixes in `progressService.ts`, the H4 pagination fix, and
-the `ExerciseProgress.tsx` headline. The required before/after check used
-the account's only meso (MESO 1.0) and its real dropset exercise
-("One-arm Dumbell Lateral Raise"): pre-fix 5/5/5/4/4 sets per session with
-avg RIR 0/0.2/0.2/0/0, post-fix 5/3/3/2/2 sets with avg RIR 0/0.3/0.3/0/0
-— exactly 8 stage rows removed, matching the known 8-row backfill scope
-from 2026-08-05. Live verification confirmed a real percentage headline
-for exercises with ≥2 eligible sessions, correct no-RIR-session exclusion
-with fallback (not an unadjusted number), and nothing shown (not "+0%")
-for an exercise with fewer than 2 eligible sessions; the all-deload-window
-case wasn't reproducible against this meso's real data (no deload weeks
-exist in it yet) and is covered by `e1rm.test.ts` instead. Everything
-below this point is Phase 3.4's status, kept as written at the time —
-still accurate, just no longer the newest thing in this file.
+the `ExerciseProgress.tsx` headline — and "2026-08-09 session (Phase 3.5
+— H4 pagination live-verified)" for the follow-up. Build summary: the
+required before/after check used the account's only meso (MESO 1.0) and
+its real dropset exercise ("One-arm Dumbell Lateral Raise"): pre-fix
+5/5/5/4/4 sets per session with avg RIR 0/0.2/0.2/0/0, post-fix 5/3/3/2/2
+sets with avg RIR 0/0.3/0.3/0/0 — exactly 8 stage rows removed, matching
+the known 8-row backfill scope from 2026-08-05. Live verification
+confirmed a real percentage headline for exercises with ≥2 eligible
+sessions, correct no-RIR-session exclusion with fallback (not an
+unadjusted number), and nothing shown (not "+0%") for an exercise with
+fewer than 2 eligible sessions; the all-deload-window case wasn't
+reproducible against this meso's real data (no deload weeks exist in it
+yet) and is covered by `e1rm.test.ts` instead. Follow-up summary:
+`fetchAllExerciseSetLogRows`'s page size was temporarily forced down to 3
+(reverted after, `git status` confirmed clean) against the same two
+exercises — 9 forced pages / 25 rows and 6 forced pages / 15 rows
+respectively, zero duplicates, zero gaps, output byte-identical to the
+page-size-1000 baseline both times, and the 15-row exercise happened to
+land on an exact multiple of the forced page size, which exercised the
+one boundary case (an extra empty page proving termination, not an
+off-by-one short-circuit on the last full page) the first exercise's row
+count couldn't reach. No bug found. Everything below this point is Phase
+3.4's status, kept as written at the time — still accurate, just no
+longer the newest thing in this file.
 
 **Phase 3.4 (History cross-meso views) is built, migration applied and
 verified, adversarially reviewed, fixed, deployed, and — as of a follow-up
@@ -3368,6 +3381,65 @@ before/after against production data, and live browser verification of
 every headline state that this account's real data could reproduce), and
 deployed. TASKS.md §4 items 1–26 (Phases 3.0–3.5) are now all built,
 verified, and deployed. Phase 3.6 (weight units) onward is still ahead.
+
+---
+
+## 2026-08-09 session (Phase 3.5 — H4 pagination live-verified)
+Follow-up, same day. The Phase 3.5 build session reasoned about H4's
+pagination fix (`fetchAllExerciseSetLogRows`'s looped `.range()`) from the
+code alone — real per-exercise set counts in this account (25 at most,
+per the earlier live checks) never come close to the 1000-row page size,
+so nothing in normal usage would exercise the loop actually looping. Same
+gap Phase 3.4's own pagination fix had, closed the same way: called the
+real function against real rows with the page size forced artificially
+small, and confirmed the result matches an unpaginated fetch exactly —
+not assumed from the code reading alone.
+
+**Method.** No exported hook to override the page size, so this was a
+temporary, uncommitted edit to `progressService.ts` — `EXERCISE_PROGRESS_
+PAGE_SIZE` dropped from `1000` to `3`, plus a `console.log` inside the
+loop recording each page's offset, row count, and row ids. Confirmed via
+`git status`/`git diff` before starting that this was the only change in
+flight. Reloaded the dev server (already authenticated — the persisted
+session from the same-day build session's live verification), reran the
+two exercises already checked earlier that day (One-arm Dumbell Lateral
+Raise, Bench Supported Incline Cable Fly), read the console log for the
+page trace, and read the rendered chart/headline output the same way as
+the earlier live-verification pass. Reverted with `git checkout --` when
+done; `git status` confirmed clean, `npm run typecheck`/`npm run test`
+(52 tests) reconfirmed clean on the reverted, currently-deployed code —
+nothing shipped or left behind from this check.
+
+**Results — both exercises, forced page size 3:**
+
+- **One-arm Dumbell Lateral Raise** (`8db7bba5-…fcc84`, 25 real rows): 9
+  pages — eight full pages of 3, a final page of 1 (`25 = 8×3 + 1`,
+  correctly terminating on the short page). All 25 logged ids distinct
+  across pages — no duplicates, no gaps. Rendered output byte-identical
+  to the same-day baseline (page size 1000): `5/3/3/2/2` sets, avg RIR
+  `0/0.3/0.3/0/0`, headline `+2.1%`.
+- **Bench Supported Incline Cable Fly** (`85636257-…82ec`, 15 real rows):
+  5 full pages of 3 (`15 = 5×3` exactly), then a genuinely empty 6th page
+  (`0` rows) before the loop terminated — this is the one boundary case
+  the first exercise's row count couldn't exercise: a total that's an
+  *exact* multiple of the page size needs one extra round trip to prove
+  there's nothing left, since a full page alone doesn't distinguish "more
+  data" from "happened to end exactly here." Confirmed correct: the loop
+  fetched offset 15, got `0 < 3`, and stopped — not an off-by-one
+  short-circuit on the preceding full page. Rendered output again
+  byte-identical to the same-day baseline: `3/3/3/3/3` sets, avg RIR
+  `0/0.3/0.3/0.7/0.7`, headline `−4.7%`.
+
+**Net effect.** H4's pagination fix is now genuinely live-verified against
+real production data, not just reasoned about from the loop's code shape
+— both the ordinary short-final-page termination and the
+exact-multiple-of-page-size termination (the one case most prone to an
+off-by-one bug) were exercised by real rows, and both produced an exact
+row-for-row match against the unpaginated baseline. No bug found; no code
+change made or needed. This closes the one open verification gap the
+Phase 3.5 build session's own report had flagged implicitly by never
+having tested it against real data at any page size other than the
+shipped one.
 
 ---
 
