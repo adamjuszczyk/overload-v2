@@ -12,7 +12,9 @@ import {
   Tooltip,
 } from 'recharts'
 import { useExercises } from '../library/useExercises'
+import { useMesos } from '../programs/useMesos'
 import { useExerciseProgress } from './useProgress'
+import { getExerciseE1rmComparison } from './progressService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import type { Exercise, MuscleGroup } from '../../types'
 
@@ -187,23 +189,35 @@ function ExercisePicker({ onSelect }: { onSelect: (ex: Exercise) => void }) {
 // ─── Charts view ──────────────────────────────────────────────────────────────
 
 function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () => void }) {
-  const { data = [], isLoading } = useExerciseProgress(exercise.id)
+  const { data, isLoading } = useExerciseProgress(exercise.id)
+  const points = data?.points ?? []
+  const { data: mesos = [] } = useMesos()
+  const activeMeso = mesos.find((m) => m.status === 'active') ?? null
+
+  // Progress headline (SPEC §6): first vs. most recent working numbers
+  // within the current (active) meso. No headline at all when there is no
+  // active meso to scope "current" to.
+  const e1rmComparison = useMemo(
+    () =>
+      activeMeso && data ? getExerciseE1rmComparison(data.e1rmSessions, activeMeso.id) : null,
+    [data, activeMeso],
+  )
 
   const chartData = useMemo(
     () =>
-      data.map((p) => ({
+      points.map((p) => ({
         date: format(parseISO(p.date), 'MMM d'),
         weight: p.topWeight,
         volume: p.volume,
         rir: p.avgRir !== null ? Math.round(p.avgRir * 10) / 10 : null,
         rest: p.avgRestSeconds !== null ? Math.round(p.avgRestSeconds) : null,
       })),
-    [data],
+    [points],
   )
 
-  const last5 = useMemo(() => [...data].reverse().slice(0, 5), [data])
-  const hasRir = data.some((p) => p.avgRir !== null)
-  const hasRest = data.some((p) => p.avgRestSeconds !== null)
+  const last5 = useMemo(() => [...points].reverse().slice(0, 5), [points])
+  const hasRir = points.some((p) => p.avgRir !== null)
+  const hasRest = points.some((p) => p.avgRestSeconds !== null)
 
   return (
     <div>
@@ -236,6 +250,36 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
         </div>
       </div>
 
+      {/* E1RM headline (SPEC §6) — percentage only, never an absolute
+          weight figure: the underlying number is a formula estimate, and
+          pairing it with a fabricated kg figure would imply false
+          precision. No headline at all when there's no active meso to
+          scope "current meso" to, or when compareE1rmWindow can't find two
+          comparable sessions (TASKS.md §2.5's edge cases) — never "+0%". */}
+      {!isLoading && e1rmComparison && (
+        <div
+          className="mt-4 rounded-xl px-4 py-3 flex items-center justify-between"
+          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <p
+            className="text-xs font-bold tracking-widest"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            E1RM · THIS MESO
+          </p>
+          <p
+            className="text-lg font-black"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              color: e1rmComparison.deltaPercent >= 0 ? 'var(--success)' : 'var(--error)',
+            }}
+          >
+            {e1rmComparison.deltaPercent >= 0 ? '+' : ''}
+            {e1rmComparison.deltaPercent.toFixed(1)}%
+          </p>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
           <div
@@ -243,7 +287,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
           />
         </div>
-      ) : data.length < 2 ? (
+      ) : points.length < 2 ? (
         <div
           className="mt-6 rounded-xl p-8 text-center"
           style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
