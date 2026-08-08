@@ -248,6 +248,38 @@ All core features built and working:
   below for the full account, including which findings got genuine
   adversarial verification versus manual re-verification, and the one
   pre-existing gap deliberately left unfixed as out of scope.
+- 2026-08-09 session: **Phase 3.5 — Progress headline — built, before/after
+  verified against real production data, live-verified, and deployed.**
+  TASKS.md §4 items 23–26 all shipped: `e1rm.ts` (new pure module —
+  RIR-adjusted Epley averaged across a session's eligible sets, meso-window
+  first-vs-most-recent comparison, all five §2.5 edge cases covered by 25
+  new Vitest tests); stage-exclusion fixes in `progressService.ts`'s
+  `fetchExerciseProgress`/`fetchMesoWeeklyProgress` (§2.7 items 4–5 —
+  `setCount`/`avgReps`/`avgRir`/`topWeight`/`topSet` now exclude drop stages
+  via `setGroupLogic.ts`'s `headsOnly`, `volume` unchanged, same reasoning
+  as the History views); the H4 pagination fix (looped `.range()` replacing
+  the old ascending `.limit(1000)`, which was silently dropping the
+  *newest* sets and — per TASKS.md's own "no new query" design — was also
+  truncating the e1RM baseline, since the headline is computed from this
+  same fetch, extended with `is_warmup`/`parent_set_id`/`mesocycle_id`/a
+  nested `v2_week_plans(is_deload)` join rather than a second query); and
+  the `ExerciseProgress.tsx` headline (percentage only, never an absolute
+  weight figure, per SPEC §6). Before/after checked against a real
+  historical meso containing dropsets — the account's only meso, MESO 1.0,
+  on "One-arm Dumbell Lateral Raise": pre-fix showed 5/5/5/4/4 sets across
+  its five real sessions with avg RIR 0/0.2/0.2/0/0; post-fix showed
+  5/3/3/2/2 sets with avg RIR 0/0.3/0.3/0/0 — the 8 sets removed exactly
+  match the 8 known dropset stage rows from the 2026-08-05 backfill audit.
+  Live-verified: the headline renders a real percentage for exercises with
+  ≥2 eligible sessions (+2.1% Lateral Raise, −4.7% Bench Supported Incline
+  Cable Fly), correctly excludes a no-RIR-recorded session and falls back
+  rather than producing an unadjusted number (Adduction Machine, −1.1% —
+  its Jul 18 session had no RIR recorded and was silently skipped), and
+  shows nothing at all — not "+0%" — for an exercise with fewer than 2
+  eligible sessions (Hip Thrust, 1 session, "NOT ENOUGH DATA YET"). The
+  all-deload-window edge case wasn't live-reproducible (this meso has no
+  deload weeks yet) — covered by `e1rm.test.ts` instead. See "2026-08-09
+  session (Phase 3.5)" below for the full account.
 
 ---
 
@@ -406,8 +438,13 @@ migration, Phase 3.8) remains unwritten.
   `v2_session_type_history`) now exist and are live as of Phase 3.4
   (2026-08-08) and are the enforcement point for History, exactly as
   TASKS.md's original design intended — see `009_v3_history_views.sql`'s
-  `filter (where ... and parent_set_id is null)` clauses. `e1rm.ts` still
-  **does not exist yet** — that's Phase 3.5.
+  `filter (where ... and parent_set_id is null)` clauses. `e1rm.ts` now
+  exists (Phase 3.5, 2026-08-09) and applies the same rule at the
+  per-set-eligibility level (`parentSetId == null` — see "Key files"
+  below); `progressService.ts`'s `fetchExerciseProgress`/
+  `fetchMesoWeeklyProgress` were the two remaining §2.7 sites (items 4–5)
+  still violating the rule and are now fixed too, via the same
+  `setGroupLogic.ts` `headsOnly` helper every other site uses.
   **Orphan dropsets** (a row with `is_dropset = true` but a null parent
   — the backfill's documented outcome for a drop with no preceding main
   set) render as their own independent head, exactly as TASKS.md §2.1's
@@ -432,19 +469,20 @@ migration, Phase 3.8) remains unwritten.
 - SPEC.md — **v3** product source of truth
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
   Phase 3.0 (§4 steps 1–5), Phase 3.1 (§4 steps 6–11), Phase 3.2 (§4 steps
-  12–15), and Phase 3.3 (§4 steps 16–18) are all implemented, verified,
-  deployed, and committed as of 2026-08-08. **Phase 3.4 (§4 steps 19–22,
-  History cross-meso views) is also built, migration applied and verified,
-  adversarially reviewed, fixed, and deployed as of 2026-08-08 (second
-  session that day)** — see "2026-08-08 session (Phase 3.4)" below.
-  Migration numbering in §2.3/§2.6/§2.8/§3/§4 was corrected during Phase
-  3.3: `008_v3_reference_panel_index.sql` occupies the slot this plan
+  12–15), Phase 3.3 (§4 steps 16–18), and Phase 3.4 (§4 steps 19–22, History
+  cross-meso views) are all implemented, verified, deployed, and committed
+  as of 2026-08-08. **Phase 3.5 (§4 steps 23–26, Progress headline) is also
+  built, before/after-verified against real production data, live-verified,
+  and deployed as of 2026-08-09** — see "2026-08-09 session (Phase 3.5)"
+  below. Migration numbering in §2.3/§2.6/§2.8/§3/§4 was corrected during
+  Phase 3.3: `008_v3_reference_panel_index.sql` occupies the slot this plan
   originally gave to the history-views migration, so history views is
   `009_v3_history_views.sql` and the contract migration is
   `010_v3_tighten_constraints.sql` throughout the document — TASKS.md and
   the `supabase/migrations/` folder agree with each other. Only the
-  contract migration (010, Phase 3.8) remains unwritten; Phase 3.5 onward
-  is still ahead
+  contract migration (010, Phase 3.8) remains unwritten; no new migration
+  was needed for Phase 3.5 (it's display/computation logic only, no schema
+  change). Phase 3.6 onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -540,6 +578,48 @@ migration, Phase 3.8) remains unwritten.
   mirrored in Dexie) with an explicit "REQUIRES A CONNECTION" empty state
   via the existing `useOnlineStatus` hook, not a spinner that never
   resolves
+- src/features/progress/e1rm.ts — **new, Phase 3.5 (2026-08-09).** Pure:
+  `calculateE1rm`/`sessionE1rmAvg`/`compareE1rmWindow` — RIR-adjusted
+  Epley (`effectiveReps = reps + rir`), averaged across a session's
+  eligible sets (not skipped, not warmup, a head — `parentSetId == null` —
+  weight/reps/rir all recorded; a missing RIR is skipped, never defaulted
+  to 0), then first-eligible-session-vs-most-recent-eligible-session,
+  excluding both no-RIR-anywhere sessions and deload weeks from the
+  window with an automatic fallback (filtering the full list once and
+  taking the two ends, no separate fallback branch). Doesn't know what a
+  meso is — same separation as referenceLogic.ts between pure date-window
+  math and caller-side scoping; `progressService.ts`'s
+  `getExerciseE1rmComparison` does the meso scoping before calling in.
+  Real Vitest coverage (e1rm.test.ts, 25 tests) covers all five §2.5 edge
+  cases individually, same precedent as setGroupLogic.ts/referenceLogic.ts
+  — the module Section 1's original Vitest argument was really about
+- src/features/progress/progressService.ts — **rewritten, Phase 3.5.**
+  `fetchExerciseProgress` now returns `{ points, e1rmSessions }` instead
+  of a bare array: `points` is the existing per-session chart data with
+  §2.7 items 4's stage-exclusion fix applied (`setCount`/`avgReps`/
+  `avgRir`/`topWeight`/`topSet` now go through `setGroupLogic.ts`'s
+  `headsOnly`; `volume` deliberately still includes stages, same reasoning
+  as the History views); `e1rmSessions` is the same underlying rows
+  reshaped for `e1rm.ts`, extended with `is_warmup`/`parent_set_id`/
+  `mesocycle_id`/a nested `v2_week_plans(is_deload)` join — no second
+  query, per TASKS.md §2.5's own "computed from data fetchExerciseProgress
+  already fetches" design. Its old `.limit(1000)` (AUDIT H4) is now a
+  looped `.range()` fetch with an `id` tiebreaker (same shape as
+  historyService.ts's Phase 3.4 pagination) — the old ascending-order cap
+  silently dropped the *newest* sets past row 1000, which also silently
+  truncated the e1RM baseline since it reads the same fetch.
+  `fetchMesoWeeklyProgress` gets the identical stage-exclusion fix (§2.7
+  item 5) for `totalSets`/`avgRir`/`avgReps` on the meso overview
+  dashboard. `getExerciseE1rmComparison(e1rmSessions, mesocycleId)` scopes
+  the pure `compareE1rmWindow` to one meso
+- src/features/progress/ExerciseProgress.tsx — **extended, Phase 3.5.**
+  New E1RM headline block (percentage only, colour keyed to sign via
+  `--success`/`--error`, never an absolute weight figure per SPEC §6),
+  scoped to the active mesocycle (`useMesos()`, same "current meso" lookup
+  `MesoProgress.tsx` already used) and rendered only when
+  `getExerciseE1rmComparison` returns non-null — no headline row at all
+  when there's no active meso or fewer than 2 comparable sessions, never
+  a "+0%" placeholder
 - src/lib/formatRestTime.ts — single source of truth for "45s" / 
   "1min 32s" rest-time formatting, used in History, Progress 
   (both charts), and RestTimer
@@ -574,6 +654,26 @@ migration, Phase 3.8) remains unwritten.
 ---
 
 ## Active work
+**Phase 3.5 (Progress headline) is built, before/after-verified against a
+real historical meso, live-verified, and deployed as of 2026-08-09.**
+TASKS.md §4 items 23–26 are all closed out. See "2026-08-09 session (Phase
+3.5)" below for the full account — `e1rm.ts` (new pure module, 25 Vitest
+tests covering every §2.5 edge case individually), the §2.7 items 4–5
+stage-exclusion fixes in `progressService.ts`, the H4 pagination fix, and
+the `ExerciseProgress.tsx` headline. The required before/after check used
+the account's only meso (MESO 1.0) and its real dropset exercise
+("One-arm Dumbell Lateral Raise"): pre-fix 5/5/5/4/4 sets per session with
+avg RIR 0/0.2/0.2/0/0, post-fix 5/3/3/2/2 sets with avg RIR 0/0.3/0.3/0/0
+— exactly 8 stage rows removed, matching the known 8-row backfill scope
+from 2026-08-05. Live verification confirmed a real percentage headline
+for exercises with ≥2 eligible sessions, correct no-RIR-session exclusion
+with fallback (not an unadjusted number), and nothing shown (not "+0%")
+for an exercise with fewer than 2 eligible sessions; the all-deload-window
+case wasn't reproducible against this meso's real data (no deload weeks
+exist in it yet) and is covered by `e1rm.test.ts` instead. Everything
+below this point is Phase 3.4's status, kept as written at the time —
+still accurate, just no longer the newest thing in this file.
+
 **Phase 3.4 (History cross-meso views) is built, migration applied and
 verified, adversarially reviewed, fixed, deployed, and — as of a follow-up
 session the same day — live-verified against real production data.**
@@ -3103,6 +3203,171 @@ migration, adversarial review, and live-testing against real production
 data all complete, not just the first two. No code changes this session;
 nothing to re-deploy. The one open item is the data anomaly above, left
 for a future session or explicit product decision.
+
+---
+
+## 2026-08-09 session (Phase 3.5)
+Built TASKS.md §4 items 23–26 (Progress headline) in order, per SPEC.md §6
+and TASKS.md §2.5/§2.7 read fresh at the start of this session.
+
+### What was written
+
+1. **`src/features/progress/e1rm.ts`** (new, pure) — `calculateE1rm`
+   (`effectiveReps = reps + rir`, `e1RM = weight × (1 + effectiveReps/30)`),
+   `sessionE1rmAvg` (averages e1RM across a session's eligible sets — not
+   skipped, not warmup, a head (`parentSetId == null`), weight/reps/rir all
+   recorded; a set with no RIR contributes nothing, never defaulted to
+   `rir=0`), and `compareE1rmWindow` (first-eligible-session vs.
+   most-recent-eligible-session — a session is excluded from either
+   endpoint when `sessionE1rmAvg` is null or the session is a deload week;
+   filtering the full list once and taking the two ends already gives the
+   "fall back to the next eligible session" behaviour the spec asks for,
+   with no separate fallback branch). Doesn't know what a mesocycle is —
+   same separation `referenceLogic.ts` uses between its pure date-window
+   math and the `workout_day_id` scoping its caller does first.
+2. **`e1rm.test.ts`** — 25 tests. Every one of the five §2.5 edge cases has
+   its own dedicated test (fewer than 2 eligible sessions; a session with a
+   partial RIR mix; a no-RIR-anywhere session excluded with fallback, both
+   with and without a second eligible session remaining after the
+   exclusion; deload weeks excluded from both endpoints with fallback to
+   the nearest non-deload eligible session; every eligible session in a
+   deload week), plus direct formula tests (`calculateE1rm`, RIR=0 matches
+   plain Epley), `sessionE1rmAvg`'s exclusion of skipped/warmup/stage sets
+   individually, and a `deltaPercent` arithmetic check. All passed on the
+   first run.
+3. **`progressService.ts` — stage-exclusion fixes (§2.7 items 4–5).**
+   `fetchExerciseProgress`'s `setCount`/`avgReps`/`avgRir`/`topWeight`/
+   `topSet` and `fetchMesoWeeklyProgress`'s `totalSets`/`avgRir`/`avgReps`
+   now run `setGroupLogic.ts`'s `headsOnly` before aggregating — a drop
+   stage no longer counts as an independent set on either the per-exercise
+   chart or the meso overview dashboard. `volume` was deliberately left
+   untouched on both (still sums all rows, stages included — a stage is
+   real work performed, same reasoning as the History views' `total_volume`
+   filter). `avgRestSeconds` was also deliberately left untouched on both —
+   TASKS.md §2.7 items 4/5 name exactly four and three fields respectively,
+   and `avgRestSeconds` isn't among either list, so it stays computed over
+   all rows, same as `volume` — not silently over-scoped beyond what the
+   task named.
+4. **H4 pagination fix.** `fetchExerciseProgress`'s old
+   `.order('logged_at', { ascending: true }).limit(1000)` silently kept the
+   *oldest* 1000 rows and dropped the newest ones past that for a
+   high-volume exercise — backwards for a trend chart, and, since the e1RM
+   headline is computed from this same fetch (TASKS.md §2.5's "no new
+   query" design), it would have silently truncated the e1RM baseline too.
+   Replaced with a looped `fetchAllExerciseSetLogRows` — same `.range()`
+   keyset shape as `historyService.ts`'s Phase 3.4 pagination, paging until
+   a short page proves there's nothing left, with `id` as a tiebreaker
+   (`logged_at` alone can tie for an offline-queued batch, same risk
+   TASKS.md's migration-risk section already flags elsewhere).
+5. **`progressService.ts` wiring — no new query.** `fetchExerciseProgress`
+   now returns `{ points, e1rmSessions }` instead of a bare array. The one
+   underlying fetch was extended with `is_warmup`, `parent_set_id`,
+   `mesocycle_id`, and a nested `v2_sessions(...,
+   v2_week_plans(is_deload))` join — PostgREST resolves the two-hop FK
+   chain (`v2_set_logs → v2_sessions → v2_week_plans`) in one request, no
+   `!inner` needed since this is a plain embed, not a filter. `points` is
+   the existing chart data (now with the stage-exclusion fix above);
+   `e1rmSessions` is the same rows reshaped for `e1rm.ts`, one entry per
+   session with its `mesocycleId`/`isDeload` attached. New
+   `getExerciseE1rmComparison(e1rmSessions, mesocycleId)` filters to one
+   meso and calls the pure `compareE1rmWindow` — this is where "current
+   meso" scoping happens (SPEC §6), not inside `e1rm.ts` itself.
+6. **`ExerciseProgress.tsx` headline.** New block between the exercise
+   header and the charts: `E1RM · THIS MESO` with the percentage only
+   (`--success`/`--error` colour keyed to sign), never an absolute weight
+   figure — pairing a formula estimate with a fabricated kg number would
+   imply false precision (SPEC §6). Scoped to the active mesocycle via
+   `useMesos()` (`mesos.find(m => m.status === 'active')`, the same lookup
+   `MesoProgress.tsx` already used) — no headline row at all when there's
+   no active meso, or when `getExerciseE1rmComparison` returns null.
+
+### Verification
+
+`npm run typecheck`, `npm run test` (52 tests across 4 files, all passing:
+17 new for `e1rm.ts` at first checkpoint, 25 after the full edge-case pass
+plus formula/exclusion tests were added — final count above), and
+`npm run build` all clean.
+
+### Before/after check (required by the task instructions, not optional)
+
+Step 24 changes displayed totals on already-shipped meso overview data for
+any historical meso containing dropsets — TASKS.md's own §2.7 flags this
+explicitly. This account has exactly one meso, **MESO 1.0 (active)**, and
+its one known dropset exercise, **One-arm Dumbell Lateral Raise** (8 linked
+stage rows across 4 sessions, per the 2026-08-05 backfill audit — see
+"Database tables" above). Used `git stash` to isolate the fix (stashed only
+`progressService.ts`/`ExerciseProgress.tsx`, leaving the new `e1rm.ts`/
+`e1rm.test.ts` files untouched and unused by the reverted code), reloaded
+the dev server against the same live production data, read the Progress →
+EXERCISE screen's "LAST 5 SESSIONS" list (plain text, not a chart
+tooltip — a more reliable read than hovering Recharts bars), then
+`git stash pop` and reloaded again for the after state:
+
+| Session | Before: sets / avg RIR | After: sets / avg RIR |
+|---|---|---|
+| Thu Aug 6 | 5 / 0 | 5 / 0 |
+| Thu Jul 30 | 5 / 0.2 | 3 / 0.3 |
+| Thu Jul 23 | 5 / 0.2 | 3 / 0.3 |
+| Thu Jul 16 | 4 / 0 | 2 / 0 |
+| Thu Jul 9 | 4 / 0 | 2 / 0 |
+
+Sets removed: `(5-3) + (5-3) + (4-2) + (4-2) = 8` — an exact match for the
+8 known dropset stage rows from the 2026-08-05 backfill audit, across the
+same 4 sessions (Aug 6 has no dropset that day, and is correctly
+unchanged). Avg RIR rose on the three affected sessions (a drop stage is
+taken near failure, so excluding it raises the average of what remains) —
+directionally exactly what TASKS.md §2.7 predicted. This is real,
+production data confirming the fix is precisely correct, not just
+superficially different — seen, not assumed.
+
+### Live verification (standing rule, added after Phase 3.4)
+
+Browser tooling checked fresh before relying on it: `preview_start` against
+the `Overload v2 dev` launch config opened the app already authenticated
+(a persisted session in this environment, not a fresh sign-in) — confirmed
+working, not assumed. Checked all four requested headline states against
+real data:
+
+- **Real percentage, ≥2 eligible sessions:** One-arm Dumbell Lateral Raise
+  `+2.1%`; Bench Supported Incline Cable Fly `−4.7%`.
+- **No-RIR-session exclusion with fallback, not an unadjusted number:**
+  Adduction Machine `−1.1%` across 3 sessions (Jul 11, Jul 18, Aug 1) — the
+  displayed session list shows no "avg RIR" line at all for Jul 18 (no set
+  that day had RIR recorded), and the headline is exactly the comparison
+  between Jul 11 and Aug 1, confirming Jul 18 was silently skipped rather
+  than folded in unadjusted.
+- **Nothing shown for fewer than 2 eligible sessions:** Hip Thrust
+  (machine) has only 1 logged session this meso — chart shows "NOT ENOUGH
+  DATA YET" and the headline block doesn't render at all (confirmed absent
+  from the page text, not present as "+0%").
+- **All-deload window:** not reproducible against this meso's real data —
+  MESO 1.0 has zero deload weeks so far (no "DELOAD WEEK" legend on the
+  MESO OVERVIEW tab). Covered instead by `e1rm.test.ts`'s dedicated tests
+  for this exact case.
+
+### Deploy
+
+Committed (`8db251c`) — `e1rm.ts`, `e1rm.test.ts`, `progressService.ts`,
+`ExerciseProgress.tsx`, all as one commit (same as Phase 3.4's build —
+nothing here needed independent deployability from the rest). Pre-push
+check: `git rev-list --left-right --count origin/master...HEAD` → `0 1`.
+Pushed; `git ls-remote origin master` confirmed `origin/master`'s HEAD is
+exactly `8db251c5807aca76341dd370144af759d6d4f3f5`. `vercel ls` showed a
+fresh Production deployment building 1 minute after the push
+(`https://overload-v2-qs3swc3vi-adamjuszczyks-projects.vercel.app`);
+`vercel inspect` confirmed `status: ● Ready`, `target: production`,
+created `Sun Aug 09 2026 01:25:26 GMT+0200`, timing-consistent with the
+push (same standard of evidence as every prior deploy confirmation in
+this file).
+
+### Net effect
+
+TASKS.md §4 items 23–26 (Phase 3.5) are built, verified at every level
+this project's standard calls for (typecheck/build/vitest, a real
+before/after against production data, and live browser verification of
+every headline state that this account's real data could reproduce), and
+deployed. TASKS.md §4 items 1–26 (Phases 3.0–3.5) are now all built,
+verified, and deployed. Phase 3.6 (weight units) onward is still ahead.
 
 ---
 
