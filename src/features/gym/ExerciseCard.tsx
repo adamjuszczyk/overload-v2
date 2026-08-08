@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
+import type { ReferenceSession } from './sessionService'
 import SetGroup, { type LogParams } from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
@@ -14,9 +15,14 @@ interface ExerciseCardProps {
   currentLogs: SetLog[]      // set logs already recorded in the current session
   lastLogs: SetLog[]         // set logs from previous session for this exercise — prefill only
   lastLogsLoading: boolean   // true until the previous-session query resolves
-  currentSessionId: string   // for the smart reference component — excludes this session from its lookup
-  workoutDayId: string       // this session's program slot — drives LAST WEEK matching
-  occurrenceCount: number    // how many times this exercise appears in the active program
+  // This exercise's eligible sessions for the two-slot reference panel
+  // (v3 §2.3) — already fetched once per workout day, sliced per exercise
+  // by the caller (GymSession.tsx's ExerciseSection). occurrenceCount/
+  // workoutDayId are gone — the session-first query is already scoped to
+  // the right workout day, and per-exercise multiplicity now falls out of
+  // THIS WEEK being a list rather than needing a pre-computed count.
+  referenceSessions: ReferenceSession[]
+  referenceLoading: boolean
   today: string
   onLog: (params: {
     exerciseId: string
@@ -45,9 +51,8 @@ export default function ExerciseCard({
   currentLogs,
   lastLogs,
   lastLogsLoading,
-  currentSessionId,
-  workoutDayId,
-  occurrenceCount,
+  referenceSessions,
+  referenceLoading,
   today,
   onLog,
   onUpdateSet,
@@ -329,17 +334,9 @@ export default function ExerciseCard({
       >
         <PlanTargetsPanel plannedSets={plannedSets} />
 
-        {/* Right: smart last-session reference — LAST WEEK / LAST TIME / FIRST TIME */}
+        {/* Right: smart last-session reference — LAST WEEK / THIS WEEK / LAST TIME / FIRST TIME */}
         <div className="px-3 py-2">
-          <ExerciseReference
-            exerciseId={programExercise.exerciseId}
-            currentSessionId={currentSessionId}
-            workoutDayId={workoutDayId}
-            occurrenceCount={occurrenceCount}
-            today={today}
-            lastLogs={lastLogs}
-            lastLogsLoading={lastLogsLoading}
-          />
+          <ExerciseReference today={today} sessions={referenceSessions} isLoading={referenceLoading} />
         </div>
       </div>
 

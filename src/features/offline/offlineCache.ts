@@ -17,12 +17,24 @@ type RawSetLogRow = {
   is_skipped: boolean
   logged_at: string
   rest_seconds: number | null
-  v2_sessions: { id: string; status: string } | null
   // Absent until migration 004/005/006 has been applied.
   stage_index?: number
   is_warmup?: boolean
   set_seconds?: number | null
   entered_unit?: string | null
+}
+
+type RawSessionRow = {
+  id: string
+  user_id: string
+  date: string
+  status: string
+  mesocycle_id: string | null
+  week_plan_id: string | null
+  workout_day_id: string | null
+  note: string | null
+  started_at: string | null
+  completed_at: string | null
 }
 
 export async function primeOfflineCache(params: {
@@ -55,28 +67,55 @@ export async function primeOfflineCache(params: {
     })
   }
 
-  // 3. Cache last completed session logs for each exercise (for pre-fill)
-  await Promise.all(
-    programExercises.map(async (pe) => {
-      const { data } = await supabase
-        .from('v2_set_logs')
-        .select('*, v2_sessions(id, status)')
-        .eq('user_id', userId)
-        .eq('exercise_id', pe.exerciseId)
-        .order('logged_at', { ascending: false })
-        .limit(20)
+  // 3. Cache candidate completed sessions for this workout day, and every
+  // set log in them for this workout day's exercises — session-first, same
+  // shape as sessionService.fetchReferenceSessions (v3 §2.3), so the
+  // offline reference panel (useExerciseReferenceSessions' Dexie fallback)
+  // has the full LAST WEEK / THIS WEEK / LAST TIME picture available, not
+  // just a single "last session". This also fully covers the old
+  // single-session prefill cache it replaces — a superset, not a narrower
+  // fetch.
+  const exerciseIds = programExercises.map((pe) => pe.exerciseId)
+  if (exerciseIds.length > 0) {
+    const { data: sessionData } = await supabase
+      .from('v2_sessions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('workout_day_id', workoutDay.id)
+      .eq('status', 'completed')
+      .neq('id', sessionId)
+      .order('date', { ascending: false })
 
-      if (!data) return
-      const rows = data as unknown as RawSetLogRow[]
-
-      const prevSessionId = rows.find(
-        (r) => r.session_id !== sessionId && r.v2_sessions?.status === 'completed',
-      )?.session_id
-      if (!prevSessionId) return
-
-      const prevRows = rows.filter((r) => r.session_id === prevSessionId)
+    const sessionRows = (sessionData ?? []) as RawSessionRow[]
+    if (sessionRows.length > 0) {
       await Promise.all(
-        prevRows.map((row) =>
+        sessionRows.map((s) =>
+          db.sessions.put({
+            id: s.id,
+            userId: s.user_id,
+            date: s.date,
+            status: s.status,
+            mesocycleId: s.mesocycle_id,
+            weekPlanId: s.week_plan_id,
+            workoutDayId: s.workout_day_id,
+            note: s.note,
+            startedAt: s.started_at,
+            completedAt: s.completed_at,
+          }),
+        ),
+      )
+
+      const sessionIds = sessionRows.map((s) => s.id)
+      const { data: logData } = await supabase
+        .from('v2_set_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .in('session_id', sessionIds)
+        .in('exercise_id', exerciseIds)
+
+      const logRows = (logData ?? []) as RawSetLogRow[]
+      await Promise.all(
+        logRows.map((row) =>
           db.set_logs.put({
             id: row.id,
             sessionId: row.session_id,
@@ -96,13 +135,13 @@ export async function primeOfflineCache(params: {
             isSkipped: row.is_skipped,
             loggedAt: row.logged_at,
             restSeconds: row.rest_seconds,
-            // prevSessionId was selected above by status === 'completed'.
+            // Every cached row here comes from a status = 'completed' query.
             sessionStatus: 'completed',
           }),
         ),
       )
-    }),
-  )
+    }
+  }
 
   // 4. Cache exercise list
   const { data: exercises } = await supabase

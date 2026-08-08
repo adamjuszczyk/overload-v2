@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog } from '../../types'
-import { useActiveSession, useLogSet, useLastSessionLogs, useUpdateSetLog, useDeleteSetLog } from './useSession'
-import { useProgramExercises, useExerciseOccurrenceCounts } from '../programs/usePrograms'
+import type { ReferenceSession } from './sessionService'
+import {
+  useActiveSession,
+  useLogSet,
+  useLastSessionLogs,
+  useUpdateSetLog,
+  useDeleteSetLog,
+  useExerciseReferenceSessions,
+} from './useSession'
+import { useProgramExercises } from '../programs/usePrograms'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { db } from '../../lib/db'
@@ -29,8 +37,8 @@ function ExerciseSection({
   plannedSets,
   allCurrentLogs,
   sessionId,
-  workoutDayId,
-  occurrenceCount,
+  referenceSessions,
+  referenceLoading,
   today,
   onLog,
   onUpdateSet,
@@ -40,8 +48,8 @@ function ExerciseSection({
   plannedSets: WeekPlanSet[]
   allCurrentLogs: SetLog[]
   sessionId: string
-  workoutDayId: string
-  occurrenceCount: number
+  referenceSessions: ReferenceSession[]
+  referenceLoading: boolean
   today: string
   onLog: (params: {
     exerciseId: string
@@ -73,9 +81,8 @@ function ExerciseSection({
       currentLogs={currentLogs}
       lastLogs={lastLogs}
       lastLogsLoading={lastLogsLoading}
-      currentSessionId={sessionId}
-      workoutDayId={workoutDayId}
-      occurrenceCount={occurrenceCount}
+      referenceSessions={referenceSessions}
+      referenceLoading={referenceLoading}
       today={today}
       onLog={onLog}
       onUpdateSet={onUpdateSet}
@@ -93,7 +100,6 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
   const { data: session } = useActiveSession(sessionId)
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
-  const occurrenceCounts = useExerciseOccurrenceCounts(workoutDay.programId)
   const logSet = useLogSet(sessionId)
   const updateSetLog = useUpdateSetLog(sessionId)
   const deleteSetLog = useDeleteSetLog(sessionId)
@@ -120,6 +126,17 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const allCurrentLogs = session?.setLogs ?? []
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
+
+  // Session-first, batched once for every exercise in this workout day (v3
+  // §2.3) — not one query per exercise card. Must run unconditionally (this
+  // is a hook), so it's placed before the showComplete early return below,
+  // fed by activeExercises so it also works from the offline-cached
+  // exercise list.
+  const { data: referenceSessionsByExercise, isLoading: referenceLoading } = useExerciseReferenceSessions(
+    workoutDay.id,
+    activeExercises.map((pe) => pe.exerciseId),
+    sessionId,
+  )
 
   if (showComplete) {
     return <SessionComplete sessionId={sessionId} onBack={() => setShowComplete(false)} />
@@ -172,8 +189,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               plannedSets={plannedSets}
               allCurrentLogs={allCurrentLogs}
               sessionId={sessionId}
-              workoutDayId={workoutDay.id}
-              occurrenceCount={occurrenceCounts.get(pe.exerciseId) ?? 1}
+              referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
+              referenceLoading={referenceLoading}
               today={today}
               onLog={(params) => {
                 // Phase 3.1 retires AUDIT M5's inference heuristic on this

@@ -1,15 +1,15 @@
 import type { ProgramExercise, WeekPlanSet } from '../../types'
+import type { ReferenceSession } from './sessionService'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import ExerciseReference from './ExerciseReference'
-import { useLastSessionLogs } from './useSession'
 import { groupWeekPlanSets } from './setGroupLogic'
 
 interface PreviewExerciseCardProps {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
-  workoutDayId: string
-  occurrenceCount: number
+  referenceSessions: ReferenceSession[]
+  referenceLoading: boolean
   today: string
 }
 
@@ -18,15 +18,10 @@ interface PreviewExerciseCardProps {
 export default function PreviewExerciseCard({
   programExercise,
   plannedSets,
-  workoutDayId,
-  occurrenceCount,
+  referenceSessions,
+  referenceLoading,
   today,
 }: PreviewExerciseCardProps) {
-  const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
-    programExercise.exerciseId,
-    null,
-  )
-
   // Heads only, stages nested beneath (§2.7 item 7) — a planned dropset's
   // stage rows are never their own top-level entry.
   const groups = groupWeekPlanSets(plannedSets).sort((a, b) => a.head.setNumber - b.head.setNumber)
@@ -41,15 +36,7 @@ export default function PreviewExerciseCard({
       >
         <PlanTargetsPanel plannedSets={plannedSets} />
         <div className="px-3 py-2">
-          <ExerciseReference
-            exerciseId={programExercise.exerciseId}
-            currentSessionId={null}
-            workoutDayId={workoutDayId}
-            occurrenceCount={occurrenceCount}
-            today={today}
-            lastLogs={lastLogs}
-            lastLogsLoading={lastLogsLoading}
-          />
+          <ExerciseReference today={today} sessions={referenceSessions} isLoading={referenceLoading} />
         </div>
       </div>
 

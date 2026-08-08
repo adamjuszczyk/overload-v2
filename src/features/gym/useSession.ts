@@ -19,9 +19,10 @@ import {
   updateSetLog,
   deleteSetLog,
   fetchLastSessionLogs,
-  fetchLastCompletedSessionForExercise,
+  fetchReferenceSessions,
   type ReferenceSession,
 } from './sessionService'
+import { groupSetLogs } from './setGroupLogic'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -129,22 +130,103 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
   })
 }
 
-// Most recent completed session for this exercise — optionally restricted to
-// a specific program workout day (the LAST WEEK / LAST TIME split behind the
-// smart reference component). `enabled` lets callers skip the same-slot
-// query entirely when the exercise only appears once in the program.
-export function useLastCompletedSession(
-  exerciseId: string,
+// Session-first, batched across every exercise in a workout day (v3 §2.3) —
+// one call per GymSession/SessionPreview, not one per exercise card. Feeds
+// the two-slot reference resolver (referenceLogic.ts): callers slice the
+// returned map per exerciseId and pass that exercise's ReferenceSession[]
+// straight into ExerciseReference.
+export function useExerciseReferenceSessions(
+  workoutDayId: string,
+  exerciseIds: string[],
   currentSessionId: string | null,
-  opts: { workoutDayId?: string; enabled?: boolean } = {},
-): { data: ReferenceSession | null | undefined; isLoading: boolean } {
+): { data: Map<string, ReferenceSession[]>; isLoading: boolean } {
   const { user } = useAuth()
-  return useQuery({
-    queryKey: ['v2_lastCompletedSession', exerciseId, currentSessionId, opts.workoutDayId ?? 'any'],
-    queryFn: () =>
-      fetchLastCompletedSessionForExercise(user!.id, exerciseId, currentSessionId, opts.workoutDayId),
-    enabled: (opts.enabled ?? true) && !!user && !!exerciseId,
+  const exerciseIdsKey = [...exerciseIds].sort().join(',')
+
+  const query = useQuery({
+    queryKey: ['v2_referenceSessions', workoutDayId, exerciseIdsKey, currentSessionId],
+    queryFn: async () => {
+      try {
+        return await fetchReferenceSessions(user!.id, workoutDayId, exerciseIds, currentSessionId)
+      } catch {
+        // Offline fallback — same shape, sourced from Dexie (populated by
+        // primeOfflineCache's session-first cache write) instead of
+        // Supabase. `workoutDayId` isn't its own Dexie index, so narrow via
+        // the indexed `status` field first, then filter — cheap at this
+        // app's single-user scale.
+        const completedCached = await db.sessions.where('status').equals('completed').toArray()
+        const eligible = completedCached.filter(
+          (s) => s.workoutDayId === workoutDayId && s.id !== (currentSessionId ?? ''),
+        )
+        if (eligible.length === 0) return new Map<string, ReferenceSession[]>()
+
+        const sessionIds = new Set(eligible.map((s) => s.id))
+        const dateBySessionId = new Map(eligible.map((s) => [s.id, s.date]))
+        const completedAtBySessionId = new Map(eligible.map((s) => [s.id, s.completedAt]))
+
+        const cachedLogs = await db.set_logs.where('exerciseId').anyOf(exerciseIds).toArray()
+
+        const byExercise = new Map<string, Map<string, SetLog[]>>()
+        for (const l of cachedLogs) {
+          if (!sessionIds.has(l.sessionId)) continue
+          const setLog: SetLog = {
+            id: l.id,
+            userId: user!.id,
+            sessionId: l.sessionId,
+            exerciseId: l.exerciseId,
+            weekPlanSetId: l.weekPlanSetId,
+            setNumber: l.setNumber,
+            weight: l.weight,
+            reps: l.reps,
+            rir: l.rir,
+            note: l.note,
+            isDropset: l.isDropset,
+            parentSetId: l.parentSetId,
+            stageIndex: l.stageIndex ?? 0,
+            isWarmup: l.isWarmup ?? false,
+            setSeconds: l.setSeconds ?? null,
+            enteredUnit: (l.enteredUnit ?? null) as SetLog['enteredUnit'],
+            isSkipped: l.isSkipped,
+            loggedAt: l.loggedAt,
+            restSeconds: l.restSeconds,
+          }
+          let bySession = byExercise.get(l.exerciseId)
+          if (!bySession) {
+            bySession = new Map()
+            byExercise.set(l.exerciseId, bySession)
+          }
+          const list = bySession.get(l.sessionId)
+          if (list) list.push(setLog)
+          else bySession.set(l.sessionId, [setLog])
+        }
+
+        const result = new Map<string, ReferenceSession[]>()
+        for (const [exerciseId, bySession] of byExercise) {
+          const refSessions: ReferenceSession[] = [...bySession.entries()]
+            .map(([sessionId, logs]) => ({
+              sessionId,
+              date: dateBySessionId.get(sessionId)!,
+              completedAt: completedAtBySessionId.get(sessionId) ?? null,
+              logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
+            }))
+            .sort((a, b) => b.date.localeCompare(a.date))
+          result.set(exerciseId, refSessions)
+        }
+        return result
+      }
+    },
+    // No staleTime override, unlike the sibling useLastSessionLogs — this
+    // inherits the app-wide 5-minute default (queryClient.ts) so a session
+    // completing elsewhere is reflected within a bounded window even without
+    // every possible mutation explicitly invalidating this key. See
+    // useCompleteSession's onSuccess below for the one mutation that also
+    // invalidates it directly, for the common case (completing a session,
+    // then immediately re-previewing the same workout day).
+    enabled: !!user && !!workoutDayId && exerciseIds.length > 0,
+    networkMode: 'offlineFirst',
   })
+
+  return { data: query.data ?? new Map(), isLoading: query.isLoading }
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
@@ -299,6 +381,13 @@ export function useCompleteSession() {
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      // And the reference panel — SessionPreview always queries this with
+      // currentSessionId=null, so its cache key doesn't change between
+      // visits to the same workout day; without this, completing a session
+      // and immediately re-previewing that same workout day could still show
+      // the pre-completion LAST WEEK/THIS WEEK/LAST TIME state (found via
+      // adversarial review, Phase 3.3).
+      queryClient.invalidateQueries({ queryKey: ['v2_referenceSessions'] })
     },
   })
 }

@@ -12,7 +12,6 @@ import {
   updateWorkoutDayName,
   deleteWorkoutDay,
   fetchProgramExercises,
-  fetchAllProgramExercisesForDays,
   addProgramExercise,
   updateProgramExerciseReps,
   deleteProgramExercise,
@@ -108,31 +107,6 @@ export function useProgramExercises(workoutDayId: string) {
     queryFn: () => fetchProgramExercises(workoutDayId),
     enabled: !!user && !!workoutDayId,
   })
-}
-
-// Every exercise across every workout day of a program — used to count how
-// many times a given exercise recurs in the schedule (drives the smart
-// last-session reference: one panel vs LAST WEEK + LAST TIME side by side).
-export function useAllProgramExercises(workoutDayIds: string[]) {
-  const { user } = useAuth()
-  const key = [...workoutDayIds].sort().join(',')
-  return useQuery({
-    queryKey: ['v2_allProgramExercises', key],
-    queryFn: () => fetchAllProgramExercisesForDays(workoutDayIds),
-    enabled: !!user && workoutDayIds.length > 0,
-  })
-}
-
-// exerciseId -> number of times it appears across the program's workout days.
-export function useExerciseOccurrenceCounts(programId: string): Map<string, number> {
-  const { data: workoutDays = [] } = useWorkoutDays(programId)
-  const { data: allProgramExercises = [] } = useAllProgramExercises(workoutDays.map((wd) => wd.id))
-
-  const counts = new Map<string, number>()
-  for (const pe of allProgramExercises) {
-    counts.set(pe.exerciseId, (counts.get(pe.exerciseId) ?? 0) + 1)
-  }
-  return counts
 }
 
 export function useAddProgramExercise(workoutDayId: string) {

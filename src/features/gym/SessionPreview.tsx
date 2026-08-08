@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import type { WorkoutDay, WeekPlan } from '../../types'
-import { useProgramExercises, useExerciseOccurrenceCounts } from '../programs/usePrograms'
+import { useProgramExercises } from '../programs/usePrograms'
+import { useExerciseReferenceSessions } from './useSession'
 import PreviewExerciseCard from './PreviewExerciseCard'
 
 interface SessionPreviewProps {
@@ -25,8 +26,15 @@ export default function SessionPreview({
   onStart,
 }: SessionPreviewProps) {
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
-  const occurrenceCounts = useExerciseOccurrenceCounts(workoutDay.programId)
   const sortedExercises = [...programExercises].sort((a, b) => a.position - b.position)
+
+  // No active session yet — currentSessionId is null, same as the old
+  // PreviewExerciseCard's own currentSessionId={null} usage.
+  const { data: referenceSessionsByExercise, isLoading: referenceLoading } = useExerciseReferenceSessions(
+    workoutDay.id,
+    programExercises.map((pe) => pe.exerciseId),
+    null,
+  )
 
   return (
     <div className="pb-24">
@@ -80,8 +88,8 @@ export default function SessionPreview({
               key={pe.id}
               programExercise={pe}
               plannedSets={plannedSets}
-              workoutDayId={workoutDay.id}
-              occurrenceCount={occurrenceCounts.get(pe.exerciseId) ?? 1}
+              referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
+              referenceLoading={referenceLoading}
               today={today}
             />
           )

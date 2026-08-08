@@ -1,0 +1,22 @@
+-- Overload v3 — reference panel index, pulled forward from 008_v3_history_views.sql
+--
+-- TASKS.md §2.3 cites this index as created by "008_v3_history_views.sql
+-- (shared with Section 2.6)" — but that migration belongs to Phase 3.4,
+-- which comes AFTER Phase 3.3 (this reference-panel rewrite) in TASKS.md's
+-- own §4 ordering. Rather than ship Phase 3.3's session-first query
+-- unindexed for one phase, or silently reorder migrations without saying
+-- so, this pulls just the index out on its own, now, ahead of the rest of
+-- 008's view work.
+--
+-- Idempotent (`if not exists`) so that when Phase 3.4 later applies its own
+-- migration containing the identical `create index if not exists` statement
+-- (per TASKS.md §2.6), that statement is a harmless no-op — no conflict.
+--
+-- Numbering note: this file claims migration number 008, which TASKS.md's
+-- text originally assigned to the history-views migration. Resolved the same
+-- session this file was created, one turn later: TASKS.md §2.3/§2.6/§2.8/§3/§4
+-- were rewritten to renumber history views 008->009 and the contract
+-- migration 009->010 throughout, so TASKS.md and this migrations/ folder now
+-- agree — this is not a standing deviation still tracked only in CONTEXT.md.
+create index if not exists v2_sessions_user_day_date_idx
+  on v2_sessions(user_id, workout_day_id, date desc);

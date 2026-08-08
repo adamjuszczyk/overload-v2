@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { Session, SetLog } from '../../types'
+import { groupSetLogs, type SetGroup } from './setGroupLogic'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -325,48 +326,105 @@ export async function fetchLastSessionLogs(
 export interface ReferenceSession {
   sessionId: string
   date: string        // v2_sessions.date — the session's calendar date, not a log timestamp
-  logs: SetLog[]
+  // Tiebreaker only, for two sessions sharing the same calendar date (AUDIT
+  // A3 — no DB uniqueness constraint on (user_id, date) prevents this; AUDIT
+  // E8 documents same-day multi-workout as a known, real scenario). `date`
+  // remains the primary sort/window key everywhere; this is only consulted
+  // when two sessions' dates are equal (see referenceLogic.ts's comparator).
+  completedAt: string | null
+  // Grouped, not flat (§2.7 item 10) — a stage never has to be re-grouped by
+  // whatever renders this; built via setGroupLogic.groupSetLogs at the point
+  // this ReferenceSession is constructed, online and offline both. Sorted by
+  // setNumber before grouping — a Postgres/Dexie read has no guaranteed row
+  // order without ORDER BY, and set rows must still render in set order even
+  // when the underlying scan order doesn't happen to match it (e.g. after a
+  // mid-session delete-and-relog left a later insertion with an earlier
+  // renumbered setNumber).
+  logs: SetGroup<SetLog>[]
 }
 
-// Most recent COMPLETED session (excluding the current one) with a logged set
-// for this exercise. Pass workoutDayId to restrict to the same program slot
-// (drives the "LAST WEEK" panel); omit it for the most recent occurrence on
-// any day (drives the "LAST TIME" panel).
-export async function fetchLastCompletedSessionForExercise(
+// Candidate completed sessions for the two-slot reference resolver (v3
+// §2.3) — same workout_day_id as the session being logged/previewed,
+// excluding it by id. No date bound on the past side: the primary slot's
+// fallback chain (LAST WEEK -> LAST TIME -> FIRST TIME) needs the full
+// history to find "most recent ever" when last week is empty, and this is
+// scoped to one workout_day_id for one user, so it stays a handful of rows
+// even unbounded (AUDIT P5 — no arbitrary row limit to silently drop one).
+async function fetchReferenceCandidateSessions(
   userId: string,
-  exerciseId: string,
+  workoutDayId: string,
   currentSessionId: string | null,
-  workoutDayId?: string,
-): Promise<ReferenceSession | null> {
+): Promise<{ id: string; date: string; completed_at: string | null }[]> {
   let query = supabase
-    .from('v2_set_logs')
-    .select('*, exercises(*), v2_sessions!inner(id, status, date, workout_day_id)')
+    .from('v2_sessions')
+    .select('id, date, completed_at')
     .eq('user_id', userId)
-    .eq('exercise_id', exerciseId)
-    .eq('v2_sessions.status', 'completed')
-    .order('logged_at', { ascending: false })
-    .limit(50)
+    .eq('workout_day_id', workoutDayId)
+    .eq('status', 'completed')
+    .order('date', { ascending: false })
 
-  if (workoutDayId) {
-    query = query.eq('v2_sessions.workout_day_id', workoutDayId)
+  if (currentSessionId) {
+    query = query.neq('id', currentSessionId)
   }
 
   const { data, error } = await query
   if (error) throw error
+  return data as { id: string; date: string; completed_at: string | null }[]
+}
 
-  type Row = DbSetLog & { v2_sessions: { id: string; status: string; date: string } | null }
-  const rows = data as Row[]
+// Session-first, batched across every exercise sharing a workout day (v3
+// §2.3) — one v2_sessions query for the candidate session ids, then one
+// batched v2_set_logs query scoped to those ids AND to this workout day's
+// exercise ids. Replaces the old fetchLastCompletedSessionForExercise,
+// which fired once per exercise per slot (AUDIT P5 / part of P1).
+export async function fetchReferenceSessions(
+  userId: string,
+  workoutDayId: string,
+  exerciseIds: string[],
+  currentSessionId: string | null,
+): Promise<Map<string, ReferenceSession[]>> {
+  if (exerciseIds.length === 0) return new Map()
 
-  const match = rows.find((r) => r.session_id !== currentSessionId)
-  if (!match?.v2_sessions) return null
+  const candidateSessions = await fetchReferenceCandidateSessions(userId, workoutDayId, currentSessionId)
+  if (candidateSessions.length === 0) return new Map()
 
-  const sessionId = match.session_id
-  return {
-    sessionId,
-    date: match.v2_sessions.date,
-    logs: rows
-      .filter((r) => r.session_id === sessionId)
-      .map((r) => toSetLog(r as DbSetLog))
-      .sort((a, b) => a.setNumber - b.setNumber),
+  const sessionIds = candidateSessions.map((s) => s.id)
+  const dateBySessionId = new Map(candidateSessions.map((s) => [s.id, s.date]))
+  const completedAtBySessionId = new Map(candidateSessions.map((s) => [s.id, s.completed_at]))
+
+  const { data: logRows, error } = await supabase
+    .from('v2_set_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .in('session_id', sessionIds)
+    .in('exercise_id', exerciseIds)
+  if (error) throw error
+
+  const logsByExercise = new Map<string, Map<string, SetLog[]>>()
+  for (const row of logRows as DbSetLog[]) {
+    const log = toSetLog(row)
+    let bySession = logsByExercise.get(log.exerciseId)
+    if (!bySession) {
+      bySession = new Map()
+      logsByExercise.set(log.exerciseId, bySession)
+    }
+    const list = bySession.get(log.sessionId)
+    if (list) list.push(log)
+    else bySession.set(log.sessionId, [log])
   }
+
+  const result = new Map<string, ReferenceSession[]>()
+  for (const [exerciseId, bySession] of logsByExercise) {
+    const refSessions: ReferenceSession[] = [...bySession.entries()]
+      .map(([sessionId, logs]) => ({
+        sessionId,
+        date: dateBySessionId.get(sessionId)!,
+        completedAt: completedAtBySessionId.get(sessionId) ?? null,
+        logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+    result.set(exerciseId, refSessions)
+  }
+
+  return result
 }
