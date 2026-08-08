@@ -196,6 +196,23 @@ All core features built and working:
   time for both — TASKS.md §4's own stated testable criterion. Test rows
   deleted and the toggle reverted afterward, zero trace left. See
   "2026-08-07 session (Phase 3.2)" below.
+- 2026-08-08 session: **Phase 3.3 — reference panel — built and adversarially
+  reviewed; not yet applied to Supabase, live-tested, or deployed.**
+  TASKS.md §4 items 16–18: `referenceLogic.ts` rewritten for two-slot
+  resolution (LAST WEEK → LAST TIME → FIRST TIME primary, additive THIS
+  WEEK secondary), session-first batched queries replacing the old
+  per-exercise-per-slot fetch (`sessionService.ts`'s new
+  `fetchReferenceSessions`, called once per screen), and grouped dropset
+  rendering in `ExerciseReference.tsx` (now purely presentational). A
+  Workflow-based adversarial review (same pattern as Phase 3.1's) confirmed
+  4 findings / 3 distinct bugs, all fixed: a high-severity missing sort
+  before grouping, same-date tie-break non-determinism, and a
+  `staleTime: Infinity` cache-invalidation gap. A follow-up correction the
+  same session renumbered TASKS.md's not-yet-applied future migrations
+  (history views 008→009, contract 009→010) after this phase's new
+  `008_v3_reference_panel_index.sql` took the slot TASKS.md had promised to
+  the history-views migration. See "2026-08-08 session (Phase 3.3)" below
+  for the full account.
 
 ---
 
@@ -345,7 +362,16 @@ session" below.
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
   Phase 3.0 (§4 steps 1–5), Phase 3.1 (§4 steps 6–11), and Phase 3.2 (§4
   steps 12–15) are all implemented, verified, deployed, and committed as
-  of 2026-08-07; Phase 3.3 onward is still ahead
+  of 2026-08-07. Phase 3.3 (§4 steps 16–18) is built, adversarially
+  reviewed, and fixed as of 2026-08-08 — **not yet applied to Supabase, not
+  live-tested, not deployed**, held for next session per explicit
+  instruction. Migration numbering in §2.3/§2.6/§2.8/§3/§4 was corrected the
+  same session: `008_v3_reference_panel_index.sql` (new, Phase 3.3) now
+  occupies the slot this plan originally gave to the history-views
+  migration, so history views is renumbered 008→009 and the contract
+  migration 009→010 throughout the document — TASKS.md and the
+  `supabase/migrations/` folder agree with each other as of this commit.
+  Phase 3.4 onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -371,9 +397,20 @@ session" below.
   Since Phase 3.1, also owns the cascade delete guard
   (handleDeleteHead/handleDeleteStage) and groups sets via
   setGroupLogic.ts before rendering
-- src/features/gym/ExerciseReference.tsx + referenceLogic.ts — smart 
-  LAST WEEK / LAST TIME / FIRST TIME reference panel (pure resolver 
-  logic is in referenceLogic.ts, testable independent of the component)
+- src/features/gym/ExerciseReference.tsx + referenceLogic.ts — smart
+  reference panel. **Rewritten in Phase 3.3 (2026-08-08)** for two-slot
+  resolution (LAST WEEK → LAST TIME → FIRST TIME primary slot, plus an
+  additive THIS WEEK list) — see "2026-08-08 session (Phase 3.3)" below.
+  ExerciseReference.tsx is now purely presentational (props: today,
+  sessions, isLoading); the pure resolver logic is
+  `resolveExerciseReference` in referenceLogic.ts, with real Vitest
+  coverage in referenceLogic.test.ts (16 tests) — the only file this
+  project's Section 1 Vitest argument originally named by name.
+  `sessionService.ts`'s `fetchReferenceSessions` +
+  `fetchReferenceCandidateSessions` replace the old
+  `fetchLastCompletedSessionForExercise`, batched session-first per
+  workout day (one call per GymSession/SessionPreview, not one per
+  exercise card) rather than per-exercise-per-slot
 - src/features/gym/SessionPreview.tsx + PreviewExerciseCard.tsx — 
   read-only session walkthrough reachable from Today
 - src/features/gym/RestDayScreen.tsx — rest day screen
@@ -413,6 +450,22 @@ session" below.
 ---
 
 ## Active work
+**Phase 3.3 (reference panel) is built, adversarially reviewed, and fixed as
+of 2026-08-08 — held for next session before touching Supabase.** TASKS.md
+§4 items 16–18. See "2026-08-08 session (Phase 3.3)" below for the full
+account: the two-slot `referenceLogic.ts` rewrite, the session-first batched
+query redesign, grouped dropset rendering, 16 new Vitest tests, a
+Workflow-based adversarial review that confirmed 4 findings (3 distinct
+bugs, one found independently by two reviewer dimensions) and all now fixed,
+and a follow-up correction to TASKS.md's migration numbering
+(`008_v3_reference_panel_index.sql` displaced the plan's original
+008/009 assignments — history views is now 009, the contract migration now
+010, throughout TASKS.md). **Not yet applied to Supabase, not live-tested
+against real session history, not pushed, not deployed** — all explicitly
+deferred to next session per instruction. Everything below this point is
+Phase 3.2's status, kept as written at the time — still accurate, just no
+longer the newest thing in this file.
+
 **Phase 3.2 (set timing and Today changes) is built, live-verified against
 production, and deployed as of 2026-08-07.** TASKS.md §4 items 12–15 —
 see "2026-08-07 session (Phase 3.2)" below for the full account, including
@@ -2134,6 +2187,216 @@ not push output alone).
 **Net effect:** Phase 3.2 is live in production. TASKS.md §4 items 1–15
 (Phases 3.0–3.2) are now all built, verified, and deployed; Phase 3.3
 (reference panel) onward is still ahead.
+
+---
+
+## 2026-08-08 session (Phase 3.3)
+Built TASKS.md §4 items 16–18 ("Reference panel"). Re-read CONTEXT.md, then
+§2.3 and §4's Phase 3.3 section fresh per instruction. **Not applied to
+Supabase, not live-tested, not deployed** — held for next session per
+explicit instruction, after a follow-up correction this same session (see
+"Migration numbering" below). Everything in this entry is committed locally
+only.
+
+### The index-ordering question — resolved explicitly, not silently
+
+§2.3 cited the `v2_sessions_user_day_date_idx` index it needs as created by
+`008_v3_history_views.sql`, "shared with Section 2.6" — but that migration
+belongs to Phase 3.4, which comes *after* Phase 3.3 in §4's own ordering.
+Chose to pull just the index into its own small migration now
+(`008_v3_reference_panel_index.sql`, idempotent `create index if not
+exists`) rather than ship the session-first query unindexed for one phase —
+reasoning: zero risk (idempotent, so Phase 3.4 re-creating the same index
+later is a harmless no-op), directly satisfies §2.3's own stated dependency,
+and removes the need to reason about whether "unindexed for one phase" is
+actually fine at this app's data volume, rather than deferring that
+judgement call. See "Migration numbering" below for the follow-up this
+created.
+
+### What was built
+
+16. **`referenceLogic.ts` rewritten for two-slot resolution.** New pure
+    `resolveExerciseReference(today, sessions)`: primary slot resolves LAST
+    WEEK (Monday-anchored previous calendar week, same workout_day_id) →
+    falls back to LAST TIME + elapsed → falls back to FIRST TIME; secondary
+    slot is THIS WEEK, additive, one entry per occurrence in the current
+    week with its own elapsed time (a list, never a collapsed value). The
+    old `RECENT_DAYS`/`ABSENCE_DAYS` constants and the `occurrenceCount`
+    input are deleted entirely, not kept as a fallback — matching the
+    instruction precisely. Both window boundaries are computed inside the
+    function itself (`startOfWeek`/`subWeeks`/`subDays`, `weekStartsOn: 1`),
+    not by the caller, so the boundary math is directly testable without a
+    caller pre-filtering anything.
+17. **Session-first batched queries.** New `fetchReferenceCandidateSessions`
+    (private) + `fetchReferenceSessions` (exported) in `sessionService.ts`:
+    one `v2_sessions` query for candidate session ids scoped to a single
+    `workout_day_id` (`status = 'completed'`, excluding the current
+    session, no arbitrary row-count limit — fixes AUDIT P5), then one
+    batched `v2_set_logs` query scoped to those session ids AND the workout
+    day's exercise ids. Replaces the old
+    `fetchLastCompletedSessionForExercise`, which fired once per exercise
+    per slot (closes the reference panel's share of AUDIT P1). Called
+    **once per screen** (`GymSession.tsx`/`SessionPreview.tsx`, fed by
+    `activeExercises` so the offline-cached-exercise-list fallback still
+    works), not once per exercise card — `ExerciseCard.tsx`/
+    `PreviewExerciseCard.tsx` no longer fetch their own reference data at
+    all; they receive an already-resolved `ReferenceSession[]` slice as a
+    prop. `useExerciseOccurrenceCounts`/`useAllProgramExercises`/
+    `fetchAllProgramExercisesForDays` (the old occurrence-count machinery,
+    now fully superseded) deleted from `usePrograms.ts`/`programService.ts`
+    — confirmed via grep they had no other consumers before removing them.
+18. **`ExerciseReference.tsx` renders both slots, dropsets grouped.** Now
+    purely presentational (props: `today`, `sessions`, `isLoading`) — no
+    longer calls its own hook. Renders the primary slot plus a `THIS WEEK`
+    panel per secondary-slot occurrence. Dropsets render as a head row plus
+    nested stage rows with a DROP badge, via `setGroupLogic.ts`'s
+    `groupByParent` (same module Phase 3.1 built), reusing the established
+    "badge driven by structural position, never by the raw `isDropset`
+    flag" convention (closes §2.7 item 9). `ReferenceSession.logs` is now
+    `SetGroup<SetLog>[]`, not a flat array — grouped at construction time in
+    `sessionService.ts`, both the online fetch and the offline Dexie
+    fallback in `useSession.ts`'s new `useExerciseReferenceSessions`, so no
+    consumer has to group it itself (closes §2.7 item 10).
+    `offlineCache.ts`'s `primeOfflineCache` step 3 rewritten from a
+    per-exercise "cache the single last session" loop to the same
+    session-first batched cache write, so the offline fallback has real
+    LAST WEEK/THIS WEEK/LAST TIME data to read, not just one session's
+    worth — a superset of what it cached before, not a narrower fetch.
+
+### Testing
+
+`referenceLogic.test.ts` (new) — 16 tests (14 written for the original
+build, 2 added during the adversarial-review fix pass below) covering
+exactly what the instruction named: LAST WEEK resolving correctly across a
+Monday boundary (a session 9 days back that falls in the week *before*
+prevWeek is excluded even though a naive fixed-day-count window would
+include it; a session 8 days back that falls inside prevWeek is included
+even though a naive 7-day lookback would miss it — proving the boundary is
+calendar-week-anchored, not day-counted), the LAST WEEK → LAST TIME → FIRST
+TIME fallback chain each in isolation, and THIS WEEK with zero/one/multiple
+occurrences (multiple confirmed sorted most-recent-first, each with its own
+`daysSince`, never collapsed to one value).
+
+### Independent adversarial review — a Workflow-based review, same pattern as Phase 3.1
+
+Ran a 4-dimension review (date-boundary math; session-first query
+correctness; rendering/prop-wiring; dead-code/regressions from the
+deletions), each with its own reviewer agent reading the actual current file
+content, findings then adversarially verified by a separate agent per
+finding instructed to try to refute it. Unlike Phase 3.1's review, this one
+ran to completion — no token-limit truncation. **4 findings confirmed, 0
+refuted, across 3 distinct bugs** (two findings, from the independent
+"query-correctness" and "rendering-and-wiring" dimensions, turned out to be
+the same underlying bug found twice — noted explicitly below, not left
+ambiguous, after an initial report of this session's findings undercounted
+the description against the "4 confirmed" headline and was corrected on
+request):
+
+- **High severity, confirmed: missing sort before grouping.**
+  `fetchReferenceSessions`'s `v2_set_logs` query has no `.order()` clause,
+  and `groupSetLogs`/`groupByParent` preserve input array order for heads —
+  Postgres gives no row-order guarantee without `ORDER BY`. The function
+  this replaced, `fetchLastCompletedSessionForExercise`, ended with
+  `.sort((a, b) => a.setNumber - b.setNumber)` before returning; that
+  safeguard was dropped in the rewrite. Concretely reachable via
+  `ExerciseCard.tsx`'s existing delete-and-renumber cascade (Phase 3.1): a
+  set deleted and relogged later in a session can end up with insertion
+  order that no longer matches its (renumbered) `setNumber`, so a
+  historical session surfaced as LAST WEEK/LAST TIME/THIS WEEK could render
+  its sets out of order (e.g. 1, 3, 2). The offline Dexie fallback in
+  `useSession.ts` had the identical gap (`db.set_logs...anyOf(...)` is also
+  unordered). **Fixed:** both paths now sort by `setNumber` immediately
+  before `groupSetLogs`, matching the replaced function's own guarantee.
+- **Medium, confirmed: same-date tie-break non-determinism.** All three sort
+  sites in `referenceLogic.ts` (LAST WEEK candidates, THIS WEEK, the LAST
+  TIME fallback) compared `ReferenceSession.date` (a calendar-day string)
+  only. When two sessions share a date — AUDIT A3 confirms there's no DB
+  uniqueness constraint on `(user_id, date)`, and AUDIT E8 already
+  documents same-day multi-workout as a real, not hypothetical, scenario —
+  "most recent if several" silently fell back to whichever session happened
+  to come first in the (explicitly documented as "unsorted") input array,
+  so the same real data could resolve differently depending purely on
+  fetch-order luck. **Fixed:** threaded `v2_sessions.completed_at` through
+  as `ReferenceSession.completedAt`, added a shared `byMostRecent`
+  comparator that breaks a same-date tie by true completion time when known
+  and falls back to `sessionId` (deterministic, if unavoidably arbitrary)
+  when it isn't. Two new tests cover both branches, including asserting the
+  same result regardless of input array order.
+- **Medium, confirmed — one bug, found independently by two reviewer
+  dimensions (not two separate bugs):** `useExerciseReferenceSessions` was
+  written with `staleTime: Infinity` and nothing ever invalidated its
+  `['v2_referenceSessions', ...]` query key.
+  `SessionPreview.tsx` always calls the hook with `currentSessionId: null`
+  (there's no active session yet to exclude), so for a given workout day
+  its cache key never changes across visits — before or after a session for
+  that day is completed. `useCompleteSession`'s `onSuccess` already
+  invalidates `['v2_session', id]`/`['v2_sessions']`/`['v2_history']`/
+  `['v2_exerciseProgress']`/`['v2_mesoProgress']`, with a comment on that
+  exact list explaining why ("without this those screens keep showing
+  pre-completion state until refetched for an unrelated reason") — but
+  never `['v2_referenceSessions']`. Net effect: complete a session, then
+  re-open Preview for that same workout day (a very plausible same-visit
+  action), and the panel could still show the pre-completion LAST WEEK/THIS
+  WEEK/LAST TIME state, for up to an hour (`gcTime`) or indefinitely with
+  repeated mounts keeping the entry alive — a real regression versus the
+  replaced `useLastCompletedSession`, which had no `staleTime` override and
+  so inherited the app's 5-minute global default. **Fixed:** removed the
+  `Infinity` override (back to the 5-minute default) and added
+  `['v2_referenceSessions']` to `useCompleteSession`'s existing
+  invalidation list, so the common case (complete, then immediately
+  re-preview) is correct immediately rather than merely bounded to 5
+  minutes. Not chased further into every other mutation that could
+  theoretically stale this cache (skip/reopen/delete-session) — scoped to
+  what the review actually found and confirmed, not extended speculatively.
+- **`dead-code-and-regressions` dimension: reported no findings.** Grepped
+  the entire `src/` tree for every deleted symbol
+  (`useExerciseOccurrenceCounts`, `useAllProgramExercises`,
+  `fetchAllProgramExercisesForDays`, `useLastCompletedSession`,
+  `fetchLastCompletedSessionForExercise`) and for any remaining flat
+  (non-grouped) use of `ReferenceSession.logs` — none found. Reported
+  plainly rather than inventing a stylistic nitpick, per the review's own
+  instruction to do so when nothing real turns up.
+
+### Verification
+
+`npm run typecheck`, `npx vitest run` (30/30 — the pre-existing 14 plus 16
+new), and `npm run build` all clean, re-run after the adversarial-review fix
+pass (not just before it).
+
+### Migration numbering — corrected on request, same session
+
+After the build + review report above, you flagged two things before
+anything touched Supabase: (1) the report's "4 real bugs" headline didn't
+match the 3 items described — resolved above, by explicitly naming which
+two findings were the same bug found twice, not a hidden 4th; (2)
+`008_v3_reference_panel_index.sql` (this session's new file) collided with
+TASKS.md's own numbering, which already promised "008" to
+`008_v3_history_views.sql` (Phase 3.4) and "009" to the contract migration
+(Phase 3.8) — neither applied yet, but both numbers already spoken for in
+the document.
+
+**Resolution: kept this migration at 008 (it genuinely is next in sequence
+and already exists), renumbered the two not-yet-applied future migrations
+throughout TASKS.md** — history views 008→009, contract 009→010 — in §2.3
+(the numbering note explaining the whole thing), §2.6 (the
+`009_v3_history_views.sql` header, and removed its now-duplicate
+`create index` statement since 008 already creates it), §2.8's summary
+table (added a row for 008, renumbered the other two), §3's new-files
+listing, and §4's Phase 3.4 item 19 and Phase 3.8 item 35. Also fixed
+`008_v3_reference_panel_index.sql`'s own header comment, which had said
+"TASKS.md itself is not rewritten to match" — no longer true once this fix
+landed. `supabase/migrations/` and TASKS.md now agree: 008 exists on disk
+and in the plan; 009 (history views) and 010 (contract) exist in the plan
+only, not yet written as files, exactly as before.
+
+### Status at the end of this session
+
+Phase 3.3's application code, tests, and the reference-panel index migration
+are all committed locally. **`008_v3_reference_panel_index.sql` has not
+been applied to Supabase** — that, plus read-only live-testing against real
+session history (including at least one exercise where the fallback chain
+should hit LAST TIME rather than LAST WEEK), plus push/deploy, are explicitly
+deferred to next session. Not pushed to `origin/master`.
 
 ---
 
