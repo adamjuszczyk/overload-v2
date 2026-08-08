@@ -138,7 +138,7 @@ alter table v2_week_plan_sets
 
 -- ── Log side ─────────────────────────────────────────────────────────────────
 -- parent_set_id already exists but is universally NULL (M5). Only the
--- ordering column is new here; the FK behaviour is changed in 009 (contract).
+-- ordering column is new here; the FK behaviour is changed in 010 (contract).
 alter table v2_set_logs
   add column if not exists stage_index integer not null default 0;
 
@@ -288,7 +288,7 @@ select count(*) from v2_set_logs where not is_dropset and parent_set_id is not n
   can share near-identical timestamps.
 - **`parent_set_id`'s `ON DELETE SET NULL` is now wrong.** Under the new model
   deleting a head silently promotes its stages to main working sets. Must
-  become `ON DELETE CASCADE`, deferred to 009 (contract) — which opens a
+  become `ON DELETE CASCADE`, deferred to 010 (contract) — which opens a
   window where the app can corrupt its own numbers. **This is a confirmed
   live issue, not a theoretical one** — see "The silent-promotion window"
   below.
@@ -311,7 +311,7 @@ select count(*) from v2_set_logs where not is_dropset and parent_set_id is not n
 
 **Question:** is there a UI path that deletes a single `v2_set_log` row rather
 than a whole session? Because `parent_set_id` keeps `ON DELETE SET NULL` from
-3.1 (when grouping becomes real) until 009 (when it becomes CASCADE), any such
+3.1 (when grouping becomes real) until 010 (when it becomes CASCADE), any such
 path would silently promote a deleted head's stages into main working sets —
 feeding wrong numbers straight into the 3.5 e1RM headline.
 
@@ -346,7 +346,7 @@ For completeness, the two paths that are *not* affected:
 #### The guard — cascade client-side, stages first
 
 Rather than blocking the delete (which makes a head undeletable until the user
-manually removes each stage, for a reason they can't see), **replicate 009's
+manually removes each stage, for a reason they can't see), **replicate 010's
 CASCADE in the client** so behaviour is identical before and after the
 constraint change and nothing needs revisiting at 3.8.
 
@@ -365,7 +365,7 @@ leaves a head with fewer stages: visible, harmless, and re-deletable. Since
 transaction, partial failure is a real outcome, so the order has to be the
 one that fails safe.
 
-Keep the guard after 009. It is then redundant with the FK, but it keeps the
+Keep the guard after 010. It is then redundant with the FK, but it keeps the
 optimistic cache update correct — the server cascade would otherwise remove
 rows that TanStack Query still has in `setLogs` until the next refetch.
 
@@ -432,10 +432,21 @@ This is a query and logic change, not a data-model change. One index earns its
 place:
 
 ```sql
--- 008_v3_history_views.sql (shared with Section 2.6)
 create index if not exists v2_sessions_user_day_date_idx
   on v2_sessions(user_id, workout_day_id, date desc);
 ```
+
+**Numbering note (resolved during Phase 3.3, 2026-08-08):** this plan
+originally assigned this index to `008_v3_history_views.sql`, shared with
+Section 2.6 — but Section 2.6/`008_v3_history_views.sql` belongs to Phase
+3.4, which comes *after* Phase 3.3 (this section) in §4's own ordering. Rather
+than ship Phase 3.3's session-first query unindexed for one phase, the index
+was pulled into its own migration, `008_v3_reference_panel_index.sql`,
+applied as part of Phase 3.3 instead of waiting for 3.4. Every migration
+number after it shifts by one from what the rest of this document originally
+said: history views is now `009_v3_history_views.sql` (was 008), and the
+contract migration is now `010_v3_tighten_constraints.sql` (was 009). See
+§2.8's summary table and §4's Phase 3.4/3.8 sections, both updated to match.
 
 #### The simplification FIX 14 unlocked
 
@@ -700,7 +711,9 @@ would re-download the same full set-log history on every visit.
 
 #### Fix — aggregate in Postgres, not in the client
 
-`008_v3_history_views.sql`:
+`009_v3_history_views.sql` (renumbered from 008 — see §2.3's numbering note;
+`008_v3_reference_panel_index.sql` now owns the index this file used to
+create):
 
 ```sql
 -- ── Replaces the set-log join in fetchHistorySessions ───────────────────────
@@ -770,10 +783,12 @@ grant select on v2_history_session_summary,
                 v2_exercise_set_history,
                 v2_session_type_history
   to authenticated;
-
-create index if not exists v2_sessions_user_day_date_idx
-  on v2_sessions(user_id, workout_day_id, date desc);
 ```
+
+The `v2_sessions_user_day_date_idx` index this file originally also created
+is gone from here — it was pulled forward into `008_v3_reference_panel_index.sql`
+during Phase 3.3 (see §2.3's numbering note) and already exists by the time
+this migration runs, so it isn't repeated here.
 
 `v2_set_logs_user_ex_time_idx` (from 001) already covers the exercise-all-time
 access path.
@@ -881,11 +896,17 @@ stored data is modified, so it is reversible by reverting the filter.
 | 006 | `v2_set_logs` | `+ entered_unit` (nullable) | expand |
 | 006 | `v2_week_plan_sets`, `v2_set_logs` | `+ is_warmup` | expand |
 | 007 | `v2_set_logs`, `v2_week_plan_sets` | dropset grouping backfill | **migrate** |
-| 008 | — | 3 views, 1 index, grants | expand |
-| 009 | `v2_set_logs` | `parent_set_id` FK → `ON DELETE CASCADE` | **contract** |
+| 008 | `v2_sessions` | 1 index (`v2_sessions_user_day_date_idx`) | expand |
+| 009 | — | 3 views, grants | expand |
+| 010 | `v2_set_logs` | `parent_set_id` FK → `ON DELETE CASCADE` | **contract** |
 
-009 runs last, after verification and after `sync_queue` is confirmed empty.
-Nothing in 004–008 breaks the currently deployed client.
+008 was pulled forward from what this plan originally called
+`008_v3_history_views.sql` and applied a phase early, during 3.3 rather than
+3.4 — see §2.3's numbering note for why. 009 and 010 are renumbered up by one
+from this document's original 008/009 as a result.
+
+010 runs last, after verification and after `sync_queue` is confirmed empty.
+Nothing in 004–009 breaks the currently deployed client.
 
 ---
 
@@ -946,8 +967,9 @@ supabase/migrations/
   005_v3_set_timing.sql
   006_v3_units_and_warmup.sql
   007_v3_backfill_dropset_stages.sql      -- data migration + audit queries
-  008_v3_history_views.sql
-  009_v3_tighten_constraints.sql          -- contract; run last
+  008_v3_reference_panel_index.sql        -- pulled forward from Phase 3.4 (§2.3); applied in 3.3
+  009_v3_history_views.sql                -- was 008 in this plan's original numbering
+  010_v3_tighten_constraints.sql          -- contract; run last (was 009)
 
 src/lib/
   weightUnit.ts                 -- real kg↔lbs conversion (fixes AUDIT E5)
@@ -1024,7 +1046,7 @@ twice.
 **Why the guard is in this phase and not 3.8:** step 8 has to ship in the same
 release as step 7. The moment `parent_set_id` carries meaning, the existing
 per-set delete on `SetRow.tsx` can orphan stages into working sets, and
-`parent_set_id` keeps `ON DELETE SET NULL` until 009. Deferring the guard
+`parent_set_id` keeps `ON DELETE SET NULL` until 010. Deferring the guard
 leaves a live corruption path open across five sub-phases, feeding wrong
 numbers into 3.5.
 
@@ -1060,7 +1082,9 @@ THIS WEEK appears after a second session of the same type in one week.
 
 ### 3.4 — History: P2 first, then the new views
 
-19. Apply 008; verify `security_invoker` and the PostgREST reload
+19. Apply 009 (`009_v3_history_views.sql` — was 008 in this plan's original
+    numbering; 008 was pulled forward into Phase 3.3, see §2.3); verify
+    `security_invoker` and the PostgREST reload
 20. Rewrite `historyService.ts` onto `v2_history_session_summary` + pagination
 21. `ExerciseHistoryView.tsx`, `SessionTypeHistoryView.tsx`, `HistoryDataTable.tsx`
     — stages nested under their head, never as extra table rows
@@ -1124,13 +1148,14 @@ dependencies in either direction.
 
 33. Additional accent colours in `tokens.css`
 34. `defaultExercises.ts` seeded library
-35. Confirm `sync_queue` empty → apply 009 (FK CASCADE)
+35. Confirm `sync_queue` empty → apply 010 (`010_v3_tighten_constraints.sql` —
+    was 009; FK CASCADE)
 36. Verification pass
 
-**Why 009 is last:** the contract migration is the only one that can reject an
+**Why 010 is last:** the contract migration is the only one that can reject an
 old-shaped offline payload. It runs when there is nothing left in flight.
 
-Note that 009 does **not** retire the client-side guard from step 8 — the two
+Note that 010 does **not** retire the client-side guard from step 8 — the two
 are complementary. The FK stops the database from orphaning stages; the guard
 keeps TanStack Query's optimistic cache correct, since a server-side cascade
 removes rows the client still holds in `setLogs` until the next refetch.
@@ -1173,7 +1198,7 @@ recording means some exercises show no headline at all.
 directly. It is the per-set delete from FIX 8 (AUDIT E1), live in every active
 session.
 
-So the silent-promotion window between 3.1 and 009 is real, and the guard in
+So the silent-promotion window between 3.1 and 010 is real, and the guard in
 §2.1 — client-side cascade, **stages first, head last** — is now step 8 of
 phase 3.1 rather than an optional hardening task. `SessionDetail.tsx` is
 read-only for sets and needs no guard; the plan side gets CASCADE from 004 and
