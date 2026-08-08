@@ -346,6 +346,28 @@ migration, Phase 3.8) remains unwritten.
 ---
 
 ## Key architectural rules
+- **Live browser verification is a hard gate, not a nice-to-have (added
+  2026-08-08, after Phase 3.4).** If a phase's task instructions call for
+  live-testing against real data and browser tooling (in-app pane, Claude
+  in Chrome) is unavailable, that is a **stop-and-report condition — the
+  same as a failing test or a typecheck error**, not a reason to ship on
+  code-level/schema-level verification alone with the gap flagged for
+  later. Phase 3.4 shipped to production on typecheck/build/vitest plus
+  `curl`-level schema checks alone, with the live-render gap noted in
+  CONTEXT.md rather than blocking — the very next session had to spend a
+  full pass just performing the verification that should have gated the
+  ship in the first place. **Don't repeat that.** Concretely: check
+  browser tooling *before* starting a build that will need it (a quick
+  `requestAnimationFrame` probe or an actual navigation — don't assume
+  from a prior session's success or failure), and if it's unavailable when
+  the live-test step is reached, stop, commit locally if the code is
+  coherent, and report back rather than asking the user whether to proceed
+  without it. The one narrow exception: a step that is itself blocked on
+  browser tooling *and* the user explicitly, in-session, overrides the gate
+  after being told plainly what won't be verified as a result (not a
+  standing preference — a live, scoped choice made with full information,
+  the way schema-level `curl` checks were offered as a partial substitute
+  during Phase 3.4, not a replacement for the real check).
 - State separation: TanStack Query owns all Supabase data. 
   Zustand owns UI state only. Never mix.
 - All colours via --accent and other CSS custom properties. 
@@ -553,37 +575,33 @@ migration, Phase 3.8) remains unwritten.
 
 ## Active work
 **Phase 3.4 (History cross-meso views) is built, migration applied and
-verified, adversarially reviewed, fixed, and deployed as of 2026-08-08.**
-TASKS.md §4 items 19–22. See "2026-08-08 session (Phase 3.4)" below for the
-full account. Unlike every phase before it, this one shipped **without a
-live UI render** — the in-app Browser pane wasn't compositing frames all
-session (confirmed via a `requestAnimationFrame` probe returning 0
-callbacks, not assumed) and Claude in Chrome was never connected, so the
-Postgres-version check and the migration application both went through the
-user directly, and the "live-test against real account" testing step from
-this session's own instructions was explicitly skipped by the user's
-choice rather than performed. What *did* happen instead: the migration was
-independently verified (`security_invoker` confirmed via `pg_class`, views
-confirmed queryable via a direct PostgREST request, RLS confirmed still
-active via an anon-key request returning `[]`); a Workflow-based
-adversarial review ran, converged independently from 4 of 5 review angles
-on a real ORDER-BY-not-a-total-order bug before hitting a platform usage
-limit mid-verification (15 of 23 agent calls failed with "session limit,
-resets 9:20am Europe/Warsaw"); the remaining findings — including the
-converged one — were verified by hand against the actual code instead of
-by further agents, since spawning more was failing anyway. Five real bugs
-found and fixed: the ORDER BY fix itself, a missing `user_id`
-defence-in-depth filter on `fetchWorkoutDayName`, a LOAD MORE button
-unreachable once a meso filter emptied the loaded page, a VIEW ALL link
-gated on the wrong field, and an unguarded duration edge case. One
-pre-existing, lower-severity finding (`fetchHistoryDetail`/`deleteSession`
-relying on RLS alone, no app-layer `user_id` filter) was deliberately left
-unfixed as out of scope — it predates this phase and wasn't introduced by
-it. **The next session that touches History or picks up Phase 3.5 should
-budget for an actual live browser check of this phase's UI** — the dropset
-grouping in the "EVERY SET" table and the exercise/session-type charts have
-only been verified by code reading and schema-level `curl` checks, never
-by looking at the rendered page.
+verified, adversarially reviewed, fixed, deployed, and — as of a follow-up
+session the same day — live-verified against real production data.**
+TASKS.md §4 items 19–22 are now fully closed out, including the live-test
+step the original build session shipped without. See "2026-08-08 session
+(Phase 3.4)" below for the build account and "2026-08-08 session (Phase
+3.4 — live verification)" for the follow-up. Summary of the follow-up:
+browser tooling was re-checked fresh (not assumed) and found working
+(`requestAnimationFrame` firing normally); all four requested checks
+passed concretely against real data — the session list confirmed 1
+summary row vs. 18 raw `v2_set_logs` rows for a real session, a real
+dropset (all 8 linked stages in the account, on "One-arm Dumbell Lateral
+Raise") confirmed rendering grouped across 4 real sessions, the offline
+empty state confirmed appearing immediately (not hanging) on a real
+`offline` event, and pagination confirmed against real data with zero
+duplicates/missing rows using a forced-small page size (real occurrence
+counts don't naturally reach the shipped page sizes yet). One non-bug
+finding surfaced and was reported, not silently patched: two of one
+workout day's five real occurrences have multi-hour session durations
+(genuine `started_at`/`completed_at` gaps in the underlying data, a
+pre-existing anomaly Phase 3.4's new view is simply the first surface to
+display — not something this phase introduced or should silently "fix" by
+guessing at a cap). **A new standing rule was added to "Key architectural
+rules" as a direct result of this phase shipping without live verification
+once already:** unavailable browser tooling during a phase that requires
+live-testing is now a stop-and-report condition, the same as a failing
+test, not a reason to ship on code-level verification with the gap flagged
+for later.
 
 **Phase 3.3 (reference panel) is built, adversarially reviewed, live-tested
 against real production data, and deployed as of 2026-08-08.** TASKS.md §4
@@ -788,6 +806,19 @@ Most impactful deferred items:
   was asked to touch; worth closing in a future session if a session-id
   URL route or deep link is ever added, at which point the risk stops
   being hypothetical.
+- **New, found during Phase 3.4's live verification (2026-08-08), not a
+  code bug — a real data anomaly.** Two of "PULL 1"'s five real occurrences
+  have implausible session durations (~45 hours and ~20.5 hours) in
+  `SessionTypeHistoryView.tsx`'s DURATION column. Confirmed against the raw
+  `v2_sessions` rows: `started_at`/`completed_at` genuinely are that far
+  apart in the stored data — the view computes exactly what's stored. This
+  view is the first surface in the app to ever display per-session
+  duration, so this is a pre-existing data quality issue only now made
+  visible, not something Phase 3.4 introduced. Root cause not
+  investigated (could be a missed auto-finish, a session finished long
+  after being reopened, or similar); no UI cap or fix applied — that would
+  be guessing at a product decision. See "2026-08-08 session (Phase 3.4 —
+  live verification)" below for the exact rows.
 - M5 (spontaneous dropsets never get parentSetId, log side): **CLOSED,
   both directions, as of 2026-08-05.** Historical data: the 007 backfill
   is confirmed complete on `v2_set_logs` (8/8 rows correctly linked, 0
@@ -2931,6 +2962,147 @@ first phase in this project shipped to production without ever being
 looked at in a real, rendered browser.** TASKS.md §4 items 1–22 (Phases
 3.0–3.4) are now all built, verified (to the standard described above),
 and deployed; Phase 3.5 (Progress headline) onward is still ahead.
+
+---
+
+## 2026-08-08 session (Phase 3.4 — live verification)
+
+**Follow-up session, same day.** The prior session shipped Phase 3.4 to
+production without ever performing the live-testing step its own task
+instructions required, because browser tooling was unavailable — that gap
+was flagged in CONTEXT.md rather than fixed. This session's task: report
+the other 4 adversarial-review bugs in real mechanism-level detail (they
+already were, in the prior entry — re-confirmed, not re-summarized), and
+actually perform the skipped live verification now that browser tooling
+should be re-checked fresh rather than assumed either working or broken
+from the prior session's state.
+
+### Browser tooling — checked fresh, found working
+
+`requestAnimationFrame` polled again at the start of this session: **3
+callbacks in 27ms**, versus 0 callbacks after 3 seconds the prior session.
+This session's own dev server (`preview_list` confirmed it belongs to this
+session's own `sessionId`, not another chat's, despite a generic
+PostToolUse hook warning suggesting otherwise) was already showing a real
+authenticated session with live data. Compositing works this session;
+it did not the prior one — this was genuinely intermittent/environmental,
+not something either report should have assumed either way without
+checking.
+
+### 1. Session list — one row per session, concrete count
+
+Queried both sides directly through the page's own authenticated Supabase
+client (`import('/src/lib/supabase.ts')`, same technique Phase 3.2 used):
+the Aug 6, 2026 "PUSH 2" session — rendered "17 SETS" in the History list
+— returns **exactly 1 row** from `v2_history_session_summary`
+(`set_count: 17`), while the raw `v2_set_logs` table for that same
+`session_id` has **18 rows**. The one-row gap is a single `is_skipped`
+row (confirmed by reading all 18 raw rows) — matches the view's
+`filter (where not is_skipped and parent_set_id is null)` exactly. The old
+per-set-log join would have downloaded all 18 rows just to compute this
+one session's summary, out of up to 500 sessions; the new query downloads
+1.
+
+### 2. Dropset rendering — grouped against real data, not code inspection
+
+Queried every `v2_set_logs` row in the account with a non-null
+`parent_set_id`: all **8** (matches the count already recorded in this
+file from 2026-08-05's backfill verification — no drift) belong to one
+exercise, **One-arm Dumbell Lateral Raise**. Rendered
+`/exercise/8db7bba5-7186-49f3-a02b-dd5ec39fcc84` (`ExerciseHistoryView.tsx`)
+directly and read the actual page. Confirmed grouped rendering across all
+4 real sessions containing a linked stage:
+
+- Jul 30 / Jul 23: Set 1, 2, 3, then two indented `STAGE` rows (dimmed,
+  no set number) — a 3-stage dropset (head + 2 stages) rendering as one
+  group of 3 rows, not 5 independent numbered sets.
+- Jul 9: Set 1, 2, then two `STAGE` rows — same shape.
+- Jul 16, the more interesting case: **two separate dropset groups in one
+  session.** The table shows Set 1, Set 2, `STAGE`, Set 4, `STAGE` — i.e.
+  Set 3 (itself a stage of Set 2's group) correctly never gets its own
+  top-level row, and Set 4's own stage nests immediately under it. This is
+  exactly the case that would have broken under the pre-fix `ORDER BY`
+  (two heads tying on `stage_index=0` within one session) — confirmed
+  correct against the real rows that motivated the fix in the first place,
+  not just against the fix's own logic in isolation.
+
+Screenshots taken and visually confirmed at each step (not just read via
+`get_page_text`).
+
+### 3. Offline empty state — real event, not just code reading
+
+`ExerciseHistoryView.tsx`'s offline check (`if (!isOnline) return
+<empty-state>`) sits before the loading-state check entirely, so it
+doesn't depend on any query being in flight — dispatching the real
+`offline` DOM event `useOnlineStatus` listens for is a faithful test of
+this exact branch, not a synthetic shortcut. Set
+`navigator.onLine = false` + dispatched `window.dispatchEvent(new
+Event('offline'))`: the page immediately showed "REQUIRES A CONNECTION —
+Exercise history isn't cached offline — reconnect to view it," and the
+app's own pre-existing global offline banner ("● OFFLINE · SETS WILL SYNC
+ON RECONNECT") appeared at the same moment, independent confirmation from
+a second, unrelated code path. No spinner, no delay. Restored
+`navigator.onLine = true` + dispatched `online` afterward.
+
+### 4. Pagination against real data — no duplicates, no missing rows
+
+Real data doesn't naturally reach the shipped page sizes yet: the busiest
+workout day has 5 real occurrences (page size 25) and the busiest
+exercise has 25 real sets (page size 60). Rather than report this as
+untestable, called `fetchExerciseSetHistory`/`fetchSessionTypeHistory`
+directly (same functions the app uses) with a forced-small page size
+against the same real rows, to genuinely exercise the offset/trim logic:
+
+- `fetchExerciseSetHistory` (One-arm Dumbell Lateral Raise, 25 real
+  rows), page size 3: **10 forced pages, 0 duplicates, 0 missing**,
+  exact id-set match against one unpaginated fetch of the same rows.
+  Several pages returned fewer than 3 rows exactly where a real dropset
+  group would otherwise have split across the boundary —
+  `trimPartialTrailingGroup` visibly engaging on real data, not just in
+  its own unit tests.
+- `fetchSessionTypeHistory` (PULL 1, 5 real rows), page size 2: **3
+  forced pages, exact match, no duplicates/missing.**
+- Also rendered `/session-type/861ecbb7-e201-431f-a433-e27306054906`
+  (`SessionTypeHistoryView.tsx`) directly and confirmed the real page
+  shows all 5 occurrences with correct volume/avg RIR/duration.
+
+### Found, reported, deliberately not patched: a real data anomaly
+
+Two of PULL 1's five real occurrences show implausible durations — Aug 4
+shows "2687min 23s" (~45 hours), Jul 7 shows "1232min 46s" (~20.5 hours).
+Checked the raw `v2_sessions` rows directly: `started_at`/`completed_at`
+really are that far apart in the stored data
+(`2026-08-04T12:22:17` → `2026-08-06T09:09:40`, e.g.) — the view is
+computing exactly what's stored, not miscalculating. This is a genuine
+pre-existing data quality wrinkle (a session started and not marked
+complete for a long time — the mechanism isn't determined here, could be
+a missed auto-finish, a manually-reopened-and-finished-later session, or
+similar) that Phase 3.4's new "Session type, all time" view is simply the
+**first surface in this app to ever display** — `SessionDetail.tsx` never
+showed per-session duration, only the Progress charts' "avg rest time,"
+which is a different metric entirely. **Not patched, per explicit
+instruction not to silently patch and re-report as done** — capping or
+hiding it would be guessing at a product decision (should a >N-hour
+session be excluded from the average? Shown differently? Investigated for
+a root cause in the session-completion flow?) that wasn't asked for.
+Flagged here for whoever picks this up next.
+
+### New standing rule
+
+Added to "Key architectural rules" (see there for the full text): live
+browser verification required by a phase's task instructions is now a
+stop-and-report condition when unavailable, the same as a failing test —
+not a reason to ship on code-level verification with the gap flagged for
+later. This session is the reason the rule exists in writing now rather
+than being assumed.
+
+### Net effect
+
+TASKS.md §4 items 19–22 (Phase 3.4) are now genuinely fully verified —
+migration, adversarial review, and live-testing against real production
+data all complete, not just the first two. No code changes this session;
+nothing to re-deploy. The one open item is the data anomaly above, left
+for a future session or explicit product decision.
 
 ---
 
