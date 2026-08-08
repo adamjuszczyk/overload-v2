@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import { useHistoryDetail, useDeleteSession } from './useHistory'
 import type { HistorySetRow } from './historyService'
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export default function SessionDetail({ sessionId, onBack }: Props) {
+  const navigate = useNavigate()
   const { data: session, isLoading, error } = useHistoryDetail(sessionId)
   const { mutate: deleteSession, isPending: isDeleting } = useDeleteSession()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -102,21 +104,31 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
         </span>
       </div>
 
-      {session.workoutDayName ? (
+      {/* VIEW ALL is gated on workoutDayId, not on whether the name resolved
+          (found by adversarial review) — the name comes from a separate,
+          non-transactional lookup (fetchHistoryDetail), so a session whose
+          workout day was deleted in between would otherwise lose the link
+          along with the name even though the route still works fine. */}
+      <div className="flex items-center justify-between gap-2 mt-1">
         <h1
-          className="text-2xl font-black tracking-tight mt-1"
-          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
+          className="text-2xl font-black tracking-tight"
+          style={{
+            color: session.workoutDayName ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontFamily: 'var(--font-display)',
+          }}
         >
-          {session.workoutDayName}
+          {session.workoutDayName ?? 'SESSION'}
         </h1>
-      ) : (
-        <h1
-          className="text-2xl font-black tracking-tight mt-1"
-          style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-display)' }}
-        >
-          SESSION
-        </h1>
-      )}
+        {session.workoutDayId && (
+          <button
+            onClick={() => navigate(`/session-type/${session.workoutDayId}`)}
+            className="shrink-0 text-xs font-bold tracking-widest"
+            style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+          >
+            VIEW ALL →
+          </button>
+        )}
+      </div>
 
       {session.mesocycleName && (
         <p

@@ -27,7 +27,14 @@ const STATUS_STYLE = {
 type StatusFilter = 'all' | 'completed' | 'skipped'
 
 export default function HistoryPage() {
-  const { data: sessions = [], isLoading } = useHistorySessions()
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useHistorySessions()
+  const sessions = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
   const { data: mesos = [] } = useMesos()
   const { mutate: deleteMeso, isPending: isDeletingMeso } = useDeleteMeso()
 
@@ -427,6 +434,27 @@ export default function HistoryPage() {
               )
             })}
           </div>
+        )}
+
+        {/* Load more — real .range() pagination (§2.6 / Phase 3.4 item 20)
+            replaces the old .limit(500) session-list query. Filters above
+            apply only to sessions already loaded, so a narrow filter may
+            need another tap of this to reach older matches. */}
+        {hasNextPage && (
+          <button
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="w-full mt-3 py-2.5 rounded-xl text-xs font-bold"
+            style={{
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              opacity: isFetchingNextPage ? 0.5 : 1,
+            }}
+          >
+            {isFetchingNextPage ? 'LOADING…' : 'LOAD MORE'}
+          </button>
         )}
       </div>
     </div>

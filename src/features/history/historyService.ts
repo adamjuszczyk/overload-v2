@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { MuscleGroup, SessionStatus } from '../../types'
 import { groupByParent, type SetGroup } from '../gym/setGroupLogic'
+import { trimPartialTrailingGroup } from './historyPagination'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,26 +50,6 @@ export interface HistoryDetail extends HistoryRow {
 
 // ─── Raw DB row types ─────────────────────────────────────────────────────────
 
-type RawLogMinimal = {
-  id: string
-  is_skipped: boolean
-  parent_set_id: string | null
-  exercises: { id: string; muscle_group: string | null } | null
-}
-
-type RawSessionRow = {
-  id: string
-  date: string
-  status: string
-  note: string | null
-  started_at: string | null
-  completed_at: string | null
-  workout_day_id: string | null
-  mesocycle_id: string | null
-  v2_set_logs: RawLogMinimal[]
-  v2_mesocycles: { id: string; name: string } | null
-}
-
 type RawLogFull = {
   id: string
   exercise_id: string
@@ -98,63 +79,89 @@ type RawSessionFull = {
   v2_mesocycles: { id: string; name: string } | null
 }
 
-// ─── Session list ─────────────────────────────────────────────────────────────
+type RawSummaryRow = {
+  id: string
+  date: string
+  status: string
+  note: string | null
+  started_at: string | null
+  completed_at: string | null
+  workout_day_id: string | null
+  workout_day_name: string | null
+  mesocycle_id: string | null
+  mesocycle_name: string | null
+  set_count: number
+  muscle_groups: string[]
+}
 
-export async function fetchHistorySessions(userId: string): Promise<HistoryRow[]> {
+// ─── Session list (v2_history_session_summary — TASKS.md §2.6 / Phase 3.4 item 20) ──
+//
+// Replaces the old per-set-log join (up to 500 sessions × every set log ever
+// recorded — AUDIT P2) with the pre-aggregated view: one row per session,
+// set_count and muscle_groups computed in Postgres. Real .range() pagination,
+// ordered by date desc, so the newest sessions are always in the first page
+// (the same class of fix as AUDIT H4's progress-chart pagination).
+//
+// security_invoker on the view (Postgres 15+, confirmed live: 17.6.1.141)
+// already scopes rows to the caller via RLS. The explicit .eq('user_id', …)
+// below is defence-in-depth on top of that, per §2.6's own risk section and
+// the same reasoning as AUDIT S1 for the exercises table — not the only
+// thing standing between this query and another user's rows.
+
+const HISTORY_SESSION_PAGE_SIZE = 25
+
+export interface HistorySessionsPage {
+  rows: HistoryRow[]
+  nextOffset: number | null
+}
+
+export async function fetchHistorySessions(
+  userId: string,
+  offset = 0,
+  pageSize = HISTORY_SESSION_PAGE_SIZE,
+): Promise<HistorySessionsPage> {
   const { data, error } = await supabase
-    .from('v2_sessions')
+    .from('v2_history_session_summary')
     .select(`
       id, date, status, note, started_at, completed_at,
-      workout_day_id, mesocycle_id,
-      v2_set_logs(id, is_skipped, parent_set_id, exercises(id, muscle_group)),
-      v2_mesocycles(id, name)
+      workout_day_id, workout_day_name, mesocycle_id, mesocycle_name,
+      set_count, muscle_groups
     `)
     .eq('user_id', userId)
+    // date is day-granularity, so two sessions on the same date tie on the
+    // primary sort key — Postgres doesn't promise a stable order for ties
+    // across separate page requests without a secondary key. Without this,
+    // a same-day session could appear twice (or never) across "load more"
+    // pages. id is arbitrary but stable, which is all a tiebreaker needs.
     .order('date', { ascending: false })
-    .limit(500)
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize - 1)
   if (error) throw error
 
-  const rows = data as unknown as RawSessionRow[]
+  const rows: HistoryRow[] = (data as unknown as RawSummaryRow[]).map((r) => ({
+    id: r.id,
+    date: r.date,
+    status: r.status as SessionStatus,
+    note: r.note,
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    workoutDayId: r.workout_day_id,
+    workoutDayName: r.workout_day_name,
+    mesocycleId: r.mesocycle_id,
+    mesocycleName: r.mesocycle_name,
+    setCount: r.set_count,
+    muscleGroups: (r.muscle_groups ?? []) as MuscleGroup[],
+  }))
 
-  // Batch-fetch workout day names for all unique workout_day_ids
-  const dayIds = [...new Set(rows.map(r => r.workout_day_id).filter(Boolean))] as string[]
-  const dayNameMap: Record<string, string> = {}
-  if (dayIds.length > 0) {
-    const { data: days } = await supabase
-      .from('v2_workout_days')
-      .select('id, name')
-      .in('id', dayIds)
-    for (const d of (days ?? []) as { id: string; name: string }[]) {
-      dayNameMap[d.id] = d.name
-    }
-  }
-
-  return rows.map(r => {
-    const activeLogs = (r.v2_set_logs ?? []).filter(l => !l.is_skipped)
-    const muscleGroups = [
-      ...new Set(activeLogs.map(l => l.exercises?.muscle_group).filter(Boolean) as MuscleGroup[]),
-    ]
-    return {
-      id: r.id,
-      date: r.date,
-      status: r.status as SessionStatus,
-      note: r.note,
-      startedAt: r.started_at,
-      completedAt: r.completed_at,
-      workoutDayId: r.workout_day_id,
-      workoutDayName: r.workout_day_id ? (dayNameMap[r.workout_day_id] ?? null) : null,
-      mesocycleId: r.mesocycle_id,
-      mesocycleName: r.v2_mesocycles?.name ?? null,
-      // Heads only — a drop stage is never counted as an independent set
-      // (stage-exclusion rule, TASKS.md §2.1). Same class of bug as §2.7
-      // item 6, just on the list view instead of the detail view.
-      setCount: activeLogs.filter((l) => l.parent_set_id == null).length,
-      muscleGroups,
-    }
-  })
+  return { rows, nextOffset: rows.length === pageSize ? offset + rows.length : null }
 }
 
 // ─── Session detail ───────────────────────────────────────────────────────────
+//
+// Unchanged by the P2 fix — this already scopes to exactly one session's set
+// logs (not "every set log ever"), so it was never the query the views above
+// replace. Still needs every log for that one session, which is what a
+// session-detail screen is for.
 
 export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDetail> {
   const { data, error } = await supabase
@@ -280,4 +287,218 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
 export async function deleteSession(id: string): Promise<void> {
   const { error } = await supabase.from('v2_sessions').delete().eq('id', id)
   if (error) throw error
+}
+
+// ─── Workout day name (for the Session-type history header) ───────────────────
+
+export async function fetchWorkoutDayName(
+  userId: string,
+  workoutDayId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('v2_workout_days')
+    .select('name')
+    // workoutDayId comes straight from a URL route param (/session-type/:workoutDayId)
+    // — unlike sessionId elsewhere in this file, which is only ever sourced from an
+    // already user_id-scoped list. Same defense-in-depth policy as the three view
+    // queries above; found missing here by adversarial review.
+    .eq('user_id', userId)
+    .eq('id', workoutDayId)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { name: string } | null)?.name ?? null
+}
+
+// ─── Exercise, all time (v2_exercise_set_history — SPEC §7 / Phase 3.4 item 21) ────
+//
+// One row per SET, so unlike the two views above, a page boundary can split
+// a dropset's head from its stage(s). Every page is fetched one row past the
+// requested size and run through trimPartialTrailingGroup (historyPagination.ts)
+// so a group is never rendered split — the trimmed rows come back complete at
+// the start of the next page instead.
+
+export interface ExerciseSetHistoryRow {
+  id: string
+  sessionId: string
+  date: string
+  mesocycleId: string | null
+  mesocycleName: string | null
+  weekNumber: number | null
+  isDeload: boolean
+  setNumber: number
+  stageIndex: number
+  parentSetId: string | null
+  weight: number | null
+  reps: number | null
+  rir: number | null
+  restSeconds: number | null
+  setSeconds: number | null
+  isWarmup: boolean
+  isSkipped: boolean
+}
+
+type RawExerciseSetRow = {
+  id: string
+  session_id: string
+  date: string
+  mesocycle_id: string | null
+  mesocycle_name: string | null
+  week_number: number | null
+  is_deload: boolean
+  set_number: number
+  stage_index: number
+  parent_set_id: string | null
+  weight: number | null
+  reps: number | null
+  rir: number | null
+  rest_seconds: number | null
+  set_seconds: number | null
+  is_warmup: boolean
+  is_skipped: boolean
+}
+
+const EXERCISE_SET_HISTORY_PAGE_SIZE = 60
+
+export interface ExerciseSetHistoryPage {
+  rows: ExerciseSetHistoryRow[]
+  nextOffset: number | null
+}
+
+export async function fetchExerciseSetHistory(
+  userId: string,
+  exerciseId: string,
+  offset = 0,
+  pageSize = EXERCISE_SET_HISTORY_PAGE_SIZE,
+): Promise<ExerciseSetHistoryPage> {
+  const { data, error } = await supabase
+    .from('v2_exercise_set_history')
+    .select(`
+      id, session_id, date, mesocycle_id, mesocycle_name, week_number, is_deload,
+      set_number, stage_index, parent_set_id, weight, reps, rir,
+      rest_seconds, set_seconds, is_warmup, is_skipped
+    `)
+    .eq('user_id', userId)
+    .eq('exercise_id', exerciseId)
+    // Every one of these is load-bearing, not cosmetic — found by an
+    // adversarial review after the fact: session_id alone still ties for
+    // every ordinary (non-dropset) set in one session, since stage_index
+    // defaults to 0 for every head row, not just the first. A session with
+    // 3 plain sets of one exercise has 3 rows sharing (date, session_id,
+    // stage_index=0) — Postgres promises nothing about tie order across
+    // separate page requests, which both scrambles the "EVERY SET" table's
+    // display order and can duplicate or silently drop rows across pages
+    // (trimPartialTrailingGroup's contiguity assumption depends on a true
+    // total order). set_number is unique per exercise per session and
+    // gives the semantically correct display order (heads in logged
+    // order — stage-to-stage order within one head is handled separately
+    // by groupByParent's own sort, not by this ORDER BY). id is the final
+    // tiebreaker since set_number's uniqueness is a convention, not a DB
+    // constraint (TASKS.md's migration-risk section already flags one
+    // known renumbering race elsewhere in this codebase) — id is the only
+    // column here guaranteed unique by the database itself.
+    .order('date', { ascending: false })
+    .order('session_id', { ascending: true })
+    .order('set_number', { ascending: true })
+    .order('stage_index', { ascending: true })
+    .order('id', { ascending: true })
+    .range(offset, offset + pageSize) // pageSize + 1 rows — see trim note above
+  if (error) throw error
+
+  const raw = data as unknown as RawExerciseSetRow[]
+  const { pageRows, hasMore } = trimPartialTrailingGroup(raw, pageSize, (r) => r.session_id)
+
+  const rows: ExerciseSetHistoryRow[] = pageRows.map((r) => ({
+    id: r.id,
+    sessionId: r.session_id,
+    date: r.date,
+    mesocycleId: r.mesocycle_id,
+    mesocycleName: r.mesocycle_name,
+    weekNumber: r.week_number,
+    isDeload: r.is_deload,
+    setNumber: r.set_number,
+    stageIndex: r.stage_index,
+    parentSetId: r.parent_set_id,
+    weight: r.weight,
+    reps: r.reps,
+    rir: r.rir,
+    restSeconds: r.rest_seconds,
+    setSeconds: r.set_seconds,
+    isWarmup: r.is_warmup,
+    isSkipped: r.is_skipped,
+  }))
+
+  return { rows, nextOffset: hasMore ? offset + rows.length : null }
+}
+
+// ─── Session type, all time (v2_session_type_history — SPEC §7 / Phase 3.4 item 21) ──
+//
+// One row per session OCCURRENCE, already aggregated in SQL (total_volume,
+// avg_rir, set_count, duration_seconds) — no client-side grouping, so no
+// pagination/grouping interaction to guard against here.
+
+export interface SessionTypeHistoryRow {
+  sessionId: string
+  date: string
+  mesocycleId: string | null
+  weekNumber: number | null
+  isDeload: boolean
+  durationSeconds: number | null
+  totalVolume: number | null
+  avgRir: number | null
+  setCount: number
+}
+
+type RawSessionTypeRow = {
+  session_id: string
+  date: string
+  mesocycle_id: string | null
+  week_number: number | null
+  is_deload: boolean
+  duration_seconds: number | null
+  total_volume: number | null
+  avg_rir: number | null
+  set_count: number
+}
+
+const SESSION_TYPE_HISTORY_PAGE_SIZE = 25
+
+export interface SessionTypeHistoryPage {
+  rows: SessionTypeHistoryRow[]
+  nextOffset: number | null
+}
+
+export async function fetchSessionTypeHistory(
+  userId: string,
+  workoutDayId: string,
+  offset = 0,
+  pageSize = SESSION_TYPE_HISTORY_PAGE_SIZE,
+): Promise<SessionTypeHistoryPage> {
+  const { data, error } = await supabase
+    .from('v2_session_type_history')
+    .select(`
+      session_id, date, mesocycle_id, week_number, is_deload,
+      duration_seconds, total_volume, avg_rir, set_count
+    `)
+    .eq('user_id', userId)
+    .eq('workout_day_id', workoutDayId)
+    // Deterministic tiebreaker — see fetchExerciseSetHistory's comment above;
+    // same-date sessions otherwise have no guaranteed stable order across pages.
+    .order('date', { ascending: false })
+    .order('session_id', { ascending: true })
+    .range(offset, offset + pageSize - 1)
+  if (error) throw error
+
+  const rows: SessionTypeHistoryRow[] = (data as unknown as RawSessionTypeRow[]).map((r) => ({
+    sessionId: r.session_id,
+    date: r.date,
+    mesocycleId: r.mesocycle_id,
+    weekNumber: r.week_number,
+    isDeload: r.is_deload,
+    durationSeconds: r.duration_seconds,
+    totalVolume: r.total_volume,
+    avgRir: r.avg_rir,
+    setCount: r.set_count,
+  }))
+
+  return { rows, nextOffset: rows.length === pageSize ? offset + rows.length : null }
 }

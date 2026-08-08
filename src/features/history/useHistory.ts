@@ -1,15 +1,24 @@
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import { fetchHistorySessions, fetchHistoryDetail, deleteSession } from './historyService'
+import {
+  fetchHistorySessions,
+  fetchHistoryDetail,
+  deleteSession,
+  fetchWorkoutDayName,
+  fetchExerciseSetHistory,
+  fetchSessionTypeHistory,
+} from './historyService'
 
 const HISTORY_KEY = ['v2_history']
 
 export function useHistorySessions() {
   const { user } = useAuth()
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: HISTORY_KEY,
-    queryFn: () => fetchHistorySessions(user!.id),
+    queryFn: ({ pageParam }) => fetchHistorySessions(user!.id, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
     enabled: !!user,
     staleTime: 2 * 60 * 1000,
   })
@@ -34,6 +43,46 @@ export function useDeleteSession() {
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_exerciseSetHistory'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_sessionTypeHistory'] })
     },
+  })
+}
+
+// ─── Exercise, all time ─────────────────────────────────────────────────────
+
+export function useExerciseSetHistory(exerciseId: string | null) {
+  const { user } = useAuth()
+  return useInfiniteQuery({
+    queryKey: ['v2_exerciseSetHistory', exerciseId],
+    queryFn: ({ pageParam }) => fetchExerciseSetHistory(user!.id, exerciseId!, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
+    enabled: !!user && !!exerciseId,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+// ─── Session type, all time ─────────────────────────────────────────────────
+
+export function useSessionTypeHistory(workoutDayId: string | null) {
+  const { user } = useAuth()
+  return useInfiniteQuery({
+    queryKey: ['v2_sessionTypeHistory', workoutDayId],
+    queryFn: ({ pageParam }) => fetchSessionTypeHistory(user!.id, workoutDayId!, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => lastPage.nextOffset,
+    enabled: !!user && !!workoutDayId,
+    staleTime: 2 * 60 * 1000,
+  })
+}
+
+export function useWorkoutDayName(workoutDayId: string | null) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_workoutDayName', workoutDayId],
+    queryFn: () => fetchWorkoutDayName(user!.id, workoutDayId!),
+    enabled: !!user && !!workoutDayId,
+    staleTime: 10 * 60 * 1000,
   })
 }
