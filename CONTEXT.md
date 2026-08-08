@@ -196,23 +196,33 @@ All core features built and working:
   time for both — TASKS.md §4's own stated testable criterion. Test rows
   deleted and the toggle reverted afterward, zero trace left. See
   "2026-08-07 session (Phase 3.2)" below.
-- 2026-08-08 session: **Phase 3.3 — reference panel — built and adversarially
-  reviewed; not yet applied to Supabase, live-tested, or deployed.**
+- 2026-08-08 session: **Phase 3.3 — reference panel — built, adversarially
+  reviewed, live-tested against real production data, and deployed.**
   TASKS.md §4 items 16–18: `referenceLogic.ts` rewritten for two-slot
-  resolution (LAST WEEK → LAST TIME → FIRST TIME primary, additive THIS
-  WEEK secondary), session-first batched queries replacing the old
-  per-exercise-per-slot fetch (`sessionService.ts`'s new
-  `fetchReferenceSessions`, called once per screen), and grouped dropset
-  rendering in `ExerciseReference.tsx` (now purely presentational). A
-  Workflow-based adversarial review (same pattern as Phase 3.1's) confirmed
-  4 findings / 3 distinct bugs, all fixed: a high-severity missing sort
-  before grouping, same-date tie-break non-determinism, and a
-  `staleTime: Infinity` cache-invalidation gap. A follow-up correction the
-  same session renumbered TASKS.md's not-yet-applied future migrations
-  (history views 008→009, contract 009→010) after this phase's new
-  `008_v3_reference_panel_index.sql` took the slot TASKS.md had promised to
-  the history-views migration. See "2026-08-08 session (Phase 3.3)" below
-  for the full account.
+  resolution (LAST WEEK → LAST TIME → FIRST TIME primary, additive
+  secondary slot for occurrences earlier in the current week), session-first
+  batched queries replacing the old per-exercise-per-slot fetch
+  (`sessionService.ts`'s new `fetchReferenceSessions`, called once per
+  screen), and grouped dropset rendering in `ExerciseReference.tsx` (now
+  purely presentational). A Workflow-based adversarial review (same pattern
+  as Phase 3.1's) confirmed 4 findings / 3 distinct bugs, all fixed: a
+  high-severity missing sort before grouping, same-date tie-break
+  non-determinism, and a `staleTime: Infinity` cache-invalidation gap. A
+  follow-up correction the same day renumbered TASKS.md's not-yet-applied
+  future migrations (history views 008→009, contract 009→010) after this
+  phase's new `008_v3_reference_panel_index.sql` took the slot TASKS.md had
+  promised to the history-views migration. Migration 008 applied,
+  independently reconfirmed via `pg_indexes`; live read-only testing against
+  real session history confirmed LAST WEEK, the LAST TIME fallback, and the
+  additive secondary slot all resolve correctly through the actual shipped
+  function; testing also found a display-only label collision (the
+  secondary slot's `THIS WEEK` header collided with `PlanTargetsPanel.tsx`'s
+  pre-existing, unrelated `THIS WEEK` header), fixed by renaming the
+  rendered string to `EARLIER THIS WEEK` — the underlying field name,
+  tests, and SPEC.md/TASKS.md's own spec language are unchanged. Pushed and
+  confirmed live via `vercel ls`/`vercel inspect`. See "2026-08-08 session
+  (Phase 3.3)" and "2026-08-08 session (Phase 3.3 — live test, label fix,
+  deploy)" below for the full account.
 
 ---
 
@@ -400,7 +410,13 @@ session" below.
 - src/features/gym/ExerciseReference.tsx + referenceLogic.ts — smart
   reference panel. **Rewritten in Phase 3.3 (2026-08-08)** for two-slot
   resolution (LAST WEEK → LAST TIME → FIRST TIME primary slot, plus an
-  additive THIS WEEK list) — see "2026-08-08 session (Phase 3.3)" below.
+  additive secondary slot) — see "2026-08-08 session (Phase 3.3)" below.
+  **Label note:** the secondary slot's rendered UI string is
+  `EARLIER THIS WEEK`, not `THIS WEEK` — it collided with
+  `PlanTargetsPanel.tsx`'s pre-existing `THIS WEEK` header (unrelated
+  feature, same row). SPEC.md §4.1 and TASKS.md §2.3 still say `THIS WEEK`
+  in their spec language; the `thisWeek` field name in referenceLogic.ts's
+  return shape is also still `thisWeek` — only the on-screen word changed.
   ExerciseReference.tsx is now purely presentational (props: today,
   sessions, isLoading); the pure resolver logic is
   `resolveExerciseReference` in referenceLogic.ts, with real Vitest
@@ -450,21 +466,27 @@ session" below.
 ---
 
 ## Active work
-**Phase 3.3 (reference panel) is built, adversarially reviewed, and fixed as
-of 2026-08-08 — held for next session before touching Supabase.** TASKS.md
-§4 items 16–18. See "2026-08-08 session (Phase 3.3)" below for the full
-account: the two-slot `referenceLogic.ts` rewrite, the session-first batched
-query redesign, grouped dropset rendering, 16 new Vitest tests, a
-Workflow-based adversarial review that confirmed 4 findings (3 distinct
-bugs, one found independently by two reviewer dimensions) and all now fixed,
-and a follow-up correction to TASKS.md's migration numbering
-(`008_v3_reference_panel_index.sql` displaced the plan's original
-008/009 assignments — history views is now 009, the contract migration now
-010, throughout TASKS.md). **Not yet applied to Supabase, not live-tested
-against real session history, not pushed, not deployed** — all explicitly
-deferred to next session per instruction. Everything below this point is
-Phase 3.2's status, kept as written at the time — still accurate, just no
-longer the newest thing in this file.
+**Phase 3.3 (reference panel) is built, adversarially reviewed, live-tested
+against real production data, and deployed as of 2026-08-08.** TASKS.md §4
+items 16–18. See "2026-08-08 session (Phase 3.3)" below for the build (the
+two-slot `referenceLogic.ts` rewrite, the session-first batched query
+redesign, grouped dropset rendering, 16 new Vitest tests, a Workflow-based
+adversarial review that confirmed 4 findings / 3 distinct bugs, all fixed,
+and the TASKS.md migration-numbering correction: `008_v3_reference_panel_index.sql`
+displaced the plan's original 008/009 assignments, so history views is now
+009 and the contract migration 010 throughout TASKS.md), then
+"2026-08-08 session (Phase 3.3 — live test, label fix, deploy)" immediately
+below that for migration 008's independent verification, the live read-only
+test against real session history (LAST WEEK, the LAST TIME fallback, and
+the THIS WEEK secondary slot all confirmed correct against the actual
+shipped `resolveExerciseReference` function), a display-only label
+collision the live test found and fixed (`ExerciseReference.tsx`'s
+secondary slot is `EARLIER THIS WEEK`, not `THIS WEEK` — see that entry's
+note on SPEC.md §4.1/TASKS.md §2.3 still saying `THIS WEEK`), and the push
++ deploy confirmation. TASKS.md §4 items 1–18 (Phases 3.0–3.3) are now all
+built, verified, and deployed. Everything below this point is Phase 3.2's
+status, kept as written at the time — still accurate, just no longer the
+newest thing in this file.
 
 **Phase 3.2 (set timing and Today changes) is built, live-verified against
 production, and deployed as of 2026-08-07.** TASKS.md §4 items 12–15 —
@@ -2397,6 +2419,117 @@ been applied to Supabase** — that, plus read-only live-testing against real
 session history (including at least one exercise where the fallback chain
 should hit LAST TIME rather than LAST WEEK), plus push/deploy, are explicitly
 deferred to next session. Not pushed to `origin/master`.
+
+---
+
+## 2026-08-08 session (Phase 3.3 — live test, label fix, deploy)
+Continuation of the same day's earlier Phase 3.3 session, per explicit
+instruction: confirm migration 008 was applied, run the deferred live
+read-only test, fix whatever it found, then push and deploy.
+
+### Migration 008 — independently confirmed applied
+
+You reported it applied; verified rather than taken on trust, per this
+project's established pattern —
+`select indexname, indexdef from pg_indexes where tablename = 'v2_sessions' and indexname = 'v2_sessions_user_day_date_idx'`
+against production returned one row:
+`CREATE INDEX v2_sessions_user_day_date_idx ON public.v2_sessions USING btree (user_id, workout_day_id, date DESC)`
+— matches the migration exactly.
+
+### Live read-only test against real production data
+
+The dev server had a live, already-authenticated session against production
+data (same situation as Phases 3.1/3.2's live tests). Supabase Studio's own
+SQL Editor was unresponsive this session (blank `#__next` root, wouldn't
+render after repeated navigation/reload — a tooling hiccup, not a data
+issue); worked around it via the same trick Phase 3.2's live test used —
+`import('/src/lib/supabase.ts')` from the running dev app's own console —
+extended this time to also `import('/src/features/gym/referenceLogic.ts')`
+and `.../setGroupLogic.ts` directly, so the test calls the **actual shipped
+`resolveExerciseReference` function** against real rows fetched straight
+from `v2_sessions`/`v2_set_logs`, not a hand-simulated approximation of it.
+
+- **LAST WEEK (common case).** Barbell Row on the live in-progress "Pull 2"
+  session: UI showed `62.5×6@0` / `60×7@1` under LAST WEEK. Cross-checked
+  directly against `v2_set_logs` for the underlying session
+  (`442dd584…`, dated 2026-07-31) — exact match. That date correctly falls
+  in the Monday-anchored previous week [2026-07-27, 2026-08-02] relative to
+  today (2026-08-08, a Saturday).
+- **LAST TIME fallback.** Called the real `resolveExerciseReference` with
+  Barbell Row's actual 4-session history but `today` shifted to
+  `2026-08-15` — a legitimate input to the pure function, not fabricated
+  session data, chosen because this account's actual weekly cadence has no
+  real gap wide enough to hit this branch under the real current date.
+  Correctly returned `last_time`, session 2026-07-31, `daysSince: 15`.
+- **THIS WEEK secondary slot.** Incline Dumbell Press (Push 1, a different
+  workout day than the active session): real history has completed
+  sessions on 2026-08-03 and 2026-07-27. The real function correctly
+  returned `primary: last_week` (Jul 27) **and** `thisWeek: [{date: Aug 3,
+  daysSince: 5}]` simultaneously, both slots independent and correct.
+
+**Found: a label collision, not a data bug.** `ExerciseReference.tsx`'s new
+secondary slot rendered as `THIS WEEK` — but `PlanTargetsPanel.tsx` (the
+unrelated, pre-existing left-hand column showing this session's planned
+targets) already hardcodes its own `THIS WEEK` header. Confirmed with the
+real Push 1/Incline Dumbell Press data above that both are simultaneously
+reachable: a user would see `THIS WEEK — 1 —, 2 —` (unlogged planned
+targets) directly beside `THIS WEEK — 32.5×6, 32.5×6, 30×6` (last Monday's
+actual performance), no visual distinction between two unrelated meanings.
+Reported before pushing, per instruction.
+
+### Fix
+
+Display-only: `ExerciseReference.tsx`'s secondary-slot `Panel` now renders
+`label="EARLIER THIS WEEK"` instead of `label="THIS WEEK"`. The `thisWeek`
+field name in `referenceLogic.ts`'s return shape, `referenceLogic.test.ts`,
+and TASKS.md/SPEC.md's own spec language are all unchanged, per explicit
+instruction — this is a rendering string only, there's no collision at the
+code/data level.
+
+**Note for future sessions:** SPEC.md §4.1 and TASKS.md §2.3 both say
+`THIS WEEK` for this slot in their spec language — the shipped UI label is
+`EARLIER THIS WEEK` instead, because of the `PlanTargetsPanel.tsx` collision
+above. Don't read the literal-string mismatch as a bug or a stale doc; the
+underlying concept and field name are still "this week," only the on-screen
+word choice changed.
+
+`npm run typecheck` and `npm run build` both clean after the fix. Visual
+confirmation: fetched the dev server's actual served bytes for
+`ExerciseReference.tsx` and confirmed `EARLIER THIS WEEK` present and zero
+remaining `label="THIS WEEK"` occurrences — i.e. confirmed what the browser
+actually loads, not just the source file on disk. Re-loaded the live Pull 2
+session and confirmed no regression (LAST WEEK panels still render
+correctly for every exercise). Did not fight further to mount an isolated
+component instance from the browser console (bare `react`/`react-dom`
+specifiers don't resolve outside Vite's own module graph) — judged
+disproportionate given the change is a single JSX string literal in an
+otherwise-untouched rendering path already proven correct earlier in this
+same test.
+
+### Deploy
+
+Committed (`a77171c`), separate from the Phase 3.3 feature commit per this
+project's established granularity. Pre-push check:
+`git rev-list --left-right --count origin/master...HEAD` → `0 4` (the
+Phase 3.3 feature commit, the TASKS.md renumbering, the prior "held for
+next session" CONTEXT.md update, and this label fix — none of it had been
+pushed yet). Pushed; `git ls-remote origin master` confirmed
+`origin/master`'s HEAD is exactly `a77171c688e117711f84b4fa64278e6daee445af`.
+`vercel ls` showed a fresh Production deployment
+(`https://overload-v2-kkxlf1zwa-adamjuszczyks-projects.vercel.app`)
+`● Building` about a minute after the push; `vercel inspect` confirmed
+`status: ● Ready`, `target: production`, created
+`Sat Aug 08 2026 05:00:29 GMT+0200`, timing-consistent with the push (same
+standard of evidence as every prior deploy confirmation in this file).
+
+**Net effect: Phase 3.3 (reference panel, TASKS.md §4 items 16–18) is live
+in production.** Migration 008 applied and independently verified; the
+two-slot resolver, session-first batched queries, and grouped dropset
+rendering are all confirmed correct against real session history, including
+the LAST TIME fallback and the THIS WEEK secondary slot; the one issue live
+testing found (a display-only label collision) is fixed, verified, and
+deployed. TASKS.md §4 items 1–18 (Phases 3.0–3.3) are now all built,
+verified, and deployed; Phase 3.4 (History) onward is still ahead.
 
 ---
 
