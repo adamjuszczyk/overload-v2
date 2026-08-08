@@ -134,10 +134,18 @@ export default function ExerciseReference({ today, sessions, isLoading }: Exerci
         />
       )}
 
+      {/* Rendered label is "EARLIER THIS WEEK", not "THIS WEEK" (which
+          TASKS.md §2.3 / SPEC.md §4.1 use) — display-only rename, the
+          underlying `thisWeek` field name is unchanged. PlanTargetsPanel.tsx
+          already hardcodes its own "THIS WEEK" header for planned targets in
+          the column immediately to the left of this one; both can render
+          simultaneously (confirmed with real data during Phase 3.3 live
+          testing) and were otherwise visually indistinguishable despite
+          meaning completely different things. See CONTEXT.md. */}
       {thisWeek.map(({ session, daysSince }) => (
         <Panel
           key={session.sessionId}
-          label="THIS WEEK"
+          label="EARLIER THIS WEEK"
           sub={relativeLabel(daysSince, session.date)}
           groups={session.logs}
         />
