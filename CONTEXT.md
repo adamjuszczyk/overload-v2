@@ -223,6 +223,31 @@ All core features built and working:
   confirmed live via `vercel ls`/`vercel inspect`. See "2026-08-08 session
   (Phase 3.3)" and "2026-08-08 session (Phase 3.3 — live test, label fix,
   deploy)" below for the full account.
+- 2026-08-08 session (second such session, same day): **Phase 3.4 — History
+  cross-meso views — built, migration applied and verified, adversarially
+  reviewed (partially — cut short by a platform usage limit), fixed, and
+  deployed.** TASKS.md §4 items 19–22: `009_v3_history_views.sql` (three
+  `security_invoker` views, Postgres 15+ confirmed live: `17.6.1.141`)
+  applied and verified; `historyService.ts` rewritten onto
+  `v2_history_session_summary` with real `.range()` pagination, fixing
+  AUDIT P2 (one row per session instead of one row per set log ever
+  recorded); two new paginated fetchers for `v2_exercise_set_history` and
+  `v2_session_type_history`; `ExerciseHistoryView.tsx` +
+  `SessionTypeHistoryView.tsx` + `HistoryDataTable.tsx` (SPEC §7's two new
+  "all time" views). This session's browser tooling (the in-app Browser
+  pane and Claude in Chrome) was unavailable throughout — confirmed via a
+  `requestAnimationFrame` probe, not assumed — so the Postgres-version
+  check and the migration application both went through the user directly
+  instead of the usual browser-automation path, and **no live UI render
+  happened this session**, unlike every prior phase. A Workflow-based
+  adversarial review converged independently from 4 of 5 review angles on a
+  real bug (`fetchExerciseSetHistory`'s `ORDER BY` wasn't a total order)
+  before hitting a session usage limit mid-verification; the remaining
+  findings were verified by hand instead of by further agents. Five real
+  bugs found and fixed in total — see "2026-08-08 session (Phase 3.4)"
+  below for the full account, including which findings got genuine
+  adversarial verification versus manual re-verification, and the one
+  pre-existing gap deliberately left unfixed as out of scope.
 
 ---
 
@@ -304,6 +329,20 @@ already_linked=7, total=7`, unchanged from the last check — so nothing
 in production drifted while this was in progress. See "2026-08-06
 session" below.
 
+**Migration 008 (`008_v3_reference_panel_index.sql`, one index) applied
+2026-08-08 during Phase 3.3.** **Migration 009 (`009_v3_history_views.sql`
+— three views: `v2_history_session_summary`, `v2_exercise_set_history`,
+`v2_session_type_history`, all `with (security_invoker = true)`) applied
+and verified 2026-08-08 during Phase 3.4** — `security_invoker` confirmed
+actually set (not just present in the SQL) via
+`select relname, reloptions from pg_class where relname in (...)`, all
+three returning `{security_invoker=true}`; views confirmed queryable via a
+direct PostgREST request with the anon key (no 404 from a stale schema
+cache); RLS confirmed still genuinely active on top of `security_invoker`
+via the same anon-key request returning `[]` rather than real rows. Only
+migration 010 (`010_v3_tighten_constraints.sql`, the FK-cascade contract
+migration, Phase 3.8) remains unwritten.
+
 ---
 
 ## Key architectural rules
@@ -342,11 +381,11 @@ session" below.
   `PlanTargetsPanel.tsx` / `PreviewExerciseCard.tsx` (planned-set lists
   — item 7), `PlanPage.tsx` (add-set numbering — item 8). The named
   Postgres views (`v2_history_session_summary`, `v2_exercise_set_history`,
-  `v2_session_type_history`) and `e1rm.ts` **do not exist yet** — those
-  are Phase 3.4/3.5. `historyService.ts`'s client-side query is what
-  enforces the rule for History today; when the views land, they become
-  the enforcement point instead, per TASKS.md's original design — this
-  is not a contradiction, just which phase built which half first.
+  `v2_session_type_history`) now exist and are live as of Phase 3.4
+  (2026-08-08) and are the enforcement point for History, exactly as
+  TASKS.md's original design intended — see `009_v3_history_views.sql`'s
+  `filter (where ... and parent_set_id is null)` clauses. `e1rm.ts` still
+  **does not exist yet** — that's Phase 3.5.
   **Orphan dropsets** (a row with `is_dropset = true` but a null parent
   — the backfill's documented outcome for a drop with no preceding main
   set) render as their own independent head, exactly as TASKS.md §2.1's
@@ -370,18 +409,20 @@ session" below.
 ## Key files
 - SPEC.md — **v3** product source of truth
 - TASKS.md — **v3** technical plan (schema changes, migrations, phase order).
-  Phase 3.0 (§4 steps 1–5), Phase 3.1 (§4 steps 6–11), and Phase 3.2 (§4
-  steps 12–15) are all implemented, verified, deployed, and committed as
-  of 2026-08-07. Phase 3.3 (§4 steps 16–18) is built, adversarially
-  reviewed, and fixed as of 2026-08-08 — **not yet applied to Supabase, not
-  live-tested, not deployed**, held for next session per explicit
-  instruction. Migration numbering in §2.3/§2.6/§2.8/§3/§4 was corrected the
-  same session: `008_v3_reference_panel_index.sql` (new, Phase 3.3) now
-  occupies the slot this plan originally gave to the history-views
-  migration, so history views is renumbered 008→009 and the contract
-  migration 009→010 throughout the document — TASKS.md and the
-  `supabase/migrations/` folder agree with each other as of this commit.
-  Phase 3.4 onward is still ahead
+  Phase 3.0 (§4 steps 1–5), Phase 3.1 (§4 steps 6–11), Phase 3.2 (§4 steps
+  12–15), and Phase 3.3 (§4 steps 16–18) are all implemented, verified,
+  deployed, and committed as of 2026-08-08. **Phase 3.4 (§4 steps 19–22,
+  History cross-meso views) is also built, migration applied and verified,
+  adversarially reviewed, fixed, and deployed as of 2026-08-08 (second
+  session that day)** — see "2026-08-08 session (Phase 3.4)" below.
+  Migration numbering in §2.3/§2.6/§2.8/§3/§4 was corrected during Phase
+  3.3: `008_v3_reference_panel_index.sql` occupies the slot this plan
+  originally gave to the history-views migration, so history views is
+  `009_v3_history_views.sql` and the contract migration is
+  `010_v3_tighten_constraints.sql` throughout the document — TASKS.md and
+  the `supabase/migrations/` folder agree with each other. Only the
+  contract migration (010, Phase 3.8) remains unwritten; Phase 3.5 onward
+  is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -432,6 +473,51 @@ session" below.
 - src/features/gym/RestDayScreen.tsx — rest day screen
 - src/features/gym/ExerciseHeader.tsx + PlanTargetsPanel.tsx — shared 
   pieces used by both ExerciseCard and PreviewExerciseCard
+- src/features/history/historyService.ts — **rewritten, Phase 3.4
+  (2026-08-08).** Session list (`fetchHistorySessions`) now reads
+  `v2_history_session_summary` with real `.range()` pagination (fixes
+  AUDIT P2), ordered `date desc, id asc` — `id` alone is already a total
+  order since it's the row's own unique key. `fetchHistoryDetail`/
+  `deleteSession` are unchanged from pre-3.4 (still per-session, never the
+  P2 query) and — flagged, not fixed, out of scope — are the one place
+  left in this file relying on RLS alone with no `.eq('user_id', …)`
+  defence-in-depth; low practical risk today since `sessionId` only ever
+  comes from an already user-scoped list, never a URL param. Two new
+  paginated fetchers: `fetchExerciseSetHistory` (against
+  `v2_exercise_set_history`, one row per **set**) and
+  `fetchSessionTypeHistory` (against `v2_session_type_history`, one row
+  per **occurrence**, already aggregated in SQL). `fetchWorkoutDayName`
+  takes `userId` and filters on it — the one query in this file an
+  adversarial review caught missing that filter, since unlike `sessionId`
+  elsewhere here, `workoutDayId` comes straight from a URL route param
+  (`/session-type/:workoutDayId`)
+- src/features/history/historyPagination.ts — **new, Phase 3.4.** Pure:
+  `trimPartialTrailingGroup`. `fetchExerciseSetHistory` is the one view
+  with per-set rows and client-side grouping (via setGroupLogic's
+  `groupByParent`), so a raw offset/limit page can split a dropset's head
+  from its stage(s) at the boundary — this over-fetches one row past the
+  page and trims a trailing partial group so it reappears complete on the
+  next page instead. Has real Vitest coverage (historyPagination.test.ts),
+  same precedent as setGroupLogic.ts/referenceLogic.ts. Its correctness
+  depends on `fetchExerciseSetHistory`'s `ORDER BY` being a true total
+  order — see that function's own comment for why `date`/`session_id`
+  alone weren't enough (an adversarial review catch, not caught at
+  build time)
+- src/features/history/ExerciseHistoryView.tsx + SessionTypeHistoryView.tsx
+  + HistoryDataTable.tsx — **new, Phase 3.4.** SPEC §7's two "all time"
+  views (trend chart + exact table); `HistoryDataTable.tsx` is the shared,
+  deliberately dumb table primitive both use. Reached via the existing
+  `/exercise/:exerciseId` route (`ExerciseHistoryPage.tsx`, previously a
+  placeholder, now wired) and a new `/session-type/:workoutDayId` route
+  (`SessionTypeHistoryPage.tsx`), the latter reached from a new VIEW ALL
+  link in `SessionDetail.tsx` gated on `workoutDayId` being present — not
+  on the workout day *name* having resolved, since the name comes from a
+  separate non-transactional lookup and an adversarial review found the
+  original name-gated version could lose the link even when the route
+  would work fine. Both views are online-only (neither source table is
+  mirrored in Dexie) with an explicit "REQUIRES A CONNECTION" empty state
+  via the existing `useOnlineStatus` hook, not a spinner that never
+  resolves
 - src/lib/formatRestTime.ts — single source of truth for "45s" / 
   "1min 32s" rest-time formatting, used in History, Progress 
   (both charts), and RestTimer
@@ -466,6 +552,39 @@ session" below.
 ---
 
 ## Active work
+**Phase 3.4 (History cross-meso views) is built, migration applied and
+verified, adversarially reviewed, fixed, and deployed as of 2026-08-08.**
+TASKS.md §4 items 19–22. See "2026-08-08 session (Phase 3.4)" below for the
+full account. Unlike every phase before it, this one shipped **without a
+live UI render** — the in-app Browser pane wasn't compositing frames all
+session (confirmed via a `requestAnimationFrame` probe returning 0
+callbacks, not assumed) and Claude in Chrome was never connected, so the
+Postgres-version check and the migration application both went through the
+user directly, and the "live-test against real account" testing step from
+this session's own instructions was explicitly skipped by the user's
+choice rather than performed. What *did* happen instead: the migration was
+independently verified (`security_invoker` confirmed via `pg_class`, views
+confirmed queryable via a direct PostgREST request, RLS confirmed still
+active via an anon-key request returning `[]`); a Workflow-based
+adversarial review ran, converged independently from 4 of 5 review angles
+on a real ORDER-BY-not-a-total-order bug before hitting a platform usage
+limit mid-verification (15 of 23 agent calls failed with "session limit,
+resets 9:20am Europe/Warsaw"); the remaining findings — including the
+converged one — were verified by hand against the actual code instead of
+by further agents, since spawning more was failing anyway. Five real bugs
+found and fixed: the ORDER BY fix itself, a missing `user_id`
+defence-in-depth filter on `fetchWorkoutDayName`, a LOAD MORE button
+unreachable once a meso filter emptied the loaded page, a VIEW ALL link
+gated on the wrong field, and an unguarded duration edge case. One
+pre-existing, lower-severity finding (`fetchHistoryDetail`/`deleteSession`
+relying on RLS alone, no app-layer `user_id` filter) was deliberately left
+unfixed as out of scope — it predates this phase and wasn't introduced by
+it. **The next session that touches History or picks up Phase 3.5 should
+budget for an actual live browser check of this phase's UI** — the dropset
+grouping in the "EVERY SET" table and the exercise/session-type charts have
+only been verified by code reading and schema-level `curl` checks, never
+by looking at the rendered page.
+
 **Phase 3.3 (reference panel) is built, adversarially reviewed, live-tested
 against real production data, and deployed as of 2026-08-08.** TASKS.md §4
 items 16–18. See "2026-08-08 session (Phase 3.3)" below for the build (the
@@ -649,9 +768,26 @@ Most impactful deferred items:
   extra-set corruption H2 described — but the wider "no unique 
   identity for a WeekPlanSet edited mid-session" concern behind A2 
   is not fully resolved; treat as improved, not closed.
-- P2: history downloads all set logs ever (performance at scale). 
-  Scoped for a fix in v3 Phase 3.4 — three Postgres views replace the 
-  client-side aggregation (TASKS.md §2.6)
+- P2 (history downloads all set logs ever): **CLOSED as of Phase 3.4
+  (2026-08-08).** `fetchHistorySessions` now reads
+  `v2_history_session_summary`, a pre-aggregated Postgres view — one row
+  per session instead of one row per set log ever recorded — with real
+  `.range()` pagination replacing the old `.limit(500)`. See "2026-08-08
+  session (Phase 3.4)" below.
+- **New, found by Phase 3.4's adversarial review, deliberately not fixed
+  (2026-08-08):** `historyService.ts`'s `fetchHistoryDetail` and
+  `deleteSession` rely solely on `v2_sessions`' RLS policy, with no
+  app-layer `.eq('user_id', userId)` filter — inconsistent with the
+  defence-in-depth pattern the three Phase 3.4 view-backed queries in the
+  same file use. Pre-existing (unchanged by Phase 3.4, not introduced by
+  it) and lower practical risk than it might sound: `sessionId` in the
+  current UI is only ever sourced from the user's own already-scoped
+  session list (`HistoryPage.tsx`), never a raw URL route param — a grep
+  across the app confirms no route ever supplies a session id that way.
+  Flagged rather than fixed to keep this phase's diff scoped to what it
+  was asked to touch; worth closing in a future session if a session-id
+  URL route or deep link is ever added, at which point the risk stops
+  being hypothetical.
 - M5 (spontaneous dropsets never get parentSetId, log side): **CLOSED,
   both directions, as of 2026-08-05.** Historical data: the 007 backfill
   is confirmed complete on `v2_set_logs` (8/8 rows correctly linked, 0
@@ -2530,6 +2666,271 @@ the LAST TIME fallback and the THIS WEEK secondary slot; the one issue live
 testing found (a display-only label collision) is fixed, verified, and
 deployed. TASKS.md §4 items 1–18 (Phases 3.0–3.3) are now all built,
 verified, and deployed; Phase 3.4 (History) onward is still ahead.
+
+---
+
+## 2026-08-08 session (Phase 3.4)
+
+**Phase 3.4 — History cross-meso views (TASKS.md §4 items 19–22) — built,
+migration applied and verified, adversarially reviewed (partially — cut
+short by a platform usage limit), fixed, and deployed, all in one session,
+same day as Phase 3.3.**
+
+### Pre-flight: re-reading TASKS.md fresh, per explicit instruction
+
+The task instructions for this session assumed the history-views migration
+might still be numbered 008 (pre-Phase-3.3-renumbering) and flagged this
+explicitly, asking for a fresh read rather than trusting memory. TASKS.md's
+own §2.8 table and the real `supabase/migrations/` folder (001–008 present)
+both confirmed the correct number is **009** — matches what Phase 3.3's
+renumbering session already fixed the same day, no drift found.
+
+A second discrepancy surfaced while writing the migration: the task
+instructions described 009 as still containing a
+`create index if not exists v2_sessions_user_day_date_idx` line (redundant
+but safe alongside 008's copy). TASKS.md §2.6's actual current text is
+explicit that this was a deliberate design decision during the Phase 3.3
+renumbering — the index was pulled into 008 and 009 **intentionally does
+not repeat it** ("it isn't repeated here"). Judged this as the task
+instructions being written against an earlier mental model (exactly the
+kind of drift the instructions themselves warned might have happened) and
+followed TASKS.md's current SQL, to keep TASKS.md and the migrations
+folder in agreement — the same consistency Phase 3.3's renumbering session
+was careful about. Flagged to the user rather than silently picking a side.
+
+### Postgres version check — browser tooling unavailable
+
+Before writing any migration, the instructions required confirming
+Postgres ≥15 (`security_invoker` silently bypasses RLS below that). Tried
+the in-app Browser pane against the Supabase dashboard (a saved login
+session existed from a prior session) — the page's React app never
+mounted past an empty shell. Diagnosed concretely rather than assumed:
+`requestAnimationFrame` polled for 3 seconds returned **0** callbacks,
+confirmed on two separate tabs including a plain `example.com` load,
+meaning the browser engine wasn't scheduling paint work for this
+non-displayed pane at all — a genuine compositing failure, not a page-load
+issue. `computer{action:"screenshot"}` independently errored with "the
+Browser pane is not displayed, so the page is not compositing frames."
+Tried Claude in Chrome as a fallback — extension reported not connected.
+Asked the user directly rather than attempt a hand-rolled API call against
+production auth internals to route around it; user checked the dashboard
+themselves and reported **Postgres 17.6.1.141** — comfortably above the
+requirement.
+
+### Migration written and applied
+
+`009_v3_history_views.sql` written per TASKS.md §2.6's SQL (three views:
+`v2_history_session_summary`, `v2_exercise_set_history`,
+`v2_session_type_history`, all `with (security_invoker = true)`, ending
+with `notify pgrst, 'reload schema';`). Same browser blocker meant the
+migration itself also had to go through the user directly (SQL Editor)
+rather than the usual assistant-driven path — user ran it and reported the
+`pg_class.reloptions` check came back `{security_invoker=true}` for all
+three. Independently re-verified from here afterward, without needing
+browser access: a plain `curl` against the PostgREST REST endpoint with
+the anon key confirmed all three views return `HTTP 200` (not 404 — no
+stale schema-cache issue; one initial 400 turned out to be the `curl` test
+itself using the wrong column name, `id` instead of `session_id`, on
+`v2_session_type_history` — not a migration problem), and a follow-up
+anon-key request against `v2_history_session_summary` returned `[]` rather
+than real rows, confirming RLS is genuinely still enforced on top of
+`security_invoker`, not bypassed.
+
+### Build
+
+- `historyService.ts` rewritten: `fetchHistorySessions` now reads
+  `v2_history_session_summary` with real `.range()` pagination ordered
+  `date desc, id asc` (fixes AUDIT P2 — one row per session instead of one
+  row per set log ever). Two new paginated fetchers,
+  `fetchExerciseSetHistory` (per-set rows) and `fetchSessionTypeHistory`
+  (per-occurrence rows, already aggregated in SQL). `fetchHistoryDetail`/
+  `deleteSession` left unchanged — still per-session, never the P2 query.
+- `historyPagination.ts` (new, pure, tested): `trimPartialTrailingGroup`.
+  `fetchExerciseSetHistory` is the one view with per-set rows and
+  client-side grouping via `setGroupLogic.ts`'s `groupByParent`, whose own
+  documented precondition warns that a partial row set (exactly what
+  pagination produces) "needs a rethink, not a silent gap." Over-fetches
+  one row past the page boundary and trims a trailing partial group so it
+  reappears complete on the next page.
+- **Caught two real bugs through the session's own self-review, before any
+  external review ran:** (1) the initial `ORDER BY date desc` alone for
+  `fetchExerciseSetHistory` — `date` is day-granularity, so same-date
+  sessions tie with no guaranteed stable order across separate page
+  requests, which could interleave two different sessions' rows and break
+  `trimPartialTrailingGroup`'s contiguity assumption. Fixed by adding
+  `session_id`/`stage_index` tiebreakers at the time — **later found still
+  incomplete by the adversarial review, see below.** (2) Cross-checked
+  every column in every `.select()` string and `Raw*Row` TypeScript type
+  against the migration SQL's actual output columns by hand, since these
+  use `as unknown as Raw*Row` casts that bypass TypeScript verification
+  against the real runtime shape — all three matched exactly.
+- `HistoryDataTable.tsx` (new): deliberately dumb shared table primitive —
+  columns + rows in, a scrollable table out. Grouping/indentation is the
+  caller's job, not this component's, so it stays reusable.
+- `ExerciseHistoryView.tsx` + `SessionTypeHistoryView.tsx` (new): SPEC §7's
+  two "all time" views. Reused `setGroupLogic.ts`'s `groupByParent` for
+  stage nesting rather than a fourth hand-rolled implementation, per
+  explicit instruction. Dash (not 0) for null `duration_seconds`
+  (`skipMissedSession` sessions have no `started_at`/`completed_at`).
+  Explicit "REQUIRES A CONNECTION" empty state via the pre-existing
+  `useOnlineStatus` hook (found by grep, not written new) — neither
+  source table is mirrored in Dexie.
+- Wired: `ExerciseHistoryPage.tsx` (pre-existing stub route) now renders
+  the real view instead of a placeholder; new `/session-type/:workoutDayId`
+  route + `SessionTypeHistoryPage.tsx`, reached via a new VIEW ALL link
+  added to `SessionDetail.tsx`.
+
+Static verification clean throughout: `npm run typecheck`, `npm run
+build`, `npm test` (35/35, including 5 new `historyPagination.test.ts`
+tests) all passed on the first pass after the initial build, and again
+after every round of adversarial-review fixes below.
+
+### Adversarial review — cut short by a platform usage limit
+
+Launched a Workflow (5 independent dimension reviewers — pagination-
+grouping, security-RLS, stage-exclusion-rule, UI-correctness,
+data-shape-fidelity — each reading the real files, followed by 2
+adversarial skeptics per finding trying to refute it), matching the
+pattern Phase 3.1 and 3.3 both used. The Review phase completed cleanly
+(9 candidate findings, 5/5 dimension agents finished). The Verify phase
+did not: 15 of 23 agent calls failed with "You've hit your session limit ·
+resets 9:20am (Europe/Warsaw)" partway through, leaving only 2 of 9
+findings with genuine adversarial verification (both survived — see
+below). Rather than wait out the reset or keep retrying agent spawns that
+were already failing, verified the remaining findings by hand — reading
+the actual files directly, the same standard the failed agents would have
+applied.
+
+**The single most important signal from this review: 4 of the 5
+independent dimension reviewers — approaching from completely different
+angles (pagination-grouping, stage-exclusion-rule, ui-correctness,
+data-shape-fidelity) — independently converged on the same root-cause
+bug** in `fetchExerciseSetHistory`'s `ORDER BY`: `stage_index` defaults to
+0 for *every* head row (not just the first), so any session with two or
+more ordinary (non-dropset) sets of the same exercise ties completely on
+`date`/`session_id`/`stage_index` — the exact tiebreaker fix from the
+session's own earlier self-review turned out to be incomplete. Postgres
+gives no ordering guarantee for ties across separate page requests, which
+could scramble the "EVERY SET" table's row order and — more seriously —
+duplicate or silently drop rows across "load more" pages (the second class
+of bug directly threatening `trimPartialTrailingGroup`'s contiguity
+assumption). Four independently-prompted agents landing on the identical
+mechanism and the identical fix (add `set_number` as a further tiebreaker)
+was treated as sufficient corroboration on its own, without needing the
+failed verify agents to confirm it a fifth time.
+
+**Fixed (5 findings, all personally re-verified against the real code
+before fixing):**
+1. **High, converged 4/5 independently.** `fetchExerciseSetHistory`'s
+   `ORDER BY` still wasn't a total order. Fixed:
+   `date desc, session_id asc, set_number asc, stage_index asc, id asc` —
+   `set_number` for the semantically correct display order (heads in
+   logged order), `id` as the final tiebreaker since `set_number`'s
+   uniqueness is a convention, not a DB constraint (TASKS.md's own
+   migration-risk section already documents one known renumbering-race
+   edge elsewhere in this codebase).
+2. **Medium, genuinely adversarially verified (2/2 votes, not refuted).**
+   `fetchWorkoutDayName` was the one query in `historyService.ts` missing
+   the `.eq('user_id', userId)` defence-in-depth filter its three
+   view-backed siblings all have — and unlike `fetchHistoryDetail`'s
+   `sessionId` (always sourced from an already-scoped list), its
+   `workoutDayId` comes straight from a URL route param
+   (`/session-type/:workoutDayId`). No live leak today (`v2_workout_days`'
+   RLS policy still blocks a foreign id), but the asymmetry was real.
+   Fixed by threading `userId` through `fetchWorkoutDayName` and
+   `useWorkoutDayName`.
+3. **High per its reviewer, personally re-verified by direct code
+   reading.** `ExerciseHistoryView.tsx`'s LOAD MORE button was nested
+   inside the `displayRows.length === 0` ternary's else-branch — if the
+   meso filter narrowed the currently-loaded page(s) to zero rows, the
+   button vanished along with `hasNextPage` still being true, trapping the
+   user with no way to reach older matching pages.
+   `HistoryPage.tsx` already had the correct pattern (button as a sibling,
+   not nested) — `ExerciseHistoryView.tsx` now matches it.
+4. **Medium, personally re-verified.** `SessionDetail.tsx`'s VIEW ALL link
+   was gated on `session.workoutDayName` being truthy instead of
+   `session.workoutDayId` — since the name comes from a separate,
+   non-transactional lookup in `fetchHistoryDetail`, a null name (e.g. a
+   race with a workout-day deletion) would silently drop the link even
+   when the route would work fine. Restructured to gate on `workoutDayId`
+   directly.
+5. **Low, personally re-verified, fixed defensively.**
+   `SessionTypeHistoryView.tsx`'s DURATION column correctly dashed a null
+   `duration_seconds` but had no floor for 0/negative (possible from
+   device clock skew between the client-set `started_at`/`completed_at`
+   timestamps). Added a `> 0` guard alongside the existing null check.
+
+**Found, deliberately left unfixed (1 finding, genuinely adversarially
+verified — 2/2 votes, not refuted):** `fetchHistoryDetail`/`deleteSession`
+rely solely on `v2_sessions`' RLS policy, no app-layer `user_id` filter —
+inconsistent with the pattern this phase's own new queries use, but
+**pre-existing code this phase didn't touch** (the in-file comment already
+said "Unchanged by the P2 fix" before this review ran). Lower practical
+risk than finding 2: `sessionId` is proven to only ever come from an
+already user-scoped list today, never a URL param. Left as a flagged,
+documented gap rather than expanding this phase's diff into code it
+wasn't asked to change — see "Known issues" above.
+
+Full verification suite (`typecheck`/`build`/`test`) re-run clean after
+every fix. A schema-level `curl` sanity check confirmed the new `ORDER BY`
+columns and the new `user_id` filter on `v2_workout_days` are both valid
+against the live schema (`HTTP 200`, no column-name typos) — the same
+defence this session already relied on to independently verify the
+migration itself.
+
+### What did *not* happen this session: live UI verification
+
+The task's own testing section asked for live-testing against the real
+account, read-only: confirming the session list is genuinely one row per
+session, both new views rendering correctly against real data including a
+session with a dropset (grouped, not flat), and the offline empty state
+actually showing rather than hanging. **None of this happened.** Both
+browser paths (in-app pane, Claude in Chrome) were unavailable the entire
+session — asked the user explicitly how to proceed, and the user chose to
+accept typecheck/build/vitest plus the schema-level `curl` verification as
+sufficient for this session rather than wait for browser access, with the
+gap noted plainly here rather than glossed over. Practically, this means
+the dropset-grouping rendering in the "EVERY SET" table, the trend charts,
+and the offline empty state have only been verified by reading the code
+and by the adversarial review — never by looking at the actual rendered
+page. Given this, checked with the user again, separately, before pushing
+to production (rather than treating "typecheck/build/vitest clean" as
+automatically equivalent to every prior phase's "clean" bar, which always
+included a live render) — user confirmed push and deploy now rather than
+holding for a future session's live check.
+
+### Deploy
+
+Committed (`2f663af`) — migration file, `historyService.ts`/
+`historyPagination.ts`/`useHistory.ts`, the three new view components +
+two new route-wrapper pages, and the `App.tsx`/`SessionDetail.tsx`/
+`HistoryPage.tsx`/`ExerciseHistoryPage.tsx` edits, all as one commit (this
+phase's build and its adversarial-review fixes weren't isolated into
+separate commits the way Phase 3.0's individual AUDIT fixes once were —
+judged unnecessary here since nothing in this diff needed independent
+deployability from the rest). Pre-push check:
+`git rev-list --left-right --count origin/master...HEAD` → `0 1`. Pushed;
+`git ls-remote origin master` confirmed `origin/master`'s HEAD is exactly
+`2f663af9866b3d7e629d8e87929bbfe36e34291f`. `vercel ls` showed a fresh
+Production deployment
+(`https://overload-v2-8w02yzdqo-adamjuszczyks-projects.vercel.app`) 1
+minute after the push; `vercel inspect` confirmed `status: ● Ready`,
+`target: production`, created `Sat Aug 08 2026 16:12:47 GMT+0200`,
+timing-consistent with the push (same standard of evidence as every prior
+deploy confirmation in this file).
+
+**Net effect: Phase 3.4 (History cross-meso views, TASKS.md §4 items
+19–22) is live in production.** Migration 009 applied and independently
+verified (three ways: `pg_class.reloptions`, a PostgREST reachability
+check, and an RLS-still-enforced check); AUDIT P2 is closed; the two new
+"all time" views and their pagination/grouping logic have real Vitest
+coverage and survived a (partial) adversarial review with 5 real bugs
+found and fixed; one lower-severity pre-existing gap is flagged, not
+fixed. **What is genuinely new and worth calling out plainly: this is the
+first phase in this project shipped to production without ever being
+looked at in a real, rendered browser.** TASKS.md §4 items 1–22 (Phases
+3.0–3.4) are now all built, verified (to the standard described above),
+and deployed; Phase 3.5 (Progress headline) onward is still ahead.
 
 ---
 
