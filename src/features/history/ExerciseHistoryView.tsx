@@ -15,6 +15,7 @@ import { useMesos } from '../programs/useMesos'
 import { useExerciseSetHistory } from './useHistory'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { groupByParent } from '../gym/setGroupLogic'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import HistoryDataTable, { type HistoryDataTableColumn } from './HistoryDataTable'
 
 // SPEC §7 "Exercise, all time": a trend chart plus an exact per-set table,
@@ -39,14 +40,14 @@ interface ChartTip {
   label?: string | number
 }
 
-function WeightTooltip({ active, payload, label }: ChartTip) {
+function WeightTooltip({ active, payload, label, unit }: ChartTip & { unit: string }) {
   if (!active || !payload?.length) return null
   const val = payload[0]?.value
   if (val === undefined || val === null) return null
   return (
     <div style={TT_STYLE}>
       <p style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 4 }}>{label}</p>
-      <p style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 700 }}>{val} kg</p>
+      <p style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 700 }}>{val} {unit}</p>
     </div>
   )
 }
@@ -62,27 +63,29 @@ interface DisplayRow {
   isSkipped: boolean
 }
 
-const COLUMNS: HistoryDataTableColumn<DisplayRow>[] = [
-  { key: 'date', header: 'DATE', render: (r) => format(parseISO(r.date), 'MMM d, yy') },
-  {
-    key: 'set',
-    header: 'SET',
-    render: (r) => <span style={{ paddingLeft: r.isStage ? 10 : 0 }}>{r.setLabel}</span>,
-  },
-  {
-    key: 'weight',
-    header: 'WEIGHT',
-    align: 'right',
-    render: (r) => (r.isSkipped || r.weight === null ? '—' : `${r.weight}`),
-  },
-  {
-    key: 'reps',
-    header: 'REPS',
-    align: 'right',
-    render: (r) => (r.isSkipped || r.reps === null ? '—' : `${r.reps}`),
-  },
-  { key: 'rir', header: 'RIR', align: 'right', render: (r) => (r.rir !== null ? `${r.rir}` : '—') },
-]
+function buildColumns(weightUnit: string): HistoryDataTableColumn<DisplayRow>[] {
+  return [
+    { key: 'date', header: 'DATE', render: (r) => format(parseISO(r.date), 'MMM d, yy') },
+    {
+      key: 'set',
+      header: 'SET',
+      render: (r) => <span style={{ paddingLeft: r.isStage ? 10 : 0 }}>{r.setLabel}</span>,
+    },
+    {
+      key: 'weight',
+      header: `WEIGHT (${weightUnit.toUpperCase()})`,
+      align: 'right',
+      render: (r) => (r.isSkipped || r.weight === null ? '—' : `${r.weight}`),
+    },
+    {
+      key: 'reps',
+      header: 'REPS',
+      align: 'right',
+      render: (r) => (r.isSkipped || r.reps === null ? '—' : `${r.reps}`),
+    },
+    { key: 'rir', header: 'RIR', align: 'right', render: (r) => (r.rir !== null ? `${r.rir}` : '—') },
+  ]
+}
 
 interface Props {
   exerciseId: string
@@ -94,6 +97,11 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
   const exercise = exercises.find((ex) => ex.id === exerciseId) ?? null
   const { data: mesos = [] } = useMesos()
   const [mesoFilter, setMesoFilter] = useState('')
+  // History converts to the global Settings unit for display (SPEC §8.1) —
+  // same as Progress, independent of whatever unit any individual
+  // program-exercise was logged in.
+  const { unit: weightUnit, toDisplay } = useWeightDisplay()
+  const columns = useMemo(() => buildColumns(weightUnit), [weightUnit])
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useExerciseSetHistory(exerciseId)
@@ -126,7 +134,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
         date: group.head.date,
         isStage: false,
         setLabel: `${group.head.setNumber}`,
-        weight: group.head.weight,
+        weight: group.head.weight !== null ? toDisplay(group.head.weight) : null,
         reps: group.head.reps,
         rir: group.head.rir,
         isSkipped: group.head.isSkipped,
@@ -137,7 +145,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
           date: stage.date,
           isStage: true,
           setLabel: 'STAGE',
-          weight: stage.weight,
+          weight: stage.weight !== null ? toDisplay(stage.weight) : null,
           reps: stage.reps,
           rir: stage.rir,
           isSkipped: stage.isSkipped,
@@ -145,7 +153,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
       }
     }
     return out
-  }, [groups])
+  }, [groups, toDisplay])
 
   // Chart: top (head, non-warmup, non-skipped) weight per session, oldest to
   // newest within the currently loaded window — same trend role as
@@ -166,8 +174,8 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
     }
     return [...bySession.values()]
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map((p) => ({ date: format(parseISO(p.date), 'MMM d'), weight: p.weight, isDeload: p.isDeload }))
-  }, [groups])
+      .map((p) => ({ date: format(parseISO(p.date), 'MMM d'), weight: toDisplay(p.weight), isDeload: p.isDeload }))
+  }, [groups, toDisplay])
 
   const deloadDates = useMemo(
     () => chartData.filter((p) => p.isDeload).map((p) => p.date),
@@ -289,7 +297,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
                   <Tooltip
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     content={(p: any) => (
-                      <WeightTooltip active={p.active} payload={p.payload} label={p.label} />
+                      <WeightTooltip active={p.active} payload={p.payload} label={p.label} unit={weightUnit} />
                     )}
                     cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
                   />
@@ -316,7 +324,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
               EVERY SET
             </p>
             <HistoryDataTable
-              columns={COLUMNS}
+              columns={columns}
               rows={displayRows}
               getRowKey={(r) => r.key}
               getRowStyle={(r) => (r.isStage ? { opacity: 0.65 } : undefined)}

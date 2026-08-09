@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { Plus } from 'lucide-react'
-import type { WeekPlanSet, SetLog } from '../../types'
+import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit } from '../../types'
 import SetRow from './SetRow'
 import RestTimerInline from './RestTimerInline'
 import { useRestTimerStore } from './restTimerStore'
@@ -16,10 +16,14 @@ export interface LogParams {
   isSkipped: boolean
   restSeconds: number | null
   setSeconds: number | null
+  // What unit the user actually typed the weight in (v3 §2.4) — null means
+  // "the resolved default for this program-exercise", never an override.
+  enteredUnit: WeightUnit | null
 }
 
 interface SetGroupProps {
   displayNumber: number
+  programExercise: ProgramExercise  // resolves this exercise's preferred weight unit (v3 §2.4)
   plannedSet: WeekPlanSet | null    // this group's own planned slot (head), if any
   plannedStages: WeekPlanSet[]      // planned stage siblings for this head, ordered by stageIndex
   lastLog: SetLog | null            // previous session's head log at this position — head-only prefill (§2.7 item 2)
@@ -47,6 +51,7 @@ interface SetGroupProps {
 // (see GymSession.tsx's onLog, which now takes parentSetId as given).
 export default function SetGroup({
   displayNumber,
+  programExercise,
   plannedSet,
   plannedStages,
   lastLog,
@@ -79,6 +84,7 @@ export default function SetGroup({
     return (
       <SetRow
         setNumber={displayNumber}
+        programExercise={programExercise}
         plannedSet={plannedSet}
         lastLog={lastLog}
         lastLogsLoading={lastLogsLoading}
@@ -97,6 +103,7 @@ export default function SetGroup({
     <div className="space-y-1.5">
       <SetRow
         setNumber={displayNumber}
+        programExercise={programExercise}
         plannedSet={plannedSet}
         lastLog={null}
         lastLogsLoading={false}
@@ -113,6 +120,7 @@ export default function SetGroup({
           <Fragment key={stage.id}>
             <SetRow
               setNumber={headLog.setNumber}
+              programExercise={programExercise}
               plannedSet={null}
               lastLog={null}
               lastLogsLoading={false}
@@ -131,6 +139,7 @@ export default function SetGroup({
           addingStage ? (
             <SetRow
               setNumber={headLog.setNumber}
+              programExercise={programExercise}
               plannedSet={plannedStages[stages.length] ?? null}
               lastLog={null}
               lastLogsLoading={false}

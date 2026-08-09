@@ -16,6 +16,7 @@ import { useMesos } from '../programs/useMesos'
 import { useExerciseProgress } from './useProgress'
 import { getExerciseE1rmComparison } from './progressService'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import type { Exercise, MuscleGroup } from '../../types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -47,7 +48,10 @@ interface ChartTip {
   label?: string | number
 }
 
-function WeightTooltip({ active, payload, label }: ChartTip) {
+// chartData's `weight` field is already in the caller's resolved display
+// unit (converted once at the chartData mapping stage, not here) — this
+// tooltip just needs the unit label to go with it.
+function WeightTooltip({ active, payload, label, unit }: ChartTip & { unit: string }) {
   if (!active || !payload?.length) return null
   const weight = payload.find((p) => p.dataKey === 'weight')?.value
   return (
@@ -55,7 +59,7 @@ function WeightTooltip({ active, payload, label }: ChartTip) {
       <p style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 4 }}>{label}</p>
       {weight !== undefined && weight !== null && (
         <p style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 700 }}>
-          {weight} kg
+          {weight} {unit}
         </p>
       )}
     </div>
@@ -193,6 +197,10 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
   const points = data?.points ?? []
   const { data: mesos = [] } = useMesos()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
+  // Progress converts to the global Settings unit for display (SPEC §8.1) —
+  // stored weight is always canonical kg regardless of what unit any
+  // individual program-exercise was logged in.
+  const { unit: weightUnit, toDisplay } = useWeightDisplay()
 
   // Progress headline (SPEC §6): first vs. most recent working numbers
   // within the current (active) meso. No headline at all when there is no
@@ -207,12 +215,12 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
     () =>
       points.map((p) => ({
         date: format(parseISO(p.date), 'MMM d'),
-        weight: p.topWeight,
+        weight: toDisplay(p.topWeight),
         volume: p.volume,
         rir: p.avgRir !== null ? Math.round(p.avgRir * 10) / 10 : null,
         rest: p.avgRestSeconds !== null ? Math.round(p.avgRestSeconds) : null,
       })),
-    [points],
+    [points, toDisplay],
   )
 
   const last5 = useMemo(() => [...points].reverse().slice(0, 5), [points])
@@ -332,7 +340,9 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
                 <YAxis yAxisId="volume" hide />
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  content={(p: any) => <WeightTooltip active={p.active} payload={p.payload} label={p.label} />}
+                  content={(p: any) => (
+                    <WeightTooltip active={p.active} payload={p.payload} label={p.label} unit={weightUnit} />
+                  )}
                   cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
                 />
                 <Area
@@ -481,7 +491,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
                       className="text-sm font-bold mt-0.5"
                       style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
                     >
-                      {session.topSet.weight}kg × {session.topSet.reps}
+                      {toDisplay(session.topSet.weight)}{weightUnit} × {session.topSet.reps}
                       {session.topSet.rir !== null ? ` @ RIR ${session.topSet.rir}` : ''}
                     </p>
                   </div>

@@ -4,6 +4,7 @@ import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import ExerciseReference from './ExerciseReference'
 import { groupWeekPlanSets } from './setGroupLogic'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 
 interface PreviewExerciseCardProps {
   programExercise: ProgramExercise
@@ -25,6 +26,7 @@ export default function PreviewExerciseCard({
   // Heads only, stages nested beneath (§2.7 item 7) — a planned dropset's
   // stage rows are never their own top-level entry.
   const groups = groupWeekPlanSets(plannedSets).sort((a, b) => a.head.setNumber - b.head.setNumber)
+  const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
@@ -36,7 +38,12 @@ export default function PreviewExerciseCard({
       >
         <PlanTargetsPanel plannedSets={plannedSets} />
         <div className="px-3 py-2">
-          <ExerciseReference today={today} sessions={referenceSessions} isLoading={referenceLoading} />
+          <ExerciseReference
+            today={today}
+            sessions={referenceSessions}
+            isLoading={referenceLoading}
+            weightUnit={resolvedWeightUnit}
+          />
         </div>
       </div>
 

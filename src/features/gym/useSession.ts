@@ -5,7 +5,7 @@ import { db } from '../../lib/db'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
-import type { Session, SetLog } from '../../types'
+import type { Session, SetLog, WeightUnit } from '../../types'
 import {
   fetchSessionsInRange,
   fetchSession,
@@ -514,6 +514,7 @@ export function useLogSet(sessionId: string) {
       isSkipped: boolean
       restSeconds: number | null
       setSeconds: number | null
+      enteredUnit: WeightUnit | null
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -549,7 +550,7 @@ export function useLogSet(sessionId: string) {
           stageIndex: params.stageIndex,
           isWarmup: false,
           setSeconds: params.setSeconds,
-          enteredUnit: null,
+          enteredUnit: params.enteredUnit,
           isSkipped: params.isSkipped,
           loggedAt,
           restSeconds: params.restSeconds,
@@ -579,6 +580,7 @@ export function useLogSet(sessionId: string) {
             logged_at: loggedAt,
             rest_seconds: params.restSeconds,
             set_seconds: params.setSeconds,
+            entered_unit: params.enteredUnit,
           },
           createdAt: loggedAt,
         })
@@ -601,7 +603,7 @@ export function useLogSet(sessionId: string) {
           stageIndex: params.stageIndex,
           isWarmup: false,
           setSeconds: params.setSeconds,
-          enteredUnit: null,
+          enteredUnit: params.enteredUnit,
           isSkipped: params.isSkipped,
           loggedAt,
           restSeconds: params.restSeconds,
@@ -639,7 +641,7 @@ export function useLogSet(sessionId: string) {
         stageIndex: params.stageIndex,
         isWarmup: false,
         setSeconds: params.setSeconds,
-        enteredUnit: null,
+        enteredUnit: params.enteredUnit,
         isSkipped: params.isSkipped,
         loggedAt: new Date().toISOString(),
         restSeconds: params.restSeconds,

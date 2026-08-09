@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { Session, SetLog } from '../../types'
+import type { Session, SetLog, WeightUnit } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -231,6 +231,7 @@ export async function logSet(params: {
   isSkipped: boolean
   restSeconds: number | null
   setSeconds: number | null
+  enteredUnit: WeightUnit | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -257,6 +258,7 @@ export async function logSet(params: {
       logged_at: new Date().toISOString(),
       rest_seconds: params.restSeconds,
       set_seconds: params.setSeconds,
+      entered_unit: params.enteredUnit,
     })
     .select('*, exercises(*)')
     .single()

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import SetGroup, { type LogParams } from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import { useRestTimerStore } from './restTimerStore'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex, type SetGroup as Group } from './setGroupLogic'
 
 interface ExerciseCardProps {
@@ -35,6 +36,7 @@ interface ExerciseCardProps {
     isSkipped: boolean
     restSeconds: number | null
     setSeconds: number | null
+    enteredUnit: WeightUnit | null
     // Direct, not inferred (v3 §2.1 / Phase 3.1) — null for a head, the
     // head's own id for a stage. The ADD STAGE tap that produces this
     // already knows which head it belongs to.
@@ -59,6 +61,7 @@ export default function ExerciseCard({
   onDeleteSet,
 }: ExerciseCardProps) {
   const { startedAt, start: startTimer } = useRestTimerStore()
+  const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
   // Heads currently mid-cascade-delete — gates ADD STAGE on that group (see
   // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
@@ -270,6 +273,7 @@ export default function ExerciseCard({
             isSkipped: true,
             restSeconds: null,
             setSeconds: null,
+            enteredUnit: null,
           },
           nextHeadNumber,
         )
@@ -290,6 +294,7 @@ export default function ExerciseCard({
           isSkipped: true,
           restSeconds: null,
           setSeconds: null,
+          enteredUnit: null,
         })
         nextStageIdx += 1
       }
@@ -336,7 +341,12 @@ export default function ExerciseCard({
 
         {/* Right: smart last-session reference — LAST WEEK / THIS WEEK / LAST TIME / FIRST TIME */}
         <div className="px-3 py-2">
-          <ExerciseReference today={today} sessions={referenceSessions} isLoading={referenceLoading} />
+          <ExerciseReference
+            today={today}
+            sessions={referenceSessions}
+            isLoading={referenceLoading}
+            weightUnit={resolvedWeightUnit}
+          />
         </div>
       </div>
 
@@ -347,6 +357,7 @@ export default function ExerciseCard({
           <SetGroup
             key={plannedSet.id}
             displayNumber={displayNumber}
+            programExercise={programExercise}
             plannedSet={plannedSet}
             plannedStages={plannedStages}
             lastLog={lastLogGroups[displayNumber - 1]?.head ?? null}
@@ -369,6 +380,7 @@ export default function ExerciseCard({
           <SetGroup
             key={group?.head.id ?? `extra-${i}`}
             displayNumber={displayNumber}
+            programExercise={programExercise}
             plannedSet={null}
             plannedStages={[]}
             lastLog={lastLogGroups[displayNumber - 1]?.head ?? null}

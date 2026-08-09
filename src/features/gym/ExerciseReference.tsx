@@ -1,8 +1,9 @@
 import { formatDistanceToNow, parseISO } from 'date-fns'
-import type { SetLog } from '../../types'
+import type { SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import type { SetGroup } from './setGroupLogic'
 import { resolveExerciseReference } from './referenceLogic'
+import { toDisplayWeight } from '../../lib/weightUnit'
 
 interface ExerciseReferenceProps {
   today: string
@@ -13,6 +14,10 @@ interface ExerciseReferenceProps {
   // owns all of that boundary math.
   sessions: ReferenceSession[]
   isLoading: boolean
+  // Resolved unit for the exercise this reference panel belongs to (v3
+  // §2.4) — log.weight is always canonical kg; this panel converts for
+  // display, same as the live gym-screen rows next to it.
+  weightUnit: WeightUnit
 }
 
 function relativeLabel(daysSince: number, date: string): string {
@@ -20,7 +25,7 @@ function relativeLabel(daysSince: number, date: string): string {
   return formatDistanceToNow(parseISO(date), { addSuffix: true }).toUpperCase()
 }
 
-function SetLine({ log, isStage }: { log: SetLog; isStage?: boolean }) {
+function SetLine({ log, isStage, weightUnit }: { log: SetLog; isStage?: boolean; weightUnit: WeightUnit }) {
   return (
     <div className="flex items-center gap-1" style={isStage ? { paddingLeft: 12 } : undefined}>
       <span
@@ -33,7 +38,7 @@ function SetLine({ log, isStage }: { log: SetLog; isStage?: boolean }) {
         className="text-xs tabular-nums"
         style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
       >
-        {log.weight}×{log.reps}
+        {log.weight !== null ? toDisplayWeight(log.weight, weightUnit) : '—'}×{log.reps}
       </span>
       {log.rir != null && (
         <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
@@ -57,7 +62,7 @@ function SetLine({ log, isStage }: { log: SetLog; isStage?: boolean }) {
 // is structural (it's in `group.stages`), never `log.isDropset` alone — an
 // orphaned dropset-flagged row with no parent renders as its own head with
 // no badge, same convention as SessionDetail.tsx / SetGroup.tsx.
-function SetRows({ groups }: { groups: SetGroup<SetLog>[] }) {
+function SetRows({ groups, weightUnit }: { groups: SetGroup<SetLog>[]; weightUnit: WeightUnit }) {
   if (groups.length === 0) {
     return (
       <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
@@ -69,9 +74,9 @@ function SetRows({ groups }: { groups: SetGroup<SetLog>[] }) {
     <div className="space-y-0.5">
       {groups.map((group) => (
         <div key={group.head.id}>
-          <SetLine log={group.head} />
+          <SetLine log={group.head} weightUnit={weightUnit} />
           {group.stages.map((stage) => (
-            <SetLine key={stage.id} log={stage} isStage />
+            <SetLine key={stage.id} log={stage} isStage weightUnit={weightUnit} />
           ))}
         </div>
       ))}
@@ -79,7 +84,17 @@ function SetRows({ groups }: { groups: SetGroup<SetLog>[] }) {
   )
 }
 
-function Panel({ label, sub, groups }: { label: string; sub?: string; groups: SetGroup<SetLog>[] }) {
+function Panel({
+  label,
+  sub,
+  groups,
+  weightUnit,
+}: {
+  label: string
+  sub?: string
+  groups: SetGroup<SetLog>[]
+  weightUnit: WeightUnit
+}) {
   return (
     <div>
       <p
@@ -89,12 +104,12 @@ function Panel({ label, sub, groups }: { label: string; sub?: string; groups: Se
         {label}
         {sub && <span style={{ color: 'var(--text-muted)', opacity: 0.7 }}> · {sub}</span>}
       </p>
-      <SetRows groups={groups} />
+      <SetRows groups={groups} weightUnit={weightUnit} />
     </div>
   )
 }
 
-export default function ExerciseReference({ today, sessions, isLoading }: ExerciseReferenceProps) {
+export default function ExerciseReference({ today, sessions, isLoading, weightUnit }: ExerciseReferenceProps) {
   if (isLoading) {
     return (
       <div>
@@ -124,13 +139,16 @@ export default function ExerciseReference({ today, sessions, isLoading }: Exerci
         </p>
       )}
 
-      {primary.type === 'last_week' && <Panel label="LAST WEEK" groups={primary.session.logs} />}
+      {primary.type === 'last_week' && (
+        <Panel label="LAST WEEK" groups={primary.session.logs} weightUnit={weightUnit} />
+      )}
 
       {primary.type === 'last_time' && (
         <Panel
           label="LAST TIME"
           sub={relativeLabel(primary.daysSince, primary.session.date)}
           groups={primary.session.logs}
+          weightUnit={weightUnit}
         />
       )}
 
@@ -148,6 +166,7 @@ export default function ExerciseReference({ today, sessions, isLoading }: Exerci
           label="EARLIER THIS WEEK"
           sub={relativeLabel(daysSince, session.date)}
           groups={session.logs}
+          weightUnit={weightUnit}
         />
       ))}
     </div>

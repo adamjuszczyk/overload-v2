@@ -13,6 +13,7 @@ import {
 import { useWorkoutDayName, useSessionTypeHistory } from './useHistory'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import HistoryDataTable, { type HistoryDataTableColumn } from './HistoryDataTable'
 import type { SessionTypeHistoryRow } from './historyService'
 
@@ -37,6 +38,8 @@ interface ChartTip {
   label?: string | number
 }
 
+// chartData's `volume` field is already converted to the caller's resolved
+// display unit (see chartData's useMemo below) — no conversion needed here.
 function VolumeTooltip({ active, payload, label }: ChartTip) {
   if (!active || !payload?.length) return null
   const val = payload[0]?.value
@@ -49,34 +52,39 @@ function VolumeTooltip({ active, payload, label }: ChartTip) {
   )
 }
 
-const COLUMNS: HistoryDataTableColumn<SessionTypeHistoryRow>[] = [
-  { key: 'date', header: 'DATE', render: (r) => format(parseISO(r.date), 'MMM d, yy') },
-  {
-    key: 'volume',
-    header: 'VOLUME',
-    align: 'right',
-    render: (r) => (r.totalVolume !== null ? `${Math.round(r.totalVolume)}` : '—'),
-  },
-  {
-    key: 'avgRir',
-    header: 'AVG RIR',
-    align: 'right',
-    render: (r) => (r.avgRir !== null ? `${Math.round(r.avgRir * 10) / 10}` : '—'),
-  },
-  {
-    key: 'duration',
-    header: 'DURATION',
-    align: 'right',
-    // Sessions created via skipMissedSession have no started_at/completed_at
-    // (TASKS.md §2.6's risk section) — render a dash, not 0. Also guard
-    // against <= 0 (found by adversarial review): a device clock change
-    // between the client-set started_at/completed_at timestamps could make
-    // extract(epoch from completed_at - started_at) come back zero or
-    // negative, which formatRestTime has no floor for.
-    render: (r) =>
-      r.durationSeconds !== null && r.durationSeconds > 0 ? formatRestTime(r.durationSeconds) : '—',
-  },
-]
+function buildColumns(
+  weightUnit: string,
+  toDisplayVolume: (kgVolume: number) => number,
+): HistoryDataTableColumn<SessionTypeHistoryRow>[] {
+  return [
+    { key: 'date', header: 'DATE', render: (r) => format(parseISO(r.date), 'MMM d, yy') },
+    {
+      key: 'volume',
+      header: `VOLUME (${weightUnit.toUpperCase()})`,
+      align: 'right',
+      render: (r) => (r.totalVolume !== null ? `${Math.round(toDisplayVolume(r.totalVolume))}` : '—'),
+    },
+    {
+      key: 'avgRir',
+      header: 'AVG RIR',
+      align: 'right',
+      render: (r) => (r.avgRir !== null ? `${Math.round(r.avgRir * 10) / 10}` : '—'),
+    },
+    {
+      key: 'duration',
+      header: 'DURATION',
+      align: 'right',
+      // Sessions created via skipMissedSession have no started_at/completed_at
+      // (TASKS.md §2.6's risk section) — render a dash, not 0. Also guard
+      // against <= 0 (found by adversarial review): a device clock change
+      // between the client-set started_at/completed_at timestamps could make
+      // extract(epoch from completed_at - started_at) come back zero or
+      // negative, which formatRestTime has no floor for.
+      render: (r) =>
+        r.durationSeconds !== null && r.durationSeconds > 0 ? formatRestTime(r.durationSeconds) : '—',
+    },
+  ]
+}
 
 interface Props {
   workoutDayId: string
@@ -87,6 +95,9 @@ export default function SessionTypeHistoryView({ workoutDayId }: Props) {
   const { data: workoutDayName } = useWorkoutDayName(workoutDayId)
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useSessionTypeHistory(workoutDayId)
+  // History converts to the global Settings unit for display (SPEC §8.1).
+  const { unit: weightUnit, toDisplayVolume } = useWeightDisplay()
+  const columns = useMemo(() => buildColumns(weightUnit, toDisplayVolume), [weightUnit, toDisplayVolume])
 
   const rows = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
 
@@ -96,10 +107,10 @@ export default function SessionTypeHistoryView({ workoutDayId }: Props) {
         .sort((a, b) => a.date.localeCompare(b.date))
         .map((r) => ({
           date: format(parseISO(r.date), 'MMM d'),
-          volume: r.totalVolume ?? 0,
+          volume: r.totalVolume !== null ? toDisplayVolume(r.totalVolume) : 0,
           isDeload: r.isDeload,
         })),
-    [rows],
+    [rows, toDisplayVolume],
   )
 
   const deloadDates = useMemo(
@@ -211,7 +222,7 @@ export default function SessionTypeHistoryView({ workoutDayId }: Props) {
               EVERY OCCURRENCE
             </p>
             <HistoryDataTable
-              columns={COLUMNS}
+              columns={columns}
               rows={rows}
               getRowKey={(r) => r.sessionId}
               emptyLabel="NO OCCURRENCES"

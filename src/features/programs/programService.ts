@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { Program, WorkoutDay, ProgramExercise, WeeklySchedule } from '../../types'
+import type { Program, WorkoutDay, ProgramExercise, WeeklySchedule, WeightUnit } from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -191,6 +191,12 @@ export async function addProgramExercise(
   workoutDayId: string,
   exerciseId: string,
   position: number,
+  // Resolved literal, not the raw per-exercise override (v3 §2.4 / TASKS.md
+  // §4 item 28) — the caller resolves against the global Settings default at
+  // creation time and writes that literal, so a later change to the global
+  // default doesn't retroactively reinterpret an already-created row. Rows
+  // created outside the builder (if any ever are) stay NULL and inherit.
+  weightUnit: WeightUnit,
 ): Promise<ProgramExercise> {
   const { data, error } = await supabase
     .from('v2_program_exercises')
@@ -200,6 +206,7 @@ export async function addProgramExercise(
       exercise_id: exerciseId,
       position,
       target_reps: null,
+      weight_unit: weightUnit,
     })
     .select('*, exercises(*)')
     .single()
@@ -214,6 +221,19 @@ export async function updateProgramExerciseReps(
   const { error } = await supabase
     .from('v2_program_exercises')
     .update({ target_reps: targetReps })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// The per-program-exercise unit picker (TASKS.md §4 item 28) — null means
+// "inherit the global Settings unit", same tri-state as the column itself.
+export async function updateProgramExerciseWeightUnit(
+  id: string,
+  weightUnit: WeightUnit | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('v2_program_exercises')
+    .update({ weight_unit: weightUnit })
     .eq('id', id)
   if (error) throw error
 }

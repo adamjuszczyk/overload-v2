@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { Check, Pencil, Trash2 } from 'lucide-react'
-import type { WeekPlanSet, SetLog } from '../../types'
+import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit } from '../../types'
 import { useOfflineStore } from '../offline/offlineStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
+import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 
 interface SetRowProps {
   setNumber: number
+  programExercise: ProgramExercise  // resolves this exercise's preferred weight unit (v3 §2.4)
   plannedSet: WeekPlanSet | null
   lastLog: SetLog | null       // from previous session — for prefill + reference
   lastLogsLoading: boolean     // true until the previous-session query resolves
@@ -27,6 +30,7 @@ interface SetRowProps {
     isSkipped: boolean
     restSeconds: number | null
     setSeconds: number | null
+    enteredUnit: WeightUnit | null
   }) => void
   onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null }) => void
   onDelete: () => void
@@ -35,6 +39,7 @@ interface SetRowProps {
 
 export default function SetRow({
   setNumber,
+  programExercise,
   plannedSet,
   lastLog,
   lastLogsLoading,
@@ -65,8 +70,20 @@ export default function SetRow({
 
   const pendingIds  = useOfflineStore((s) => s.pendingIds)
   const failedIds   = useOfflineStore((s) => s.failedIds)
-  const weightUnit  = useSettingsStore((s) => s.weightUnit)
   const measureSetTime = useSettingsStore((s) => s.measureSetTime)
+
+  // Resolved unit for this program-exercise (v3 §2.4): its own override, else
+  // the global Settings default. `resolvedUnit` is fixed — it changes only
+  // if the exercise's configured unit changes, never by the logging-time
+  // toggle below.
+  const { unit: resolvedUnit } = useWeightDisplay(programExercise.weightUnit)
+
+  // The rarely-used logging-time override (SPEC §8.1) — a small toggle that
+  // lets THIS one set be logged in the other unit without changing the
+  // exercise's configured default. null = no override, use resolvedUnit.
+  const [unitOverride, setUnitOverride] = useState<WeightUnit | null>(null)
+  const activeUnit = unitOverride ?? resolvedUnit
+  const otherUnit: WeightUnit = resolvedUnit === 'kg' ? 'lbs' : 'kg'
 
   // Start Set flow (v3 §2.2) — only meaningful while measureSetTime is on and
   // this row hasn't been logged yet. isTiming is local (not read from the
@@ -103,16 +120,27 @@ export default function SetRow({
 
   // Prefill from the previous session only once it has actually loaded —
   // never from an in-flight/undetermined lastLog (fixes fake-prefill bug).
+  // lastLog.weight is always canonical kg (v3 §2.4) — converted to whatever
+  // unit is currently active for this input. Depending on activeUnit means
+  // toggling the override before typing anything re-converts the prefilled
+  // figure automatically; userEditedRef still guards against clobbering
+  // anything the user has already typed by then.
   useEffect(() => {
     if (lastLogsLoading || !lastLog || userEditedRef.current) return
-    if (lastLog.weight != null) setWeight(String(lastLog.weight))
+    if (lastLog.weight != null) setWeight(String(toDisplayWeight(lastLog.weight, activeUnit)))
     if (lastLog.reps != null) setReps(String(lastLog.reps))
-  }, [lastLogsLoading, lastLog])
+  }, [lastLogsLoading, lastLog, activeUnit])
 
   // ── Already logged — read-only row ──────────────────────────────────────
   if (currentLog) {
     const isPending = pendingIds.has(currentLog.id)
     const isFailed = failedIds.has(currentLog.id)
+    // Display/edit in whatever unit this set was actually logged in
+    // (v3 §2.4) — falls back to today's resolved default only for logs
+    // that predate this feature (enteredUnit null). Kept fixed for the
+    // life of this render so the edit round-trip guard below always
+    // compares against the same unit it initialized from.
+    const editUnit = currentLog.enteredUnit ?? resolvedUnit
 
     if (currentLog.isSkipped) {
       return (
@@ -137,10 +165,28 @@ export default function SetRow({
     }
 
     if (isEditing) {
+      const originalKg = currentLog.weight
       function saveEdit() {
-        const w = editWeight.trim() === '' ? null : parseFloat(editWeight.replace(',', '.'))
+        const editedDisplay = editWeight.trim() === '' ? null : parseFloat(editWeight.replace(',', '.'))
+        // Same guard as handleLog's input-row validation — a non-numeric
+        // edit (e.g. stray letters) must not silently write NaN through
+        // resolveEditedWeightKg/onUpdate, which Supabase would serialize as
+        // a silent NULL.
+        if (editedDisplay !== null && Number.isNaN(editedDisplay)) {
+          setLogError('Enter a valid weight')
+          return
+        }
+        // Round-trip drift guard (v3 §2.4 / weightUnit.ts): if the displayed
+        // value is unchanged from what originalKg would already show, this
+        // returns the original stored kg exactly rather than reconstructing
+        // it from a rounded display figure.
+        const w =
+          editedDisplay === null || originalKg === null
+            ? editedDisplay
+            : resolveEditedWeightKg(originalKg, editUnit, editedDisplay)
         const r = editReps.trim() === '' ? null : parseInt(editReps, 10)
         const rv = editRir.trim() === '' ? null : parseInt(editRir, 10)
+        setLogError('')
         onUpdate({
           weight: w,
           reps: r,
@@ -180,7 +226,7 @@ export default function SetRow({
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
                 style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
               >
-                {weightUnit}
+                {editUnit}
               </span>
             </div>
 
@@ -259,7 +305,10 @@ export default function SetRow({
             />
 
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                setLogError('')
+                setIsEditing(false)
+              }}
               className="flex items-center justify-center text-xs px-3 rounded"
               style={{
                 minHeight: 44,
@@ -271,6 +320,17 @@ export default function SetRow({
               CANCEL
             </button>
           </div>
+
+          {logError && (
+            <div className="pl-7">
+              <span
+                className="text-xs"
+                style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
+              >
+                {logError}
+              </span>
+            </div>
+          )}
         </div>
       )
     }
@@ -294,8 +354,8 @@ export default function SetRow({
           className="flex-1 text-sm font-bold"
           style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
         >
-          {currentLog.weight}
-          <span style={{ color: 'var(--text-muted)' }}>{weightUnit} × </span>
+          {currentLog.weight !== null ? toDisplayWeight(currentLog.weight, editUnit) : '—'}
+          <span style={{ color: 'var(--text-muted)' }}>{editUnit} × </span>
           {currentLog.reps}
           {currentLog.rir != null && (
             <span style={{ color: 'var(--text-muted)' }}> @ RIR {currentLog.rir}</span>
@@ -378,10 +438,11 @@ export default function SetRow({
           <>
             <button
               onClick={() => {
-                setEditWeight(currentLog.weight != null ? String(currentLog.weight) : '')
+                setEditWeight(currentLog.weight != null ? String(toDisplayWeight(currentLog.weight, editUnit)) : '')
                 setEditReps(currentLog.reps != null ? String(currentLog.reps) : '')
                 setEditRir(currentLog.rir != null ? String(currentLog.rir) : '')
                 setEditNote(currentLog.note ?? '')
+                setLogError('')
                 setIsEditing(true)
               }}
               className="flex-shrink-0 flex items-center justify-center"
@@ -422,25 +483,31 @@ export default function SetRow({
   }
 
   function handleLog() {
-    const w = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
+    const wEntered = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
     const r = reps.trim() === '' ? null : parseInt(reps, 10)
-    if (w === null || r === null || Number.isNaN(w) || Number.isNaN(r)) {
+    if (wEntered === null || r === null || Number.isNaN(wEntered) || Number.isNaN(r)) {
       setLogError('Enter weight and reps, or tap SKIP')
       return
     }
     setLogError('')
     const rirVal = rir.trim() === '' ? null : parseInt(rir, 10)
     const { restSeconds, setSeconds } = resolveTiming()
+    // Canonical storage is always kg (v3 §2.4) — what was typed is in
+    // activeUnit and gets converted here, once, at the write boundary.
+    // enteredUnit records the override only when one was actually used;
+    // null means "the resolved default for this program-exercise", per
+    // the column's own documented semantics.
     onLog({
       weekPlanSetId: plannedSet?.id ?? null,
       setNumber,
-      weight: w,
+      weight: toStorageWeight(wEntered, activeUnit),
       reps: r,
       rir: rirVal,
       isDropset: isStage,
       isSkipped: false,
       restSeconds,
       setSeconds,
+      enteredUnit: activeUnit === resolvedUnit ? null : activeUnit,
     })
   }
 
@@ -457,6 +524,7 @@ export default function SetRow({
       isSkipped: true,
       restSeconds,
       setSeconds: null,
+      enteredUnit: null,
     })
   }
 
@@ -494,12 +562,24 @@ export default function SetRow({
               opacity: lastLogsLoading ? 0.5 : 1,
             }}
           />
-          <span
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          {/* Logging-time unit override (SPEC §8.1) — small, rarely used:
+              tapping flips this one set between the exercise's resolved
+              unit and the other, without changing the exercise's configured
+              default. Shows an indicator only while actually overridden, so
+              the common case looks identical to a plain unit label. */}
+          <button
+            type="button"
+            onClick={() => setUnitOverride(unitOverride === null ? otherUnit : null)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
+            style={{
+              color: unitOverride !== null ? 'var(--accent)' : 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: unitOverride !== null ? 700 : 400,
+            }}
+            aria-label={`Log this set in ${otherUnit}`}
           >
-            {weightUnit}
-          </span>
+            {activeUnit}
+          </button>
         </div>
 
         <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>×</span>

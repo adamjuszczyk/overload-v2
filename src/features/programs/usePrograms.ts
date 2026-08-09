@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import type { WeeklySchedule, DayOfWeek } from '../../types'
+import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise } from '../../types'
 import {
   fetchPrograms,
   createProgram,
@@ -14,6 +14,7 @@ import {
   fetchProgramExercises,
   addProgramExercise,
   updateProgramExerciseReps,
+  updateProgramExerciseWeightUnit,
   deleteProgramExercise,
   reorderProgramExercises,
 } from './programService'
@@ -112,8 +113,18 @@ export function useProgramExercises(workoutDayId: string) {
 export function useAddProgramExercise(workoutDayId: string) {
   const { user } = useAuth()
   return useMutation({
-    mutationFn: ({ exerciseId, position }: { exerciseId: string; position: number }) =>
-      addProgramExercise(user!.id, workoutDayId, exerciseId, position),
+    mutationFn: ({
+      exerciseId,
+      position,
+      weightUnit,
+    }: {
+      exerciseId: string
+      position: number
+      // Resolved literal from the global default at add-time (TASKS.md §4
+      // item 28) — the caller resolves this, not this hook, since the
+      // resolution itself reads the Settings store.
+      weightUnit: WeightUnit
+    }) => addProgramExercise(user!.id, workoutDayId, exerciseId, position, weightUnit),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
   })
@@ -125,6 +136,31 @@ export function useUpdateProgramExerciseReps(workoutDayId: string) {
       updateProgramExerciseReps(id, targetReps),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
+  })
+}
+
+// Optimistic with real rollback — unlike handleRepsStepper's ad-hoc pattern,
+// a failed/offline weight-unit PATCH must not leave the picker showing a
+// selection that was never actually persisted (found via adversarial
+// review: this mutation has no offline queue, so a failed write with no
+// rollback could sit uncorrected for the full 5-minute staleTime).
+export function useUpdateProgramExerciseWeightUnit(workoutDayId: string) {
+  const qk = ['v2_programExercises', workoutDayId] as const
+  return useMutation({
+    mutationFn: ({ id, weightUnit }: { id: string; weightUnit: WeightUnit | null }) =>
+      updateProgramExerciseWeightUnit(id, weightUnit),
+    onMutate: async ({ id, weightUnit }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<ProgramExercise[]>(qk)
+      queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
+        old?.map((e) => (e.id === id ? { ...e, weightUnit } : e)),
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
   })
 }
 

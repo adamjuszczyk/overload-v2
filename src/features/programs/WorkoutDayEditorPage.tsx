@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react'
-import type { ProgramExercise } from '../../types'
+import type { ProgramExercise, WeightUnit } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import {
   useWorkoutDays,
   useUpdateWorkoutDayName,
   useProgramExercises,
   useUpdateProgramExerciseReps,
+  useUpdateProgramExerciseWeightUnit,
   useDeleteProgramExercise,
   useReorderProgramExercises,
 } from './usePrograms'
+import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from './ExercisePicker'
 
 export default function WorkoutDayEditorPage() {
@@ -28,8 +30,10 @@ export default function WorkoutDayEditorPage() {
 
   const updateName = useUpdateWorkoutDayName(programId ?? '')
   const updateReps = useUpdateProgramExerciseReps(dayId ?? '')
+  const updateWeightUnit = useUpdateProgramExerciseWeightUnit(dayId ?? '')
   const deleteExercise = useDeleteProgramExercise(dayId ?? '')
   const reorder = useReorderProgramExercises(dayId ?? '')
+  const globalWeightUnit = useSettingsStore((s) => s.weightUnit)
 
   function handleRepsStepper(pe: ProgramExercise, delta: number) {
     let newVal: number | null
@@ -125,6 +129,8 @@ export default function WorkoutDayEditorPage() {
               onMoveDown={() => moveExercise(index, 'down')}
               onDelete={() => setConfirmDeleteExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
               onStepper={(delta) => handleRepsStepper(pe, delta)}
+              globalWeightUnit={globalWeightUnit}
+              onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: pe.id, weightUnit })}
             />
           ))}
         </div>
@@ -194,9 +200,21 @@ interface ExerciseRowProps {
   onMoveDown: () => void
   onDelete: () => void
   onStepper: (delta: number) => void
+  globalWeightUnit: WeightUnit
+  onWeightUnit: (unit: WeightUnit | null) => void
 }
 
-function ExerciseRow({ pe, index, total, onMoveUp, onMoveDown, onDelete, onStepper }: ExerciseRowProps) {
+function ExerciseRow({
+  pe,
+  index,
+  total,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
+  onStepper,
+  globalWeightUnit,
+  onWeightUnit,
+}: ExerciseRowProps) {
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
       {/* Name row */}
@@ -246,6 +264,50 @@ function ExerciseRow({ pe, index, total, onMoveUp, onMoveDown, onDelete, onStepp
             SUGGESTION ONLY
           </span>
         )}
+      </div>
+
+      {/* Weight unit row (v3 §2.4 / TASKS.md §4 item 28) — preferred unit for
+          this program-exercise. INHERIT (weightUnit === null) resolves from
+          the global Settings default at logging time; picking KG/LBS here
+          writes that literal so a later change to the global default doesn't
+          retroactively reinterpret this row (SPEC §8.1). */}
+      <div style={{ padding: '0 16px 12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0, paddingTop: 10 }}>
+          WEIGHT UNIT
+        </span>
+        <div style={{ display: 'flex', gap: 4, paddingTop: 10 }}>
+          {(
+            [
+              { value: null, label: `INHERIT (${globalWeightUnit.toUpperCase()})` },
+              { value: 'kg' as const, label: 'KG' },
+              { value: 'lbs' as const, label: 'LBS' },
+            ]
+          ).map((opt) => {
+            const active = pe.weightUnit === opt.value
+            return (
+              <button
+                key={opt.label}
+                onClick={() => onWeightUnit(opt.value)}
+                style={{
+                  height: 26,
+                  padding: '0 9px',
+                  flexShrink: 0,
+                  background: active ? 'var(--accent-muted)' : 'var(--surface-overlay)',
+                  border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '1px',
+                  color: active ? 'var(--accent)' : 'var(--text-muted)',
+                }}
+              >
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

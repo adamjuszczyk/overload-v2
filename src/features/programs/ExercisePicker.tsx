@@ -3,6 +3,7 @@ import { X, Plus } from 'lucide-react'
 import type { MuscleGroup } from '../../types'
 import { useExercises } from '../library/useExercises'
 import { useAddProgramExercise, useProgramExercises } from './usePrograms'
+import { useSettings } from '../settings/useSettings'
 
 const MUSCLE_GROUPS: MuscleGroup[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -22,6 +23,19 @@ export default function ExercisePicker({ workoutDayId, existingExerciseIds, onCl
   const { data: allExercises = [] } = useExercises(false)
   const { data: currentExercises = [] } = useProgramExercises(workoutDayId)
   const add = useAddProgramExercise(workoutDayId)
+  // Resolved literal at creation time, per TASKS.md §4 item 28 — a freshly
+  // added exercise has no per-exercise override yet, so "resolve" is just
+  // "today's global default", written as a real value rather than NULL.
+  // Read from the query directly (not settingsStore) and gate on isLoading —
+  // the store only mirrors the query's data via a useEffect one render frame
+  // after it resolves, and until then it silently reports DEFAULT_SETTINGS
+  // ('kg'). A fast add on a fresh/slow-network load could otherwise write a
+  // wrong 'kg' literal that's permanently stuck (this column is a resolved
+  // literal by design, not re-interpreted later — found via adversarial
+  // review).
+  const { data: settings, isLoading: settingsLoading } = useSettings()
+  const globalWeightUnit = settings.weightUnit
+  const addDisabled = add.isPending || settingsLoading
 
   // Combines snapshot IDs from prop with live query so additions mid-session hide immediately
   const addedIds = new Set([
@@ -36,7 +50,12 @@ export default function ExercisePicker({ workoutDayId, existingExerciseIds, onCl
       : available.filter((ex) => ex.muscleGroup === muscleFilter)
 
   async function handleAdd(exerciseId: string) {
-    await add.mutateAsync({ exerciseId, position: currentExercises.length })
+    if (settingsLoading) return
+    await add.mutateAsync({
+      exerciseId,
+      position: currentExercises.length,
+      weightUnit: globalWeightUnit,
+    })
   }
 
   return (
@@ -91,8 +110,8 @@ export default function ExercisePicker({ workoutDayId, existingExerciseIds, onCl
             <button
               key={ex.id}
               onClick={() => handleAdd(ex.id)}
-              disabled={add.isPending}
-              style={{ width: '100%', padding: '14px 0', display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: add.isPending ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: add.isPending ? 0.5 : 1 }}
+              disabled={addDisabled}
+              style={{ width: '100%', padding: '14px 0', display: 'flex', alignItems: 'center', gap: 12, background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-subtle)', cursor: addDisabled ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: addDisabled ? 0.5 : 1 }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

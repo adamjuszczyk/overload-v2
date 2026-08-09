@@ -4,6 +4,7 @@ import { format, parseISO } from 'date-fns'
 import { useHistoryDetail, useDeleteSession } from './useHistory'
 import type { HistorySetRow } from './historyService'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import type { MuscleGroup } from '../../types'
 
 const MUSCLE_LABEL: Record<MuscleGroup, string> = {
@@ -283,6 +284,8 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
 // STAGE label, no number of its own — it shares its head's set_number).
 
 function HistorySetRowView({ set, isStage = false }: { set: HistorySetRow; isStage?: boolean }) {
+  // History converts to the global Settings unit for display (SPEC §8.1).
+  const { toDisplay, unit: weightUnit } = useWeightDisplay()
   return (
     <div
       className="flex items-center gap-3 px-4 py-2.5"
@@ -313,7 +316,10 @@ function HistorySetRowView({ set, isStage = false }: { set: HistorySetRow; isSta
             className="text-sm font-bold"
             style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
           >
-            {set.weight !== null ? set.weight : '—'}
+            {set.weight !== null ? toDisplay(set.weight) : '—'}
+            {set.weight !== null && (
+              <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>{weightUnit}</span>
+            )}
             <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>{' × '}</span>
             {set.reps !== null ? set.reps : '—'}
           </span>

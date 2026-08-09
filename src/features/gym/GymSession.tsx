@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog } from '../../types'
+import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import {
   useActiveSession,
@@ -62,6 +62,7 @@ function ExerciseSection({
     isSkipped: boolean
     restSeconds: number | null
     setSeconds: number | null
+    enteredUnit: WeightUnit | null
     parentSetId: string | null
     stageIndex: number
   }) => Promise<SetLog>
