@@ -3,7 +3,7 @@ import type { WeekPlan, WeekPlanSet } from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
-type DbWeekPlanSet = {
+export type DbWeekPlanSet = {
   id: string
   week_plan_id: string
   user_id: string
@@ -203,91 +203,167 @@ export async function copyFromPreviousWeek(
   mesoId: string,
   weekNumber: number,
 ): Promise<void> {
-  const { data: prevPlans, error: e1 } = await supabase
+  const { data: prevPlans, error } = await supabase
     .from('v2_week_plans')
     .select('*, v2_week_plan_sets(*)')
     .eq('mesocycle_id', mesoId)
     .eq('week_number', weekNumber - 1)
-  if (e1) throw e1
+  if (error) throw error
   if (!prevPlans || prevPlans.length === 0) return
 
   for (const prev of prevPlans as DbWeekPlan[]) {
-    const { data: newPlan, error: e2 } = await supabase
+    await copyOnePlanForward(userId, mesoId, weekNumber, prev)
+  }
+}
+
+// Phase 3.7's scoped twin of copyFromPreviousWeek (TASKS.md §4 item 31 /
+// SPEC §5) — same previous-week source, but filtered to one workoutDayId
+// instead of every workout in the week. `existingWeekPlanId` lets the caller
+// pass an already-created (possibly still-empty) week_plan row for this
+// workout/week so this doesn't create a duplicate — same optional-id pattern
+// useAddSet/addSet already uses.
+export async function copyWorkoutFromPreviousWeek(
+  userId: string,
+  mesoId: string,
+  weekNumber: number,
+  workoutDayId: string,
+  existingWeekPlanId?: string,
+): Promise<void> {
+  const { data: prevPlan, error } = await supabase
+    .from('v2_week_plans')
+    .select('*, v2_week_plan_sets(*)')
+    .eq('mesocycle_id', mesoId)
+    .eq('week_number', weekNumber - 1)
+    .eq('workout_day_id', workoutDayId)
+    .maybeSingle()
+  if (error) throw error
+  if (!prevPlan) return
+
+  await copyOnePlanForward(userId, mesoId, weekNumber, prevPlan as DbWeekPlan, existingWeekPlanId)
+}
+
+// Shared by both copy actions above — the two differ only in how they pick
+// which previous-week plan(s) to walk (every plan in the week vs. one
+// workout's plan); once a source plan is picked, copying it forward is
+// identical either way. Creates the destination week_plan row unless the
+// caller already has one (copyWorkoutFromPreviousWeek's existingWeekPlanId),
+// then hands the set-copying itself to copySetsWithGrouping unchanged.
+async function copyOnePlanForward(
+  userId: string,
+  mesoId: string,
+  weekNumber: number,
+  prevPlan: DbWeekPlan,
+  existingWeekPlanId?: string,
+): Promise<void> {
+  const prevSets = (prevPlan.v2_week_plan_sets ?? []) as DbWeekPlanSet[]
+  if (prevSets.length === 0) return
+
+  let newWeekPlanId = existingWeekPlanId
+  if (!newWeekPlanId) {
+    const { data: newPlan, error } = await supabase
       .from('v2_week_plans')
       .insert({
         user_id: userId,
         mesocycle_id: mesoId,
-        workout_day_id: prev.workout_day_id,
+        workout_day_id: prevPlan.workout_day_id,
         week_number: weekNumber,
-        is_deload: prev.is_deload,
+        is_deload: prevPlan.is_deload,
       })
       .select()
       .single()
-    if (e2) throw e2
-
-    const prevSets = (prev.v2_week_plan_sets ?? []) as DbWeekPlanSet[]
-    if (prevSets.length > 0) {
-      await copySetsWithGrouping(userId, (newPlan as { id: string }).id, prevSets)
-    }
+    if (error) throw error
+    newWeekPlanId = (newPlan as { id: string }).id
+  } else {
+    // Reusing an already-created (empty) plan row — still sync is_deload
+    // from the source, same as the fresh-insert branch above, so "copy this
+    // workout" faithfully replicates the source week's plan (deload flag
+    // included), not just its sets. Found by Phase 3.7's adversarial
+    // review: this branch used to leave whatever is_deload the row already
+    // had (always false, since the only way to reach this branch with an
+    // existing row is useAddSet's createWeekPlan, which hardcodes false).
+    const { error } = await supabase
+      .from('v2_week_plans')
+      .update({ is_deload: prevPlan.is_deload })
+      .eq('id', newWeekPlanId)
+    if (error) throw error
   }
+
+  await copySetsWithGrouping(userId, newWeekPlanId, prevSets)
 }
 
-// Copies a week's sets forward via a direct old-id → new-id map, instead of
-// re-inferring grouping from set_number ordering the way this used to work
-// (AUDIT M5's plan-side fix, pre-Phase-3.1). That re-inference assumed every
-// stage's set_number was strictly greater than its head's — true for legacy
-// rows, but no longer true for Phase 3.1's ADD STAGE, which writes stages
-// sharing their head's set_number (TASKS.md §2.1). It would silently fail
-// to reattach any dropset authored through ADD STAGE. A direct map works
-// for both: Phase 3.0's backfill + M5 fixes mean parent_week_plan_set_id is
-// now correctly populated on every existing row (log side 8/8, plan side
-// 7/7, independently verified — see CONTEXT.md), so there's no longer a
-// reason to re-derive it here at all. Heads are inserted first so each
-// stage's new parent id is already resolvable when its own row is created.
-async function copySetsWithGrouping(
+// A single new-row insert, factored out so tests can substitute a fake and
+// assert on exactly what copySetsWithGrouping tried to write — real behaviour
+// (the supabase call) is unchanged, this is purely an injection seam.
+async function defaultInsertPlanSet(
+  payload: Record<string, unknown>,
+): Promise<DbWeekPlanSet> {
+  const { data, error } = await supabase
+    .from('v2_week_plan_sets')
+    .insert(payload)
+    .select()
+    .single()
+  if (error) throw error
+  return data as DbWeekPlanSet
+}
+
+// Copies one week_plan's sets forward via a direct old-id → new-id map,
+// instead of re-inferring grouping from set_number ordering the way this
+// used to work (AUDIT M5's plan-side fix, pre-Phase-3.1). That re-inference
+// assumed every stage's set_number was strictly greater than its head's —
+// true for legacy rows, but no longer true for Phase 3.1's ADD STAGE, which
+// writes stages sharing their head's set_number (TASKS.md §2.1). It would
+// silently fail to reattach any dropset authored through ADD STAGE. A direct
+// map works for both: Phase 3.0's backfill + M5 fixes mean
+// parent_week_plan_set_id is now correctly populated on every existing row
+// (log side 8/8, plan side 7/7, independently verified — see CONTEXT.md), so
+// there's no longer a reason to re-derive it here at all. Heads are inserted
+// first so each stage's new parent id is already resolvable when its own row
+// is created.
+//
+// Exported (and takes an injectable insertPlanSet) so Phase 3.7's test suite
+// can exercise the reattachment logic directly without a real Supabase
+// round-trip — the id-remapping is the part that's actually risky, not the
+// insert call itself. Called once per week_plan by both copyFromPreviousWeek
+// (in a loop, one call per workout in the week) and
+// copyWorkoutFromPreviousWeek (a single call) — this function has no
+// awareness of which caller it's serving, which is exactly what makes it
+// safe to share: whole-week scope is just "call this per plan," never a
+// different code path through here.
+export async function copySetsWithGrouping(
   userId: string,
   newWeekPlanId: string,
   prevSets: DbWeekPlanSet[],
+  insertPlanSet: (payload: Record<string, unknown>) => Promise<DbWeekPlanSet> = defaultInsertPlanSet,
 ): Promise<void> {
   const idMap = new Map<string, string>()
   const heads = prevSets.filter((s) => s.parent_week_plan_set_id == null)
   const stages = prevSets.filter((s) => s.parent_week_plan_set_id != null)
 
   for (const s of heads) {
-    const { data: newRow, error } = await supabase
-      .from('v2_week_plan_sets')
-      .insert({
-        week_plan_id: newWeekPlanId,
-        user_id: userId,
-        program_exercise_id: s.program_exercise_id,
-        set_number: s.set_number,
-        target_rir: s.target_rir,
-        is_dropset: s.is_dropset,
-        stage_index: s.stage_index ?? 0,
-      })
-      .select()
-      .single()
-    if (error) throw error
-    idMap.set(s.id, (newRow as DbWeekPlanSet).id)
+    const newRow = await insertPlanSet({
+      week_plan_id: newWeekPlanId,
+      user_id: userId,
+      program_exercise_id: s.program_exercise_id,
+      set_number: s.set_number,
+      target_rir: s.target_rir,
+      is_dropset: s.is_dropset,
+      stage_index: s.stage_index ?? 0,
+    })
+    idMap.set(s.id, newRow.id)
   }
 
   for (const s of stages) {
     const newParentId = s.parent_week_plan_set_id ? idMap.get(s.parent_week_plan_set_id) : undefined
-    const { data: newRow, error } = await supabase
-      .from('v2_week_plan_sets')
-      .insert({
-        week_plan_id: newWeekPlanId,
-        user_id: userId,
-        program_exercise_id: s.program_exercise_id,
-        set_number: s.set_number,
-        target_rir: s.target_rir,
-        is_dropset: s.is_dropset,
-        parent_week_plan_set_id: newParentId ?? null,
-        stage_index: s.stage_index ?? 0,
-      })
-      .select()
-      .single()
-    if (error) throw error
-    idMap.set(s.id, (newRow as DbWeekPlanSet).id)
+    const newRow = await insertPlanSet({
+      week_plan_id: newWeekPlanId,
+      user_id: userId,
+      program_exercise_id: s.program_exercise_id,
+      set_number: s.set_number,
+      target_rir: s.target_rir,
+      is_dropset: s.is_dropset,
+      parent_week_plan_set_id: newParentId ?? null,
+      stage_index: s.stage_index ?? 0,
+    })
+    idMap.set(s.id, newRow.id)
   }
 }

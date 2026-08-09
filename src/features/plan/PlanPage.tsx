@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, Trash2, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2, Copy, Rows3 } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay } from '../../types'
 import { useMesos } from '../programs/useMesos'
@@ -13,8 +13,11 @@ import {
   useUpdateSet,
   useRemoveSet,
   useCopyFromPreviousWeek,
+  useCopyWorkoutFromPreviousWeek,
 } from './useWeekPlan'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
+import WorkoutSwitcher from './WorkoutSwitcher'
+import CompactPlanRows from './CompactPlanRows'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,17 @@ export default function PlanPage() {
 
   const currentWeek = activeMeso ? computeWeekNumber(activeMeso.startDate) : 1
   const [viewWeek, setViewWeek] = useState(1)
+
+  // Workout switcher (TASKS.md §4 item 30) — which single workout day is
+  // showing. No effect needed to keep it valid: `selected` below always
+  // falls back to the first scheduled day if this points at a dow that
+  // isn't scheduled (e.g. after switching meso/program).
+  const [selectedDow, setSelectedDow] = useState<DayOfWeek | null>(null)
+
+  // Compact display mode (TASKS.md §4 item 32) — not in SPEC §11's Settings
+  // list, so this is page-local UI state, not a persisted setting: it resets
+  // on reload, same as isPast/viewWeek here.
+  const [compact, setCompact] = useState(false)
 
   useEffect(() => {
     if (activeMeso) setViewWeek(computeWeekNumber(activeMeso.startDate))
@@ -69,6 +83,8 @@ export default function PlanPage() {
         }))
         .filter((x): x is { dow: DayOfWeek; workoutDay: WorkoutDay } => !!x.workoutDay)
     : []
+
+  const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
 
   const showCopyButton =
     !isPast && viewWeek > 1 && weekPlans.length === 0 && !plansLoading && !daysLoading
@@ -158,7 +174,7 @@ export default function PlanPage() {
           </div>
         )}
 
-        {/* Copy from last week */}
+        {/* Copy whole week */}
         {showCopyButton && (
           <button
             onClick={() => copyPrev.mutate()}
@@ -167,7 +183,7 @@ export default function PlanPage() {
           >
             <Copy size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-secondary)' }}>
-              {copyPrev.isPending ? 'COPYING…' : 'COPY LAST WEEK'}
+              {copyPrev.isPending ? 'COPYING…' : 'COPY WEEK'}
             </span>
           </button>
         )}
@@ -194,22 +210,33 @@ export default function PlanPage() {
           </div>
         )}
 
-        {/* Workout day panels */}
-        {!plansLoading && !daysLoading &&
-          scheduledDays.map(({ dow, workoutDay }) => {
-            const weekPlan = weekPlans.find((wp) => wp.workoutDayId === workoutDay.id)
-            return (
-              <WorkoutDayPanel
-                key={workoutDay.id}
-                dow={dow}
-                workoutDay={workoutDay}
-                weekPlan={weekPlan}
-                isPast={isPast}
-                mesoId={activeMeso.id}
-                weekNumber={viewWeek}
-              />
-            )
-          })}
+        {/* Workout switcher + the one selected workout's panel */}
+        {!plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <button
+                onClick={() => setCompact((c) => !c)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
+              >
+                <Rows3 size={11} />
+                COMPACT
+              </button>
+            </div>
+
+            <WorkoutSwitcher days={scheduledDays} selectedDow={selected.dow} onSelect={setSelectedDow} />
+
+            <WorkoutDayPanel
+              key={selected.workoutDay.id}
+              dow={selected.dow}
+              workoutDay={selected.workoutDay}
+              weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
+              isPast={isPast}
+              mesoId={activeMeso.id}
+              weekNumber={viewWeek}
+              compact={compact}
+            />
+          </>
+        )}
       </div>
     </div>
   )
@@ -224,9 +251,10 @@ interface PanelProps {
   isPast: boolean
   mesoId: string
   weekNumber: number
+  compact: boolean
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact }: PanelProps) {
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
 
   const addSet = useAddSet(mesoId, weekNumber)
@@ -234,8 +262,16 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const removeSet = useRemoveSet(mesoId, weekNumber)
   const updateSet = useUpdateSet(mesoId, weekNumber)
   const toggleDeload = useSetDeload(mesoId, weekNumber)
+  const copyWorkout = useCopyWorkoutFromPreviousWeek(mesoId, weekNumber)
 
   const sets = weekPlan?.sets ?? []
+
+  // Copy just this workout (TASKS.md §4 item 31 / SPEC §5) — offered
+  // whenever this specific workout has nothing planned yet this week, even
+  // if other workouts in the week already do (which is exactly when the
+  // page-level "copy whole week" button above has already disappeared —
+  // see showCopyButton's weekPlans.length===0 gate).
+  const showCopyWorkoutButton = !isPast && weekNumber > 1 && sets.length === 0
 
   function handleAddSet(pe: ProgramExercise) {
     // Count heads only — a dropset's stage rows must not inflate the next
@@ -291,6 +327,20 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
         )}
       </div>
 
+      {/* Copy just this workout */}
+      {showCopyWorkoutButton && (
+        <button
+          onClick={() => copyWorkout.mutate({ workoutDayId: workoutDay.id, weekPlanId: weekPlan?.id })}
+          disabled={copyWorkout.isPending}
+          style={{ width: '100%', height: 36, marginBottom: 8, background: 'var(--surface)', border: '1px dashed var(--border-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: copyWorkout.isPending ? 'not-allowed' : 'pointer', opacity: copyWorkout.isPending ? 0.6 : 1 }}
+        >
+          <Copy size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-secondary)' }}>
+            {copyWorkout.isPending ? 'COPYING…' : 'COPY THIS WORKOUT'}
+          </span>
+        </button>
+      )}
+
       {/* Exercise card */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         {programExercises.length === 0 ? (
@@ -313,6 +363,7 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 groups={groups}
                 isPast={isPast}
                 isLast={idx === programExercises.length - 1}
+                compact={compact}
                 onAddSet={() => handleAddSet(pe)}
                 onAddStage={(group) => handleAddStage(pe, group)}
                 onRemoveSet={(id) => removeSet.mutate(id)}
@@ -333,13 +384,14 @@ interface ExerciseSectionProps {
   groups: Group<WeekPlanSet>[]
   isPast: boolean
   isLast: boolean
+  compact: boolean
   onAddSet: () => void
   onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
   onUpdateSet: (id: string, changes: { targetRir?: number | null }) => void
 }
 
-function ExerciseSection({ pe, groups, isPast, isLast, onAddSet, onAddStage, onRemoveSet, onUpdateSet }: ExerciseSectionProps) {
+function ExerciseSection({ pe, groups, isPast, isLast, compact, onAddSet, onAddStage, onRemoveSet, onUpdateSet }: ExerciseSectionProps) {
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
@@ -365,22 +417,28 @@ function ExerciseSection({ pe, groups, isPast, isLast, onAddSet, onAddStage, onR
         )}
       </div>
 
-      {/* Set groups — one row per head, its stages nested beneath it */}
+      {/* Set groups — one row per head, its stages nested beneath it.
+          Compact mode swaps this for CompactPlanRows' collapsed summary;
+          it's a read-only glance view, so editing needs expanded mode. */}
       {groups.length > 0 && (
-        <div style={{ paddingBottom: 10 }}>
-          {groups.map((group, idx) => (
-            <PlanSetGroup
-              key={group.head.id}
-              group={group}
-              displayNumber={idx + 1}
-              isPast={isPast}
-              onRemoveHead={() => onRemoveSet(group.head.id)}
-              onRemoveStage={(id) => onRemoveSet(id)}
-              onUpdate={(id, changes) => onUpdateSet(id, changes)}
-              onAddStage={() => onAddStage(group)}
-            />
-          ))}
-        </div>
+        compact ? (
+          <CompactPlanRows exerciseName={pe.exercise?.name ?? '—'} groups={groups} />
+        ) : (
+          <div style={{ paddingBottom: 10 }}>
+            {groups.map((group, idx) => (
+              <PlanSetGroup
+                key={group.head.id}
+                group={group}
+                displayNumber={idx + 1}
+                isPast={isPast}
+                onRemoveHead={() => onRemoveSet(group.head.id)}
+                onRemoveStage={(id) => onRemoveSet(id)}
+                onUpdate={(id, changes) => onUpdateSet(id, changes)}
+                onAddStage={() => onAddStage(group)}
+              />
+            ))}
+          </div>
+        )
       )}
     </div>
   )

@@ -13,6 +13,7 @@ import {
   updateSet,
   removeSet,
   copyFromPreviousWeek,
+  copyWorkoutFromPreviousWeek,
 } from './weekPlanService'
 
 function key(mesoId: string, weekNumber: number) {
@@ -167,7 +168,38 @@ export function useCopyFromPreviousWeek(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
     mutationFn: () => copyFromPreviousWeek(user!.id, mesoId, weekNumber),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      // Scheduler's missed-session detection reads useAllWeekPlans (same
+      // reasoning as useSetDeload/useAddSet/useAddStage above) — a
+      // whole-week copy is exactly the kind of bulk plan mutation that
+      // needs this too. Found missing by Phase 3.7's adversarial review:
+      // its new sibling, useCopyWorkoutFromPreviousWeek, already had it.
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+// Phase 3.7's scoped copy (TASKS.md §4 item 31 / SPEC §5) — same shape as
+// useCopyFromPreviousWeek but filtered to one workout day. weekPlanId is
+// passed through when a (possibly empty) plan row already exists for this
+// workout/week, so copyWorkoutFromPreviousWeek reuses it instead of creating
+// a duplicate — same optional-id pattern useAddSet already uses.
+export function useCopyWorkoutFromPreviousWeek(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: ({
+      workoutDayId,
+      weekPlanId,
+    }: {
+      workoutDayId: string
+      weekPlanId?: string
+    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 
