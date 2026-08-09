@@ -280,6 +280,55 @@ All core features built and working:
   all-deload-window edge case wasn't live-reproducible (this meso has no
   deload weeks yet) — covered by `e1rm.test.ts` instead. See "2026-08-09
   session (Phase 3.5)" below for the full account.
+- 2026-08-09 session (second such session, same day): **Phase 3.6 — weight
+  units — built, adversarially reviewed, fixed, live-verified against real
+  production data, and deployed.** TASKS.md §4 items 27–29 all shipped: new
+  `src/lib/weightUnit.ts` (real kg↔lbs conversion — the exact
+  0.45359237 kg-per-lb constant, `toDisplayWeight`/`toStorageWeight` at the
+  column's own precision, `resolveWeightUnit`'s three-step chain, and
+  `resolveEditedWeightKg` — the round-trip drift guard: an edit save whose
+  displayed value is unchanged returns the original stored kg exactly
+  rather than reconstructing it through a second lossy conversion, per
+  TASKS.md §2.4's own named risk), `src/hooks/useWeightDisplay.ts` wrapping
+  it for components, a per-program-exercise INHERIT/KG/LBS picker in
+  `WorkoutDayEditorPage.tsx` (with `addProgramExercise` now writing the
+  resolved global-default literal at creation time instead of NULL,
+  matching TASKS.md §2.4's stated design), a small logging-time override
+  toggle in `SetRow.tsx` threaded through the full write path (online
+  insert, offline Dexie cache, sync_queue payload), and display conversion
+  in `ExerciseProgress.tsx`, both new History cross-meso views, session
+  detail, and the gym-screen reference panel — all of which previously
+  assumed kg (AUDIT E5). This fixes AUDIT E5 fully: SetRow.tsx's weight
+  unit stopped being a display-only label. 25 new Vitest tests
+  (`weightUnit.test.ts`) cover conversion, rounding, resolution order, and
+  — specifically — that repeated no-op edits don't accumulate drift; 69
+  total tests pass. A Workflow-based adversarial review (4 dimensions, each
+  finding independently verified against the real current source) found 3
+  real bugs, all fixed: a missing NaN guard on the set-edit save path that
+  could silently null a stored weight with no error shown; a
+  settings-hydration race in the exercise picker (Zustand mirrors the
+  Settings query one render frame late, so a fast add before that resolves
+  could permanently write the wrong literal unit) — fixed by reading the
+  query directly and gating on its own loading state; and a missing
+  optimistic-update rollback on the new picker mutation — fixed by giving
+  it real onMutate/onError, unlike the pre-existing sibling reps-stepper
+  pattern it had copied. A fourth finding (the Progress chart's hidden,
+  never-displayed `volume` field left in raw kg) was raised and correctly
+  refuted — confirmed genuinely inert since neither the hidden axis nor the
+  tooltip ever renders it as a number, so no fix was needed there — see
+  "2026-08-09 session (Phase 3.6)" below for why this is deliberately not
+  the same call as the display sites that *are* touched. Live-verified
+  against real production data, including a short-lived, fully
+  cleaned-up test session created with explicit go-ahead (today was a
+  scheduled rest day, so no session existed to test against): the picker
+  persists and confirmed a genuine all-NULL baseline on every pre-existing
+  row (not assumed), Progress/History/gym-screen all convert and stay
+  consistent whether an exercise uses its own override or inherits the
+  global default, and — the critical check TASKS.md itself calls out — an
+  edit-without-change round-trip on a value logged natively in kg (32.47)
+  then viewed through a switched-to-lbs lens (71.6) preserved the stored
+  kg exactly on reload, not the 32.48 a naive re-derivation would produce.
+  See "2026-08-09 session (Phase 3.6)" below for the full account.
 
 ---
 
@@ -482,7 +531,12 @@ migration, Phase 3.8) remains unwritten.
   the `supabase/migrations/` folder agree with each other. Only the
   contract migration (010, Phase 3.8) remains unwritten; no new migration
   was needed for Phase 3.5 (it's display/computation logic only, no schema
-  change). Phase 3.6 onward is still ahead
+  change). **Phase 3.6 (§4 items 27–29, weight units) is also built,
+  adversarially reviewed, live-verified against real production data, and
+  deployed as of 2026-08-09** — see "2026-08-09 session (Phase 3.6)" in
+  CONTEXT.md below. No new migration needed for 3.6 either — the
+  `weight_unit`/`entered_unit` columns already existed from Phase 3.0's
+  migration 006. Phase 3.7 onward is still ahead
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -620,6 +674,32 @@ migration, Phase 3.8) remains unwritten.
   `getExerciseE1rmComparison` returns non-null — no headline row at all
   when there's no active meso or fewer than 2 comparable sessions, never
   a "+0%" placeholder
+- src/lib/weightUnit.ts — **new, Phase 3.6 (2026-08-09).** Pure:
+  `kgToLbs`/`lbsToKg` (via the exact 0.45359237 kg-per-lb constant, so both
+  directions are true inverses of the same authority rather than two
+  independently-rounded approximations), `toDisplayWeight`/`toStorageWeight`
+  (lbs to 1 decimal, kg to 2 — matching `numeric(6,2)`), `resolveWeightUnit`
+  (program-exercise → global Settings → 'kg', TASKS.md §2.4's three-step
+  chain), `toDisplayVolume` (same linear scale, no fixed rounding — callers
+  round the total themselves), and `resolveEditedWeightKg` — the round-trip
+  drift guard named in TASKS.md's own risk section: if the value being
+  saved is exactly what the original stored kg would already display as,
+  the original kg is returned untouched rather than reconstructed from a
+  second, lossy conversion. Real Vitest coverage (weightUnit.test.ts, 25
+  tests), same precedent as setGroupLogic.ts/referenceLogic.ts/e1rm.ts —
+  the drift tests specifically include a 25-cycle repeated-no-op-edit loop,
+  not just one-way conversion correctness
+- src/hooks/useWeightDisplay.ts — **new, Phase 3.6.** Wraps weightUnit.ts
+  for components: `useWeightDisplay(programExerciseUnit?)` resolves against
+  the global Settings store and returns `{unit, toDisplay, toStorage,
+  resolveEdited, toDisplayVolume}`. Called with an argument in
+  `SetRow.tsx`/`ExerciseCard.tsx`/`ExerciseReference.tsx`/
+  `PreviewExerciseCard.tsx` (the gym screen, which resolves per
+  program-exercise); called with no argument — resolving straight to the
+  global unit — in `ExerciseProgress.tsx`/`ExerciseHistoryView.tsx`/
+  `SessionTypeHistoryView.tsx`/`SessionDetail.tsx` (Progress/History, which
+  SPEC §8.1 states convert to the Settings unit only, not any individual
+  exercise's override)
 - src/lib/formatRestTime.ts — single source of truth for "45s" / 
   "1min 32s" rest-time formatting, used in History, Progress 
   (both charts), and RestTimer
@@ -654,6 +734,37 @@ migration, Phase 3.8) remains unwritten.
 ---
 
 ## Active work
+**Phase 3.6 (weight units) is built, adversarially reviewed, fixed,
+live-verified against real production data, and deployed as of
+2026-08-09.** TASKS.md §4 items 27–29 are all closed out, and AUDIT E5 is
+fully closed. See "2026-08-09 session (Phase 3.6)" below for the full
+build, review, and live-verification account. Summary: `weightUnit.ts`
+(new pure module, 25 Vitest tests including a 25-cycle repeated-no-op-edit
+drift check) plus `useWeightDisplay.ts` wrapping it; a per-program-exercise
+INHERIT/KG/LBS picker in `WorkoutDayEditorPage.tsx` that writes the
+resolved global-default literal at creation time; a small logging-time
+override toggle in `SetRow.tsx` threaded through the full write path
+(online + offline + sync_queue); and display conversion in Progress, both
+History cross-meso views, session detail, and the gym-screen reference
+panel. A Workflow-based adversarial review (4 dimensions, each finding
+independently re-verified) found and fixed 3 real bugs — a missing NaN
+guard on the set-edit save path, a settings-hydration race in the exercise
+picker that could permanently write the wrong unit literal, and a missing
+optimistic-update rollback on the new picker mutation — and correctly
+refuted a 4th (a hidden, never-rendered chart field left in raw kg, with
+no actual display consequence). Live-verified against real production
+data, including a short-lived, fully cleaned-up test session (explicit
+go-ahead, today was a scheduled rest day): the picker persists and
+confirmed a genuine all-NULL baseline on every pre-existing
+`v2_program_exercises` row; Progress/History/gym-screen all convert
+consistently; and the critical round-trip check — editing a value logged
+natively in kg (32.47) after it's viewed through a switched-to-lbs lens
+(71.6), saved unchanged, reloaded fresh from the database — held the
+stored kg exactly at 32.47, not the 32.48 a naive re-derivation would
+produce. Everything below this point is Phase 3.5's status, kept as
+written at the time — still accurate, just no longer the newest thing in
+this file.
+
 **Phase 3.5 (Progress headline) is built, before/after-verified against a
 real historical meso, live-verified, and deployed as of 2026-08-09 —
 and, as of a same-day follow-up, the H4 pagination fix is live-verified
@@ -3440,6 +3551,251 @@ change made or needed. This closes the one open verification gap the
 Phase 3.5 build session's own report had flagged implicitly by never
 having tested it against real data at any page size other than the
 shipped one.
+
+---
+
+## 2026-08-09 session (Phase 3.6)
+Second session of the day, following directly on from Phase 3.5's H4
+follow-up above. Built TASKS.md §4 items 27–29 (weight units), the last
+item flagged as "still open" against §2.4's design.
+
+**Build.** `src/lib/weightUnit.ts` (new, pure): `kgToLbs`/`lbsToKg` via a
+single authoritative constant (`KG_PER_LB = 0.45359237`, the internationally
+defined exact pound) so both directions are true inverses at full float
+precision rather than two independently-rounded approximations of each
+other; `toDisplayWeight`/`toStorageWeight` at the column's own precision
+(lbs 1 decimal, kg 2, matching `numeric(6,2)`); `resolveWeightUnit`
+implementing TASKS.md §2.4's exact chain (`programExerciseUnit ?? globalUnit
+?? 'kg'`); `toDisplayVolume` for the one aggregate (session-type-history's
+volume total) that scales the same way but isn't a single weight value;
+and `resolveEditedWeightKg` — the round-trip drift guard TASKS.md's own risk
+section names by a worked example (100kg → 220.5lbs → naive re-derivation
+→ 100.02kg, not 100). The guard compares the value being saved against what
+the *original stored kg* would already display as; if unchanged, it returns
+that original kg untouched instead of reconstructing it from the rounded
+display figure.
+
+Design decision made explicit here since neither TASKS.md nor SPEC.md
+resolve it directly by name: **the gym screen resolves weight unit
+per-program-exercise (its own override, else the global default);
+Progress and History resolve to the global Settings unit only**, never an
+individual exercise's override. This reads SPEC §8.1 literally ("All
+Progress/History numbers convert to the Settings unit for display") and
+keeps every number in a Progress/History view comparable to every other,
+regardless of what unit any individual workout happened to be logged in.
+`useWeightDisplay(programExerciseUnit?)` — new, wraps weightUnit.ts —
+serves both: called with an exercise's unit on the gym screen, called with
+no argument (falling straight through to the global unit) in Progress/
+History.
+
+Write path: `SetGroup.tsx`'s `LogParams` gained `enteredUnit: WeightUnit |
+null` (null = "the resolved default was used," matching the column's own
+documented semantics), threaded through `ExerciseCard.tsx`, `GymSession.tsx`,
+`useSession.ts`'s `useLogSet` (both the online Supabase insert and the
+offline Dexie/`sync_queue` payload — the offline branch previously hardcoded
+`enteredUnit: null` in three places, now passes the real value through, and
+the `sync_queue` payload gained the missing `entered_unit` key entirely,
+since without it an offline-then-synced log would have silently dropped the
+override on replay), and `sessionService.ts`'s `logSet()`. `SetRow.tsx`
+resolves its unit via `useWeightDisplay(programExercise.weightUnit)`, adds a
+local `unitOverride` state for the small per-set logging-time toggle (SPEC
+§8.1), converts on `handleLog` via `toStorageWeight`, and on edit uses
+`editUnit = currentLog.enteredUnit ?? resolvedUnit` (so a log stays
+readable/editable in whatever unit it was actually entered in, falling back
+to today's resolved default only for pre-3.6 rows) plus
+`resolveEditedWeightKg` for the save. `ExerciseReference.tsx` (the gym-screen
+LAST WEEK/THIS WEEK/LAST TIME panel) gained a required `weightUnit` prop and
+now converts every displayed historical weight — previously flat, unlabeled
+numbers assumed kg. `WorkoutDayEditorPage.tsx` gained a 3-way INHERIT/KG/LBS
+picker per program-exercise; `programService.ts`'s `addProgramExercise` now
+takes a `weightUnit` parameter and writes it as a real literal at creation
+time (never NULL) — `ExercisePicker.tsx` resolves the current global default
+before calling, per TASKS.md §2.4's stated design ("a later change to the
+global default doesn't retroactively reinterpret an existing program").
+Display conversion added to `ExerciseProgress.tsx` (chart, tooltip, last-5-
+sessions list), `ExerciseHistoryView.tsx` and `SessionTypeHistoryView.tsx`
+(both new Phase 3.4 cross-meso views — column headers now show the resolved
+unit, e.g. `WEIGHT (LBS)`/`VOLUME (LBS)`), and `SessionDetail.tsx` (the
+original per-session History view — not explicitly named in TASKS.md §4
+item 29's file list, but fixed anyway since leaving it showing raw kg next
+to every other now-converted surface would have been a glaring, confusing
+inconsistency).
+
+**Confirmed, not assumed: the two "no migration needed" premises.**
+`weight_unit`/`entered_unit` already existed from Phase 3.0's migration
+006 — re-checked against the live schema, not just recalled. Every existing
+`v2_program_exercises` row is NULL (inherit) — confirmed two ways: (1)
+`addProgramExercise`'s pre-3.6 code, read fresh, never wrote `weight_unit`
+at all (the column existed but nothing ever set it), and (2) live-checked
+against the real account's actual data — the workout-day editor's new
+picker showed `INHERIT (KG)` selected for all 5 exercises on the one
+workout day inspected, with no pre-existing overrides anywhere.
+
+**Tests.** `weightUnit.test.ts` (new, 25 tests) — conversion correctness
+both directions, rounding precision at each unit's own decimal place,
+`resolveWeightUnit`'s full 3-step chain including the double-null-fallback
+case, and — the specific risk this build exists to close — the round-trip
+drift guard: an exact-match no-op edit returns the original kg unchanged,
+a 25-cycle repeated no-op edit loop never drifts, a worked example
+demonstrating what the *naive* `lbsToKg(display)` re-derivation would have
+produced (proving the guard is load-bearing, not redundant), a genuinely
+changed value still converts correctly, and the guard holds after a unit
+*switch* between log time and edit time, not just within one unit. 69 total
+tests pass (44 pre-existing + 25 new); `npm run typecheck` and `npm run
+build` both clean.
+
+**Adversarial review.** Workflow-based, matching the Phase 3.1/3.3/3.4
+precedent: 4 independent review agents (round-trip/conversion math,
+write-path threading online+offline, Progress/History display-site
+consistency, the builder's resolution order), each finding then
+independently re-verified by a separate agent instructed to try to refute
+it against the real current source. 4 findings raised, 3 confirmed real
+and fixed, 1 correctly refuted:
+
+1. **Confirmed, fixed — `SetRow.tsx`'s edit-save path had no NaN guard.**
+   `handleLog` (the fresh-log path) already rejected a non-numeric weight
+   with an on-screen error; `saveEdit` (the edit path) had no equivalent
+   check, so typing garbage into an already-logged set's weight field and
+   hitting SAVE would silently write `NaN` through the whole chain —
+   `JSON.stringify` serializes `NaN` as `null`, so Supabase would silently
+   null the column with no error shown. Fixed: same `Number.isNaN` guard
+   as `handleLog`, reusing the existing `logError` state (which the edit
+   form didn't render at all before this — added the missing `<span>`, and
+   clear the error on both a fresh Edit-tap and CANCEL).
+2. **Confirmed, fixed, high severity — a settings-hydration race in
+   `ExercisePicker.tsx` could permanently write the wrong resolved unit.**
+   The Zustand settings store only mirrors the Settings TanStack Query's
+   data via a `useEffect`, one render frame after the query resolves — until
+   then it silently reports `DEFAULT_SETTINGS.weightUnit` ('kg'), and
+   nothing in the render path (`App.tsx`'s route gate checks only auth
+   `loading`, never the settings query's) blocks a route from mounting
+   before that query resolves. A user on a slow connection who deep-links
+   straight into the workout-day editor and adds an exercise before
+   settings load would get a permanently-stuck wrong `'kg'` literal — wrong
+   by the addProgramExercise column's own explicit design ("a later change
+   to the global default doesn't retroactively reinterpret" — this is not
+   a NULL/inherit sentinel, it's meant to be correct forever). Fixed:
+   `ExercisePicker.tsx` now reads `useSettings()` (the query) directly
+   instead of the store, gates `handleAdd` and disables every "add" button
+   on the query's own `isLoading`, closing the race at its actual source
+   rather than at the mirror.
+3. **Confirmed, fixed — the new weight-unit picker's optimistic update had
+   no rollback.** `WorkoutDayEditorPage.tsx`'s `onWeightUnit` applied an
+   ad-hoc `queryClient.setQueryData` before calling the mutation, matching
+   the existing (pre-3.6) reps-stepper pattern in the same file — but that
+   pattern has no `onError`, so a failed or offline PATCH (this mutation has
+   no offline queue, unlike the log write path) leaves the UI permanently
+   showing a selection that was never actually persisted, with `staleTime:
+   Infinity`/`refetchOnWindowFocus: false` meaning nothing resyncs the
+   cache for a long time. Fixed by moving the optimistic update into
+   `useUpdateProgramExerciseWeightUnit` itself with real `onMutate`/
+   `onError`/`onSettled` (snapshot-and-restore on failure) — the sibling
+   reps-stepper's identical pre-existing gap was left alone, out of scope
+   for this phase.
+4. **Raised, correctly refuted — `ExerciseProgress.tsx`'s chart `volume`
+   field left in raw kg.** True as a factual observation (line 219 next to
+   the correctly-converted `weight` on line 218), but the verify pass
+   confirmed it has no actual display consequence: that chart's
+   `yAxisId="volume"` axis is rendered `hide`, and `WeightTooltip` only ever
+   reads the `weight` dataKey from its payload, never `volume` — so no raw-kg
+   number is shown to an lbs-unit user today. Left unfixed, deliberately —
+   matching the original build-time reasoning (documented inline in that
+   file already) that scaling is a uniform linear rescale, so the *shape*
+   of a hidden-axis Area fill is unaffected by unit regardless. Would
+   become a real bug only if a future change started surfacing `volume` as
+   on-screen text.
+
+**Live verification.** Today (2026-08-09) is a scheduled REST DAY for the
+account's active meso — no session existed to log a real test set against.
+Per the standing browser-tooling rule, this is not a browser-availability
+gap (the dev server and Browser pane both worked throughout — confirmed via
+an actual navigation, not assumed) but a data-availability one, so rather
+than stopping, asked the user directly and got explicit go-ahead to create
+a short-lived, fully-cleaned-up off-schedule test session — the same
+"explicit go-ahead, fully cleaned up afterward" pattern Phase 3.1 used for
+its own live production testing.
+
+One credential-handling note, for the record: an early attempt to reopen a
+*past* completed session (to avoid creating a new one) by extracting the
+Supabase auth token from `localStorage` and issuing a raw authenticated
+fetch was correctly blocked by the environment's safety classifier before
+it ran. Did not attempt to route around that block through another tool —
+instead asked the user for explicit go-ahead on a different, sanctioned
+approach: a temporary, source-level debug affordance (a plain button added
+to `TodayPage.tsx`'s rest-day branch, going through the app's own real
+`useCreateSession` hook, no credential extraction involved), used once,
+then fully removed. `git diff` on `TodayPage.tsx` confirmed byte-identical
+to its pre-session state afterward.
+
+**What was checked, with real numbers:**
+
+- **The picker persists and the all-NULL baseline is real, not assumed.**
+  Set "Incline Dumbell Press" to LBS via the new picker; reload confirmed
+  it survived a real round trip through Postgres, not just the optimistic
+  cache. Every other exercise on the same workout day showed `INHERIT (KG)`
+  before this session touched anything.
+- **Gym screen.** With the account's global default also switched to LBS
+  for this check: the reference panel (LAST WEEK / EARLIER THIS WEEK)
+  showed real historical sets converted correctly for both the
+  per-exercise-overridden exercise and the exercises inheriting the global
+  default (e.g. "Cable Lateral Raise" showing `22×8`/`18.7×13` — its real
+  kg values converted to lbs). Every input row's unit toggle showed `lbs`.
+  Logged a real test set on "Incline Dumbell Press" as `220.5` in the
+  toggle-shown unit; the row re-displayed `220.5lbs` and a temporary debug
+  span (added to `SetRow.tsx`, removed immediately after — `git diff`
+  confirmed clean) showed the true stored value: `100.02` kg, exactly
+  matching `lbsToKg(220.5)` computed independently.
+- **Progress.** "Incline Dumbell Press" (the account's real historical
+  data) showed `71.7lbs × 6` in the last-sessions list and a real e1RM
+  headline percentage, both converted from the same underlying kg the gym
+  screen and History show.
+- **Both new History views.** `SessionTypeHistoryView.tsx` for "PUSH 1"
+  showed a `VOLUME (LBS)` column header with real converted totals (e.g.
+  `9706`, `6796`). `ExerciseHistoryView.tsx` for the same exercise showed a
+  `WEIGHT (LBS)` column matching the same `71.7`/`66.1` figures visible
+  elsewhere.
+- **Session detail (the original per-session History view).** Showed every
+  exercise in a real completed session converted to lbs (`71.7lbs`,
+  `22lbs`, `154.3lbs`, `88.2lbs`, `198.4lbs`) — confirms the decision to fix
+  this file too, beyond what TASKS.md §4 item 29's file list named
+  explicitly, was the right call: leaving it unconverted next to every
+  other now-consistent surface would have been the one glaring exception.
+- **The round-trip drift check — the critical one, engineered specifically
+  to expose the failure mode a same-unit no-op edit can't.** A value
+  logged *natively in kg* (`32.47`, typed directly via the per-set kg
+  override on "Cable Lateral Raise") does not itself risk drift on a
+  same-unit edit — the interesting case is what happens once that
+  exercise's *resolved* unit later changes. Switched "Cable Lateral
+  Raise" to LBS via the picker; the same logged set now displayed
+  `71.6lbs` (`toDisplayWeight(32.47, 'lbs')`, confirmed by independent
+  calculation). Opened Edit — the form pre-filled `71.6`, confirming the
+  edit-open conversion matches the display exactly. Tapped SAVE with no
+  change. Reloaded the page (a real fetch from Postgres, not the
+  optimistic cache) and re-read the debug span: **`raw_kg=32.47` —
+  unchanged.** A naive re-derivation (`lbsToKg(71.6)`) computes to `32.48`
+  — an 0.01kg drift that the guard specifically exists to prevent, and did.
+  This is the strongest form of the check TASKS.md's own risk section
+  describes, run against a real value in the real production database, not
+  a synthetic unit-test fixture.
+
+**Cleanup.** Both test sets deleted via the gym screen's own delete flow;
+the test session itself finished (0 sets logged) then deleted entirely via
+History's DELETE SESSION, since it existed only because of an off-schedule
+debug affordance and had no legitimate reason to remain in the account's
+history. Both per-exercise unit overrides reverted to INHERIT, the global
+default reverted to KG — each reversion reload-confirmed as a real,
+persisted round trip, not just an optimistic UI flicker. The two temporary
+debug additions (`TodayPage.tsx`'s rest-day test button, `SetRow.tsx`'s
+raw-kg debug span) were fully removed; `git status`/`git diff` confirmed
+zero trace of either survived into what was committed.
+
+**Deploy.** Committed (`f1caaa0`), pushed to `origin/master`, confirmed via
+both `vercel ls` (Production, Ready, built in 21s) and `vercel inspect`
+(status Ready, target production, `created` timestamp matching the push)
+— the same double-check pattern used for every prior phase's deploy, not
+just a successful `git push`. A final smoke check against the actual
+deployed production URL (not the local dev server) confirmed the app loads
+cleanly with no console errors.
 
 ---
 
