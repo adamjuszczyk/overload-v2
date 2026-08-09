@@ -329,6 +329,87 @@ All core features built and working:
   then viewed through a switched-to-lbs lens (71.6) preserved the stored
   kg exactly on reload, not the 32.48 a naive re-derivation would produce.
   See "2026-08-09 session (Phase 3.6)" below for the full account.
+- 2026-08-09 session (third such session, same day): **Phase 3.7 — Plan
+  view — built, adversarially reviewed, fixed, live-verified against real
+  production data (including a confirmed 3-bug adversarial-review fix
+  round), and deployed.** TASKS.md §4 items 30–32 all shipped: a workout
+  switcher (new `WorkoutSwitcher.tsx`, a chip row over `PlanPage.tsx`'s
+  scheduled days) replacing the old scroll-through-every-workout layout,
+  without disturbing Phase 3.1's ADD STAGE authoring or the
+  ordering-sensitive `headsOnly`-based set numbering; "copy last week" split
+  into whole-week (existing `copyFromPreviousWeek`) and a new single-workout
+  `copyWorkoutFromPreviousWeek`, both refactored onto a shared private
+  `copyOnePlanForward` helper that still calls Phase 3.1's
+  `copySetsWithGrouping` unchanged — confirmed (not assumed) it already
+  generalizes to single-workout scope, since it was always called once per
+  `week_plan` row, never once per week; and compact display mode (new
+  `CompactPlanRows.tsx` + pure `compactPlanLogic.ts`), collapsing repeated
+  plain-set rows into one line per exercise while a dropset always renders
+  as its own entry with its stage count, in true set order — page-local
+  state, not persisted, since SPEC §11's Settings list doesn't mention it.
+  **Before building, checked TASKS.md for a "§2.x Plan view design
+  decisions" section as instructed and found none exists** — grepped every
+  `### 2.x` heading; Section 2 only covers 2.1–2.8 (dropsets through the
+  audit/summary), with no Plan-view subsection. Phase 3.7's actual technical
+  shape lives only in §3 (file structure, which names `WorkoutSwitcher.tsx`/
+  `CompactPlanRows.tsx` explicitly) and §4 items 30–32 — built against those
+  plus SPEC §5, with the remaining UI-shape calls (switcher-as-chips,
+  compact's collapsing rule, non-persisted state) made directly and noted.
+  Closed the `copySetsWithGrouping()` test gap flagged and deferred during
+  Phase 3.1 (no unit tests, never live-exercised) now that a second feature
+  depends on it: new `weekPlanService.test.ts`, `insertPlanSet` made an
+  injectable parameter (defaulting to the real Supabase call — behaviour
+  unchanged) purely so the id-remapping is unit-testable without mocking
+  Supabase, matching this codebase's existing pure/injectable-logic-only
+  testing convention. A Workflow-based adversarial review (5 dimensions —
+  switcher state, copy-action correctness, compact-mode correctness, test
+  quality, the stage-exclusion rule) found 9 raw findings, 7 confirmed by
+  3-way adversarial verification each, and none hallucinated or
+  unreachable — 3 were real code bugs, fixed before shipping: `is_deload`
+  wasn't propagated when a copy action reused an existing (emptied)
+  `week_plan` row instead of creating one (only the insert branch wrote it);
+  `useCopyFromPreviousWeek` was missing the `['v2_allWeekPlans', mesoId]`
+  cache invalidation its new sibling and every other plan mutation has,
+  which scheduler's missed-session detection depends on; and
+  `CompactPlanRows` always rendered all plain sets before all dropsets
+  regardless of true position, so toggling COMPACT could imply a different
+  workout order than expanded mode for identical data — fixed by extracting
+  order-preserving `toRuns()` into `compactPlanLogic.ts` with its own real
+  Vitest coverage. The other 4 confirmed findings were test-quality gaps in
+  the first draft of `weekPlanService.test.ts` (no test combined multiple
+  heads with a dropset in one call, so nothing distinguished correct
+  id-based reattachment from a plausible ordering/proximity regression; the
+  addStage-shape and legacy-shape tests exercised identical control flow
+  since `set_number` is never branched on in production code; `target_rir`
+  was never asserted; multi-stage-per-head was untested) — closed by adding
+  4 more tests, including two adversarial multi-exercise/colliding-set-number
+  cases that would fail under a broken ordering heuristic. Test count went
+  69 (pre-Phase-3.7) to 75 (first draft, weekPlanService.test.ts's initial
+  6 tests) to 85 (post-fix: 4 more weekPlanService.test.ts tests plus the
+  new 6-test compactPlanLogic.test.ts), all 85 passing. Live-verified
+  against real production data:
+  the workout switcher (switched Push 1 → Pull 1, confirmed no bleed, no
+  console errors); both copy actions against a **real** dropset already
+  present in MESO 1.0's week 7 Push 2 plan (`One-arm Dumbell Lateral Raise`,
+  set 3/stage 1) — single-workout copy into throwaway week 8 and whole-week
+  copy from week 8 into throwaway week 9, both confirmed via direct
+  PostgREST query (using the live app's own session token, not a service
+  key) that the copied stage row's `parent_week_plan_set_id` resolves to the
+  brand-new head's id, never the source week's id and never null; the
+  `is_deload` reuse-path fix specifically (toggled deload on a week-8 source
+  workout, copied it into a pre-existing empty week-9 row via "COPY THIS
+  WORKOUT", confirmed the target row's `is_deload` flipped to `true`, not
+  left stale `false`); and compact mode toggling on/off with set counts
+  matching the expanded view exactly and no underlying data change. All test
+  rows lived only in weeks 8–9 (confirmed empty, `maxWeek: 7`, before
+  starting) and were deleted afterward — the delete call was blocked by the
+  permission classifier on the first attempt, so explicit user go-ahead was
+  asked for and given before retrying; cascade-delete and a fresh page
+  reload both confirmed zero trace left and week 7's real data untouched.
+  Pushed and confirmed live via `vercel ls`/`vercel inspect` (`Ready`,
+  Production, built ~3 min after the push, aliased to
+  `overload-v2-sage.vercel.app`). See "2026-08-09 session (Phase 3.7)" below
+  for the full account.
 
 ---
 
@@ -536,7 +617,15 @@ migration, Phase 3.8) remains unwritten.
   deployed as of 2026-08-09** — see "2026-08-09 session (Phase 3.6)" in
   CONTEXT.md below. No new migration needed for 3.6 either — the
   `weight_unit`/`entered_unit` columns already existed from Phase 3.0's
-  migration 006. Phase 3.7 onward is still ahead
+  migration 006. **Phase 3.7 (§4 items 30–32, Plan view) is also built,
+  adversarially reviewed, fixed, live-verified against real production
+  data, and deployed as of 2026-08-09** — see "2026-08-09 session (Phase
+  3.7)" below. No new migration needed for 3.7 either — it's UI/query logic
+  only, no schema change. TASKS.md has no dedicated Plan-view design-decision
+  subsection under §2 (checked directly — §2 only covers 2.1–2.8); Phase
+  3.7's technical shape comes from §3's file listing and §4 items 30–32
+  alone, plus SPEC §5. Only Phase 3.8 (§4 items 33–36, settings/library/the
+  010 contract migration) remains unbuilt
 - Overload-v2-SPEC.md — v2 product spec (superseded where v3 differs)
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
@@ -700,6 +789,51 @@ migration, Phase 3.8) remains unwritten.
   `SessionTypeHistoryView.tsx`/`SessionDetail.tsx` (Progress/History, which
   SPEC §8.1 states convert to the Settings unit only, not any individual
   exercise's override)
+- src/features/plan/WorkoutSwitcher.tsx — **new, Phase 3.7.** Purely
+  presentational chip row over PlanPage.tsx's scheduledDays; PlanPage.tsx
+  owns which dow is selected (`selectedDow` state) and the
+  fallback-to-first-scheduled-day rule when the selection points at a dow
+  that's no longer scheduled (meso/program switch) — no effect needed,
+  `selected` is derived fresh every render
+- src/features/plan/compactPlanLogic.ts — **new, Phase 3.7.** Pure:
+  `toRuns` — walks a `SetGroup<WeekPlanSet>[]` (already sorted by
+  set_number, the true set order) and merges only *consecutive* plain
+  groups into one run; a dropset is always its own single-count run,
+  annotated with its stage count, and never merges with a plain run or
+  another dropset. Order-preserving is the point — same precedent as
+  setGroupLogic.ts/e1rm.ts, and specifically extracted here after an
+  adversarial review caught the first version (inline in
+  CompactPlanRows.tsx, partitioned into "all plain, then all dropsets")
+  implying a different set order than expanded mode for identical data
+  whenever a dropset sat between two plain sets. Real Vitest coverage
+  (compactPlanLogic.test.ts) includes that exact interleaved scenario
+- src/features/plan/CompactPlanRows.tsx — **new, Phase 3.7.** Presentational
+  only — renders compactPlanLogic.ts's `toRuns()` output as one line per
+  run ("N× Exercise Name", or "1× Exercise Name +K stages" for a dropset).
+  Read-only: compact mode is a glance view, not an editing surface — no RIR
+  stepper, no add/remove, toggle back to expanded mode to edit
+- src/features/plan/weekPlanService.ts / PlanPage.tsx / useWeekPlan.ts —
+  **PlanPage.tsx extended, weekPlanService.ts/useWeekPlan.ts extended,
+  Phase 3.7 (TASKS.md §4 items 30–32).** PlanPage.tsx now shows one
+  workout day at a time via WorkoutSwitcher.tsx instead of scrolling
+  through every scheduled day — WorkoutDayPanel/ExerciseSection/
+  PlanSetGroup/SetRow (Phase 3.1's ADD STAGE authoring, the
+  ordering-sensitive `headsOnly`-based set numbering) are otherwise
+  unchanged. `copyFromPreviousWeek` (whole-week) and the new
+  `copyWorkoutFromPreviousWeek` (single-workout, scoped to one
+  workout_day_id) now share a private `copyOnePlanForward` helper — the
+  two differ only in which previous-week plan(s) they select, never in how
+  a selected plan gets copied forward. Both still call
+  `copySetsWithGrouping` (Phase 3.1) completely unchanged in production
+  behaviour; it's now exported and takes an injectable `insertPlanSet`
+  (defaults to the real Supabase insert) purely so weekPlanService.test.ts
+  can assert on the id-remapping directly. `copyOnePlanForward` also fixes
+  a bug an adversarial review found: when reusing an already-existing
+  (emptied) week_plan row rather than creating one, `is_deload` used to be
+  left untouched instead of synced from the source plan — now both branches
+  sync it. `useCopyFromPreviousWeek` also picked up the
+  `['v2_allWeekPlans', mesoId]` cache invalidation its new sibling and
+  every other plan mutation already has (the same review's second finding)
 - src/lib/formatRestTime.ts — single source of truth for "45s" / 
   "1min 32s" rest-time formatting, used in History, Progress 
   (both charts), and RestTimer
@@ -734,6 +868,50 @@ migration, Phase 3.8) remains unwritten.
 ---
 
 ## Active work
+**Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
+live-verified against real production data, and deployed as of
+2026-08-09.** TASKS.md §4 items 30–32 are all closed out. See "2026-08-09
+session (Phase 3.7)" below for the full build, review, and
+live-verification account. Summary: a workout switcher
+(`WorkoutSwitcher.tsx`) replaces PlanPage.tsx's scroll-through-every-day
+layout without disturbing Phase 3.1's ADD STAGE authoring or the
+ordering-sensitive `headsOnly` set numbering; "copy last week" split into
+whole-week (existing) and a new single-workout `copyWorkoutFromPreviousWeek`,
+both sharing a private `copyOnePlanForward` helper that still calls Phase
+3.1's `copySetsWithGrouping` completely unchanged — confirmed, not assumed,
+that it already generalizes to single-workout scope; and compact display
+mode (`CompactPlanRows.tsx` + pure `compactPlanLogic.ts`), collapsing
+repeated plain-set rows while a dropset always renders as its own
+stage-annotated entry in true set order. Checked TASKS.md for a dedicated
+Plan-view design-decision subsection under §2 as instructed and confirmed
+none exists (§2 only has 2.1–2.8) — built against §3/§4 plus SPEC §5
+instead, with the remaining UI calls made directly. Closed the
+`copySetsWithGrouping()` test gap flagged since Phase 3.1: new
+`weekPlanService.test.ts`, `insertPlanSet` made injectable purely for
+testability, production behaviour unchanged. A Workflow-based adversarial
+review (5 dimensions) found 7 confirmed findings from 9 raw — 3 real code
+bugs (an `is_deload` propagation gap on the copy-into-existing-row path, a
+missing `['v2_allWeekPlans', mesoId]` cache invalidation on the whole-week
+copy hook, and `CompactPlanRows` rendering dropsets out of true position),
+all fixed, plus 4 test-quality gaps (no multi-head reattachment test, two
+tests that looked distinct but exercised identical control flow, no
+`target_rir` assertion, no multi-stage-per-head test), all closed by adding
+4 more `weekPlanService.test.ts` tests and the new 6-test
+`compactPlanLogic.test.ts` (69 → 85 total tests, all passing). Live-verified
+against real production data: the workout switcher (no state bleed between
+workouts); both copy actions against a **real** dropset already present in
+MESO 1.0's week 7 Push 2 plan, confirmed via direct PostgREST query (the
+live app's own session token) that copied stage rows resolve to the correct
+new head, for both scopes; the `is_deload` fix specifically, confirmed live;
+and compact mode toggling with set counts matching expanded mode exactly.
+All test data lived only in throwaway future weeks (8–9, confirmed empty
+beforehand) and was fully deleted afterward — with explicit user go-ahead
+requested for the delete itself, since it was blocked by the permission
+classifier on the first attempt. Pushed and confirmed live via `vercel
+ls`/`vercel inspect`. Everything below this point is Phase 3.6's status,
+kept as written at the time — still accurate, just no longer the newest
+thing in this file.
+
 **Phase 3.6 (weight units) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
 2026-08-09.** TASKS.md §4 items 27–29 are all closed out, and AUDIT E5 is
@@ -3874,6 +4052,271 @@ report hold up under direct re-verification: the credential attempt was
 real but never executed, the debug button never touched historical data,
 and no trace of either survives in the working tree, any commit, or the
 deployed bundle. No code change was needed as a result of this follow-up.
+
+---
+
+## 2026-08-09 session (Phase 3.7)
+
+**Reading fresh, per instruction.** Re-read CONTEXT.md, then TASKS.md §4's
+Phase 3.7 section plus a search for "whichever §2.x section documents the
+Plan view design decisions." Grepped every `### 2.x`/`## 2.` heading in
+TASKS.md: Section 2 only has 2.1 (dropsets), 2.2 (set timing), 2.3
+(reference panel), 2.4 (weight unit), 2.5 (progress headline), 2.6 (history
+views), 2.7 (the stage-exclusion audit), 2.8 (schema summary) — **no
+Plan-view subsection exists.** Phase 3.7's actual technical shape lives only
+in §3's file-structure listing (which names `PlanPage.tsx`,
+`weekPlanService.ts`/`useWeekPlan.ts`, and two new files —
+`WorkoutSwitcher.tsx`, `CompactPlanRows.tsx` — directly) and §4 items 30–32
+(three terse bullets: workout switcher, split copy, compact rows counting
+heads not stages). Built against those plus SPEC §5, and made the remaining
+UI-shape calls directly (switcher-as-chips vs. tabs, compact's exact
+collapsing rule, non-persisted state), each noted below rather than silently
+assumed.
+
+### Build
+
+**1. Workout switcher.** New `WorkoutSwitcher.tsx` — a horizontal chip row
+(day abbreviation + workout name, matching the visual weight of the
+existing week-nav chevrons) replacing PlanPage.tsx's
+`scheduledDays.map(...)` over every `WorkoutDayPanel`. `PlanPage.tsx` gained
+`selectedDow` state and a `selected = scheduledDays.find(...) ?? scheduledDays[0]`
+derivation — no `useEffect` needed to keep it valid, since it's recomputed
+every render and falls back to the first scheduled day automatically if the
+selection ever points at a dow that's no longer scheduled (a meso/program
+switch). Chose "first scheduled day" over a "today's day-of-week" smart
+default deliberately — simpler, deterministic, no new date dependency, and
+SPEC §5 doesn't ask for a smart default. `WorkoutDayPanel`,
+`ExerciseSection`, `PlanSetGroup`, `SetRow` — Phase 3.1's ADD STAGE
+authoring (`handleAddStage`, `addStage.mutate`) and the
+ordering-sensitive `headsOnly`-based set numbering (`handleAddSet`) — are
+completely untouched; the switcher only changes *which single* panel
+renders, not how a panel itself works.
+
+**2. Split copy.** `weekPlanService.ts`'s `copyFromPreviousWeek`
+(whole-week) and a new `copyWorkoutFromPreviousWeek` (single-workout,
+filtered to one `workout_day_id` via `.maybeSingle()`) both now delegate to
+a new private `copyOnePlanForward(userId, mesoId, weekNumber, prevPlan,
+existingWeekPlanId?)` helper — the two callers differ only in *which*
+previous-week plan(s) they select (every plan in the week vs. one), never
+in how a selected plan gets copied forward. `copyOnePlanForward` in turn
+still calls Phase 3.1's `copySetsWithGrouping` completely unchanged in
+production behaviour. Per the task's explicit instruction to confirm rather
+than assume generalization: read `copySetsWithGrouping`'s existing call
+site and confirmed it was **already** being called once per `week_plan` row
+inside `copyFromPreviousWeek`'s own `for` loop, never once for the whole
+week — so it needed zero changes to serve `copyWorkoutFromPreviousWeek`'s
+single-call use too. `PlanPage.tsx`'s page-level "COPY WEEK" button
+(renamed from "COPY LAST WEEK" for disambiguation, same gating as before —
+`weekPlans.length === 0` for the whole viewed week) is joined by a new
+per-panel "COPY THIS WORKOUT" button, shown whenever that *specific*
+workout has no sets yet this week (`sets.length === 0`) even if other
+workouts in the week already do — exactly the case the whole-week button's
+existing gate makes unreachable once any workout in the week has data,
+which is the entire reason this second action needed to exist.
+
+**3. Compact display mode.** New `CompactPlanRows.tsx` (presentational) +
+`compactPlanLogic.ts` (pure — `toRuns`, extracted mid-build after the
+adversarial review, see below). Collapses consecutive plain-set groups into
+one "N× Exercise Name" line; a dropset is always its own single-count
+entry, annotated with its stage count ("1× Exercise Name +K stages"),
+never merged with a plain run or another dropset. Read-only by design — no
+RIR stepper, no add/remove/ADD-STAGE controls in compact rows; toggling
+back to expanded mode is the only way to edit, which matches "compact
+display mode" as a glance view rather than a second editing surface.
+**Not persisted**, confirmed against SPEC §11's Settings list (theme,
+accent, rest timer, weight unit, plus new-in-v3 measure-set-time and more
+accent colours) — compact mode isn't mentioned anywhere in it, so it's
+page-local `useState`, resetting on reload like `viewWeek`/`isPast` do.
+
+### Testing — closing the `copySetsWithGrouping()` gap
+
+Per instruction: this function was flagged during Phase 3.1 as having no
+unit tests and never being live-exercised, deferred as acceptable while
+only one caller (`copyFromPreviousWeek`) depended on it — no longer true
+now that `copyWorkoutFromPreviousWeek` is a second. `copySetsWithGrouping`
+is now exported and takes an injectable `insertPlanSet` parameter
+(defaulting to a real Supabase `insert().select().single()` call, so
+production behaviour is byte-identical) purely so tests can substitute a
+fake that assigns synthetic sequential ids and records every payload —
+matching this codebase's existing convention (setGroupLogic.test.ts,
+referenceLogic.test.ts, e1rm.test.ts, weightUnit.test.ts) of unit-testing
+pure/injectable logic rather than mocking the Supabase client. New
+`weekPlanService.test.ts`: addStage-shape (stage shares its head's
+set_number) and legacy-shape (stage's set_number strictly greater)
+single-head reattachment, a plain no-dropset workout unaffected, heads
+always inserted before stages regardless of input order, and a
+whole-week-scope test asserting sequential calls to
+`copySetsWithGrouping` (mirroring `copyFromPreviousWeek`'s loop) don't leak
+id-map state between plans. 6 tests, all passing — but see the adversarial
+review below for what this first draft still missed.
+
+### Adversarial review — 9 raw findings, 7 confirmed, 3 real code bugs
+
+A Workflow-based review (same pattern as every phase since 3.1), 5
+dimensions run in parallel — switcher state, copy-action correctness,
+compact-mode correctness, test quality, and a dedicated re-audit of the
+stage-exclusion rule against Phase 3.7's new code — each finding then
+adversarially re-verified by 3 independent agents told to try to refute it
+(default to refuted unless concrete evidence in the actual current code
+supports the failure scenario). 9 raw findings, 7 survived (fewer than 2 of
+3 votes refuted them); the 2 that didn't survive were both about
+`copySetsWithGrouping`'s handling of multiple stages sharing one head —
+correctly refuted by 2/3 votes after tracing that `idMap.get()` is a
+non-destructive read with no per-head fan-out logic, so N stages under one
+head was never actually at risk (the underlying coverage gap was still
+real, and got closed anyway as part of fixing the sibling finding below).
+
+**Three real code bugs, all fixed:**
+
+1. **`is_deload` not propagated on the reuse-an-existing-row path**
+   (medium). `copyOnePlanForward` only wrote `is_deload: prevPlan.is_deload`
+   inside the branch that creates a brand-new `week_plan` row; when
+   `copyWorkoutFromPreviousWeek` passed an `existingWeekPlanId` (reachable
+   whenever a workout's plan row already exists with zero sets — e.g. add
+   then delete a set, which `removeSet` never cleans up the parent row
+   for), that branch was skipped entirely and the reused row's `is_deload`
+   stayed whatever it already was (always `false`, since `createWeekPlan`
+   hardcodes that). Fixed by adding an `else` branch that `UPDATE`s
+   `is_deload` on the reused row too, so "copy this workout" faithfully
+   replicates the source week's deload flag either way. All three
+   verification votes independently traced the exact reachability chain
+   (PlanPage.tsx's `sets.length === 0` gate doesn't require the row to be
+   absent, just empty) before confirming.
+2. **`useCopyFromPreviousWeek` missing `['v2_allWeekPlans', mesoId]`
+   invalidation** (low). Its new sibling `useCopyWorkoutFromPreviousWeek`,
+   and every other plan-mutating hook in the file (`useSetDeload`,
+   `useAddSet`, `useAddStage`), already invalidate this key — the file's
+   own comment on `useSetDeload` explains why: scheduler's missed-session
+   detection reads `useAllWeekPlans`. The whole-week copy was the one
+   outlier. Fixed by adding the same invalidation.
+3. **`CompactPlanRows` rendering dropsets out of true position** (medium).
+   The first version partitioned `groups` into `plain`/`dropsets` arrays
+   and rendered all plain lines before all dropset lines — discarding
+   `groups`' true set-number order. A workout with plain/dropset/plain in
+   that real sequence would show "2× Name" then "1× Name +K stages" in
+   compact mode, implying the dropset happened last, while expanded mode
+   (walking the same sorted `groups` array in order) correctly showed it
+   second. Fixed by extracting `toRuns()` into `compactPlanLogic.ts`,
+   which walks `groups` once and merges only *consecutive* plain groups,
+   so a dropset's position in the output always matches its position in
+   the input. New `compactPlanLogic.test.ts` (6 tests) includes the exact
+   interleaved plain/dropset/plain scenario the review found, plus that
+   adjacent dropsets never merge with each other even at equal stage
+   counts.
+
+**Four test-quality findings, all closed by strengthening
+`weekPlanService.test.ts`:**
+
+- No test ever called `copySetsWithGrouping` with more than one head
+  present (high severity) — meaning nothing distinguished "reattach via
+  the explicit `parent_week_plan_set_id` id map" (what the code does) from
+  a plausible "reattach via nearest/first matching head" heuristic (the
+  exact class of bug `copySetsWithGrouping`'s own header comment documents
+  as the pre-3.1 failure mode it replaced). A real workout's `prevSets`
+  spans every exercise together, and `set_number` restarts from 1 per
+  exercise, so two different exercises' "set 1" heads coexisting is the
+  normal shape, not contrived. Closed by adding two adversarial multi-head
+  tests (addStage-shape and legacy-shape) where a dropset's own head and a
+  *different* exercise's head share the exact same `set_number` — a broken
+  heuristic would grab the wrong one; the real id-map-based code doesn't.
+- The addStage-shape and legacy-shape single-head tests exercised
+  *identical* production control flow, since `copySetsWithGrouping` never
+  branches on `set_number` at all — varying it between the two tests
+  changed only the recorded payload values, not which code ran, so the
+  "legacy" test provided no actual protection against reintroducing the
+  old set_number-ordering bug. Left both tests in place (still valid basic
+  payload-shape checks) but revised their comments to say so honestly, and
+  pointed at the new multi-head tests as the ones that actually
+  distinguish the two reattachment strategies.
+- `target_rir` was never asserted in any test despite being a real field
+  `copySetsWithGrouping` copies — a future refactor that dropped or
+  mistyped it would pass all 6 original tests. Closed with a dedicated
+  test using distinct non-default values (3 and 0, not the shared default
+  2) for head and stage.
+- No test covered a dropset with more than one stage under the same head.
+  Closed with a 3-stage test asserting every stage resolves to the same
+  head's new id.
+
+Final count: 10 new tests across the two new/strengthened files (69 → 75
+after the first draft → 85 after the fix round), `npm run typecheck` /
+`npm run build` / `npm test` all clean at each stage.
+
+### Live verification against real production data
+
+Browser tooling checked first, per the standing rule — dev server started
+cleanly, `get_page_text` returned real content (`REST DAY`, `WEEK 6 · MESO
+1.0`), gate open. The dev server had an already-authenticated real session
+(same as every prior live-testing phase).
+
+**Workout switcher:** switched Monday/Push 1 → Tuesday/Pull 1 on the real
+current week (6). Exercise list changed completely (Neutral Lat Pulldown,
+Cable Row, etc. — genuinely different from Push 1's Incline Dumbell Press,
+Cable Lateral Raise), zero console errors, confirming no state bleed.
+
+**Compact mode:** toggled on for Tuesday/Pull 1 — rendered "3× Neutral Lat
+Pulldown (cable)", "3× Cable Row", "3× Ezbar Preacher Curl", "2× One-arm
+Cable Lat Row", "2× Cable Reverse Biceps Curl", each count matching the
+expanded view's numbered rows exactly. Toggled back off — reverted to the
+identical expanded view, byte-for-byte the same rows as before toggling.
+
+**Copy actions against a real dropset — the critical check, done via direct
+query, not just UI appearance.** A read-only query for
+`is_dropset=eq.true` across the whole meso found 7 real dropsets, all
+`set_number: 3, stage_index: 1` — including one in MESO 1.0's own **week
+7** (not history — the account's actual forward plan), workout Push 2,
+exercise "One-arm Dumbell Lateral Raise" (the same exercise CONTEXT.md's
+Phase 3.5/3.6 entries independently identified as this meso's real dropset
+case). `maxWeek` across all `v2_week_plans` for this meso was 7, confirming
+weeks 8+ were completely empty — a safe sandbox needing no fabricated test
+data, since week 7 itself could serve as a genuine, real dropset source
+without ever being written to.
+- **Single-workout scope:** on week 8 (empty), selected Push 2, clicked
+  "COPY THIS WORKOUT." UI showed the dropset grouped correctly (`02` with
+  a nested `↳` stage). Queried `v2_week_plan_sets` for the new week-8 Push
+  2 plan directly: the copied stage row's `parent_week_plan_set_id`
+  (`5829a5e7…`) matched exactly the id of the newly-inserted head row with
+  the same `program_exercise_id`/`set_number: 2` in the same new plan — a
+  brand-new id, not week 7's original head id, not null.
+- **Whole-week scope:** on week 9 (empty), clicked "COPY WEEK" (source =
+  week 8, which by now had exactly the one Push 2 plan from the step
+  above — still a genuine exercise of `copyFromPreviousWeek`'s per-plan
+  loop with real dropset data flowing through it). Queried week 9's new
+  Push 2 plan: the copied stage's parent resolved to week 9's own new head
+  id, confirmed **not equal** to week 8's head id (`linkedToOldWeek8Id:
+  false`) — proving the id remap re-derives fresh per copy rather than
+  accidentally carrying a stale id forward.
+- **`is_deload` reuse-path fix, specifically:** on week 9, added then
+  deleted one set on Pull 1 (leaving an empty `week_plan` row,
+  `is_deload: false` — confirmed via query, 0 sets remaining). On week 8,
+  copied Pull 1 from week 7 via "COPY THIS WORKOUT," then toggled DELOAD
+  on for it (confirmed `is_deload: true` via query). Back on week 9's
+  Pull 1 (the pre-existing empty row), clicked "COPY THIS WORKOUT" again —
+  this specifically exercises the reuse branch the fix targets. Queried
+  the same row afterward: `is_deload: true`, 13 sets copied — the fix
+  holds under the exact failure scenario the adversarial review described.
+
+**Cleanup.** All test data lived only in the 4 `v2_week_plans` rows created
+in weeks 8–9 (confirmed via query before starting: `maxWeek: 7`). The first
+delete attempt (`DELETE .../v2_week_plans?id=in.(...)`) was blocked by the
+permission classifier as a destructive-operation guard; per the classifier's
+own guidance, did not attempt to route around it through another tool —
+explained exactly what was being deleted and why via `AskUserQuestion`
+instead, got explicit go-ahead, then retried the identical request, which
+succeeded (`deletedCount: 4`). Verified afterward: 0 remaining week 8–9
+plans, 0 orphaned `v2_week_plan_sets` rows (cascade delete via the existing
+`on delete cascade` FK worked as expected), week 7's real 5-plan data still
+present and untouched. A final hard reload of `/plan` showed the app back
+at its original baseline (Week 6, Monday, Push 1) with no visual trace of
+any test activity.
+
+### Deploy
+
+Committed (`51f8ded`), pushed to `origin/master`. Confirmed via `vercel ls`
+(new deployment, `● Building` at first check, 60s old) then `vercel
+inspect` on it directly: `status ● Ready`, `target production`, created ~3
+minutes after the push, aliased to `overload-v2-sage.vercel.app` and the
+other production aliases — matching the same confirmation bar every prior
+phase's deploy used.
 
 ---
 
