@@ -202,8 +202,12 @@ export default function ExerciseCard({
   // without deletingHeadIds gating SetGroup's ADD STAGE (see that prop),
   // a stage logged mid-cascade would never be in `order` and, once the head
   // goes, would be silently orphaned by the log-side FK's ON DELETE SET
-  // NULL (CASCADE is deferred to a not-yet-written migration 009) — exactly
-  // the corruption this guard exists to prevent. (2) the renumbering step
+  // NULL until migration 010 (Phase 3.8) — exactly the corruption this
+  // guard exists to prevent, and it stays in place unchanged after 010
+  // lands: the FK stops the database from orphaning stages, this guard
+  // keeps TanStack Query's optimistic cache correct in the meantime, since
+  // a server-side cascade removes rows the client still holds until the
+  // next refetch. (2) the renumbering step
   // below sends only `setNumber`, not the head's full captured weight/reps/
   // rir/note — those were snapshotted before the (now genuinely multi-step)
   // cascade and would silently clobber a concurrent edit to that set made

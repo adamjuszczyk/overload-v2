@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
+import { DEFAULT_EXERCISES } from './defaultExercises'
 import type { Exercise, MuscleGroup } from '../../types'
 
 type DbExercise = {
@@ -65,4 +66,49 @@ export async function setExerciseArchived(id: string, archived: boolean): Promis
     .update({ is_archived: archived })
     .eq('id', id)
   if (error) throw error
+}
+
+// Total row count, archived included — the seed-on-empty check (SPEC §9) must
+// use this rather than fetchExercises(false), since a user who's archived
+// every exercise (but still has rows) is not a fresh account and must not be
+// reseeded on top of their own data.
+export async function fetchExerciseCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('exercises')
+    .select('id', { count: 'exact', head: true })
+  if (error) throw error
+  return count ?? 0
+}
+
+export async function seedDefaultExercises(userId: string): Promise<void> {
+  const rows = DEFAULT_EXERCISES.map(({ name, muscleGroup }) => ({
+    user_id: userId,
+    name,
+    muscle_group: muscleGroup,
+  }))
+  const { error } = await supabase.from('exercises').insert(rows)
+  if (error) throw error
+}
+
+// There's no unique constraint on exercises(user_id, name) to upsert
+// against, so seeding is a plain check-then-insert — two tabs (or a PWA
+// auto-update reload) racing this on the same browser could otherwise both
+// see count===0 and both insert the full default set (found via
+// adversarial review). navigator.locks serializes same-browser callers so
+// the loser re-checks the *real* count after the winner's insert has
+// landed, instead of trusting a count read before the lock was acquired.
+// This does not protect against two genuinely different devices seeding
+// the same brand-new account at the same instant — that residual window
+// is accepted rather than closed with a new production constraint.
+export async function seedDefaultExercisesIfEmpty(userId: string): Promise<void> {
+  const run = async () => {
+    const count = await fetchExerciseCount()
+    if (count > 0) return
+    await seedDefaultExercises(userId)
+  }
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    await navigator.locks.request(`overload-seed-exercises-${userId}`, run)
+  } else {
+    await run()
+  }
 }

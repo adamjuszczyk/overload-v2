@@ -10,6 +10,13 @@ const ACCENT_SWATCHES: { colour: string; label: string }[] = [
   { colour: '#EC4899', label: 'PINK'   },
   { colour: '#8B5CF6', label: 'PURPLE' },
   { colour: '#EF4444', label: 'RED'    },
+  // v3 §11 — additional accent options.
+  { colour: '#FACC15', label: 'YELLOW' },
+  { colour: '#84CC16', label: 'LIME'   },
+  { colour: '#14B8A6', label: 'TEAL'   },
+  { colour: '#06B6D4', label: 'CYAN'   },
+  { colour: '#6366F1', label: 'INDIGO' },
+  { colour: '#F43F5E', label: 'ROSE'   },
 ]
 
 function fmtSeconds(s: number): string {
@@ -161,13 +168,19 @@ export default function SettingsPage() {
             {/* Accent */}
             <div>
               <p className="text-xs mb-2.5" style={labelStyle}>ACCENT COLOUR</p>
-              <div className="flex gap-2 flex-wrap">
+              {/* Grid, not flex-wrap: a fixed column count keeps every row's
+                  buttons the same size, including a partial trailing row —
+                  flex-wrap's flex-1 items stretch to fill a short last row,
+                  which produced two oversized pill-shaped swatches on
+                  common phone widths once this list grew past what fits
+                  one row (found via adversarial review, live-rendered). */}
+              <div className="grid grid-cols-4 gap-2">
                 {ACCENT_SWATCHES.map(({ colour, label }) => (
                   <button
                     key={colour}
                     onClick={() => set({ accentColour: colour })}
                     aria-label={label}
-                    className="flex-1 rounded-xl py-3 min-w-[48px]"
+                    className="rounded-xl py-3"
                     style={{
                       backgroundColor: colour,
                       outline: settings.accentColour === colour

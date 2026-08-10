@@ -32,9 +32,19 @@ interface SetGroupProps {
   // True while this group's head is mid-cascade-delete. ADD STAGE must be
   // unavailable during that window: the guard computes its deletion order
   // once at click time, so a stage added after that snapshot would never be
-  // deleted, and once the head goes the DB's ON DELETE SET NULL orphans the
-  // new stage into a silently-independent "head" (found via live testing —
-  // see ExerciseCard.tsx's handleDeleteHead for the full guard).
+  // deleted (found via live testing — see ExerciseCard.tsx's
+  // handleDeleteHead for the full guard). What happens to that orphaned
+  // stage at the DB level changed with migration 010 (Phase 3.8): before
+  // 010, ON DELETE SET NULL left it behind as a silently-independent
+  // "head" (wrong classification, but visible and recoverable); from 010
+  // onward, ON DELETE CASCADE removes it outright when the real head is
+  // deleted, since by the time the head's own DELETE runs, the new stage
+  // row now references it too — so the same pre-existing race (a stage
+  // added to a head after this component last disabled ADD STAGE for it,
+  // but before that in-flight insert actually commits) goes from a wrong
+  // number to a silently deleted set. This gating still narrows the window
+  // but does not close it for an insert that was already in flight before
+  // isDeleting became true.
   isDeleting: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
