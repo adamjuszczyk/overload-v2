@@ -112,3 +112,44 @@ export async function seedDefaultExercisesIfEmpty(userId: string): Promise<void>
     await run()
   }
 }
+
+// Explicit, user-triggered import (post-launch fix, 2026-08-10) — the
+// original seed (above) only ever runs once, automatically, on a brand-new
+// account. An account that started before that existed, or that archived
+// its way down to an empty-looking library, had no way to pull the same
+// default list in later. Reuses DEFAULT_EXERCISES/the same insert shape as
+// seedDefaultExercises rather than a second copy of either. Diffs by name
+// (case/whitespace-insensitive, since two exercises differing only in
+// casing is more likely a duplicate than two distinct movements) against
+// every existing row, archived included — an archived exercise still means
+// "already present in this account's library", same reasoning
+// fetchExerciseCount already documents for the empty-account check.
+export async function importDefaultExercises(userId: string): Promise<{ added: number; skipped: number }> {
+  const run = async () => {
+    const existing = await fetchExercises(true)
+    const existingNames = new Set(existing.map((ex) => ex.name.trim().toLowerCase()))
+    const toAdd = DEFAULT_EXERCISES.filter((d) => !existingNames.has(d.name.trim().toLowerCase()))
+
+    if (toAdd.length > 0) {
+      const rows = toAdd.map(({ name, muscleGroup }) => ({
+        user_id: userId,
+        name,
+        muscle_group: muscleGroup,
+      }))
+      const { error } = await supabase.from('exercises').insert(rows)
+      if (error) throw error
+    }
+
+    return { added: toAdd.length, skipped: DEFAULT_EXERCISES.length - toAdd.length }
+  }
+
+  // Same double-tap/double-tab race seedDefaultExercisesIfEmpty already
+  // guards against — this is a manual button tap rather than an
+  // effect-on-mount, so the window is much narrower, but the guard is one
+  // line to reuse and a double-insert here is exactly as permanent (no
+  // hard-delete) as the original race it was written for.
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(`overload-seed-exercises-${userId}`, run)
+  }
+  return run()
+}

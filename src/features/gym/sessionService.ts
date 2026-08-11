@@ -164,12 +164,74 @@ export async function completeSession(id: string, note: string | null): Promise<
   if (error) throw error
 }
 
-export async function reopenSession(id: string): Promise<void> {
+// Reopening a completed session used to leave started_at untouched, so both
+// duration surfaces — the live Today header (useSessionDuration.ts, straight
+// Date.now() - startedAt) and v2_session_type_history's
+// extract(epoch from completed_at - started_at) — counted the entire
+// completed→reopened idle gap as part of the workout (found post-launch,
+// 2026-08-10). Neither surface stores a duration value anywhere; both always
+// recompute it fresh from these two columns, so there's nothing to
+// backfill — the fix only has to change what happens from here forward.
+// This is ONE contributor to the broad duration anomaly a live production
+// query found this session (11 of 23 completed sessions >4h, across all 4
+// workout types, not just the PULL 1 pair Phase 3.4 originally flagged) —
+// not necessarily the dominant one. useAutoFinishSession.ts only polls
+// while the app is foregrounded (a plain setInterval in a mounted
+// component), so a session left open in a backgrounded/closed PWA can sit
+// un-finished for hours with no reopen involved at all, then get
+// completed_at set to whenever the app is next opened. Both mechanisms
+// produce an identical stored signature (a large started_at→completed_at
+// gap), so which one caused any specific historical row can't be
+// determined after the fact — no audit trail exists. Only the reopen path
+// is fixed here; the backgrounded-polling gap is reported, not fixed — see
+// CONTEXT.md. Rather than adding a new column/event log, started_at is
+// shifted forward by exactly the idle gap on reopen: newStartedAt =
+// reopenTime - (oldCompletedAt - oldStartedAt). That makes
+// (now - newStartedAt) and (nextCompletedAt - newStartedAt) both equal
+// "time actually worked so far" without touching either read site, and
+// composes correctly across repeated reopen/complete cycles since each
+// reopen re-derives the shift from whatever startedAt the previous reopen
+// (if any) already left in place.
+export async function reopenSession(id: string): Promise<{ startedAt: string | null }> {
+  const { data: current, error: fetchError } = await supabase
+    .from('v2_sessions')
+    .select('started_at, completed_at')
+    .eq('id', id)
+    .single()
+  if (fetchError) throw fetchError
+
+  let startedAt = current.started_at as string | null
+  if (current.started_at && current.completed_at) {
+    const accumulatedMs = new Date(current.completed_at).getTime() - new Date(current.started_at).getTime()
+    // A clock change between started_at/completed_at (same class of edge
+    // case SessionTypeHistoryView.tsx's DURATION column already guards
+    // against) could make this <= 0. Falling all the way back to "leave
+    // startedAt untouched" here would silently reproduce the exact bug this
+    // function exists to fix for that one trigger (found by this session's
+    // own adversarial review) — and since every later reopen re-derives its
+    // shift from whatever startedAt is already on the row, an untouched
+    // value here would keep re-encoding that contamination into every
+    // future reopen too, not just this one. The accumulated span can't be
+    // trusted when the clock moved, so it's discarded rather than carried
+    // forward: resume counting from right now, same as a session with no
+    // prior work at all.
+    startedAt = accumulatedMs > 0 ? new Date(Date.now() - accumulatedMs).toISOString() : new Date().toISOString()
+  }
+
   const { error } = await supabase
     .from('v2_sessions')
-    .update({ status: 'in_progress', completed_at: null })
+    .update({ status: 'in_progress', completed_at: null, started_at: startedAt })
     .eq('id', id)
   if (error) throw error
+
+  // Returned (not just written) so useReopenSession's onSuccess can patch
+  // the TanStack Query cache with the real new value immediately, instead
+  // of only invalidating and leaving a stale cached session (old startedAt,
+  // status 'completed') to render for however long the background refetch
+  // takes — found by this session's own adversarial review: GymSession
+  // reads this exact cache key on mount and feeds it straight into
+  // useSessionDuration with no freshness/status guard.
+  return { startedAt }
 }
 
 // Patches the note directly, independent of status — the completed-state

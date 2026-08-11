@@ -395,7 +395,25 @@ export function useCompleteSession() {
 export function useReopenSession() {
   return useMutation({
     mutationFn: (id: string) => reopenSession(id),
-    onSuccess: (_, id) => {
+    // Patches the cache with the real new startedAt immediately, same
+    // pattern as useCompleteSession above — without this (found by
+    // adversarial review), GymSession reads this exact query key
+    // (staleTime 0, but still cache-first on mount) straight into
+    // useSessionDuration with no freshness/status guard, so it could render
+    // at least one frame — longer on a slow connection — showing the stale
+    // pre-reopen session (old startedAt, status 'completed'), flashing the
+    // same large bogus duration this whole fix exists to eliminate.
+    onSuccess: ({ startedAt }, id) => {
+      queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
+        old ? { ...old, status: 'in_progress' as const, completedAt: null, startedAt } : old,
+      )
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) =>
+          old?.map((s) =>
+            s.id === id ? { ...s, status: 'in_progress' as const, completedAt: null, startedAt } : s,
+          ),
+      )
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
     },

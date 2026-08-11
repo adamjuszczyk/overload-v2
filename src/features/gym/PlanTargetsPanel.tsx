@@ -15,7 +15,7 @@ export default function PlanTargetsPanel({ plannedSets }: { plannedSets: WeekPla
         className="text-xs font-bold tracking-widest mb-1"
         style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
       >
-        THIS WEEK
+        PLANNED RIR
       </p>
       {groups.length === 0 ? (
         <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>

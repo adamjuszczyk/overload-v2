@@ -10,6 +10,7 @@ import {
   setExerciseArchived,
   fetchExerciseCount,
   seedDefaultExercisesIfEmpty,
+  importDefaultExercises,
 } from './exerciseService'
 
 export function useExercises(includeArchived = false) {
@@ -82,4 +83,16 @@ export function useSeedDefaultExercisesIfEmpty() {
     attempted.current = true
     seed.mutate()
   }, [count, seed])
+}
+
+// Explicit Library-screen action (SPEC §9 / post-launch fix, 2026-08-10) —
+// distinct from the fresh-account auto-seed above: reachable on any account
+// at any time, diffs against what's already there instead of only firing
+// once on an empty library.
+export function useImportDefaultExercises() {
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: () => importDefaultExercises(user!.id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
+  })
 }

@@ -85,6 +85,10 @@ export default function SettingsPage() {
             onClick={() => onChange(value)}
             className="flex-1 py-3 rounded-xl text-xs font-bold"
             style={{
+              // Found by adversarial review, same class of bug as the
+              // accent swatches: padding + text-only height landed at 42px,
+              // 2px under this app's 44px touch-target convention.
+              minHeight: 44,
               backgroundColor: current === value ? 'var(--accent)' : 'var(--surface-raised)',
               color: current === value ? 'var(--base)' : 'var(--text-muted)',
               border: `1px solid ${current === value ? 'transparent' : 'var(--border)'}`,
@@ -173,15 +177,28 @@ export default function SettingsPage() {
                   flex-wrap's flex-1 items stretch to fill a short last row,
                   which produced two oversized pill-shaped swatches on
                   common phone widths once this list grew past what fits
-                  one row (found via adversarial review, live-rendered). */}
+                  one row (found via adversarial review, live-rendered,
+                  Phase 3.8). Separately (post-launch fix, 2026-08-10,
+                  confirmed via real bounding-box measurements at 375px and
+                  320px): every swatch was rendering only 24px tall — `py-3`
+                  padding with no content to give it height, versus the
+                  44px minimum touch target every other tappable control in
+                  this app uses — with only an 8px gap between rows. All 12
+                  render, are correctly positioned, and are individually
+                  hit-testable at their own center, so this is a distinct
+                  issue from Phase 3.8's wrapping bug, not a regression of
+                  it: too small/close together to tap reliably with a real
+                  finger, not literally broken. minHeight below brings every
+                  swatch to this app's standard 44px. */}
               <div className="grid grid-cols-4 gap-2">
                 {ACCENT_SWATCHES.map(({ colour, label }) => (
                   <button
                     key={colour}
                     onClick={() => set({ accentColour: colour })}
                     aria-label={label}
-                    className="rounded-xl py-3"
+                    className="rounded-xl"
                     style={{
+                      minHeight: 44,
                       backgroundColor: colour,
                       outline: settings.accentColour === colour
                         ? `3px solid var(--text-primary)`
@@ -330,6 +347,10 @@ export default function SettingsPage() {
               disabled={signingOut}
               className="w-full py-3 rounded-xl text-xs font-bold"
               style={{
+                // Found by adversarial review — ~40px without this (no
+                // border here, unlike chipRow, so even further under the
+                // 44px convention).
+                minHeight: 44,
                 backgroundColor: 'rgba(248, 113, 113, 0.1)',
                 color: 'var(--error)',
                 fontFamily: 'var(--font-mono)',

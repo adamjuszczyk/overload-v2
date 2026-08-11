@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, Trash2, Copy, Rows3 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Minus, Trash2, Copy, Rows3 } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay } from '../../types'
 import { useMesos } from '../programs/useMesos'
@@ -364,9 +364,25 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 isPast={isPast}
                 isLast={idx === programExercises.length - 1}
                 compact={compact}
+                // Disables ADD SET/minus while either mutation is in flight
+                // for this workout day (found by adversarial review):
+                // useAddSet has no optimistic update, so `groups` — and
+                // therefore the minus button's own onRemoveLastSet closure
+                // below — doesn't reflect a just-added set until the insert
+                // round-trips and the query refetches. A rapid ADD SET then
+                // MINUS before that happens targeted groups[groups.length-1]
+                // from the stale pre-add render, silently deleting the
+                // previous last set instead of the new one. addSet/removeSet
+                // are shared per workout day, not per exercise, so this
+                // briefly disables both buttons across every exercise in the
+                // day during any single add/remove — a deliberately
+                // conservative trade against the more invasive alternative
+                // of adding optimistic-update logic to useAddSet itself.
+                addOrRemovePending={addSet.isPending || removeSet.isPending}
                 onAddSet={() => handleAddSet(pe)}
                 onAddStage={(group) => handleAddStage(pe, group)}
                 onRemoveSet={(id) => removeSet.mutate(id)}
+                onRemoveLastSet={() => removeSet.mutate(groups[groups.length - 1].head.id)}
                 onUpdateSet={(id, changes) => updateSet.mutate({ id, changes })}
               />
             )
@@ -385,13 +401,15 @@ interface ExerciseSectionProps {
   isPast: boolean
   isLast: boolean
   compact: boolean
+  addOrRemovePending: boolean
   onAddSet: () => void
   onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
+  onRemoveLastSet: () => void
   onUpdateSet: (id: string, changes: { targetRir?: number | null }) => void
 }
 
-function ExerciseSection({ pe, groups, isPast, isLast, compact, onAddSet, onAddStage, onRemoveSet, onUpdateSet }: ExerciseSectionProps) {
+function ExerciseSection({ pe, groups, isPast, isLast, compact, addOrRemovePending, onAddSet, onAddStage, onRemoveSet, onRemoveLastSet, onUpdateSet }: ExerciseSectionProps) {
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
@@ -408,12 +426,31 @@ function ExerciseSection({ pe, groups, isPast, isLast, compact, onAddSet, onAddS
           </div>
         </div>
         {!isPast && (
-          <button
-            onClick={onAddSet}
-            style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: 'pointer', color: 'var(--accent)', flexShrink: 0 }}
-          >
-            <Plus size={13} />
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {/* Compact mode has no per-row delete (it's a read-only glance
+                view), so ADD SET's plus had no symmetric way to reduce the
+                count without switching to expanded mode (post-launch fix,
+                2026-08-10). Expanded mode already offers precise per-row
+                delete via PlanSetGroup's trash icon, so this stays
+                compact-only rather than duplicating that control. */}
+            {compact && groups.length > 0 && (
+              <button
+                onClick={onRemoveLastSet}
+                disabled={addOrRemovePending}
+                aria-label="Remove last set"
+                style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--text-dim)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
+              >
+                <Minus size={13} />
+              </button>
+            )}
+            <button
+              onClick={onAddSet}
+              disabled={addOrRemovePending}
+              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--accent)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
+            >
+              <Plus size={13} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -422,7 +459,7 @@ function ExerciseSection({ pe, groups, isPast, isLast, compact, onAddSet, onAddS
           it's a read-only glance view, so editing needs expanded mode. */}
       {groups.length > 0 && (
         compact ? (
-          <CompactPlanRows exerciseName={pe.exercise?.name ?? '—'} groups={groups} />
+          <CompactPlanRows groups={groups} />
         ) : (
           <div style={{ paddingBottom: 10 }}>
             {groups.map((group, idx) => (

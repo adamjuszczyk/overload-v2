@@ -105,6 +105,10 @@ export default function ExerciseCard({
   // plannedGroups below, for stage prefill/target-RIR when ADD STAGE is used.
   const plannedHeads = headsOnly(plannedSets, (s) => s.parentWeekPlanSetId)
   const plannedGroups = groupWeekPlanSets(plannedSets)
+  // Same emptiness PlanTargetsPanel would compute internally from the same
+  // plannedSets input — read here instead of duplicating groupWeekPlanSets
+  // a second time just to ask "would this panel render NO PLAN".
+  const showPlanTargets = plannedGroups.length > 0
 
   // The plan side's head/stage structure isn't authoritative for what a log
   // actually turned out to be — the log's OWN parentSetId is (a log-side
@@ -336,14 +340,26 @@ export default function ExerciseCard({
     >
       <ExerciseHeader programExercise={programExercise} />
 
-      {/* Two reference panels */}
+      {/* Two reference panels, side by side — but PlanTargetsPanel collapses
+          entirely when this exercise has no plan (post-launch fix,
+          2026-08-10): rendering it empty left half the row showing "NO PLAN"
+          next to ExerciseReference's real content, which read as broken
+          rather than intentional. ExerciseReference has no empty state to
+          collapse the same way — resolveExerciseReference always returns at
+          least FIRST_TIME once loaded (and a loading placeholder before
+          that) — so only PlanTargetsPanel's side of this ever collapses in
+          practice; the wrapper still only applies the two-column grid when
+          both panels are actually present. */}
       <div
-        className="grid"
-        style={{ gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}
+        className={showPlanTargets ? 'grid' : undefined}
+        style={{
+          ...(showPlanTargets ? { gridTemplateColumns: '1fr 1fr' } : {}),
+          borderBottom: '1px solid var(--border)',
+        }}
       >
-        <PlanTargetsPanel plannedSets={plannedSets} />
+        {showPlanTargets && <PlanTargetsPanel plannedSets={plannedSets} />}
 
-        {/* Right: smart last-session reference — LAST WEEK / THIS WEEK / LAST TIME / FIRST TIME */}
+        {/* Smart last-session reference — LAST WEEK / EARLIER THIS WEEK / LAST TIME / FIRST TIME */}
         <div className="px-3 py-2">
           <ExerciseReference
             today={today}

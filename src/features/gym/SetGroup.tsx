@@ -163,6 +163,39 @@ export default function SetGroup({
               onDelete={() => {}}
               restElapsed={restElapsed}
             />
+          ) : stages.length === 0 ? (
+            // No stages yet — most logged sets are never dropsets, so a
+            // bold ADD STAGE affordance under every single one clutters the
+            // common case (post-launch fix, 2026-08-10). This low-emphasis
+            // entry point reveals the exact same stage-entry row ADD STAGE
+            // always has; once a real stage exists below, the normal ADD
+            // STAGE affordance (below) takes over for adding further ones.
+            <button
+              onClick={() => setAddingStage(true)}
+              className="flex items-center text-xs font-medium"
+              style={{
+                // Same 36px touch target as the ADD STAGE button below (its
+                // sibling in this exact slot) — "low-emphasis" is a visual
+                // choice (smaller text, no icon), not a smaller tap target
+                // than the very control it temporarily replaces.
+                minHeight: 36,
+                // --text-muted, not --text-dim (found by adversarial
+                // review): --text-dim is this codebase's disabled/
+                // placeholder-text token (global.css's input::placeholder,
+                // every disabled-state colour in PlanPage.tsx/
+                // WorkoutDayEditorPage.tsx) — at ~1.7:1 contrast on the
+                // default dark theme's near-black surface it read as inert
+                // placeholder text, undermining the discoverability this
+                // button exists for. --text-muted is what every other
+                // low-emphasis-but-active label in this file (ADD STAGE
+                // below, CANCEL, SKIP REST OF EXERCISE) already uses.
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+              }}
+            >
+              mark as dropset
+            </button>
           ) : (
             <button
               onClick={() => setAddingStage(true)}

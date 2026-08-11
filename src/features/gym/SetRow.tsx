@@ -529,7 +529,12 @@ export default function SetRow({
   }
 
   return (
-    <div className="space-y-1">
+    // Marks the first unlogged, non-stage row for useScrollToCurrentSet.ts
+    // (post-launch fix, 2026-08-10) — a stage-input row is deliberately
+    // unmarked since it only ever renders right where the user just tapped
+    // ADD STAGE / "mark as dropset", never scrolled out of view the way a
+    // planned/extra set further down the session can be.
+    <div className="space-y-1" data-unlogged-set={isStage ? undefined : 'true'}>
       <div className="flex items-center gap-2">
         {/* Set number — stage-input rows share the head's number (v3 §2.1) */}
         <span

@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import { useMesos, useDeleteMeso } from '../programs/useMesos'
 import { useHistorySessions } from './useHistory'
+import { useExercises } from '../library/useExercises'
 import SessionDetail from './SessionDetail'
 import type { MuscleGroup } from '../../types'
 
@@ -27,6 +29,7 @@ const STATUS_STYLE = {
 type StatusFilter = 'all' | 'completed' | 'skipped'
 
 export default function HistoryPage() {
+  const navigate = useNavigate()
   const {
     data,
     isLoading,
@@ -37,6 +40,10 @@ export default function HistoryPage() {
   const sessions = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
   const { data: mesos = [] } = useMesos()
   const { mutate: deleteMeso, isPending: isDeletingMeso } = useDeleteMeso()
+  // For the "find exercise history" search below — every exercise reachable
+  // from a workout, not just ones with logged history, same list Library
+  // itself shows (archived excluded, matching that screen's default).
+  const { data: allExercises = [] } = useExercises(false)
 
   const [selectedId, setSelectedId]         = useState<string | null>(null)
   const [filterMesoId, setFilterMesoId]     = useState('')
@@ -47,6 +54,18 @@ export default function HistoryPage() {
   const [searchQuery, setSearchQuery]       = useState('')
   const [showAdvanced, setShowAdvanced]     = useState(false)
   const [mesoDeleteConfirm, setMesoDeleteConfirm] = useState(false)
+  // Exercise-history search (post-launch fix, 2026-08-10) — before this, the
+  // only way to reach ExerciseHistoryView.tsx was the History icon on a live
+  // gym-session ExerciseHeader, so an exercise with no session running today
+  // was unreachable from History itself.
+  const [showExerciseSearch, setShowExerciseSearch] = useState(false)
+  const [exerciseQuery, setExerciseQuery]   = useState('')
+
+  const matchingExercises = useMemo(() => {
+    const q = exerciseQuery.trim().toLowerCase()
+    if (!q) return allExercises
+    return allExercises.filter((ex) => ex.name.toLowerCase().includes(q))
+  }, [allExercises, exerciseQuery])
 
   const selectedMeso = mesos.find(m => m.id === filterMesoId) ?? null
 
@@ -234,6 +253,83 @@ export default function HistoryPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Exercise-history search toggle — the only way to reach a given
+            exercise's all-time chart/table used to be the History icon on
+            an active session's ExerciseHeader, so it was unreachable from
+            here on a rest day or for an exercise not on today's plan
+            (post-launch fix, 2026-08-10). */}
+        <button
+          onClick={() => setShowExerciseSearch(v => !v)}
+          className="w-full py-2 rounded-xl text-xs font-bold"
+          style={{
+            backgroundColor: 'var(--surface)',
+            border: `1px solid ${showExerciseSearch ? 'var(--accent)' : 'var(--border)'}`,
+            color: showExerciseSearch ? 'var(--accent)' : 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {showExerciseSearch ? '▲ HIDE EXERCISE HISTORY' : '▼ FIND EXERCISE HISTORY'}
+        </button>
+
+        {showExerciseSearch && (
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Search exercises…"
+              value={exerciseQuery}
+              onChange={e => setExerciseQuery(e.target.value)}
+              autoFocus
+              className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+              style={{ ...inputStyle, fontFamily: 'var(--font-sans)' }}
+            />
+            <div
+              className="rounded-xl hide-scrollbar"
+              // Scrolls instead of hard-truncating (found by adversarial
+              // review: the original .slice(0, 25) silently hid everything
+              // past the 25th match with zero indication more existed —
+              // real on an empty query, since the seeded default library
+              // alone has 46 exercises). maxHeight keeps a large library
+              // from pushing the rest of the page off-screen.
+              style={{
+                backgroundColor: 'var(--surface)',
+                border: '1px solid var(--border)',
+                maxHeight: 320,
+                overflowY: 'auto',
+              }}
+            >
+              {matchingExercises.length === 0 ? (
+                <p
+                  className="text-xs text-center py-4"
+                  style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                >
+                  NO MATCHES
+                </p>
+              ) : (
+                matchingExercises.map((ex, i) => (
+                  <button
+                    key={ex.id}
+                    onClick={() => navigate(`/exercise/${ex.id}`)}
+                    className="w-full text-left px-4 py-3 flex items-center justify-between gap-2"
+                    style={{
+                      borderTop: i === 0 ? 'none' : '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {ex.name}
+                    </span>
+                    <span
+                      className="text-xs font-bold shrink-0"
+                      style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                    >
+                      {ex.muscleGroup?.toUpperCase() ?? 'OTHER'}
+                    </span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
         )}

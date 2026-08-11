@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Download } from 'lucide-react'
 import type { Exercise, MuscleGroup } from '../../types'
-import { useExercises } from './useExercises'
+import { useExercises, useImportDefaultExercises } from './useExercises'
+import { useToastStore } from '../notifications/toastStore'
 import ExerciseList from './ExerciseList'
 import ExerciseForm from './ExerciseForm'
 
@@ -19,9 +20,24 @@ export default function LibraryPage() {
   const [formState, setFormState] = useState<FormState>(null)
 
   const { data: exercises = [], isLoading, error } = useExercises(showArchived)
+  const importDefaults = useImportDefaultExercises()
+  const showToast = useToastStore((s) => s.show)
 
   const filtered =
     filter === 'all' ? exercises : exercises.filter((ex) => ex.muscleGroup === filter)
+
+  function handleImportDefaults() {
+    importDefaults.mutate(undefined, {
+      onSuccess: ({ added, skipped }) => {
+        showToast(
+          added === 0
+            ? `All ${skipped} default exercises already in your library`
+            : `Added ${added} default exercise${added === 1 ? '' : 's'} · ${skipped} already there`,
+        )
+      },
+      onError: () => showToast('Could not import default exercises'),
+    })
+  }
 
   return (
     <div
@@ -53,24 +69,51 @@ export default function LibraryPage() {
         >
           LIBRARY
         </span>
-        <button
-          onClick={() => setFormState({ mode: 'create' })}
-          style={{
-            width: 40,
-            height: 40,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--accent)',
-            border: 'none',
-            borderRadius: 11,
-            cursor: 'pointer',
-            color: 'var(--base)',
-            flexShrink: 0,
-          }}
-        >
-          <Plus size={20} strokeWidth={2.5} />
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {/* Import default exercises (SPEC §9 / post-launch fix,
+              2026-08-10) — the seeded default list used to be reachable
+              only automatically, once, on a brand-new account. This inserts
+              whatever's missing by name and reports the result via toast,
+              safe to tap on any account at any time. */}
+          <button
+            onClick={handleImportDefaults}
+            disabled={importDefaults.isPending}
+            aria-label="Import default exercises"
+            style={{
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--surface-overlay)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 11,
+              cursor: importDefaults.isPending ? 'default' : 'pointer',
+              color: 'var(--text-secondary)',
+              opacity: importDefaults.isPending ? 0.6 : 1,
+            }}
+          >
+            <Download size={18} strokeWidth={2.5} />
+          </button>
+          <button
+            onClick={() => setFormState({ mode: 'create' })}
+            style={{
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--accent)',
+              border: 'none',
+              borderRadius: 11,
+              cursor: 'pointer',
+              color: 'var(--base)',
+              flexShrink: 0,
+            }}
+          >
+            <Plus size={20} strokeWidth={2.5} />
+          </button>
+        </div>
       </div>
 
       {/* Muscle group filter — horizontal scroll */}

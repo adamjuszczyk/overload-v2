@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { ArrowDown } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import {
@@ -20,6 +21,7 @@ import { useRestTimerStore } from './restTimerStore'
 import SessionComplete from './SessionComplete'
 import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
+import { useScrollToCurrentSet } from './useScrollToCurrentSet'
 import { formatRestTime } from '../../lib/formatRestTime'
 
 interface GymSessionProps {
@@ -128,6 +130,9 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
 
+  const { containerRef: exercisesContainerRef, showButton: showScrollToCurrentSet, scrollToCurrentSet } =
+    useScrollToCurrentSet()
+
   // Session-first, batched once for every exercise in this workout day (v3
   // §2.3) — not one query per exercise card. Must run unconditionally (this
   // is a hook), so it's placed before the showComplete early return below,
@@ -177,7 +182,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
       <RestTimer />
 
       {/* Exercise cards */}
-      <div className="px-4 space-y-4">
+      <div className="px-4 space-y-4" ref={exercisesContainerRef}>
         {sortedExercises.map((pe) => {
           const plannedSets = (weekPlan?.sets ?? [])
             .filter((s) => s.programExerciseId === pe.id)
@@ -234,6 +239,28 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           FINISH SESSION
         </button>
       </div>
+
+      {/* Jump to the first unlogged set once it's scrolled out of view
+          (post-launch fix, 2026-08-10) — e.g. after checking a reference
+          panel or an earlier set further up the session. */}
+      {showScrollToCurrentSet && (
+        <button
+          onClick={scrollToCurrentSet}
+          className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full font-bold text-xs tracking-widest"
+          style={{
+            bottom: 'calc(96px + env(safe-area-inset-bottom))',
+            padding: '10px 18px',
+            backgroundColor: 'var(--accent)',
+            color: 'var(--base)',
+            fontFamily: 'var(--font-mono)',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
+            zIndex: 30,
+          }}
+        >
+          <ArrowDown size={13} />
+          CURRENT SET
+        </button>
+      )}
     </div>
   )
 }
