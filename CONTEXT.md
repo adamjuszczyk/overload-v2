@@ -410,6 +410,21 @@ All core features built and working:
   Production, built ~3 min after the push, aliased to
   `overload-v2-sage.vercel.app`). See "2026-08-09 session (Phase 3.7)" below
   for the full account.
+- 2026-08-11 session (post-launch fixes, NOT a TASKS.md phase): 9 real-usage
+  feedback items built and adversarially reviewed — a header rename +
+  empty-panel collapse on Today, a scroll-to-current-set button, a
+  reopen-duration bug fix, a de-emphasized dropset entry point, compact-plan
+  text/minus-button changes, an exercise-history search on the History
+  screen, a mobile touch-target fix on the accent swatches (a different bug
+  than Phase 3.8's, confirmed still fixed), and an explicit default-library
+  import action on Library. Adversarial review found 8 real bugs across the
+  9 changes (including a data-corrupting race and a permanently-broken
+  button after Finish Session → Back to Session), all fixed and
+  live-verified. **Not pushed or deployed** — item 3's own investigation
+  found real corrupted historical duration data broader than previously
+  known (11 of 23 completed sessions, not just the 2-session PULL 1 anomaly
+  Phase 3.4 flagged), which is a stop-and-report condition per standing
+  instruction. See "2026-08-11 session (post-launch fixes)" below.
 
 ---
 
@@ -4562,6 +4577,251 @@ doing every time, migration or not.
 This closes out TASKS.md §4 — every phase from 3.0 through 3.8 is now
 built, adversarially reviewed, tested, live-verified, and deployed to
 production. No further phases remain in the v3 plan.
+
+---
+
+## 2026-08-11 session (post-launch fixes)
+
+**Not a TASKS.md phase.** A round of 9 real-usage feedback items collected
+after v3 shipped. Recorded as its own dated entry, separate from the
+phase-numbered history above, per explicit instruction.
+
+### Build
+
+**1. Today screen panel collision.** `PlanTargetsPanel.tsx`'s header renamed
+`THIS WEEK` → `PLANNED RIR` (independent of Phase 3.3's earlier
+`EARLIER THIS WEEK` rename for `ExerciseReference.tsx`'s secondary slot —
+this was about `PlanTargetsPanel`'s own header being confusing on its own).
+`ExerciseCard.tsx`'s two-panel row now collapses to one column when
+`PlanTargetsPanel` has nothing to show (`plannedGroups.length === 0`,
+reusing the value `ExerciseCard` already computes rather than duplicating
+`groupWeekPlanSets`). `ExerciseReference` has no equivalent empty state to
+collapse — `resolveExerciseReference` always returns at least `FIRST_TIME`
+once loaded — so only `PlanTargetsPanel`'s side ever collapses in practice;
+verified at the code level (shared computation) but not observed live
+against a real empty-plan exercise, since none exists in the account's
+current data.
+
+**2. Scroll-to-current-set.** New `useScrollToCurrentSet.ts` + a
+`data-unlogged-set` marker on `SetRow.tsx`'s true input-row branch
+(stage-input rows excluded — they only ever render right where the user
+just tapped ADD STAGE/"mark as dropset"). A floating `CURRENT SET` button
+on `GymSession.tsx` appears only when the first unlogged row is scrolled out
+of the app shell's `<main>` viewport, and scrolls it to the top quarter (not
+center, not the top edge) on tap. Two real bugs found and fixed during this
+session's own live-testing before the formal adversarial review even ran:
+an earlier deps-array version of the re-sync effect never noticed a new
+unlogged row created by ADD SET (no prop it could depend on changes), and
+`IntersectionObserver` never fired at all while this session's dev tab ran
+backgrounded (`document.hidden`) — Chromium throttles it same as
+`requestAnimationFrame` for backgrounded tabs. Rebuilt on a MutationObserver
+re-sync + a plain scroll-listener/`getBoundingClientRect` visibility check,
+neither gated on paint/compositing, both confirmed live in that exact
+backgrounded state.
+
+**3. Workout duration reopen bug — investigated and fixed.** Duration is
+**never stored** — always computed live, both client-side
+(`useSessionDuration.ts`, `Date.now() - startedAt`) and in
+`v2_session_type_history`'s SQL (`extract(epoch from completed_at -
+started_at)`), so there was no stored column to check for corruption and
+nothing to backfill. `sessionService.ts`'s `reopenSession()` used to only
+clear `completed_at`, leaving `started_at` untouched — reopening after a
+gap counted the whole idle gap as workout duration. Fixed by shifting
+`started_at` forward by exactly the completed→reopened gap on every reopen
+(`newStartedAt = reopenTime - (oldCompletedAt - oldStartedAt)`), so both
+read sites resume from accumulated work instead of restarting from raw
+wall-clock time. Live-verified against the real shipped function (isolated
+test row: 2h since start, 1h since completion, reopened — fixed code
+correctly resumed from the 1h mark; old code would have shown ~2h), and
+against a **real production reopen**: today's actual PUSH 1 session (12
+sets, 3 skipped, already showing a pre-existing 623-minute duration from
+this exact class of bug) was reopened via `CONTINUE SESSION`, the scroll
+button and dropset entry point verified live against it, then re-finished —
+final duration 630 minutes, growing only by the ~7 real minutes spent
+testing, not by the idle gap.
+
+**Historical data finding — broader than previously known, not fixed.** A
+live query against real production data found 11 of 23 completed sessions
+(~48%) with implausible durations (multi-hour to multi-day), spanning **all
+four workout types** (PUSH 1, PUSH 2, PULL 1, PULL 2) — not just the
+2-session PULL 1 anomaly Phase 3.4's live verification flagged. The reopen
+fix above is a real, confirmed contributor, but same-day evidence (today's
+own PUSH 1 session was one of the 11, and `v2_user_settings.auto_finish_minutes`
+is actively set to 5) points to a second, more likely dominant mechanism
+that was **not** in scope for this session to fix:
+`useAutoFinishSession.ts` only polls (a plain `setInterval`) while the app
+is open and foregrounded — a session left running in a backgrounded/closed
+PWA can sit un-finished for hours with no reopen involved at all, then get
+`completed_at` stamped whenever the app is next opened, reproducing an
+identical stored signature. No audit trail exists (no `reopened_at`, no
+event log), so which mechanism caused any specific historical row can't be
+determined after the fact, and no historical `started_at`/`completed_at`
+values were altered — reported, not silently corrected, per standing
+instruction. Whether to build a fix for the backgrounded-polling gap (would
+need a fundamentally different mechanism — a server-side check, a
+service-worker-driven check, or accepting the current design) is a decision
+for a future session.
+
+**4. Dropset entry de-emphasis.** `SetGroup.tsx` (gym/logging screen only —
+`PlanPage.tsx`'s plan-authoring ADD STAGE deliberately untouched): a logged
+head with zero stages shows a small "mark as dropset" text button instead
+of the bold ADD STAGE button; tapping it reveals the identical stage-entry
+row ADD STAGE always has. Once `stages.length > 0`, ADD STAGE takes over
+unchanged.
+
+**5. Compact plan view.** `CompactPlanRows.tsx`: exercise name dropped from
+compact lines (redundant with the section header above — "3× sets" not "3×
+Exercise Name"); dropset lines read "1× dropset (K stages)". Decision,
+stated rather than guessed at: consecutive same-stage-count dropsets still
+never merge into one line — kept `compactPlanLogic.ts`'s `toRuns()`
+completely unchanged, matching Phase 3.7's own deliberate, tested behaviour
+(`compactPlanLogic.test.ts`'s "never merges two adjacent dropsets"). New
+minus button next to the existing plus in compact mode, removing the last
+set via the existing `removeSet` mutation.
+
+**6. Exercise history from History.** New collapsible "FIND EXERCISE
+HISTORY" search in `HistoryPage.tsx` (reuses `useExercises`), navigating to
+the existing `/exercise/:exerciseId` route — previously reachable only via
+the History icon on an active gym session's `ExerciseHeader`.
+
+**7. Mobile accent-colour issue — investigated, confirmed distinct from
+Phase 3.8's fix.** Live `getBoundingClientRect`/hit-testing at 375px and
+320px confirmed Phase 3.8's grid-layout fix is still fully intact (no
+wrapping, no stretching, no clipping, all 12 individually hit-testable at
+their own center) — this was a **different** bug: every swatch rendered
+only 24px tall (`py-3` padding, zero content), well under this app's
+established 44px touch-target convention, with only 8px gaps between rows.
+Fixed with an explicit `minHeight: 44`, confirmed live (all 12 now exactly
+44px, selection still works, reverted to baseline after).
+
+**8. Default exercise library, explicit import.** New
+`importDefaultExercises()` reuses `DEFAULT_EXERCISES`/the same insert shape
+`seedDefaultExercises` already uses; diffs by case/whitespace-insensitive
+name against every existing exercise (archived included) to find what's
+missing, inserts only that, returns `{added, skipped}`. New Library-screen
+button, toast-reported result, reuses `seedDefaultExercisesIfEmpty`'s
+`navigator.locks` guard. Live-verified via the real shipped function against
+the real account (28 → 70, "42 added · 4 already there"), then cleaned up
+(diffed by `created_at` recency against `DEFAULT_EXERCISES` names, deleted
+exactly the 42 just-added rows, confirmed back to 28).
+
+### Adversarial review — 11 raw findings, 8 confirmed, all fixed
+
+Same Workflow-based pattern as every phase since 3.1: 6 dimensions in
+parallel (one per major change area), each finding then adversarially
+re-verified by 3 independent agents defaulting to refuted unless the actual
+current code supports the failure scenario. One dimension's verify agents
+(`settings-swatch-fix`) hit a session token/usage limit mid-run and failed
+outright (0/3 votes) for 2 of that dimension's raw findings — these were
+independently re-verified by hand (live `getBoundingClientRect` measurement)
+rather than trusted unverified, and both confirmed real.
+
+**Confirmed and fixed:**
+
+1. **Reopen fix's negative-`accumulatedMs` guard silently reintroduced the
+   original bug for clock-skew sessions, and it compounded across every
+   future reopen (medium).** The fallback for `completed_at <= started_at`
+   (a real, precedented edge case — `SessionTypeHistoryView.tsx` already
+   guards the identical condition) left `started_at` completely untouched,
+   identical to the pre-fix code, and since every reopen re-derives its
+   shift from whatever `started_at` is already on the row, the
+   contamination never self-corrected. Fixed: fall back to "resume from
+   right now" (treat the untrustworthy span as 0) instead of leaving
+   `started_at` untouched.
+2. **`useReopenSession` had no optimistic cache patch, unlike its sibling
+   `useCompleteSession` (medium).** `GymSession` reads the same
+   `['v2_session', id]` key on mount that `CompletedTodayScreen` had just
+   populated with the pre-reopen session; the scheduler's `active_session`
+   transition is gated on a *different*, typically-faster query, so
+   `GymSession` could mount and render at least one frame — longer on a
+   slow connection — showing the stale `startedAt`/`status`, flashing the
+   same bogus duration the whole fix targets. Fixed: `reopenSession()` now
+   returns the real new `startedAt`, and `useReopenSession`'s `onSuccess`
+   patches the cache with it immediately, same pattern `useCompleteSession`
+   already uses.
+3. **`useScrollToCurrentSet`'s effect never re-ran when the container was
+   unmounted and remounted, permanently breaking the button (high).**
+   `GymSession.tsx` conditionally returns `<SessionComplete />` instead of
+   the exercises container on FINISH SESSION, then swaps back to a
+   brand-new container node on BACK TO SESSION — the same `GymSession`
+   instance stays mounted throughout, so the hook's own effect (keyed on a
+   `useRef` object whose identity never changes) never re-ran, permanently
+   freezing the target on the old, now-detached node until the user left
+   and re-entered `GymSession` entirely. Fixed: the hook now takes a
+   callback ref (fires on every attach *and* detach) instead of a
+   `RefObject`, driving a `useState` the effect can correctly key on.
+   Live-verified against the exact FINISH SESSION → BACK TO SESSION → still
+   works round trip, on a real session.
+4. **"mark as dropset" used `--text-dim`, this codebase's disabled/
+   placeholder-text token, at ~1.7:1 contrast in dark mode (medium).**
+   Every other low-emphasis-but-active label in this file/directory (ADD
+   STAGE, CANCEL, SKIP REST OF EXERCISE) uses `--text-muted`; `--text-dim`
+   is `input::placeholder`'s colour and every disabled-state colour
+   elsewhere. Undermined the exact discoverability item 4 exists for. Fixed
+   by switching to `--text-muted` (also a real, confirmed improvement in
+   the account's actual light theme: ~2.8:1 → ~5.4:1).
+5. **Compact-mode minus button raced with ADD SET, silently deleting the
+   wrong set (high).** `useAddSet` has no optimistic update, so `groups` —
+   and the minus button's own `onRemoveLastSet` closure — didn't reflect a
+   just-added set until the round trip completed; a rapid ADD SET then
+   MINUS deleted the previous last set instead of the new one, same total
+   count, no error. Fixed by disabling both ADD SET and minus while either
+   mutation is in flight for that workout day (`addSet.isPending ||
+   removeSet.isPending`), same pattern this file already uses for
+   `copyPrev.isPending`/`copyWorkout.isPending`, rather than adding
+   optimistic-update logic to the shared `useAddSet` hook.
+6. **Compact dropset line always read grammatically-wrong plural "1×
+   dropsets" (low).** `toRuns()` never merges dropsets, so `run.count` is
+   always exactly 1 for that branch; the label hardcoded the plural noun
+   with no check, unlike the correctly-pluralized stage count right next to
+   it. Fixed to pluralize on `run.count` the same way.
+7. **History exercise search silently truncated to 25 results with no
+   indicator (medium).** The seeded default library alone has 46 exercises,
+   so an empty-query search (the natural first tap) already hid 21 of them
+   with zero hint more existed. Fixed by dropping the cap and making the
+   results container scroll (`maxHeight: 320, overflowY: 'auto'`) instead.
+8. **Navigating to `/exercise/:id` and back resets every History filter
+   (low, not fixed).** `/history` and `/exercise/:exerciseId` are sibling
+   top-level routes with no shared layout, so React Router fully unmounts
+   `HistoryPage` on navigate; all its filter/search state is plain
+   `useState` with no persistence. Flagged rather than fixed — proper
+   state-preservation (URL params, lifted state) is more surface area than
+   this round's scope justified for a low-severity, easily-recoverable
+   annoyance.
+
+**Independently verified by hand (automated verify failed on a session
+limit) — both confirmed real, both fixed:** `SettingsPage.tsx`'s
+`chipRow()` (THEME/WEIGHT UNIT) buttons measured 42px live; SIGN OUT
+measured 40px. Both same class of bug as finding 7's original swatch issue,
+in the same file, unaddressed by that fix. Both given `minHeight: 44`,
+re-measured live at exactly 44px.
+
+`npm run typecheck` / `npm run build` / `npm test` clean after every fix
+round (88 tests, unchanged — no test file was touched this session).
+
+### Live verification
+
+Every item live-verified against real production data (details above,
+per-item) except item 1b (empty-panel collapse — no real exercise with an
+empty plan exists in the account currently) and the exact millisecond-scale
+ADD-SET/MINUS race window for finding 5 — direct DOM-timing tests proved
+unreliable in this Browser pane session (background-tab timer throttling
+from an unrelated stray `supabase.com` tab caused a script timeout
+mid-test), so that fix rests on code-level verification (correctly wired,
+matches an already-working pattern) plus a successful normal-flow click
+test, not a reproduced-and-fixed race under artificial network delay. All
+test data (synthetic session rows, Library import rows, Plan week-9 test
+sets) created during verification was deleted/reverted; the real account's
+actual today session (PULL 1, Aug 11) was left in a normal, uncorrupted
+in-progress state with zero fake data.
+
+### Status — not pushed, not deployed
+
+Per standing instruction, item 3's own investigation turning up real
+corrupted historical data (broader than previously documented) is a
+stop-and-report condition. Everything above is complete, tested, and
+committed locally. **Not pushed to `origin/master`, production unchanged.**
+Awaiting a decision on the backgrounded-auto-finish gap before proceeding.
 
 ---
 
