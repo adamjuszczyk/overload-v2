@@ -420,11 +420,36 @@ All core features built and working:
   import action on Library. Adversarial review found 8 real bugs across the
   9 changes (including a data-corrupting race and a permanently-broken
   button after Finish Session → Back to Session), all fixed and
-  live-verified. **Not pushed or deployed** — item 3's own investigation
-  found real corrupted historical duration data broader than previously
-  known (11 of 23 completed sessions, not just the 2-session PULL 1 anomaly
-  Phase 3.4 flagged), which is a stop-and-report condition per standing
-  instruction. See "2026-08-11 session (post-launch fixes)" below.
+  live-verified. Item 3's own investigation found real corrupted historical
+  duration data broader than previously known (11 of 23 completed sessions,
+  not just the 2-session PULL 1 anomaly Phase 3.4 flagged), which was a
+  stop-and-report condition per standing instruction — pushed and deployed
+  the next session, after investigating and fixing the root cause and
+  backfilling the historical data. See "2026-08-11 session (post-launch
+  fixes)" and "2026-08-11 session (post-launch fixes — completed_at fix and
+  backfill)" below.
+- 2026-08-11 session (post-launch fixes — completed_at fix and backfill,
+  same day, follow-up session): pushed the prior session's 9-item round to
+  production (confirmed via `vercel inspect` + a live bundle grep). Root-caused
+  the duration anomaly precisely: `useAutoFinishSession.ts` is a plain
+  `setInterval` with zero Page Visibility integration, tied to the
+  component staying mounted — confirmed via full-codebase grep, the only
+  other Page Visibility usage anywhere is an unrelated midnight-refresh
+  hook. Built a shared `deriveCompletedAt` function (max `logged_at` across
+  a session's set_logs, `null` — not wall-clock — for zero eligible rows)
+  and wired it into both real completion write sites (`useAutoFinishSession`
+  confirmed to have no separate write path of its own — it shares
+  `useCompleteSession` entirely). A focused adversarial review found 11 real
+  issues, including two high-severity regressions: making `completed_at`
+  legitimately nullable silently reopened last session's `reopenSession` fix
+  for zero-log sessions, and a pre-existing `useSyncQueueRunner` cold-start
+  bug meant a PWA reopened already-online after finishing offline would
+  never flush the queue — both fixed and live-verified. Backfilled all 24
+  real historical sessions using the shipped function directly (not a
+  reimplementation); every duration collapsed into a plausible 0.9h–9.9h
+  range, down from a max of 44.79h. See "2026-08-11 session (post-launch
+  fixes — completed_at fix and backfill)" below for the full account,
+  including the complete before/after table.
 
 ---
 
@@ -4815,13 +4840,262 @@ sets) created during verification was deleted/reverted; the real account's
 actual today session (PULL 1, Aug 11) was left in a normal, uncorrupted
 in-progress state with zero fake data.
 
-### Status — not pushed, not deployed
+### Status — since superseded
 
 Per standing instruction, item 3's own investigation turning up real
-corrupted historical data (broader than previously documented) is a
-stop-and-report condition. Everything above is complete, tested, and
-committed locally. **Not pushed to `origin/master`, production unchanged.**
-Awaiting a decision on the backgrounded-auto-finish gap before proceeding.
+corrupted historical data (broader than previously documented) was a
+stop-and-report condition, so this session ended without pushing. The next
+session pushed this work after independently re-verifying the remaining
+adversarial-review findings, investigated the backgrounded-auto-finish gap
+in full, built and shipped the fix, and backfilled the historical data —
+see "2026-08-11 session (post-launch fixes — completed_at fix and
+backfill)" below for the complete account.
+
+---
+
+## 2026-08-11 session (post-launch fixes — completed_at fix and backfill)
+
+Same-day follow-up to "2026-08-11 session (post-launch fixes)" above. Four
+parts: push the prior session's already-reviewed work; investigate the
+auto-finish duration mechanism without writing code; implement and
+adversarially review the fix; backfill the historical data.
+
+### Part 1 — pushed the prior session
+
+Confirmed nothing new needed committing beyond `e363401`/`0878d36`, pushed
+to `origin/master`. Confirmed the actual Production deploy the same way as
+every prior phase: `vercel inspect` on the newest deployment showed
+`target: production`, `status: ● Ready`, correctly aliased to
+`overload-v2-sage.vercel.app`; fetched the live bundle directly and grepped
+it for content only this round could have added (`PLANNED RIR`,
+`mark as dropset`, `CURRENT SET`, `FIND EXERCISE HISTORY`) — all present.
+
+### Part 2 — auto-finish investigation (no code, as instructed)
+
+**1. The actual mechanism, read directly, not inferred.**
+`useAutoFinishSession.ts` is a plain `setInterval(check, 30_000)` inside a
+`useEffect` tied entirely to `GymSession` staying mounted. Zero Page
+Visibility API usage — confirmed via a full-codebase grep, the only other
+Page Visibility usage anywhere in `src/` is `TodayPage.tsx`'s unrelated
+midnight-date-refresh hook. Consequence: the interval only exists while the
+tab/PWA process is alive and `GymSession` is rendered; a closed/suspended
+process runs no code at all until relaunch, and on relaunch `armedAtRef`
+resets so auto-finish can't even become eligible again until another full
+`autoFinishMinutes` (5 min, this account) passes with the app open.
+`refetchOnWindowFocus: false` in `queryClient.ts` (deliberate — "user
+switches apps at the gym constantly") confirms nothing else runs on
+regaining focus either.
+
+**2. Real numbers, not just the prior session's >4h count.** All 24
+completed sessions at investigation time (23 → 24, one more completed since
+the prior session), sorted hours:
+`44.79, 34.42, 20.55, 11.99, 11.32, 10.49, 9.02, 5.82, 5.78, 5.41, 4.67,
+3.78, 3.48, 3.04, 2.84, 2.61, 2.01, 1.70, 1.68, 1.57, 1.51, 1.37, 1.09,
+1.06`. Against the prior session's >4h threshold: 11/24 (46%) — but no
+clean gap exists at 4h, it's a smooth tail; against >2h: 17/24 (71%).
+
+**3. Blast radius, checked call sites directly.** `started_at` has exactly
+one consumer, duration display (client tick + the SQL view). `completed_at`
+has exactly one non-display consumer: `referenceLogic.ts`'s `byMostRecent`,
+used only as a tiebreak when two `ReferenceSession`s share the same
+calendar `date` (AUDIT E8's same-day-multi-workout scenario) — checked real
+production data directly, zero such duplicate pairs currently exist, so
+this consumer is real but dormant. `progressService.ts`, `e1rm.ts`,
+`mesoService.ts`, `scheduler.ts`, `useScheduler.ts`, `SessionDetail.tsx`,
+`HistoryPage.tsx`, `HistoryDataTable.tsx` — grepped directly, zero
+references to either field; meso week boundaries run off `date`/
+`week_number`, not `completed_at`.
+
+**4. The proposed fix (derive `completed_at` from the newest set log's
+`logged_at`), evaluated and empirically validated against all 24 real
+sessions**, not just reasoned about: computing `max(logged_at) -
+started_at` for every session collapsed every currently-inflated one into
+the same tight, plausible range the never-delayed sessions already
+occupied — the 44.79h session derived to 1.25h, the 34.42h one to 1.47h,
+the 20.55h one to 1.45h. Confirmed the fix composes with (doesn't replace)
+the already-shipped `reopenSession()` fix — both needed together for the
+reopen case. Considered and rejected two alternatives: Page Visibility
+integration only makes the check fire sooner, it doesn't fix the *value*
+written; a server-side cron/edge-function sweep would need the identical
+derivation to get the value right anyway, plus new infrastructure this
+project doesn't have and iffy PWA background reliability (especially iOS).
+
+### Part 2 (continued) — build
+
+New `src/features/gym/sessionCompletion.ts`, one pure exported function:
+
+```ts
+export function deriveCompletedAt(logs: LoggedAtRow[]): string | null
+```
+
+Returns the max `loggedAt` among the input rows (real `Date` comparison,
+not string comparison — Supabase returns `+00:00`, client writes use `Z`,
+both must compare equal for the same instant), or `null` for zero eligible
+rows — a deliberate "unavailable" signal, not a bug, matching how
+`skipMissedSession` rows already have null `started_at`/`completed_at` and
+already render as a dash. Every set_log row counts — skipped, warmup,
+dropset-stage rows included, no filtering; this is "when was the user last
+active here", not a set-counting concern (that's the stage-exclusion rule,
+a different concern entirely).
+
+Applied at both real write sites (confirmed `useAutoFinishSession` has no
+third, separate write path — it calls the identical `useCompleteSession`
+mutation manual FINISH SESSION uses):
+1. `sessionService.ts`'s `completeSession()` — now SELECTs this session's
+   `v2_set_logs.logged_at` before the UPDATE, derives, writes that instead
+   of `new Date().toISOString()`.
+2. `useSession.ts`'s `useCompleteSession` offline branch — queries the
+   local Dexie cache (`db.set_logs.where('sessionId').equals(id)`) instead
+   of wall-clock time. **A real, documented, deliberately-accepted gap
+   here**: `useLogSet`'s *online* branch never writes to Dexie's set_logs
+   at all (only the offline branch does), and `primeOfflineCache`
+   explicitly excludes the current session (`.neq('id', sessionId)` — it
+   primes the *reference-panel* cache for other sessions). So a session
+   logged partly/fully online then completed offline with zero further
+   offline logs has nothing to derive from and correctly falls back to
+   `null` rather than a wrong value — never reintroduces the inflated-
+   duration bug, just narrower coverage than the online path gets.
+
+### Part 2 (continued) — adversarial review, 11 raw findings, 11 confirmed
+
+Same Workflow-based pattern, scaled to this smaller change: 4 dimensions in
+parallel, each finding adversarially re-verified by 3 independent agents.
+All 11 raw findings confirmed (0 refuted this round).
+
+**Fixed — two high-severity regressions:**
+1. **`reopenSession()`'s idle-gap-shift guard silently broke for the new
+   nullable `completed_at`.** The guard required *both* `started_at` and
+   `completed_at` before shifting; a null `completed_at` (a zero-set
+   completion, now legitimate) skipped the shift entirely, leaving
+   `started_at` stale — reproducing the exact original bug through the door
+   this session's own fix opened. Fixed: a null `completed_at` is now
+   treated the same as the existing untrustworthy-span fallback (resume
+   counting from right now). Live-verified: a session started 3 days ago,
+   completed with zero logs, reopened — `started_at` now resets to the
+   reopen moment instead of staying 3 days stale.
+2. **`useSyncQueueRunner`'s cold-start gap (pre-existing, not introduced by
+   this diff, but directly determines whether the offline half of this fix
+   ever reaches Supabase).** `prevOnline` was seeded from `isOnline` itself
+   at mount, so a PWA closed while offline and reopened later already
+   online never observes a transition — `flushSyncQueue` never ran, so a
+   session finished offline (carrying the new correctly-derived
+   `completed_at`) could sit in `db.sync_queue` forever. Fixed by seeding
+   to `null` ("not yet observed") instead. Live-verified: queued a real
+   sync item, did a full page reload while online (the exact cold-start
+   scenario), confirmed the queue emptied and the write landed.
+
+**Fixed — medium/low, cheap and clearly correct:**
+3. `deriveCompletedAt` had a NaN-poisoning gap: a naive running-max loop
+   seeded from an unvalidated first element gets permanently stuck if that
+   element's `loggedAt` fails to parse (any comparison against `NaN` is
+   `false` in JS, so no later, valid, genuinely-later row could ever
+   displace it). Not reachable via today's real callers (DB column is
+   `not null`, every writer uses `new Date().toISOString()`) but rewritten
+   to skip invalid/null entries defensively rather than only happen to work
+   given today's callers.
+4. `useAutoFinishSession`'s `triggeredRef` had no `onError` — a failed
+   completion attempt (now two round trips instead of one, a second real
+   failure point) permanently disabled auto-finish for that mounted session
+   with nothing surfaced. Added an `onError` resetting the ref so the next
+   30s tick retries.
+
+**Documented, deliberately not fixed (low severity):** a narrow TOCTOU race
+in `completeSession()` between the new SELECT and the UPDATE (a set logged
+in that exact window is excluded — bounded impact, never re-inflates
+duration, would need a DB transaction/RPC this project doesn't have
+elsewhere to fully close); the same NaN-poisoning class of gap independently
+found from the offline-path angle (same fix as #3, not a separate one).
+
+**Test-quality findings — the test suite was rewritten, not just patched:**
+two of the original 7 tests were flagged as structurally redundant/vacuous
+(didn't test what their names claimed); real coverage was missing for tied
+timestamps and malformed/null entries. Replaced with 8 tests covering the
+actual behaviour, including the new defensive skip-on-invalid path.
+
+`npm run typecheck` / `npm run build` / `npm test` clean after every fix
+round (97 tests, up from 88 — net +9: sessionCompletion adds a net +7 after
+the rewrite, no other test file touched).
+
+### Part 2 (continued) — live verification
+
+Every fix verified against the real shipped functions on isolated,
+fully-cleaned-up test data: a normal completion with a deliberate 45-minute
+gap between last log and completion correctly derived the last-log time,
+not wall-clock, both before and after the NaN-defense rewrite; a zero-log
+completion correctly produced `completed_at: null` and the real
+`v2_session_type_history` view correctly returned `duration_seconds: null`
+for it; the Dexie offline-query mechanics were confirmed against real
+`db.set_logs` writes including a skipped-set row; the `reopenSession`
+regression fix and the `useSyncQueueRunner` cold-start fix were both
+proven end-to-end as described above. All test rows deleted afterward,
+confirmed zero leftover `POST-LAUNCH FIX TEST`-tagged rows before the
+backfill began.
+
+### Part 3 — historical backfill
+
+**Confirmed, not assumed: duration is computed at read time, never
+stored.** `v2_session_type_history`'s SQL does
+`extract(epoch from (s.completed_at - s.started_at))::int as
+duration_seconds` — a live view expression, not a column. So the backfill
+only ever needed to write `v2_sessions.completed_at`.
+
+**Scope:** every session with `status = 'completed'` at audit time (before
+this session's deploy) — 24 sessions, all 24 needed a correction (even
+small ones — every historical write used wall-clock time, so there was
+always some non-zero drift between it and the true last-log time).
+
+**Full before/after table, every in-scope row:**
+
+| Date | Workout | Logs | Old `completed_at` (UTC) | New `completed_at` (UTC) | Old duration | New duration |
+|---|---|---|---|---|---|---|
+| 2026-07-07 | PULL 1  | 13 | 07-08 07:27:17 | 07-07 12:21:39 | 20.55h | 1.45h |
+| 2026-07-09 | PUSH 2  | 16 | 07-09 18:51:45 | 07-09 11:28:16 | 9.02h  | 1.63h |
+| 2026-07-10 | PULL 2  | 12 | 07-10 17:49:27 | 07-10 13:31:42 | 5.78h  | 1.48h |
+| 2026-07-11 | LEGS    | 10 | 07-11 12:21:41 | 07-11 12:21:18 | 1.37h  | 1.36h |
+| 2026-07-13 | PUSH 1  | 12 | 07-13 12:54:09 | 07-13 10:54:36 | 3.78h  | 1.78h |
+| 2026-07-14 | PULL 1  | 13 | 07-14 10:35:30 | 07-14 10:09:04 | 2.01h  | 1.57h |
+| 2026-07-16 | PUSH 2  | 17 | 07-16 12:24:08 | 07-16 11:22:50 | 2.61h  | 1.58h |
+| 2026-07-17 | PULL 2  | 12 | 07-17 22:33:23 | 07-17 12:19:47 | 11.99h | 1.76h |
+| 2026-07-18 | LEGS    | 12 | 07-18 14:08:40 | 07-18 14:08:36 | 1.09h  | 1.09h |
+| 2026-07-20 | PUSH 1  | 12 | 07-20 17:41:38 | 07-20 17:41:27 | 4.67h  | 4.66h |
+| 2026-07-21 | PULL 1  | 13 | 07-21 14:33:34 | 07-21 14:33:32 | 3.04h  | 3.04h |
+| 2026-07-23 | PUSH 2  | 17 | 07-23 11:32:54 | 07-23 11:32:24 | 1.70h  | 1.69h |
+| 2026-07-24 | PULL 2  | 12 | 07-24 13:28:13 | 07-24 13:26:06 | 1.51h  | 1.47h |
+| 2026-07-27 | PUSH 1  | 12 | 07-27 10:46:38 | 07-27 10:41:31 | 1.57h  | 1.49h |
+| 2026-07-28 | PULL 1  | 13 | 07-28 09:36:39 | 07-28 09:36:36 | 1.06h  | 1.06h |
+| 2026-07-30 | PUSH 2  | 17 | 07-30 13:49:55 | 07-30 10:12:49 | 5.41h  | 1.79h |
+| 2026-07-31 | PULL 2  | 12 | 07-31 12:45:09 | 07-31 10:49:41 | 2.84h  | 0.92h |
+| 2026-08-01 | LEGS    | 10 | 08-01 13:05:37 | 08-01 12:37:38 | 1.68h  | 1.22h |
+| 2026-08-03 | PUSH 1  | 12 | 08-03 19:53:08 | 08-03 09:44:06 | 11.32h | 1.17h |
+| 2026-08-04 | PULL 1  | 11 | 08-06 09:09:40 | 08-04 13:37:22 | 44.79h | 1.25h |
+| 2026-08-06 | PUSH 2  | 18 | 08-06 15:27:48 | 08-06 11:07:22 | 5.82h  | 1.48h |
+| 2026-08-07 | PULL 2  | 9  | 08-08 18:32:38 | 08-07 09:35:42 | 34.42h | 1.47h |
+| 2026-08-10 | PUSH 1  | 15 | 08-10 20:36:17 | 08-10 20:03:16 | 10.49h | 9.94h |
+| 2026-08-11 | PULL 1  | 13 | 08-11 11:22:30 | 08-11 11:22:27 | 3.48h  | 3.48h |
+
+**Process, each step verified before the next, not assumed to have
+worked:** ran the audit using `deriveCompletedAt` directly (imported and
+called, not reimplemented) against each session's real `v2_set_logs`; a
+dry-run re-fetch of the scope immediately before writing confirmed 24==24
+with an exact ID match (nothing had changed since the audit); executed all
+24 updates, zero failures; re-queried all 24 rows directly against
+`v2_sessions` — zero mismatches against the audit, zero status changes,
+total completed-session count still exactly 24; final check against the
+*actual* `v2_session_type_history` view (the real path the app reads)
+confirmed all 24 durations match the audit exactly, which also confirms
+`started_at` (never part of the UPDATE payload) was left untouched.
+
+### Part 4 — pushed, deployed
+
+Committed (code, then this CONTEXT.md update, matching this project's
+established two-commit pattern), pushed to `origin/master`, confirmed the
+actual Production deploy via `vercel inspect` + a live bundle grep, the
+same way as every prior phase and Part 1 above.
+
+**This closes out the post-launch fixes round in full.** All 9 original
+items plus the duration root-cause fix and historical backfill are live in
+production, adversarially reviewed twice over, and verified against real
+data at every step.
 
 ---
 
