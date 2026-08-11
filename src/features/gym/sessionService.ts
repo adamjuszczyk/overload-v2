@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { Session, SetLog, WeightUnit } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
+import { deriveCompletedAt } from './sessionCompletion'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -156,10 +157,42 @@ export async function createSession(
   return toSession(data as DbSession)
 }
 
+// completed_at is derived from this session's own set_logs (deriveCompletedAt,
+// sessionCompletion.ts), not wall-clock time at whatever moment this
+// function happens to run — see that module's header for why. Requires a
+// read before the write (this session's own set_logs), unlike the old
+// single-UPDATE version; a transient failure on the read means the
+// completion attempt fails outright rather than completing with a wrong
+// timestamp, same class of failure as any other network error in this
+// mutation.
+//
+// Known, deliberately-accepted race (found by adversarial review, not
+// closed): the SELECT and the UPDATE are two separate round trips, not one
+// transaction — a set logged for this same session in the narrow window
+// between them is invisible to the SELECT's snapshot, so completed_at could
+// land on the previous-latest set instead of the true latest one. Closing
+// this fully would need either a DB-side transaction/SELECT ... FOR UPDATE
+// or a single correlated-subquery UPDATE (this project has no Postgres
+// functions/RPCs today, and every other multi-step write here already uses
+// this same fetch-then-update shape, e.g. reopenSession below). Low
+// practical impact — the error is bounded by one race window and only ever
+// makes completed_at slightly earlier than true, never wall-clock-inflated
+// like the bug this whole fix targets — so left as a known limitation
+// rather than a blocker.
 export async function completeSession(id: string, note: string | null): Promise<void> {
+  const { data: logs, error: fetchError } = await supabase
+    .from('v2_set_logs')
+    .select('logged_at')
+    .eq('session_id', id)
+  if (fetchError) throw fetchError
+
+  const completedAt = deriveCompletedAt(
+    (logs ?? []).map((l) => ({ loggedAt: l.logged_at as string })),
+  )
+
   const { error } = await supabase
     .from('v2_sessions')
-    .update({ status: 'completed', completed_at: new Date().toISOString(), note })
+    .update({ status: 'completed', completed_at: completedAt, note })
     .eq('id', id)
   if (error) throw error
 }
@@ -201,20 +234,32 @@ export async function reopenSession(id: string): Promise<{ startedAt: string | n
   if (fetchError) throw fetchError
 
   let startedAt = current.started_at as string | null
-  if (current.started_at && current.completed_at) {
-    const accumulatedMs = new Date(current.completed_at).getTime() - new Date(current.started_at).getTime()
+  if (current.started_at) {
+    // completed_at can now legitimately be null (deriveCompletedAt,
+    // sessionCompletion.ts — a session completed with zero set_logs, or an
+    // offline completion with nothing cached to derive from). Found by
+    // adversarial review: the original guard here required BOTH
+    // started_at AND completed_at before shifting, so a null completed_at
+    // silently skipped the shift entirely and left startedAt at its stale
+    // value — reproducing this function's own original bug through a door
+    // Part 2 opened. A null completed_at carries no real "accumulated
+    // work" signal either way, so it gets exactly the same treatment as an
+    // untrustworthy (clock-skew, <= 0) span below: resume counting from
+    // right now rather than trust/carry forward a number that isn't there.
+    const accumulatedMs = current.completed_at
+      ? new Date(current.completed_at).getTime() - new Date(current.started_at).getTime()
+      : 0
     // A clock change between started_at/completed_at (same class of edge
     // case SessionTypeHistoryView.tsx's DURATION column already guards
-    // against) could make this <= 0. Falling all the way back to "leave
-    // startedAt untouched" here would silently reproduce the exact bug this
-    // function exists to fix for that one trigger (found by this session's
-    // own adversarial review) — and since every later reopen re-derives its
-    // shift from whatever startedAt is already on the row, an untouched
-    // value here would keep re-encoding that contamination into every
-    // future reopen too, not just this one. The accumulated span can't be
-    // trusted when the clock moved, so it's discarded rather than carried
-    // forward: resume counting from right now, same as a session with no
-    // prior work at all.
+    // against) could also make this <= 0. Falling all the way back to
+    // "leave startedAt untouched" here would silently reproduce the exact
+    // bug this function exists to fix for that trigger too — and since
+    // every later reopen re-derives its shift from whatever startedAt is
+    // already on the row, an untouched value here would keep re-encoding
+    // that contamination into every future reopen too, not just this one.
+    // The accumulated span can't be trusted when it's absent or negative,
+    // so it's discarded rather than carried forward: resume counting from
+    // right now, same as a session with no prior work at all.
     startedAt = accumulatedMs > 0 ? new Date(Date.now() - accumulatedMs).toISOString() : new Date().toISOString()
   }
 

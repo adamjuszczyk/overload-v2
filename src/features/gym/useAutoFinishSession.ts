@@ -56,7 +56,19 @@ export function useAutoFinishSession(session: Session | undefined, weekPlan: Wee
       triggeredRef.current = true
       completeSession.mutate(
         { id: session.id, note: session.note },
-        { onSuccess: () => showToast('Session completed automatically') },
+        {
+          onSuccess: () => showToast('Session completed automatically'),
+          // Without this (found by adversarial review), a failed completion
+          // attempt left triggeredRef stuck true forever for this mounted
+          // session — every later 30s tick's early-return at the top of
+          // check() would silently no-op, permanently disabling auto-finish
+          // for it with no error surfaced. completeSession() now does two
+          // round trips instead of one (a SELECT before the UPDATE, see
+          // sessionService.ts), a real second failure point this closes off.
+          onError: () => {
+            triggeredRef.current = false
+          },
+        },
       )
     }
 

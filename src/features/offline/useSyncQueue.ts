@@ -24,7 +24,19 @@ export function useSyncQueueRunner() {
   const isOnline = useOnlineStatus()
   const removePending = useOfflineStore((s) => s.removePending)
   const addFailed = useOfflineStore((s) => s.addFailed)
-  const prevOnline = useRef(isOnline)
+  // null, not isOnline — "not yet observed", distinct from a real online/
+  // offline reading. Found by adversarial review: seeding this from
+  // isOnline itself meant a cold start that begins already online (the PWA
+  // was closed while offline at the gym, then reopened later at home
+  // already on WiFi) never registers as a false->true transition, since
+  // both isOnline and prevOnline.current are true on that very first
+  // render — flushSyncQueue never ran, silently stranding anything queued
+  // offline (e.g. this session's own completed_at fix for an
+  // offline-completed session) in db.sync_queue indefinitely. Seeding to
+  // null makes the first render flush whenever the app happens to already
+  // be online at mount, in addition to the genuine offline->online
+  // transition case this already handled.
+  const prevOnline = useRef<boolean | null>(null)
 
   useEffect(() => {
     if (isOnline && !prevOnline.current) {

@@ -23,6 +23,7 @@ import {
   type ReferenceSession,
 } from './sessionService'
 import { groupSetLogs } from './setGroupLogic'
+import { deriveCompletedAt } from './sessionCompletion'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -345,7 +346,28 @@ export function useCompleteSession() {
     networkMode: 'always',
     mutationFn: async ({ id, note }: { id: string; note: string | null }) => {
       if (!isOnline) {
-        const completedAt = new Date().toISOString()
+        // completed_at derived the same way the online path derives it
+        // (deriveCompletedAt, sessionCompletion.ts) — from this session's
+        // own cached set_logs, not wall-clock time. Real, confirmed gap in
+        // this specific path (not silently assumed correct): the Dexie
+        // set_logs cache only ever gets rows written to it by useLogSet's
+        // *offline* branch — the online branch (the common case) never
+        // writes to Dexie at all, and primeOfflineCache explicitly excludes
+        // the current session (.neq('id', sessionId), it's priming the
+        // *reference* cache for other sessions). So a session logged partly
+        // or fully online, then completed offline with zero further offline
+        // logs, has nothing here to derive from and correctly falls back to
+        // null ("unavailable") rather than a wrong value — never
+        // re-introduces the original inflated-duration bug, but is a real,
+        // narrower fix than the online path gets. See CONTEXT.md.
+        // createdAt (the sync_queue item's own timestamp, used for FIFO
+        // replay ordering in useSyncQueue.ts) is deliberately real wall-clock
+        // time regardless — it answers "when was this queued", a different
+        // question from "what should this session's completed_at be", and
+        // must never be null the way completedAt now legitimately can be.
+        const now = new Date().toISOString()
+        const cachedLogs = await db.set_logs.where('sessionId').equals(id).toArray()
+        const completedAt = deriveCompletedAt(cachedLogs.map((l) => ({ loggedAt: l.loggedAt })))
         const cached = findCachedSession(id)
         await db.sync_queue.add({
           table: 'v2_sessions',
@@ -357,7 +379,7 @@ export function useCompleteSession() {
             completed_at: completedAt,
             note,
           },
-          createdAt: completedAt,
+          createdAt: now,
         })
         addPending(id)
         return
