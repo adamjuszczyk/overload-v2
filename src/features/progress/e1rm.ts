@@ -26,6 +26,22 @@ export interface E1rmSessionInput {
   sets: E1rmSetInput[]
 }
 
+// firstAvg/lastAvg/deltaPercent are the whole-session-average numbers this
+// module was originally built to compute (SPEC §6's original headline). As
+// of the position-matched headline (2026-08-12, see CONTEXT.md), no
+// production code reads any of the three anymore — ExerciseProgress.tsx
+// now displays averagePositionMatchedDelta's rollup instead, and
+// progressService.ts's fetchPositionMatchedHeadline reads this type only
+// for its session identity (firstSessionId/firstDate/lastSessionId/
+// lastDate). Kept, not removed: compareE1rmWindow's session-
+// eligibility/selection logic (which two sessions are "first" and "last")
+// is still exactly what the live headline relies on today, and computing
+// the averages is inseparable from that selection — the eligibility
+// filter itself is "has a non-null average, and isn't in a deload week", so
+// a narrower version that dropped these three fields would still have to
+// compute them internally to decide eligibility. Still directly tested
+// (e1rm.test.ts) as part of asserting this function's own correctness,
+// independent of which fields production currently reads.
 export interface E1rmComparison {
   firstSessionId: string
   firstDate: string
