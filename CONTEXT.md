@@ -1454,6 +1454,160 @@ rather than assumed.
 
 No writes were made during this re-verification either.
 
+### 2026-08-12 session (rollup built, wired into the live headline, deployed)
+**This session replaced the Progress page's live E1RM headline number for
+real users — the first UI-facing change in this initiative.** Everything
+before this point was algorithm-only, explicitly with no UI consumer.
+
+**Confirmed before touching anything, by reading the code (not assumed
+from memory, per explicit instruction):** `getExerciseE1rmComparison`
+(`progressService.ts`) → `compareE1rmWindow` (`e1rm.ts`) is exactly the
+same first-eligible-vs-most-recent-eligible-session-in-the-active-meso
+resolution it always was, deload weeks excluded — completely untouched
+(`git diff HEAD -- src/features/progress/e1rm.ts` is empty). Grepped the
+whole `src/` tree for `.deltaPercent`: `compareE1rmWindow`'s own
+`deltaPercent` field had exactly one production consumer anywhere in the
+app — `ExerciseProgress.tsx`'s headline render — plus its own test file
+(`e1rm.test.ts`, asserting `compareE1rmWindow`'s own math, still correct
+since that function is unchanged). Nothing else was reading it, so
+nothing else needed to change.
+
+**What was built:**
+- `positionMatch.ts`'s `averagePositionMatchedDelta(result)` — collects
+  every non-null `deltaPercent` across `plain.slots[].head`,
+  `dropsets.slots[].head`, and `dropsets.slots[].stages[]` (one uniform
+  loop over both streams; safe because a plain slot's `stages` is always
+  empty by construction, not because it's special-cased out), drops
+  nulls, averages what's left. Returns `null` — never `0%` — when nothing
+  survives: no matched items in either stream, or every matched item was
+  ineligible. Deliberately still no per-slot/per-stage breakdown exposed
+  anywhere; this is the single rolled-up number only.
+- `progressService.ts`'s `fetchPositionMatchedHeadline(exerciseId,
+  sessionPair)` — takes `getExerciseE1rmComparison`'s own result
+  (`sessionPair`, an `E1rmComparison`) and reads only its session
+  identity (`firstSessionId`/`firstDate`/`lastSessionId`/`lastDate`),
+  never its `deltaPercent`/`firstAvg`/`lastAvg`. Does two `fetchSession()`
+  reads (imported from `../gym/sessionService` — the same already-shipped
+  function the gym reference panel and session detail use), filters each
+  session's `setLogs` to this exercise, calls `matchSessionsByPosition`
+  then `averagePositionMatchedDelta`. A second network round trip per
+  headline is a real cost, not a free one — `fetchExerciseProgress`'s own
+  fetch can't be reused because its `e1rmSessions[].sets` is deliberately
+  the flat, position-agnostic shape `compareE1rmWindow` needs (no
+  `setNumber`/`stageIndex`/`id`), which can't build ordered slots.
+- `useProgress.ts`'s `usePositionMatchedHeadline(exerciseId, sessionPair)`
+  — a `useQuery` keyed on the *resolved* session pair
+  (`['v2_positionMatchedHeadline', exerciseId, firstSessionId,
+  lastSessionId]`), not on `exerciseId` alone, so it only refetches when
+  which two sessions get compared actually changes.
+- `ExerciseProgress.tsx` — the only UI change, exactly as scoped: the
+  existing `useMemo` that calls `getExerciseE1rmComparison` is unchanged
+  in every way except its variable name (`e1rmComparison` →
+  `sessionPair`, since it's now read only for session identity); the
+  headline now renders `positionMatchedDelta` (from the new hook) instead
+  of `sessionPair.deltaPercent`, gated on `positionMatchedDelta != null`
+  in addition to the existing `sessionPair` truthiness check. Same
+  percentage-only display convention, same colour rule, same `.toFixed(1)`
+  formatting, same "no headline at all" fallback — nothing about the
+  presentation changed, only where the number comes from. No History
+  component touched; no per-slot/per-stage breakdown surfaced anywhere.
+
+**Tests** (`positionMatch.test.ts`, 8 new before the review round, 120
+total up from 112 by the time review fixes' tests are included): several
+non-null deltas across a plain head, a dropset head, and a dropset stage
+averaging correctly (cross-checked against hand-computed `calculateE1rm`
+values, not just internal consistency); a null delta (no RIR) excluded
+from the average rather than dragging it toward zero; returns `null` when
+every matched item is ineligible; returns `null` when nothing matched at
+all in either stream (disjoint dropset/plain sessions). `npm run
+typecheck` / `npm test` / `npm run build` all clean.
+
+**Adversarial review — Workflow-based, 4 dimensions in parallel (rollup
+math correctness, session-resolution preservation + service wiring,
+React Query wiring + UI integration, regression/scope check), each
+finding independently re-verified against the real current code by a
+separate agent instructed to try to refute it.** 2 raw findings, both
+independently confirmed, 0 refuted:
+
+1. **Confirmed, high-value catch, fixed: a weight=0 baseline set silently
+   produced `Infinity`/`NaN` instead of an excluded null, reachable via
+   real, legitimately-loggable data.** `eligibleE1rm` only rejects null
+   weight/reps/rir — not `weight === 0`, which is a real loggable value
+   (no `weight > 0` constraint in the DB schema, no floor in `SetRow.tsx`'s
+   free-text input). `calculateE1rm(0, reps, rir)` returns `0` (not null),
+   so a `weight: 0` set reached `matchItem`'s division as a non-null
+   `e1rmA = 0`: `((e1rmB - 0) / 0) * 100` is `Infinity` when `e1rmB > 0`,
+   `NaN` when both sides are `0`. `averagePositionMatchedDelta`'s `!=
+   null` guard does not exclude either (`Infinity != null` and `NaN !=
+   null` are both `true`), so one zero-weight set anywhere in either
+   resolved session would have poisoned the *entire* averaged headline —
+   and `ExerciseProgress.tsx`'s own `positionMatchedDelta != null` gate
+   doesn't catch it either, so a real user could have seen a headline
+   literally reading "+Infinity%" or "NaN%". **Fixed** at the source —
+   `matchItem` now also requires `e1rmA !== 0` before computing
+   `deltaPercent` (excluding only the undefined-baseline case; a
+   zero-weight *comparison* side, e.g. `100 → 0`, still correctly
+   produces a real `-100%`, not excluded). 4 new tests lock this in:
+   null-not-Infinity when the baseline is 0, null-not-NaN when both sides
+   are 0, a legitimate `-100%` when only the comparison side is 0, and
+   the rollup-level poisoning case (one zero-weight item mixed with
+   normal ones must not turn the whole average into `Infinity`/`NaN`).
+2. **Confirmed, fixed: the new query key had no invalidation path
+   anywhere in the app, unlike its `v2_exerciseProgress`/`v2_mesoProgress`
+   siblings.** Reachable scenario: reopen a completed session (
+   `useReopenSession`), fix a set's weight/reps/RIR, re-complete it (
+   `useCompleteSession`) — same session id, same date, still meso-eligible,
+   so `getExerciseE1rmComparison` resolves the *identical*
+   `firstSessionId`/`lastSessionId` pair as before the edit.
+   `usePositionMatchedHeadline`'s query key is therefore unchanged, and
+   with `staleTime` 5 min and `refetchOnWindowFocus: false`
+   (`queryClient.ts`), the pre-edit cached percentage keeps rendering
+   even though the corrected data is already visible everywhere else
+   (charts, last-5-sessions list) via `v2_exerciseProgress`'s own,
+   correctly-invalidated cache entry. **Fixed** by adding
+   `queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })`
+   at both existing sites that already invalidate
+   `v2_exerciseProgress`/`v2_mesoProgress` for the identical reason —
+   `useSession.ts`'s `useCompleteSession.onSuccess` and
+   `useHistory.ts`'s `useDeleteSession.onSuccess` (deleting a session can
+   change which two sessions resolve, or leave this cache entry orphaned
+   even when it doesn't). `useHistory.ts` is a data-layer hook, not a
+   History *component* — the "don't touch History" scope boundary was
+   about not building new History UI/features this round, not about
+   leaving a confirmed cache-consistency bug half-fixed; flagged here
+   explicitly rather than done silently.
+
+**Live verification — before/after, real account, both before and after
+the two review fixes** (dev server's already-authenticated Supabase
+session, dynamic `import()` of the real unmodified/now-fixed modules):
+
+| Exercise | OLD (whole-session avg, `compareE1rmWindow`) | NEW (position-matched, pre-fix) | NEW (post-fix) |
+|---|---|---|---|
+| One-arm Dumbell Lateral Raise (Jul 9 → Aug 6) | +2.06% | +2.5% | **+2.5%** |
+| Cable Reverse Biceps Curl (Jul 7 → Jul 17) | +7.78% | +7.7075…% | **+7.7075…%** |
+| Seated Machine Calf Raise (Jul 9 → Aug 6) | -2.33% | -2.0855…% | **-2.0855…%** |
+
+Identical before/after the fix for all three, confirmed rather than
+assumed — none of the three real exercises has a real `weight: 0` set, so
+the divide-by-zero fix was correctly a no-op for them. All three also
+independently confirmed rendering correctly in the actual browser UI
+(`E1RM · THIS MESO` card), not just via the service function directly:
+`+2.5%`, `+7.7%`, `-2.1%` respectively, matching `.toFixed(1)` of the
+computed values exactly. A sparse-data exercise (Squat, 1 completed
+session) correctly still shows "NOT ENOUGH DATA YET" with no headline and
+no crash — that branch is untouched by this change. No console errors.
+The stale-cache fix itself was verified by direct code inspection
+(exact same invalidation pattern as the already-correct sibling keys, at
+the identical two call sites) rather than by live-reproducing a
+reopen → edit → re-complete cycle against real account data — judged a
+disproportionate live-test for a mechanical one-line cache-key addition
+given the risk of mutating real historical session data to prove it, but
+flagged here as a real, deliberate scope decision, not an oversight.
+
+**Deployed.** Committed, pushed to `origin/master`, confirmed the actual
+Production deploy via `vercel ls` / `vercel inspect`, same double-check
+pattern as every prior phase.
+
 ---
 
 ## Known issues
