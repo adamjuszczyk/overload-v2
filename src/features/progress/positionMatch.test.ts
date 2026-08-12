@@ -72,10 +72,95 @@ describe('buildLoggedSlots', () => {
   })
 })
 
-// ─── matchSessionsByPosition (steps 2–5) ────────────────────────────────────
+// ─── matchSessionsByPosition (steps 2–5, split into a plain stream and a
+// dropset stream before matching) ───────────────────────────────────────────
 
-describe('matchSessionsByPosition — slot count truncation (step 2)', () => {
-  it('matches up to the shorter session, reporting the extra slots without comparing them', () => {
+describe('matchSessionsByPosition — stream split (dropset only ever matches dropset)', () => {
+  it('matches a dropset against the other session\'s dropset, even when a plain set sits between them positionally', () => {
+    // Session A: plain, then a 1-stage dropset. Session B: dropset first,
+    // then plain. A shared-forward-index match would have paired A's plain
+    // set (slot 1) against B's dropset (slot 1) — the exact bug this
+    // refinement fixes. The stream split must still pair the two dropsets
+    // and the two plain sets correctly regardless of where each falls.
+    const aPlain = makeLog({ id: 'a-plain', setNumber: 1, weight: 100 })
+    const aDropHead = makeLog({ id: 'a-drop-head', setNumber: 2, weight: 90 })
+    const aDropStage = makeLog({ id: 'a-drop-stage', setNumber: 2, stageIndex: 1, parentSetId: 'a-drop-head', weight: 60 })
+    const a = session({ sessionId: 'a', logs: [aPlain, aDropHead, aDropStage] })
+
+    const bDropHead = makeLog({ id: 'b-drop-head', setNumber: 1, weight: 95 })
+    const bDropStage = makeLog({ id: 'b-drop-stage', setNumber: 1, stageIndex: 1, parentSetId: 'b-drop-head', weight: 65 })
+    const bPlain = makeLog({ id: 'b-plain', setNumber: 2, weight: 105 })
+    const b = session({ sessionId: 'b', logs: [bDropHead, bDropStage, bPlain] })
+
+    const result = matchSessionsByPosition(a, b)
+
+    expect(result.plain.slots).toHaveLength(1)
+    expect(result.plain.slots[0].head.a.weight).toBe(100)
+    expect(result.plain.slots[0].head.b.weight).toBe(105)
+
+    expect(result.dropsets.slots).toHaveLength(1)
+    expect(result.dropsets.slots[0].head.a.weight).toBe(90)
+    expect(result.dropsets.slots[0].head.b.weight).toBe(95)
+    expect(result.dropsets.slots[0].stages).toHaveLength(1)
+    expect(result.dropsets.slots[0].stages[0].a.weight).toBe(60)
+    expect(result.dropsets.slots[0].stages[0].b.weight).toBe(65)
+  })
+
+  it('has no shapeMismatch field anywhere on the result — a dropset/plain pairing is structurally impossible now', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain).not.toHaveProperty('shapeMismatch')
+    expect(result.plain.slots[0]).not.toHaveProperty('shapeMismatch')
+    expect(result.plain.slots[0]).not.toHaveProperty('isDropsetA')
+    expect(result.plain.slots[0]).not.toHaveProperty('isDropsetB')
+  })
+
+  // The real scenario the account's data surfaced: a dropset as the *last*
+  // slot in both sessions, but the two sessions have different total slot
+  // counts overall (an extra plain set on one side). Positionally (shared
+  // forward index) that extra plain set pushes the dropsets out of
+  // alignment; per-stream, the plain-count difference only ever affects the
+  // plain stream, and the two dropsets — both last, both "the 1st dropset
+  // logged" in their own session — still pair correctly.
+  it('correctly pairs a dropset as the last slot in two sessions with different total slot counts', () => {
+    const aP1 = makeLog({ id: 'a-p1', setNumber: 1, weight: 100 })
+    const aP2 = makeLog({ id: 'a-p2', setNumber: 2, weight: 100 })
+    const aDropHead = makeLog({ id: 'a-drop-head', setNumber: 3, weight: 80 })
+    const aDropStage = makeLog({ id: 'a-drop-stage', setNumber: 3, stageIndex: 1, parentSetId: 'a-drop-head', weight: 50 })
+    const a = session({ sessionId: 'a', logs: [aP1, aP2, aDropHead, aDropStage] }) // 4 rows, 3 slots total
+
+    const bP1 = makeLog({ id: 'b-p1', setNumber: 1, weight: 105 })
+    const bDropHead = makeLog({ id: 'b-drop-head', setNumber: 2, weight: 85 })
+    const bDropStage = makeLog({ id: 'b-drop-stage', setNumber: 2, stageIndex: 1, parentSetId: 'b-drop-head', weight: 55 })
+    const b = session({ sessionId: 'b', logs: [bP1, bDropHead, bDropStage] }) // 3 rows, 2 slots total
+
+    const result = matchSessionsByPosition(a, b)
+
+    // Plain stream: A has 2, B has 1 — matches 1, A has 1 extra.
+    expect(result.plain.slotCountA).toBe(2)
+    expect(result.plain.slotCountB).toBe(1)
+    expect(result.plain.matchedSlotCount).toBe(1)
+    expect(result.plain.extraSlotsA).toBe(1)
+    expect(result.plain.extraSlotsB).toBe(0)
+
+    // Dropset stream: both have exactly 1 — they pair correctly despite the
+    // plain-count mismatch and despite landing at different original
+    // combined positions (slot 3 in A, slot 2 in B).
+    expect(result.dropsets.slotCountA).toBe(1)
+    expect(result.dropsets.slotCountB).toBe(1)
+    expect(result.dropsets.matchedSlotCount).toBe(1)
+    expect(result.dropsets.extraSlotsA).toBe(0)
+    expect(result.dropsets.extraSlotsB).toBe(0)
+    expect(result.dropsets.slots[0].head.a.weight).toBe(80)
+    expect(result.dropsets.slots[0].head.b.weight).toBe(85)
+    expect(result.dropsets.slots[0].stages[0].a.weight).toBe(50)
+    expect(result.dropsets.slots[0].stages[0].b.weight).toBe(55)
+  })
+})
+
+describe('matchSessionsByPosition — per-stream slot count truncation (step 2)', () => {
+  it('matches up to the shorter session, reporting the extra plain slots without comparing them', () => {
     const a = session({
       sessionId: 'a',
       logs: [1, 2, 3].map((n) => makeLog({ id: `a-${n}`, setNumber: n, weight: 100 })),
@@ -86,44 +171,17 @@ describe('matchSessionsByPosition — slot count truncation (step 2)', () => {
     })
     const result = matchSessionsByPosition(a, b)
 
-    expect(result.slotCountA).toBe(3)
-    expect(result.slotCountB).toBe(2)
-    expect(result.matchedSlotCount).toBe(2)
-    expect(result.extraSlotsA).toBe(1)
-    expect(result.extraSlotsB).toBe(0)
-    expect(result.slots).toHaveLength(2)
-    expect(result.slots[0].head.deltaPercent).not.toBeNull()
-  })
-})
+    expect(result.plain.slotCountA).toBe(3)
+    expect(result.plain.slotCountB).toBe(2)
+    expect(result.plain.matchedSlotCount).toBe(2)
+    expect(result.plain.extraSlotsA).toBe(1)
+    expect(result.plain.extraSlotsB).toBe(0)
+    expect(result.plain.slots).toHaveLength(2)
+    expect(result.plain.slots[0].head.deltaPercent).not.toBeNull()
 
-describe('matchSessionsByPosition — dropset shape mismatch (step 3)', () => {
-  it('compares heads only and flags the mismatch when one side is a dropset and the other is plain', () => {
-    const dropHead = makeLog({ id: 'a-head', setNumber: 1, weight: 100 })
-    const dropStage = makeLog({ id: 'a-stage', setNumber: 1, stageIndex: 1, parentSetId: 'a-head', weight: 70 })
-    const a = session({ sessionId: 'a', logs: [dropHead, dropStage] })
-    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 105 })] })
-
-    const result = matchSessionsByPosition(a, b)
-
-    expect(result.slots).toHaveLength(1)
-    const slot = result.slots[0]
-    expect(slot.isDropsetA).toBe(true)
-    expect(slot.isDropsetB).toBe(false)
-    expect(slot.shapeMismatch).toBe(true)
-    expect(slot.stages).toEqual([])
-    expect(slot.extraStagesA).toBe(0)
-    expect(slot.extraStagesB).toBe(0)
-    // Head-only comparison still runs despite the mismatch.
-    expect(slot.head.a.weight).toBe(100)
-    expect(slot.head.b.weight).toBe(105)
-    expect(slot.head.deltaPercent).not.toBeNull()
-  })
-
-  it('does not flag a mismatch when both sides are plain sets', () => {
-    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1 })] })
-    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
-    const result = matchSessionsByPosition(a, b)
-    expect(result.slots[0].shapeMismatch).toBe(false)
+    expect(result.dropsets.slotCountA).toBe(0)
+    expect(result.dropsets.slotCountB).toBe(0)
+    expect(result.dropsets.slots).toEqual([])
   })
 })
 
@@ -142,9 +200,9 @@ describe('matchSessionsByPosition — dropset stage-by-stage matching (step 3, p
     const b = session({ sessionId: 'b', logs: [bHead, bS1, bS2] })
     const result = matchSessionsByPosition(a, b)
 
-    expect(result.slots).toHaveLength(1)
-    const slot = result.slots[0]
-    expect(slot.shapeMismatch).toBe(false)
+    expect(result.plain.slots).toEqual([])
+    expect(result.dropsets.slots).toHaveLength(1)
+    const slot = result.dropsets.slots[0]
     expect(slot.stages).toHaveLength(2)
 
     // Head: 100->105
@@ -173,7 +231,7 @@ describe('matchSessionsByPosition — dropset stage-by-stage matching (step 3, p
     const b = session({ sessionId: 'b', logs: [bHead, bS1] })
     const result = matchSessionsByPosition(a, b)
 
-    const slot = result.slots[0]
+    const slot = result.dropsets.slots[0]
     expect(slot.stages).toHaveLength(1)
     expect(slot.extraStagesA).toBe(2)
     expect(slot.extraStagesB).toBe(0)
@@ -187,32 +245,32 @@ describe('matchSessionsByPosition — e1RM delta (step 4, reusing e1rm.ts)', () 
     const result = matchSessionsByPosition(a, b)
     const e1rmA = calculateE1rm({ weight: 100, reps: 8, rir: 2 })
     const e1rmB = calculateE1rm({ weight: 110, reps: 8, rir: 2 })
-    expect(result.slots[0].head.deltaPercent).toBeCloseTo(((e1rmB - e1rmA) / e1rmA) * 100, 5)
+    expect(result.plain.slots[0].head.deltaPercent).toBeCloseTo(((e1rmB - e1rmA) / e1rmA) * 100, 5)
   })
 
   it('is null when either side has no RIR recorded — does not default to rir=0', () => {
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, rir: null })] })
     const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, rir: 2 })] })
     const result = matchSessionsByPosition(a, b)
-    expect(result.slots[0].head.e1rmA).toBeNull()
-    expect(result.slots[0].head.e1rmB).not.toBeNull()
-    expect(result.slots[0].head.deltaPercent).toBeNull()
+    expect(result.plain.slots[0].head.e1rmA).toBeNull()
+    expect(result.plain.slots[0].head.e1rmB).not.toBeNull()
+    expect(result.plain.slots[0].head.deltaPercent).toBeNull()
   })
 
   it('is null for a warmup item on either side', () => {
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, isWarmup: true })] })
     const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
     const result = matchSessionsByPosition(a, b)
-    expect(result.slots[0].head.e1rmA).toBeNull()
-    expect(result.slots[0].head.deltaPercent).toBeNull()
+    expect(result.plain.slots[0].head.e1rmA).toBeNull()
+    expect(result.plain.slots[0].head.deltaPercent).toBeNull()
   })
 
   it('still reports raw weight/reps/rir for an ineligible item, just no e1RM/delta', () => {
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 90, reps: 12, rir: null })] })
     const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
     const result = matchSessionsByPosition(a, b)
-    expect(result.slots[0].head.a).toEqual({ weight: 90, reps: 12, rir: null, isWarmup: false })
-    expect(result.slots[0].head.e1rmA).toBeNull()
+    expect(result.plain.slots[0].head.a).toEqual({ weight: 90, reps: 12, rir: null, isWarmup: false })
+    expect(result.plain.slots[0].head.e1rmA).toBeNull()
   })
 })
 
@@ -227,10 +285,12 @@ describe('matchSessionsByPosition — no rollup (step 5)', () => {
       logs: [1, 2].map((n) => makeLog({ id: `b-${n}`, setNumber: n, weight: 100 + n })),
     })
     const result = matchSessionsByPosition(a, b)
-    expect(result.slots).toHaveLength(2)
-    expect(result.slots[0].head.deltaPercent).not.toEqual(result.slots[1].head.deltaPercent)
-    // No averaged/rolled-up field anywhere on the result.
+    expect(result.plain.slots).toHaveLength(2)
+    expect(result.plain.slots[0].head.deltaPercent).not.toEqual(result.plain.slots[1].head.deltaPercent)
+    // No averaged/rolled-up field anywhere on the result or either stream.
     expect(result).not.toHaveProperty('deltaPercent')
     expect(result).not.toHaveProperty('avgDeltaPercent')
+    expect(result.plain).not.toHaveProperty('deltaPercent')
+    expect(result.dropsets).not.toHaveProperty('deltaPercent')
   })
 })

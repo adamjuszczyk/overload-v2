@@ -1363,6 +1363,97 @@ status` shows exactly two new files (`positionMatch.ts`,
 `positionMatch.test.ts`) plus this CONTEXT.md update — nothing else
 touched.
 
+### 2026-08-12 session (refinement — two-stream matching)
+**The single shared-forward-index match from the first build was wrong
+in a way real account data actually hit** (see the Jul 30 → Aug 6
+adjacent-week result above: a real dropset landed against a plain slot
+purely because of where it fell in the combined set order). Refined
+`matchSessionsByPosition`, not rewritten: each session's slot list
+(still built by the unchanged `buildLoggedSlots`) is now split into two
+ordered sub-streams *before* matching — dropset slots in the order
+logged, plain slots in the order logged — and each stream is matched
+against its own kind only, slot N to slot N, same truncation rule as
+before, just applied per stream via a new shared `matchSlotStream`
+helper instead of once across the whole session. Stage-level matching
+inside a matched dropset pair (`matchSlotPair`) is untouched — same
+logic, now just always operating on a pair that's guaranteed to already
+be the right shape.
+
+**`shapeMismatch` is now structurally impossible, not just unobserved —
+removed, not left in place returning `false`.** A matched pair from the
+`dropsets` stream is, by construction, two groups that both passed the
+`stages.length > 0` filter; a matched pair from `plain` both passed the
+inverse filter. There is no remaining code path that could zip a
+dropset against a plain set. `isDropsetA`/`isDropsetB` were removed
+alongside it — redundant once stream membership already says which kind
+a slot is. `PositionMatchResult` now returns `{ sessionA, sessionB,
+plain, dropsets }`, each a `PositionMatchStreamResult` (`slotCountA/B`,
+`matchedSlotCount`, `extraSlotsA/B`, `slots`) — same shape reused for
+both streams via the new `matchSlotStream` rather than duplicated
+inline. A slot's position in the original combined logged order (e.g.
+"this was set 3 that day") is deliberately not carried through anymore
+— the matched identity is "the Nth dropset logged" / "the Nth plain set
+logged" in each stream, not "the Nth thing logged."
+
+**Tests** updated for the new shape (112 total, up from 111 — replaced
+the two shape-mismatch tests with three stream-split tests): a dropset
+correctly pairs with the other session's dropset even with a plain set
+sitting between them positionally (the shared-forward-index bug this
+fixes, reproduced directly); no `shapeMismatch`/`isDropsetA`/
+`isDropsetB` property exists anywhere on the result; and the exact
+scenario asked for — a dropset as the last slot in two sessions with
+different *total* slot counts, correctly pairing dropset-to-dropset via
+the per-stream counts while the plain stream absorbs the count
+difference on its own. Stage-matching and e1RM-delta tests updated to
+read from `result.plain.slots`/`result.dropsets.slots` instead of a
+combined `result.slots`, otherwise unchanged. `npm run typecheck` /
+`npm test` clean (112/112).
+
+**Live re-verification — same three real exercises, same six
+comparisons as the first build, run against the refined function via
+the same dev-server/dynamic-`import()` mechanism:**
+
+*One-arm Dumbell Lateral Raise* — **meso-start-vs-now** (2026-07-09 →
+2026-08-06): plain stream matched 1 (A has only 1 plain slot that day),
+7.5×10@0 → 7.5×11@0, e1RM 10 → 10.25, **+2.5%**, with 4 extra plain
+slots on B. Dropset stream: A has 1 real dropset, **B has zero** — Aug
+6's `isDropset: true` rows never actually have a linked stage
+(`parentSetId: null`), so they're correctly classified as plain by the
+same `stages.length > 0` structural rule the rest of the codebase uses,
+not a dropset. Result: `matchedSlotCount: 0`, `extraSlotsA: 1`, no
+comparison attempted — correctly reported as "nothing to compare
+against," not forced into a mismatch against B's nearest plain slot the
+way the first build did. **Adjacent-week** (2026-07-30 → 2026-08-06):
+same pattern — plain stream matches slots 1–2 (deltas +0%, +2.5%,
+identical to the first build's numbers for those two slots since they
+were never part of the mismatch), dropset stream again 1 vs 0, no
+comparison, `extraSlotsA: 1`. **Supplementary 2026-07-09 vs 2026-07-30
+— this is the real fix, live**: both sessions have a genuine 2-stage
+dropset. Dropset stream now matches them 1-to-1 despite landing at
+different original combined positions (slot 2 that day on Jul 9, slot 3
+on Jul 30): head 7.5×11@0 → 7.5×11@0, e1RM 10.25 → 10.25, **+0%**;
+stage 1, 7.5×10 (no RIR recorded on Jul 9) → 7.5×12@0, **e1RM/delta
+null** (correctly not defaulted, not silently dropped — `e1rmA: null`
+reported); stage 2, 5×8 (no RIR) → 5×8@0, **e1RM/delta null** again.
+Plain stream separately matches Jul 9's one plain slot against Jul 30's
+first plain slot, +2.5%, with Jul 30's second plain slot reported as an
+extra. This is the exact real-data case the refinement targeted: the
+first build could never pair these two real dropsets (different
+combined positions put them at different shared-index slots); the
+refined function pairs them correctly and independently of the plain
+sets around them.
+
+*Cable Reverse Biceps Curl* and *Seated Machine Calf Raise* —
+re-ran both comparisons for each (all four): **byte-identical deltas to
+the first build's report** (+10.87%/+4.55% meso, +8.51%/-2.13%
+adjacent for Cable Reverse Biceps Curl; +0%/+2.44%/-8.70% meso,
++11.63%×3 adjacent for Seated Machine Calf Raise), `dropsets` stream
+empty (0/0, no extras) on every comparison for both — neither exercise
+has any real dropset, so the refinement has no effect on them, confirmed
+rather than assumed.
+
+No writes were made during this re-verification either.
+
 ---
 
 ## Known issues

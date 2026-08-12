@@ -60,17 +60,11 @@ export interface PositionMatchItemResult {
 }
 
 export interface PositionMatchSlotResult {
-  slotIndex: number // 1-based position among logged, non-skipped slots
-  isDropsetA: boolean
-  isDropsetB: boolean
-  // True when exactly one side is a dropset and the other isn't — an
-  // assumption (compare heads only), not a confirmed rule, so callers/
-  // reports must be able to see it happened rather than have it silently
-  // applied.
-  shapeMismatch: boolean
+  slotIndex: number // 1-based position within its own stream (plain or dropset)
   head: PositionMatchItemResult
-  // Stage-by-stage matches, up to the shorter side's stage count. Empty when
-  // shapeMismatch is true, or when neither side is a dropset.
+  // Stage-by-stage matches, up to the shorter side's stage count. Always
+  // empty for a plain-stream slot — both sides are guaranteed zero stages
+  // by construction (see matchSessionsByPosition), not filtered here.
   stages: PositionMatchItemResult[]
   // Stages beyond the matched count on each side — logged, but produced no
   // comparison, same "extra doesn't compare" rule as extraSlotsA/B.
@@ -78,18 +72,32 @@ export interface PositionMatchSlotResult {
   extraStagesB: number
 }
 
-export interface PositionMatchResult {
-  sessionA: { sessionId: string; date: string }
-  sessionB: { sessionId: string; date: string }
+// Slot N is matched against slot N *within one stream* (see
+// matchSessionsByPosition) — the shorter side's count in that stream caps
+// how many produce a comparison; anything beyond that is a real logged slot
+// that still counts toward volume elsewhere in the app, but this function
+// doesn't touch that, it just doesn't compare it.
+export interface PositionMatchStreamResult {
   slotCountA: number
   slotCountB: number
   matchedSlotCount: number
-  // Slots beyond matchedSlotCount on each side — logged, still count toward
-  // volume elsewhere in the app, but this function doesn't touch that; they
-  // just produce no comparison here.
   extraSlotsA: number
   extraSlotsB: number
   slots: PositionMatchSlotResult[]
+}
+
+export interface PositionMatchResult {
+  sessionA: { sessionId: string; date: string }
+  sessionB: { sessionId: string; date: string }
+  // Split before matching (TASKS.md-style precedent: e1rm.ts's own
+  // stage-exclusion rule already treats "a plain set" and "a dropset stage"
+  // as different kinds of thing) — a dropset only ever matches another
+  // dropset, a plain set only ever matches another plain set. No
+  // shapeMismatch field: matching within a stream makes a dropset-vs-plain
+  // pairing structurally impossible, not just unobserved (see
+  // matchSessionsByPosition's comment for why).
+  plain: PositionMatchStreamResult
+  dropsets: PositionMatchStreamResult
 }
 
 // Step 1: ordered list of "slots" — each logged (non-skipped) set group, in
@@ -130,62 +138,86 @@ function matchItem(logA: SetLog, logB: SetLog): PositionMatchItemResult {
   }
 }
 
-// Steps 2–5: match slot N to slot N up to the shorter session's slot count;
-// within a matched pair, match stage 1 to stage 1 etc. (same truncation rule,
-// one level down) when both sides are dropsets, or compare heads only (and
-// say so) when their shapes disagree. Returns every matched comparison and
-// its delta — deliberately no rollup/average here (TASKS.md-style precedent:
-// e1rm.ts's compareE1rmWindow computes one summary number, but what a single
-// summary should mean for a set-by-set comparison is a UI decision for
-// later, not decided by this function).
-export function matchSessionsByPosition(
-  sessionA: PositionMatchSessionInput,
-  sessionB: PositionMatchSessionInput,
-): PositionMatchResult {
-  const slotsA = buildLoggedSlots(sessionA.logs)
-  const slotsB = buildLoggedSlots(sessionB.logs)
-  const matchedSlotCount = Math.min(slotsA.length, slotsB.length)
+// One matched slot pair, whichever stream it came from. Stage matching
+// (step 3, one level down) needs no dropset/plain branch here — it's the
+// same "match N to N, extra doesn't compare" rule as the stream-level one,
+// and for a plain-stream pair both sides' `stages` are always empty by
+// construction (see matchSessionsByPosition), so the loop below simply
+// produces nothing rather than needing to be skipped.
+function matchSlotPair(
+  groupA: SetGroup<SetLog>,
+  groupB: SetGroup<SetLog>,
+  slotIndex: number,
+): PositionMatchSlotResult {
+  const matchedStageCount = Math.min(groupA.stages.length, groupB.stages.length)
+  const stages: PositionMatchItemResult[] = []
+  for (let s = 0; s < matchedStageCount; s++) {
+    stages.push(matchItem(groupA.stages[s], groupB.stages[s]))
+  }
+  return {
+    slotIndex: slotIndex + 1,
+    head: matchItem(groupA.head, groupB.head),
+    stages,
+    extraStagesA: groupA.stages.length - matchedStageCount,
+    extraStagesB: groupB.stages.length - matchedStageCount,
+  }
+}
 
+// Step 2, within one stream: match slot N to slot N up to the shorter side's
+// count in *this* stream; anything beyond that is reported via
+// extraSlotsA/B but produces no comparison.
+function matchSlotStream(slotsA: SetGroup<SetLog>[], slotsB: SetGroup<SetLog>[]): PositionMatchStreamResult {
+  const matchedSlotCount = Math.min(slotsA.length, slotsB.length)
   const slots: PositionMatchSlotResult[] = []
   for (let i = 0; i < matchedSlotCount; i++) {
-    const groupA = slotsA[i]
-    const groupB = slotsB[i]
-    const isDropsetA = groupA.stages.length > 0
-    const isDropsetB = groupB.stages.length > 0
-    const shapeMismatch = isDropsetA !== isDropsetB
-
-    let stages: PositionMatchItemResult[] = []
-    let extraStagesA = 0
-    let extraStagesB = 0
-    if (!shapeMismatch && isDropsetA && isDropsetB) {
-      const matchedStageCount = Math.min(groupA.stages.length, groupB.stages.length)
-      for (let s = 0; s < matchedStageCount; s++) {
-        stages.push(matchItem(groupA.stages[s], groupB.stages[s]))
-      }
-      extraStagesA = groupA.stages.length - matchedStageCount
-      extraStagesB = groupB.stages.length - matchedStageCount
-    }
-
-    slots.push({
-      slotIndex: i + 1,
-      isDropsetA,
-      isDropsetB,
-      shapeMismatch,
-      head: matchItem(groupA.head, groupB.head),
-      stages,
-      extraStagesA,
-      extraStagesB,
-    })
+    slots.push(matchSlotPair(slotsA[i], slotsB[i], i))
   }
-
   return {
-    sessionA: { sessionId: sessionA.sessionId, date: sessionA.date },
-    sessionB: { sessionId: sessionB.sessionId, date: sessionB.date },
     slotCountA: slotsA.length,
     slotCountB: slotsB.length,
     matchedSlotCount,
     extraSlotsA: slotsA.length - matchedSlotCount,
     extraSlotsB: slotsB.length - matchedSlotCount,
     slots,
+  }
+}
+
+// A dropset is never a defensible stand-in for a plain set's position, or
+// vice versa — comparing a 3-stage dropset's head against a lone plain set
+// two-thirds of the way through a session says nothing about progress. So
+// each session's ordered slot list is split into two ordered sub-streams
+// *before* matching — dropset slots in the order logged, plain slots in the
+// order logged — and each stream is matched against its own kind only,
+// slot N to slot N, same truncation rule as before (step 2), just applied
+// per stream instead of once across the whole session. A slot's position
+// within the *original* combined order (e.g. "this was set 3 that day") is
+// deliberately not carried through — the matched-comparison identity is
+// "the Nth dropset" / "the Nth plain set", not "the Nth thing logged".
+//
+// This makes a dropset-vs-plain shapeMismatch structurally impossible, not
+// just unobserved: a matched pair from the `dropsets` stream is, by
+// construction, two groups that both passed the `stages.length > 0` filter
+// below; a matched pair from `plain` both passed the inverse filter. There
+// is no code path left that could zip a dropset against a plain set — the
+// old shared-forward-index version could (and, against real account data,
+// did); this version cannot, so the field that reported it is gone rather
+// than kept around always false.
+export function matchSessionsByPosition(
+  sessionA: PositionMatchSessionInput,
+  sessionB: PositionMatchSessionInput,
+): PositionMatchResult {
+  const slotsA = buildLoggedSlots(sessionA.logs)
+  const slotsB = buildLoggedSlots(sessionB.logs)
+
+  const dropsetSlotsA = slotsA.filter((g) => g.stages.length > 0)
+  const dropsetSlotsB = slotsB.filter((g) => g.stages.length > 0)
+  const plainSlotsA = slotsA.filter((g) => g.stages.length === 0)
+  const plainSlotsB = slotsB.filter((g) => g.stages.length === 0)
+
+  return {
+    sessionA: { sessionId: sessionA.sessionId, date: sessionA.date },
+    sessionB: { sessionId: sessionB.sessionId, date: sessionB.date },
+    plain: matchSlotStream(plainSlotsA, plainSlotsB),
+    dropsets: matchSlotStream(dropsetSlotsA, dropsetSlotsB),
   }
 }
