@@ -1219,6 +1219,152 @@ starting Phase 3.1.
 
 ---
 
+## Position-matched progress comparison
+**New scope, not a TASKS.md phase.** From a design conversation about a
+replacement for the existing e1RM headline (SPEC §6 / `e1rm.ts`'s
+`compareE1rmWindow`), which averages a whole session's eligible sets
+against another whole session's average — meaning a session with more or
+fewer sets than its comparison, or a set list reshuffled by a mid-session
+skip, gets compared on a misleading average-vs-average basis instead of a
+defensible set-1-vs-set-1 one.
+
+**2026-08-12 session: core matching logic built, unit-tested, and
+live-verified against real production data. No UI built — this is
+deliberately scoped as the algorithm only**, per explicit instruction not
+to touch `ExerciseProgress.tsx`, any History component, or the existing
+Progress headline display.
+
+**What was built.** New `src/features/progress/positionMatch.ts`, pure
+and self-contained, same precedent as `e1rm.ts` / `referenceLogic.ts` /
+`setGroupLogic.ts`:
+- `buildLoggedSlots(logs: SetLog[])` — sorts by `setNumber`, groups via
+  the existing `groupSetLogs` (reused, not reimplemented), then filters
+  out any group whose head is skipped. A skip removes its slot from the
+  list entirely rather than leaving a gap — this is the whole mechanism
+  behind "a mid-session skip renumbers later slots" (e.g. set 3 becomes
+  slot 2 when set 2 was skipped); no separate renumbering logic exists or
+  is needed, it falls out of filtering an already-ordered list.
+- `matchSessionsByPosition(sessionA, sessionB)` — matches slot N to slot
+  N up to the shorter session's slot count (extras are reported via
+  `extraSlotsA`/`extraSlotsB` but produce no comparison); within a
+  matched pair, matches stage 1 to stage 1 etc. when both sides are
+  dropsets (same truncation rule one level down, via
+  `extraStagesA`/`extraStagesB`), or compares heads only and sets
+  `shapeMismatch: true` when exactly one side is a dropset — an
+  assumption, surfaced explicitly in the output rather than silently
+  applied. Per-item e1RM delta reuses `calculateE1rm` from `e1rm.ts`
+  directly (not reimplemented); the "skip-if-no-RIR" eligibility gate is
+  re-declared locally rather than reusing `e1rm.ts`'s own
+  (non-exported) `isEligibleSet`, because that gate also requires
+  `parentSetId == null` — correct for the existing whole-session-average
+  headline (a stage is never an independent working set there) but wrong
+  here, where a dropset's second stage is a legitimate comparison item in
+  its own right. Convention: sessionA is the earlier/baseline side,
+  `deltaPercent` is `(e1rmB - e1rmA) / e1rmA × 100`, same sign convention
+  as `compareE1rmWindow`. Deliberately returns every matched item
+  individually — no averaged/rolled-up summary field anywhere on the
+  result; what a single summary number should mean for a set-by-set
+  comparison is a UI decision for later, not decided here.
+- Picking *which* two sessions to compare is the caller's job, reused
+  from existing modules, not reinvented: adjacent-week via
+  `referenceLogic.ts`'s `resolveExerciseReference` (LAST WEEK
+  resolution), meso-start-vs-now via `e1rm.ts`'s `compareE1rmWindow` /
+  `progressService.ts`'s `getExerciseE1rmComparison` — literally the same
+  function the current Progress headline calls, just reading
+  `firstSessionId`/`lastSessionId` off its result instead of its
+  `deltaPercent`. No new resolver code was added to the shipped module
+  for this — both paths were demonstrated by calling the real,
+  already-exported functions directly (see live verification below), so
+  there's nothing new to keep in sync with `referenceLogic.ts`/`e1rm.ts`
+  if either changes later.
+
+**Tests** (`positionMatch.test.ts`, 14 new, 111 total up from 97):
+the exact renumbering case from the design conversation (3rd logged set
+becomes the 2nd slot after the 2nd is skipped); a skipped dropset head
+dropping its whole group, stages included; slot-count truncation (extra
+slots reported, not compared); the dropset/plain shape-mismatch case
+(heads-only, `shapeMismatch: true`, both directions); stage-by-stage
+matching where every stage individually progressed, plus per-stage
+truncation when one side has more stages than the other; e1RM delta
+math (reusing `calculateE1rm`), null-on-no-RIR, null-on-warmup, and raw
+values still reported even when ineligible; no-rollup (every slot's
+delta is independent, no summary field exists on the result).
+`npm run typecheck` / `npm test` clean (111/111 passing) after this
+change.
+
+**Live verification — full actual output, not a summary**, run against
+the real account via the dev server's already-authenticated Supabase
+session (dynamic `import()` of the real, unmodified source modules —
+`positionMatch.ts`, `referenceLogic.ts`, `progressService.ts`,
+`sessionService.ts`, `mesoService.ts` — executed in the browser, same
+code the app ships, not a reimplementation), across three real
+exercises:
+
+*One-arm Dumbell Lateral Raise* (real dropsets exist for this exercise
+only — 8 of 8 account-wide drop rows) — **meso-start-vs-now** (2026-07-09
+→ 2026-08-06, MESO 1.0): slot 1 both plain, 7.5kg×10@0 → 7.5kg×11@0,
+e1RM 10 → 10.25, **+2.5%**. Slot 2: session A's is a real 2-stage dropset
+(head 7.5×11@0, stages 7.5×12@0 and 5×8@0) but session B's slot 2 is
+plain (7.5×11@0) — real `shapeMismatch: true`, heads-only compared,
+e1RM 10.25 → 10.25, **+0%**. 3 further slots on session B (5 total)
+produced no comparison (`extraSlotsB: 3`) — B's own session had a real
+mid-session skip (its logged set 5 was skipped; sets 1–4 and 6 remain,
+so set 6 renumbers to slot 5) that this function correctly absorbed
+into slot count, not a gap. **Adjacent-week** (2026-07-30 → 2026-08-06,
+resolved via the real LAST WEEK boundary): slot 1, 7.5×10@1 → 7.5×11@0
+(same effective reps, 11), e1RM 10.25 → 10.25, **+0%**. Slot 2,
+7.5×10@0 → 7.5×11@0, e1RM 10 → 10.25, **+2.5%**. Slot 3: session A's
+is again the real 2-stage dropset from that session (head 7.5×11@0);
+session B's slot 3 is plain with **no RIR recorded** (7.5×10, rir null)
+— real `shapeMismatch: true` *and* a real ineligible item on top of it:
+e1RM 10.25 → null, **delta null** (not defaulted to 0, not silently
+dropped from the output — reported with `e1rmB: null`). 2 extra slots
+on B produced no comparison. Also ran 2026-07-09 vs 2026-07-30 directly
+(not one of the two required comparison types, a supplementary check):
+confirms position-matching is purely positional, not type-aware — A's
+dropset (slot 2) landed against B's *plain* slot 2 (B's own dropset was
+at slot 3 that session), another real, unprompted shape mismatch. No
+same-slot dropset-vs-dropset pair exists anywhere in this account's real
+data for this exercise — every real dropset occurrence this session
+checked produced a shape mismatch against its positional counterpart,
+which is itself a useful empirical data point on why the mismatch
+handling matters, not just a hypothetical.
+
+*Cable Reverse Biceps Curl* (9 completed sessions, all-plain, no
+dropsets/skips in the sessions selected) — clean baseline. Meso-start-
+vs-now (2026-07-07 → 2026-07-17): slot 1, 10×16@0 → 10×21@0, e1RM
+15.33 → 17, **+10.87%**; slot 2, 10×14@0 → 10×16@0, e1RM 14.67 → 15.33,
+**+4.55%**. Adjacent-week (2026-07-10 → 2026-07-17): slot 1, 10×17@0 →
+10×21@0, e1RM 15.67 → 17, **+8.51%**; slot 2, 10×17@0 → 10×16@0, e1RM
+15.67 → 15.33, **-2.13%** (a real regression on one slot within an
+overall-improving session — exactly the kind of per-slot signal the
+whole-session average would have hidden).
+
+*Seated Machine Calf Raise* — meso-start-vs-now (2026-07-09 →
+2026-08-06): slot 1, 40×11@1 → 40×12@0, e1RM 56 → 56, **+0%**; slot 2,
+40×11@0 → 40×12@0, e1RM 54.67 → 56, **+2.44%**; slot 3, 40×16@0 →
+40×12@0, e1RM 61.33 → 56, **-8.70%** (a real per-slot regression inside
+a session whose whole-session average — this is the exercise SPEC §6's
+existing headline currently shows as -2.33% for this same window —
+looks roughly flat). Adjacent-week (2026-07-30 → 2026-08-06): all three
+slots identical, 35×12@1 → 40×12@0, e1RM 50.17 → 56, **+11.63%** each —
+session A logged the same weight/reps/RIR on all three sets that day, so
+three identical per-slot deltas is a correct reflection of the real
+input, not a bug.
+
+No writes were made to the account during verification — every call was
+a read (`fetchSession`, `fetchExerciseProgress`, `fetchMesos`,
+`resolveExerciseReference`, the new pure `matchSessionsByPosition`).
+
+**Not built, deliberately** (per instruction): no UI consumer, no
+rollup/averaging of the per-slot deltas into a single headline number,
+no change to `ExerciseProgress.tsx` or any History component. `git
+status` shows exactly two new files (`positionMatch.ts`,
+`positionMatch.test.ts`) plus this CONTEXT.md update — nothing else
+touched.
+
+---
+
 ## Known issues
 See AUDIT.md deferred section for full list.
 Most impactful deferred items:
