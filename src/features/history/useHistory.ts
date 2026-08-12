@@ -43,6 +43,11 @@ export function useDeleteSession() {
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      // Same gap as useCompleteSession's onSuccess (useSession.ts) — deleting
+      // a session can change which two sessions getExerciseE1rmComparison
+      // resolves, and even when it doesn't, this cache entry has no other
+      // invalidation path. Same fix, same reasoning.
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseSetHistory'] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessionTypeHistory'] })
     },

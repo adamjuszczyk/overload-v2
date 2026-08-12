@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildLoggedSlots, matchSessionsByPosition, type PositionMatchSessionInput } from './positionMatch'
+import {
+  buildLoggedSlots,
+  matchSessionsByPosition,
+  averagePositionMatchedDelta,
+  type PositionMatchSessionInput,
+} from './positionMatch'
 import { calculateE1rm } from './e1rm'
 import type { SetLog } from '../../types'
 
@@ -265,6 +270,40 @@ describe('matchSessionsByPosition — e1RM delta (step 4, reusing e1rm.ts)', () 
     expect(result.plain.slots[0].head.deltaPercent).toBeNull()
   })
 
+  // Found by adversarial review (2026-08-12): weight=0 is a legitimately
+  // loggable value (no DB or UI floor above 0), so e1rmA=0 is a real,
+  // reachable case, not a hypothetical. calculateE1rm(0, reps, rir) = 0
+  // reaches eligibleE1rm as non-null, so a naive `e1rmA != null` guard on
+  // deltaPercent would divide by zero — Infinity when e1rmB > 0, NaN when
+  // e1rmB is also 0 — and neither is `== null`, so both would have
+  // silently reached averagePositionMatchedDelta and the rendered headline.
+  it('is null (not Infinity) when the baseline side has weight=0', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 0, reps: 8, rir: 2 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 100, reps: 8, rir: 2 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.e1rmA).toBe(0) // still a real, non-null e1RM — weight=0 is not "ineligible"
+    expect(head.e1rmB).not.toBeNull()
+    expect(head.deltaPercent).toBeNull() // but the percent change from a 0 baseline is undefined
+  })
+
+  it('is null (not NaN) when both sides have weight=0', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 0, reps: 8, rir: 2 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 0, reps: 8, rir: 2 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.e1rmA).toBe(0)
+    expect(head.e1rmB).toBe(0)
+    expect(head.deltaPercent).toBeNull()
+  })
+
+  it('still computes a legitimate -100% when only the comparison side is weight=0', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 100, reps: 8, rir: 2 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 0, reps: 8, rir: 2 })] })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots[0].head.deltaPercent).toBeCloseTo(-100, 8)
+  })
+
   it('still reports raw weight/reps/rir for an ineligible item, just no e1RM/delta', () => {
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 90, reps: 12, rir: null })] })
     const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
@@ -292,5 +331,110 @@ describe('matchSessionsByPosition — no rollup (step 5)', () => {
     expect(result).not.toHaveProperty('avgDeltaPercent')
     expect(result.plain).not.toHaveProperty('deltaPercent')
     expect(result.dropsets).not.toHaveProperty('deltaPercent')
+  })
+})
+
+// ─── averagePositionMatchedDelta (the headline rollup) ──────────────────────
+
+describe('averagePositionMatchedDelta', () => {
+  it('averages every non-null delta across a plain head, a dropset head, and a dropset stage', () => {
+    // Session A: plain 100x8@2; dropset head 90x8@2, stage 60x10@1
+    const aPlain = makeLog({ id: 'a-plain', setNumber: 1, weight: 100, reps: 8, rir: 2 })
+    const aDropHead = makeLog({ id: 'a-drop-head', setNumber: 2, weight: 90, reps: 8, rir: 2 })
+    const aDropStage = makeLog({ id: 'a-drop-stage', setNumber: 2, stageIndex: 1, parentSetId: 'a-drop-head', weight: 60, reps: 10, rir: 1 })
+    const a = session({ sessionId: 'a', logs: [aPlain, aDropHead, aDropStage] })
+
+    // Session B: every item up a bit
+    const bPlain = makeLog({ id: 'b-plain', setNumber: 1, weight: 110, reps: 8, rir: 2 })
+    const bDropHead = makeLog({ id: 'b-drop-head', setNumber: 2, weight: 100, reps: 8, rir: 2 })
+    const bDropStage = makeLog({ id: 'b-drop-stage', setNumber: 2, stageIndex: 1, parentSetId: 'b-drop-head', weight: 66, reps: 10, rir: 1 })
+    const b = session({ sessionId: 'b', logs: [bPlain, bDropHead, bDropStage] })
+
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots).toHaveLength(1)
+    expect(result.dropsets.slots).toHaveLength(1)
+    expect(result.dropsets.slots[0].stages).toHaveLength(1)
+
+    const plainDelta = result.plain.slots[0].head.deltaPercent!
+    const dropHeadDelta = result.dropsets.slots[0].head.deltaPercent!
+    const dropStageDelta = result.dropsets.slots[0].stages[0].deltaPercent!
+    const expectedAverage = (plainDelta + dropHeadDelta + dropStageDelta) / 3
+
+    expect(averagePositionMatchedDelta(result)).toBeCloseTo(expectedAverage, 8)
+
+    // Sanity-check against hand-computed e1RM deltas too, not just internal consistency.
+    const e1rmPlainA = calculateE1rm({ weight: 100, reps: 8, rir: 2 })
+    const e1rmPlainB = calculateE1rm({ weight: 110, reps: 8, rir: 2 })
+    expect(plainDelta).toBeCloseTo(((e1rmPlainB - e1rmPlainA) / e1rmPlainA) * 100, 8)
+  })
+
+  it('excludes a null delta (no RIR recorded) from the average rather than treating it as zero', () => {
+    const aEligible = makeLog({ id: 'a-1', setNumber: 1, weight: 100, reps: 8, rir: 2 })
+    const aNoRir = makeLog({ id: 'a-2', setNumber: 2, weight: 100, reps: 8, rir: null })
+    const a = session({ sessionId: 'a', logs: [aEligible, aNoRir] })
+
+    const bEligible = makeLog({ id: 'b-1', setNumber: 1, weight: 110, reps: 8, rir: 2 })
+    const bAlsoEligible = makeLog({ id: 'b-2', setNumber: 2, weight: 999, reps: 8, rir: 2 })
+    const b = session({ sessionId: 'b', logs: [bEligible, bAlsoEligible] })
+
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots).toHaveLength(2)
+    expect(result.plain.slots[0].head.deltaPercent).not.toBeNull()
+    expect(result.plain.slots[1].head.deltaPercent).toBeNull() // A's side has no RIR
+
+    // If the null were zeroed instead of excluded, the average would be
+    // dragged toward 0 by the phantom second term. It must equal exactly
+    // the one real delta.
+    const onlyRealDelta = result.plain.slots[0].head.deltaPercent!
+    expect(averagePositionMatchedDelta(result)).toBeCloseTo(onlyRealDelta, 8)
+  })
+
+  // Found by adversarial review (2026-08-12): a single weight=0 baseline
+  // item used to produce Infinity/NaN (see matchItem's tests above), and
+  // `!= null` does not exclude either — so it would have poisoned the
+  // whole average (any Infinity/NaN in a reduce's input makes the entire
+  // sum, and therefore the whole exercise's headline, Infinity/NaN) even
+  // with other perfectly normal, finite deltas in the same result.
+  it('excludes a weight=0 baseline item rather than letting it poison the average with Infinity/NaN', () => {
+    const aNormal = makeLog({ id: 'a-1', setNumber: 1, weight: 100, reps: 8, rir: 2 })
+    const aZero = makeLog({ id: 'a-2', setNumber: 2, weight: 0, reps: 8, rir: 2 })
+    const a = session({ sessionId: 'a', logs: [aNormal, aZero] })
+
+    const bNormal = makeLog({ id: 'b-1', setNumber: 1, weight: 110, reps: 8, rir: 2 })
+    const bAlsoNormal = makeLog({ id: 'b-2', setNumber: 2, weight: 200, reps: 8, rir: 2 })
+    const b = session({ sessionId: 'b', logs: [bNormal, bAlsoNormal] })
+
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots[0].head.deltaPercent).not.toBeNull()
+    expect(result.plain.slots[1].head.deltaPercent).toBeNull() // the weight=0 slot
+
+    const average = averagePositionMatchedDelta(result)
+    expect(average).not.toBeNull()
+    expect(Number.isFinite(average)).toBe(true)
+    expect(average).toBeCloseTo(result.plain.slots[0].head.deltaPercent!, 8)
+  })
+
+  it('returns null, not 0%, when every matched item is ineligible', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, rir: null })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, rir: null })] })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots).toHaveLength(1)
+    expect(result.plain.slots[0].head.deltaPercent).toBeNull()
+    expect(averagePositionMatchedDelta(result)).toBeNull()
+  })
+
+  it('returns null, not 0%, when nothing matched at all in either stream', () => {
+    // Session A logs only a dropset, session B logs only a plain set — the
+    // dropset stream and plain stream both have a zero count on one side,
+    // so matchedSlotCount is 0 in both.
+    const aHead = makeLog({ id: 'a-head', setNumber: 1 })
+    const aStage = makeLog({ id: 'a-stage', setNumber: 1, stageIndex: 1, parentSetId: 'a-head' })
+    const a = session({ sessionId: 'a', logs: [aHead, aStage] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
+
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots).toEqual([])
+    expect(result.dropsets.slots).toEqual([])
+    expect(averagePositionMatchedDelta(result)).toBeNull()
   })
 })

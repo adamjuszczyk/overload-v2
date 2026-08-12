@@ -126,15 +126,27 @@ function eligibleE1rm(log: SetLog): number | null {
   return calculateE1rm({ weight: log.weight, reps: log.reps, rir: log.rir })
 }
 
+// Found by adversarial review (2026-08-12): weight=0 is a legitimately
+// loggable/storable set (no DB or UI floor above 0), and eligibleE1rm above
+// only rejects null fields, not zero — so calculateE1rm(0, reps, rir) = 0
+// reaches here as a non-null e1rmA. A percent change from a zero baseline
+// is mathematically undefined, not just "small": dividing by e1rmA === 0
+// produces Infinity (e1rmB > 0) or NaN (e1rmB also 0), and `!= null` does
+// not catch either — both would have silently flowed into the averaged
+// headline (and rendered literally as "+Infinity%"/"NaN%") without this
+// guard. Excluding only e1rmA === 0 here (not e1rmB === 0, which produces a
+// legitimate -100%) keeps the fix scoped to the actual undefined case.
 function matchItem(logA: SetLog, logB: SetLog): PositionMatchItemResult {
   const e1rmA = eligibleE1rm(logA)
   const e1rmB = eligibleE1rm(logB)
+  const deltaPercent =
+    e1rmA != null && e1rmB != null && e1rmA !== 0 ? ((e1rmB - e1rmA) / e1rmA) * 100 : null
   return {
     a: toSetValue(logA),
     b: toSetValue(logB),
     e1rmA,
     e1rmB,
-    deltaPercent: e1rmA != null && e1rmB != null ? ((e1rmB - e1rmA) / e1rmA) * 100 : null,
+    deltaPercent,
   }
 }
 
@@ -220,4 +232,32 @@ export function matchSessionsByPosition(
     plain: matchSlotStream(plainSlotsA, plainSlotsB),
     dropsets: matchSlotStream(dropsetSlotsA, dropsetSlotsB),
   }
+}
+
+// The single headline percentage (SPEC §6's successor): every matched
+// item's deltaPercent — plain-stream heads, dropset heads, dropset stages,
+// all three categories, uniformly — with the nulls (ineligible items: no
+// RIR, warmup) dropped before averaging rather than zeroed. Iterating both
+// streams' slots the same way is safe, not an approximation: a plain slot's
+// `stages` is always empty by construction (matchSessionsByPosition never
+// puts a stage on a plain-stream pair), so folding it into the same loop as
+// a dropset slot's stages just contributes nothing for that slot, it never
+// needs to be special-cased out.
+//
+// Returns null — never 0% — when nothing survives to average: no matched
+// items at all (e.g. the two sessions share no slots in either stream), or
+// every matched item was ineligible. Same "nothing shown" treatment
+// compareE1rmWindow already uses for fewer-than-2-eligible-sessions; this
+// is the equivalent edge case one level down, at the item level instead of
+// the session level.
+export function averagePositionMatchedDelta(result: PositionMatchResult): number | null {
+  const deltas: number[] = []
+  for (const slot of [...result.plain.slots, ...result.dropsets.slots]) {
+    if (slot.head.deltaPercent != null) deltas.push(slot.head.deltaPercent)
+    for (const stage of slot.stages) {
+      if (stage.deltaPercent != null) deltas.push(stage.deltaPercent)
+    }
+  }
+  if (deltas.length === 0) return null
+  return deltas.reduce((sum, d) => sum + d, 0) / deltas.length
 }

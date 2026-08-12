@@ -1,7 +1,9 @@
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { headsOnly } from '../gym/setGroupLogic'
+import { fetchSession } from '../gym/sessionService'
 import { compareE1rmWindow, type E1rmComparison, type E1rmSetInput } from './e1rm'
+import { matchSessionsByPosition, averagePositionMatchedDelta } from './positionMatch'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -203,6 +205,53 @@ export function getExerciseE1rmComparison(
       .filter((s) => s.mesocycleId === mesocycleId)
       .map((s) => ({ sessionId: s.sessionId, date: s.date, isDeload: s.isDeload, sets: s.sets })),
   )
+}
+
+// Progress headline (SPEC §6), now position-matched instead of a
+// whole-session average (see CONTEXT.md "Position-matched progress
+// comparison"). *Which* two sessions get compared is unchanged — still
+// getExerciseE1rmComparison's first-eligible-vs-most-recent-eligible pick
+// within the active meso, deload weeks excluded; `sessionPair` here is that
+// same call's result, read only for its session identity
+// (firstSessionId/firstDate/lastSessionId/lastDate), not its own
+// deltaPercent (compareE1rmWindow's whole-session-average number, which
+// this headline no longer uses — see CONTEXT.md for the one other call
+// site check). Only the delta *calculation* on those two sessions changed:
+// matchSessionsByPosition's slot-by-slot match, rolled up by
+// averagePositionMatchedDelta, instead of compareE1rmWindow's average.
+//
+// `fetchExerciseProgress`'s own set-log fetch (`e1rmSessions[].sets`) is
+// deliberately not reused here — it's the flat, position-agnostic shape
+// e1rm.ts's whole-session average needs, without setNumber/stageIndex/id,
+// so it can't build ordered slots. Two full `fetchSession` reads (the same
+// already-shipped function the gym reference panel and session detail use)
+// get the real ordered SetLog rows instead — a second network round trip
+// per headline, not a free one, but React Query's cache key below scopes
+// it to the resolved session pair, so it only re-fetches when the pair
+// itself changes, not on every render.
+export async function fetchPositionMatchedHeadline(
+  exerciseId: string,
+  sessionPair: E1rmComparison,
+): Promise<number | null> {
+  const [firstSession, lastSession] = await Promise.all([
+    fetchSession(sessionPair.firstSessionId),
+    fetchSession(sessionPair.lastSessionId),
+  ])
+
+  const result = matchSessionsByPosition(
+    {
+      sessionId: sessionPair.firstSessionId,
+      date: sessionPair.firstDate,
+      logs: (firstSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+    },
+    {
+      sessionId: sessionPair.lastSessionId,
+      date: sessionPair.lastDate,
+      logs: (lastSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+    },
+  )
+
+  return averagePositionMatchedDelta(result)
 }
 
 // ─── Meso weekly progress ─────────────────────────────────────────────────────

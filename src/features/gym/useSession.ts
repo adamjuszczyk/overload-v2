@@ -403,6 +403,15 @@ export function useCompleteSession() {
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      // Found by adversarial review (2026-08-12): the position-matched
+      // headline is keyed on the *resolved* session pair
+      // (['v2_positionMatchedHeadline', exerciseId, firstSessionId,
+      // lastSessionId]), which stays identical when a session is reopened,
+      // edited, and re-completed without changing which two sessions get
+      // picked — so without this it kept serving the pre-edit percentage
+      // for up to staleTime even though v2_exerciseProgress (the chart,
+      // the last-5-sessions list) had already refreshed correctly above.
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
       // And the reference panel — SessionPreview always queries this with
       // currentSessionId=null, so its cache key doesn't change between
       // visits to the same workout day; without this, completing a session

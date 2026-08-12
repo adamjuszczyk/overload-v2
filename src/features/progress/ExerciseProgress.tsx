@@ -13,7 +13,7 @@ import {
 } from 'recharts'
 import { useExercises } from '../library/useExercises'
 import { useMesos } from '../programs/useMesos'
-import { useExerciseProgress } from './useProgress'
+import { useExerciseProgress, usePositionMatchedHeadline } from './useProgress'
 import { getExerciseE1rmComparison } from './progressService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
@@ -202,14 +202,20 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
   // individual program-exercise was logged in.
   const { unit: weightUnit, toDisplay } = useWeightDisplay()
 
-  // Progress headline (SPEC §6): first vs. most recent working numbers
-  // within the current (active) meso. No headline at all when there is no
-  // active meso to scope "current" to.
-  const e1rmComparison = useMemo(
+  // Progress headline (SPEC §6): first vs. most recent working session
+  // within the current (active) meso — session *resolution* only, unchanged
+  // from before the position-matched rework. No headline at all when there
+  // is no active meso to scope "current" to, or when getExerciseE1rmComparison
+  // can't find two comparable sessions (TASKS.md §2.5's edge cases).
+  const sessionPair = useMemo(
     () =>
       activeMeso && data ? getExerciseE1rmComparison(data.e1rmSessions, activeMeso.id) : null,
     [data, activeMeso],
   )
+  // The displayed delta itself: position-matched (slot-by-slot,
+  // dropset-aware), not sessionPair's own whole-session-average deltaPercent
+  // — see progressService.ts's fetchPositionMatchedHeadline.
+  const { data: positionMatchedDelta } = usePositionMatchedHeadline(exercise.id, sessionPair)
 
   const chartData = useMemo(
     () =>
@@ -261,10 +267,15 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
       {/* E1RM headline (SPEC §6) — percentage only, never an absolute
           weight figure: the underlying number is a formula estimate, and
           pairing it with a fabricated kg figure would imply false
-          precision. No headline at all when there's no active meso to
-          scope "current meso" to, or when compareE1rmWindow can't find two
-          comparable sessions (TASKS.md §2.5's edge cases) — never "+0%". */}
-      {!isLoading && e1rmComparison && (
+          precision. Position-matched now (see CONTEXT.md "Position-matched
+          progress comparison"): an average of every matched slot/stage's
+          own delta between the two resolved sessions, not a whole-session
+          average. No headline at all when there's no active meso to scope
+          "current meso" to, when sessionPair can't find two comparable
+          sessions, or when nothing in the two resolved sessions matched up
+          eligibly (TASKS.md §2.5-style edge cases, one level down at the
+          item level) — never "+0%". */}
+      {!isLoading && sessionPair && positionMatchedDelta != null && (
         <div
           className="mt-4 rounded-xl px-4 py-3 flex items-center justify-between"
           style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -279,11 +290,11 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             className="text-lg font-black"
             style={{
               fontFamily: 'var(--font-mono)',
-              color: e1rmComparison.deltaPercent >= 0 ? 'var(--success)' : 'var(--error)',
+              color: positionMatchedDelta >= 0 ? 'var(--success)' : 'var(--error)',
             }}
           >
-            {e1rmComparison.deltaPercent >= 0 ? '+' : ''}
-            {e1rmComparison.deltaPercent.toFixed(1)}%
+            {positionMatchedDelta >= 0 ? '+' : ''}
+            {positionMatchedDelta.toFixed(1)}%
           </p>
         </div>
       )}
