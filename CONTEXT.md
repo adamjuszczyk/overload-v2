@@ -5490,7 +5490,221 @@ data at every step.
 
 ---
 
-## Pending feedback to address
+## 2026-08-13 session (investigation + two fixes: PWA update detection, History exercise-search discoverability)
+
+**Trigger:** user reported two already-shipped features — the
+position-matched Progress headline and History's exercise-search entry
+point — weren't visible in the live app, despite both being reported
+built/tested/deployed.
+
+### Investigation — both features actually work; the real gap was elsewhere
+
+Re-verified from scratch rather than trusting the prior reports: fetched
+the live production bundle directly and confirmed both features' code was
+genuinely present and wired correctly (`v2_positionMatchedHeadline` query
+key at all 3 expected call sites; `FIND EXERCISE HISTORY` string present).
+Queried real account data via the dev server's authenticated Supabase
+session against the actual shipped `progressService.ts` functions: 24 of
+70 exercises currently resolve a valid session pair in the active meso,
+23 of those 24 produce a non-null position-matched percentage right now —
+the "maybe nothing qualifies" theory was false. Live-rendered both
+features end-to-end in a real browser: Progress → Cable Reverse Biceps
+Curl showed `E1RM · THIS MESO / +7.7%` exactly matching the computed
+value; History → FIND EXERCISE HISTORY → search → select → correctly
+landed on `ExerciseHistoryView.tsx` with real data. **Both features
+genuinely work as shipped.**
+
+Two real, separate problems found instead:
+1. **PWA update-detection gap (structural, affects every future deploy,
+   not just these two features).** `vite.config.ts` had
+   `registerType: 'autoUpdate'` (generated `sw.js` calls
+   `self.skipWaiting()` + `clients.claim()` unconditionally), but nothing
+   in `src/` ever imported the client-side registration module that
+   actually drives that lifecycle — grepped the whole tree for
+   `registerSW`/`virtual:pwa-register`/`serviceWorker`, zero matches. The
+   auto-injected `registerSW.js` was a bare
+   `navigator.serviceWorker.register(...)` with no update-checking, no
+   periodic re-check, no reaction to a new worker taking over. An
+   already-open PWA session (installed, foregrounded or backgrounded)
+   could run stale JS indefinitely after a deploy, and even on reopen the
+   classic "first reload still serves the old bundle" race could apply.
+   This plausibly explains a real user not seeing a real, correctly-shipped
+   feature — independent of whether #1/#2 were coded correctly, which they
+   were.
+2. **History's `FIND EXERCISE HISTORY` toggle was a genuine
+   discoverability gap**, not a broken feature. Measured live: 12px font,
+   `rgb(106,106,102)` (this codebase's muted/low-emphasis text token),
+   34px tap height — below this app's own 44px touch-target convention —
+   sitting directly under an almost-identical `DATE & MUSCLE FILTERS`
+   toggle. Read as a third filter chip, not a distinct entry point to a
+   different screen.
+
+### Fix 1 — PWA update detection
+
+**Build.** `vite.config.ts` sets `injectRegister: false` (stops the bare
+auto-injected script). New `src/features/pwa/usePwaUpdate.ts` imports
+`useRegisterSW` from `virtual:pwa-register/react` and: registers periodic
+`registration.update()` checks (1hr interval, plus once on
+`visibilitychange` going visible — a bundle-byte check only, never touches
+app data, so it doesn't conflict with `queryClient.ts`'s deliberate
+`refetchOnWindowFocus: false`, a different axis entirely, that's about not
+disrupting an active workout with a *data* refetch); wires `onNeedReload`
+(autoUpdate mode's callback, fired once the new worker has fully activated
+and already claimed every open client) to flip React state only — never to
+`window.location.reload()` automatically, unlike the library's own default.
+New `src/features/pwa/PwaUpdateNotice.tsx` renders a small, dismissible,
+non-blocking "UPDATE AVAILABLE" banner with RELOAD/✕ buttons, mounted
+unconditionally in `App.tsx` (not gated behind auth — a stale bundle on the
+login screen is just as real a problem as one mid-workout).
+
+**Design correction made before the review even ran:** the first version
+stacked this banner into `Nav.tsx`'s existing Install/Offline-strip
+pattern (same visual language as those). Live-measured before trusting it:
+`CURRENT SET` (`GymSession.tsx`, `position: fixed`,
+`bottom: calc(96px + safe-area)`) has only ~35px of clearance above the
+tab bar with zero strips showing today — a same-height banner there
+measured 61px tall, which would have pushed Nav's top edge up past
+`CURRENT SET`'s bottom edge and overlapped it by ~26px, exactly the
+mid-workout collision this feature exists to avoid causing. Rebuilt as
+`PwaUpdateNotice.tsx`, a `position: fixed; top: 0` overlay instead — proven
+via the same live measurement to add zero height to Nav's own layout
+(`navUnaffected: true`), structurally independent of the bottom-anchored
+button regardless of viewport size.
+
+**Adversarial review** (Workflow-based, same pattern as every phase since
+3.1: 4 dimensions in parallel — pwa-hook-correctness, offline-safety,
+history-ui, regression-scope — each finding re-verified by 3 independent
+agents defaulting to refuted unless the real current code proves the
+failure reachable). 9 raw findings, 4 confirmed, 5 refuted. **All 5
+refuted findings assumed the pre-correction design** (hook wired into
+`Nav.tsx`, which mounts/unmounts on auth transitions) — stale by the time
+the raw-finding agents' prompts were dispatched, since the fixed-top-banner
+redesign had already moved registration to `App.tsx`'s unconditional root.
+The verify-stage agents caught this correctly by reading the actual current
+files rather than trusting the dimension prompts, exactly the point of the
+adversarial-verify pattern.
+
+**Confirmed and fixed:**
+1. **`injectRegister: false` silently disabled the `skipWaiting`/
+   `clientsClaim` auto-wiring `registerType: 'autoUpdate'` depends on
+   (high — would have made the whole feature dead in production).**
+   vite-plugin-pwa 1.3.0 only sets `workbox.skipWaiting`/`clientsClaim` to
+   `true` from `registerType: 'autoUpdate'` when `injectRegister` is
+   `'auto'` or unset (`node_modules/vite-plugin-pwa/dist/index.js:874-877`)
+   — setting it to `false` (needed so the app's own explicit registration
+   doesn't double-register) silently fell through to workbox-build's own
+   default of `false` for both. Confirmed empirically against the actual
+   built `dist/sw.js` before the fix: no `self.skipWaiting()`, no
+   `clientsClaim()` call at all. Without them, a new worker installs and
+   sits in `waiting` indefinitely with any tab open — `activated` never
+   fires, `onNeedReload` never fires, the whole mechanism silently never
+   triggers, the exact bug this fix was meant to close. Fixed by setting
+   `workbox: { skipWaiting: true, clientsClaim: true }` explicitly, since
+   the auto-wiring no longer applies. Re-confirmed against the rebuilt
+   `dist/sw.js`: both present again.
+2. **The online (non-offline) `LOG SET` write path can lose data on a
+   user-triggered reload, a real gap `usePwaUpdate.ts`'s own safety
+   comment didn't cover (medium).** `useLogSet`'s online branch
+   (`useSession.ts`) posts straight to Supabase with no local durable copy
+   — confirmed by that file's own comment, "the online branch (the common
+   case) never writes to Dexie at all" — after already optimistically
+   marking the set logged in the UI. A reload mid-request aborts the fetch:
+   no Supabase row, no Dexie row, no `sync_queue` entry, nothing to
+   recover, no error shown. The original safety reasoning ("the sync queue
+   survives a reload") was true but incomplete — it only covered the
+   *offline* queue, not an in-flight *online* write. Fixed: `reload()` now
+   waits (polling, capped at 8s) for React Query's `isMutating()` count to
+   reach zero before actually navigating away — covers `LOG SET` and every
+   other online write this app makes, not just one call site. `isReloading`
+   surfaces a brief "…" state on the RELOAD button so the tap still
+   registers instantly even though the reload itself may lag a moment
+   behind it.
+3. **`HistoryPage.tsx`'s new accent-fill button collided with `DATE &
+   MUSCLE FILTERS` the moment that toggle was expanded (medium) — see Fix
+   2 below**, found by this same review round.
+4. **`onRegisterError` had no fallback if the dynamic `import('workbox-window')`
+   itself fails — a strict CSP, an ad-blocker, a transient network blip on
+   first paint (low).** `register()`'s own source returns immediately on
+   that failure with zero retry; left alone, that's a silent, permanent "no
+   service worker at all" for the tab. Fixed with one bare
+   `navigator.serviceWorker.register('/sw.js')` fallback — restores basic
+   offline/installable capability the same way the old auto-injected script
+   used to; can't restore rich update-detection too, since that needs the
+   exact piece that failed to load. A known, accepted, low-severity gap for
+   a rare edge case, not silently unhandled.
+
+**Also added: a small BUILD hash/time display in Settings** (`git rev-parse
+--short HEAD` locally / `VERCEL_GIT_COMMIT_SHA` on Vercel, injected via
+`vite.config.ts`'s `define`). Real and permanently useful for support on
+its own, and — confirmed empirically first, since comment-only source
+changes don't survive minification (`npm run build` twice with only a
+comment added produced a byte-identical bundle hash) — the concrete
+artifact needed to live-verify update detection against two genuinely
+distinct deploys instead of two byte-identical ones. Since the build time
+is baked in fresh on every build, every real deploy is guaranteed
+detectable, with zero fabricated/throwaway changes needed.
+
+### Fix 2 — History exercise-search discoverability
+
+`HistoryPage.tsx`'s `FIND EXERCISE HISTORY` toggle: `minHeight: 44` (this
+app's touch-target convention, same fix `SettingsPage.tsx`'s
+`chipRow()`/`SIGN OUT` already got); the same `History` icon
+`ExerciseHeader.tsx` already uses for the identical destination. Original
+attempt used `var(--accent-muted)` background + always-on `var(--accent)`
+border/text — adversarial review caught that `DATE & MUSCLE FILTERS`
+*also* switches to that exact border/text colour once expanded
+(`showAdvanced`), so the two collided the moment a user opened the filters
+panel, live-confirmed at `showAdvanced === true` (both buttons' computed
+`border-color`/`color` were byte-identical). Rebuilt as a solid accent-fill
+button (`background: var(--accent)`, `color: var(--base)`) instead —
+reuses this same file's own pre-existing "selected" convention (the
+ALL/muscle-group chips a few lines above) and can't coincide with an
+outline-style button in any state, structurally rather than by luck.
+`DATE & MUSCLE FILTERS` above still measures 34px, unchanged — same class
+of gap, left as-is, out of scope for this round, flagged rather than
+silently fixed.
+
+`npm run typecheck` / `npm run build` / `npm test` clean after every fix
+round (120 tests, unchanged — no test file touched; neither fix has pure
+logic that warranted new unit coverage, both are UI/registration wiring).
+
+### Live verification
+
+**History fix** — measured live (dev server, real account): collapsed
+`▼ FIND EXERCISE HISTORY` is 44px tall, `backgroundColor: rgb(6,182,212)`
+(solid accent fill), `color: rgb(249,249,248)` (base), no overflow at
+320px width in either collapsed or expanded label state. Then forced the
+exact collision scenario the review found — clicked `DATE & MUSCLE
+FILTERS` open — and re-measured: `DATE & MUSCLE FILTERS` correctly turns
+`border/color: rgb(6,182,212)` (confirming the collision precondition is
+real), while `FIND EXERCISE HISTORY` stays solid-filled
+(`background: rgb(6,182,212)`, `color: rgb(249,249,248)`, `border:
+transparent`) — a different visual category (filled vs. outlined) in every
+state, not just the common one. Toggle/search/navigate behaviour re-tested
+and unaffected.
+
+**PWA update detection — two real sequential production deploys, not
+verified from reading the code alone (per explicit instruction).**
+
+Deploy 1 (this session's code fix, commit `cdeb961`) pushed and confirmed
+via `vercel inspect` (`target: production`, `status: Ready`, aliased to
+`overload-v2-sage.vercel.app`) and a live bundle grep — `dist/sw.js` fetched
+directly from production confirmed `self.skipWaiting()` + `clientsClaim`
+present, `registerSW.js` now correctly 404s, `BUILD ","cdeb961"` embedded
+matching the real deployed commit. Opened a real browser tab against
+`overload-v2-sage.vercel.app`'s (unauthenticated) login screen — no
+credentials entered or needed, exactly why `PwaUpdateNotice` was made
+auth-independent — and forced a hard reload to confirm it was genuinely
+running deploy 1's JS (`index-BD5L4RKi.js`), not a leftover SW-cached
+bundle from an earlier visit this same session (which it initially was —
+a real, live instance of the exact "already-open session serving stale JS"
+problem this fix targets, confirmed happening, before this tab was
+deliberately reloaded once to establish the "already on the new code"
+starting state the test needs).
+
+This CONTEXT.md commit is deliberately deploy 2 — see below for the
+detection result observed against the still-open tab from deploy 1,
+without navigating or reloading it in between.
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
