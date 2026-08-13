@@ -5796,6 +5796,243 @@ edit had landed cleanly. Restored.
 
 ---
 
+## 2026-08-13 session (Position-matched multi-session table — History "SIDE BY SIDE")
+**New initiative, not a TASKS.md phase — same status as "Position-matched
+progress comparison" above, which this one extends.** That initiative's
+pairwise `matchSessionsByPosition` (2 sessions, delta-focused, powers the
+Progress E1RM headline) stayed untouched; this session added a sibling N-way
+function for History and a new UI section, structured as the same two-part,
+checkpoint-gated discipline the original pairwise work used: algorithm built
+and live-verified against real data first, UI only after that checkpoint
+passed.
+
+### Part 1 — `buildPositionMatchTable` (algorithm only)
+
+**Where it lives — same file, not a sibling.** Added directly to
+`positionMatch.ts` rather than a new module: it needs `buildLoggedSlots` and
+the dropset/plain split rule as internal helpers already living there, and
+keeping it in the same file means both functions provably share one identity
+model instead of two that could drift. Concretely: extracted the
+dropset/plain filter (previously inlined twice in `matchSessionsByPosition`)
+into a new shared `splitStreams(slots)` helper, used by both the existing
+pairwise function and the new one — same refactor discipline as the earlier
+"two-stream matching" refinement session, just generalized.
+
+**What it does.** Takes N sessions (caller-ordered, chronological — same
+"picking/ordering sessions is the caller's job" convention as the pairwise
+function), runs `buildLoggedSlots` + `splitStreams` per session, and produces
+a table: `plain` rows (1-based `slotIndex`, one cell per session, `null` when
+that session's own plain stream never reached that position) and `dropsets`
+rows (`slotIndex`, a `head` row plus `stages` rows — stage row count is the
+*max* stage count any single session logged at that dropset position, not a
+fixed number; shorter sessions get `null` cells on the deeper rows rather
+than shrinking the row count). Deliberately does **no e1RM/eligibility math
+at all** — raw `weight`/`reps`/`rir`/`isWarmup` values only. This is a table,
+not a comparison; per-item deltas remain the pairwise function's job.
+
+**Tests** (`positionMatch.test.ts`, 9 new — 8 initially, 1 more added by the
+adversarial review below, 129 total up from 120): the three shapes the task
+specifically asked for — a dropset landing at a different *combined* logged
+position in each of 3 sessions but still landing in the same dropset-stream
+row; a session with fewer plain slots than others (empty cells at the
+missing positions, never a shifted/misaligned value); a mid-session skip
+chained across three sessions independently (each session's own
+renumbering, none leaking into another's row alignment). Plus: no e1RM/delta
+fields anywhere on a cell; max-stage-count-per-row correctness; a session
+with zero dropsets getting empty cells at every dropset row; a single
+no-logs session producing empty arrays, not a crash.
+
+**Live verification — full real output, not a summary**, run via the dev
+server's authenticated Supabase session (dynamic `import()` of the real
+unmodified `positionMatch.ts`/`sessionService.ts`, same technique the
+pairwise session used), against MESO 1.0 (5 real completed sessions, Jul 9 –
+Aug 6) for all three exercises the pairwise work already validated:
+
+- **One-arm Dumbell Lateral Raise**: 5 plain rows × 5 sessions, 1 dropset row
+  with 2 stage rows. Every value matched the pairwise session's own
+  previously-reported numbers exactly at the shared endpoints. **New real
+  case this table surfaced that the pairwise verification never hit**: Jul
+  16 has a *second* would-be dropset (set 4 + its stage, set 5) whose *head*
+  is skipped — `buildLoggedSlots`' existing, already-tested rule ("a skipped
+  head drops the whole group, stages included") correctly drops it entirely,
+  confirmed against the raw row dump, not just inferred from the table
+  output. Aug 6 correctly shows 5 populated plain cells and an empty dropset
+  cell, matching the refinement session's already-documented "Aug 6's
+  `isDropset` rows have no linked stage, so they're plain" finding.
+- **Cable Reverse Biceps Curl**: fully rectangular, 2 plain rows × 4
+  sessions, no dropsets, every cell populated — endpoints byte-match the
+  original pairwise report.
+- **Seated Machine Calf Raise**: 3 plain rows × 5 sessions. Jul 23 genuinely
+  only logged 1 plain set that day (2 real skips) — rows 2–3 for that
+  column correctly `null`, not shifted from a neighboring session. Jul 30's
+  three identical `35×12@1` cells and both endpoints match the original
+  pairwise report exactly.
+
+No misalignment anywhere; checkpoint passed. `npm run typecheck`/`npm
+test`/`npm run build` all clean throughout.
+
+### Part 2 — the "SIDE BY SIDE" UI
+
+**Service/hook layer.** `progressService.ts`'s `fetchPositionMatchTable(
+exerciseId, sessions)` — sibling to the existing `fetchPositionMatchedHeadline`
+just above it, same reasoning (session set-log rows need real
+`setNumber`/`stageIndex`/`id` to build ordered slots, which
+`fetchExerciseProgress`'s own flat `e1rmSessions[].sets` can't provide), one
+`fetchSession` per session. `useProgress.ts`'s `usePositionMatchTable`, keyed
+on the resolved session-id list (not just `exerciseId`) — same convention as
+`usePositionMatchedHeadline`'s pair key, one level up at N sessions. Added
+`v2_positionMatchTable` invalidation at the same two sites the pairwise
+`v2_positionMatchedHeadline` cache already uses (`useSession.ts`'s
+`useCompleteSession.onSuccess`, `useHistory.ts`'s `useDeleteSession.onSuccess`)
+— same staleness gap, same fix, one level up.
+
+**UI.** New "SIDE BY SIDE" section in `ExerciseHistoryView.tsx`, a third,
+additive view alongside the existing TOP WEIGHT TREND chart and EVERY SET
+table (neither touched/replaced) — horizontally scrollable (reuses the
+existing `HistoryDataTable` primitive, no new table component), columns =
+sessions labeled by date, "SET N" / "DROP N" row labels with nested
+"STAGE"/"STAGE N" rows for dropsets (indentation + dimming, same convention
+`SessionDetail.tsx`/this file's own EVERY SET table already use), cells in
+`weight×reps@RIR` compact notation matching `ExerciseReference.tsx`'s
+existing `SetLine` convention exactly (no unit suffix, `@RIR` only when
+recorded). Scoped to the active meso by default, switchable via the page's
+existing `mesoFilter` select (confirmed its current implementation first,
+reused directly rather than building a second filter) — see the adversarial
+review below for why the *naive* version of "default to active meso" was
+wrong and how it was fixed.
+
+### Adversarial review — Workflow-based, 4 dimensions, cut short by a
+platform usage limit (same class of interruption as Phase 3.4's review)
+
+4 dimension reviewers (table-correctness, data-fetch-caching, ui-correctness,
+regression-scope) ran in full — 10 raw findings. The verify stage hit
+"You've hit your session limit" partway through (11 of ~20 verify-agent
+calls failed); the findings that *did* get through were 2-vote adversarial
+verification exactly as designed, so those results are trusted as fully
+verified rather than redone by hand this time — no findings were left in an
+ambiguous, personally-re-checked state, since the ones that survived already
+had 2/2 independent votes.
+
+**Confirmed real, fixed (4):**
+1. **High.** The naive "default `mesoFilter` to the active meso" effect fired
+   unconditionally the moment any active meso existed, regardless of whether
+   *this* exercise had ever been logged in it — silently collapsing the
+   pre-existing TOP WEIGHT TREND chart and EVERY SET table to "NO HISTORY
+   YET" for any exercise not yet logged this meso (the single most common
+   reason to check an exercise's history: right before doing it again).
+   Independently found and identically diagnosed by both the ui-correctness
+   and regression-scope dimension agents — same corroboration-by-convergence
+   signal Phase 3.4's review used to treat a finding as sufficiently
+   confirmed. **Fixed**: the defaulting effect now checks
+   `progressData.e1rmSessions.some(s => s.mesocycleId === active.id)` before
+   defaulting — only applies when the active meso actually has ≥1 eligible
+   session for this exercise, which provably guarantees the default can
+   never empty a view that would otherwise show real data (an `e1rmSessions`
+   entry means a real, non-skipped set exists that day, which is therefore
+   also present in EVERY SET's own row set). Falls back to the untouched
+   prior default (`''`/ALL MESOS) whenever the active meso has nothing for
+   this exercise yet, exactly as before this feature existed. Verified live
+   against real `e1rmSessions` data (both directions of the boolean: `true`
+   for the real active meso a known exercise has data in, `false` for a
+   synthetic meso id it doesn't) — the exact real-multi-meso repro (a
+   *completed* prior meso plus a sparse new active one) isn't reproducible
+   against this account's data since it only has one meso ever, so the guard
+   condition was verified directly rather than via a full end-to-end replay.
+2. **High.** `fetchPositionMatchTable`'s `Promise.all` over every session had
+   no cap — a long-trained exercise under "ALL MESOS" (the real fallback
+   default whenever there's no active meso) could fire 100+ concurrent full-
+   session Supabase reads (`fetchSession` pulls a session's *every* exercise,
+   not just the one being viewed). **Fixed** two ways: `ExerciseHistoryView.tsx`'s
+   `tableSessions` now caps to the most recent `MAX_TABLE_SESSIONS` (30),
+   with a visible "N older not shown" note when it truncates (no silent
+   caps, same principle `historyPagination.ts` already follows); and
+   `progressService.ts` now chunks `fetchSession` calls in batches of 8 as
+   defence-in-depth regardless of what a future caller passes in.
+3. **High.** A single failed `fetchSession` call (out of potentially many
+   concurrent ones) rejected the whole `Promise.all`, and the UI never read
+   `isError` — a fetch failure rendered identically to genuinely-empty data
+   ("NO SETS"), no indication anything went wrong. **Fixed**: destructure
+   `isError` from `usePositionMatchTable`, render a distinct "COULDN'T LOAD"
+   state instead of falling through to the empty-state table.
+4. **Medium.** Empty-cell dashes used `--text-dim` (~1.7:1 contrast in dark
+   mode — this codebase's disabled/placeholder token, already flagged and
+   fixed once before for the same anti-pattern elsewhere in this file's own
+   history), while an empty cell here is meaningful data ("this session
+   didn't reach this position"), not decoration. **Fixed**: switched to
+   `--text-muted`, confirmed live (`rgb(106,106,102)`, matching the token
+   exactly) after the fix.
+
+**Also fixed opportunistically (found by the review as coverage/consistency
+gaps, not confirmed live bugs):** a 9th test locking in that two
+independently-shaped dropsets in one session (different stage counts, e.g.
+3-stage + 1-stage vs. 1-stage + 3-stage) each get their own row with no
+cross-row bleed — the reviewers' own hand-verification already showed the
+current code handles this correctly, this just makes that a committed
+regression guard instead of an unrepeated manual check; and the SIDE BY SIDE
+date-column headers now include the year (`MMM d, yy`, matching EVERY SET's
+own DATE column) rather than the year-ambiguous `MMM d` the first pass used.
+
+**Found, deliberately left as-is (documented in code, not silently
+left):** SIDE BY SIDE can show fewer columns than EVERY SET has rows,
+because `fetchExerciseProgress`'s `e1rmSessions` excludes a session where
+*every* set of this exercise was skipped before it ever becomes an entry,
+while EVERY SET (a different, unfiltered query) still shows that day as a
+dashed-out row. Judged correct as-is: an all-null SIDE BY SIDE column would
+be pure noise, and re-deriving a different inclusion rule here would drift
+from the exclusion `fetchExerciseProgress` already applies for the Progress
+page. A pre-existing, unrelated gap was also surfaced (`useReopenSession`'s
+`onSuccess` doesn't invalidate `v2_exerciseProgress`/`v2_positionMatchedHeadline`/
+now `v2_positionMatchTable` either) — confirmed via `git diff` that
+`useReopenSession` is untouched by this session, so `v2_positionMatchTable`
+just inherits an already-existing, already-accepted gap symmetrically with
+its sibling cache; not fixed, same "flag rather than expand the diff into
+code this phase didn't touch" policy as every prior phase.
+
+Full suite re-run clean after every fix: 129/129 tests, `npm run typecheck`,
+`npm run build`.
+
+### Live re-verification after fixes
+
+Re-rendered all three exercises against real data (new real session appeared
+mid-session — the account had genuinely been used since Part 1's check, Aug
+13 today — the table picked it up correctly with zero code changes needed,
+confirming the pipeline is live-correct, not just correct against a frozen
+snapshot). Confirmed live: meso filter still correctly shows "MESO 1.0"
+selected (only meso, still has data, so the fixed defaulting guard still
+applies it); date headers now show `Jul 9, 26` etc.; empty-cell dashes
+computed to `rgb(106, 106, 102)` (`--text-muted`, matching exactly) instead
+of the prior near-invisible token; horizontally scrollable and legible at a
+375px mobile viewport (`document.body.scrollWidth === clientWidth`, i.e. no
+page-level horizontal scroll leak, while the table's own container correctly
+has `scrollWidth > clientWidth`); no console errors.
+
+### Deploy
+
+Committed (`287961c`) — `positionMatch.ts`/`positionMatch.test.ts`,
+`progressService.ts`, `useProgress.ts`, `ExerciseHistoryView.tsx`, and the
+two cache-invalidation call sites, all as one commit (build + review fixes
+together, same "nothing in this diff needed independent deployability"
+judgment Phase 3.4 made). Pre-push check:
+`git rev-list --left-right --count origin/master...HEAD` → `0 1`. Pushed;
+`git ls-remote origin master` confirmed `origin/master`'s HEAD is exactly
+`287961c04008fef9b0eec5c0ca356ef7ac35b3a0`. `vercel ls` showed a fresh
+Production deployment 1 minute after the push; `vercel inspect` confirmed
+`status: ● Ready`, `target: production`, aliased to
+`overload-v2-sage.vercel.app`. Fetched the live bundle directly and grepped
+it: `SIDE BY SIDE`, `COULDN'T LOAD` (the review's error-state fix), and the
+literal commit hash `287961c` (the BUILD identifier from Fix 1's PWA
+session) all present — confirms the live bundle is genuinely this commit,
+not a stale cache. Production's unauthenticated login screen loads with zero
+console errors.
+
+**Net effect: History now has a third view of per-exercise data — a
+position-matched, session-by-session table — built with the same
+checkpoint-gated discipline (algorithm verified against real data before any
+UI) and the same adversarial-review-before-ship standard as every phase
+since 3.1, live in production.**
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
