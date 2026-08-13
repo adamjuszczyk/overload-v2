@@ -1652,27 +1652,43 @@ Most impactful deferred items:
   after being reopened, or similar); no UI cap or fix applied — that would
   be guessing at a product decision. See "2026-08-08 session (Phase 3.4 —
   live verification)" below for the exact rows.
-- **New, found during Part 1's live verification of the position-matched
-  multi-session table (2026-08-13), confirmed reachable via the current UI
-  by a same-day follow-up (not a historical-only artifact) — not fixed,
-  read-only investigation.** `src/features/gym/SetGroup.tsx`'s "mark as
-  dropset"/`ADD STAGE` affordance renders whenever a head log exists and
-  `stages.length === 0` (gated only on `!isDeleting`) — it never checks
-  `headLog.isSkipped`. A user can skip a set, then tap the stage-entry
-  button still sitting directly under the resulting "SKIPPED" label, and log
-  a stage parented to a skipped head. Pre-dates Phase 3.1: the old
+- **Skipped-head-can-receive-a-stage gap: CLOSED as of the 2026-08-13/14
+  follow-up session.** Found during Part 1's live verification of the
+  position-matched multi-session table (2026-08-13): `SetGroup.tsx`'s "mark
+  as dropset"/`ADD STAGE` affordance rendered whenever a head log existed
+  with `stages.length === 0`, with no `headLog.isSkipped` check — a user
+  could skip a set, then tap the stage-entry button still sitting directly
+  under the resulting "SKIPPED" label. Pre-dated Phase 3.1: the old
   DROP-toggle inference rule it replaced (`GymSession.tsx` before commit
-  `677ce47`) had the identical gap — "highest `setNumber` entry that isn't
-  itself a dropset," no skip check — so this has been continuously reachable
+  `677ce47`) had the identical gap ("highest `setNumber` entry that isn't
+  itself a dropset," no skip check), so this was continuously reachable
   across the Phase 3.1 rewrite, not introduced by it. Real account instance:
   session `67ebb796-49b9-4041-9310-34a3573b798b` (2026-07-16), set 4
-  (skipped) + its stage, `logged_at` 9.8 seconds apart. Effect on downstream
-  logic already handled correctly, not a data-integrity risk today:
-  `buildLoggedSlots` (`positionMatch.ts`) already drops a skipped head's
-  whole group, stages included, so this shape never reaches the Progress
-  headline or the SIDE BY SIDE table's cells — it's a gym-screen UI gap (a
-  confusing/pointless action a user could take), not a silent-corruption
-  one. See "2026-08-13 session... Follow-up" for the full trace.
+  (skipped) + its stage, `logged_at` 9.8 seconds apart.
+  **Correction to this entry's own initial framing:** the first pass
+  (2026-08-13) called this "not a data-integrity risk today," reasoning only
+  from `buildLoggedSlots`' (Progress/SIDE BY SIDE) exclusion — it did not
+  check volume/set-count consumers. A same-day follow-up found that framing
+  was wrong: `fetchExerciseProgress`'s `points[].volume` and
+  `v2_session_type_history`'s `total_volume` **did** silently count a
+  skipped-head stage's weight (both check a row's own `is_skipped`, never
+  its *parent's*) — a real, narrow calculation gap, not just a UI
+  confusion. Account-wide audit found exactly **one** real affected row (of
+  9 total stage rows) — the same Jul 16 session above — inflating that
+  day's reported volume by 40 (5kg×8). Both fixed: `SetGroup.tsx` now gates
+  on a new `canAddStageTo` predicate (`setGroupLogic.ts`, tested);
+  `fetchExerciseProgress` via a new `isStageOfSkippedHead` predicate
+  (tested); `v2_session_type_history` via migration
+  `011_v3_fix_skipped_head_stage_volume.sql`, applied and independently
+  verified (`security_invoker=true` confirmed live via `pg_class.reloptions`
+  after the migration, the view's `total_volume` for the real affected
+  session recomputed by hand two ways — old logic 3487.5, new logic
+  3447.5 — and the live view matches the new figure exactly, difference of
+  exactly 40; two unaffected sessions spot-checked at zero difference).
+  Volume is never stored (always a live sum), so no historical data needed
+  correcting — the raw `v2_set_logs` stage row itself was always accurate
+  and was confirmed untouched by any of this. See "2026-08-13 session...
+  Follow-up" and the 2026-08-13/14 session below for the full trace.
 - M5 (spontaneous dropsets never get parentSetId, log side): **CLOSED,
   both directions, as of 2026-08-05.** Historical data: the 007 backfill
   is confirmed complete on `v2_set_logs` (8/8 rows correctly linked, 0
@@ -6106,6 +6122,154 @@ after which the identical scroll gesture worked immediately and repeatably.
 No code changes needed; the mechanism is the same shared `HistoryDataTable`/
 `overflow-x-auto` container the already-shipped EVERY SET table uses,
 unmodified by this feature.
+
+---
+
+## 2026-08-13/14 session (skipped-head stage gap — full blast radius, fixed)
+
+**Trigger:** the prior session's Known Issues entry for the
+skipped-dropset-head-can-receive-a-stage gap claimed "not a data-integrity
+risk today," reasoning only from `buildLoggedSlots`' exclusion (Progress/
+SIDE BY SIDE). Asked to check that framing against every volume/set-count
+consumer before leaving it as a known issue, and fix what checked out
+simple.
+
+### Audit — two real calculation gaps, not just the one UI gap
+
+Checked every consumer that sums or displays volume/set-count from
+`v2_set_logs`:
+- `progressService.ts`'s `fetchExerciseProgress` (`points[].volume`) — **real
+  gap.** Its row filter (`weight !== null && reps !== null`) checks a row's
+  own eligibility, never whether a *stage's parent* is skipped. A skipped
+  head has null weight/reps (excluded correctly), but its stage can carry
+  real values of its own and pass straight through.
+- `progressService.ts`'s `fetchMesoWeeklyProgress` — **not affected.** No
+  volume field at all (`WeekPoint` has none); its own aggregates are built
+  from `headsOnly` first, so a stage never reaches them regardless of skip
+  status.
+- `009_v3_history_views.sql`'s `v2_session_type_history` (`total_volume`) —
+  **real gap, same root cause, at the SQL level.** `filter (where not
+  sl.is_skipped and not sl.is_warmup)` checks the STAGE row's own flags,
+  never its parent's — identical mistake, different layer.
+- `v2_history_session_summary` / `v2_exercise_set_history` — **not
+  affected.** No volume computed in either; `set_count` in the first already
+  excludes every stage outright via `parent_set_id is null`.
+
+### Real production impact — exactly one row, not widespread
+
+Queried every stage row account-wide (9 total) against its parent's
+`is_skipped`: **1 affected row** — the already-known Jul 16 session
+(`67ebb796-49b9-4041-9310-34a3573b798b`), the 5kg×8 stage under skipped set
+4. No other instance anywhere in the account. Did not touch the raw
+`v2_set_logs` row — confirmed byte-identical to when it was first found
+(same `weight`/`reps`/`is_skipped`/`parent_set_id`/`logged_at`); volume is
+never stored (always a live `SUM`/`reduce`, never a column), so fixing the
+calculation is the complete fix — there was never a separate "existing data"
+decision to make.
+
+### Fixes
+
+1. **`SetGroup.tsx`'s render-condition gap.** Extracted the eligibility rule
+   into `setGroupLogic.ts`'s `canAddStageTo(headLog)` (`!headLog.isSkipped`)
+   — this codebase has no component-test infrastructure at all
+   (`vitest.config.ts`: `environment: 'node'`, `include:
+   ['src/**/*.test.ts']` only, deliberately no React/jsdom dependency), so
+   the fix is a small pure predicate extracted out of the JSX condition and
+   unit-tested, same precedent as every other rule in this file, rather than
+   introducing new test infrastructure for one condition.
+2. **`fetchExerciseProgress`'s volume gap.** New `isStageOfSkippedHead(parentSetId,
+   skippedById)` predicate in `progressService.ts` (a `Map` built from the
+   *unfiltered* row set, since a skipped head's own row drops out of the
+   filtered set before a stage's lookup would otherwise fail) — unit tested.
+   `progressService.ts` itself has no service-layer tests (I/O-bound,
+   verified live per this project's convention); this is the pure rule
+   extracted out of it.
+3. **`v2_session_type_history`'s volume gap** —
+   `011_v3_fix_skipped_head_stage_volume.sql`: added a `left join
+   v2_set_logs sl_parent on sl_parent.id = sl.parent_set_id` and `and not
+   coalesce(sl_parent.is_skipped, false)` to the `total_volume` filter.
+   `avg_rir`/`set_count` untouched (already `parent_set_id is null`,
+   never see a stage at all).
+
+135/135 tests (6 new), typecheck, build all clean.
+
+### Live verification
+
+**SetGroup.tsx fix**, in a real session, not synthetically: reopened the
+real 2026-08-13 "PUSH 2" session (already `completed`, 17 sets — confirmed
+"all logged sets stay intact" before proceeding), added a genuine extra test
+set to Dips, skipped it — **no "mark as dropset" button rendered underneath
+it**, unlike every other logged set on the same screen. Cleaned up
+immediately: deleted the one test `v2_set_logs` row directly (confirmed zero
+remaining), re-completed the session via the real FINISH SESSION /
+COMPLETE SESSION flow. Re-queried afterward: `status: completed`, exactly 17
+log rows — matches the original exactly, nothing else touched.
+
+**Volume fix, app layer:** live-called `fetchExerciseProgress` for One-arm
+Dumbell Lateral Raise — the Jul 16 point now reports `volume: 240`
+(hand-computed correct total, matching exactly).
+
+**Migration 011 — applied by the user via the SQL Editor (same mechanism as
+every prior migration in this build), then independently verified, not
+assumed from being told it ran:**
+- **`security_invoker` survival — the one check this session's own
+  instructions flagged as highest-stakes ("flag it immediately rather than
+  proceeding" if missing).** No service-role/DB credentials available
+  (`.env.local` has only `VITE_SUPABASE_ANON_KEY`, confirmed by inspection —
+  same limitation noted for every prior migration in this project, all
+  applied by the user via the SQL Editor). Two independent confirmations:
+  (a) an indirect RLS-behavioral check run from here — queried
+  `v2_session_type_history` with **no** `user_id` filter at all (which would
+  leak every user's rows if the view ran as owner instead of invoker) and
+  got back exactly this account's own 25 rows, zero others; (b) the direct
+  check, run personally in the real Supabase SQL Editor (the user opened the
+  tab and handed it over) after the editor's existing query text proved
+  resistant to clearing via keyboard shortcuts — worked around by opening a
+  fresh query tab instead: `select relname, reloptions from pg_class where
+  relname = 'v2_session_type_history'` → `reloptions:
+  ["security_invoker=true"]`. Confirmed intact, no RLS-bypass regression.
+- **Schema cache / reachability:** `v2_session_type_history` queried live,
+  `200`, real rows, not `404`, not stale.
+- **The fix's actual effect, confirmed exactly:** the live view's
+  `total_volume` for the Jul 16 session is `3447.5`. Independently
+  recomputed by hand from the raw `v2_set_logs` rows both ways: old (buggy)
+  logic gives `3487.5`, new (fixed) logic gives `3447.5` — the live figure
+  matches the new computation exactly, a difference of exactly `40`. Two
+  unaffected sessions (Jul 30, Jul 7 — no dropsets/skips involved)
+  spot-checked at `difference: 0` each, confirming the fix doesn't touch
+  sessions without the bug pattern.
+- **Raw stage row:** re-queried directly — `weight: 5, reps: 8, is_skipped:
+  false, parent_set_id: 526f9a7f...`, `logged_at` unchanged — byte-identical
+  to when first found. Closed, not left open: the row was always accurate,
+  only the read logic was wrong, and nothing about this needed a decision.
+
+### Deploy
+
+Committed (`4c59810`) — `SetGroup.tsx`, `setGroupLogic.ts`/`.test.ts`,
+`progressService.ts`, `progressService.test.ts` (new), migration
+`011_v3_fix_skipped_head_stage_volume.sql` (new), all as one commit. Pre-push
+check: `git rev-list --left-right --count origin/master...HEAD` → `0 1`.
+Pushed; `git ls-remote origin master` confirmed `origin/master`'s HEAD is
+exactly `4c59810b0d1b9451b98e8838c324e02e21054d67`. `vercel ls` showed a
+fresh Production deployment ~1 minute after the push; `vercel inspect`
+confirmed `status: ● Ready`, `target: production`, aliased to
+`overload-v2-sage.vercel.app`. Fetched the live bundle directly via `curl`
+and grepped it: commit hash `4c59810` present, confirming the live bundle is
+genuinely this commit. Navigated a real tab to production: an initial stale
+service-worker-cached bundle reference 404'd (an old tab's leftover
+`index-DHN9kCP0.js`, the exact "already-open session serving stale JS" case
+the PWA update-detection feature exists for) — a forced reload landed
+cleanly on the new `index-CPvovk46.js`, confirmed via
+`document.querySelectorAll('script[src]')`, not just assumed from the
+reload succeeding. Login screen renders with no further errors.
+
+**Net effect: the skipped-head-stage gap is fully closed — the UI dead end,
+the app-level volume calculation, and the SQL-level volume calculation all
+fixed, migration applied and directly verified (including the
+highest-stakes `security_invoker` check), and the one real affected row's
+downstream effect (a `+40` volume inflation on one historical session) is
+gone from every consumer without any data migration, since nothing was ever
+stored.**
 
 ---
 
