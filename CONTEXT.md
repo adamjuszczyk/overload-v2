@@ -5734,6 +5734,69 @@ chooses to gets them cleanly onto the new version.
 this final CONTEXT.md-only edit doesn't change build output (confirmed
 earlier that non-source changes don't affect the bundle) so no further
 deploy verification applies to it specifically.
+
+### Follow-up verification (same day) — three questions, reproduced not recalled
+
+Re-derived rather than trusted from memory, per instruction:
+
+1. **`injectRegister: false` mechanism, precise.** Reproduced the actual
+   before/after generated `dist/sw.js` output by temporarily reverting just
+   the `workbox: { skipWaiting, clientsClaim }` lines (keeping
+   `injectRegister: false`) and rebuilding, then restoring and rebuilding
+   again — not described from memory. Before:
+   `self.addEventListener("message",e=>{e.data&&"SKIP_WAITING"===e.data.type&&self.skipWaiting()})`
+   (a message-listener handshake only, no `clientsClaim` call at all,
+   confirmed via `workbox-build/src/templates/sw-template.ts`'s own
+   `<% if (skipWaiting) %>...<% } else { %>` branch). After:
+   `self.skipWaiting(),e.clientsClaim()` (unconditional). The precise
+   failure mode: it's a mismatch between two independently-configured
+   things `registerType` is supposed to keep coupled. Client-side,
+   `register.js`'s `auto` branch (selected by `registerType: 'autoUpdate'`)
+   correctly *never* sends a `SKIP_WAITING` postMessage — by design, it
+   assumes the SW already self-activates unconditionally, since that's what
+   `autoUpdate` mode means. Server-side, the generated SW's own
+   `skipWaiting`/`clientsClaim` (separate `workbox-build` options,
+   normally auto-set from `registerType` only when `injectRegister` is
+   `'auto'`/unset — `dist/index.js:874-877`) fell back to `false`/`false`
+   once `injectRegister: false` skipped that wiring. So the registration
+   script isn't "missing" the handshake — it correctly never attempts one,
+   because `autoUpdate` mode doesn't use that handshake at all; the SW
+   itself just silently stopped self-activating.
+2. **Sequencing confirmed unambiguous.** `git show cdeb961:vite.config.ts`
+   and `git show cdeb961:src/features/pwa/usePwaUpdate.ts` both already
+   contain the fixed `workbox.skipWaiting`/`clientsClaim` and the
+   `RELOAD_MUTATION_WAIT_MS`/`isMutating()` wait logic — `cdeb961` is the
+   *only* code commit in this session, pushed as deploy 1 before the
+   two-deploy test ran; the two commits after it (`355afa4`, `595f4ba`)
+   are confirmed `CONTEXT.md`-only via `git show --stat`. No ambiguity, no
+   re-run needed.
+3. **`reload()`'s mutation-wait, offline/never-settles case.** Read the
+   current code precisely: the `while` loop's exit condition is
+   `queryClient.isMutating() > 0 && Date.now() - start < RELOAD_MUTATION_WAIT_MS`
+   — time-bounded independent of whether the mutation ever settles, and
+   `window.location.reload()` runs unconditionally right after the loop.
+   Proved this empirically rather than trusting the read: imported the
+   real live `queryClient` singleton in the running app, monkey-patched
+   `isMutating` to permanently return `1` (simulating exactly the
+   never-reconnects case), ran the identical loop body against it —
+   terminated at ~8.8s (the 8s bound plus poll-interval overhead) and
+   proceeded to the reload step regardless. `isReloading` (set at the very
+   start of `reload()`) already drives visible feedback — the RELOAD/✕
+   buttons disable and show "…" — for the whole wait, not silently. **No
+   fix required**, unlike the offline-delete hang and sync-queue
+   cold-start bugs this was checked against, both of which had no time
+   bound at all; this one already does.
+
+Also fixed in this pass: this same CONTEXT.md entry's own `## Pending
+feedback to address` heading had been silently swallowed by an earlier
+edit's `old_string`/`new_string` boundary (the heading and its preceding
+`---` were consumed by the match but never reappeared in the replacement)
+— found by re-reading the file end-to-end rather than trusting the last
+edit had landed cleanly. Restored.
+
+---
+
+## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
