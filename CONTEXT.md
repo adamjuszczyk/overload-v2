@@ -1652,6 +1652,27 @@ Most impactful deferred items:
   after being reopened, or similar); no UI cap or fix applied — that would
   be guessing at a product decision. See "2026-08-08 session (Phase 3.4 —
   live verification)" below for the exact rows.
+- **New, found during Part 1's live verification of the position-matched
+  multi-session table (2026-08-13), confirmed reachable via the current UI
+  by a same-day follow-up (not a historical-only artifact) — not fixed,
+  read-only investigation.** `src/features/gym/SetGroup.tsx`'s "mark as
+  dropset"/`ADD STAGE` affordance renders whenever a head log exists and
+  `stages.length === 0` (gated only on `!isDeleting`) — it never checks
+  `headLog.isSkipped`. A user can skip a set, then tap the stage-entry
+  button still sitting directly under the resulting "SKIPPED" label, and log
+  a stage parented to a skipped head. Pre-dates Phase 3.1: the old
+  DROP-toggle inference rule it replaced (`GymSession.tsx` before commit
+  `677ce47`) had the identical gap — "highest `setNumber` entry that isn't
+  itself a dropset," no skip check — so this has been continuously reachable
+  across the Phase 3.1 rewrite, not introduced by it. Real account instance:
+  session `67ebb796-49b9-4041-9310-34a3573b798b` (2026-07-16), set 4
+  (skipped) + its stage, `logged_at` 9.8 seconds apart. Effect on downstream
+  logic already handled correctly, not a data-integrity risk today:
+  `buildLoggedSlots` (`positionMatch.ts`) already drops a skipped head's
+  whole group, stages included, so this shape never reaches the Progress
+  headline or the SIDE BY SIDE table's cells — it's a gym-screen UI gap (a
+  confusing/pointless action a user could take), not a silent-corruption
+  one. See "2026-08-13 session... Follow-up" for the full trace.
 - M5 (spontaneous dropsets never get parentSetId, log side): **CLOSED,
   both directions, as of 2026-08-05.** Historical data: the 007 backfill
   is confirmed complete on `v2_set_logs` (8/8 rows correctly linked, 0
@@ -6030,6 +6051,61 @@ position-matched, session-by-session table — built with the same
 checkpoint-gated discipline (algorithm verified against real data before any
 UI) and the same adversarial-review-before-ship standard as every phase
 since 3.1, live in production.**
+
+### Follow-up (same day) — two questions, both traced/reproduced not assumed
+
+**1. Is the "skipped dropset head with a still-logged stage" shape (Jul 16's
+Part 1 live verification, above) reachable through the current write path,
+or only a pre-Phase-3.1 artifact?** **Reachable today — not closed off.**
+Traced the actual rows on session `67ebb796-49b9-4041-9310-34a3573b798b`
+(2026-07-16, real completed "PUSH 2" — confirmed via the post-launch-fixes
+backfill table above, which only ever touched `completed_at`, never
+individual set-log rows, so these rows are genuine/organic, not synthetic):
+set 4 (`526f9a7f...`, `is_skipped: true`) logged at `10:42:53.119`, its
+stage (`6731384c...`, `parent_set_id` = set 4's id) logged **9.8 seconds
+later** at `10:43:02.944` — real-time evidence of skip-then-immediately-
+add-a-stage-under-it, not two unrelated edits.
+
+The timeline looked contradictory at first (this session predates Phase 3.1,
+which built today's `ADD STAGE` button, by three weeks), so checked what
+actually created it: `git show 677ce47~1:src/features/gym/GymSession.tsx`
+(the pre-Phase-3.1 version) shows the old DROP-toggle's parent-inference was
+`[...exerciseLogs].sort((a,b)=>b.setNumber-a.setNumber).find(l=>!l.isDropset)`
+— "the highest-`setNumber` entry that isn't itself a dropset," with **no
+`isSkipped` check anywhere in that line**. That's what actually parented
+Jul 16's stage onto the skipped set 4.
+
+The real finding: reading the **current** `src/features/gym/SetGroup.tsx`
+directly (not from memory) shows Phase 3.1's rewrite carried the exact same
+gap forward, just in a different shape. The "mark as dropset"/`ADD STAGE`
+affordance (lines ~148-212) renders whenever `group` exists and
+`stages.length === 0`, gated only on `!isDeleting` — there is no
+`headLog.isSkipped` check anywhere in the file. `SetRow.tsx` shows a
+dead-end "SKIPPED" label for the head's *own* row once `currentLog.isSkipped`
+is true, but that's a sibling render inside `SetGroup`, not a gate on the
+stage-entry button rendered underneath it. **So today: skip a set, the
+"mark as dropset" button still sits right below the "SKIPPED" label, tap it,
+log a stage — same shape, fully reproducible, zero code changes needed to
+demonstrate it.** Not fixed (read-only investigation per instruction); added
+to Known Issues below so a future session doesn't have to re-derive this.
+
+**2. SIDE BY SIDE at a real mobile viewport, with real touch.** Already
+covered by that session's own live verification, but re-confirmed fresh on
+request rather than trusting the prior report: resized to 375×812 with
+mobile emulation (`navigator.userAgent` confirmed Android/Chrome, 5 touch
+points), scrolled to the table, and drove real touch-translated gestures —
+scrolled right through all 6 real session columns to the newest
+(`scrollLeft` 0 → 270, the exact max: `611 - 341`), then back left to 0,
+then partway. Every cell stayed fully legible at every scroll position — no
+truncation, no overlap, `weight×reps@RIR` notation rendered cleanly
+throughout. One tooling artifact along the way, not an app bug: a
+`left_click_drag` gesture attempt left the browser-automation pointer in a
+stuck state (it registered as a text-selection instead of a scroll, and
+subsequent scroll gestures stopped registering) — resolved by a page reload,
+after which the identical scroll gesture worked immediately and repeatably.
+No code changes needed; the mechanism is the same shared `HistoryDataTable`/
+`overflow-x-auto` container the already-shipped EVERY SET table uses,
+unmodified by this feature.
 
 ---
 
