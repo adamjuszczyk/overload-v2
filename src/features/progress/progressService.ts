@@ -3,7 +3,12 @@ import { supabase } from '../../lib/supabase'
 import { headsOnly } from '../gym/setGroupLogic'
 import { fetchSession } from '../gym/sessionService'
 import { compareE1rmWindow, type E1rmComparison, type E1rmSetInput } from './e1rm'
-import { matchSessionsByPosition, averagePositionMatchedDelta } from './positionMatch'
+import {
+  matchSessionsByPosition,
+  averagePositionMatchedDelta,
+  buildPositionMatchTable,
+  type PositionMatchTable,
+} from './positionMatch'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -252,6 +257,50 @@ export async function fetchPositionMatchedHeadline(
   )
 
   return averagePositionMatchedDelta(result)
+}
+
+// Found by adversarial review: an unbounded Promise.all here — one
+// fetchSession per session, all in flight at once — is fine for a meso's
+// worth of sessions (the intended default) but a real, reachable problem for
+// an exercise with a long unscoped ("ALL MESOS") history: fetchSession pulls
+// a session's *every* exercise (sessionService.ts's `select('*, v2_set_logs(*,
+// exercises(*))')`), so 100+ sessions means 100+ full-payload requests fired
+// simultaneously. Chunked instead of capped here — ExerciseHistoryView.tsx
+// caps the session *count* it ever passes in (its own concern, "which
+// sessions" is the caller's job); this is defence-in-depth so the fetch layer
+// itself never fires an unbounded burst regardless of what a future caller
+// passes.
+const FETCH_SESSION_BATCH_SIZE = 8
+
+async function fetchSessionsBatched(sessionIds: string[]) {
+  const results: Awaited<ReturnType<typeof fetchSession>>[] = []
+  for (let i = 0; i < sessionIds.length; i += FETCH_SESSION_BATCH_SIZE) {
+    const batch = sessionIds.slice(i, i + FETCH_SESSION_BATCH_SIZE)
+    results.push(...(await Promise.all(batch.map((id) => fetchSession(id)))))
+  }
+  return results
+}
+
+// History's position-matched table (CONTEXT.md "Position-matched multi-session
+// table" initiative) — every session side by side, not a two-session delta.
+// *Which* sessions and in what order is still the caller's job (same
+// convention as fetchPositionMatchedHeadline above): History resolves the
+// session list itself (scoped to a meso via its own existing filter, or all
+// of them), this just fetches each one's real ordered SetLog rows and hands
+// them to buildPositionMatchTable.
+export async function fetchPositionMatchTable(
+  exerciseId: string,
+  sessions: { sessionId: string; date: string }[],
+): Promise<PositionMatchTable> {
+  const fullSessions = await fetchSessionsBatched(sessions.map((s) => s.sessionId))
+
+  return buildPositionMatchTable(
+    fullSessions.map((full, i) => ({
+      sessionId: sessions[i].sessionId,
+      date: sessions[i].date,
+      logs: (full.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+    })),
+  )
 }
 
 // ─── Meso weekly progress ─────────────────────────────────────────────────────

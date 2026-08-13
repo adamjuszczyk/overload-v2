@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
   ResponsiveContainer,
@@ -13,6 +13,8 @@ import {
 import { useExercises } from '../library/useExercises'
 import { useMesos } from '../programs/useMesos'
 import { useExerciseSetHistory } from './useHistory'
+import { useExerciseProgress, usePositionMatchTable } from '../progress/useProgress'
+import type { PositionMatchSetValue } from '../progress/positionMatch'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { groupByParent } from '../gym/setGroupLogic'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
@@ -87,6 +89,53 @@ function buildColumns(weightUnit: string): HistoryDataTableColumn<DisplayRow>[] 
   ]
 }
 
+// ─── Side by side (position-matched table, CONTEXT.md "Position-matched
+// multi-session table") — a third view of the same data: every session as a
+// column, "the Nth plain set logged" / "the Nth dropset logged" as
+// independently-numbered rows, reusing progressService.ts's
+// fetchPositionMatchTable / positionMatch.ts's buildPositionMatchTable
+// directly rather than re-deriving the plain/dropset slot model a third
+// time in this file.
+
+interface PositionMatchDisplayRow {
+  key: string
+  label: string
+  isStage: boolean
+  cells: (PositionMatchSetValue | null)[] // aligned with the table's own sessions[] order
+}
+
+// Compact "weight×reps@RIR" notation — the same convention
+// ExerciseReference.tsx's SetLine already uses (no unit suffix, "@RIR" only
+// when recorded), not a fourth notation invented for this table.
+// --text-muted, not --text-dim (found by adversarial review: --text-dim is
+// this codebase's disabled/placeholder token, ~1.7:1 contrast in dark mode —
+// far below legible for an empty cell here, which is meaningful data ("this
+// session didn't reach this position"), not decoration).
+function formatCompactCell(value: PositionMatchSetValue | null, toDisplay: (kg: number) => number) {
+  if (!value || value.weight === null) {
+    return <span style={{ color: 'var(--text-muted)' }}>—</span>
+  }
+  return (
+    <span style={{ color: 'var(--text-primary)' }}>
+      {toDisplay(value.weight)}
+      <span style={{ color: 'var(--text-muted)' }}>×</span>
+      {value.reps ?? '—'}
+      {value.rir != null && (
+        <span style={{ color: 'var(--text-muted)' }}>@{value.rir}</span>
+      )}
+    </span>
+  )
+}
+
+// Found by adversarial review: passing every session an exercise has ever
+// been logged in (the "ALL MESOS" / no-active-meso case) to
+// fetchPositionMatchTable means one fetchSession call per session — a real,
+// long-trained exercise can have 100+. Capped here (the caller's own
+// concern — "which sessions" is this component's job, not the fetch layer's)
+// to the most recent N; progressService.ts's fetchSessionsBatched is
+// separate defence-in-depth for whatever count does get passed through.
+const MAX_TABLE_SESSIONS = 30
+
 interface Props {
   exerciseId: string
 }
@@ -97,6 +146,46 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
   const exercise = exercises.find((ex) => ex.id === exerciseId) ?? null
   const { data: mesos = [] } = useMesos()
   const [mesoFilter, setMesoFilter] = useState('')
+
+  // SIDE BY SIDE table data source — see the fuller comment below. Called
+  // here (ahead of the meso-defaulting effect) because that effect needs
+  // e1rmSessions to decide whether defaulting to the active meso is safe.
+  const { data: progressData } = useExerciseProgress(exerciseId)
+
+  // The SIDE BY SIDE table (below) is scoped to the active meso by default —
+  // a position-matched comparison is only meaningful within one program's
+  // sessions, not a pile of unrelated ones. This is the one shared filter
+  // both the existing EVERY SET table/chart and the new table read, so
+  // defaulting it also changes their initial view.
+  //
+  // Found by adversarial review: defaulting unconditionally the moment an
+  // active meso exists — regardless of whether this exercise has ever been
+  // logged in it — silently collapsed the pre-existing EVERY SET table and
+  // TOP WEIGHT TREND chart to "NO HISTORY YET" for any exercise not yet
+  // logged this meso (the single most common reason to check an exercise's
+  // history: right before doing it again). Fixed by only defaulting when the
+  // active meso actually has at least one eligible session for *this*
+  // exercise (checked against e1rmSessions, not the paginated EVERY SET rows,
+  // since that's the complete, non-paginated list) — guaranteeing the default
+  // never empties a view that would otherwise have shown real data. Still a
+  // one-time default (never re-applied, so it never clobbers a user's own
+  // later choice, including explicitly picking ALL MESOS back); falls back to
+  // the prior ALL MESOS default whenever there's no active meso, or the
+  // active meso has nothing for this exercise yet — both unchanged from
+  // before this feature.
+  const [mesoFilterDefaulted, setMesoFilterDefaulted] = useState(false)
+  useEffect(() => {
+    if (mesoFilterDefaulted || mesos.length === 0) return
+    const active = mesos.find((m) => m.status === 'active')
+    if (!active) {
+      setMesoFilterDefaulted(true)
+      return
+    }
+    if (!progressData) return // wait for the data needed to judge whether defaulting is safe
+    const activeMesoHasData = progressData.e1rmSessions.some((s) => s.mesocycleId === active.id)
+    if (activeMesoHasData) setMesoFilter(active.id)
+    setMesoFilterDefaulted(true)
+  }, [mesos, progressData, mesoFilterDefaulted])
   // History converts to the global Settings unit for display (SPEC §8.1) —
   // same as Progress, independent of whatever unit any individual
   // program-exercise was logged in.
@@ -105,6 +194,97 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useExerciseSetHistory(exerciseId)
+
+  // SIDE BY SIDE table data — a separate query from the paginated EVERY SET
+  // rows above: it needs every session's own *ordered* SetLog rows (setNumber/
+  // stageIndex/parentSetId) to build slots, which the flat set-history rows
+  // can't provide (same reasoning progressService.ts's
+  // fetchPositionMatchedHeadline already documents for the pairwise case).
+  // useExerciseProgress's e1rmSessions is reused for the session id/date/
+  // mesocycleId list only (already fetched, already chronological, already
+  // complete — not gated by this page's own EVERY SET pagination).
+  //
+  // Note this means SIDE BY SIDE and EVERY SET can legitimately disagree on
+  // session count: e1rmSessions (progressService.ts's fetchExerciseProgress)
+  // excludes a session where every set of this exercise was skipped, before
+  // it ever becomes an entry — so that session never becomes a SIDE BY SIDE
+  // column, even though it still appears as a dashed-out row in EVERY SET
+  // (a different, unfiltered query). Deliberate: an all-empty column here
+  // would be pure noise, and re-deriving a different inclusion rule would
+  // drift from the exclusion fetchExerciseProgress already applies elsewhere.
+  //
+  // Capped to the most recent MAX_TABLE_SESSIONS (found by adversarial
+  // review — see fetchPositionMatchTable's own comment for why an unbounded
+  // count is a real cost, not just a hypothetical one).
+  const tableSessions = useMemo(() => {
+    if (!progressData) return []
+    const scoped = mesoFilter
+      ? progressData.e1rmSessions.filter((s) => s.mesocycleId === mesoFilter)
+      : progressData.e1rmSessions
+    return scoped.slice(-MAX_TABLE_SESSIONS).map((s) => ({ sessionId: s.sessionId, date: s.date }))
+  }, [progressData, mesoFilter])
+  const truncatedTableSessionCount = useMemo(() => {
+    if (!progressData) return 0
+    const scoped = mesoFilter
+      ? progressData.e1rmSessions.filter((s) => s.mesocycleId === mesoFilter)
+      : progressData.e1rmSessions
+    return Math.max(0, scoped.length - MAX_TABLE_SESSIONS)
+  }, [progressData, mesoFilter])
+  const {
+    data: positionMatchTable,
+    isLoading: isPositionMatchLoading,
+    isError: isPositionMatchError,
+  } = usePositionMatchTable(exerciseId, tableSessions.length > 0 ? tableSessions : null)
+
+  const positionMatchRows = useMemo<PositionMatchDisplayRow[]>(() => {
+    if (!positionMatchTable) return []
+    const out: PositionMatchDisplayRow[] = []
+    for (const row of positionMatchTable.plain) {
+      out.push({
+        key: `plain-${row.slotIndex}`,
+        label: `SET ${row.slotIndex}`,
+        isStage: false,
+        cells: row.cells.map((c) => c.value),
+      })
+    }
+    for (const row of positionMatchTable.dropsets) {
+      out.push({
+        key: `drop-${row.slotIndex}-head`,
+        label: `DROP ${row.slotIndex}`,
+        isStage: false,
+        cells: row.head.cells.map((c) => c.value),
+      })
+      row.stages.forEach((stageRow, i) => {
+        out.push({
+          key: `drop-${row.slotIndex}-stage-${i}`,
+          label: row.stages.length > 1 ? `STAGE ${i + 1}` : 'STAGE',
+          isStage: true,
+          cells: stageRow.cells.map((c) => c.value),
+        })
+      })
+    }
+    return out
+  }, [positionMatchTable])
+
+  const positionMatchColumns = useMemo<HistoryDataTableColumn<PositionMatchDisplayRow>[]>(() => {
+    if (!positionMatchTable) return []
+    return [
+      {
+        key: 'label',
+        header: 'SET',
+        render: (r) => <span style={{ paddingLeft: r.isStage ? 10 : 0 }}>{r.label}</span>,
+      },
+      ...positionMatchTable.sessions.map((s, i) => ({
+        key: s.sessionId,
+        // Includes the year, matching buildColumns' own DATE column above
+        // (found by adversarial review — 'MMM d' alone can't disambiguate
+        // two sessions a year apart under ALL MESOS, e.g. two "Jan 15"s).
+        header: format(parseISO(s.date), 'MMM d, yy'),
+        align: 'right' as const,
+        render: (r: PositionMatchDisplayRow) => formatCompactCell(r.cells[i], toDisplay),
+      })),
+    ]
+  }, [positionMatchTable, toDisplay])
 
   const allRows = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
   const filteredRows = useMemo(
@@ -354,6 +534,67 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
         >
           {isFetchingNextPage ? 'LOADING…' : 'LOAD MORE'}
         </button>
+      )}
+
+      {/* SIDE BY SIDE — third view of the same data (position-matched table,
+          CONTEXT.md "Position-matched multi-session table"). Independent data
+          source/gating from the EVERY SET table above (progressService.ts's
+          fetchPositionMatchTable via useExerciseProgress, not the paginated
+          set-history rows) — same "chart only renders once it has enough
+          data" precedent as TOP WEIGHT TREND above, not nested inside the
+          EVERY SET empty/loading branches. */}
+      {isOnline && tableSessions.length > 0 && (
+        <div className="mt-7 mb-2">
+          <p
+            className="text-xs font-bold tracking-widest mb-3"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            SIDE BY SIDE
+          </p>
+          {isPositionMatchLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <div
+                className="w-5 h-5 rounded-full animate-spin"
+                style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
+              />
+            </div>
+          ) : isPositionMatchError ? (
+            // Found by adversarial review: a failed fetch used to resolve to
+            // the exact same "NO SETS" empty state as genuinely-empty data,
+            // indistinguishable to the user. Distinct message + no silent
+            // "nothing here" claim when the real cause is a fetch failure.
+            <div
+              className="rounded-xl p-6 text-center"
+              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+            >
+              <p
+                className="text-xs font-bold"
+                style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+              >
+                COULDN'T LOAD
+              </p>
+            </div>
+          ) : (
+            <>
+              <HistoryDataTable
+                columns={positionMatchColumns}
+                rows={positionMatchRows}
+                getRowKey={(r) => r.key}
+                getRowStyle={(r) => (r.isStage ? { opacity: 0.65 } : undefined)}
+                emptyLabel="NO SETS"
+              />
+              {truncatedTableSessionCount > 0 && (
+                <p
+                  className="mt-2 text-xs"
+                  style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+                >
+                  Showing the most recent {MAX_TABLE_SESSIONS} sessions ({truncatedTableSessionCount}{' '}
+                  older not shown)
+                </p>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   )

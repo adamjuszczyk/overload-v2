@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth/useAuth'
-import { fetchExerciseProgress, fetchMesoWeeklyProgress, fetchPositionMatchedHeadline } from './progressService'
+import {
+  fetchExerciseProgress,
+  fetchMesoWeeklyProgress,
+  fetchPositionMatchedHeadline,
+  fetchPositionMatchTable,
+} from './progressService'
 import type { E1rmComparison } from './e1rm'
 
 export function useExerciseProgress(exerciseId: string | null) {
@@ -27,6 +32,24 @@ export function usePositionMatchedHeadline(
     queryKey: ['v2_positionMatchedHeadline', exerciseId, sessionPair?.firstSessionId, sessionPair?.lastSessionId],
     queryFn: () => fetchPositionMatchedHeadline(exerciseId!, sessionPair!),
     enabled: !!exerciseId && !!sessionPair,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// History's position-matched table (see progressService.ts's
+// fetchPositionMatchTable). Keyed on the resolved session id list itself,
+// not just exerciseId — same reasoning as usePositionMatchedHeadline's pair
+// key, one level up at N sessions instead of 2: it should only refetch when
+// *which* sessions are in scope actually changes (e.g. the meso filter), not
+// on every unrelated re-render of the caller.
+export function usePositionMatchTable(
+  exerciseId: string | null,
+  sessions: { sessionId: string; date: string }[] | null,
+) {
+  return useQuery({
+    queryKey: ['v2_positionMatchTable', exerciseId, sessions?.map((s) => s.sessionId).join(',')],
+    queryFn: () => fetchPositionMatchTable(exerciseId!, sessions!),
+    enabled: !!exerciseId && !!sessions && sessions.length > 0,
     staleTime: 5 * 60 * 1000,
   })
 }

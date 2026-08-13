@@ -48,6 +48,7 @@ export function useDeleteSession() {
       // resolves, and even when it doesn't, this cache entry has no other
       // invalidation path. Same fix, same reasoning.
       queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseSetHistory'] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessionTypeHistory'] })
     },

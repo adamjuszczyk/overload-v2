@@ -412,6 +412,11 @@ export function useCompleteSession() {
       // for up to staleTime even though v2_exerciseProgress (the chart,
       // the last-5-sessions list) had already refreshed correctly above.
       queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
+      // Same gap, same fix, one level up at N sessions instead of 2 —
+      // History's position-matched table (v2_positionMatchTable) is keyed on
+      // the resolved session id list, which is also unchanged by a
+      // reopen/edit/re-complete cycle on an existing session.
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] })
       // And the reference panel — SessionPreview always queries this with
       // currentSessionId=null, so its cache key doesn't change between
       // visits to the same workout day; without this, completing a session

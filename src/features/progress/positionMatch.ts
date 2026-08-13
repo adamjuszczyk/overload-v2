@@ -199,32 +199,37 @@ function matchSlotStream(slotsA: SetGroup<SetLog>[], slotsB: SetGroup<SetLog>[])
 // two-thirds of the way through a session says nothing about progress. So
 // each session's ordered slot list is split into two ordered sub-streams
 // *before* matching — dropset slots in the order logged, plain slots in the
-// order logged — and each stream is matched against its own kind only,
-// slot N to slot N, same truncation rule as before (step 2), just applied
-// per stream instead of once across the whole session. A slot's position
-// within the *original* combined order (e.g. "this was set 3 that day") is
-// deliberately not carried through — the matched-comparison identity is
-// "the Nth dropset" / "the Nth plain set", not "the Nth thing logged".
-//
+// order logged. A slot's position within the *original* combined order
+// (e.g. "this was set 3 that day") is deliberately not carried through —
+// the matched-comparison identity is "the Nth dropset" / "the Nth plain
+// set", not "the Nth thing logged". Shared by matchSessionsByPosition
+// (pairwise, below) and buildPositionMatchTable (N-way, further down) so
+// both use the exact same identity rule — one filter, not two copies that
+// could quietly drift apart.
+function splitStreams(slots: SetGroup<SetLog>[]): {
+  dropsets: SetGroup<SetLog>[]
+  plain: SetGroup<SetLog>[]
+} {
+  return {
+    dropsets: slots.filter((g) => g.stages.length > 0),
+    plain: slots.filter((g) => g.stages.length === 0),
+  }
+}
+
 // This makes a dropset-vs-plain shapeMismatch structurally impossible, not
 // just unobserved: a matched pair from the `dropsets` stream is, by
-// construction, two groups that both passed the `stages.length > 0` filter
-// below; a matched pair from `plain` both passed the inverse filter. There
-// is no code path left that could zip a dropset against a plain set — the
-// old shared-forward-index version could (and, against real account data,
-// did); this version cannot, so the field that reported it is gone rather
-// than kept around always false.
+// construction, two groups that both passed splitStreams' `stages.length >
+// 0` filter; a matched pair from `plain` both passed the inverse filter.
+// There is no code path left that could zip a dropset against a plain set —
+// the old shared-forward-index version could (and, against real account
+// data, did); this version cannot, so the field that reported it is gone
+// rather than kept around always false.
 export function matchSessionsByPosition(
   sessionA: PositionMatchSessionInput,
   sessionB: PositionMatchSessionInput,
 ): PositionMatchResult {
-  const slotsA = buildLoggedSlots(sessionA.logs)
-  const slotsB = buildLoggedSlots(sessionB.logs)
-
-  const dropsetSlotsA = slotsA.filter((g) => g.stages.length > 0)
-  const dropsetSlotsB = slotsB.filter((g) => g.stages.length > 0)
-  const plainSlotsA = slotsA.filter((g) => g.stages.length === 0)
-  const plainSlotsB = slotsB.filter((g) => g.stages.length === 0)
+  const { dropsets: dropsetSlotsA, plain: plainSlotsA } = splitStreams(buildLoggedSlots(sessionA.logs))
+  const { dropsets: dropsetSlotsB, plain: plainSlotsB } = splitStreams(buildLoggedSlots(sessionB.logs))
 
   return {
     sessionA: { sessionId: sessionA.sessionId, date: sessionA.date },
@@ -260,4 +265,116 @@ export function averagePositionMatchedDelta(result: PositionMatchResult): number
   }
   if (deltas.length === 0) return null
   return deltas.reduce((sum, d) => sum + d, 0) / deltas.length
+}
+
+// ─── Multi-session position-matched table (History, not Progress) ──────────
+//
+// matchSessionsByPosition above is inherently pairwise — sessionA vs
+// sessionB, one delta per matched item. History's "every session side by
+// side" table needs a different shape: N sessions as N columns, "the Nth
+// plain set logged" / "the Nth dropset logged" (and each of *its* stages) as
+// independently-numbered rows, one cell per session — empty when that
+// session's own slot list didn't reach that position, never
+// misaligned/shifted to fill the gap. No e1RM/delta math here at all: this
+// is a raw-value table, not a comparison, so there's nothing to compute
+// beyond alignment — deltas belong to the pairwise function above, reused
+// as-is by any future caller that wants them for a two-session slice of
+// this same table.
+//
+// Reuses buildLoggedSlots and splitStreams directly (same functions
+// matchSessionsByPosition uses, not re-derived copies) — this is the same
+// plain/dropset identity model as the Progress headline, just aligned across
+// N sessions instead of 2.
+
+export interface PositionMatchTableCell {
+  sessionId: string
+  // null = this session's own slot list never reached this position (not a
+  // skip — a skip already removed its slot entirely in buildLoggedSlots;
+  // null here just means "logged fewer of this kind than other sessions
+  // did").
+  value: PositionMatchSetValue | null
+}
+
+// One row: one position (e.g. "the 2nd plain set logged" or "the 1st
+// dropset's 2nd stage"), one cell per session in the same order as
+// PositionMatchTable.sessions.
+export interface PositionMatchTableRow {
+  cells: PositionMatchTableCell[]
+}
+
+export interface PositionMatchDropsetTableRow {
+  slotIndex: number // 1-based position within the dropset stream, independent of the plain stream's numbering
+  head: PositionMatchTableRow
+  // Stage rows, 1-based by position within the dropset — stages[0] is every
+  // session's own 1st stage of its Nth dropset, etc. Row count is the max
+  // stage count any single session logged for *this* dropset position, not
+  // a fixed number — a session with fewer stages at this position gets
+  // empty (null) cells on the deeper rows, it doesn't shrink the row count
+  // for sessions that logged more.
+  stages: PositionMatchTableRow[]
+}
+
+export interface PositionMatchTable {
+  // Same order as the input — this function trusts the caller's chronological
+  // ordering, same convention as matchSessionsByPosition's sessionA/sessionB
+  // (picking and ordering the sessions is the caller's job).
+  sessions: { sessionId: string; date: string }[]
+  // Two independently-numbered row groups — a table row's slotIndex in
+  // `plain` has no relationship to any slotIndex in `dropsets`, same
+  // independence as the two streams in matchSessionsByPosition's result.
+  plain: (PositionMatchTableRow & { slotIndex: number })[]
+  dropsets: PositionMatchDropsetTableRow[]
+}
+
+function buildTableRow(
+  sessions: PositionMatchSessionInput[],
+  slotsPerSession: SetGroup<SetLog>[][],
+  position: number,
+  pick: (group: SetGroup<SetLog>) => SetLog,
+): PositionMatchTableRow {
+  return {
+    cells: sessions.map((session, i) => {
+      const group = slotsPerSession[i][position]
+      return { sessionId: session.sessionId, value: group ? toSetValue(pick(group)) : null }
+    }),
+  }
+}
+
+export function buildPositionMatchTable(sessions: PositionMatchSessionInput[]): PositionMatchTable {
+  const slotsPerSession = sessions.map((s) => buildLoggedSlots(s.logs))
+  const streamsPerSession = slotsPerSession.map(splitStreams)
+  const plainPerSession = streamsPerSession.map((s) => s.plain)
+  const dropsetsPerSession = streamsPerSession.map((s) => s.dropsets)
+
+  const maxPlain = Math.max(0, ...plainPerSession.map((s) => s.length))
+  const plain: (PositionMatchTableRow & { slotIndex: number })[] = []
+  for (let i = 0; i < maxPlain; i++) {
+    plain.push({ slotIndex: i + 1, ...buildTableRow(sessions, plainPerSession, i, (g) => g.head) })
+  }
+
+  const maxDropsets = Math.max(0, ...dropsetsPerSession.map((s) => s.length))
+  const dropsets: PositionMatchDropsetTableRow[] = []
+  for (let i = 0; i < maxDropsets; i++) {
+    const groupsAtThisSlot = dropsetsPerSession.map((s) => s[i] as SetGroup<SetLog> | undefined)
+    const head = buildTableRow(sessions, dropsetsPerSession, i, (g) => g.head)
+
+    const maxStages = Math.max(0, ...groupsAtThisSlot.map((g) => g?.stages.length ?? 0))
+    const stages: PositionMatchTableRow[] = []
+    for (let stageI = 0; stageI < maxStages; stageI++) {
+      stages.push({
+        cells: sessions.map((session, si) => {
+          const stage = groupsAtThisSlot[si]?.stages[stageI]
+          return { sessionId: session.sessionId, value: stage ? toSetValue(stage) : null }
+        }),
+      })
+    }
+
+    dropsets.push({ slotIndex: i + 1, head, stages })
+  }
+
+  return {
+    sessions: sessions.map((s) => ({ sessionId: s.sessionId, date: s.date })),
+    plain,
+    dropsets,
+  }
 }
