@@ -5702,9 +5702,38 @@ problem this fix targets, confirmed happening, before this tab was
 deliberately reloaded once to establish the "already on the new code"
 starting state the test needs).
 
-This CONTEXT.md commit is deliberately deploy 2 — see below for the
-detection result observed against the still-open tab from deploy 1,
-without navigating or reloading it in between.
+This CONTEXT.md commit is deliberately deploy 2 (commit `355afa4`) — pushed,
+confirmed live the same way (`vercel inspect`: `Ready`/`production`;
+bundle hash `index-d121Jxzj.js`, genuinely different from deploy 1's
+`index-BD5L4RKi.js`; `sw.js` re-confirmed with `skipWaiting`/`clientsClaim`
+still present).
+
+**Result, observed against the still-open tab from deploy 1, without
+navigating or reloading it in between:** called
+`(await navigator.serviceWorker.getRegistration()).update()` in that tab's
+own console — the exact call `usePwaUpdate.ts`'s interval/`visibilitychange`
+handler makes — and a new worker immediately appeared as `installing`.
+~1.5s later (`skipWaiting`+`clientsClaim` completing the activate/claim
+cycle): `hasUpdateBanner: true`, the real "UPDATE AVAILABLE / RELOAD"
+banner rendered on screen, **while the page's own executing JS was still
+provably deploy 1's** (`scriptSrc` still `index-BD5L4RKi.js`) — the SW
+updated and claimed control in the background exactly as designed, but
+nothing reloaded automatically; the tab just surfaced the choice. Clicked
+RELOAD: `performance.getEntriesByType('navigation')` showed exactly one
+entry (`type: "reload", redirectCount: 0`, `loadEventEnd: 59ms`) — a
+single clean reload, not a loop — and it landed directly on deploy 2's
+bundle (`index-d121Jxzj.js`) on that first reload, no second-reload gotcha,
+with the banner correctly gone afterward (nothing newer to update to).
+
+This is the complete, real chain the fix was built for: an already-open
+session, given a genuinely new deploy, detects it without any manual
+action and without a forced reload, and reloading once when the user
+chooses to gets them cleanly onto the new version.
+
+**Deployed.** Two real, confirmed production deploys as documented above;
+this final CONTEXT.md-only edit doesn't change build output (confirmed
+earlier that non-source changes don't affect the bundle) so no further
+deploy verification applies to it specifically.
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
