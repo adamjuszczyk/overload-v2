@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { History } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { useMesos, useDeleteMeso } from '../programs/useMesos'
 import { useHistorySessions } from './useHistory'
@@ -261,17 +262,40 @@ export default function HistoryPage() {
             exercise's all-time chart/table used to be the History icon on
             an active session's ExerciseHeader, so it was unreachable from
             here on a rest day or for an exercise not on today's plan
-            (post-launch fix, 2026-08-10). */}
+            (post-launch fix, 2026-08-10).
+            Deliberately styled distinct from the DATE & MUSCLE FILTERS
+            toggle directly above (same History icon ExerciseHeader.tsx
+            uses for the identical destination) — this navigates to a
+            different screen entirely, not another filter on this list, and
+            it was previously easy to miss for exactly that reason (found
+            live-testing 2026-08-12: same size/colour/weight as the filters
+            toggle, read as a third filter chip).
+            A solid accent-fill treatment, not an accent-outline one: an
+            earlier version used var(--accent-muted) background + var(--accent)
+            border/text always-on, but DATE & MUSCLE FILTERS *also* switches
+            to that exact border/text colour once expanded (showAdvanced),
+            so the two collided the moment a user opened the filters panel —
+            found by adversarial review, live-confirmed at showAdvanced=true.
+            Solid fill (background var(--accent), text var(--base)) reuses
+            this same file's own "selected" convention (the ALL/muscle-group
+            chips a few lines above) and can never coincide with an outline
+            style, in any state, structurally rather than by coincidence.
+            44px minHeight matches this app's established touch-target
+            convention (same fix SettingsPage.tsx's chipRow()/SIGN OUT got);
+            DATE & MUSCLE FILTERS above still measures 34px, unchanged —
+            same class of gap, left as-is, out of scope for this round. */}
         <button
           onClick={() => setShowExerciseSearch(v => !v)}
-          className="w-full py-2 rounded-xl text-xs font-bold"
+          className="w-full rounded-xl text-xs font-bold flex items-center justify-center gap-2"
           style={{
-            backgroundColor: 'var(--surface)',
-            border: `1px solid ${showExerciseSearch ? 'var(--accent)' : 'var(--border)'}`,
-            color: showExerciseSearch ? 'var(--accent)' : 'var(--text-muted)',
+            minHeight: 44,
+            backgroundColor: 'var(--accent)',
+            border: '1px solid transparent',
+            color: 'var(--base)',
             fontFamily: 'var(--font-mono)',
           }}
         >
+          <History size={14} />
           {showExerciseSearch ? '▲ HIDE EXERCISE HISTORY' : '▼ FIND EXERCISE HISTORY'}
         </button>
 

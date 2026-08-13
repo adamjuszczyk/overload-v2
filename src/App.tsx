@@ -17,6 +17,7 @@ import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
+import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
@@ -34,6 +35,12 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          {/* Unconditional on auth state — a stale bundle on the login
+              screen is just as real a problem as one mid-workout, and
+              registering the update check here (rather than only once
+              authenticated) means it can't be blocked on a test/verification
+              path that needs to reach a logged-in screen. */}
+          <PwaUpdateNotice />
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { format, parseISO } from 'date-fns'
 import { useSettings, useUpdateSettings } from './useSettings'
 import { useAuth } from '../auth/useAuth'
 import type { UserSettings } from '../../types'
@@ -360,6 +361,22 @@ export default function SettingsPage() {
             >
               {signingOut ? 'SIGNING OUT…' : 'SIGN OUT'}
             </button>
+          </div>
+        </section>
+
+        {/* ── About ────────────────────────────────────────────────────── */}
+        {/* Which build is actually running, for support/debugging — and,
+            not incidentally, the concrete artifact that let the PWA
+            update-detection fix (see usePwaUpdate.ts) be live-verified
+            against two real, distinguishable production deploys instead of
+            two byte-identical ones (comments alone don't survive
+            minification — confirmed empirically before adding this). */}
+        <section>
+          {sectionTitle('ABOUT')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              BUILD {__BUILD_HASH__} · {format(parseISO(__BUILD_TIME__), 'MMM d, yyyy HH:mm')}
+            </p>
           </div>
         </section>
       </div>
