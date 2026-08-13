@@ -112,16 +112,48 @@ async function fetchAllExerciseSetLogRows(
   return rows
 }
 
+// Found by adversarial review (2026-08-13/14): a stage's own is_skipped is
+// never true in any real-account case observed (SKIP only fires on an
+// unlogged row, before a stage could ever be attached to it), so a stage
+// under a skipped head can carry real, non-null weight/reps of its own and
+// slip past a row-level "is this row skipped" check. A stage whose *parent*
+// (head) is skipped never represents real performed work in this slot,
+// regardless of its own values — same rule buildLoggedSlots
+// (positionMatch.ts) already applies by dropping a skipped head's whole
+// group, stages included. Extracted as its own predicate — not inlined in
+// fetchExerciseProgress's row filter — so it's independently testable, same
+// precedent as every other pure rule in this codebase (e1rm.ts,
+// setGroupLogic.ts, positionMatch.ts).
+export function isStageOfSkippedHead(
+  parentSetId: string | null,
+  skippedById: Map<string, boolean>,
+): boolean {
+  return parentSetId != null && skippedById.get(parentSetId) === true
+}
+
 export async function fetchExerciseProgress(
   userId: string,
   exerciseId: string,
 ): Promise<ExerciseProgressData> {
   const allRows = await fetchAllExerciseSetLogRows(userId, exerciseId)
 
-  // Filter to completed sessions only — skipped/in_progress never appear
+  // Skip status lookup by id, from the *unfiltered* rows — a skipped head's
+  // own row gets excluded below (null weight/reps), but a stage under it can
+  // carry real weight/reps of its own, so this is the only way to still know
+  // "this stage's parent was skipped" once the head row itself drops out.
+  const skippedById = new Map(allRows.map((r) => [r.id, r.is_skipped]))
+
+  // Filter to completed sessions only — skipped/in_progress never appear.
+  // Also excludes a stage whose *parent* is skipped (real account instance:
+  // a 2026-07-16 session) via isStageOfSkippedHead above — volume/rest
+  // aggregates below never count the stage in the first place rather than
+  // relying on a downstream consumer to filter it back out.
   const rows = allRows.filter(
     (r) =>
-      r.v2_sessions?.status === 'completed' && r.weight !== null && r.reps !== null,
+      r.v2_sessions?.status === 'completed' &&
+      r.weight !== null &&
+      r.reps !== null &&
+      !isStageOfSkippedHead(r.parent_set_id, skippedById),
   )
 
   // Group by session

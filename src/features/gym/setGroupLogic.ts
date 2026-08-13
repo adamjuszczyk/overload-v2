@@ -80,6 +80,22 @@ export function headsOnly<T>(rows: T[], getParentId: (row: T) => string | null):
   return rows.filter((row) => getParentId(row) == null)
 }
 
+// Whether a group's head is still eligible to receive a new stage. A
+// skipped head is a dead end everywhere else (SetRow.tsx renders it as a
+// read-only "SKIPPED" row, no further input) — this must be one too.
+// Found by adversarial review (2026-08-13/14): SetGroup.tsx's ADD STAGE /
+// "mark as dropset" affordance previously rendered whenever a head existed
+// with zero stages, with no check on isSkipped at all, so a skipped set
+// could still receive a stage — a real account instance existed (a
+// 2026-07-16 session), traced back through the identical gap in the
+// pre-Phase-3.1 DROP-toggle inference this affordance replaced. Extracted
+// as its own predicate — not inlined in the JSX condition — so it's
+// independently testable, same precedent as every other pure rule in this
+// file.
+export function canAddStageTo(headLog: { isSkipped: boolean }): boolean {
+  return !headLog.isSkipped
+}
+
 // The stage_index to give a newly-added stage. Deliberately max(existing) +
 // 1, not stages.length + 1 — those diverge once a non-last stage has been
 // individually deleted (e.g. stages [1,2,3], delete 2 → [1,3], length is 2

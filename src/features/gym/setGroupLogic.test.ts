@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex } from './setGroupLogic'
+import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex, canAddStageTo } from './setGroupLogic'
 import type { SetLog, WeekPlanSet } from '../../types'
 
 function makeLog(overrides: Partial<SetLog>): SetLog {
@@ -190,5 +190,19 @@ describe('nextStageIndex', () => {
     const groups = groupSetLogs([head, s1, s2])
 
     expect(nextStageIndex(groups[0], (l) => l.stageIndex)).toBe(3)
+  })
+})
+
+// Found by adversarial review (2026-08-13/14): SetGroup.tsx's ADD STAGE /
+// "mark as dropset" affordance had no isSkipped check at all — a skipped
+// head could still receive a new stage. Real account instance: a
+// 2026-07-16 session (see CONTEXT.md).
+describe('canAddStageTo', () => {
+  it('is true for a normally-logged (not skipped) head', () => {
+    expect(canAddStageTo({ isSkipped: false })).toBe(true)
+  })
+
+  it('is false for a skipped head — the exact gap this fix closes', () => {
+    expect(canAddStageTo({ isSkipped: true })).toBe(false)
   })
 })

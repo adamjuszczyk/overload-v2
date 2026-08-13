@@ -4,7 +4,7 @@ import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit } from '../../typ
 import SetRow from './SetRow'
 import RestTimerInline from './RestTimerInline'
 import { useRestTimerStore } from './restTimerStore'
-import type { SetGroup as Group } from './setGroupLogic'
+import { canAddStageTo, type SetGroup as Group } from './setGroupLogic'
 
 export interface LogParams {
   weekPlanSetId: string | null
@@ -145,7 +145,20 @@ export default function SetGroup({
           </Fragment>
         ))}
 
-        {!isDeleting && (
+        {/* Found by adversarial review (2026-08-13/14): this affordance had
+            no headLog.isSkipped check at all — the exact gap that let a
+            skipped head still receive a stage (real account instance: a
+            2026-07-16 session, traced back through this same gap in the
+            pre-Phase-3.1 DROP-toggle inference it replaced). A skipped head
+            is a dead-end everywhere else (SetRow.tsx renders it as a
+            read-only "SKIPPED" row with no further input), so this must be
+            one too — not just visually, the tap target itself must not
+            exist. Already-logged stages below are untouched by this guard:
+            a skipped head can never have pre-existing stages going forward
+            (SKIP only fires on an unlogged row, before any stage could have
+            been added), but real historical data must still display, not
+            vanish. */}
+        {!isDeleting && canAddStageTo(headLog) && (
           addingStage ? (
             <SetRow
               setNumber={headLog.setNumber}
