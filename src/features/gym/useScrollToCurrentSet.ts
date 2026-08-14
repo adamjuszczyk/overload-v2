@@ -37,29 +37,38 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // component instance stays mounted throughout, so its hooks including this
 // one persist unchanged). A callback ref fires on every attach *and*
 // detach, which correctly drives a state update the effect can key on.
+// direction: null while the current set is in view (button hidden, same
+// gating as before) — 'up' when it's scrolled above the viewport, 'down'
+// when below, so the button can point the way instead of always pointing
+// down regardless of which way the target actually is.
 export function useScrollToCurrentSet() {
   const [container, setContainer] = useState<HTMLElement | null>(null)
-  const [showButton, setShowButton] = useState(false)
+  const [direction, setDirection] = useState<'up' | 'down' | null>(null)
   const targetRef = useRef<Element | null>(null)
 
   const checkVisibility = useCallback(() => {
     const target = targetRef.current
     if (!target) {
-      setShowButton(false)
+      setDirection(null)
       return
     }
     const rect = target.getBoundingClientRect()
     const scrollParent = document.querySelector('main')
     const viewportTop = scrollParent?.getBoundingClientRect().top ?? 0
     const viewportBottom = scrollParent?.getBoundingClientRect().bottom ?? window.innerHeight
-    const inView = rect.bottom > viewportTop && rect.top < viewportBottom
-    setShowButton(!inView)
+    if (rect.bottom > viewportTop && rect.top < viewportBottom) {
+      setDirection(null)
+    } else if (rect.top >= viewportBottom) {
+      setDirection('down')
+    } else {
+      setDirection('up')
+    }
   }, [])
 
   useEffect(() => {
     if (!container) {
       targetRef.current = null
-      setShowButton(false)
+      setDirection(null)
       return
     }
 
@@ -102,5 +111,5 @@ export function useScrollToCurrentSet() {
     }
   }, [])
 
-  return { containerRef: setContainer, showButton, scrollToCurrentSet }
+  return { containerRef: setContainer, direction, scrollToCurrentSet }
 }

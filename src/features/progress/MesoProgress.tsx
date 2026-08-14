@@ -18,7 +18,7 @@ import { formatRestTime } from '../../lib/formatRestTime'
 
 // ─── Shared chart constants ───────────────────────────────────────────────────
 
-const CHART_MARGIN = { top: 8, right: 8, left: -24, bottom: 0 }
+const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 }
 const TICK = { fill: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' } as const
 
 const TT_STYLE = {
@@ -197,6 +197,7 @@ export default function MesoProgress() {
         rir: w.avgRir !== null ? Math.round(w.avgRir * 10) / 10 : null,
         reps: w.avgReps !== null ? Math.round(w.avgReps * 10) / 10 : null,
         rest: w.avgRestSeconds !== null ? Math.round(w.avgRestSeconds) : null,
+        duration: w.avgDurationSeconds !== null ? Math.round(w.avgDurationSeconds) : null,
       })),
     [weeks],
   )
@@ -209,6 +210,7 @@ export default function MesoProgress() {
   const hasRir = weeks.some((w) => w.avgRir !== null)
   const hasReps = weeks.some((w) => w.avgReps !== null)
   const hasRest = weeks.some((w) => w.avgRestSeconds !== null)
+  const hasDuration = weeks.some((w) => w.avgDurationSeconds !== null)
 
   if (mesosLoading) {
     return (
@@ -335,6 +337,19 @@ export default function MesoProgress() {
               title="AVG REST TIME / WEEK"
               data={chartData}
               dataKey="rest"
+              deloadWeeks={deloadWeeks}
+              unit="s"
+              color="var(--text-muted)"
+              tickFormatter={formatRestTime}
+              formatValue={formatRestTime}
+            />
+          )}
+
+          {hasDuration && (
+            <MetricLineChart
+              title="AVG WORKOUT DURATION / WEEK"
+              data={chartData}
+              dataKey="duration"
               deloadWeeks={deloadWeeks}
               unit="s"
               color="var(--text-muted)"

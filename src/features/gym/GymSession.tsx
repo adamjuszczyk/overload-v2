@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, ArrowUp } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import {
@@ -130,7 +130,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
 
-  const { containerRef: exercisesContainerRef, showButton: showScrollToCurrentSet, scrollToCurrentSet } =
+  const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } =
     useScrollToCurrentSet()
 
   // Session-first, batched once for every exercise in this workout day (v3
@@ -242,8 +242,11 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
       {/* Jump to the first unlogged set once it's scrolled out of view
           (post-launch fix, 2026-08-10) — e.g. after checking a reference
-          panel or an earlier set further up the session. */}
-      {showScrollToCurrentSet && (
+          panel or an earlier set further up the session. Arrow direction
+          matches which way the set actually is (post-launch fix,
+          2026-08-14) — up when it's scrolled above the viewport, down when
+          below — instead of always pointing down regardless. */}
+      {scrollToCurrentSetDirection && (
         <button
           onClick={scrollToCurrentSet}
           className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full font-bold text-xs tracking-widest"
@@ -257,7 +260,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             zIndex: 30,
           }}
         >
-          <ArrowDown size={13} />
+          {scrollToCurrentSetDirection === 'up' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
           CURRENT SET
         </button>
       )}

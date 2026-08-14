@@ -47,6 +47,18 @@ export function useDeleteMeso() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: MESOS_KEY })
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
+      // v2_sessions.mesocycle_id is `on delete set null`, not cascade — a
+      // deleted meso's sessions survive, just orphaned, so any exercise's
+      // already-cached e1rmSessions can keep tagging them with the
+      // now-deleted meso's id until this invalidates. Same gap class (and
+      // same fix) useDeleteSession/useCompleteSession already apply for the
+      // identical reason — found by adversarial review, generically more
+      // relevant now that ExerciseHistoryView.tsx reads v2_exerciseProgress
+      // as its primary data source, not a secondary one.
+      queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] })
     },
   })
 }

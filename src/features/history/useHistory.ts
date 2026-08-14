@@ -6,7 +6,6 @@ import {
   fetchHistoryDetail,
   deleteSession,
   fetchWorkoutDayName,
-  fetchExerciseSetHistory,
   fetchSessionTypeHistory,
 } from './historyService'
 
@@ -49,23 +48,8 @@ export function useDeleteSession() {
       // invalidation path. Same fix, same reasoning.
       queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
       queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] })
-      queryClient.invalidateQueries({ queryKey: ['v2_exerciseSetHistory'] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessionTypeHistory'] })
     },
-  })
-}
-
-// ─── Exercise, all time ─────────────────────────────────────────────────────
-
-export function useExerciseSetHistory(exerciseId: string | null) {
-  const { user } = useAuth()
-  return useInfiniteQuery({
-    queryKey: ['v2_exerciseSetHistory', exerciseId],
-    queryFn: ({ pageParam }) => fetchExerciseSetHistory(user!.id, exerciseId!, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => lastPage.nextOffset,
-    enabled: !!user && !!exerciseId,
-    staleTime: 2 * 60 * 1000,
   })
 }
 

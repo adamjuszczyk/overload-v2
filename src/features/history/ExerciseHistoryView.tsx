@@ -10,21 +10,24 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts'
+import { ArrowUp, ArrowDown } from 'lucide-react'
 import { useExercises } from '../library/useExercises'
 import { useMesos } from '../programs/useMesos'
-import { useExerciseSetHistory } from './useHistory'
 import { useExerciseProgress, usePositionMatchTable } from '../progress/useProgress'
-import type { PositionMatchSetValue } from '../progress/positionMatch'
+import type { PositionMatchTableRow } from '../progress/positionMatch'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import { groupByParent } from '../gym/setGroupLogic'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import HistoryDataTable, { type HistoryDataTableColumn } from './HistoryDataTable'
 
-// SPEC §7 "Exercise, all time": a trend chart plus an exact per-set table,
-// filterable by meso, deload weeks marked. Sourced from v2_exercise_set_history
-// (TASKS.md §2.6 / Phase 3.4 item 21) — one row per set, paginated.
+// SPEC §7 "Exercise, all time": a trend chart plus a position-matched
+// session-by-session table, filterable by meso (incl. an all-time/ALL MESOS
+// option), deload weeks marked. Both sourced from progressService.ts's
+// fetchExerciseProgress/fetchPositionMatchTable (v2_set_logs directly) — the
+// former EVERY SET table (v2_exercise_set_history-backed, one row per set)
+// was deleted once SIDE BY SIDE was confirmed to genuinely cover the same
+// ground; see CONTEXT.md "History: Sessions/Exercises tab split".
 
-const CHART_MARGIN = { top: 8, right: 8, left: -24, bottom: 0 }
+const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 }
 const TICK = { fill: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' } as const
 const TT_STYLE = {
   backgroundColor: 'var(--surface-overlay)',
@@ -54,74 +57,63 @@ function WeightTooltip({ active, payload, label, unit }: ChartTip & { unit: stri
   )
 }
 
-interface DisplayRow {
-  key: string
-  date: string
-  isStage: boolean
-  setLabel: string
-  weight: number | null
-  reps: number | null
-  rir: number | null
-  isSkipped: boolean
-}
-
-function buildColumns(weightUnit: string): HistoryDataTableColumn<DisplayRow>[] {
-  return [
-    { key: 'date', header: 'DATE', render: (r) => format(parseISO(r.date), 'MMM d, yy') },
-    {
-      key: 'set',
-      header: 'SET',
-      render: (r) => <span style={{ paddingLeft: r.isStage ? 10 : 0 }}>{r.setLabel}</span>,
-    },
-    {
-      key: 'weight',
-      header: `WEIGHT (${weightUnit.toUpperCase()})`,
-      align: 'right',
-      render: (r) => (r.isSkipped || r.weight === null ? '—' : `${r.weight}`),
-    },
-    {
-      key: 'reps',
-      header: 'REPS',
-      align: 'right',
-      render: (r) => (r.isSkipped || r.reps === null ? '—' : `${r.reps}`),
-    },
-    { key: 'rir', header: 'RIR', align: 'right', render: (r) => (r.rir !== null ? `${r.rir}` : '—') },
-  ]
-}
-
 // ─── Side by side (position-matched table, CONTEXT.md "Position-matched
-// multi-session table") — a third view of the same data: every session as a
-// column, "the Nth plain set logged" / "the Nth dropset logged" as
-// independently-numbered rows, reusing progressService.ts's
-// fetchPositionMatchTable / positionMatch.ts's buildPositionMatchTable
-// directly rather than re-deriving the plain/dropset slot model a third
-// time in this file.
+// multi-session table") — every session as a column, "the Nth plain set
+// logged" / "the Nth dropset logged" as independently-numbered row groups,
+// reusing progressService.ts's fetchPositionMatchTable / positionMatch.ts's
+// buildPositionMatchTable directly rather than re-deriving the plain/dropset
+// slot model a third time in this file.
+//
+// Each position is a row *group* (CONTEXT.md "SIDE BY SIDE row redesign"):
+// a header row carrying the label (SET N / DROP N / STAGE), then three
+// metric sub-rows (WEIGHT, REPS, RIR) each independently showing its own
+// up/down arrow against the immediately preceding column actually shown in
+// the table — no combined judgment, each metric's arrow reflects only its
+// own value. Weight/reps are colored (green up, red down); RIR's arrow is
+// never colored — a lower RIR is often the program working as intended, not
+// regression, so no verdict is implied there.
 
 interface PositionMatchDisplayRow {
   key: string
+  kind: 'header' | 'metric'
   label: string
-  isStage: boolean
-  cells: (PositionMatchSetValue | null)[] // aligned with the table's own sessions[] order
+  indent: number
+  metric?: 'weight' | 'reps' | 'rir'
+  cells: (number | null)[] // aligned with the table's own sessions[] order; only meaningful for kind === 'metric'
 }
 
-// Compact "weight×reps@RIR" notation — the same convention
-// ExerciseReference.tsx's SetLine already uses (no unit suffix, "@RIR" only
-// when recorded), not a fourth notation invented for this table.
-// --text-muted, not --text-dim (found by adversarial review: --text-dim is
-// this codebase's disabled/placeholder token, ~1.7:1 contrast in dark mode —
-// far below legible for an empty cell here, which is meaningful data ("this
-// session didn't reach this position"), not decoration).
-function formatCompactCell(value: PositionMatchSetValue | null, toDisplay: (kg: number) => number) {
-  if (!value || value.weight === null) {
-    return <span style={{ color: 'var(--text-muted)' }}>—</span>
-  }
+function arrowDirection(curr: number | null, prev: number | null): 'up' | 'down' | null {
+  if (curr == null || prev == null) return null
+  if (curr > prev) return 'up'
+  if (curr < prev) return 'down'
+  return null
+}
+
+// colored=false for RIR — arrow shown for direction, never colored (see the
+// file-level comment above for why). The first column, and any column whose
+// immediately preceding one lacks a value for this exact metric, has
+// prevValue null and therefore renders no arrow at all.
+function MetricCell({
+  value,
+  prevValue,
+  colored,
+}: {
+  value: number | null
+  prevValue: number | null
+  colored: boolean
+}) {
+  if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+  const dir = arrowDirection(value, prevValue)
+  const arrowColor = colored ? (dir === 'up' ? 'var(--success)' : 'var(--error)') : 'var(--text-secondary)'
   return (
     <span style={{ color: 'var(--text-primary)' }}>
-      {toDisplay(value.weight)}
-      <span style={{ color: 'var(--text-muted)' }}>×</span>
-      {value.reps ?? '—'}
-      {value.rir != null && (
-        <span style={{ color: 'var(--text-muted)' }}>@{value.rir}</span>
+      {value}
+      {dir && (
+        <span
+          style={{ color: arrowColor, marginLeft: 3, display: 'inline-flex', verticalAlign: 'middle' }}
+        >
+          {dir === 'up' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+        </span>
       )}
     </span>
   )
@@ -130,10 +122,12 @@ function formatCompactCell(value: PositionMatchSetValue | null, toDisplay: (kg: 
 // Found by adversarial review: passing every session an exercise has ever
 // been logged in (the "ALL MESOS" / no-active-meso case) to
 // fetchPositionMatchTable means one fetchSession call per session — a real,
-// long-trained exercise can have 100+. Capped here (the caller's own
-// concern — "which sessions" is this component's job, not the fetch layer's)
-// to the most recent N; progressService.ts's fetchSessionsBatched is
-// separate defence-in-depth for whatever count does get passed through.
+// long-trained exercise can have 100+. Also the initial page size / LOAD
+// MORE increment for the table's own session window (below) — reusing one
+// constant for both keeps "how many at a time" consistent in both
+// directions. fetchSessionsBatched (progressService.ts) chunks the actual
+// requests in batches of 8 regardless of how high sessionLimit climbs, so
+// repeated LOAD MORE taps stay safe by construction, not just by convention.
 const MAX_TABLE_SESSIONS = 30
 
 interface Props {
@@ -147,32 +141,30 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
   const { data: mesos = [] } = useMesos()
   const [mesoFilter, setMesoFilter] = useState('')
 
-  // SIDE BY SIDE table data source — see the fuller comment below. Called
-  // here (ahead of the meso-defaulting effect) because that effect needs
-  // e1rmSessions to decide whether defaulting to the active meso is safe.
-  const { data: progressData } = useExerciseProgress(exerciseId)
+  // Primary data source for this whole view — the chart and the SIDE BY
+  // SIDE table's session list both come from here.
+  const { data: progressData, isLoading: isProgressLoading, isError: isProgressError } =
+    useExerciseProgress(exerciseId)
 
-  // The SIDE BY SIDE table (below) is scoped to the active meso by default —
-  // a position-matched comparison is only meaningful within one program's
-  // sessions, not a pile of unrelated ones. This is the one shared filter
-  // both the existing EVERY SET table/chart and the new table read, so
-  // defaulting it also changes their initial view.
+  // Scoped to the active meso by default — a position-matched comparison is
+  // most useful within one program's sessions by default, but switchable to
+  // ALL MESOS (all-time, cross-meso) via the same select below — the page's
+  // one shared meso filter, same "ALL MESOS" pattern History's own session
+  // list (HistorySessions.tsx) already uses, not a second selector built for
+  // this view.
   //
   // Found by adversarial review: defaulting unconditionally the moment an
   // active meso exists — regardless of whether this exercise has ever been
-  // logged in it — silently collapsed the pre-existing EVERY SET table and
-  // TOP WEIGHT TREND chart to "NO HISTORY YET" for any exercise not yet
-  // logged this meso (the single most common reason to check an exercise's
-  // history: right before doing it again). Fixed by only defaulting when the
-  // active meso actually has at least one eligible session for *this*
-  // exercise (checked against e1rmSessions, not the paginated EVERY SET rows,
-  // since that's the complete, non-paginated list) — guaranteeing the default
-  // never empties a view that would otherwise have shown real data. Still a
-  // one-time default (never re-applied, so it never clobbers a user's own
-  // later choice, including explicitly picking ALL MESOS back); falls back to
-  // the prior ALL MESOS default whenever there's no active meso, or the
-  // active meso has nothing for this exercise yet — both unchanged from
-  // before this feature.
+  // logged in it — silently collapsed the view to "NO HISTORY YET" for any
+  // exercise not yet logged this meso (the single most common reason to
+  // check an exercise's history: right before doing it again). Fixed by only
+  // defaulting when the active meso actually has at least one eligible
+  // session for *this* exercise (checked against e1rmSessions) —
+  // guaranteeing the default never empties a view that would otherwise have
+  // shown real data. Still a one-time default (never re-applied, so it never
+  // clobbers a user's own later choice, including explicitly picking ALL
+  // MESOS back); falls back to ALL MESOS whenever there's no active meso, or
+  // the active meso has nothing for this exercise yet.
   const [mesoFilterDefaulted, setMesoFilterDefaulted] = useState(false)
   useEffect(() => {
     if (mesoFilterDefaulted || mesos.length === 0) return
@@ -186,85 +178,116 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
     if (activeMesoHasData) setMesoFilter(active.id)
     setMesoFilterDefaulted(true)
   }, [mesos, progressData, mesoFilterDefaulted])
+
   // History converts to the global Settings unit for display (SPEC §8.1) —
   // same as Progress, independent of whatever unit any individual
   // program-exercise was logged in.
   const { unit: weightUnit, toDisplay } = useWeightDisplay()
-  const columns = useMemo(() => buildColumns(weightUnit), [weightUnit])
 
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useExerciseSetHistory(exerciseId)
+  // How many of the current scope's sessions (oldest end first, most recent
+  // MAX_TABLE_SESSIONS by default) feed the SIDE BY SIDE table — expandable
+  // via LOAD MORE rather than a fixed ceiling, so ALL MESOS can genuinely
+  // reach every session an exercise has ever been logged in, the same way
+  // EVERY SET's own pagination used to. Reset back to the default window
+  // whenever the scope itself changes, so switching mesos doesn't carry over
+  // an inflated limit from a previous, larger scope.
+  const [sessionLimit, setSessionLimit] = useState(MAX_TABLE_SESSIONS)
+  useEffect(() => {
+    setSessionLimit(MAX_TABLE_SESSIONS)
+  }, [mesoFilter])
 
-  // SIDE BY SIDE table data — a separate query from the paginated EVERY SET
-  // rows above: it needs every session's own *ordered* SetLog rows (setNumber/
-  // stageIndex/parentSetId) to build slots, which the flat set-history rows
-  // can't provide (same reasoning progressService.ts's
-  // fetchPositionMatchedHeadline already documents for the pairwise case).
-  // useExerciseProgress's e1rmSessions is reused for the session id/date/
-  // mesocycleId list only (already fetched, already chronological, already
-  // complete — not gated by this page's own EVERY SET pagination).
-  //
-  // Note this means SIDE BY SIDE and EVERY SET can legitimately disagree on
-  // session count: e1rmSessions (progressService.ts's fetchExerciseProgress)
-  // excludes a session where every set of this exercise was skipped, before
-  // it ever becomes an entry — so that session never becomes a SIDE BY SIDE
-  // column, even though it still appears as a dashed-out row in EVERY SET
-  // (a different, unfiltered query). Deliberate: an all-empty column here
-  // would be pure noise, and re-deriving a different inclusion rule would
-  // drift from the exclusion fetchExerciseProgress already applies elsewhere.
-  //
-  // Capped to the most recent MAX_TABLE_SESSIONS (found by adversarial
-  // review — see fetchPositionMatchTable's own comment for why an unbounded
-  // count is a real cost, not just a hypothetical one).
-  const tableSessions = useMemo(() => {
+  const scopedSessions = useMemo(() => {
     if (!progressData) return []
-    const scoped = mesoFilter
+    return mesoFilter
       ? progressData.e1rmSessions.filter((s) => s.mesocycleId === mesoFilter)
       : progressData.e1rmSessions
-    return scoped.slice(-MAX_TABLE_SESSIONS).map((s) => ({ sessionId: s.sessionId, date: s.date }))
   }, [progressData, mesoFilter])
-  const truncatedTableSessionCount = useMemo(() => {
-    if (!progressData) return 0
-    const scoped = mesoFilter
-      ? progressData.e1rmSessions.filter((s) => s.mesocycleId === mesoFilter)
-      : progressData.e1rmSessions
-    return Math.max(0, scoped.length - MAX_TABLE_SESSIONS)
-  }, [progressData, mesoFilter])
+
+  // Chart: top (head, non-warmup, non-skipped) weight per session, oldest to
+  // newest within the current scope — same trend role the chart has always
+  // had, now sourced from progressData directly instead of EVERY SET's
+  // separate row fetch. e1rmSessions is already sorted ascending by date
+  // (progressService.ts), and each session's own `sets` already excludes
+  // stage-of-skipped-head rows and anything without weight/reps, so only the
+  // head/warmup/skip filter needs re-applying here — the same rule the old
+  // EVERY SET-sourced version used.
+  const chartData = useMemo(() => {
+    const points: { date: string; weight: number; isDeload: boolean }[] = []
+    for (const session of scopedSessions) {
+      const headSets = session.sets.filter(
+        (s) => s.parentSetId == null && !s.isSkipped && !s.isWarmup && s.weight !== null,
+      )
+      if (headSets.length === 0) continue
+      const topWeight = Math.max(...headSets.map((s) => s.weight!))
+      points.push({ date: session.date, weight: toDisplay(topWeight), isDeload: session.isDeload })
+    }
+    return points.map((p) => ({ ...p, date: format(parseISO(p.date), 'MMM d') }))
+  }, [scopedSessions, toDisplay])
+
+  const deloadDates = useMemo(
+    () => chartData.filter((p) => p.isDeload).map((p) => p.date),
+    [chartData],
+  )
+
+  // SIDE BY SIDE table session window — capped/expandable slice of the
+  // current scope, most recent first (see sessionLimit above).
+  const tableSessions = useMemo(
+    () => scopedSessions.slice(-sessionLimit).map((s) => ({ sessionId: s.sessionId, date: s.date })),
+    [scopedSessions, sessionLimit],
+  )
+  const truncatedTableSessionCount = Math.max(0, scopedSessions.length - sessionLimit)
+
   const {
     data: positionMatchTable,
     isLoading: isPositionMatchLoading,
+    isFetching: isPositionMatchFetching,
     isError: isPositionMatchError,
   } = usePositionMatchTable(exerciseId, tableSessions.length > 0 ? tableSessions : null)
 
   const positionMatchRows = useMemo<PositionMatchDisplayRow[]>(() => {
     if (!positionMatchTable) return []
     const out: PositionMatchDisplayRow[] = []
-    for (const row of positionMatchTable.plain) {
+
+    function pushGroup(keyPrefix: string, headerLabel: string, indent: number, row: PositionMatchTableRow) {
+      out.push({ key: `${keyPrefix}-header`, kind: 'header', label: headerLabel, indent, cells: [] })
       out.push({
-        key: `plain-${row.slotIndex}`,
-        label: `SET ${row.slotIndex}`,
-        isStage: false,
-        cells: row.cells.map((c) => c.value),
+        key: `${keyPrefix}-weight`,
+        kind: 'metric',
+        metric: 'weight',
+        label: `WEIGHT (${weightUnit.toUpperCase()})`,
+        indent: indent + 1,
+        cells: row.cells.map((c) => (c.value?.weight != null ? toDisplay(c.value.weight) : null)),
+      })
+      out.push({
+        key: `${keyPrefix}-reps`,
+        kind: 'metric',
+        metric: 'reps',
+        label: 'REPS',
+        indent: indent + 1,
+        cells: row.cells.map((c) => c.value?.reps ?? null),
+      })
+      out.push({
+        key: `${keyPrefix}-rir`,
+        kind: 'metric',
+        metric: 'rir',
+        label: 'RIR',
+        indent: indent + 1,
+        cells: row.cells.map((c) => c.value?.rir ?? null),
       })
     }
+
+    for (const row of positionMatchTable.plain) {
+      pushGroup(`plain-${row.slotIndex}`, `SET ${row.slotIndex}`, 0, row)
+    }
     for (const row of positionMatchTable.dropsets) {
-      out.push({
-        key: `drop-${row.slotIndex}-head`,
-        label: `DROP ${row.slotIndex}`,
-        isStage: false,
-        cells: row.head.cells.map((c) => c.value),
-      })
+      pushGroup(`drop-${row.slotIndex}`, `DROP ${row.slotIndex}`, 0, row.head)
       row.stages.forEach((stageRow, i) => {
-        out.push({
-          key: `drop-${row.slotIndex}-stage-${i}`,
-          label: row.stages.length > 1 ? `STAGE ${i + 1}` : 'STAGE',
-          isStage: true,
-          cells: stageRow.cells.map((c) => c.value),
-        })
+        const stageLabel = row.stages.length > 1 ? `STAGE ${i + 1}` : 'STAGE'
+        pushGroup(`drop-${row.slotIndex}-stage-${i}`, stageLabel, 1, stageRow)
       })
     }
     return out
-  }, [positionMatchTable])
+  }, [positionMatchTable, toDisplay, weightUnit])
 
   const positionMatchColumns = useMemo<HistoryDataTableColumn<PositionMatchDisplayRow>[]>(() => {
     if (!positionMatchTable) return []
@@ -272,95 +295,28 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
       {
         key: 'label',
         header: 'SET',
-        render: (r) => <span style={{ paddingLeft: r.isStage ? 10 : 0 }}>{r.label}</span>,
+        render: (r) => (
+          <span style={{ paddingLeft: r.indent * 10, fontWeight: r.kind === 'header' ? 700 : 400 }}>
+            {r.label}
+          </span>
+        ),
       },
       ...positionMatchTable.sessions.map((s, i) => ({
         key: s.sessionId,
-        // Includes the year, matching buildColumns' own DATE column above
-        // (found by adversarial review — 'MMM d' alone can't disambiguate
-        // two sessions a year apart under ALL MESOS, e.g. two "Jan 15"s).
+        // Includes the year, matching the app's other "all time" date
+        // columns — 'MMM d' alone can't disambiguate two sessions a year
+        // apart under ALL MESOS, e.g. two "Jan 15"s.
         header: format(parseISO(s.date), 'MMM d, yy'),
         align: 'right' as const,
-        render: (r: PositionMatchDisplayRow) => formatCompactCell(r.cells[i], toDisplay),
+        render: (r: PositionMatchDisplayRow) => {
+          if (r.kind === 'header') return null
+          const value = r.cells[i]
+          const prevValue = i > 0 ? r.cells[i - 1] : null
+          return <MetricCell value={value} prevValue={prevValue} colored={r.metric !== 'rir'} />
+        },
       })),
     ]
-  }, [positionMatchTable, toDisplay])
-
-  const allRows = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
-  const filteredRows = useMemo(
-    () => (mesoFilter ? allRows.filter((r) => r.mesocycleId === mesoFilter) : allRows),
-    [allRows, mesoFilter],
-  )
-
-  // Grouped for the table — a drop stage nests under its head instead of
-  // appearing as its own row, reusing setGroupLogic.ts's groupByParent
-  // (TASKS.md §4 item 21 — "not a fourth hand-rolled grouping implementation").
-  const groups = useMemo(
-    () =>
-      groupByParent(
-        filteredRows,
-        (r) => r.id,
-        (r) => r.parentSetId,
-        (r) => r.stageIndex,
-      ),
-    [filteredRows],
-  )
-
-  const displayRows = useMemo<DisplayRow[]>(() => {
-    const out: DisplayRow[] = []
-    for (const group of groups) {
-      out.push({
-        key: group.head.id,
-        date: group.head.date,
-        isStage: false,
-        setLabel: `${group.head.setNumber}`,
-        weight: group.head.weight !== null ? toDisplay(group.head.weight) : null,
-        reps: group.head.reps,
-        rir: group.head.rir,
-        isSkipped: group.head.isSkipped,
-      })
-      for (const stage of group.stages) {
-        out.push({
-          key: stage.id,
-          date: stage.date,
-          isStage: true,
-          setLabel: 'STAGE',
-          weight: stage.weight !== null ? toDisplay(stage.weight) : null,
-          reps: stage.reps,
-          rir: stage.rir,
-          isSkipped: stage.isSkipped,
-        })
-      }
-    }
-    return out
-  }, [groups, toDisplay])
-
-  // Chart: top (head, non-warmup, non-skipped) weight per session, oldest to
-  // newest within the currently loaded window — same trend role as
-  // ExerciseProgress.tsx's chart, but across all history instead of one meso.
-  const chartData = useMemo(() => {
-    const bySession = new Map<string, { date: string; weight: number; isDeload: boolean }>()
-    for (const group of groups) {
-      const head = group.head
-      if (head.isSkipped || head.isWarmup || head.weight === null) continue
-      const existing = bySession.get(head.sessionId)
-      if (!existing || head.weight > existing.weight) {
-        bySession.set(head.sessionId, {
-          date: head.date,
-          weight: head.weight,
-          isDeload: head.isDeload,
-        })
-      }
-    }
-    return [...bySession.values()]
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((p) => ({ date: format(parseISO(p.date), 'MMM d'), weight: toDisplay(p.weight), isDeload: p.isDeload }))
-  }, [groups, toDisplay])
-
-  const deloadDates = useMemo(
-    () => chartData.filter((p) => p.isDeload).map((p) => p.date),
-    [chartData],
-  )
+  }, [positionMatchTable])
 
   // The views this screen reads from are online-only (Dexie doesn't mirror
   // them, TASKS.md §2.6's risk section) — an explicit empty state instead of
@@ -424,14 +380,26 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
         </select>
       )}
 
-      {isLoading ? (
+      {isProgressLoading ? (
         <div className="flex items-center justify-center py-16">
           <div
             className="w-5 h-5 rounded-full animate-spin"
             style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
           />
         </div>
-      ) : displayRows.length === 0 ? (
+      ) : isProgressError ? (
+        <div
+          className="mt-6 rounded-xl p-8 text-center"
+          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <p
+            className="text-xs font-bold"
+            style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+          >
+            COULDN'T LOAD
+          </p>
+        </div>
+      ) : scopedSessions.length === 0 ? (
         <div
           className="mt-6 rounded-xl p-8 text-center"
           style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -496,105 +464,71 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
             </div>
           )}
 
-          <div className="mt-6 mb-2">
+          {/* SIDE BY SIDE — position-matched table (CONTEXT.md "Position-
+              matched multi-session table"). Independent loading/error state
+              from the outer progressData gate above — its own query
+              (usePositionMatchTable) fetches each session's full ordered
+              SetLog rows and can fail/lag separately. */}
+          <div className="mt-7 mb-2">
             <p
               className="text-xs font-bold tracking-widest mb-3"
               style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
             >
-              EVERY SET
+              SIDE BY SIDE
             </p>
-            <HistoryDataTable
-              columns={columns}
-              rows={displayRows}
-              getRowKey={(r) => r.key}
-              getRowStyle={(r) => (r.isStage ? { opacity: 0.65 } : undefined)}
-              emptyLabel="NO SETS"
-            />
+            {isPositionMatchLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <div
+                  className="w-5 h-5 rounded-full animate-spin"
+                  style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
+                />
+              </div>
+            ) : isPositionMatchError ? (
+              // Found by adversarial review: a failed fetch used to resolve
+              // to the exact same "NO SETS" empty state as genuinely-empty
+              // data, indistinguishable to the user. Distinct message + no
+              // silent "nothing here" claim when the real cause is a fetch
+              // failure.
+              <div
+                className="rounded-xl p-6 text-center"
+                style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <p
+                  className="text-xs font-bold"
+                  style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+                >
+                  COULDN'T LOAD
+                </p>
+              </div>
+            ) : (
+              <>
+                <HistoryDataTable
+                  columns={positionMatchColumns}
+                  rows={positionMatchRows}
+                  getRowKey={(r) => r.key}
+                  getRowStyle={(r) => (r.indent === 0 ? undefined : { opacity: r.indent === 1 ? 0.85 : 0.65 })}
+                  emptyLabel="NO SETS"
+                />
+                {truncatedTableSessionCount > 0 && (
+                  <button
+                    onClick={() => setSessionLimit((l) => l + MAX_TABLE_SESSIONS)}
+                    disabled={isPositionMatchFetching}
+                    className="w-full mt-3 py-2.5 rounded-xl text-xs font-bold"
+                    style={{
+                      backgroundColor: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                      opacity: isPositionMatchFetching ? 0.5 : 1,
+                    }}
+                  >
+                    {isPositionMatchFetching ? 'LOADING…' : `LOAD MORE (${truncatedTableSessionCount} OLDER)`}
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </>
-      )}
-
-      {/* Sibling of the empty-state branch above, not nested inside it
-          (found by adversarial review) — the meso filter can empty
-          displayRows down to the loaded page(s) while hasNextPage is still
-          true, and this button is the only way to reach further-back pages
-          that might match. Same pattern HistoryPage.tsx already uses. */}
-      {!isLoading && hasNextPage && (
-        <button
-          onClick={() => fetchNextPage()}
-          disabled={isFetchingNextPage}
-          className="w-full mt-3 py-2.5 rounded-xl text-xs font-bold"
-          style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-            opacity: isFetchingNextPage ? 0.5 : 1,
-          }}
-        >
-          {isFetchingNextPage ? 'LOADING…' : 'LOAD MORE'}
-        </button>
-      )}
-
-      {/* SIDE BY SIDE — third view of the same data (position-matched table,
-          CONTEXT.md "Position-matched multi-session table"). Independent data
-          source/gating from the EVERY SET table above (progressService.ts's
-          fetchPositionMatchTable via useExerciseProgress, not the paginated
-          set-history rows) — same "chart only renders once it has enough
-          data" precedent as TOP WEIGHT TREND above, not nested inside the
-          EVERY SET empty/loading branches. */}
-      {isOnline && tableSessions.length > 0 && (
-        <div className="mt-7 mb-2">
-          <p
-            className="text-xs font-bold tracking-widest mb-3"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            SIDE BY SIDE
-          </p>
-          {isPositionMatchLoading ? (
-            <div className="flex items-center justify-center py-10">
-              <div
-                className="w-5 h-5 rounded-full animate-spin"
-                style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
-              />
-            </div>
-          ) : isPositionMatchError ? (
-            // Found by adversarial review: a failed fetch used to resolve to
-            // the exact same "NO SETS" empty state as genuinely-empty data,
-            // indistinguishable to the user. Distinct message + no silent
-            // "nothing here" claim when the real cause is a fetch failure.
-            <div
-              className="rounded-xl p-6 text-center"
-              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
-            >
-              <p
-                className="text-xs font-bold"
-                style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
-              >
-                COULDN'T LOAD
-              </p>
-            </div>
-          ) : (
-            <>
-              <HistoryDataTable
-                columns={positionMatchColumns}
-                rows={positionMatchRows}
-                getRowKey={(r) => r.key}
-                getRowStyle={(r) => (r.isStage ? { opacity: 0.65 } : undefined)}
-                emptyLabel="NO SETS"
-              />
-              {truncatedTableSessionCount > 0 && (
-                <p
-                  className="mt-2 text-xs"
-                  style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-                >
-                  Showing the most recent {MAX_TABLE_SESSIONS} sessions ({truncatedTableSessionCount}{' '}
-                  older not shown)
-                </p>
-              )}
-            </>
-          )}
-        </div>
       )}
     </div>
   )

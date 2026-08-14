@@ -1,5 +1,6 @@
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import { supabase } from '../../lib/supabase'
+import { queryClient } from '../../lib/queryClient'
 import { headsOnly } from '../gym/setGroupLogic'
 import { fetchSession } from '../gym/sessionService'
 import { compareE1rmWindow, type E1rmComparison, type E1rmSetInput } from './e1rm'
@@ -47,6 +48,7 @@ export interface WeekPoint {
   avgRir: number | null
   avgReps: number | null
   avgRestSeconds: number | null
+  avgDurationSeconds: number | null
   isDeload: boolean
 }
 
@@ -304,11 +306,35 @@ export async function fetchPositionMatchedHeadline(
 // passes.
 const FETCH_SESSION_BATCH_SIZE = 8
 
+// Found by adversarial review: usePositionMatchTable's queryKey embeds the
+// *entire* session-id list (useProgress.ts), so ExerciseHistoryView.tsx's
+// LOAD MORE — which grows that list by MAX_TABLE_SESSIONS every click —
+// produced a brand-new query key each time, with this function re-fetching
+// every already-shown session over again alongside the newly-revealed ones.
+// Routed through queryClient.fetchQuery per session id (keyed ['v2_session',
+// id], the same key useSession.ts's useActiveSession already uses for this
+// exact fetchSession call — one shared cache, not a second one) instead of
+// calling fetchSession directly: a session already cached from an earlier
+// LOAD MORE (or from viewing it live) resolves instantly with no network
+// call, so only the genuinely new ids in a page get fetched. staleTime here
+// (5 min, matching this file's other historical-data queries) is this call's
+// own — it doesn't conflict with useActiveSession's staleTime: 0, since
+// staleness is evaluated per-call against the options each caller passes.
 async function fetchSessionsBatched(sessionIds: string[]) {
   const results: Awaited<ReturnType<typeof fetchSession>>[] = []
   for (let i = 0; i < sessionIds.length; i += FETCH_SESSION_BATCH_SIZE) {
     const batch = sessionIds.slice(i, i + FETCH_SESSION_BATCH_SIZE)
-    results.push(...(await Promise.all(batch.map((id) => fetchSession(id)))))
+    results.push(
+      ...(await Promise.all(
+        batch.map((id) =>
+          queryClient.fetchQuery({
+            queryKey: ['v2_session', id],
+            queryFn: () => fetchSession(id),
+            staleTime: 5 * 60 * 1000,
+          }),
+        ),
+      )),
+    )
   }
   return results
 }
@@ -340,6 +366,8 @@ export async function fetchPositionMatchTable(
 type RawSession = {
   id: string
   date: string
+  started_at: string | null
+  completed_at: string | null
   v2_set_logs: Array<{
     weight: number | null
     reps: number | null
@@ -358,7 +386,9 @@ export async function fetchMesoWeeklyProgress(
   const [{ data: sessions, error: sErr }, { data: plans, error: pErr }] = await Promise.all([
     supabase
       .from('v2_sessions')
-      .select('id, date, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id)')
+      .select(
+        'id, date, started_at, completed_at, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id)',
+      )
       .eq('user_id', userId)
       .eq('mesocycle_id', mesoId)
       .eq('status', 'completed')
@@ -377,12 +407,32 @@ export async function fetchMesoWeeklyProgress(
       .map((p) => p.week_number),
   )
 
-  // Group set_logs by week number, computed from session date vs meso start
+  // Group set_logs by week number, computed from session date vs meso start.
+  // Session durations are tracked in a parallel map, keyed the same way —
+  // a duration is a per-session figure (started_at/completed_at), not a
+  // per-set-log one, so it can't live in the same flattened array as
+  // weekMap's set_logs.
   const weekMap = new Map<number, RawSession['v2_set_logs']>()
+  const weekDurations = new Map<number, number[]>()
   for (const session of (sessions ?? []) as RawSession[]) {
     const wk = differenceInCalendarWeeks(parseISO(session.date), parseISO(mesoStartDate), { weekStartsOn: 1 }) + 1
     const existing = weekMap.get(wk) ?? []
     weekMap.set(wk, [...existing, ...session.v2_set_logs])
+
+    // completed_at is already the fixed, logged-at-derived value (post
+    // 2026-08-11 fix + backfill, CONTEXT.md) — read directly, no
+    // re-derivation needed here. Sessions with no derivable duration (the
+    // skipMissedSession dash case, or a device clock change producing <= 0 —
+    // same guard SessionTypeHistoryView.tsx's DURATION column already
+    // applies) are left out of this week's array entirely, not zeroed.
+    if (session.started_at && session.completed_at) {
+      const durationSeconds =
+        (parseISO(session.completed_at).getTime() - parseISO(session.started_at).getTime()) / 1000
+      if (durationSeconds > 0) {
+        const existingDurations = weekDurations.get(wk) ?? []
+        weekDurations.set(wk, [...existingDurations, durationSeconds])
+      }
+    }
   }
 
   const result: WeekPoint[] = []
@@ -395,6 +445,7 @@ export async function fetchMesoWeeklyProgress(
     )
     const withRir = valid.filter((l) => l.rir !== null)
     const withRest = allLogs.filter((l) => l.rest_seconds !== null)
+    const durations = weekDurations.get(weekNumber) ?? []
 
     result.push({
       weekNumber,
@@ -407,6 +458,8 @@ export async function fetchMesoWeeklyProgress(
         withRest.length > 0
           ? withRest.reduce((s, l) => s + l.rest_seconds!, 0) / withRest.length
           : null,
+      avgDurationSeconds:
+        durations.length > 0 ? durations.reduce((s, d) => s + d, 0) / durations.length : null,
       isDeload: deloadWeeks.has(weekNumber),
     })
   }

@@ -11,23 +11,17 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts'
-import { useExercises } from '../library/useExercises'
 import { useMesos } from '../programs/useMesos'
 import { useExerciseProgress, usePositionMatchedHeadline } from './useProgress'
 import { getExerciseE1rmComparison } from './progressService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
-import type { Exercise, MuscleGroup } from '../../types'
+import ExercisePicker from './ExercisePicker'
+import type { Exercise } from '../../types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MUSCLE_GROUPS: MuscleGroup[] = [
-  'chest', 'back', 'shoulders', 'biceps', 'triceps',
-  'forearms', 'quads', 'hamstrings', 'glutes', 'calves',
-  'core', 'other',
-]
-
-const CHART_MARGIN = { top: 8, right: 8, left: -24, bottom: 0 }
+const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 }
 const TICK = { fill: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' } as const
 
 // ─── Tooltips ─────────────────────────────────────────────────────────────────
@@ -82,109 +76,6 @@ function SimpleTooltip({
         <p style={{ color: 'var(--text-primary)', fontSize: 12 }}>
           {formatValue ? formatValue(val) : `${val} ${unit}`}
         </p>
-      )}
-    </div>
-  )
-}
-
-// ─── Exercise picker ──────────────────────────────────────────────────────────
-
-function ExercisePicker({ onSelect }: { onSelect: (ex: Exercise) => void }) {
-  const [search, setSearch] = useState('')
-  const [filterGroup, setFilterGroup] = useState<MuscleGroup | null>(null)
-  const { data: exercises = [] } = useExercises(false)
-
-  const filtered = useMemo(
-    () =>
-      exercises
-        .filter((ex) => !filterGroup || ex.muscleGroup === filterGroup)
-        .filter((ex) => !search || ex.name.toLowerCase().includes(search.toLowerCase()))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [exercises, search, filterGroup],
-  )
-
-  return (
-    <div className="mt-4">
-      {/* Search */}
-      <input
-        type="search"
-        placeholder="Search exercises…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
-        style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-primary)',
-        }}
-      />
-
-      {/* Muscle group filter chips */}
-      <div
-        className="flex gap-1.5 mt-2 overflow-x-auto pb-1"
-        style={{ scrollbarWidth: 'none' }}
-      >
-        <button
-          onClick={() => setFilterGroup(null)}
-          className="flex-none px-2.5 py-1 rounded-full text-xs font-bold tracking-wide"
-          style={{
-            backgroundColor: filterGroup === null ? 'var(--accent)' : 'var(--surface)',
-            color: filterGroup === null ? 'var(--base)' : 'var(--text-muted)',
-            border: `1px solid ${filterGroup === null ? 'var(--accent)' : 'var(--border)'}`,
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          ALL
-        </button>
-        {MUSCLE_GROUPS.map((mg) => (
-          <button
-            key={mg}
-            onClick={() => setFilterGroup(filterGroup === mg ? null : mg)}
-            className="flex-none px-2.5 py-1 rounded-full text-xs font-bold tracking-wide"
-            style={{
-              backgroundColor: filterGroup === mg ? 'var(--accent)' : 'var(--surface)',
-              color: filterGroup === mg ? 'var(--base)' : 'var(--text-muted)',
-              border: `1px solid ${filterGroup === mg ? 'var(--accent)' : 'var(--border)'}`,
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            {mg.toUpperCase()}
-          </button>
-        ))}
-      </div>
-
-      {/* Exercise list */}
-      {filtered.length === 0 ? (
-        <p className="mt-10 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-          No exercises found
-        </p>
-      ) : (
-        <div
-          className="mt-3 rounded-xl overflow-hidden"
-          style={{ border: '1px solid var(--border)' }}
-        >
-          {filtered.map((ex, i) => (
-            <button
-              key={ex.id}
-              onClick={() => onSelect(ex)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left"
-              style={{
-                backgroundColor: 'var(--surface)',
-                borderTop: i > 0 ? '1px solid var(--border)' : undefined,
-              }}
-            >
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {ex.name}
-              </span>
-              <span
-                className="text-xs ml-3 flex-none"
-                style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-              >
-                {ex.muscleGroup?.toUpperCase() ?? 'OTHER'}
-              </span>
-            </button>
-          ))}
-        </div>
       )}
     </div>
   )
@@ -264,7 +155,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
         </div>
       </div>
 
-      {/* E1RM headline (SPEC §6) — percentage only, never an absolute
+      {/* Progress headline (SPEC §6) — percentage only, never an absolute
           weight figure: the underlying number is a formula estimate, and
           pairing it with a fabricated kg figure would imply false
           precision. Position-matched now (see CONTEXT.md "Position-matched
@@ -284,7 +175,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             className="text-xs font-bold tracking-widest"
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
-            E1RM · THIS MESO
+            PROGRESS · THIS MESO
           </p>
           <p
             className="text-lg font-black"
@@ -348,7 +239,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
                   tickLine={false}
                   width={36}
                 />
-                <YAxis yAxisId="volume" hide />
+                <YAxis yAxisId="volume" hide width={0} />
                 <Tooltip
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   content={(p: any) => (

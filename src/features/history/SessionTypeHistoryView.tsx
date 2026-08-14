@@ -22,7 +22,7 @@ import type { SessionTypeHistoryRow } from './historyService'
 // Sourced from v2_session_type_history (TASKS.md §2.6 / Phase 3.4 item 21) —
 // already one row per occurrence, aggregated in SQL.
 
-const CHART_MARGIN = { top: 8, right: 8, left: -24, bottom: 0 }
+const CHART_MARGIN = { top: 8, right: 8, left: 0, bottom: 0 }
 const TICK = { fill: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' } as const
 const TT_STYLE = {
   backgroundColor: 'var(--surface-overlay)',

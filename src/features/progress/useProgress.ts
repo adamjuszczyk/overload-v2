@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useAuth } from '../auth/useAuth'
 import {
   fetchExerciseProgress,
@@ -42,6 +42,17 @@ export function usePositionMatchedHeadline(
 // key, one level up at N sessions instead of 2: it should only refetch when
 // *which* sessions are in scope actually changes (e.g. the meso filter), not
 // on every unrelated re-render of the caller.
+//
+// Found by adversarial review: ExerciseHistoryView.tsx's LOAD MORE grows the
+// session list (and therefore this query's key) on every click, which without
+// placeholderData would blank the fully-rendered table back to a loading
+// spinner on every tap, not just append the newly revealed sessions —
+// exactly the "matches EVERY SET's old useInfiniteQuery-style pagination"
+// behavior this feature was built to provide, but wasn't actually giving.
+// keepPreviousData keeps the last successful (smaller) table on screen while
+// the larger one loads in the background; it does not by itself avoid
+// re-fetching already-seen sessions — see fetchSessionsBatched
+// (progressService.ts) for the per-session cache that fixes that half.
 export function usePositionMatchTable(
   exerciseId: string | null,
   sessions: { sessionId: string; date: string }[] | null,
@@ -51,6 +62,7 @@ export function usePositionMatchTable(
     queryFn: () => fetchPositionMatchTable(exerciseId!, sessions!),
     enabled: !!exerciseId && !!sessions && sessions.length > 0,
     staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   })
 }
 
