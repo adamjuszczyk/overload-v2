@@ -6273,6 +6273,299 @@ stored.**
 
 ---
 
+## 2026-08-14/15 session (scroll direction, SIDE BY SIDE redesign, EVERY SET removed, History tab split, Progress avg duration, mobile chart fix)
+
+Four independent items, no shared TASKS.md phase — a real-usage-driven UI
+round like the 2026-08-11 post-launch-fixes session.
+
+### 1. Scroll-to-current-set button — dynamic direction
+
+`useScrollToCurrentSet.ts`'s `checkVisibility` always set a boolean
+(`showButton`), and `GymSession.tsx` always rendered `<ArrowDown/>`
+regardless of whether the current (first unlogged) set was actually above or
+below the visible viewport. Replaced the boolean with a `'up' | 'down' |
+null` `direction`, derived by splitting the original single `inView`
+boolean expression into three mutually-exclusive branches: unchanged
+(`rect.bottom > viewportTop && rect.top < viewportBottom` → `null`, button
+hidden — byte-identical to the old gating, so "only shown when out of view"
+is unchanged), `rect.top >= viewportBottom` → `'down'` (target entirely
+below), else → `'up'` (target entirely above, the only remaining case by
+elimination). `GymSession.tsx` now renders `<ArrowUp/>` or `<ArrowDown/>`
+based on `direction`.
+
+**Not live-verified in a real gym session** — doing so would have required
+either starting the account's real, not-yet-started scheduled workout for
+today, or temporarily un-logging a set on a real historical session; asked
+the user, who chose to skip live verification in favor of code review only
+rather than touch either. Verified instead by tracing the three-way branch
+by hand against the original boolean it's derived from (documented above) —
+confirmed logically exhaustive and non-overlapping, not just "looked
+right."
+
+### 2. History: EVERY SET vs SIDE BY SIDE, resolved, and SIDE BY SIDE redesigned
+
+**The premise check, as instructed.** The literal claim "SIDE BY SIDE is
+meso-scoped only" was **false** — SIDE BY SIDE already shared
+`ExerciseHistoryView.tsx`'s one `mesoFilter` select with the TOP WEIGHT
+TREND chart and (the then-still-present) EVERY SET table, including an ALL
+MESOS option, so it already had a working all-time/cross-meso view. The
+**real** gap: SIDE BY SIDE's session window was hard-capped at
+`MAX_TABLE_SESSIONS` (30, from the 2026-08-13 adversarial review that added
+the cap as a burst-request safeguard), with no way to see further back,
+while EVERY SET had genuine unbounded `.range()`-based pagination via LOAD
+MORE. A secondary, smaller, already-known-and-accepted gap: SIDE BY SIDE's
+session list (`e1rmSessions`, from `fetchExerciseProgress`) excludes any
+session where every set of the exercise was skipped, while EVERY SET's
+unfiltered row source still showed those as dashed-out rows — this was
+already documented as a deliberate tradeoff when SIDE BY SIDE first shipped
+("an all-null column would be pure noise") and wasn't revisited as a
+blocker here.
+
+Confirmed `buildPositionMatchTable`/`fetchPositionMatchTable`
+(positionMatch.ts / progressService.ts) already generalize to an arbitrary
+session range spanning multiple mesos with zero changes needed — neither
+function has any meso concept at all; "which sessions, in what order" is
+entirely the caller's job, unchanged since they were built.
+
+**Fix:** replaced the fixed 30-session cap with an expandable `sessionLimit`
+state (starts at `MAX_TABLE_SESSIONS`, `+MAX_TABLE_SESSIONS` per LOAD MORE
+tap, resets to the default window on meso-filter change) plus a LOAD MORE
+button — reusing the exact same button convention EVERY SET's own
+pagination used, not a new pattern. Once this genuinely let SIDE BY SIDE
+reach every session ALL MESOS has to offer, **EVERY SET was deleted**
+(`ExerciseHistoryView.tsx`'s table, and its dead backing code:
+`fetchExerciseSetHistory`/`ExerciseSetHistoryRow`/`useExerciseSetHistory`
+and the now-orphaned `historyPagination.ts`/`trimPartialTrailingGroup`
+pagination-safety helper it alone used — all removed, confirmed by grep
+with zero remaining references anywhere in `src/`). The underlying
+`v2_exercise_set_history` SQL view was deliberately left in place — dropping
+it would need a migration, out of scope, and an unused view costs nothing.
+TOP WEIGHT TREND (which used to read EVERY SET's row source) was retargeted
+onto `progressData.e1rmSessions` directly, recomputing top-weight per
+session with the exact same head/non-warmup/non-skipped/max-weight filter
+the old EVERY SET-sourced version used — not `points[].topWeight` from
+`fetchExerciseProgress`, which doesn't exclude warmups and would have been a
+silent behavior change.
+
+**Row redesign.** Each set position (SET N / DROP N / STAGE) is now a row
+group: a header row carrying the label, plus three metric sub-rows (WEIGHT,
+REPS, RIR), each independently showing its own up/down arrow against the
+literal immediately-preceding column (`cells[i-1]`, not the last non-null
+value — chosen because "the immediately preceding column actually shown in
+the table" reads as a positional rule, not a look-back-through-gaps one).
+Weight/reps arrows are colored (green up / red down); RIR's arrow is shown
+for direction but always `--text-secondary`, never colored — a lower RIR is
+often the program working as intended. No arrow when either side is null
+(covers the first column and any column whose predecessor lacks a value for
+that exact metric). Indentation/opacity now has three tiers (0/0.85/0.65 by
+nesting depth) generalizing the old binary head/stage dimming — a stage's
+own metric rows land at the same 0.65 the old code used for stages,
+unchanged at that depth.
+
+**History split into tabs.** `HistoryPage.tsx` is now a thin tab shell
+(Sessions / Exercises), mirroring `ProgressPage.tsx`'s existing
+EXERCISE/MESO OVERVIEW tab-shell pattern exactly. `HistorySessions.tsx`:
+the old `HistoryPage.tsx` body (filters, session list, delete-meso card),
+extracted near-verbatim, **minus the FIND EXERCISE HISTORY collapsible
+search toggle** (search box + muscle-filtered exercise list) — deliberately
+removed. `HistoryExercises.tsx` (new): picker-then-detail, mirroring
+`ExerciseProgress.tsx`'s own EXERCISE tab exactly — shows a picker, and on
+selection shows a BACK button + `<ExerciseHistoryView>`. The picker itself
+(`ExercisePicker.tsx`, new) was extracted out of `ExerciseProgress.tsx` so
+Progress's EXERCISE tab and History's new EXERCISES tab share the literal
+same component, not two copies — confirmed archived-exclusion parity
+(`useExercises(false)` in both, same as the old FIND EXERCISE HISTORY
+toggle used).
+
+**This supersedes the FIND EXERCISE HISTORY discoverability fix from
+2026-08-10/11** (post-launch fixes session) — that toggle's entry point no
+longer exists in this structure; the EXERCISES tab is now the direct,
+always-visible way to reach an exercise's history from History, with a
+better picker (muscle-group chips, not just search) than the toggle had.
+The live gym session's own History-icon entry point
+(`ExerciseHeader.tsx` → `/exercise/:exerciseId` → `ExerciseHistoryPage.tsx`)
+is untouched and still works exactly as before — a different, still-needed
+entry point from an active session, not the one being superseded.
+
+### 3. Progress: avg duration stat + label rename
+
+`fetchMesoWeeklyProgress` now also selects `started_at`/`completed_at` and
+computes each week's average session duration the same way `avgRir`/
+`avgRestSeconds` already do — sessions with no derivable duration or a
+`<= 0` one (a device-clock-change artifact, same guard
+`SessionTypeHistoryView.tsx`'s DURATION column already applies) are left out
+of that week's array entirely, not zeroed. Reads `completed_at` directly
+(already the fixed, `deriveCompletedAt`-derived value as of the 2026-08-11
+fix + backfill) rather than re-deriving anything. `MesoProgress.tsx` renders
+it as "AVG WORKOUT DURATION / WEEK", same `MetricLineChart`/`formatRestTime`
+convention as the sibling AVG REST TIME / WEEK chart. `ExerciseProgress.tsx`'s
+"E1RM · THIS MESO" headline label renamed to "PROGRESS · THIS MESO"
+(confirmed via grep to be the only user-facing "E1RM" string anywhere in the
+app — every other hit is an internal function/variable name describing the
+underlying math, which is still accurate).
+
+**Not a bug, but worth knowing:** some real weeks' avg duration is very
+high (week 7 in the live account averages ~7.7h). Traced this against raw
+Supabase data by hand (fetched `v2_sessions.started_at/completed_at`
+directly, computed durations, matched the chart's rendered value exactly) —
+it's a faithful average of a few real sessions with implausibly long
+durations (one *negative* — correctly excluded by the `<= 0` guard; several
+3–10h), which is the **same pre-existing, already-documented, deliberately
+unfixed** data-quality issue Phase 3.4 first flagged for
+`SessionTypeHistoryView.tsx`'s DURATION column ("no UI cap or fix applied —
+that would be guessing at a product decision," Known Issues above). Not
+introduced by this session; this stat just makes it more visible by
+averaging instead of listing per-session. Left as-is, same judgment as
+before.
+
+### 4. Mobile chart-cutoff investigation and fix
+
+Investigated before fixing, as instructed. No shared chart
+component/wrapper exists in this codebase — `ExerciseHistoryView.tsx`,
+`ExerciseProgress.tsx`, `MesoProgress.tsx`, and `SessionTypeHistoryView.tsx`
+each independently define their own byte-identical `CHART_MARGIN = { top:
+8, right: 8, left: -24, bottom: 0 }` and `TICK` consts (confirmed via grep —
+no file imports these from another). Root-caused live at a real 375px
+viewport with real account data (not synthetic): Y-axis tick `<text>`
+elements were rendering at `x: -46` to `x: -40` in actual browser-viewport
+coordinates — genuinely off the physical screen, not just clipped by an
+`overflow` container (confirmed `document.body.scrollWidth ===
+document.documentElement.clientWidth`, i.e. no scroll-to-reveal escape
+hatch either). Cause: `CHART_MARGIN.left: -24` combined with the YAxis's own
+tick-label offset pushed the text well past the container's actual left
+edge on a viewport too narrow to have spare margin absorbing the negative
+offset (works "by accident" on a wide desktop preview, breaks on real
+mobile). Fixed identically in all four files (`left: -24` → `left: 0`,
+since it's duplicated code with an identical root cause, not a shared
+implementation to fix once). `ExerciseProgress.tsx`'s dual-Y-axis "TOP
+WEIGHT" chart (visible `weight` axis + hidden `volume` axis) needed one
+more fix: even after the margin change, the *hidden* axis was still
+mispositioning the *visible* axis's tick labels (a Recharts quirk, verified
+by reading the rendered SVG's raw `x` attribute before/after) — fixed with
+an explicit `width={0}` on the hidden axis. Verified live at 375px mobile
+and desktop width, real data, all four files, all ticks fully within the
+viewport afterward (confirmed via `getBoundingClientRect`, not just visual
+inspection).
+
+### Adversarial review — Workflow-based, 4 dimensions (table-correctness,
+data-fetch-caching, ui-correctness, regression-scope), 2-vote adversarial
+verification per finding, same pattern as every prior shipped-UI phase.
+4 raw findings, all 4 survived verification (none refuted by both
+verifiers) — full findings and vote reasoning in the workflow transcript
+(run `wf_e8e5ec06-271`).
+
+**Confirmed real, fixed (3):**
+1. **High.** SIDE BY SIDE's new LOAD MORE button blanked the *entire*
+   already-rendered table back to a bare loading spinner and re-fetched
+   *every* already-shown session from scratch on each click, not just the
+   newly-revealed older ones — found independently by both the
+   ui-correctness and regression-scope reviewers (corroboration by
+   convergence). Root cause: `usePositionMatchTable`'s query key
+   (`useProgress.ts`) embeds the *entire* session-id list, so growing
+   `sessionLimit` always produces a brand-new, never-cached key with no
+   `placeholderData` configured. **Fixed two ways**: `usePositionMatchTable`
+   now sets `placeholderData: keepPreviousData` (keeps the last table on
+   screen while a larger one loads, instead of blanking to a spinner —
+   verified this doesn't affect the genuine first-load spinner, since
+   `keepPreviousData` only has something to hold onto after a successful
+   fetch); and `fetchSessionsBatched` (progressService.ts) now routes each
+   session fetch through `queryClient.fetchQuery` keyed `['v2_session', id]`
+   — the exact same key `useSession.ts`'s `useActiveSession` already uses
+   for this identical fetch, so a session already fetched (on an earlier
+   LOAD MORE page, or from having been viewed live) resolves from cache with
+   no network call; only genuinely new ids in a page fetch for real.
+   LOAD MORE button now also shows `LOADING…`/disabled while a background
+   fetch is in flight, matching EVERY SET's old convention. **Live-verified**
+   by temporarily lowering `MAX_TABLE_SESSIONS` to 2 against real 6-session
+   data, clicking LOAD MORE twice: table stayed rendered (old columns
+   visible) through both clicks rather than blanking, grew 2→4→6 columns
+   correctly, button correctly disappeared once exhausted; reverted the
+   temporary constant afterward (confirmed back to `30` in the diff).
+2. **Low.** `useDeleteMeso` (`useMesos.ts`) invalidated only `v2_mesos`/
+   `v2_history`, never `v2_exerciseProgress`/`v2_mesoProgress`/
+   `v2_positionMatchedHeadline`/`v2_positionMatchTable` — the same set its
+   sibling mutations (`useDeleteSession`, `useCompleteSession`) already
+   invalidate for the identical reason. Pre-existing (not introduced this
+   session — `useMesos.ts`/the delete-meso feature predate it), flagged as
+   more relevant now that `ExerciseHistoryView.tsx`'s rewrite makes
+   `v2_exerciseProgress` the page's primary data source rather than a
+   secondary one. Currently inert in the live app (a deleted meso can't be
+   reselected via the meso-filter dropdown, and ALL MESOS mode doesn't
+   filter by `mesocycleId` at all), but the fix is a 4-line, low-risk
+   addition matching an established pattern exactly, so fixed rather than
+   just documented.
+3. Bonus, not a formal finding but surfaced during verification: `v2_sessions
+   .mesocycle_id` is `on delete set null`, not cascade — deleting a meso
+   does *not* delete its sessions, only orphans them. `HistorySessions.tsx`'s
+   delete-confirmation copy ("will permanently delete... and all associated
+   sessions") is therefore inaccurate — pre-existing text, carried over
+   verbatim from the original `HistoryPage.tsx`, out of scope for this
+   diff. Spawned as a follow-up task rather than fixed here or silently
+   dropped.
+
+**Investigated myself, refuted (1):** a finding claimed the new AVG WORKOUT
+DURATION chart's fixed 36px Y-axis width would clip long duration labels
+(e.g. "220min 48s") the same way the CHART_MARGIN bug above did — one
+verifier confirmed this by static reasoning, the other refuted it after
+building a live repro with the project's real Recharts and finding it
+auto-wraps long tick labels onto two lines (`Text.js`'s word-wrapping),
+staying on-screen even at a synthetic 600-minute stress test. Given the
+split, checked it myself directly against the real account's real ~7.7h
+week-7 outlier at a real 375px viewport: tick text auto-wraps ("466min" /
+"40s" on two lines) with a leftmost edge at `x: 8`, comfortably on-screen —
+confirming the live-tested verifier was right and the statically-reasoned
+one missed Recharts' own wrapping behavior. No fix needed.
+
+### Live verification
+
+Real account data throughout (no synthetic/seeded data): scroll button
+direction verified by code trace only (user declined live testing, see
+above). SIDE BY SIDE redesign verified against "One-arm Dumbell Lateral
+Raise" (a real dropset with 2 real stages, incl. the same Jul 16 session
+from the skipped-head-stage investigation above) via direct DOM/arrow-color
+inspection — every cell's arrow direction and color matched hand-computed
+expectations exactly, including every null-adjacent edge case. Two-tab
+History navigation, avg-duration stat, and the renamed label all confirmed
+live. Mobile chart fix confirmed at real 375px width across all four files
+with real data. LOAD MORE fix confirmed live (see above).
+
+**Not verified against real data:** the all-time view spanning more than
+one mesocycle — the account has only ever had one meso
+(MESO 1.0), and completing it to create a second, or otherwise touching the
+user's real active meso, was explicitly declined when asked rather than
+assumed acceptable. Verified instead that `buildPositionMatchTable`/
+`fetchPositionMatchTable` have no meso concept to begin with (see above),
+so there's no meso-count-dependent code path to have missed.
+
+### Deploy
+
+Committed (`1f8ded2`) — all 17 changed files as one commit (feature +
+adversarial-review fixes together, same judgment every prior phase has made
+when nothing in the diff needed independent deployability). Pre-push check:
+`git rev-list --left-right --count origin/master...HEAD` → `0 1`. Pushed;
+`git ls-remote origin master` confirmed `origin/master`'s HEAD is exactly
+`1f8ded2437981f1df3452df22d64136e06660911`. `vercel ls` showed a fresh
+Production deployment ~1 minute after the push; polled `vercel inspect`
+until it left the Building state, confirming `status: ● Ready`, `target:
+production`, aliased to `overload-v2-sage.vercel.app`. Fetched the live
+bundle directly via `curl` and grepped it: commit hash `1f8ded2` present
+(confirming the live bundle is genuinely this commit), all of "AVG WORKOUT
+DURATION", "EXERCISES", "LOAD MORE", "PROGRESS · THIS MESO", "SIDE BY SIDE"
+present, and "EVERY SET" confirmed **absent** (0 matches — the deletion
+genuinely shipped, not just locally). Navigated a real tab to
+`overload-v2-sage.vercel.app`: login screen renders with zero console
+errors.
+
+**Net effect: the scroll button points the right way, History's two "all
+time" tables are down to one that genuinely covers what both used to,
+redesigned for per-metric trend visibility, split across two tabs with a
+shared exercise picker; Progress shows average workout duration and an
+accurately-named headline; four charts no longer clip their Y-axis on
+mobile; and a real LOAD MORE regression this same session introduced was
+caught and fixed before shipping, not after — all live in production.**
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
