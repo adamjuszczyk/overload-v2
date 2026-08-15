@@ -6566,6 +6566,190 @@ caught and fixed before shipping, not after — all live in production.**
 
 ---
 
+## 2026-08-15 session (DELETE MESO copy fix, PWA update-banner investigation, Vercel ignoreCommand for docs-only pushes)
+
+Two read-only investigations, reported back first, then two small fixes —
+same standard as every other bug in this build: mechanism precisely
+described before anything got changed.
+
+### Investigation 1 — the delete-confirmation copy flagged last session
+
+Read-only pass over the bonus finding from the 2026-08-14/15 adversarial
+review (above): `HistorySessions.tsx`'s DELETE MESO confirmation said
+deleting a mesocycle "permanently delete[s]... all associated sessions,"
+which is wrong — `v2_sessions.mesocycle_id` is `on delete set null`
+(`supabase/migrations/001_v2_schema.sql:97`), not cascade, and `deleteMeso()`
+(`mesoService.ts`) is a bare row delete with no manual cleanup, so it relies
+entirely on that FK behaviour. Sessions survive, orphaned (`mesocycle_id`
+nulled), not deleted. What genuinely *is* permanently deleted: the
+mesocycle row, plus — via `v2_week_plans.mesocycle_id on delete cascade`
+(line 67) and the same cascade one level down to `v2_week_plan_sets` — every
+week plan and planned set for that meso.
+
+### Investigation 2 — is the PWA update banner a bug?
+
+**Deploy cadence (real, not assumed):** pulled actual Vercel production
+deployment history via `vercel ls --prod -F json` (two pages, `-N` cursor).
+Every single day from 2026-08-04 through 2026-08-14 (11 straight days) had
+at least one production deployment; several had many (9 on Aug 13, 8 on Aug
+8) — ~35 deploys against 54 commits in that window. **Daily-ish deploys are
+simply real here**, not a perception issue.
+
+**Detection logic (`usePwaUpdate.ts`) — no bug.** `onNeedReload` is a
+library-level callback (`virtual:pwa-register/react`, wrapping
+workbox-window) that only fires once a genuinely *different* `sw.js` has
+been fetched, installed, and — because `registerType: 'autoUpdate'` plus
+explicit `workbox.skipWaiting`/`clientsClaim: true` are set in
+`vite.config.ts` — actually taken over as the controlling worker. The
+interval/`visibilitychange` handlers only call `registration.update()` (a
+re-fetch-and-byte-compare); they don't themselves decide anything. Standard
+Service Worker spec behaviour, not a custom heuristic.
+
+**Dismissal — no bug.** `updateAvailable` is plain `useState` inside a hook
+mounted exactly once, unconditionally, at the true app root
+(`<PwaUpdateNotice />` sits beside `<AppRoutes />` in `App.tsx`, not inside
+it), so it never resets on route navigation. It only flips back to `true`
+via another genuine `onNeedReload()` call, which per spec only fires for an
+actually-different worker than the one currently controlling the page.
+
+**Real secondary factor found, not a bug in the hook — in the deploy
+pipeline instead.** No `vercel.json` existed at the time, so every push —
+including pure documentation commits touching zero application source —
+triggered its own full Vercel rebuild. Vite's build output isn't
+byte-deterministic across separate build invocations. Confirmed directly,
+live: the `feat:` commit (`1f8ded2`) and the immediately-following
+`docs: CONTEXT.md`-only commit (`e20b92e`, touches nothing under `src/`)
+produced two different production bundle hashes 8 minutes apart
+(`index-h_fAnCAv.js` → `index-XDaShIQi.js`) for byte-identical app code.
+Since the service worker's precache manifest embeds those hashed filenames,
+the browser correctly-per-spec saw that as a new worker and showed the
+banner — for a push that changed nothing real. **Verdict: working as
+intended, not a bug** — but the banner tracks *every push*, not just feature
+deploys, until something filters that at the pipeline level. See the fix
+below.
+
+### Fix 1 — DELETE MESO copy
+
+`HistorySessions.tsx`'s confirmation text changed from "This will
+permanently delete **{name}** and all associated sessions. This cannot be
+undone." to "This will permanently delete **{name}**'s plan. This cannot be
+undone. Its logged sessions aren't deleted — they'll remain in History, no
+longer linked to this mesocycle." Matches the wording pattern
+`ProgramPage.tsx` already uses correctly for the *same* `useDeleteMeso()`
+action reached from its own delete-mesocycle flow ("This cannot be undone.
+Any linked session history will remain.") — this app already had the right
+answer in one place, just not the other. `deleteMeso()` itself untouched —
+copy only, the FK-driven behaviour (sessions survive, orphaned) was already
+correct and is now accurately described instead of altered.
+
+**Live verification, adapted:** this session's browser pane started with no
+persisted auth (a fresh profile), and entering the account password to sign
+in is not something to do regardless — so the real DELETE MESO flow
+couldn't be click-tested directly (the account's only mesocycle is
+`active`, not `completed`, so the card doesn't naturally render either;
+temporarily bypassing the `status === 'completed'` gate and forcing
+`mesoDeleteConfirm`'s default to `true` was tried locally to render it, then
+reverted before committing — confirmed via `git diff` showing only the copy
+change). Verified instead with a real (not manually-reasoned) React
+server-side render of the exact JSX from the file — `renderToStaticMarkup`
+against a throwaway `esbuild`-bundled script with a mock `{name: 'MESO
+1.0'}`, run from the repo root so `node_modules` resolution worked, deleted
+immediately after — producing the exact final string: *"This will
+permanently delete MESO 1.0's plan. This cannot be undone. Its logged
+sessions aren't deleted — they'll remain in History, no longer linked to
+this mesocycle."* Confirms JSX whitespace collapses correctly (no double
+space, no missing space around the bolded name/apostrophe) without relying
+on eyeballing the source.
+
+**Open product question, explicitly not decided here:** whether the
+orphaned-session experience itself needs a UX look — e.g. how a session
+with no mesocycle surfaces under History's ALL MESOS view, whether that's
+adequate or confusing on its own. The copy now accurately describes what
+happens; whether what happens is the *right* behaviour is a separate,
+undecided question.
+
+### Fix 2 — `vercel.json` `ignoreCommand`
+
+New `vercel.json` (none existed before):
+```json
+{
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'"
+}
+```
+Uses git's pathspec exclusion (`:!path`) rather than an explicit allowlist
+of build-relevant paths — the diff is computed over *everything except* the
+six known docs/planning files, so any file not on that list (current or
+future — `src/`, `supabase/`, `public/`, `index.html`, `package.json`,
+`vite.config.ts`, or something nobody's added yet) triggers a build by
+default. Safer than the inverse: a forgotten build-relevant path would
+silently degrade to "always build" (harmless), not "silently skip a real
+change."
+
+Vercel's convention for `ignoreCommand`: exit `0` skips the deploy, non-zero
+proceeds — confirmed against Vercel's own canonical example (`git diff
+--quiet HEAD^ HEAD ./`, used directly with no inversion) before writing
+this, not assumed from memory alone. Verified the exclusion pathspec
+mechanically against this repo's *real* commit history before shipping:
+`git diff --quiet 1f8ded2 e20b92e -- . ':!CONTEXT.md' ...` (a real
+docs-only commit vs. its parent) → exit `0`; `git diff --quiet cd3fca1
+1f8ded2 -- . ':!CONTEXT.md' ...` (a real code commit vs. its parent) → exit
+`1`. Both correct.
+
+**Verification, as instructed — used the low-risk live test available
+(this very CONTEXT.md commit).** Sequenced deliberately: pushed Fix 1 +
+`vercel.json` together first (commit `487b40a` — touches `src/` and a new
+root file, correctly *not* in the skip-list, so it builds normally
+regardless of the new ignoreCommand) and confirmed that deploy went out
+clean — `vercel ls --prod` showed a fresh Ready deployment ~1 minute after
+the push, live bundle grepped for commit hash `487b40a` (present) and the
+new copy string (present, old "all associated sessions" string confirmed
+**absent**, 0 matches). This also matters as its own check: a malformed
+`vercel.json` could have broken the build outright, and it didn't. *Then*
+this CONTEXT.md update — genuinely docs-only — is the real-world test of
+the ignoreCommand itself: if Vercel correctly reads the now-present
+`vercel.json` from this commit's own checkout and skips it, no new
+Production deployment will appear in `vercel ls --prod` after this push
+lands, and the bundle hash currently live (`index-CBDcJ48N.js`, from
+`487b40a`) will stay unchanged. Checked and recorded immediately below,
+not assumed.
+
+### Deploy
+
+Two commits, deliberately sequenced (see "verification" above for why).
+Fix 1 + Fix 2 committed together (`487b40a`) — pre-push check: `git
+rev-list --left-right --count origin/master...HEAD` → `0 1`. Pushed;
+`git ls-remote origin master` confirmed `origin/master`'s HEAD is exactly
+`487b40a1b4cace3613d441d6abe4a52e01ae5aa1`. `vercel ls --prod` showed a
+fresh Production deployment ~1 minute after the push (correctly *not*
+skipped — this commit isn't docs-only); `vercel inspect` confirmed `status:
+● Ready`, `target: production`, aliased to `overload-v2-sage.vercel.app`.
+Live bundle fetched and grepped: commit hash `487b40a` present, the new
+DELETE MESO copy string present verbatim, the old "all associated sessions"
+string confirmed absent (0 matches).
+
+This CONTEXT.md update is committed and pushed separately, immediately
+after, as the real-world test of the `ignoreCommand` itself — genuinely
+docs-only, touching nothing this repo's own exclusion list doesn't cover.
+Per the standing instruction to report results honestly rather than assert
+an outcome before it's checked: the expected result, checked immediately
+after this push lands, is that `vercel ls --prod` shows **no** new
+Production deployment, and the live bundle hash stays `index-CBDcJ48N.js`
+(from `487b40a`) rather than changing again. That check is what actually
+happened — reported to the user directly once confirmed, not backfilled
+into this paragraph as if already known before the push.
+
+**Net effect: the DELETE MESO copy accurately describes what deleting a
+mesocycle actually does (plan permanently gone, logged sessions survive
+untagged) instead of overstating the damage; the account's only real
+mesocycle stayed untouched throughout, since this was a copy-only fix
+verified via an isolated SSR render rather than the live delete flow; and
+docs-only pushes going forward skip triggering a real (if silently
+no-op) production rebuild and PWA update banner, verified against real
+git history in both directions before shipping and tested live against
+this repo's actual deploy pipeline, not just reasoned about.**
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
