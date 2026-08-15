@@ -272,8 +272,9 @@ export default function HistorySessions() {
               </p>
               <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
                 This will permanently delete{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{selectedMeso.name}</strong> and
-                all associated sessions. This cannot be undone.
+                <strong style={{ color: 'var(--text-primary)' }}>{selectedMeso.name}</strong>'s
+                plan. This cannot be undone. Its logged sessions aren't deleted — they'll remain
+                in History, no longer linked to this mesocycle.
               </p>
               <div className="flex gap-2">
                 <button
