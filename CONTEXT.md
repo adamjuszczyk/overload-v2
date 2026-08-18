@@ -1189,15 +1189,30 @@ enforces they stay in agreement going forward; a manual re-check is still
 the only guard (TASKS §4 step E note). **Explicit approval is required
 before step F (the Analysis tab UI — the first step with a real
 user-facing consumer of this endpoint) starts** — a direct instruction
-for this initiative, not a standing default. See "2026-08-18 session
-(Coach analysis — migration 012)", "2026-08-18 session (Coach analysis —
-step B)", "2026-08-18 session (Coach analysis — step C)", "2026-08-18
-session (Coach analysis — step D)", and "2026-08-18 session (Coach —
-step E, serverless function + first real Anthropic calls)" below.
-Everything below this point predates the Coach initiative and describes
-the last TASKS.md-phase work — TASKS.md §4's 36 items are all closed out
-as of Phase 3.8 (2026-08-10) — kept as written at the time, still
-accurate, just no longer the newest thing in this file.
+for this initiative, not a standing default. **`coachPrompt.ts` is at
+`PROMPT_VERSION = 2`** as of a same-day follow-up fix: a diagnosed
+phrasing gap (an exercise skipped in both the current and reference
+session was described as "no prior session to compare against" instead
+of naming the double-skip) was root-caused to the prompt, not the
+payload, and fixed — verified against a real Haiku 4.5 call before
+deploying, without spending on a second permanent analysis. The one
+existing saved analysis (`3044110c-...`) keeps its original
+`promptVersion: 1` text permanently, unregenerated, per SPEC §9. A
+separate, deliberately-deferred tone/persona gap ("chill but
+knowledgeable coach" vs. the current clinical default) is tracked under
+"Pending feedback to address" below — explicitly not part of this fix,
+revisit once more real analyses exist to calibrate against. See
+"2026-08-18 session (Coach analysis — migration 012)", "2026-08-18
+session (Coach analysis — step B)", "2026-08-18 session (Coach analysis
+— step C)", "2026-08-18 session (Coach analysis — step D)", "2026-08-18
+session (Coach — step E, serverless function + first real Anthropic
+calls)", "2026-08-18 session (Coach — step E diagnosis: Cable Reverse
+Biceps Curl phrasing)", and "2026-08-18 session (Coach — coachPrompt.ts
+v2, double-skip fix)" below. Everything below this point predates the
+Coach initiative and describes the last TASKS.md-phase work — TASKS.md
+§4's 36 items are all closed out as of Phase 3.8 (2026-08-10) — kept as
+written at the time, still accurate, just no longer the newest thing in
+this file.
 
 **Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
@@ -8168,6 +8183,75 @@ whether/when to fix is still open, to be made together.**
 
 ---
 
+## 2026-08-18 session (Coach — coachPrompt.ts v2, double-skip fix)
+
+Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md
+first, as instructed. Direct follow-through on the prior session's
+diagnosis (immediately above): fix the confirmed `coachPrompt.ts`
+wording gap, verify without spending on a second permanent analysis,
+deploy, report back before step F. Explicitly scoped as prompt-only —
+`analysisInput.ts`, `positionMatch.ts`, and `referenceLogic.ts` untouched,
+since the diagnosis already confirmed the payload needs no change.
+
+**Fix**: two additions to `COACH_SYSTEM_PROMPT`, both new, nothing
+removed. In the `match` bullet, a new paragraph: if `matchedSlotCount`,
+`extraSlotsA`, and `extraSlotsB` are all zero on *both* `plain` and
+`dropsets`, a real reference session was found but the exercise was
+skipped in it entirely — and since the exercise still appears in the
+payload at all, it was logged and skipped this session too — so the
+model must say **"skipped in both weeks,"** explicitly not "no prior
+session to compare against" (reserved for `first_time`, a genuinely
+different case). The same distinction was added as a second sentence in
+"What to write," mirroring the existing `first_time` instruction so the
+two cases read as siblings rather than one being an afterthought.
+`PROMPT_VERSION` bumped `1 → 2`, with a dated changelog comment above the
+constant recording why (matches this file's session-log convention, kept
+in the source too since that's what a saved row's `promptVersion` field
+actually points back to).
+
+**Verification — real Haiku 4.5 call, zero additional DB writes**:
+session `48d841fb-...` already holds its one permanent analysis
+(`3044110c-...`), so re-running it through `api/coach/analyze.ts` was
+correctly ruled out (idempotency would just return the existing v1 row
+without even calling the model — it wouldn't test anything). Instead, a
+throwaway script (`promptV2Verify.ts`, repo root, same category as E1 —
+deleted after use, never committed) pulled that row's **already-
+persisted `input_snapshot` verbatim** (a second real Supabase read, zero
+Anthropic cost) and sent the **exact same payload** to Haiku 4.5 again,
+changing only the system prompt (v1 → v2) — a clean, controlled
+comparison with nothing else different. Result **not saved anywhere**,
+printed only:
+
+- v1 (already persisted): *"No prior session to compare against; this
+  is a reference baseline for future sessions."*
+- **v2 (this run)**: *"Cable Reverse Biceps Curl was skipped in both the
+  reference session (Aug 11) and this session (Aug 18), so there is no
+  training stimulus or comparison for this exercise this week."*
+
+Exactly the fix asked for — dated, explicit "skipped in both," no
+"no prior session" phrasing. 13.6s wall-clock, `4787` in / `1018` out
+tokens. The other four exercises' comments (re-generated in the same
+call, not reused from the v1 row) stayed materially consistent with the
+original analysis's reasoning — same fatigue-accumulation read on lat
+pulldown/cable row/preacher curl, same +5% one-arm-row read — and still
+no bare progressed/same/regressed verdict anywhere. Script and token
+file deleted immediately after; `git status` confirmed nothing left
+behind, only `coachPrompt.ts` modified.
+
+Typecheck, 167 tests, and `vite build` all clean (bundle size
+unaffected — a prompt string change, no dependency graph change).
+Committed (`67d8316`), pushed, deployed — reached `● Ready`.
+
+**Status: fix verified and live.** Any *future* analysis will use
+`PROMPT_VERSION = 2`; the one existing saved row (`3044110c-...`) keeps
+its `promptVersion: 1` and its original v1 text permanently, as it
+should — SPEC §9 rules out regeneration, and this row is what the model
+actually said at the time, not something to silently rewrite. **This
+does not fold into step F — reporting back separately, as instructed.**
+**Still awaiting explicit approval before starting step F.**
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -8178,6 +8262,20 @@ From real usage (one day):
   behaviour exactly (rest still includes set-performance time by
   default) — this closes the gap for anyone who turns the toggle on, not
   a change to the default.
+- **Coach analysis output reads clinical, not "chill but knowledgeable
+  coach."** `coachPrompt.ts` currently has no persona/tone instruction at
+  all — its two hard rules (reason about *why*, never a bare verdict)
+  constrain content, not voice, and the payload itself (matched sets,
+  e1RM deltas, phase/weight-trend numbers) has no casual register for the
+  model to mirror, so output defaults to a neutral, clinical tone.
+  Adam's feedback after reading the first real analysis (2026-08-18,
+  session `48d841fb-...`): wants a "chill but knowledgeable coach"
+  register instead. **Deliberately not addressed as part of
+  `PROMPT_VERSION 2`** (that bump was scoped narrowly to the diagnosed
+  double-skip phrasing gap) — **revisit as its own future
+  `PROMPT_VERSION` bump once 4–5 more real analyses exist to calibrate
+  tone against.** One sample (today's) isn't enough signal to design a
+  persona instruction against without guessing.
 
 ---
 
