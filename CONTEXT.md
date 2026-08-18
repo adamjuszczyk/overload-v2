@@ -8042,12 +8042,129 @@ returned in `844ms` (vs. 19.5s for the real generation): identical
 same `model` — the existing-row branch, not a second generation. No
 double spend.
 
-**Status: step E complete, live-verified end to end, nothing
-outstanding.** `api/coach/analyze.ts` is real, deployed, and has
-produced one genuine, permanently saved analysis. No UI consumer yet —
-step F is what makes this reachable from the app instead of curl/fetch.
-**Awaiting explicit approval before starting step F** (the Analysis tab
-UI).
+**Status: step E complete, live-verified end to end.** `api/coach/analyze.ts`
+is real, deployed, and has produced one genuine, permanently saved
+analysis. No UI consumer yet — step F is what makes this reachable from
+the app instead of curl/fetch. One phrasing imprecision was flagged in
+the generated text (Cable Reverse Biceps Curl's comment) — diagnosed in
+a follow-up session below, **not fixed yet, a joint decision on whether
+to fix before step F pending**. **Awaiting explicit approval before
+starting step F** (the Analysis tab UI) either way.
+
+---
+
+## 2026-08-18 session (Coach — step E diagnosis: Cable Reverse Biceps Curl phrasing)
+
+Read CONTEXT.md first, as instructed. Two explicit, narrow asks, no
+building: (1) show the complete, current `coachPrompt.ts` text so SPEC
+§8's two hard requirements are visibly *in* the prompt, not just true of
+one output by accident; (2) diagnose — using the already-persisted
+`input_snapshot`, zero additional cost — whether the payload assembled
+for Cable Reverse Biceps Curl in session `48d841fb-...`'s analysis
+structurally distinguishes "a `last_week` reference session exists, but
+this exercise has zero comparable sets in it" from "no reference exists
+at all" (`first_time`), or whether both look identical to the model once
+assembled. **Explicitly told not to fix anything yet** — diagnosis only.
+
+**`coachPrompt.ts`'s full, current text was re-read fresh from disk and
+confirmed unchanged since step E** (still `PROMPT_VERSION = 1`) — shown
+in full in this session, matching what step E's CONTEXT.md entry already
+quotes above verbatim. Both of SPEC §8's hard requirements are written
+into the prompt as explicit numbered rules (not just tone): rule 1
+("Reason about *why*, using training-science judgment...") and rule 2
+("Never emit a bare progressed / same / regressed verdict... a comment
+that is only a label, with no explanation, is a failure to follow this
+prompt").
+
+**Diagnosis method**: re-fetched the ground truth live rather than
+trusting scrollback — the persisted `input_snapshot` for analysis row
+`3044110c-eb49-4990-831b-18fd70bad36a` (direct PostgREST query, the
+live app's own refreshed session token — the one from earlier in the day
+had expired, refreshed via the same `/today` navigation trick used
+before) plus the raw `v2_set_logs` rows for this exact exercise
+(`9fd89bfb-5e2a-43f1-ba6d-6cca55ff2d11`) in both sessions. **Ground
+truth confirmed**: both the current session (`48d841fb-...`, 2026-08-18)
+and the reference session (`cf44de02-...`, 2026-08-11) have two real
+`v2_set_logs` rows each for this exercise, **all four rows
+`is_skipped: true`, weight/reps/rir all null** — the lifter logged this
+exercise into both sessions and explicitly skipped every set, two weeks
+running. The persisted payload entry: `reference: {kind: "last_week",
+sessionId: "cf44de02-...", date: "2026-08-11"}` (a real prior session),
+`isDeloadReference: false` (a real boolean), `match:` a fully-populated,
+**non-null** object naming both sessions with `slotCountA: 0,
+slotCountB: 0, matchedSlotCount: 0, extraSlotsA: 0, extraSlotsB: 0` on
+*both* the `plain` and `dropsets` streams. The model's actual comment:
+"No prior session to compare against; this is a reference baseline for
+future sessions."
+
+**Verified via a Workflow — two independent code-tracing investigators,
+blind to each other, plus a reconciliation pass that re-read the source
+itself rather than trusting either summary** (given the stakes of
+recommending a change vs. not), not a single read. All three agreed
+without any disagreement to reconcile:
+
+1. **The payload does structurally distinguish the two cases — confirmed
+   against exact source lines, not assumed.** `buildExercise`
+   (`analysisInput.ts:125-145`) sets `match = null` **only** when
+   `reference.type === 'first_time'` (or the defensive
+   `referenceLogs === null` case) — line 127. For `last_week`, neither
+   holds, so `matchSessionsByPosition` always runs and *unconditionally*
+   returns a real object (`positionMatch.ts:227-240` has no
+   null-returning path at all). `toReference()`
+   (`analysisInput.ts:109-123`) sets real `sessionId`/`date` on `kind:
+   "last_week"`; `isDeloadReference` is forced `null` only for
+   `first_time` (line 142). So `first_time`'s payload
+   (`{kind:"first_time"}`, `match: null`, `isDeloadReference: null`) and
+   this case's payload (`{kind:"last_week", sessionId, date}`, `match:
+   {...real session identity, all-zero counts}`, `isDeloadReference:
+   false`) are unambiguous and machine-distinguishable. **Not a payload
+   gap.**
+2. **`resolveExerciseReference`'s `last_week` selection here is correct,
+   by-design behavior, not a separate hidden bug.**
+   (`referenceLogic.ts:56-97`) buckets purely by session *date*
+   (`isWithinInterval` against the previous calendar week) — it never
+   inspects `is_skipped` anywhere in the file. A session enters its
+   candidate list upstream merely by having *any* `v2_set_logs` row for
+   the exercise (`analysisInput.ts:300-326`, no `is_skipped` filter on
+   the query). A session whose only rows for an exercise are all
+   skipped is therefore a legitimate `last_week` candidate purely
+   because a row exists in the right date window — a deliberate
+   separation of concerns (date-based session selection vs. set-level
+   comparability, the latter owned entirely by `positionMatch.ts`), not
+   an oversight.
+3. **The zero-counts shape traces cleanly and is expected.**
+   `buildLoggedSlots` (`positionMatch.ts:110-113`) filters out any group
+   whose head is skipped — both sessions' only group for this exercise
+   is skipped, so both slot arrays end up empty, and `matchSlotStream`
+   (`positionMatch.ts:181-195`) reports `matchedSlotCount: 0` and all
+   `extraSlots*: 0` while still returning a populated object.
+4. **`coachPrompt.ts` gives zero explicit guidance for this exact
+   shape — confirmed by direct text search, "skip"/"skipped" appears
+   nowhere in the prompt.** It gives phrasing instructions for exactly
+   two cases: `first_time` (line 28, reiterated in "What to write," line
+   44 — "say plainly that there's no prior session to compare against")
+   and the *asymmetric* nonzero-`extraSlots` case (line 35 — "worth a
+   mention if it changes the volume story"). Nothing addresses the
+   *symmetric* case: `match` non-null, but `slotCountA`, `slotCountB`,
+   `matchedSlotCount`, `extraSlotsA`, and `extraSlotsB` all zero on
+   *both* streams. Lacking a specific instruction, the model reused the
+   nearest template it had — `first_time`'s wording — which conflates
+   "no reference session exists" with "a reference session exists but
+   had nothing comparable in it."
+
+**Conclusion: this is a `coachPrompt.ts` wording gap, not an
+`analysisInput.ts` payload gap.** The payload already carries everything
+needed to be precise (a real prior session identified by date, plus an
+explicit zero-count match) — the prompt just never tells the model what
+sentence to reach for when it sees that specific shape. The workflow's
+own recommendation (not acted on, since fixing was explicitly out of
+scope this session): worth a fix before step F, since it's a one-sentence
+addition to the `reference`/`match` bullet, not a rare edge case (any
+lifter who skips the same exercise twice running will hit it, and this
+data shows it already happened for real), and the underlying
+matching/payload logic needs no change either way. **No code was
+changed this session — diagnosis only, per instruction. Decision on
+whether/when to fix is still open, to be made together.**
 
 ---
 
