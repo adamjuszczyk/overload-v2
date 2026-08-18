@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useAuth } from '../auth/useAuth'
 import { isCoachUser } from './coachGate'
 import CoachLocked from './CoachLocked'
+import CoachAnalysisTab from './CoachAnalysisTab'
 import PhaseLog from './PhaseLog'
 import WeightLog from './WeightLog'
 
 // Two-tab shell (COACH-ANALYSIS-TASKS.md §4 step B) — same pattern
 // HistoryPage.tsx uses: page header + tab bar live in the shell, each tab
-// owns its own content below it. Context tab logic (step C) is now live;
-// Analysis tab logic is still step F.
+// owns its own content below it. Both tabs are now live (Context: step C,
+// Analysis: step F).
 
 type Tab = 'analysis' | 'context'
 
@@ -62,14 +63,9 @@ export default function CoachPage() {
         ))}
       </div>
 
-      {/* Tab content — Analysis is still step F */}
+      {/* Tab content */}
       {activeTab === 'analysis' ? (
-        <div
-          className="mt-8 text-center text-xs"
-          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-        >
-          ANALYSIS — COMING SOON
-        </div>
+        <CoachAnalysisTab />
       ) : (
         <>
           <PhaseLog />
