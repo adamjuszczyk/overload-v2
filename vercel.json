@@ -1,3 +1,8 @@
 {
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'",
+  "functions": {
+    "api/**": {
+      "maxDuration": 60
+    }
+  }
 }
