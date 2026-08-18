@@ -104,9 +104,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${accessToken}` } },
-  })
+  let supabase
+  try {
+    supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    })
+  } catch {
+    // createClient throws synchronously on a non-empty but malformed URL
+    // (e.g. dashboard-pasted with stray quotes) — the stripping above only
+    // catches invisible characters, not this. Caught here so a bad env var
+    // still produces the same clean 500 the missing-var case above does,
+    // instead of an uncaught rejection and an opaque platform-level error.
+    res.status(500).json({ error: 'Server misconfigured: invalid Supabase env vars' })
+    return
+  }
 
   const { data: userData, error: userError } = await supabase.auth.getUser(accessToken)
   if (userError || !userData.user) {
@@ -117,8 +128,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Authoritative gate — guards spend. Must equal the same account as the
   // client-side VITE_COACH_USER_ID gate (coachGate.ts); nothing enforces
-  // that agreement automatically (see CONTEXT.md).
-  const coachUserId = process.env.COACH_USER_ID
+  // that agreement automatically (see CONTEXT.md). Same invisible-char
+  // stripping as the Supabase env vars above — a dashboard paste can carry
+  // a BOM/zero-width space here too, which would otherwise silently lock
+  // out the legitimate coach account (fails closed, but still a real gap).
+  const coachUserId = (process.env.COACH_USER_ID ?? '').replace(/[^\x20-\x7E]/g, '').trim()
   if (!coachUserId || userId !== coachUserId) {
     res.status(403).json({ error: 'Not authorized for Coach analysis' })
     return
@@ -128,6 +142,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from('v2_coach_session_analyses')
     .select('*')
     .eq('session_id', sessionId)
+    // Defence-in-depth alongside RLS, matching every query in
+    // analysisInput.ts — currently redundant (RLS plus the COACH_USER_ID
+    // gate above already make session_id alone safe), but an adversarial
+    // review flagged this as the one place in the function relying on RLS
+    // alone rather than also filtering explicitly.
+    .eq('user_id', userId)
     .maybeSingle()
   if (existingError) {
     res.status(500).json({ error: 'Failed to check for an existing analysis' })
@@ -163,7 +183,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       messages: [{ role: 'user', content: JSON.stringify(inputSnapshot) }],
     })
   } catch (err) {
-    res.status(502).json({ error: 'Analysis generation failed', detail: String(err) })
+    // Anthropic SDK errors embed the full upstream status/body in their
+    // message (unlike a Postgrest error object, whose String() is inert) —
+    // logged server-side only, not echoed to the client, same treatment as
+    // the insert-failure path below.
+    console.error('Coach analysis generation call failed', { sessionId, userId, error: err })
+    res.status(502).json({ error: 'Analysis generation failed' })
     return
   }
 
@@ -205,6 +230,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('v2_coach_session_analyses')
         .select('*')
         .eq('session_id', sessionId)
+        .eq('user_id', userId)
         .single()
       if (!raceError && raceRow) {
         res.status(200).json(toCoachSessionAnalysis(raceRow as CoachSessionAnalysisRow))
