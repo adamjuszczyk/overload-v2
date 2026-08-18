@@ -574,6 +574,99 @@ All core features built and working:
   account and the three payloads. **Awaiting approval before step E**
   (the serverless function and the actual Anthropic call — the first step
   that costs money per run).
+- 2026-08-18 session (Coach — step E, serverless function + first real
+  Anthropic calls): **`api/coach/analyze.ts` is built, deployed, and
+  live-verified end to end against production — real analysis generated,
+  saved, and readable back; 403 and idempotency both confirmed live; two
+  real bugs found only by live-testing (not by typecheck/build/Vitest) are
+  fixed.** E1 (mandated first action, no scaffolding before it) measured
+  real Haiku 4.5 latency at **14.2s wall-clock against the 60s
+  `maxDuration` cap** (3151 in / 729 out tokens) — a comfortable margin,
+  so the rest of the step proceeded as planned rather than stopping.
+  `tsconfig.api.json` (Node target, referenced from root `tsconfig.json`
+  alongside app/node) plus a widened `typecheck` script; `vercel.json` got
+  `functions.maxDuration: 60` for `api/**`, added alongside the existing
+  `ignoreCommand`, not replacing it; `@anthropic-ai/sdk` →
+  `dependencies`, `@vercel/node` → `devDependencies`, confirmed absent
+  from the client bundle (`grep -c anthropic dist/assets/*.js` → 0,
+  gzip sizes unchanged). `coachPrompt.ts` (`PROMPT_VERSION = 1`) carries
+  SPEC §8's two hard requirements as explicit prose, not just tone, and
+  explains the full `AnalysisInput` payload shape (reference kind,
+  `isDeloadReference`, position-matched plain/dropset streams,
+  `extraSlots*`, phase, weight trend) so the model reconstructs less on
+  its own. `api/coach/analyze.ts`: verify JWT via
+  `supabase.auth.getUser(token)` → check server-side `COACH_USER_ID` (the
+  authoritative gate — `coachGate.ts`'s client-side check stays cosmetic
+  only) → return any existing row for the session first (idempotency,
+  real-money guard) → `assembleAnalysisInput` → Haiku 4.5 with structured
+  output, no thinking, pinned `claude-haiku-4-5-20251001` → insert,
+  persisting `response.model` (not the request constant) and the full
+  `input_snapshot` → return the row. Catches Postgres `23505`
+  (`v2_coach_analyses_session_uk`) and returns the winning row instead of
+  erroring, for race-safety on a concurrent double-tap. Implements §5.12's
+  two zero-cost mitigations for a paid-but-unsaved generation: the
+  generated content rides along in the error response, and it's logged
+  server-side, rather than either being silently discarded. Checked the
+  PWA service worker directly against the built `dist/sw.js`: it precaches
+  a fixed, explicit asset list (no `/api/` entries) and registers exactly
+  one runtime route, a `NavigationRoute` scoped to top-level `GET`
+  navigations — a `POST /api/coach/analyze` fetch call matches neither
+  condition, so no `navigateFallbackDenylist` change was needed, confirmed
+  rather than assumed. `COACH_USER_ID` set to
+  `12e79b69-9891-4f53-a7cf-650edd83659f` — **the same UUID as
+  `VITE_COACH_USER_ID`, not re-derived independently, per instruction** —
+  in both `.env.local` and Vercel Production.
+  **Two real, live-only bugs found and fixed, neither caught by
+  typecheck/test/build:** (1) `package.json`'s `"type": "module"` means
+  Vercel's Node function builder resolves `api/**` under real Node ESM
+  rules, which require an explicit extension on every relative import —
+  Vite/Vitest's bundler-mode resolution had been tolerating extensionless
+  imports the whole time, so this was invisible locally. First deploy
+  crashed on *every* invocation with `ERR_MODULE_NOT_FOUND` before the
+  auth check could even run. Fixed by adding explicit `.js` extensions
+  across the whole chain reachable from `api/coach/analyze.ts`:
+  `analysisInput.ts`, `referenceLogic.ts`, `setGroupLogic.ts`,
+  `positionMatch.ts`, `phaseLogic.ts`, `weightLogic.ts` — import
+  specifiers only, no logic changes, confirmed harmless to Vite/Vitest's
+  own resolution (`.js` pointing at `.ts` source is the standard
+  TS+Node16/nodenext convention, and bundler-mode resolves it the same
+  way). (2) With that fixed, the 403 test came back `401 Invalid or
+  expired session` instead — for a token independently confirmed valid
+  against Supabase's own `/auth/v1/user` endpoint moments earlier. Traced
+  to `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` being read raw via
+  `process.env` in `analyze.ts`, unlike `src/lib/supabase.ts`'s browser
+  client, which has stripped invisible/non-ASCII characters (BOM,
+  zero-width space from a past dashboard paste) from these exact two
+  values since earlier in the project, for exactly this
+  "non ISO-8859-1 code point in Authorization header" failure mode. Same
+  fix, mirrored into `analyze.ts`.
+  **Live E2E verification, all three pieces, against production:**
+  (a) the one real, irreversible analyze call, run against a genuine
+  session you chose (`48d841fb-4071-46a5-89e0-b3f1579f61cb`, 2026-08-18,
+  "PULL 1") — succeeded in 19.5s, `4510` input / `984` output tokens,
+  `model: "claude-haiku-4-5-20251001"`, saved as row
+  `3044110c-eb49-4990-831b-18fd70bad36a`. Generated analysis reasoned
+  about fatigue accumulation at day 92 of a sustained cut (not a bare
+  verdict anywhere): a positive first-set e1RM signal on lat pulldown
+  alongside rep erosion on sets 2–3, uniform-load-but-dropping-reps on
+  cable row and preacher curl read as CNS/glycogen fatigue rather than
+  strength loss, a volume drop on one-arm row flagged as possibly
+  adaptive, and the zero-match Cable Reverse Biceps Curl exercise
+  explicitly called out rather than silently skipped. (b) the 403 path —
+  no second real account exists, so verified via a **temporary,
+  restored-afterward** mismatch instead: Vercel Production's
+  `COACH_USER_ID` was set to a dummy UUID, redeployed, called with your
+  real (still genuinely valid) token → `403 Not authorized for Coach
+  analysis`, then `COACH_USER_ID` was restored to the real value and
+  redeployed again *before* the real analyze call above ran. (c)
+  idempotent double-tap — a second call against the same session returned
+  the identical row (`3044110c-...`, same `createdAt`) in `844ms`, not a
+  new generation. **`coachPrompt.ts`'s full text and the generated
+  analysis's full text were shown directly in this session, not just
+  pass/fail, per instruction.** See "2026-08-18 session (Coach analysis —
+  step E)" below for the full account. **Awaiting approval before step
+  F** (the Analysis tab UI — the first step with a real user-facing
+  consumer of this endpoint).
 
 ---
 
@@ -1077,28 +1170,34 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
-**Coach (Daily Session Analysis) — steps A through D of
-COACH-ANALYSIS-TASKS.md §4 are built and independently verified as of
-2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
-gating), C (Context tab), and D (analysis-input assembly) are done. A–C
-are deployed and verified against production through the UI; D is pure
-logic plus a fetch layer with no UI consumer yet, verified via a real
-dry run against production data instead (see below) — nothing to deploy
-in the UI sense, though the commit is pushed and built clean. **Explicit
-approval is required before step E (the serverless function + the actual
-Anthropic call — first step that spends money) starts** — a direct
-instruction for this initiative, not a standing default.
-`VITE_COACH_USER_ID` is set in both places it needs to be (`.env.local`,
-Vercel Production) — **still needs its server-side twin, `COACH_USER_ID`,
-set to the same UUID when step E lands; nothing enforces that they agree,
-drift is quiet and asymmetric (TASKS §4 step E note).** See "2026-08-18
-session (Coach analysis — migration 012)", "2026-08-18 session (Coach
-analysis — step B)", "2026-08-18 session (Coach analysis — step C)", and
-"2026-08-18 session (Coach analysis — step D)" below. Everything below
-this point predates the Coach initiative and describes the last
-TASKS.md-phase work — TASKS.md §4's 36 items are all closed out as of
-Phase 3.8 (2026-08-10) — kept as written at the time, still accurate, just
-no longer the newest thing in this file.
+**Coach (Daily Session Analysis) — steps A through E of
+COACH-ANALYSIS-TASKS.md §4 are built and independently, live-verified as
+of 2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
+gating), C (Context tab), D (analysis-input assembly), and E (serverless
+function + first real Anthropic calls) are done. A–C are deployed and
+verified against production through the UI; D is pure logic plus a fetch
+layer with no UI consumer yet, verified via a real dry run instead; E has
+a real, deployed, callable endpoint (`POST /api/coach/analyze`) with no
+UI consumer yet either — verified by calling it directly (real analyze
+call, 403, idempotent double-tap, all live against production — see
+"2026-08-18 session (Coach — step E, serverless function + first real
+Anthropic calls)" below). **`COACH_USER_ID` (server-side, authoritative)
+and `VITE_COACH_USER_ID` (client-side, cosmetic) both hold
+`12e79b69-9891-4f53-a7cf-650edd83659f`** — confirmed the same value, not
+re-derived independently, in `.env.local` and Vercel Production. Nothing
+enforces they stay in agreement going forward; a manual re-check is still
+the only guard (TASKS §4 step E note). **Explicit approval is required
+before step F (the Analysis tab UI — the first step with a real
+user-facing consumer of this endpoint) starts** — a direct instruction
+for this initiative, not a standing default. See "2026-08-18 session
+(Coach analysis — migration 012)", "2026-08-18 session (Coach analysis —
+step B)", "2026-08-18 session (Coach analysis — step C)", "2026-08-18
+session (Coach analysis — step D)", and "2026-08-18 session (Coach —
+step E, serverless function + first real Anthropic calls)" below.
+Everything below this point predates the Coach initiative and describes
+the last TASKS.md-phase work — TASKS.md §4's 36 items are all closed out
+as of Phase 3.8 (2026-08-10) — kept as written at the time, still
+accurate, just no longer the newest thing in this file.
 
 **Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
@@ -7690,6 +7789,265 @@ E** (`api/coach/analyze.ts`, `@anthropic-ai/sdk`, `tsconfig.api.json`,
 plan's own ordering, **E1 — a single real Haiku 4.5 call to measure actual
 latency — must be the literal first action inside step E**, before any
 scaffolding, since a near-the-cap reading is a stop-and-report condition).
+
+---
+
+## 2026-08-18 session (Coach — step E, serverless function + first real Anthropic calls)
+
+Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md
+first, as instructed. Instruction was explicit and sequenced: E1 first
+and only E1 (no function file, no `vercel.json` edit, no dependency
+added yet) — a throwaway script sending one real assembled payload to
+`claude-haiku-4-5-20251001`, reporting latency and tokens, stopping to
+report rather than routing around it if the reading landed near the
+60s cap. Only once E1 confirmed a safe margin was the rest of §1/§4
+step E to be built.
+
+### E1 — the literal first action
+
+`e1LatencyCheck.ts` (repo root, throwaway, deleted after use, never
+committed): imported `assembleAnalysisInput` from step D's
+`analysisInput.ts` unmodified, a Supabase client built from a fresh
+browser-extracted access token (the dry-run token had expired since
+step D), and `Anthropic` from `@anthropic-ai/sdk` installed via
+`npm install --no-save` — real SDK, zero footprint in `package.json`/
+`package-lock.json` (confirmed via `git status --short` on both,
+empty). Called against the same real session used at the end of step
+D's dry run (`c0fe3868-...`, 2026-07-21, "PULL 1"), structured output
+via `output_config: {format: {type: 'json_schema', schema: ...}}`
+matching `CoachAnalysisContent`'s shape, no `thinking` param.
+
+**Result: 14.2s wall-clock (14230ms) against the 60s `maxDuration`
+cap — 45.8s of margin, not a marginal reading.** `response.model`
+confirmed `claude-haiku-4-5-20251001` (pinning works). `input_tokens:
+3151`, `output_tokens: 729` — matches TASKS.md's own 4–7k in / 1–1.5k
+out estimate. Output was valid structured JSON, qualitatively strong:
+reasoned about fatigue accumulation mid-cut, CNS load on top sets vs.
+volume-set rep erosion, and explicitly reasoned about a skipped
+exercise (Cable Reverse Biceps Curl) instead of ignoring it — no bare
+progressed/same/regressed verdict anywhere. Script and its token file
+deleted immediately after; `git status` confirmed nothing dangling.
+
+**Comfortable margin → proceeded to the rest of step E as instructed.**
+
+### The rest of §1/§4 step E
+
+- **`src/types/index.ts`**: `CoachExerciseComment`, `CoachAnalysisContent`,
+  `CoachSessionAnalysis` (mirrors `v2_coach_session_analyses` row-for-row).
+  `CoachSessionAnalysis.inputSnapshot: AnalysisInput` needs `AnalysisInput`
+  from `analysisInput.ts` — a feature file, reversing this codebase's usual
+  "features import from `types/index.ts`, not back" direction. Accepted as
+  a narrow, deliberate exception (`import type`, so it's a type-only
+  circular reference — confirmed harmless: `tsc --noEmit` clean) rather
+  than inventing a new home for a type that's genuinely a DB row shape.
+- **`tsconfig.api.json`**: separate project for `api/`, Node target
+  (`ES2022`/`ES2023` lib), referenced from root `tsconfig.json` alongside
+  the existing app/node projects; `typecheck` script widened to run both.
+  Needed one non-obvious addition: `"types": ["node", "vite/client"]` —
+  `api/coach/analyze.ts`'s import chain reaches `src/lib/supabase.ts`'s
+  `import.meta.env` through a *type-only* import three hops deep
+  (`analysisInput.ts` → `referenceLogic.ts` → `sessionService.ts`'s
+  `ReferenceSession` type) — the exact risk TASKS §1.3 already flags for
+  that same import, just surfacing on the type-check axis instead of the
+  runtime one this time. `vite/client`'s `ImportMeta.env` augmentation is
+  there purely to satisfy `tsc` on a file it has to fully typecheck but
+  never actually loads at runtime (type-only imports are erased) — zero
+  runtime effect, `api/` never runs in Vite.
+- **`vercel.json`**: `functions.maxDuration: 60` for `api/**`, added
+  alongside the existing `ignoreCommand`, not replacing it.
+- **`@anthropic-ai/sdk`** → `dependencies`, **`@vercel/node`** →
+  `devDependencies`, for real this time. Confirmed absent from the client
+  bundle: `grep -ril anthropic dist/assets/*.js` → no match, gzip sizes
+  byte-identical to the pre-step-E build.
+- **`coachPrompt.ts`** (`PROMPT_VERSION = 1`) — full text, as requested:
+
+  ```
+  You are a strength-training coach reviewing one completed gym session for an experienced lifter. You are given a single JSON payload (the "input") describing that session, matched up against its most relevant prior session, plus the lifter's current training phase and recent bodyweight trend. Your job is to write a short, honest, coach-style analysis of the session — not to compute or restate numbers the lifter can already see.
+
+  ## The two rules that matter most
+
+  1. **Reason about *why*, using training-science judgment** — RIR trend vs load trend, e1RM signal, deload timing, and the phase/weight-trend context all inform this. "Same weight, but RIR dropped from 2 to 1" is a different story from "same weight, same RIR" even though both look identical on a bare progressed/same/regressed axis.
+  2. **Never emit a bare progressed / same / regressed verdict.** Every comment explains its reasoning. A verdict-shaped word is fine as part of a sentence ("this reads as a small step back in recovery terms") but a comment that is only a label, with no explanation, is a failure to follow this prompt.
+
+  ## Input payload shape
+
+  `session` — { id, date, workoutDayName } for the session being analyzed. `isDeloadCurrent` is true/false/null (null = no week plan attached) and applies to the *whole* session, not per exercise — a true value means lighter numbers this week are the deload working as intended, not a regression.
+
+  `exercises` — one entry per exercise trained this session:
+  - `exerciseId` / `exerciseName` — echo these back exactly in your per-exercise comment so the caller can match your comment to the right exercise. Do not rename, translate, or paraphrase the exercise name.
+  - `reference` — what this exercise is being compared against:
+    - `{ kind: "first_time" }` — no prior occurrence exists at all. There is nothing to compare. Say so plainly; do not invent a trend or imply this is a first attempt at the exercise in general (it may not be) — only that no reference session exists for this comparison.
+    - `{ kind: "last_week", sessionId, date }` — the clean case, roughly a week prior.
+    - `{ kind: "last_time", sessionId, date, daysSince }` — the reference session is further back than a week (`daysSince`). A large gap changes what a delta means (detraining, a deload week, a missed session) — factor the gap into your reasoning rather than treating it like a normal week-over-week comparison.
+  - `isDeloadReference` — true/false/null (null only when reference is first_time). If true, the *reference* session was a deload — a jump back up this session isn't "big progress," it's returning from an intentionally light week, and should be framed that way.
+  - `match` — null exactly when reference is first_time. Otherwise, a position-matched, slot-by-slot comparison between the current session and the reference session for this exercise, split into two independent streams:
+    - `plain` — ordinary (non-dropset) sets, matched in the order logged: the Nth plain set this session vs the Nth plain set the reference session.
+    - `dropsets` — dropset groups, matched the same way. Each matched dropset has a `head` (the first, heaviest stage) and `stages` (the drops that follow, matched stage-by-stage).
+    - Each stream reports `slotCountA`/`slotCountB` (current session is always side B, reference is side A — sessionA/sessionB inside `match` identify which), `matchedSlotCount`, and `extraSlotsA`/`extraSlotsB` — sets logged on one side with no counterpart on the other (e.g. an extra set added this session, or a set dropped). A nonzero `extraSlotsB` is real, deliberate work that has no comparison point — worth a mention if it changes the volume story, not something to silently ignore.
+    - Each matched item (`head` or a stage) is `{ a, b, e1rmA, e1rmB, deltaPercent }` — `a` is the reference-session set, `b` is the current-session set, each carrying `{ weight, reps, rir, isWarmup }` as actually logged. `e1rmA`/`e1rmB`/`deltaPercent` are null when either side lacks weight/reps/RIR or is a warmup — a null delta is not zero, it means there is no computed signal for that item, so lean on the raw weight/reps/RIR instead.
+
+  `phase` — `{ current, previous }`, each null or `{ phase: "cut"|"bulk"|"maintain", startDate, durationDays }`, resolved as of the session's own date. A cut in week 6 reads differently from a cut in week 1 — use `durationDays` and the phase value to read strength/recovery trends in context (e.g. rep or RIR erosion late in a long cut is expected fatigue accumulation, not a red flag).
+
+  `weightTrend` — an array of recent weekly bodyweight averages, each `{ weekStart, averageKg, source, dailyCount }` (`source` is "manual" for a directly-logged weekly figure or "daily" for a computed average of `dailyCount` daily entries), ordered oldest to newest, ending at or before the session's own week. Use this alongside `phase` to judge whether strength trends match what the phase and bodyweight direction would predict — e.g. stalling load during a fast cut is a different story from stalling load with a stable or rising bodyweight.
+
+  ## What to write
+
+  For each entry in `exercises`, write one `comment`: a few sentences of coach-style reasoning about that exercise's session, referencing the specific numbers that matter (not every number) and explaining *why* they matter given the reference kind, deload flags, phase, and weight trend. If `reference.kind` is `"first_time"`, say plainly that there's no prior session to compare against instead of writing a comparison.
+
+  Then write one `overall`: a short read of the session as a whole — how the exercises fit together, and anything the per-exercise comments don't capture on their own (e.g. a session-wide fatigue pattern, or how the whole session fits the current phase and weight trend).
+
+  Output only the exercises array (each item carrying back the same `exerciseId`/`exerciseName` it was given) and the overall summary, in the structured format requested. No preamble, no markdown headers, no bare verdict words standing alone.
+  ```
+
+- **`api/coach/analyze.ts`** — `POST` only. Verify JWT via
+  `supabase.auth.getUser(token)` on a per-request client (anon key +
+  caller's `Authorization` header, no service-role key) → check
+  `process.env.COACH_USER_ID` against the verified `user.id` (403 if
+  absent or mismatched) → return any existing row for the session first
+  (idempotency, checked before any spend) → `assembleAnalysisInput` →
+  `anthropic.messages.create` with the pinned model, `output_config`
+  structured output, no `thinking` → insert, persisting `response.model`
+  and the full `input_snapshot` → return the row. Catches Postgres
+  `23505` on insert and re-fetches/returns the winning row instead of
+  erroring (race-safe double-tap protection, matches the DB's own
+  `unique(session_id)` constraint from migration 012). §5.12's two
+  zero-cost mitigations implemented: on an insert failure *after* a
+  successful generation, the generated content rides along in the `500`
+  response body (`{error, generated}`), and `console.error` logs it
+  server-side — a hard `maxDuration` kill is still unrecoverable by
+  construction (no response to return anything in), which is the
+  accepted risk itself, not something these mitigations claim to cover.
+- **PWA service worker check**: read the built `dist/sw.js` directly
+  rather than assuming. It precaches a fixed, explicit URL list (no
+  `/api/` entries) and registers exactly one runtime route —
+  `NavigationRoute(createHandlerBoundToURL('index.html'))` — which
+  Workbox scopes to top-level `GET` navigations only
+  (`request.mode === 'navigate'`). A `fetch('/api/coach/analyze',
+  {method: 'POST'})` call matches neither condition, so it cannot be
+  intercepted as built. No `navigateFallbackDenylist` change made —
+  confirmed unnecessary, not skipped.
+- **Env vars**: `COACH_USER_ID` set to
+  `12e79b69-9891-4f53-a7cf-650edd83659f` in `.env.local` and Vercel
+  Production — the same UUID as `VITE_COACH_USER_ID`, read from that
+  existing value rather than re-derived independently, per instruction.
+
+Typecheck, 167 tests, and build all clean before the first deploy.
+Committed in five logical units (`522197d` types, `d56cdd5` tsconfig +
+maxDuration, `6a6c645` dependencies, `9a41b0f` coachPrompt.ts, `c3f4e83`
+`api/coach/analyze.ts`), pushed, deployed — reached `● Ready`.
+
+### Two real bugs, found only by live-calling the deployed function
+
+Neither was caught by local typecheck, Vitest, or `vite build` — both
+are specific to how Vercel actually builds and runs `api/**` in
+production, which nothing local exercises.
+
+**Bug 1 — `ERR_MODULE_NOT_FOUND` on every invocation.**
+`package.json` has `"type": "module"`. Vite/Vitest's bundler-mode
+resolution (`moduleResolution: "bundler"`) tolerates extensionless
+relative imports and always has — nothing about this project's local
+tooling would ever surface a problem. But Vercel's Node function
+builder compiles `api/**.ts` (and everything it transitively imports)
+under real Node ESM rules, which *require* an explicit extension on
+every relative specifier. The build step printed this as a `tsc`
+diagnostic (`TS2835`) across seven files but did not fail the build —
+so the first deploy shipped anyway, and crashed on the very first
+`POST /api/coach/analyze`, before the auth check could even run:
+`Error [ERR_MODULE_NOT_FOUND]: Cannot find module
+'/var/task/src/features/coach/analysisInput' imported from
+/var/task/api/coach/analyze.js` (from `vercel logs`, not just the
+build log). **Fixed** by adding explicit `.js` extensions (the standard
+TS+Node16/nodenext convention — a `.ts` source file's import specifier
+names the extension its *compiled* output will have) to every relative
+import reachable from `api/coach/analyze.ts`: `analyze.ts` itself,
+`analysisInput.ts`, `referenceLogic.ts`, `setGroupLogic.ts`,
+`positionMatch.ts`, `phaseLogic.ts`, `weightLogic.ts` — import
+specifiers only, no logic touched. Confirmed harmless everywhere else:
+full local typecheck/test/build all still pass (`.js` pointing at `.ts`
+source resolves fine under bundler-mode too), bundle size unchanged.
+
+**Bug 2 — a genuinely valid token rejected as `401 Invalid or expired
+session`.** Found immediately after fixing Bug 1, while re-testing the
+403 path: `supabase.auth.getUser(token)` inside `analyze.ts` rejected a
+token independently confirmed valid seconds earlier via a direct call
+to Supabase's own `/auth/v1/user` endpoint (`200`, correct user
+returned, ~24 minutes from expiry). Root cause: `analyze.ts` read
+`process.env.VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` raw, but
+`src/lib/supabase.ts`'s browser client has stripped invisible/non-ASCII
+characters from these exact two values since earlier in the project —
+its own comment explains why: a BOM or zero-width space accidentally
+introduced by pasting into a hosting dashboard causes a "non
+ISO-8859-1 code point" failure in the `Authorization` header. The
+underlying Vercel-stored values apparently still carry that, and
+`analyze.ts` was the first place reading them without the same
+cleaning. **Fixed** by mirroring the identical
+`.replace(/[^\x20-\x7E]/g, '').trim()` stripping into `analyze.ts`.
+
+Both fixes committed (`49a2c93` extensions, `10ba5f8` env stripping),
+pushed, redeployed, confirmed `● Ready` each time before re-testing.
+
+### Live E2E verification — all three pieces, against production
+
+Per instruction, asked before doing anything irreversible: which real
+session to spend the one un-redoable analyze call on, and how to
+verify the 403 path given no second real account exists. You chose
+`48d841fb-4071-46a5-89e0-b3f1579f61cb` (2026-08-18, "PULL 1", today's
+session — offered from a live, read-only query of your 12 most recent
+completed sessions, all still unanalyzed) and approved a temporary,
+restored-afterward `COACH_USER_ID` mismatch for the 403 test.
+
+**(b) 403 first, before any spend** — Vercel Production's
+`COACH_USER_ID` set to a dummy UUID
+(`00000000-0000-0000-0000-000000000000`), redeployed, called with your
+real (still valid) token → `403 {"error":"Not authorized for Coach
+analysis"}`. `COACH_USER_ID` restored to the real value, redeployed
+again, confirmed present via `vercel env ls` — done *before* the real
+call below, so the real call couldn't have been silently blocked or
+misrouted by a stale gate.
+
+**(a) The one real, irreversible analyze call** — succeeded: `200`,
+19.5s wall-clock, `input_tokens: 4510`, `output_tokens: 984`,
+`model: "claude-haiku-4-5-20251001"`, saved as row
+`3044110c-eb49-4990-831b-18fd70bad36a`. Full generated text:
+
+  > **Overall**: Session is tracking as expected for week 13 of a sustained cut (92 days in, ~3 months). Primary lifts (lat pulldown, cable row) show stalled or slightly declining reps on static loads, and arm work followed suit—all classic signs of accumulated fatigue rather than any acute issue. The positive e1RM signal on lat pulldown's first set and the one-arm row's improvement suggest strength reserves are still accessible, just requiring higher effort. Volume also dropped partway through (one-arm row down to a single set), which may be adaptive (backing off when fatigued) or a sign that today's energy budget was tight. At this stage of a cut with bodyweight stable around 72.9 kg, some rep and RIR erosion is predictable; the next 1–2 weeks will clarify whether this is a normal late-cut plateau or a signal to deload or tighten nutrition. No immediate red flags, but monitor closely.
+  >
+  > **Neutral Lat Pulldown (cable)**: Mixed picture on this one. First set shows a promising signal—dropped 2.5 kg but pulled 11 reps at RIR 0 versus 8 last week, computing to a +3.9% e1RM jump. That's solid, especially given the weight dip. However, sets 2 and 3 tell a different story: you held the same 65 kg but lost reps (9 vs 10, then matched at 9), reading as a small step back in cumulative fatigue terms. You're 13 weeks into a cut, so some rep erosion late in the cycle is expected, but the first-set strength signal suggests there's still room to push if recovery permits.
+  >
+  > **Cable Row**: This one reads as clear fatigue accumulation. Same 60 kg across all three sets, but reps dropped across the board—8 vs 8 (even), 8 vs 9 (down 1), and 8 vs 10 (down 2). E1RM estimates trend downward with each set. At three months into a cut, this pattern is typical CNS/glycogen fatigue rather than an outright strength loss, but it's a signal to watch if the trend continues—you may be approaching the point where session volume or intensity needs careful management.
+  >
+  > **Ezbar Preacher Curl**: Arm work is showing fatigue consistent with the rowing pattern. Same 10 kg across all three sets, but reps dropped in sets 1 and 2 (10→8, 9→7), with only set 3 holding even. First set had RIR 1 last week and hit RIR 0 this week while losing 2 reps, a sign recovery is tighter. The e1RM estimates are down 5–7% on the first two sets. This is a secondary exercise late in the session, so some fatigue is inevitable, but it reinforces the session-wide pattern.
+  >
+  > **One-arm Cable Lat Row**: Only one set logged this week versus two last week, so direct comparison is limited. The matched set shows +5% e1RM (35 kg, 12 reps vs 10), a genuine step forward despite the reduced volume. This is a minor positive outlier in an otherwise flat-to-fatigued session, though dropping a full set suggests you may have run low on reserves by this point in the session.
+  >
+  > **Cable Reverse Biceps Curl**: No prior session to compare against; this is a reference baseline for future sessions.
+
+  (Last one is a slight imprecision worth flagging: `reference.kind`
+  was actually `"last_week"` — a reference session exists, it just had
+  zero comparable logged sets for this exercise on either side
+  (`slotCountA: 0, slotCountB: 0`), same zero-match shape step D's dry
+  run already surfaced for this exact exercise. The model's phrasing
+  reads as "first time" rather than "nothing to compare in the
+  matched week" — not a bare verdict, still useful, but not perfectly
+  precise. Not fixed this session; noted for a future prompt revision
+  if it recurs.)
+
+No bare progressed/same/regressed verdict anywhere in any of the six
+fields — every one reasons about *why*, exactly as SPEC §8 and
+`coachPrompt.ts`'s two rules require.
+
+**(c) Idempotent double-tap** — a second call against the same session
+returned in `844ms` (vs. 19.5s for the real generation): identical
+`id: "3044110c-eb49-4990-831b-18fd70bad36a"`, identical `createdAt`,
+same `model` — the existing-row branch, not a second generation. No
+double spend.
+
+**Status: step E complete, live-verified end to end, nothing
+outstanding.** `api/coach/analyze.ts` is real, deployed, and has
+produced one genuine, permanently saved analysis. No UI consumer yet —
+step F is what makes this reachable from the app instead of curl/fetch.
+**Awaiting explicit approval before starting step F** (the Analysis tab
+UI).
 
 ---
 
