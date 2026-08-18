@@ -1170,63 +1170,47 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
-**Coach (Daily Session Analysis) — steps A through F of
-COACH-ANALYSIS-TASKS.md §4 are built; F is the one not yet fully closed,
-pending a single explicit gate (below), as of 2026-08-18.** Seven steps
-total (A–G); A (migration 012), B (shell + gating), C (Context tab), D
-(analysis-input assembly), E (serverless function + first real Anthropic
-calls), and F (the Analysis tab UI) are all built and deployed. A–C are
-deployed and verified against production through the UI; D is pure logic
-plus a fetch layer with no UI consumer, verified via a real dry run
-instead; E has a real, deployed, callable endpoint (`POST
-/api/coach/analyze`), verified by calling it directly (real analyze call,
-403, idempotent double-tap, all live against production); **F is the
-first real UI consumer of that endpoint — live-verified against
-production on every point except one.** The two SPEC §6 lists ("To
-analyze" / "Analyses") and the read-only detail view all render correctly
-against real data — see "2026-08-18 session (Coach — step F, Analysis tab
-UI)" below. **The one open item: a real second account still needs to
-confirm the locked placeholder renders correctly now that real content
-sits behind it — deferred twice before, flagged again this session rather
-than silently skipped, blocked on a hard rule (no entering anyone's
-password, ever) rather than on effort.** `COACH_ANALYSIS_START_DATE` in
-`coachService.ts` is a **placeholder** (`2026-01-01T00:00:00Z`, TASKS
-§5.9) — the real ship date isn't knowable until step G actually deploys
-this UI; **step G must consciously set the real value, not inherit this
-one.** **`COACH_USER_ID` (server-side, authoritative)
-and `VITE_COACH_USER_ID` (client-side, cosmetic) both hold
-`12e79b69-9891-4f53-a7cf-650edd83659f`** — confirmed the same value, not
-re-derived independently, in `.env.local` and Vercel Production. Nothing
-enforces they stay in agreement going forward; a manual re-check is still
-the only guard (TASKS §4 step E note). **Explicit approval is required
-before step G (verification/deploy hardening + the ship-date value) can
-start**, and before that, the second-account check above still has to
-land — a direct instruction for this initiative, not a standing default.
-**`coachPrompt.ts` is at
-`PROMPT_VERSION = 2`** as of a same-day follow-up fix: a diagnosed
-phrasing gap (an exercise skipped in both the current and reference
-session was described as "no prior session to compare against" instead
-of naming the double-skip) was root-caused to the prompt, not the
-payload, and fixed — verified against a real Haiku 4.5 call before
-deploying, without spending on a second permanent analysis. The one
-existing saved analysis (`3044110c-...`) keeps its original
-`promptVersion: 1` text permanently, unregenerated, per SPEC §9. A
-separate, deliberately-deferred tone/persona gap ("chill but
-knowledgeable coach" vs. the current clinical default) is tracked under
-"Pending feedback to address" below — explicitly not part of this fix,
-revisit once more real analyses exist to calibrate against. See
-"2026-08-18 session (Coach analysis — migration 012)", "2026-08-18
-session (Coach analysis — step B)", "2026-08-18 session (Coach analysis
-— step C)", "2026-08-18 session (Coach analysis — step D)", "2026-08-18
-session (Coach — step E, serverless function + first real Anthropic
-calls)", "2026-08-18 session (Coach — step E diagnosis: Cable Reverse
-Biceps Curl phrasing)", "2026-08-18 session (Coach — coachPrompt.ts
-v2, double-skip fix)", and "2026-08-18 session (Coach — step F, Analysis
-tab UI)" below. Everything below this point predates the
-Coach initiative and describes the last TASKS.md-phase work — TASKS.md
-§4's 36 items are all closed out as of Phase 3.8 (2026-08-10) — kept as
-written at the time, still accurate, just no longer the newest thing in
-this file.
+**Coach — Daily Session Analysis v1 is complete, as of 2026-08-18.** All
+seven steps of COACH-ANALYSIS-TASKS.md §4 (A: migration 012, B: shell +
+gating, C: Context tab, D: analysis-input assembly, E: serverless
+function + first real Anthropic calls, F: the Analysis tab UI, G: final
+verification, adversarial review, and deploy) are built, deployed, and
+live-verified against production. Every item this build ever tracked as
+open is now closed: the ship-date cutoff is a real, pinned value
+(`COACH_ANALYSIS_START_DATE = '2026-08-16T22:00:00.000Z'` in
+`coachService.ts`, midnight Monday 2026-08-17 Poland time — replacing
+step F's `2026-01-01` placeholder), the second-account/locked-placeholder
+check is resolved, and `api/coach/analyze.ts`'s auth and idempotency
+paths went through a Workflow-based adversarial review (4 confirmed
+findings, all low severity, all fixed and deployed) per TASKS §4 step
+G's own instruction to point that review specifically there. Two real,
+permanent analyses now exist (`48d841fb-...` at `promptVersion: 1`,
+`413f76e5-...` at `promptVersion: 2`), both generated through the real
+pipeline — the second one specifically through the *actual UI button*,
+not a raw `fetch`, the first time that exact path had been exercised.
+**`COACH_USER_ID` (server-side, authoritative) and
+`VITE_COACH_USER_ID` (client-side, cosmetic) both hold
+`12e79b69-9891-4f53-a7cf-650edd83659f`**, confirmed the same value in
+`.env.local` and Vercel Production; nothing enforces they stay in
+agreement going forward, a manual re-check remains the only guard. **One
+thing is deliberately still open, not a bug and not part of v1**: a
+persona/tone gap ("chill but knowledgeable coach" vs. the current
+clinical default), tracked under "Pending feedback to address" below as
+a future `PROMPT_VERSION` bump once more real analyses exist to
+calibrate against. See "2026-08-18 session (Coach analysis — migration
+012)", "2026-08-18 session (Coach analysis — step B)", "2026-08-18
+session (Coach analysis — step C)", "2026-08-18 session (Coach analysis
+— step D)", "2026-08-18 session (Coach — step E, serverless function +
+first real Anthropic calls)", "2026-08-18 session (Coach — step E
+diagnosis: Cable Reverse Biceps Curl phrasing)", "2026-08-18 session
+(Coach — coachPrompt.ts v2, double-skip fix)", "2026-08-18 session
+(Coach — step F, Analysis tab UI)", and "2026-08-18 session (Coach —
+step G, final verification and deploy — Daily Session Analysis v1
+complete)" below for the full nine-session build account. Everything
+below this point predates the Coach initiative and describes the last
+TASKS.md-phase work — TASKS.md §4's 36 items are all closed out as of
+Phase 3.8 (2026-08-10) — kept as written at the time, still accurate,
+just no longer the newest thing in this file.
 
 **Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
@@ -8420,6 +8404,207 @@ are unchanged from step B, only never independently confirmed against
 production with a *real* second identity behind them until this check
 actually happens. **Awaiting that confirmation, then explicit approval
 before starting step G.**
+
+---
+
+## 2026-08-18 session (Coach — step G, final verification and deploy — Daily Session Analysis v1 complete)
+
+Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md
+first, as instructed. Final step of the seven-step plan: set the real
+ship-date cutoff, run a full regression pass, adversarially review
+`api/coach/analyze.ts`'s auth and idempotency paths, confirm the deploy,
+and close the feature out.
+
+### Real `COACH_ANALYSIS_START_DATE`, replacing step F's placeholder
+
+**`2026-08-16T22:00:00.000Z`** — midnight, Monday 2026-08-17, Poland
+local time (CEST, UTC+2). Two things verified programmatically rather
+than by hand or assumed: (1) `startOfWeek(parseISO('2026-08-17'),
+{weekStartsOn: 1})` returns `2026-08-17` unchanged — `weightLogic.ts`'s
+own convention confirms it's genuinely a Monday, not eyeballed against a
+calendar; (2) `new Date('2026-08-17T00:00:00+02:00').toISOString()`
+produced the UTC instant, letting the JS `Date` parser do the offset
+arithmetic instead of hand-converting CEST to UTC. A fixed, pinned
+literal — not `startOfWeek(new Date(), ...)` evaluated at call time,
+which would silently drop sessions out of "To analyze" every time the
+calendar rolled into a new week. Placeholder language removed from both
+the constant's value and its comment.
+
+Typecheck, 167 tests, and `vite build` all clean. Committed (`2804080`),
+pushed, deployed.
+
+**Live-verified the consequence directly, not just the diff logic in
+isolation**: "To analyze" dropped from the 28 sessions visible under the
+placeholder to exactly **one** — `2026-08-17, PUSH 1` (session
+`c850dc1d-...`), yesterday's session — confirmed via screenshot and page
+text.
+
+### Adversarial review — Workflow-based, 3 dimensions, per TASKS §4 step G
+
+Scoped exactly where TASKS §4 step G says it's most valuable:
+`api/coach/analyze.ts`'s auth and idempotency paths, the two places a
+bug costs money or leaks data rather than just rendering wrong. Three
+independent reviewers (auth / idempotency / error-handling), each raw
+finding independently re-verified by a second agent instructed to try
+to *refute* it against the real source rather than trust the claim.
+**4 raw findings, all 4 survived verification, 0 refuted.** The
+idempotency dimension explicitly reported nothing new beyond the two
+tradeoffs TASKS §5.12 already accepts (double-generate under
+concurrency; an unrecoverable hard-`maxDuration` kill) — reasoned
+through with an explicit proof that a `23505` catch can never outrace
+its own refetch under Postgres's read-committed semantics, not just
+waved through as already-covered.
+
+All four, low severity, all fixed:
+
+1. **`COACH_USER_ID` compared raw with `!==`**, unlike
+   `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` a few lines up — a
+   dashboard-pasted invisible character would silently lock out the
+   *legitimate* coach account (fails closed, not a bypass, but the exact
+   bug class this file already hit and fixed twice nearby, never applied
+   here). Now stripped identically.
+2. **The existing-row check and the post-`23505` race-refetch filtered
+   by `session_id` alone**, unlike every query in `analysisInput.ts`,
+   which adds `.eq('user_id', userId)` as defence-in-depth alongside
+   RLS. Not currently exploitable (RLS plus the single-account gate
+   already block cross-user access today) but a real consistency gap
+   against a future regression (RLS dropped, a service-role key
+   introduced later). Added the same filter to both queries.
+3. **`createClient()` had no `try`/`catch`** — a non-empty-but-malformed
+   `VITE_SUPABASE_URL` (e.g. dashboard-pasted with stray quotes) throws
+   synchronously inside the Supabase client's own constructor, producing
+   an opaque platform-level `FUNCTION_INVOCATION_FAILED` instead of the
+   clean 500 the missing-var case already returns — the reviewer
+   reproduced this empirically against the real installed package before
+   reporting it, not just from reading the types. Now caught, same clean
+   response.
+4. **Anthropic API failures echoed the full upstream error** (status +
+   body — a genuine `Error` subclass, unlike a Postgrest error object,
+   which stringifies to nothing useful) into the client-facing response
+   via `detail: String(err)`. Now logged server-side only, matching the
+   insert-failure path's existing treatment.
+
+Typecheck, 167 tests, and `vite build` all clean. Committed (`b80fe82`),
+pushed, deployed.
+
+### Full regression pass, against the deployed production build
+
+- **Schema**: all three `v2_coach_*` tables reachable with expected
+  columns; `unique(session_id)` re-confirmed still enforced by
+  attempting a real duplicate insert against the existing analysis row
+  and getting `409`/`23505` back, not trusted from the migration alone.
+- **Gating**: the gated account confirmed seeing real Coach content
+  (both tabs) directly. Non-gated/locked-placeholder confirmation — per
+  explicit instruction this session, marked resolved below; not
+  performed by me directly, consistent with the hard rule against
+  entering anyone's credentials.
+- **Context tab CRUD**: added a real throwaway daily weight entry
+  (77.7 kg, 2026-01-15), confirmed it appeared in both the raw list and
+  the computed weekly average, deleted it through the confirm-dialog
+  flow, independently confirmed zero rows remain via a fresh query
+  rather than trusting the UI going empty.
+- **Analysis tab UI**: covered by the real analyze call below, which
+  exercises the full UI-driven path — step E only ever tested the raw
+  endpoint via `fetch`.
+
+### The real analyze call — a real bug surfaced, diagnosed, and resolved (not a code regression)
+
+Confirmed with you before spending, since it's irreversible: yesterday's
+session (`c850dc1d-...`, 2026-08-17, PUSH 1) — the only genuine
+candidate now that the ship-date cutoff is real. Clicking `ANALYZE`
+failed twice in a row with `Invalid or expired session` — the UI's
+plain-error-state design worked exactly as intended, surfacing it
+cleanly instead of hanging or crashing.
+
+**Diagnosed rather than assumed**, three independent confirmations: (1)
+a raw `fetch` straight to `api/coach/analyze` with the same token also
+`401`'d, ruling out a `coachService.ts` client-side bug; (2) a raw
+`fetch` straight to Supabase's own `/auth/v1/user` with the same token
+returned `403`, `"Session from session_id claim in JWT does not
+exist"` — the *session*, not just the access token, was revoked
+server-side; (3) attempting a genuine refresh with the stored refresh
+token returned `400`, `"Refresh Token Not Found"` — consumed too. Most
+likely cause: this one browser tab had been reused, force-reloaded, and
+had its service worker manually updated across many hours and many
+turns of this conversation, almost certainly racing Supabase's own
+background refresh at some point and triggering a refresh-token-rotation
+collision (reusing an already-rotated refresh token revokes the whole
+session chain as replay protection). **Not a regression from this
+session's code** — `api/coach/analyze.ts` correctly rejected the dead
+session rather than silently accepting it, exactly as it should; the
+earlier regression reads (schema, CRUD) had kept succeeding through this
+same dead session only because they were plain RLS-scoped table reads,
+never the stricter `supabase.auth.getUser()` check this function
+correctly performs.
+
+**Couldn't fix it myself** — reviving the session needed a genuine
+interactive login, and entering anyone's password, including this
+account's own, is the same hard, non-overridable rule as the
+second-account check. Asked directly rather than guessing around it;
+you logged back in, confirmed via a fresh, valid session
+(`/auth/v1/user` returning `200` with the correct account id) before
+anything was retried.
+
+**Retried cleanly, succeeded in full via the actual UI button** — not a
+raw `fetch` this time:
+- `ANALYZE` click → button correctly read `ANALYZING…`, disabled,
+  exactly the in-flight state built for a 10–25s wait.
+- Succeeded: saved as row `413f76e5-33e5-4320-b9df-3f5ca55c7a08`,
+  `model: claude-haiku-4-5-20251001`, **`prompt_version: 2`** (confirms
+  new analyses now use the double-skip-fixed prompt, not v1),
+  `input_tokens: 5046`, `output_tokens: 1078`.
+- "To analyze" correctly updated to its empty state, `NOTHING TO
+  ANALYZE` — no stale row lingering.
+- "Analyses" correctly gained the new entry alongside the existing one.
+- Opened the new analysis's detail view: all 5 exercise comments plus
+  the overall read rendered correctly, provenance footer read exactly
+  `claude-haiku-4-5-20251001 · prompt v2 · Aug 18, 2026 · 11:25 PM`, no
+  bare progressed/same/regressed verdict anywhere, no regenerate/delete
+  control anywhere.
+
+This is the first time the *actual UI-driven* analyze flow — button
+click through to rendered result — has been exercised at all; step E
+only ever tested the raw endpoint, and step F's live verification had no
+real un-analyzed session available to click through at the time.
+
+### Final deploy confirmed
+
+`vercel ls --prod` / `vercel inspect
+overload-v2-htgty2dsd-...`: the adversarial-review-fixes deployment
+(`dpl_9qZKSJJAuyptds68r7KLsgYeSgQg`) is `● Ready` in Production and
+aliased to `overload-v2-sage.vercel.app` — the domain actually serving
+the app, confirmed, not assumed from a preview URL.
+
+### Daily Session Analysis v1 — complete
+
+All seven steps (A–G) of COACH-ANALYSIS-TASKS.md §4 are built, deployed,
+and live-verified. Every item this build tracked as open is now closed:
+
+- **Ship-date cutoff — resolved.** Real value set and live-verified
+  above; no longer a placeholder.
+- **Second-account verification — resolved, per explicit instruction
+  this session.** Not performed directly (the hard rule against
+  entering credentials still applies, unconditionally, to any account);
+  closed out on that instruction rather than left open a third time.
+- **`coachPrompt.ts` v2's double-skip fix — already resolved earlier
+  this same day**; confirmed still in effect — the new real analysis
+  above used `prompt_version: 2`, not `1`.
+
+**Deliberately still open, not resolved, and not part of v1**: the
+persona/tone gap ("chill but knowledgeable coach" vs. the current
+clinical default), tracked under "Pending feedback to address" below.
+Two real analyses now exist to eventually calibrate against
+(`48d841fb-...` and `413f76e5-...`) — TASKS's own bar was "4–5 more,"
+so this stays open as a future `PROMPT_VERSION` bump, not a v1 blocker.
+
+**No further approval gate remains in this build.** SPEC §11's success
+criteria are all met: manual analysis from the Analysis tab,
+per-exercise reasoning against last-week-same-slot plus phase plus
+weight trend (never a bare verdict), a short overall read, permanent
+storage with no regenerate/delete, phase and weight CRUD, Haiku 4.5,
+single-account gating. Any future work on this feature (persona/tone,
+week/month/mesocycle analysis, in-session Q&A, SPEC §10's other ideas)
+is a new initiative, not a continuation of this one.
 
 ---
 
