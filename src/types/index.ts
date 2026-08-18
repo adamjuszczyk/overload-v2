@@ -196,3 +196,41 @@ export interface UserSettings {
   autoFinishMinutes: number | null  // null = auto-finish disabled
   measureSetTime: boolean    // global Start Set toggle (v3 §2.2 / SPEC §4.2)
 }
+
+// ─── Coach (Daily Session Analysis) ────────────────────────────────────────────
+
+export type TrainingPhase = 'cut' | 'bulk' | 'maintain'
+
+export interface PhaseEntry {
+  id: string
+  userId: string
+  phase: TrainingPhase
+  startDate: string          // ISO date
+  createdAt: string
+}
+
+// Derived at read time — never stored (COACH-ANALYSIS-SPEC §5: no end-date field).
+export interface ResolvedPhase extends PhaseEntry {
+  endDate: string | null     // next entry's startDate − 1 day; null = current
+  durationDays: number       // as of the date being resolved against
+}
+
+export type WeightEntryKind = 'daily' | 'weekly_average'
+
+export interface WeightEntry {
+  id: string
+  userId: string
+  entryDate: string          // ISO date. For 'weekly_average', the Monday of
+                              // the week it represents (COACH-ANALYSIS-TASKS §5.2)
+  weightKg: number
+  kind: WeightEntryKind
+  createdAt: string
+}
+
+// Computed, never stored (COACH-ANALYSIS-SPEC §8: "never destroy raw data").
+export interface WeeklyWeightAverage {
+  weekStart: string              // Monday, ISO date
+  averageKg: number
+  source: 'manual' | 'daily'     // which rule produced it (COACH-ANALYSIS-TASKS §5.3)
+  dailyCount: number             // 0 when source === 'manual'
+}
