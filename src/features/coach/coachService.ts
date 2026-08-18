@@ -6,15 +6,16 @@ import type { CoachAnalysisContent, CoachSessionAnalysis } from '../../types'
 // snake_case DB row types kept separate from the camelCase public interface,
 // explicit .eq('user_id', userId) defence-in-depth alongside RLS.
 
-// PLACEHOLDER — COACH-ANALYSIS-TASKS.md §5.9 says this constant must be the
-// feature's actual ship date ("sessions finished after this ships, no
-// historical backlog"), which isn't knowable until step G actually deploys
-// this UI to real use. Deliberately set well before any real session in
-// this account so step F's own live verification has genuine, un-analyzed
-// sessions to show in "To analyze" — this is NOT the real cutoff and MUST
-// be consciously reset at step G, not silently inherited from here. See
-// CONTEXT.md.
-export const COACH_ANALYSIS_START_DATE = '2026-01-01T00:00:00Z'
+// The real ship-date cutoff (COACH-ANALYSIS-TASKS.md §5.9 — "sessions
+// finished after this ships, no historical backlog"), set at step G.
+// Midnight, Monday 2026-08-17, Poland local time (CEST, UTC+2). 2026-08-17
+// is confirmed a Monday via this app's own standing convention —
+// startOfWeek(parseISO('2026-08-17'), { weekStartsOn: 1 }) returns
+// 2026-08-17 unchanged, the same tool/pattern weightLogic.ts's weekKey()
+// uses — rather than assumed by hand. The UTC instant below
+// (2026-08-17T00:00:00+02:00) was computed by the JS Date parser itself,
+// not hand-converted, to rule out an off-by-timezone slip.
+export const COACH_ANALYSIS_START_DATE = '2026-08-16T22:00:00.000Z'
 
 // ─── "To analyze" — completed sessions since the cutoff, no analysis row ──────
 
