@@ -15,6 +15,7 @@ import ProgramBuilderPage from './features/programs/ProgramBuilderPage'
 import WorkoutDayEditorPage from './features/programs/WorkoutDayEditorPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
+import CoachPage from './features/coach/CoachPage'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
@@ -102,6 +103,12 @@ function AppRoutes() {
           <Route path="/program/:programId/day/:dayId"  element={<WorkoutDayEditorPage />} />
           <Route path="/library"  element={<LibraryPage />}  />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* Unconditional route — CoachPage itself renders the locked
+              placeholder for every account except the gated one, so
+              opening /coach directly still resolves to *something*
+              (COACH-ANALYSIS-SPEC.md §3), it just isn't in Nav for
+              anyone else. */}
+          <Route path="/coach"    element={<CoachPage />}    />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>

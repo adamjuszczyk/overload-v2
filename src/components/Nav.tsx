@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router-dom'
-import { Dumbbell, LayoutList, TrendingUp, Clock, CalendarDays, BookOpen, Settings } from 'lucide-react'
+import { Dumbbell, LayoutList, TrendingUp, Clock, CalendarDays, BookOpen, Settings, Sparkles } from 'lucide-react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { useInstallPrompt } from '../features/offline/useInstallPrompt'
+import { useAuth } from '../features/auth/useAuth'
+import { isCoachUser } from '../features/coach/coachGate'
 
-const tabs = [
+const baseTabs = [
   { to: '/today',    label: 'TODAY',    Icon: Dumbbell     },
   { to: '/plan',     label: 'PLAN',     Icon: LayoutList   },
   { to: '/progress', label: 'PROGRESS', Icon: TrendingUp   },
@@ -13,9 +15,16 @@ const tabs = [
   { to: '/settings', label: 'SETTINGS', Icon: Settings     },
 ] as const
 
+const coachTab = { to: '/coach', label: 'COACH', Icon: Sparkles } as const
+
 export default function Nav() {
   const isOnline = useOnlineStatus()
   const { canInstall, install } = useInstallPrompt()
+  const { user } = useAuth()
+  // Gated: an eighth tab is tight on a narrow phone (TASKS §5.6), so it
+  // only renders for the one account it's actually for — no crowding for
+  // anyone else. The route still exists unconditionally (see App.tsx).
+  const tabs = isCoachUser(user?.id) ? [...baseTabs, coachTab] : baseTabs
 
   return (
     <div style={{ borderTop: '1px solid var(--border-subtle)', backgroundColor: 'var(--base)' }}>
