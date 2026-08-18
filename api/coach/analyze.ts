@@ -94,8 +94,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const accessToken = authHeader.slice('Bearer '.length)
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL
-  const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY
+  // Same invisible/non-ASCII stripping as src/lib/supabase.ts, for the same
+  // reason: a dashboard-pasted env var value can carry a BOM or zero-width
+  // space that silently corrupts the Authorization/apikey header.
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL ?? '').replace(/[^\x20-\x7E]/g, '').trim()
+  const supabaseAnonKey = (process.env.VITE_SUPABASE_ANON_KEY ?? '').replace(/[^\x20-\x7E]/g, '').trim()
   if (!supabaseUrl || !supabaseAnonKey) {
     res.status(500).json({ error: 'Server misconfigured: missing Supabase env vars' })
     return
