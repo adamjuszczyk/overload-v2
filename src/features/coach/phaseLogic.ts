@@ -1,5 +1,5 @@
 import { parseISO, subDays, format, differenceInCalendarDays } from 'date-fns'
-import type { PhaseEntry, ResolvedPhase } from '../../types'
+import type { PhaseEntry, ResolvedPhase } from '../../types/index.js'
 
 // Pure phase-log resolution (COACH-ANALYSIS-TASKS.md §4 step C). No end-date
 // column exists by design (COACH-ANALYSIS-SPEC.md §5/§8) — every entry's end

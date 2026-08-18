@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveExerciseReference, type PrimarySlot } from '../gym/referenceLogic'
-import type { ReferenceSession } from '../gym/sessionService'
-import { matchSessionsByPosition, type PositionMatchResult } from '../progress/positionMatch'
-import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic'
-import { phaseAt } from './phaseLogic'
-import { recentWeightTrend } from './weightLogic'
-import type { SetLog, PhaseEntry, WeightEntry, ResolvedPhase, WeeklyWeightAverage } from '../../types'
+import { resolveExerciseReference, type PrimarySlot } from '../gym/referenceLogic.js'
+import type { ReferenceSession } from '../gym/sessionService.js'
+import { matchSessionsByPosition, type PositionMatchResult } from '../progress/positionMatch.js'
+import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic.js'
+import { phaseAt } from './phaseLogic.js'
+import { recentWeightTrend } from './weightLogic.js'
+import type { SetLog, PhaseEntry, WeightEntry, ResolvedPhase, WeeklyWeightAverage } from '../../types/index.js'
 
 // Analysis input assembly (COACH-ANALYSIS-TASKS.md §4 step D). Two parts,
 // deliberately kept in one file per the plan's own framing ("pure, plus a

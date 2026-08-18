@@ -6,7 +6,7 @@ import {
   subDays,
   isWithinInterval,
 } from 'date-fns'
-import type { ReferenceSession } from './sessionService'
+import type { ReferenceSession } from './sessionService.js'
 
 // Two-slot resolution (v3 TASKS.md §2.3). FIX 14 made meso weeks
 // Monday-anchored calendar weeks, so "the immediately preceding meso week"

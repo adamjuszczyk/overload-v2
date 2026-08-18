@@ -19,9 +19,9 @@
 // comparison side — deltaPercent is (e1rmB - e1rmA) / e1rmA × 100, same sign
 // convention as e1rm.ts's compareE1rmWindow (positive = improvement).
 
-import type { SetLog } from '../../types'
-import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic'
-import { calculateE1rm } from './e1rm'
+import type { SetLog } from '../../types/index.js'
+import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic.js'
+import { calculateE1rm } from './e1rm.js'
 
 export interface PositionMatchSessionInput {
   sessionId: string

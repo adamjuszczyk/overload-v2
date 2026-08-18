@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
-import { assembleAnalysisInput } from '../../src/features/coach/analysisInput'
-import { COACH_SYSTEM_PROMPT, PROMPT_VERSION } from '../../src/features/coach/coachPrompt'
-import type { CoachAnalysisContent, CoachSessionAnalysis } from '../../src/types'
+import { assembleAnalysisInput } from '../../src/features/coach/analysisInput.js'
+import { COACH_SYSTEM_PROMPT, PROMPT_VERSION } from '../../src/features/coach/coachPrompt.js'
+import type { CoachAnalysisContent, CoachSessionAnalysis } from '../../src/types/index.js'
 
 // Vercel serverless function (COACH-ANALYSIS-TASKS.md §4 step E). Single
 // POST endpoint: verify the caller's Supabase JWT → check the server-side

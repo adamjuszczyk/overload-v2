@@ -7,7 +7,7 @@
 // Deliberately generic and side-effect free so it's independently testable
 // (same precedent as referenceLogic.ts / formatRestTime.ts).
 
-import type { SetLog, WeekPlanSet } from '../../types'
+import type { SetLog, WeekPlanSet } from '../../types/index.js'
 
 export interface SetGroup<T> {
   head: T

@@ -1,5 +1,5 @@
 import { parseISO, startOfWeek, subWeeks, format } from 'date-fns'
-import type { WeightEntry, WeeklyWeightAverage } from '../../types'
+import type { WeightEntry, WeeklyWeightAverage } from '../../types/index.js'
 
 // Pure weight-log resolution (COACH-ANALYSIS-TASKS.md §4 step C). Bodyweight
 // stays kg-only, no unit conversion (TASKS §5.8) — unrelated to lifted-weight
