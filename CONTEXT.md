@@ -1170,26 +1170,39 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
-**Coach (Daily Session Analysis) — steps A through E of
-COACH-ANALYSIS-TASKS.md §4 are built and independently, live-verified as
-of 2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
-gating), C (Context tab), D (analysis-input assembly), and E (serverless
-function + first real Anthropic calls) are done. A–C are deployed and
-verified against production through the UI; D is pure logic plus a fetch
-layer with no UI consumer yet, verified via a real dry run instead; E has
-a real, deployed, callable endpoint (`POST /api/coach/analyze`) with no
-UI consumer yet either — verified by calling it directly (real analyze
-call, 403, idempotent double-tap, all live against production — see
-"2026-08-18 session (Coach — step E, serverless function + first real
-Anthropic calls)" below). **`COACH_USER_ID` (server-side, authoritative)
+**Coach (Daily Session Analysis) — steps A through F of
+COACH-ANALYSIS-TASKS.md §4 are built; F is the one not yet fully closed,
+pending a single explicit gate (below), as of 2026-08-18.** Seven steps
+total (A–G); A (migration 012), B (shell + gating), C (Context tab), D
+(analysis-input assembly), E (serverless function + first real Anthropic
+calls), and F (the Analysis tab UI) are all built and deployed. A–C are
+deployed and verified against production through the UI; D is pure logic
+plus a fetch layer with no UI consumer, verified via a real dry run
+instead; E has a real, deployed, callable endpoint (`POST
+/api/coach/analyze`), verified by calling it directly (real analyze call,
+403, idempotent double-tap, all live against production); **F is the
+first real UI consumer of that endpoint — live-verified against
+production on every point except one.** The two SPEC §6 lists ("To
+analyze" / "Analyses") and the read-only detail view all render correctly
+against real data — see "2026-08-18 session (Coach — step F, Analysis tab
+UI)" below. **The one open item: a real second account still needs to
+confirm the locked placeholder renders correctly now that real content
+sits behind it — deferred twice before, flagged again this session rather
+than silently skipped, blocked on a hard rule (no entering anyone's
+password, ever) rather than on effort.** `COACH_ANALYSIS_START_DATE` in
+`coachService.ts` is a **placeholder** (`2026-01-01T00:00:00Z`, TASKS
+§5.9) — the real ship date isn't knowable until step G actually deploys
+this UI; **step G must consciously set the real value, not inherit this
+one.** **`COACH_USER_ID` (server-side, authoritative)
 and `VITE_COACH_USER_ID` (client-side, cosmetic) both hold
 `12e79b69-9891-4f53-a7cf-650edd83659f`** — confirmed the same value, not
 re-derived independently, in `.env.local` and Vercel Production. Nothing
 enforces they stay in agreement going forward; a manual re-check is still
 the only guard (TASKS §4 step E note). **Explicit approval is required
-before step F (the Analysis tab UI — the first step with a real
-user-facing consumer of this endpoint) starts** — a direct instruction
-for this initiative, not a standing default. **`coachPrompt.ts` is at
+before step G (verification/deploy hardening + the ship-date value) can
+start**, and before that, the second-account check above still has to
+land — a direct instruction for this initiative, not a standing default.
+**`coachPrompt.ts` is at
 `PROMPT_VERSION = 2`** as of a same-day follow-up fix: a diagnosed
 phrasing gap (an exercise skipped in both the current and reference
 session was described as "no prior session to compare against" instead
@@ -1207,8 +1220,9 @@ session (Coach analysis — step B)", "2026-08-18 session (Coach analysis
 — step C)", "2026-08-18 session (Coach analysis — step D)", "2026-08-18
 session (Coach — step E, serverless function + first real Anthropic
 calls)", "2026-08-18 session (Coach — step E diagnosis: Cable Reverse
-Biceps Curl phrasing)", and "2026-08-18 session (Coach — coachPrompt.ts
-v2, double-skip fix)" below. Everything below this point predates the
+Biceps Curl phrasing)", "2026-08-18 session (Coach — coachPrompt.ts
+v2, double-skip fix)", and "2026-08-18 session (Coach — step F, Analysis
+tab UI)" below. Everything below this point predates the
 Coach initiative and describes the last TASKS.md-phase work — TASKS.md
 §4's 36 items are all closed out as of Phase 3.8 (2026-08-10) — kept as
 written at the time, still accurate, just no longer the newest thing in
@@ -8249,6 +8263,163 @@ should — SPEC §9 rules out regeneration, and this row is what the model
 actually said at the time, not something to silently rewrite. **This
 does not fold into step F — reporting back separately, as instructed.**
 **Still awaiting explicit approval before starting step F.**
+
+---
+
+## 2026-08-18 session (Coach — step F, Analysis tab UI)
+
+Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md
+first, as instructed. Built TASKS.md §4 step F: `coachService.ts`,
+`useCoachAnalysis.ts`, `CoachAnalysisTab.tsx` (SPEC §6's two lists), and
+`AnalysisDetail.tsx` — the first UI consumer of step E's
+`api/coach/analyze.ts`, and the first screen that actually renders a
+generated analysis anywhere in the app.
+
+**Built:**
+
+- **`coachService.ts`** — `fetchAnalyzableSessions` reads
+  `v2_history_session_summary` (`status = 'completed'`,
+  `completed_at >= COACH_ANALYSIS_START_DATE`) and diffs it client-side
+  against a second query of already-analyzed `session_id`s (TASKS §4 step
+  F's own framing: "read from v2_history_session_summary diffed against
+  the analysis-ids query" — two queries, not a PostgREST anti-join or a
+  fourth database object, matching SPEC §8's minimal-footprint
+  principle at this feature's real volume). `fetchCoachAnalyses` (the
+  list) selects a **narrow JSON path** off `input_snapshot`
+  (`session:input_snapshot->session`) rather than the whole snapshot —
+  the list only needs date/workout-day-name to render a row, and
+  `input_snapshot` is several KB of match data per row the list has no
+  use for; the detail fetch pulls the full row. `analyzeSession` POSTs
+  `{sessionId}` to `/api/coach/analyze` with the caller's own
+  `supabase.auth.getSession()` access token — the function's response
+  body is already the camelCase `CoachSessionAnalysis` shape (it builds
+  that itself before returning), so no row-mapping is needed on this
+  side, only on the direct-Supabase-read paths.
+  **`COACH_ANALYSIS_START_DATE` is a placeholder, loudly flagged as
+  one** — see below.
+- **`useCoachAnalysis.ts`** — TanStack Query hooks, `useCoachContext.ts`'s
+  shape. `useAnalyzeSession`'s in-flight UI keys off the mutation's own
+  `variables` (the `sessionId` just passed to `mutate`) instead of
+  separate local state — since only one analysis can run at a time from
+  this tab, `isPending && variables === session.id` is enough to know
+  exactly which row's button should show `ANALYZING…`, and a fresh
+  `mutate()` call on a different row atomically clears the previous
+  row's error state for free (`useMutation`'s own reset-on-new-call
+  behaviour), so no manual `reset()` calls were needed.
+- **`CoachAnalysisTab.tsx`** — SPEC §6's two lists. **To analyze**: date
+  + workout day name + set count per row, an `ANALYZE` button that reads
+  `ANALYZING…` and disables every row's button while any one is in
+  flight (a 10–25s wait, TASKS §1.6), a plain inline error message under
+  the row that just failed. **Analyses**: date + workout day name + a
+  2-line-clamped preview of `overall`, tap to open the detail view.
+  Detail swaps in via local state exactly like `HistorySessions.tsx`
+  does for `SessionDetail` — no new route needed, matching this
+  codebase's established convention rather than introducing one.
+  **`REQUIRES A CONNECTION`** empty state via the existing
+  `useOnlineStatus` hook (TASKS §1.7 — this feature has no offline
+  requirement; neither the summary view nor the analyses table is
+  mirrored in Dexie), same treatment `ExerciseHistoryView.tsx`/
+  `SessionTypeHistoryView.tsx` already use.
+- **`AnalysisDetail.tsx`** — read-only. **No regenerate control, no
+  delete control anywhere on the screen** — confirmed by omission, not
+  just by intent (SPEC §9). Header (session date + workout day name),
+  an OVERALL card, then one card per exercise comment — each exercise
+  name is a button that `navigate()`s to `/exercise/:exerciseId`
+  (same pattern `ExerciseHeader.tsx` already uses elsewhere), per
+  TASKS §3.1's own note that the denormalised id "still allows
+  deep-linking." A small muted provenance footer
+  (`model · prompt vN · timestamp`) — the row stores exactly this data
+  specifically to be observed (SPEC §1), so it's surfaced, not buried.
+- **`CoachPage.tsx`** — `CoachAnalysisTab` wired in, replacing the
+  "ANALYSIS — COMING SOON" placeholder from step B.
+
+**The ship-date cutoff placeholder — flagged loudly, on purpose:**
+`COACH_ANALYSIS_START_DATE = '2026-01-01T00:00:00Z'` in `coachService.ts`.
+TASKS §5.9 is explicit that the real value is the feature's actual ship
+date and **isn't knowable until step G actually deploys this UI** — so
+this is deliberately a placeholder, not a guess at the real value.
+Deliberately set well before any real session in this account (real
+history starts ~2026-07) so this step's own live verification would have
+genuine, un-analyzed sessions to check "To analyze" against, rather than
+an empty list that proves nothing. Both the source comment directly on
+the constant and this entry exist so **step G must consciously set the
+real value and cannot silently inherit this one by accident** — the
+literal risk being guarded against is a future session reading
+`COACH_ANALYSIS_START_DATE` already set to *something* and assuming
+that's already the considered, real answer.
+
+**Build/deploy:** typecheck, 167 tests, and `vite build` all clean before
+deploying (bundle grew ~1.9 kB gzip for four new files, unsurprising and
+unconcerning at this feature's size). Committed (`ef36eb5`), pushed,
+deployed — reached `● Ready`.
+
+**Live verification against real production data — hit and cleared the
+same stale-service-worker gap CONTEXT.md has documented before** (step
+C's session, and Phase 3.x's `skipWaiting` gap before that): the first
+navigation to `/coach` after this deploy served the *previous* deploy's
+already-evicted asset hashes (two `404`s in the console, blank page) —
+`serviceWorker.getRegistrations()...update()` plus a forced reload
+served the real, current build, exactly the same fix as before. Worth
+noting again since it has now recurred more than once: **any live
+verification against a fresh Vercel deploy should default to forcing a
+service-worker update before trusting what renders**, not just when a
+blank page is observed.
+
+Once serving fresh:
+
+- **To analyze**: 28 real completed sessions rendered, `2026-01-01`
+  through today, correctly **excluding** session `48d841fb-...`
+  (2026-08-18, already analyzed) — confirming the diff-against-analyzed-
+  ids logic works against real data, not just in principle. This is also
+  the "at least one genuinely un-analyzed completed session" check the
+  instructions asked for, satisfied with room to spare.
+- **Analyses**: exactly one entry, `48d841fb-...` (Aug 18, PULL 1), the
+  correct `overall` preview text.
+- **Detail view**: opened it — header, OVERALL card, and all 5 exercise
+  comments rendered correctly, including **Cable Reverse Biceps Curl
+  still showing its original v1 text** ("No prior session to compare
+  against…") — correct and expected, since this row's `promptVersion: 1`
+  is permanent and this analysis predates the `coachPrompt.ts` v2 fix
+  earlier in this same session. Provenance footer read exactly
+  `claude-haiku-4-5-20251001 · prompt v1 · Aug 18, 2026 · 8:58 PM`,
+  matching the persisted row. **No regenerate or delete control present
+  anywhere** — confirmed via the full interactive-element tree, not just
+  a visual scan.
+- **Exercise deep-link**: tapped "Neutral Lat Pulldown (cable)" from the
+  detail view, landed on the real `ExerciseHistoryView` for that exact
+  exercise (trend chart + side-by-side table both rendered) — confirms
+  the `/exercise/:exerciseId` wiring is correct, not just plausible.
+- Console/network clean after the service-worker refresh — no errors,
+  every asset `200`.
+- **Not independently re-tested this session:** the offline
+  `REQUIRES A CONNECTION` empty state — it reuses `useOnlineStatus`
+  exactly as `ExerciseHistoryView.tsx` does, an already-verified pattern,
+  copied rather than re-invented; going genuinely offline to re-prove it
+  wasn't done here.
+
+**Second-account verification — not completed this session, and this is
+a real gate, not a formality being waved through.** The instruction was
+explicit: get a real second account to confirm the locked placeholder
+renders correctly now that real content sits behind it, and close this
+out rather than deferring it a third time. **I can't perform this
+myself** — logging in as a second account means entering someone else's
+password, and entering any password into any field is a hard,
+non-overridable rule regardless of who supplies it or authorizes it.
+This needs a human (you, or your friend) to actually do the login.
+**Flagged back to you directly in this session rather than silently
+skipped or silently marked done.** Step F's code is built, deployed, and
+live-verified on every point that doesn't require a second identity;
+this one specific check is the reason step F isn't being reported as
+fully closed yet.
+
+**Status: step F is code-complete, deployed, and live-verified except
+for the second-account check above, which is now the single explicit
+gate before this step is done.** No code was written for the locked
+placeholder itself this session — `CoachLocked.tsx` and `coachGate.ts`
+are unchanged from step B, only never independently confirmed against
+production with a *real* second identity behind them until this check
+actually happens. **Awaiting that confirmation, then explicit approval
+before starting step G.**
 
 ---
 
