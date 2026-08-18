@@ -1,3 +1,5 @@
+import type { AnalysisInput } from '../features/coach/analysisInput'
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 export type MuscleGroup =
@@ -233,4 +235,30 @@ export interface WeeklyWeightAverage {
   averageKg: number
   source: 'manual' | 'daily'     // which rule produced it (COACH-ANALYSIS-TASKS §5.3)
   dailyCount: number             // 0 when source === 'manual'
+}
+
+export interface CoachExerciseComment {
+  exerciseId: string
+  exerciseName: string       // denormalised at generation time — an exercise
+                              // rename/archive later must not rewrite this record
+  comment: string             // prose — reasons about *why*, per SPEC §5/§8
+}
+
+export interface CoachAnalysisContent {
+  exercises: CoachExerciseComment[]
+  overall: string              // SPEC §5's short overall session read
+}
+
+// Row shape for v2_coach_session_analyses (migration 012).
+export interface CoachSessionAnalysis {
+  id: string
+  userId: string
+  sessionId: string
+  content: CoachAnalysisContent
+  inputSnapshot: AnalysisInput   // exactly what the model was shown (§5.11)
+  model: string                  // response.model, e.g. 'claude-haiku-4-5-20251001'
+  promptVersion: number
+  inputTokens: number | null
+  outputTokens: number | null
+  createdAt: string
 }
