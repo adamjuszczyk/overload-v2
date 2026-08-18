@@ -502,6 +502,45 @@ All core features built and working:
   per instruction — no Context tab logic (step C), no Analysis tab logic
   (step F). **Awaiting approval before step C.** See "2026-08-18 session
   (Coach analysis — step B)" below.
+- 2026-08-18 session (Coach — step C, Context tab): **Phase log and weight
+  log — full CRUD, both pure resolution modules, both UI panels — built,
+  deployed, and live-verified against production with real created data,
+  not just Vitest.** `coachContextService.ts` (following
+  `historyService.ts`'s shape, Postgres `23505` translated into a friendly
+  `Error` so a unique-constraint collision surfaces as UI copy, not a raw
+  error), `useCoachContext.ts` (following `useHistory.ts`), `phaseLogic.ts`
+  / `weightLogic.ts` (pure, 21 new Vitest cases), `PhaseLog.tsx` /
+  `WeightLog.tsx` (add/edit/delete, date picker defaulting to today via a
+  newly-shared `useToday` hook extracted from `TodayPage.tsx`). **All four
+  scenarios named in this session's instructions were confirmed live, with
+  real rows created, checked, and then deleted again**, not just asserted
+  from the pure-module tests: (1) a `cut` entry logged 2026-06-23 correctly
+  stayed open-ended until a `bulk` entry was logged 2026-08-04, at which
+  point it live-resolved to "Jun 23, 2026 — Aug 3, 2026 · 42 days" — SPEC
+  §5's own example, reproduced exactly; (2) logging a third phase entry on
+  the already-used 2026-08-04 start date failed with "A phase already
+  starts on that date — edit the existing entry instead." inline in the
+  form (confirmed via a real `409` in the network log, not just the UI
+  claiming success), no phantom row created; (3) three real weekly-average
+  cases — daily-only (3 entries, 80/82.4/81.8 → 82.07 kg computed), manual-
+  only (81 kg), and both-present (two dailies averaging to 82 kg, but the
+  manual 81.5 kg entry won and the dailies stayed visible, per §5.3) — all
+  matched by hand; (4) a `weekly_average` entry picked on a Wednesday
+  (2026-08-05) and later on a Friday (2026-08-14) both stored under that
+  week's real Monday (2026-08-03, 2026-08-10) — confirmed in the raw
+  entries list, not just the computed-averages panel, so the normalisation
+  is provably in the stored row, not a display trick. Edit and delete were
+  also exercised for real (a weight value changed and re-fetched correctly;
+  every test row deleted through the UI's own confirm flow). **Test data
+  fully cleaned up afterward — independently confirmed via a fresh
+  `count(*)` query returning `0` on both tables**, not assumed from the UI
+  going empty. One incidental finding, not a bug: the PWA's cached bundle
+  needed an explicit `serviceWorker.getRegistrations()... .update()` plus a
+  forced reload before the new deploy's code was actually being served in
+  the already-open tab — same class of staleness CONTEXT.md has documented
+  before, not new. **Awaiting approval before step D** (the pure,
+  dry-run-first analysis-input assembly). See "2026-08-18 session (Coach
+  analysis — step C)" below.
 
 ---
 
@@ -1005,22 +1044,24 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
-**Coach (Daily Session Analysis) — steps A and B of
+**Coach (Daily Session Analysis) — steps A, B, and C of
 COACH-ANALYSIS-TASKS.md §4 are built, deployed, and independently verified
-as of 2026-08-18.** Seven steps total (A–G); A (migration 012) and B
-(shell + gating) are done, both applied/deployed and verified against
-production, not just locally. **Explicit approval is required before step
-C (Context tab) starts** — a direct instruction for this initiative, not a
-standing default. `VITE_COACH_USER_ID` is set in both places it needs to
-be (`.env.local`, Vercel Production) — **still needs its server-side twin,
-`COACH_USER_ID`, set to the same UUID when step E lands; nothing enforces
-that they agree, drift is quiet and asymmetric (TASKS §4 step E note).**
-See "2026-08-18 session (Coach analysis — migration 012)" and "2026-08-18
-session (Coach analysis — step B)" below. Everything below this point
-predates the Coach initiative and describes the last TASKS.md-phase work —
-TASKS.md §4's 36 items are all closed out as of Phase 3.8 (2026-08-10) —
-kept as written at the time, still accurate, just no longer the newest
-thing in this file.
+as of 2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
+gating), and C (Context tab — phase log, weight log) are done, all
+applied/deployed and verified against production with real data, not just
+locally or from unit tests alone. **Explicit approval is required before
+step D (analysis-input assembly) starts** — a direct instruction for this
+initiative, not a standing default. `VITE_COACH_USER_ID` is set in both
+places it needs to be (`.env.local`, Vercel Production) — **still needs
+its server-side twin, `COACH_USER_ID`, set to the same UUID when step E
+lands; nothing enforces that they agree, drift is quiet and asymmetric
+(TASKS §4 step E note).** See "2026-08-18 session (Coach analysis —
+migration 012)", "2026-08-18 session (Coach analysis — step B)", and
+"2026-08-18 session (Coach analysis — step C)" below. Everything below
+this point predates the Coach initiative and describes the last
+TASKS.md-phase work — TASKS.md §4's 36 items are all closed out as of
+Phase 3.8 (2026-08-10) — kept as written at the time, still accurate, just
+no longer the newest thing in this file.
 
 **Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
@@ -7284,6 +7325,181 @@ still doesn't exist — step E). **Awaiting explicit approval before
 starting step C** (Context tab — phase log and weight log,
 `coachContextService.ts`, `useCoachContext.ts`, `phaseLogic.ts`,
 `weightLogic.ts`).
+
+---
+
+## 2026-08-18 session (Coach analysis — step C)
+
+Context tab only, per instruction — phase log and weight log, pure CRUD
+with no AI dependency, verified thoroughly with real data rather than
+unit tests alone since this is "the cheapest point in the whole feature to
+catch a logic error." Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and
+COACH-ANALYSIS-TASKS.md first, as instructed.
+
+**Reconnaissance before writing anything:** an Explore agent read
+`historyService.ts`, `settingsService.ts`, `useHistory.ts`,
+`queryClient.ts`, the delete-confirmation pattern (inline local-state
+toggle, no shared modal — `SessionDetail.tsx`/`HistorySessions.tsx`), the
+date-input pattern (native `<input type="date">`, `colorScheme: 'dark'`,
+no custom picker component exists), and a form-styling reference
+(`ProgramPage.tsx`), in full, so the new files would match established
+convention rather than invent new ones.
+
+**Built:**
+- `src/types/index.ts` — `TrainingPhase`, `PhaseEntry`, `ResolvedPhase`,
+  `WeightEntryKind`, `WeightEntry`, `WeeklyWeightAverage`, appended as a
+  new `// ─── Coach ───` section per COACH-ANALYSIS-TASKS.md §3.2/§3.3
+  exactly.
+- `src/hooks/useToday.ts` — **extracted from `TodayPage.tsx`**, its only
+  prior caller, rather than duplicated or naively recomputed in the new
+  forms. This app has a standing rule ("Key architectural rules") that
+  `today` is never computed at module load; the date-picker default needed
+  the same midnight/visibility-refresh behaviour `TodayPage.tsx` already
+  had, so sharing it was the correct fix, not a shortcut. `TodayPage.tsx`
+  itself is unchanged in behaviour — confirmed via typecheck and the
+  existing test suite staying green.
+- `phaseLogic.ts` (pure) — `resolvePhases(entries, asOf)` gives every
+  entry an implicit `endDate` (the next entry's `startDate` − 1 day, or
+  `null` for the open one) and a `durationDays`. `phaseAt(entries, date)`
+  is not a thin wrapper — it deliberately **overrides** `resolvePhases`'s
+  `durationDays` for the entry containing `date`, because a naive reuse
+  would report a closed entry's *full* eventual duration even when `date`
+  falls partway through it. Caught and fixed while writing the module
+  (before any test failed on it), then wrote a dedicated test for exactly
+  this case: a date inside an already-closed earlier phase reports partial
+  duration as of that date, not its eventual full one. 10 Vitest cases,
+  including SPEC §5's own example verbatim (bulk 2 weeks in, cut before it
+  ran 6 weeks).
+- `weightLogic.ts` (pure) — `weekKey` (Monday-anchored, `startOfWeek(...,
+  {weekStartsOn: 1})`), `buildWeeklyAverages` (manual entry wins over
+  dailies per §5.3, `dailyCount: 0` when it does — dailies are never
+  dropped from the raw list, just excluded from that week's computed
+  figure), `recentWeightTrend` (trailing N-week window, gaps left absent
+  rather than zero-filled). 11 Vitest cases.
+- `coachContextService.ts` — CRUD for both tables, `historyService.ts`'s
+  shape exactly (raw snake_case row types kept separate from the camelCase
+  public interface, `.eq('user_id', userId)` defence-in-depth alongside
+  RLS, plain `if (error) throw error`). One deliberate departure: Postgres
+  `23505` (the tables' load-bearing unique constraints, migration 012 §5.1
+  §5.2) is caught and re-thrown as a plain, specific `Error` with UI-ready
+  copy, since — unlike every other service in this app — hitting this
+  constraint is an *expected*, not exceptional, user action.
+- `useCoachContext.ts` — TanStack Query hooks, `useHistory.ts`'s shape
+  (hoisted key constants, `enabled: !!user`, singleton `queryClient`
+  import, invalidate-on-success, no optimistic updates).
+- `PhaseLog.tsx` / `WeightLog.tsx` — add/edit/delete, wired into
+  `CoachPage.tsx`'s CONTEXT tab in place of the step-B placeholder.
+  Duplicate-key mutation errors render inline via
+  `mutation.isError`/`mutation.error.message` — no local error state
+  needed, TanStack Query already owns it. `WeightLog.tsx` also renders a
+  live "Saved as the week of [date] (Monday)" preview under the date input
+  whenever `kind === 'weekly_average'`, computed from the same `weekKey`
+  the write path uses — so the normalisation is visible before submit, not
+  just true after it. A "WEEKLY AVERAGES" panel below the raw entries list
+  renders `buildWeeklyAverages` directly, which doubled as the mechanism
+  for this session's own case-3 verification (see below).
+
+**Typecheck, the full Vitest suite (155 tests, 21 new, all passing), and
+build all clean before deploying.**
+
+**Committed as one commit** (`47c0846`, following this build's own
+established two-commits-per-step convention loosely — step C's service,
+hooks, pure modules, UI, and the `useToday` extraction are one coherent
+unit, unlike step B's shell-vs-gating split). Pushed; a fresh Production
+deployment (`dpl_AnZtADii5tiFZhmEYaiSoC8Bxacn`) went `● Ready`; bundle
+grepped directly for `"PHASE LOG"`, `"WEIGHT LOG"`, and the friendly
+unique-violation message string before treating the deploy as live.
+
+**Live verification against production, with real rows this session
+created, checked, and deleted again — all four scenarios named in the
+task instructions, plus edit/delete exercised, plus an independent DB-level
+cleanup check:**
+
+1. **Implicit end date resolves once a second entry exists.** Logged
+   `bulk` starting 2026-08-04 (today is 2026-08-18 — Tuesday, confirmed
+   against the app's own header) — showed `Aug 4, 2026 — current · 14
+   days`. Logged `cut` starting 2026-06-23 next — the `bulk` row was
+   unaffected, and `cut` immediately live-resolved to `Jun 23, 2026 — Aug
+   3, 2026 · 42 days`, reproducing SPEC §5's own example exactly (6-week
+   cut, 2-week bulk) from two real, separately-created database rows, not
+   from a single test fixture.
+2. **Duplicate `start_date` fails gracefully.** A third phase entry
+   attempted on the already-used 2026-08-04 start date surfaced "A phase
+   already starts on that date — edit the existing entry instead." inline
+   in the open form. Confirmed this was the real unique-constraint path,
+   not a client-side pre-check: `read_console_messages` shows an actual
+   `409` network response for the attempt. The entries list still showed
+   exactly the original two rows afterward — no phantom third row.
+3. **Three real weekly-average cases, by hand-checked arithmetic:**
+   - Daily-only (week of Jul 27): three dailies, 82.0/82.4/81.8 kg →
+     computed average **82.07 kg, 3 entries** (246.2/3 = 82.0666… rounds
+     correctly).
+   - Manual-only (week of Aug 3): one `weekly_average` entry, 81.0 kg →
+     **81 kg, manual**.
+   - Both present (week of Aug 10): two dailies (80/84 kg, which alone
+     would average to 82 kg — confirmed live before the manual entry was
+     added) plus one manual entry at 81.5 kg → the manual entry **won**:
+     **81.5 kg, manual**, and both dailies remained visible and untouched
+     in the raw entries list underneath, exactly matching §5.3 ("the
+     manual entry wins... nothing is destroyed").
+4. **A `weekly_average` entry's date normalises to that week's Monday
+   regardless of the picked date — confirmed twice, and confirmed in the
+   *stored row*, not just the computed panel.** Picked 2026-08-05
+   (Wednesday) → the live "Saved as the week of Aug 3, 2026 (Monday)"
+   preview appeared before submit, and after submit the raw entries list
+   showed the actual stored row as `Aug 3, 2026 · weekly average` — not
+   Aug 5. Picked 2026-08-14 (Friday) → same pattern, stored as `Aug 10,
+   2026`. Both are the real `entry_date` column value round-tripped back
+   from the database, not a display-only reformat.
+
+**Edit and delete, also exercised for real, not just assumed from the code
+reading:** edited a weight entry's value (84 → 84.5 kg), confirmed the
+change round-tripped through Supabase and the list re-rendered with the
+new value. Deleted all 9 test rows (2 phase, 7 weight) one at a time
+through the UI's own confirm-then-delete flow (`DELETE` → inline red
+confirm card → `CONFIRM DELETE`), each deletion checked against the
+re-rendered list before moving to the next.
+
+**Cleanup independently verified, not assumed from the UI going empty:**
+a fresh `select count(*)` against both tables directly in the SQL Editor
+returned `phase_entries: 0, weight_entries: 0` after the UI showed "No…
+logged yet" for both. The account now has zero Coach rows, same as before
+this session — ready for you to log real phase/weight data, or for step D
+to be dry-run against it once real entries exist.
+
+**Two mechanical notes worth recording for future sessions doing this
+kind of browser-driven form testing:**
+- **Coordinate-based clicks (`computer.left_click` at a cached
+  `(x, y)`) were unreliable for this session's form buttons** — several
+  landed on the wrong element or no element, confirmed by checking
+  `getComputedStyle`/page state immediately after and finding no change.
+  **`element.dispatchEvent(new MouseEvent('click', {bubbles: true,
+  cancelable: true, view: window}))` via `javascript_tool`, targeting the
+  element by its text content, worked every time.** `form_input` (for the
+  actual date/number/text values) remained reliable throughout — only
+  button *clicks* were the problem.
+- **Checking React state immediately after a `.click()` in the *same*
+  script can read stale values** — a click-then-check in one
+  `javascript_exec` call showed the old selection; splitting the click and
+  the check into two separate tool calls (a natural event-loop gap between
+  them) showed the correct, updated state every time after that.
+- **A stale PWA-cached bundle served the *previous* deploy's code in an
+  already-open production tab** even after the new deployment was
+  confirmed `● Ready` — same class of issue COACH-ANALYSIS-TASKS.md §1.2
+  already flagged as worth checking, now hit for real. Fixed by calling
+  `navigator.serviceWorker.getRegistrations()` → `.update()` on each
+  registration, then a forced reload — after which
+  `document.querySelectorAll('script[src]')` confirmed the new bundle
+  hash was actually being served before continuing.
+
+**Status: Context tab only**, exactly the scope instructed — no analysis-
+input assembly (step D), no server function (step E), no Analysis tab
+(step F). **Awaiting explicit approval before starting step D**
+(`analysisInput.ts` — pure, dry-run-first per COACH-ANALYSIS-TASKS.md §4:
+feeds `matchSessionsByPosition`'s output plus `phaseAt`/
+`recentWeightTrend`, resolved as of the *session's* date, into the exact
+payload shape the model will eventually see, verifiable against real
+production sessions at zero API cost before step E introduces spend).
 
 ---
 
