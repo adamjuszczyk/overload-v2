@@ -450,6 +450,58 @@ All core features built and working:
   range, down from a max of 44.79h. See "2026-08-11 session (post-launch
   fixes — completed_at fix and backfill)" below for the full account,
   including the complete before/after table.
+- 2026-08-18 session: **Coach (Daily Session Analysis) technical planning
+  only — no implementation code written.** Produced
+  `COACH-ANALYSIS-TASKS.md` from the new `COACH-ANALYSIS-SPEC.md`. This is
+  the first feature in this project that needs server-side code (an
+  Anthropic API key can't ship in a Vite client bundle) and the first that
+  adds tables outside the existing nine. **Reviewed and approved the same
+  session, with two edits applied** (pin the exact Haiku 4.5 snapshot rather
+  than the auto-resolving alias; move `input_snapshot jsonb` into migration
+  012 rather than skipping it) and one risk explicitly accepted rather than
+  left unaddressed. Still zero implementation code. See "2026-08-18 session
+  (Coach analysis — technical planning)" below.
+- 2026-08-18 session (Coach — migration 012 applied): **Step A of
+  COACH-ANALYSIS-TASKS.md §4 built: schema only, exactly as specified in
+  §2–§3.** `supabase/migrations/012_v3_coach_analysis.sql` — three tables
+  (`v2_coach_session_analyses`, `v2_coach_phase_entries`,
+  `v2_coach_weight_entries`), RLS identical in shape to every existing
+  `v2_` table, six indexes. Applied to production via the SQL Editor (same
+  established mechanism as every prior migration) and independently
+  verified against the live schema, not just trusted from "no error" on
+  apply: `information_schema.columns` (21 columns across the three tables,
+  every type/nullability/default matching the plan exactly, including
+  `input_snapshot jsonb not null`), `pg_indexes` (all six named indexes
+  plus the three auto-created primary keys, exact `indexdef` match),
+  `pg_policies` + `pg_class.relrowsecurity` (RLS enabled and the standard
+  "Users access own rows" policy present on all three tables), and
+  `pg_constraint` (the three check constraints — phase enum, kind enum,
+  `weight_kg > 0` — all present with the expected definition). No
+  application code, no dependency, no deploy — schema only, per explicit
+  instruction. **Awaiting approval before step B.** See "2026-08-18 session
+  (Coach analysis — migration 012)" below.
+- 2026-08-18 session (Coach — step B, shell + gating): **New `/coach`
+  route, two-tab shell (`CoachPage.tsx`, following `HistoryPage.tsx`'s
+  pattern), neutral locked placeholder (`CoachLocked.tsx`, SPEC §3), and a
+  gated COACH nav entry — built, deployed, and live-verified against the
+  production build.** `VITE_COACH_USER_ID` set both locally and in Vercel
+  Production (via `vercel env add`, not the dashboard UI — same store,
+  more reliable than browser automation). Live-verified on the deployed
+  build (`overload-v2-sage.vercel.app`) with the one real account this
+  session had access to: two-tab shell renders, both tabs empty, tab
+  switching works, COACH nav entry present. **The locked-placeholder path
+  could not be live-verified with a second real account — none was
+  available this session** — substituted with two things instead: a
+  direct Vitest suite on `isCoachUser()` (the exact boolean both
+  `CoachPage.tsx` and `Nav.tsx` gate on) covering match/mismatch/logged-out/
+  unset-env-var, and a genuine live render of `CoachLocked` on localhost
+  using the one real account's already-authenticated session, with
+  `VITE_COACH_USER_ID` temporarily pointed at a dummy id and reverted
+  afterward (confirmed reverted correctly; `.env.local` stayed gitignored
+  throughout, no stray diff). Both tabs ship with placeholder-only content,
+  per instruction — no Context tab logic (step C), no Analysis tab logic
+  (step F). **Awaiting approval before step C.** See "2026-08-18 session
+  (Coach analysis — step B)" below.
 
 ---
 
@@ -541,9 +593,43 @@ actually set (not just present in the SQL) via
 three returning `{security_invoker=true}`; views confirmed queryable via a
 direct PostgREST request with the anon key (no 404 from a stale schema
 cache); RLS confirmed still genuinely active on top of `security_invoker`
-via the same anon-key request returning `[]` rather than real rows. Only
-migration 010 (`010_v3_tighten_constraints.sql`, the FK-cascade contract
-migration, Phase 3.8) remains unwritten.
+via the same anon-key request returning `[]` rather than real rows.
+Migration 010 (`010_v3_tighten_constraints.sql`, the FK-cascade contract
+migration) applied and verified during Phase 3.8, and migration 011
+(`011_v3_fix_skipped_head_stage_volume.sql`) applied and verified
+2026-08-13/14 — see those sessions below.
+
+**Migration 012 (`012_v3_coach_analysis.sql`) applied and independently
+verified 2026-08-18 — three new tables, no changes to any existing table:**
+- `v2_coach_session_analyses` — `id`, `user_id`, `session_id` (FK →
+  `v2_sessions`, `on delete cascade` — a deliberate, flagged exception to
+  "permanent", COACH-ANALYSIS-TASKS §3.1/§5.7), `content jsonb not null`,
+  `input_snapshot jsonb not null`, `model text not null`, `prompt_version
+  integer not null default 1`, `input_tokens`/`output_tokens` (nullable
+  integer, null if the API omits usage), `created_at`. `unique
+  (session_id)` — load-bearing: SPEC §9 rules out regeneration, so a second
+  analysis of the same session must be impossible, not merely un-offered.
+- `v2_coach_phase_entries` — `id`, `user_id`, `phase text not null check
+  (phase in ('cut','bulk','maintain'))`, `start_date date not null`,
+  `created_at`. `unique (user_id, start_date)` — load-bearing: it's what
+  makes the implicit-end-date model well-defined (no separate end-date
+  column exists by design).
+- `v2_coach_weight_entries` — `id`, `user_id`, `entry_date date not null`,
+  `weight_kg numeric(5,2) not null check (weight_kg > 0)`, `kind text not
+  null check (kind in ('daily','weekly_average'))`, `created_at`. `unique
+  (user_id, entry_date, kind)` — lets a daily and a weekly-average entry
+  coexist on the same date without colliding.
+
+RLS enabled on all three, identical shape to every existing `v2_` table
+(`for all using (user_id = auth.uid()) with check (user_id = auth.uid())`).
+Six indexes total (the three unique ones above plus one `(user_id, <date
+col> desc)` index per table for the list views) — exact statements in
+COACH-ANALYSIS-TASKS.md §2.2. No FK to `exercises` — exercise identity is
+denormalised into the analysis JSON on purpose, so a later exercise rename
+or archive can't silently rewrite a permanent written record
+(COACH-ANALYSIS-TASKS §2). Verified against live production schema, not
+assumed from a clean apply — see "2026-08-18 session (Coach analysis —
+migration 012)" below for the exact queries and full results.
 
 ---
 
@@ -670,6 +756,17 @@ migration, Phase 3.8) remains unwritten.
 - TASKS-v2.md — v2 technical architecture, data models, scheduling algorithm.
   Still the accurate description of the app as shipped
 - AUDIT.md — Fable 5 audit findings, fixed and deferred items
+- COACH-ANALYSIS-SPEC.md — **new, 2026-08-18.** Product source of truth for the
+  Coach section (Daily Session Analysis, phase log, weight log). Its own §1–§11
+  numbering, independent of SPEC.md's — this is a separate initiative, not a
+  v3 phase, and TASKS.md does not cover it
+- COACH-ANALYSIS-TASKS.md — **new, 2026-08-18.** Technical plan for the above:
+  schema (migration 012, three `v2_coach_*` tables), the Vercel serverless
+  function that holds the Anthropic key, data models, implementation order, and
+  the twelve decisions the spec leaves open. **Reviewed and approved
+  2026-08-18 with two edits applied — nothing in it is built yet.** §0 records
+  two corrections to the spec's own technical references; §7 records the review
+  outcome and what changed because of it (see "2026-08-18 session" below)
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -908,6 +1005,23 @@ migration, Phase 3.8) remains unwritten.
 ---
 
 ## Active work
+**Coach (Daily Session Analysis) — steps A and B of
+COACH-ANALYSIS-TASKS.md §4 are built, deployed, and independently verified
+as of 2026-08-18.** Seven steps total (A–G); A (migration 012) and B
+(shell + gating) are done, both applied/deployed and verified against
+production, not just locally. **Explicit approval is required before step
+C (Context tab) starts** — a direct instruction for this initiative, not a
+standing default. `VITE_COACH_USER_ID` is set in both places it needs to
+be (`.env.local`, Vercel Production) — **still needs its server-side twin,
+`COACH_USER_ID`, set to the same UUID when step E lands; nothing enforces
+that they agree, drift is quiet and asymmetric (TASKS §4 step E note).**
+See "2026-08-18 session (Coach analysis — migration 012)" and "2026-08-18
+session (Coach analysis — step B)" below. Everything below this point
+predates the Coach initiative and describes the last TASKS.md-phase work —
+TASKS.md §4's 36 items are all closed out as of Phase 3.8 (2026-08-10) —
+kept as written at the time, still accurate, just no longer the newest
+thing in this file.
+
 **Phase 3.7 (Plan view) is built, adversarially reviewed, fixed,
 live-verified against real production data, and deployed as of
 2026-08-09.** TASKS.md §4 items 30–32 are all closed out. See "2026-08-09
@@ -6747,6 +6861,429 @@ docs-only pushes going forward skip triggering a real (if silently
 no-op) production rebuild and PWA update banner, verified against real
 git history in both directions before shipping and tested live against
 this repo's actual deploy pipeline, not just reasoned about.**
+
+---
+
+## 2026-08-18 session (Coach analysis — technical planning)
+
+**Planning only. No implementation code written, by explicit instruction —
+the plan was to be shown and approved before anything gets built.** Read
+CONTEXT.md and the new `COACH-ANALYSIS-SPEC.md`, surveyed the codebase, and
+produced `COACH-ANALYSIS-TASKS.md`.
+
+### Scope of this initiative
+
+A new **Coach** top-level section, gated to one account, with two tabs:
+Analysis (a list of un-analyzed finished sessions with a manual per-item
+trigger, plus the growing list of saved write-ups) and Context (a dated
+cut/bulk/maintain phase log and a dated bodyweight log). One permanent,
+non-regenerable, coach-style write-up per analyzed session, generated by
+Claude Haiku 4.5. Not a TASKS.md phase — TASKS.md's §4 items 1–36 are all
+closed out; this is separate scope with its own spec and its own plan
+document.
+
+### Two corrections to the spec's technical references, found by reading the code
+
+Recorded as §0 of the plan rather than silently built around — same standard
+as the TASKS.md §2.7/§4 citation inconsistency Phase 3.1 had to resolve.
+
+1. **`fetchLastCompletedSessionForExercise` no longer exists.** COACH-ANALYSIS-SPEC
+   §5 names it as the function to reuse for the comparison window. It was
+   deleted in Phase 3.3 (2026-08-08) and replaced by `fetchReferenceSessions` /
+   `fetchReferenceCandidateSessions` in `sessionService.ts` plus
+   `resolveExerciseReference` in `referenceLogic.ts`. The spec's *intent* — the
+   same exercise's last occurrence at the same workout-day slot, roughly a week
+   prior — is exactly what `resolveExerciseReference`'s `primary` slot resolves,
+   so only the names change, not the design.
+2. **The spec doesn't mention set-by-set matching, but `positionMatch.ts`
+   already does it and is the highest-value reuse in the feature.**
+   `matchSessionsByPosition` (built 2026-08-12, live-verified, 120+ tests)
+   already pairs this session's sets against last week's — two streams
+   (plain / dropset), slot N to slot N, stage 1 to stage 1 inside a matched
+   dropset pair, a mid-session skip correctly renumbering later slots — and
+   returns per-item weight/reps/RIR on both sides with e1RM deltas already
+   computed. The plan feeds that output to the model rather than two unaligned
+   set lists.
+
+### What the plan settles
+
+- **Server-side hop is unavoidable and lands on Vercel, not Supabase.** An
+  `ANTHROPIC_API_KEY` can't ship in a Vite bundle (every `VITE_` var does).
+  Vercel is already the deploy target and its CLI is already wired into this
+  repo's verification routine; Supabase Edge Functions were rejected because
+  CONTEXT.md records that no Supabase CLI link, service-role key, or DB
+  connection string exists in this environment — every migration to date went
+  through the SQL Editor by hand.
+- **No service-role key gets introduced.** The function verifies the caller's
+  Supabase JWT and then reads/writes through a client built with *that* token,
+  so RLS enforces ownership server-side exactly as it does in the browser.
+- **Gating is two independent layers:** a server-side `COACH_USER_ID` env check
+  (authoritative — it's the one guarding spend) and a cosmetic client-side
+  `VITE_COACH_USER_ID` comparison deciding whether the nav tab renders. The
+  tradeoff is stated in the plan: that puts a user UUID in the public bundle
+  (not a credential, but identifying).
+- **Three tables, migration `012_v3_coach_analysis.sql`:**
+  `v2_coach_session_analyses` (jsonb content, `unique (session_id)`, plus
+  `model` / `prompt_version` / token counts so cost is measured not estimated),
+  `v2_coach_phase_entries` (phase + start_date only, no end date — implicit via
+  the next entry, with `unique (user_id, start_date)` making that model
+  well-defined), and `v2_coach_weight_entries` (kg, `daily` | `weekly_average`,
+  weekly averages computed as a read and never written back). `v2_` prefix for
+  the app namespace, `v3_` in the migration filename for the era — matching
+  both existing conventions.
+- **The "To analyze" list reuses `v2_history_session_summary`** (the Phase 3.4
+  view) rather than adding a fourth database object — it already returns one
+  row per session with workout-day name, meso name, stage-excluded set count,
+  `status` and `completed_at`.
+
+### Four platform details checked directly, not assumed
+
+- `api/` would ship **untypechecked**: `npm run typecheck` is
+  `tsc -p tsconfig.app.json --noEmit` and that project is `include: ["src"]`;
+  `tsconfig.node.json` covers only `vite.config.ts`. Needs `tsconfig.api.json`
+  plus a `tsconfig.json` reference.
+- **Function timeout is the biggest platform risk.** A Haiku write-up is
+  realistically a 10–25s generation against a low default `maxDuration`.
+  Streaming does not dodge it — it's a wall-clock cap. The plan's step E1 is
+  to measure one real generation before building anything on the assumption.
+- `vercel.json` already exists (the 2026-08-15 `ignoreCommand`); the
+  `functions.maxDuration` block gets added alongside it, not over it.
+- The pure modules the function imports (`positionMatch.ts`, `e1rm.ts`,
+  `setGroupLogic.ts`, `referenceLogic.ts`) were **checked import-by-import** to
+  confirm none pulls in `src/lib/supabase.ts` — which `throw`s at module load
+  without `VITE_SUPABASE_*` and would be a confusing cold-start crash.
+  `referenceLogic.ts`'s only tie to `sessionService.ts` is an `import type`,
+  erased at compile; if that ever became a value import the function breaks.
+
+### Implementation order and its principle
+
+Seven steps — migration → shell + gate → Context tab → analysis-input assembly
+→ function + Anthropic call → Analysis tab → verify/deploy. The ordering
+principle: **everything verifiable against real production data for free comes
+before anything that costs money per run.** The Context tab lands third because
+COACH-ANALYSIS-SPEC §6 says the analysis can't tell a plateau from a successful
+cut without phase and weight data; the pure `analysisInput.ts` lands fourth
+because it's the highest-risk correctness work and the last point where finding
+it wrong is free.
+
+Two new pure Vitest-covered modules are planned (`phaseLogic.ts`,
+`weightLogic.ts`) plus `analysisInput.ts` — same precedent as
+`setGroupLogic.ts` / `referenceLogic.ts` / `e1rm.ts` / `weightUnit.ts` /
+`positionMatch.ts` / `compactPlanLogic.ts`.
+
+### Model-configuration notes specific to Haiku 4.5
+
+Recorded because they differ from current-generation defaults and are easy to
+get wrong: `output_config.effort` **errors** on Haiku 4.5 and adaptive thinking
+isn't available (it uses the older `budget_tokens` form) — the plan runs
+without thinking in v1, since the reasoning inputs arrive pre-computed.
+Structured output *is* supported and is used. Prompt caching is deliberately
+**not** used: Haiku 4.5's minimum cacheable prefix is 4,096 tokens and the
+system prompt will be well under that, so a `cache_control` marker would
+silently do nothing rather than error. Cost lands on the order of one to two
+cents per analysis; token counts get persisted so that becomes measured.
+
+### Twelve open decisions surfaced rather than assumed
+
+§5 of the plan lists each with a recommendation: one-analysis-per-session
+enforced in the DB; a weekly-average entry dated to its week's Monday (**the
+one decision that's awkward to reverse once data exists**); manual weekly
+entries winning over dailies; phase/weight context resolving as of the
+*session's* date rather than today; `primary`-slot-only reference use with the
+`last_time` / `first_time` cases labelled so the model doesn't treat a
+five-week gap as a weekly comparison; COACH as an eighth nav tab (tight at
+360px — needs a real check, not an assumption); cascade-delete narrowing the
+spec's "permanent"; kg-only bodyweight display; the ship-date cutoff filtering
+on `completed_at` (now reliable after the 2026-08-11 fix and backfill) rather
+than `date`; warmup exclusion; whether to store an input snapshot (§5.11 —
+**settled at review, it ships in 012**); and the paid-but-unsaved-generation
+window (§5.12 — **explicitly accepted at review**).
+
+### Review — approved same session, two edits applied
+
+The plan was held for review as instructed, reviewed, and approved. Two edits
+landed, both of which the review was right about and neither of which the plan
+had got right on its own:
+
+1. **Pin the model snapshot.** The plan specified the `claude-haiku-4-5`
+   alias. Valid, but the alias auto-resolves to whatever the newest Haiku 4.5
+   snapshot is *at call time* — which directly undercuts §3.1's own stated
+   reason for storing `model` per row, since after a future snapshot ships
+   every historical row would still just read `claude-haiku-4-5`. Now pinned
+   to `claude-haiku-4-5-20251001`, plus a related improvement the review
+   prompted: persist `response.model` (what actually served the request)
+   rather than the request constant.
+2. **`input_snapshot jsonb` moves into migration 012.** The plan had skipped
+   it citing COACH-ANALYSIS-SPEC §8's minimal-footprint principle. The review
+   pushed back and was correct: §8 rules out fields with no concrete use case,
+   and this has the most concrete one in the feature — with no regeneration
+   (§9), an analysis whose input can't be reconstructed can't be recovered at
+   all. `prompt_version` dates a row; it doesn't show what the model saw. Cost
+   is asymmetric too — one line in a migration that hasn't run yet, versus a
+   013 plus a nullable code path plus a permanent population gap.
+
+Also settled at review, without changing the design:
+
+- **E1 (measure one real generation's latency) is the literal first action of
+  step E**, not merely early in it — §4 rewritten to say so unambiguously and
+  to make a near-the-cap reading a stop-and-report rather than something to
+  design around.
+- **The paid-but-unsaved-generation window is an accepted risk.**
+  `unique (session_id)` + catching `23505` covers a duplicate *request*, not
+  the case where the Anthropic call succeeds and the function dies before the
+  insert commits. Volume is a handful of manual clicks a week and the loss is
+  one to two cents, so a pending-row state machine isn't worth its permanent
+  complexity. Two zero-cost mitigations do get built (return the generated
+  content in the error response instead of discarding it; log it), and the one
+  genuinely unrecoverable case — a hard `maxDuration` kill, where there's no
+  response to return anything in — is named rather than papered over.
+- **`COACH_USER_ID` and `VITE_COACH_USER_ID` must hold the same UUID**, with
+  nothing enforcing it. Drift is quiet and asymmetric: wrong server value →
+  the tab renders and every Analyze click 403s; wrong client value → the
+  feature works but is unreachable. To be recorded here properly at ship
+  (§4 step G).
+
+### Status
+
+`COACH-ANALYSIS-TASKS.md` written, reviewed, approved, and amended. **Nothing
+built, no migration applied, no dependency added, no deploy.** Cleared to
+start at §4 step A (migration 012).
+
+---
+
+## 2026-08-18 session (Coach analysis — migration 012)
+
+Step A only, per explicit instruction — schema, nothing else, and not to
+proceed to step B without approval. Read CONTEXT.md,
+COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md first, as instructed.
+
+**Migration written.** `supabase/migrations/012_v3_coach_analysis.sql` —
+transcribed directly from COACH-ANALYSIS-TASKS.md §2–§3, checked line by
+line against the spec text before applying: three tables
+(`v2_coach_session_analyses`, `v2_coach_phase_entries`,
+`v2_coach_weight_entries`), RLS on all three in the exact shape
+`002_v2_rls_policies.sql` established, six indexes (three of them unique
+and load-bearing per §5.1/§5.2, not hygiene). `input_snapshot jsonb not
+null` and `model text not null` (for the pinned
+`claude-haiku-4-5-20251001` response value, per §1.6/§5.11) are both
+present exactly as the reviewed plan specifies. Comment banners in the file
+record the *why* behind each non-obvious choice (cascade-on-delete as a
+flagged exception to "permanent"; the three unique constraints' role in
+making the implicit-phase-end and manual-vs-daily-weight models
+well-defined) so the migration file itself carries that reasoning, not just
+this log.
+
+**Applied via the Supabase SQL Editor — same established mechanism as
+every prior migration in this build.** You signed into the Supabase
+dashboard in the Browser pane (a credentials action outside this session's
+authority) and handed the authenticated tab over. Two things about the
+browser-automation mechanics this session are worth recording for next
+time, since they differ from what earlier sessions documented:
+
+- **Ctrl+A, Ctrl+Home, Ctrl+Shift+End did not reliably reach the Monaco
+  editor as modifier-combos in this environment** — confirms, with a
+  cleaner repro, the same "modifier keys did not appear to reach the page
+  correctly" finding CONTEXT.md already recorded from 2026-08-05 and
+  2026-08-08. Concretely: `ctrl+a` moved the cursor without producing a
+  selection (`selectionStart === selectionEnd` on Monaco's hidden textarea,
+  confirmed by reading it directly via `document.activeElement`), and a
+  follow-up attempt to clear-and-retype a query landed the new text
+  *inside* the old query rather than replacing it. **Workaround that
+  worked cleanly: never try to clear a populated Monaco editor — open a
+  fresh browser tab navigated straight to the project's `/sql/new` route
+  for every new query instead.** That route always loads a genuinely empty
+  editor, sidestepping the whole class of problem. (Creating a new snippet
+  via the in-app sidebar "+" — 2026-08-05's documented workaround — was
+  tried first and worked once, then became unreliable on repeat clicks
+  this session; the fresh-tab approach was the one that worked every time.)
+- **Typing a long multi-line block into Monaco produces compounding
+  auto-indent, not a formatting bug worth chasing.** Each new line's
+  leading whitespace kept growing (Monaco continuing the previous line's
+  indent, then adding the typed line's own leading spaces on top), so the
+  migration text as it sat in the editor before running looked cosmetically
+  wrong — by line 50 it had drifted into a narrow, heavily-indented column.
+  **Confirmed harmless, not assumed:** SQL ignores leading whitespace, and
+  the actual Monaco model content was read directly via
+  `window.monaco.editor.getModels()[0].getValue()` and diffed by eye against
+  the source file before running — every statement, column, constraint, and
+  index present, byte-correct, no characters dropped or duplicated (the
+  real risk with simulated typing into an editor with autoclosing
+  brackets). For every verification query after that, single-line queries
+  (or ones wrapped so the whole result comes back as a `json_agg`/
+  `json_build_object` blob) were used instead, both to avoid the
+  auto-indent noise entirely and because a compact JSON string is far
+  easier to read back in full via `get_page_text` than scrolling a paginated
+  results grid.
+
+**Migration ran clean:** "Success. No rows returned."
+
+**Independent verification — four checks, not just trusting a clean apply.**
+Three were the ones asked for; a fourth (check constraints) was added
+because it was nearly free and the three columns/indexes/policies checks
+don't by themselves confirm the `check` clauses landed as written.
+
+1. **`information_schema.columns`** — `select table_name, column_name,
+   data_type, is_nullable, column_default from information_schema.columns
+   where table_name in (...) order by table_name, ordinal_position`. **21
+   rows** (10 + 5 + 6 — the exact column counts of the three tables),
+   every one matching COACH-ANALYSIS-TASKS.md §3 exactly: `id` defaults to
+   `gen_random_uuid()`, `created_at` defaults to `now()`,
+   `prompt_version` defaults to `1`, `input_tokens`/`output_tokens` are the
+   only nullable columns anywhere in the three tables (`is_nullable =
+   'YES'`), and **`input_snapshot` is `jsonb`, `is_nullable = 'NO'`** —
+   confirmed present exactly as specified, not just present.
+2. **`pg_indexes`** — `select tablename, indexname, indexdef from
+   pg_indexes where tablename in (...) order by tablename, indexname`.
+   **9 rows**: the three auto-created primary keys plus all six named
+   indexes from COACH-ANALYSIS-TASKS.md §2.2, each `indexdef` matching
+   exactly — `v2_coach_analyses_session_uk` (unique, `session_id`),
+   `v2_coach_analyses_user_idx` (`user_id, created_at desc`),
+   `v2_coach_phase_user_start_uk` (unique, `user_id, start_date`),
+   `v2_coach_phase_user_idx` (`user_id, start_date desc`),
+   `v2_coach_weight_user_date_uk` (unique, `user_id, entry_date, kind`),
+   `v2_coach_weight_user_idx` (`user_id, entry_date desc`).
+3. **`pg_policies` + `pg_class.relrowsecurity`** — one combined query
+   (`json_build_object` wrapping both). All three tables:
+   `relrowsecurity: true`, and exactly one policy each, `"Users access own
+   rows"`, `cmd: ALL`, `qual: (user_id = auth.uid())`, `with_check: (user_id
+   = auth.uid())` — byte-identical in shape to every existing `v2_` table's
+   policy.
+4. **`pg_constraint`** (bonus, `contype = 'c'`) — three check constraints
+   found, one per table needing one: `v2_coach_phase_entries_phase_check`
+   → `phase = ANY (ARRAY['cut','bulk','maintain'])`,
+   `v2_coach_weight_entries_kind_check` → `kind = ANY
+   (ARRAY['daily','weekly_average'])`, `v2_coach_weight_entries_weight_kg_check`
+   → `weight_kg > 0`. All three match the migration file exactly.
+
+**Status: schema only.** No application code, no new dependency, no
+`api/` directory, no deploy — exactly the scope instructed. Extra browser
+tabs opened for verification queries were closed afterward; the
+originally-handed-off tab was left as-is (its last query, the intentionally
+corrupted clear-attempt text, is harmless scratch content, same as the
+leftover "Untitled query" snippets 2026-08-05 documented leaving behind).
+**Awaiting explicit approval before starting step B** (Coach shell +
+gating — new `/coach` route, two-tab shell, locked placeholder for every
+other account).
+
+---
+
+## 2026-08-18 session (Coach analysis — step B)
+
+Shell + gating only, per explicit instruction — both tabs ship empty, no
+Context (step C) or Analysis (step F) logic. Read CONTEXT.md,
+COACH-ANALYSIS-SPEC.md, and COACH-ANALYSIS-TASKS.md first, as instructed.
+
+**Built**, following COACH-ANALYSIS-TASKS.md §4 step B and §6's file
+listing exactly:
+- `src/features/coach/coachGate.ts` — pure, `isCoachUser(userId)` compares
+  `import.meta.env.VITE_COACH_USER_ID` against the passed id. Cosmetic
+  only, per §1.4 — the authoritative gate is the server-side
+  `COACH_USER_ID` check, which doesn't exist yet (step E).
+- `src/features/coach/CoachLocked.tsx` — the neutral placeholder
+  (SPEC §3's exact suggested copy: "Coach is still cooking — check back
+  soon."), same empty-state card treatment as `ExerciseHistoryView.tsx`'s
+  "REQUIRES A CONNECTION" state.
+- `src/features/coach/CoachPage.tsx` — two-tab shell copying
+  `HistoryPage.tsx`'s pattern (page header + tab bar in the shell, `useState`
+  for the active tab), gated: renders `CoachLocked` when `isCoachUser` is
+  false, otherwise the real shell with both tabs showing a plain
+  "— COMING SOON" placeholder.
+- `App.tsx` — `/coach` route added **unconditionally**. `CoachPage` itself
+  decides locked-vs-shell, so opening the URL directly always resolves to
+  something rather than 404ing for non-gated accounts.
+- `Nav.tsx` — COACH tab appended to the tab array **only when
+  `isCoachUser(user.id)` is true** — resolves TASKS §5.6's crowding
+  concern literally: the seven-tab bar is completely unchanged for every
+  account except the one Coach is for, not just visually deprioritized.
+
+**Gate value resolved and set in both places it needs to be.** Queried
+`auth.users` directly (`select id, email from auth.users order by
+created_at`) rather than guessing or asking — three real accounts exist on
+this Supabase project; the account this session already knew as the
+primary one (`sch0gunjr@gmail.com`) has id `12e79b69-9891-4f53-a7cf-
+650edd83659f`. Set as `VITE_COACH_USER_ID` in `.env.local` (with the same
+"must match the server-side twin" comment migration 012's session already
+flagged) and in Vercel Production **via `vercel env add
+VITE_COACH_USER_ID production` piped a value on stdin, not the dashboard
+UI** — confirmed the Vercel CLI is authenticated in this environment
+(`vercel whoami` → `adamjuszczyk`) and this is the same underlying store,
+just a more reliable path than browser-automating the dashboard. Confirmed
+via `vercel env ls` afterward. `.env.example` updated with the new key
+(blank, as the other two already are).
+
+**Typecheck, Vitest (134 tests, all passing — 4 new, see below), and build
+all clean before anything was deployed.** Confirmed the built bundle
+actually contains the new code and the correct gate value via `grep` on
+`dist/assets/index-*.js` before pushing, not just a clean build log.
+
+**Committed as three separate commits, each independently coherent** (same
+convention as prior phases): `81dc823` (COACH-ANALYSIS-SPEC.md,
+COACH-ANALYSIS-TASKS.md, migration 012 — step A's artifacts, which hadn't
+been committed yet), `b5d3863` (step B's application code), and a later
+`13316a0` (the `coachGate.test.ts` added mid-session once the second-account
+gap surfaced, see below). Pushed and confirmed via `vercel ls` / `vercel
+inspect`: a fresh Production deployment (`dpl_zzwQBrgvZhSYyc6ZjAAh2eU6A7Zt`)
+went `● Ready` within about a minute of the push, aliased to
+`overload-v2-sage.vercel.app` as expected.
+
+**Live verification — one real account fully confirmed on both localhost
+and the deployed build; the second-account path substituted, not skipped
+silently.**
+
+- **Pre-check, not a bug:** direct navigation to `/coach` on the fresh
+  production deployment 404'd once, before `/history` (an old, unrelated
+  route) also 404'd on the very next direct-navigation attempt — both self-
+  healed on the next load. This is the PWA `navigateFallback` service-
+  worker mechanism COACH-ANALYSIS-TASKS.md §1.2 item 4 already flagged as
+  worth checking: a service worker registered on first visit to `/` then
+  intercepts subsequent direct navigations to any path and serves the
+  cached shell, so client-side routing takes over. Confirmed by testing an
+  unrelated existing route with `curl` (no JS, no SW) and getting `404`
+  there too — this is a site-wide characteristic of a fresh deployment with
+  no prior SW registration, not a regression from this session's route
+  addition.
+- **Your account, `overload-v2-sage.vercel.app` (the deployed build) —
+  the two-tab shell live-verified exactly as instructed:** you signed in
+  directly (a credentials action outside this session's authority) on both
+  `localhost:5173` and, separately, on the production origin (session
+  storage doesn't cross origins) after being asked to do so specifically —
+  the first handoff landed on localhost, which was checked and confirmed
+  working, then you were asked again for the production origin
+  specifically and confirmed there too. On production: COACH nav entry
+  present, `/coach` renders the two-tab shell, ANALYSIS active by default,
+  clicking CONTEXT switches correctly (`get_page_text` confirmed
+  "CONTEXT — COMING SOON" after the click), zero console errors
+  (`read_console_messages` with `onlyErrors: true` → none).
+- **Second account: none available this session** (your own words: "I
+  dont have access to other accounts") — the instructed two-account live
+  check could not be completed as originally scoped. Substituted with two
+  things instead, both closing the actual gap rather than just noting it:
+  1. **`coachGate.test.ts`** (4 tests, `vi.stubEnv`/`vi.unstubAllEnvs`) —
+     exercises the exact boolean both `CoachPage.tsx` and `Nav.tsx` gate
+     on: the gated id → `true`; any other id → `false`; logged-out
+     (`undefined`) → `false`; the env var unset → `false` for everyone,
+     including the would-be-gated id.
+  2. **A genuine live render of the locked path**, not just a unit test
+     claim: on `localhost:5173`, with your account's already-authenticated
+     session still live, `VITE_COACH_USER_ID` was temporarily changed to a
+     dummy UUID (`00000000-...`) in `.env.local`, the dev server restarted
+     (Vite doesn't hot-reload `.env` changes), and the same real,
+     logged-in session re-checked: the COACH nav entry was gone (7 tabs,
+     not 8) and `/coach` rendered exactly "COACH IS STILL COOKING / Check
+     back soon." — the real `CoachLocked` component, for a real
+     authenticated session, just with the gate deliberately mismatched to
+     stand in for "any other account." Reverted immediately after
+     (`.env.local` back to the real id, dev server restarted again,
+     confirmed the COACH tab was back) — `.env.local` is gitignored
+     throughout, so none of this touched version control, and the
+     production deploy/env var were never touched by this experiment.
+
+**Status: shell + gating only**, exactly the scope instructed. No Context
+tab logic, no Analysis tab logic, no server-side gate (`COACH_USER_ID`
+still doesn't exist — step E). **Awaiting explicit approval before
+starting step C** (Context tab — phase log and weight log,
+`coachContextService.ts`, `useCoachContext.ts`, `phaseLogic.ts`,
+`weightLogic.ts`).
 
 ---
 
