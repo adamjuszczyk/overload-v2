@@ -541,6 +541,39 @@ All core features built and working:
   before, not new. **Awaiting approval before step D** (the pure,
   dry-run-first analysis-input assembly). See "2026-08-18 session (Coach
   analysis — step C)" below.
+- 2026-08-18 session (Coach — step D, analysis-input assembly): **You
+  logged real phase and weight data between sessions** — one `cut` entry
+  (started 2026-05-18, still open) and two daily weight entries
+  (2026-05-18: 83.9 kg, 2026-08-18: 72.9 kg) — so this step's real-data
+  check (§4 D's own stop condition) passed without needing to stop.
+  `analysisInput.ts` — pure `buildAnalysisInput()` (12 new Vitest cases)
+  plus a thin, deliberately singleton-decoupled fetch layer
+  (`assembleAnalysisInput()`, takes an injected `SupabaseClient` rather
+  than importing the browser client, so it's safe to reuse unmodified from
+  step E's future Vercel function — that function has no `import.meta.env`
+  at all, so any accidental value-import chain back to
+  `src/lib/supabase.ts` would crash at cold start). **Dry-run verified
+  against three real production sessions, zero API spend, using the
+  already-authenticated browser session's own access token** (same "live
+  app's own session token" pattern used for direct PostgREST checks in
+  earlier phases) rather than a mocked client — real matched sets, real
+  e1RM deltas, correct `first_time`/`last_week` resolution, correct
+  per-session phase duration (50/64/92 days for the three sessions
+  respectively, each computed as of *that session's own date*, not
+  2026-08-18). **Two of the three requested phase-timeline cases weren't
+  achievable with the real data that exists** — only one phase entry, and
+  it predates every completed session, so no session "predates any
+  entries" and no phase transition exists yet to test against — reported
+  plainly rather than substituted silently; picked the earliest, a
+  mid-timeline, and today's session instead, which still exercises
+  `first_time` vs `last_week`, a genuinely gapped exercise
+  (logged last week, skipped today — real, matched-slot-count-zero
+  data, not synthetic), and the weight-trend window correctly picking up
+  a same-week entry only when the session date falls inside it. See
+  "2026-08-18 session (Coach analysis — step D)" below for the full
+  account and the three payloads. **Awaiting approval before step E**
+  (the serverless function and the actual Anthropic call — the first step
+  that costs money per run).
 
 ---
 
@@ -1044,20 +1077,24 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
-**Coach (Daily Session Analysis) — steps A, B, and C of
-COACH-ANALYSIS-TASKS.md §4 are built, deployed, and independently verified
-as of 2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
-gating), and C (Context tab — phase log, weight log) are done, all
-applied/deployed and verified against production with real data, not just
-locally or from unit tests alone. **Explicit approval is required before
-step D (analysis-input assembly) starts** — a direct instruction for this
-initiative, not a standing default. `VITE_COACH_USER_ID` is set in both
-places it needs to be (`.env.local`, Vercel Production) — **still needs
-its server-side twin, `COACH_USER_ID`, set to the same UUID when step E
-lands; nothing enforces that they agree, drift is quiet and asymmetric
-(TASKS §4 step E note).** See "2026-08-18 session (Coach analysis —
-migration 012)", "2026-08-18 session (Coach analysis — step B)", and
-"2026-08-18 session (Coach analysis — step C)" below. Everything below
+**Coach (Daily Session Analysis) — steps A through D of
+COACH-ANALYSIS-TASKS.md §4 are built and independently verified as of
+2026-08-18.** Seven steps total (A–G); A (migration 012), B (shell +
+gating), C (Context tab), and D (analysis-input assembly) are done. A–C
+are deployed and verified against production through the UI; D is pure
+logic plus a fetch layer with no UI consumer yet, verified via a real
+dry run against production data instead (see below) — nothing to deploy
+in the UI sense, though the commit is pushed and built clean. **Explicit
+approval is required before step E (the serverless function + the actual
+Anthropic call — first step that spends money) starts** — a direct
+instruction for this initiative, not a standing default.
+`VITE_COACH_USER_ID` is set in both places it needs to be (`.env.local`,
+Vercel Production) — **still needs its server-side twin, `COACH_USER_ID`,
+set to the same UUID when step E lands; nothing enforces that they agree,
+drift is quiet and asymmetric (TASKS §4 step E note).** See "2026-08-18
+session (Coach analysis — migration 012)", "2026-08-18 session (Coach
+analysis — step B)", "2026-08-18 session (Coach analysis — step C)", and
+"2026-08-18 session (Coach analysis — step D)" below. Everything below
 this point predates the Coach initiative and describes the last
 TASKS.md-phase work — TASKS.md §4's 36 items are all closed out as of
 Phase 3.8 (2026-08-10) — kept as written at the time, still accurate, just
@@ -7500,6 +7537,159 @@ feeds `matchSessionsByPosition`'s output plus `phaseAt`/
 `recentWeightTrend`, resolved as of the *session's* date, into the exact
 payload shape the model will eventually see, verifiable against real
 production sessions at zero API cost before step E introduces spend).
+
+---
+
+## 2026-08-18 session (Coach analysis — step D)
+
+`analysisInput.ts` only, per instruction — pure builder plus the thin
+fetch layer, Vitest first, then a real dry run, no server function, no
+Anthropic call. Read CONTEXT.md, COACH-ANALYSIS-SPEC.md, and
+COACH-ANALYSIS-TASKS.md first, as instructed.
+
+**The real-data check landed on "proceed", not "stop":** queried
+`v2_coach_phase_entries`/`v2_coach_weight_entries` before writing anything
+dry-run-related, per the explicit instruction to check first. Found
+`phase_entries: 1, weight_entries: 2` — you'd logged a real `cut` entry
+(started 2026-05-18, still open — no second entry) and two real daily
+weight entries (2026-05-18: 83.9 kg, 2026-08-18: 72.9 kg) since step C's
+session ended. Not empty, so the dry run proceeded as instructed —
+recorded here rather than silently assumed, since this genuinely could
+have gone the other way and the instruction was explicit about which
+path to take on each outcome.
+
+**Built:**
+- **Types**: `AnalysisInput`, `AnalysisInputExercise`,
+  `AnalysisInputReference` (a `{kind: 'first_time'} |
+  {kind:'last_week',...} | {kind:'last_time',...,daysSince}` discriminated
+  union — directly mirrors `PrimarySlot` from `referenceLogic.ts`, just
+  reshaped to a JSON-friendly label rather than carrying the full
+  `ReferenceSession`). Defined in `analysisInput.ts` itself, not
+  `types/index.ts` — matches this codebase's existing precedent
+  (`PositionMatchResult`, `ReferenceState` etc. all live next to the logic
+  that produces them; `types/index.ts` is for DB-entity-shaped domain
+  types).
+- **`buildAnalysisInput()`** — pure. Per exercise: calls
+  `matchSessionsByPosition` when a reference session exists (`null` only
+  for `first_time`), labels the reference kind per §5.5, carries
+  `isDeloadReference` (forced `null` for `first_time` — there's no "other
+  week" to have been a deload). Session-level: `isDeloadCurrent`,
+  `phase: phaseAt(phaseEntries, session.date)`,
+  `weightTrend: recentWeightTrend(weightEntries, session.date,
+  WEIGHT_TREND_WEEKS)` — 6 weeks, a documented, not-load-bearing default.
+  **Deliberately excludes `session.note`** — SPEC §8/§9 name session-level
+  mood/pump/note text as explicitly out of scope for v1 reasoning inputs;
+  the type itself has no field for it, not just an unused one.
+- **`assembleAnalysisInput()`** — the thin fetch layer, and the one real
+  design decision this step required beyond transcribing the plan. It
+  takes an **injected `SupabaseClient`** and does its **own** direct
+  queries (session + set logs, workout day name, reference candidate
+  sessions + their set logs, batched `is_deload` lookup, phase/weight
+  entries) rather than importing `sessionService.ts` /
+  `historyService.ts` / `coachContextService.ts`'s already-built
+  equivalents. Reason: every one of those imports the browser singleton
+  `supabase` client (`src/lib/supabase.ts`), which throws at module load
+  when `VITE_SUPABASE_*` are absent. That's harmless in the browser, but
+  step E's server function is a Vercel Node function, not a Vite app —
+  `import.meta.env.VITE_SUPABASE_URL` is simply `undefined` there, so any
+  value-import chain leading back to `src/lib/supabase.ts` would crash at
+  cold start. This is the *same* risk COACH-ANALYSIS-TASKS.md §1.3 already
+  flagged for `referenceLogic.ts`'s type-only import of `sessionService.ts`
+  (safe, because type imports erase) — the thing to avoid is a *value*
+  import doing the same, which is exactly what reusing those service
+  functions here would have been. Costs some duplicated query logic
+  (flagged inline in the file) but means `analysisInput.ts` needs no
+  rewrite when step E actually wires it into a server function — it
+  already takes exactly the kind of client that function will construct
+  (anon key + `Authorization: Bearer <caller JWT>`, TASKS §1.1).
+
+**Vitest: 12 new cases on `buildAnalysisInput`** — all three reference
+kinds (including `isDeloadReference` forced null for `first_time` even
+when the source data claims otherwise), session-level field pass-through,
+`'note' in result.session` asserted `false`, multiple exercises resolved
+independently, and — the case most likely to have hidden a real bug —
+phase/weight resolution tested against a session date *earlier* than a
+later phase/weight entry, confirming the later entry doesn't leak
+backward into a past session's resolved context. 167 tests total, all
+passing; typecheck and build both clean; bundle size unchanged
+(`481.95 kB`, byte-identical to the pre-step-D build) — confirms
+`analysisInput.ts` is correctly tree-shaken out, since nothing imports it
+yet.
+
+**Dry run — real production data, zero Anthropic spend, using the
+account's own already-authenticated session, not a mock:**
+
+Extracted the real access token from the live browser session's
+`localStorage` (same "live app's own session token" pattern this project
+has used before for direct PostgREST verification — not a new technique),
+confirmed it matched the gated account
+(`12e79b69-9891-4f53-a7cf-650edd83659f`), and used it to construct a
+Supabase client scoped exactly like the real per-request client step E
+will build (anon key + `Authorization: Bearer <token>`), so RLS applied
+precisely as it will there. A throwaway script (`dryRunAnalysisInput.ts`,
+repo root, never committed) called the real, shipped
+`assembleAnalysisInput()` — not a reimplementation — against three real
+sessions, then was deleted along with the token file immediately after.
+
+**The three sessions asked for — "different relationships to the phase
+timeline, one predating any entries, one inside a documented phase, one
+near a transition if the dates allow it" — couldn't be fully satisfied by
+the real data that exists, and this is reported rather than papered
+over:** the account's only phase entry starts 2026-05-18, and every
+completed session in the account is dated 2026-07-07 or later — so no
+completed session predates it, and with only one entry there is no
+transition boundary to test at all (the instruction's own "if the dates
+allow it" hedge anticipated exactly this for the transition case, just
+not for the "predates" case). **Substituted the earliest, a mid-timeline,
+and today's completed session on the same recurring workout day
+("PULL 1") instead**, which still produced real diversity:
+
+1. **2026-07-07 (day 50 of the cut)** — the very first occurrence of this
+   workout day in the account. All 5 exercises correctly resolved
+   `first_time` — `match: null`, `isDeloadReference: null` for every one,
+   confirmed not asserted. `phase.current.durationDays: 50`,
+   `phase.previous: null`. `weightTrend: []` — correctly empty, this
+   session's 6-week trailing window reaches back past neither real weight
+   entry.
+2. **2026-07-21 (day 64)** — 4 of 5 exercises resolved `last_week`
+   against 2026-07-14 with real matched slots, real weight/reps/rir on
+   both sides, real e1RM deltas (e.g. Ezbar Preacher Curl: unchanged
+   weight/reps three slots running, `deltaPercent: 0` each — a
+   genuinely flat week, not a fabricated one). **The 5th exercise (Cable
+   Reverse Biceps Curl) is the most useful real edge case surfaced this
+   session**: it also resolved `last_week`, but `plain.slotCountB: 0,
+   matchedSlotCount: 0, extraSlotsA: 2` — logged twice last week, not
+   logged at all this session. No crash, no null-pointer, just an
+   honestly empty match — exactly the "extra doesn't compare" contract
+   `positionMatch.ts` already promises, now confirmed against a real row
+   that actually exercises it. `phase.current.durationDays: 64`.
+   `weightTrend: []` still — window still doesn't reach either entry.
+3. **2026-08-18 (day 92, today)** — all 5 exercises resolved `last_week`
+   against 2026-08-11, one again showing a real `slotCountA: 0,
+   slotCountB: 0` (neither week logged Cable Reverse Biceps Curl at all).
+   `phase.current.durationDays: 92` (2026-05-18 → 2026-08-18, hand-checked:
+   31 + 30 + 31 = 92, exactly). **`weightTrend` is non-empty here**:
+   `[{weekStart: "2026-08-17", averageKg: 72.9, source: "daily",
+   dailyCount: 1}]` — the real 2026-08-18 weigh-in, correctly bucketed
+   into the Monday-anchored week containing it, correctly included because
+   this session's date falls inside the trailing window that reaches it.
+
+**The as-of-session-date requirement (§5.4) is confirmed working, not
+just asserted**: the same single phase entry produced three different
+`durationDays` (50, 64, 92) for the three sessions — each computed against
+*that session's own date*, not `2026-08-18` for all three. Had this been
+wired to "today" instead of `session.date`, all three would have shown 92.
+
+**Status: analysisInput.ts only**, exactly the scope instructed. No
+server function, no Anthropic call, no UI consumer — step E is what wires
+this into something reachable from the app. Committed (`f535700`), pushed,
+build confirmed `● Ready` in production (nothing user-visible changed,
+this step has no UI). **Awaiting explicit approval before starting step
+E** (`api/coach/analyze.ts`, `@anthropic-ai/sdk`, `tsconfig.api.json`,
+`vercel.json`'s `functions.maxDuration`, `COACH_USER_ID` — and per the
+plan's own ordering, **E1 — a single real Haiku 4.5 call to measure actual
+latency — must be the literal first action inside step E**, before any
+scaffolding, since a near-the-cap reading is a stop-and-report condition).
 
 ---
 
