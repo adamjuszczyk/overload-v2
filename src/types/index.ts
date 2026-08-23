@@ -1,4 +1,5 @@
 import type { AnalysisInput } from '../features/coach/analysisInput'
+import type { WeekAnalysisInput } from '../features/coach/weekAnalysisInput'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -258,6 +259,86 @@ export interface CoachSessionAnalysis {
   inputSnapshot: AnalysisInput   // exactly what the model was shown (§5.11)
   model: string                  // response.model, e.g. 'claude-haiku-4-5-20251001'
   promptVersion: number
+  inputTokens: number | null
+  outputTokens: number | null
+  createdAt: string
+}
+
+// ─── Coach (Weekly Analysis) ────────────────────────────────────────────────
+// exercises.muscle_subgroup / .movement_pattern (migration 013). Both nullable
+// — an exercise with neither is untagged and falls back to muscleGroup for
+// bucketing (COACH-WEEK-ANALYSIS-SPEC.md §5).
+
+// DB-enforced vocabulary (013's CHECK) — exactly SPEC §4's seven values.
+export type MovementPattern =
+  | 'horizontal_push' | 'vertical_push'
+  | 'horizontal_pull' | 'vertical_pull'
+  | 'hip_hinge' | 'squat' | 'isolation'
+
+// Deliberately NOT a union type: the subgroup vocabulary is app-layer only
+// (COACH-WEEK-ANALYSIS-TASKS.md §7.10), so a value the app doesn't recognise
+// must degrade to "an unfamiliar bucket label", never a type error or a
+// dropped occurrence.
+export type MuscleSubgroup = string
+
+export interface ExerciseTags {
+  exerciseId: string
+  exerciseName: string
+  muscleGroup: MuscleGroup | null
+  muscleSubgroups: MuscleSubgroup[] | null   // null = untagged (never [])
+  movementPattern: MovementPattern | null
+}
+
+// Two values, not three: which axis a bucket lives on. Whether a
+// muscle_subgroup-axis bucket used a real tag or fell back to the coarse
+// muscleGroup column is carried by WeekAnalysisBucket.isFallback below, not
+// by a third kind value — a bucket's kind and its fallback status would
+// otherwise say the same thing twice for every subgroup-axis bucket.
+export type WeekBucketKind = 'muscle_subgroup' | 'movement_pattern'
+
+export interface WeekAnalysisBucket {
+  key: string                       // e.g. 'subgroup:side_delt', 'pattern:horizontal_push'
+  kind: WeekBucketKind
+  label: string                     // e.g. 'side_delt'
+  // true when at least one occurrence here landed via the muscleGroup
+  // fallback rather than a real muscle_subgroup tag (SPEC §5). Only
+  // meaningful for kind === 'muscle_subgroup' — a movement_pattern bucket
+  // has no fallback path at all (no tags row means absent from this axis
+  // entirely, not present-with-fallback — see §7.9).
+  isFallback: boolean
+  occurrenceIds: string[]
+}
+
+// Output shape (COACH-WEEK-ANALYSIS-TASKS.md §3.2) — a small, selective set
+// of highlights (SPEC §5), never one per bucket. `bucketKind` includes
+// 'cross' (not in WeekBucketKind) deliberately — SPEC §1's whole point is
+// reading a pattern *across* buckets ("bench down, fly up"), which by
+// definition doesn't live in one.
+export interface CoachWeekHighlight {
+  bucketKind: WeekBucketKind | 'cross'
+  bucketLabel: string
+  // Filtered at render time against the payload's real ids — a
+  // hallucinated id is dropped from the deep links, never fails the
+  // render (mirrors AnalysisDetail.tsx's existing precedent).
+  exerciseIds: string[]
+  headline: string
+  comment: string
+}
+
+export interface CoachWeekAnalysisContent {
+  highlights: CoachWeekHighlight[]
+  overall: string
+}
+
+// Row shape for v2_coach_week_analyses (migration 013).
+export interface CoachWeekAnalysis {
+  id: string
+  userId: string
+  weekStart: string
+  content: CoachWeekAnalysisContent
+  inputSnapshot: WeekAnalysisInput   // exactly what the model was shown
+  model: string                      // response.model, not the request constant
+  promptVersion: number              // WEEK_PROMPT_VERSION, independent of daily's
   inputTokens: number | null
   outputTokens: number | null
   createdAt: string

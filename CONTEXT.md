@@ -796,6 +796,65 @@ or archive can't silently rewrite a permanent written record
 assumed from a clean apply — see "2026-08-18 session (Coach analysis —
 migration 012)" below for the exact queries and full results.
 
+**Migration 013 (`013_v3_coach_week_analysis.sql`) applied and
+independently verified 2026-08-20 — two additive columns on the shared
+`exercises` table, one new table:**
+- `exercises` + `muscle_subgroup text[]` (nullable, multi-value) and
+  `movement_pattern text` (nullable, single-value, `check` against SPEC
+  §4's exact seven values). Same minimal-blast-radius shape `muscle_group`
+  itself was added in with in `001_v2_schema.sql` — no default, no `not
+  null`, no trigger, since `exercises` is shared with Northstar v2.
+  `muscle_subgroup`'s own `check` forbids `'{}'` and null array elements —
+  load-bearing, not hygiene: it leaves exactly one representation of
+  "untagged" (`NULL`), so `weekBuckets.ts`'s fallback logic has one branch
+  to check, not two (COACH-WEEK-ANALYSIS-TASKS §2.1).
+- `v2_coach_week_analyses` — one permanent row per resolved week, full
+  provenance parity with `v2_coach_session_analyses` (`content`,
+  `input_snapshot`, `model`, `prompt_version`, token counts). Identity
+  column is `week_start date`, not a session id — `unique (user_id,
+  week_start)` plus `check (extract(isodow from week_start) = 1)` (the
+  Monday invariant, enforced where a bad value can't slip past code) make
+  "one row per real calendar week" actually true, not just intended.
+  **No FK, therefore no cascade** — deliberate divergence from the daily
+  table's rule (TASKS §7.7): a weekly analysis outlives deletion of any
+  session it describes, since a week has no single subject to cascade
+  from.
+- All six verification checks from TASKS §2.4 run for real, not trusted
+  from a clean apply: `information_schema` for both column sets;
+  `pg_indexes` (exactly two — the pkey and the `(user_id, week_start)`
+  unique, no third `desc`-ordered index since the unique index already
+  serves the list query as a backward scan); `pg_policies` +
+  `pg_class.relrowsecurity` (both true); **all three constraints proven by
+  attempting to violate them, not read off the DDL** — a `week_start`
+  insert on a real Tuesday (`2026-08-18`), an empty-array
+  `muscle_subgroup` update, and an out-of-vocabulary `movement_pattern`
+  update all returned real `23514` errors with zero rows written; and a
+  final check that all 70 existing `exercises` rows for the account came
+  through with `muscle_subgroup`/`movement_pattern` still `NULL`. See
+  "2026-08-20 session (Coach Weekly Analysis — build)" below for the exact
+  queries and results.
+
+**Migration 014 (`014_v3_exercise_tags.sql`) applied and independently
+verified 2026-08-20 — the reviewed tag data, no schema change:** a single
+keyed `UPDATE` from `COACH-EXERCISE-TAGS.md` as approved by Adam (every
+proposed value, including all ⚠-flagged rows — no corrections), 70
+`values(id, subgroups, pattern)` tuples, `where e.id = v.id`. All four
+TASKS §4.2 checks run for real: `count(muscle_subgroup) = 70` (not "no
+error" — the actual count, matching the VALUES list exactly);
+`null_count = 0`; `select distinct unnest(muscle_subgroup)` returned 21 of
+the 22 proposed values with zero typos (`obliques` alone unused — correct,
+no exercise in this library targets it specifically); `movement_pattern`
+distribution across all seven values (`isolation` 33, `horizontal_push` 10,
+`horizontal_pull` 7, `squat` 7, `hip_hinge` 5, `vertical_pull` 5,
+`vertical_push` 3), not degenerate. **Tag corrections apply prospectively
+only** — a `v2_coach_week_analyses` row's frozen `input_snapshot` keeps
+whatever tag was live when that analysis was generated, exactly the same
+provenance asymmetry `prompt_version` already has on the daily table (see
+"Active work" below for the full reasoning). See "2026-08-20 session (Coach
+Weekly Analysis — migration 014, tag review closed out)" below for the
+exact queries, results, and the SQL Editor typing workaround this step
+needed.
+
 ---
 
 ## Key architectural rules
@@ -931,7 +990,26 @@ migration 012)" below for the exact queries and full results.
   the twelve decisions the spec leaves open. **Reviewed and approved
   2026-08-18 with two edits applied — nothing in it is built yet.** §0 records
   two corrections to the spec's own technical references; §7 records the review
-  outcome and what changed because of it (see "2026-08-18 session" below)
+  outcome and what changed because of it (see "2026-08-18 session" below).
+  **All seven steps built, deployed and closed out 2026-08-18** — see "Active
+  work" above
+- COACH-WEEK-ANALYSIS-SPEC.md — **new, 2026-08-19 (written by Adam, not this
+  session).** Product source of truth for Coach → Analysis → **Week**: the
+  Analysis tab becomes a container with Session (existing, relocated) and Week
+  (new) sub-tabs; `exercises.muscle_subgroup` (multi-value) and
+  `exercises.movement_pattern` (single-value) get added and populated by a
+  one-time AI-assisted batch pass; a week becomes analyzable by *plan
+  resolution*, not calendar date; per-exercise facts are reused from
+  `analysisInput.ts` and mechanically regrouped by tag; **a blended
+  per-muscle-group metric is rejected outright, not deferred.** Its own §1–§11
+  numbering, independent of both SPEC.md's and COACH-ANALYSIS-SPEC.md's
+- COACH-WEEK-ANALYSIS-TASKS.md — **new, 2026-08-19.** Technical plan for the
+  above: migration 013 (two `exercises` columns + `v2_coach_week_analyses`),
+  the batch tagging pass and its review gate, the one `analysisInput.ts`
+  extraction the week path needs, a nine-step implementation order, and
+  seventeen assumptions/decisions the spec leaves open. **Written this session,
+  awaiting review — nothing in it is built.** §9 lists the four open questions
+  worth settling before the tagging pass runs (see "2026-08-19 session" below)
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -1170,6 +1248,225 @@ migration 012)" below for the exact queries and full results.
 ---
 
 ## Active work
+**Resolved, as of 2026-08-22: the gym reference panel bug is fixed
+(session-skip reclassification + one-time backfill + meso-scoped
+reach-back, shared across the daily/weekly Coach payloads and the live
+panel), `coachPrompt.ts` v3 verified against real data, and step 5's real
+Weekly Analysis dry run is done — real payload built, read, and measured.
+See "2026-08-22 session (fix: session-skip reclassification +
+meso-scoped reach-back + coachPrompt.ts v3 + the real Weekly Analysis dry
+run)" below for the full account.**
+
+**Coach — Weekly Analysis: steps 1–7 now built and verified (step 7
+completed 2026-08-23 — `coachApiAuth.ts`/`api/coach/analyze-week.ts`/
+`coachWeekPrompt.ts`, first real Weekly Analysis ever generated, id
+`0c9951ef-...`, week 2026-08-17). Not yet deployed to Vercel or committed —
+not asked to do either this session. Step 8 (UI — Session/Week sub-tab
+restructure) and step 9 (adversarial review, deploy, this file) remain.**
+`COACH-WEEK-ANALYSIS-SPEC.md` (Adam) and `COACH-WEEK-ANALYSIS-TASKS.md`
+(2026-08-19, still formally "awaiting review" though most of it has since
+been executed) are the pair. Steps 1–4 and the tagging pass (step 3) are
+fully closed out — see the three earlier dated session entries below. **This
+session added `weekAnalysisInput.ts`, the actual week-payload assembler —
+the last piece of code step 5 needed** — with full Vitest coverage against
+constructed fixtures, so none of it waited on real data.
+
+**Corrected framing, per explicit instruction this session: the remaining
+wait is narrower than "everything past step 3."** It is specifically: step
+5's dry run (build the real payload for a real complete week and read it —
+the code that would do this now exists and is tested, it just has nothing
+real to run against yet), step 6's latency measurement, step 7's server
+function and prompt, and step 9's live UI check. All four wait on the same
+single real-world fact — a genuinely complete week doesn't exist yet — not
+on anything left to design, build, or review. See the four dated session
+entries below for the full account; this paragraph is the current-state
+summary.
+
+**`weekAnalysisInput.ts` built and tested this session (2026-08-20) — the
+week-payload assembler TASKS §5.3 specifies, the last piece of code step 5
+needed.** Two parts, same shape as `analysisInput.ts`:
+
+- **`buildWeekAnalysisInput`** (pure) — fans out over each completed
+  session's already-fetched `SessionFacts`, maps every exercise through
+  `buildExercise` (the exact function the daily path uses — no second copy),
+  looks up each exercise's tags (a missing map key, not a null-valued entry,
+  is the §7.12 no-row case — kept as a distinct signal all the way through
+  to `weekBuckets.ts`'s `TaggableOccurrence.tags`), buckets via
+  `bucketOccurrences`, and resolves phase/weight **once** as of the week's
+  *last session's* date — deliberately including a skipped session if it's
+  the chronologically latest one in the roster, not just the latest
+  *completed* one, since a skipped session is still a real date the week's
+  story ran through.
+- **`assembleWeekAnalysisInput`** (the fetch layer) — reads every session in
+  `[weekStart, weekEnd]` with status `completed` or `skipped` (§7.3 —
+  membership, not expectedness; this module does not itself re-check
+  completeness, that stays `weekResolution.ts`'s job for the future caller),
+  batches workout-day names, mesocycle names + start dates, and `is_deload`
+  lookups across the whole roster, computes each session's `weekNumber` via
+  `differenceInCalendarWeeks(..., {weekStartsOn: 1})` (this app's standing
+  rule, never `differenceInWeeks`), runs `assembleSessionFacts` per
+  *completed* session only (a skipped session has no set logs to fetch),
+  and issues **the one genuinely new query in this whole feature** — the
+  exercise-tag read (`id, name, muscle_group, muscle_subgroup,
+  movement_pattern`, filtered on `user_id`, same injected-client pattern as
+  every other query in this feature, for the same cold-start-avoidance
+  reason).
+- **Two small precedent-consistent refactors to `analysisInput.ts` along the
+  way, both pure moves**: `fetchIsDeload` is now exported (was private) so
+  both payload assemblers share the exact same batched is_deload lookup;
+  the phase/weight row-mapping that used to be inlined in
+  `assembleAnalysisInput` is now two exported named functions
+  (`toPhaseEntries`, `toWeightEntries`), reused by both. **The §5.4 live-data
+  regression check was not re-run when this was first written — the 180
+  pre-existing Vitest tests passing was wrongly cited as confirmation, but
+  none of them exercise `assembleAnalysisInput`'s fetch-layer body. Caught
+  on direct question the next session and re-run for real: still passes.**
+  See "2026-08-20 session (Coach Weekly Analysis — §5.4 re-check +
+  week-number call-site confirmation)" below.
+
+**Full Vitest coverage against constructed fixtures, exactly as instructed
+— none of it waited on real data.** 11 new tests (`weekAnalysisInput.test.ts`,
+191 total now): a multi-tagged exercise landing in every named subgroup
+bucket; a tags row with no `muscle_subgroup` falling back to `muscleGroup`;
+an occurrence with **no tags row at all** still landing in the untagged
+bucket rather than vanishing (§7.12 — the case a naive `?? null` chain
+alone wouldn't distinguish from "row exists, values null"); a null
+`movement_pattern` correctly absent from the pattern axis entirely (§7.9);
+the same exercise trained twice landing as two independent occurrences in
+the same bucket; a skipped session appearing in the roster while
+contributing zero occurrences (§7.8); **a week spanning a meso boundary**,
+confirming each session's own mesocycle name/week number passes through
+distinctly rather than one bleeding into the other; `isDeloadCurrent`
+carried from each occurrence's own session, never mixed across sessions in
+the same week; and — the case most likely to have hidden a real bug — **the
+phase/weight as-of date is the week's actual last session (2026-08-22,
+skipped) and not the first completed session's earlier date (2026-08-17)
+nor "today"**, proven by a phase entry that only takes effect on the later
+date. Typecheck, all 191 tests, and `vite build` clean throughout.
+
+**The one live, read-only check this session's build asked for ran and
+confirmed the expected shape**: `jsonb_typeof(to_jsonb(muscle_subgroup))`
+returned `array` for all 5 sampled real rows, including a genuine two-tag
+case (`["upper_chest","front_delt"]`) — PostgREST serializes the `text[]`
+column as a native JSON array, exactly matching what
+`weekAnalysisInput.ts`'s tag-row mapper already assumed. Nothing in the
+code needed to change.
+
+**Tag corrections apply prospectively only — a load-bearing asymmetry, worth
+a future session finding here rather than being surprised by it.** A
+`v2_coach_week_analyses` row's `input_snapshot` is frozen at generation time
+(same permanence discipline as the daily table, TASKS §3.1/§5.11). If a
+future re-tagging pass changes an exercise's `muscle_subgroup` or
+`movement_pattern`, every weekly analysis already generated keeps reflecting
+the tag as it stood when that analysis ran — it does not retroactively
+update, and there is no mechanism that would make it. This is the exact same
+asymmetry `prompt_version` already has on the daily table: the row is a
+permanent record of what the system produced at the time, not a live view
+that tracks the current tag/prompt. Nothing to fix — just something a later
+session could otherwise mistake for a bug if it noticed a weekly analysis
+"disagreeing" with the exercise library's current tags.
+
+**Migration 014 (`014_v3_exercise_tags.sql`) applied and independently
+verified 2026-08-20** — all 70 real `exercises` rows tagged, keyed on `id`
+from the reviewed `COACH-EXERCISE-TAGS.md`, zero corrections from what was
+proposed. All four §4.2 checks run for real, not trusted from a clean apply:
+(1) `count(id) = 70, count(muscle_subgroup) = 70` — every row in the VALUES
+list actually matched and updated, not silently 0; (2)
+`null_count = 0`, matching the reviewed file's own "0 deliberately left
+untagged"; (3) `select distinct unnest(muscle_subgroup)` returned exactly 21
+of the 22 proposed vocabulary values (only `obliques` unused — correct, no
+oblique-specific exercise exists in this library), zero typos, zero
+out-of-vocabulary values; (4) `movement_pattern` distribution — `isolation`
+33, `horizontal_push` 10, `horizontal_pull` 7, `squat` 7, `hip_hinge` 5,
+`vertical_pull` 5, `vertical_push` 3 (sums to 70) — every one of the seven
+values represented, `isolation`'s 47% plurality expected for an
+accessory-heavy library, not degenerate. Applying it required working around
+a real Monaco-editor auto-indent/typing-timeout issue in the SQL Editor —
+see the dated session entry below for the exact workaround (small batches,
+verify after every batch, never trust a "Success" message alone for row
+counts).
+
+**Built and verified in the prior session (2026-08-20, earlier):**
+- **Migration 013 applied and independently verified** — `exercises` +
+  `muscle_subgroup`/`movement_pattern`, `v2_coach_week_analyses`. All six
+  §2.4 checks run for real (see "Database tables" above for the full
+  account, including the three prove-it-by-violating-it constraint tests).
+- **The batch tagging pass, steps 1–2 of TASKS §4** — all 70 real
+  `exercises` rows read from production and proposed into
+  `COACH-EXERCISE-TAGS.md` (muscle_subgroup + movement_pattern for every
+  row, 9 flagged ⚠ as the closest calls). Stopped at step 3's review gate at
+  the time — **now closed out, see above.**
+- **`weekResolution.ts` + `weekBuckets.ts`**, pure, new — TASKS §4 step 4.
+  `resolveWeek()` derives a week's expected sessions from
+  `program.schedule` (matching `scheduler.ts`'s own source, not
+  `v2_week_plans` — TASKS §7.1) and whether it's complete;
+  `bucketOccurrences()` does the tag-fallback bucketing with zero
+  aggregation, per §1.6's hard constraint. 13 new Vitest cases, all seven
+  §6-step-4-listed `weekResolution` cases and all five listed
+  `weekBuckets` cases covered, including the two hardest ones — an
+  `in_progress` session correctly NOT counting as resolved (§7.2, a
+  deliberate divergence from `scheduler.ts`'s own predicate) and an
+  occurrence with no tags row at all still landing in a bucket rather than
+  vanishing (§7.12).
+- **A real design correction found while implementing `weekBuckets.ts`**:
+  the plan's own `WeekBucketKind` (§3.2) originally had three values
+  (`'muscle_subgroup' | 'movement_pattern' | 'muscle_group'`), where the
+  third value said exactly what `WeekAnalysisBucket.isFallback` already
+  said, for every bucket on the subgroup axis, with no case where the two
+  could disagree. Simplified to two values in both the shipped code
+  (`src/types/index.ts`) and the plan document itself — `kind` now answers
+  only "which axis", `isFallback` alone carries the fallback signal.
+- **`analysisInput.ts`'s one required change (§5.2)** — `assembleSessionFacts`
+  extracted (pure move, not a rewrite: the body is the exact code that used
+  to be inline, `assembleAnalysisInput` now composes it with the
+  unchanged phase/weight fetch), `buildExercise` exported. **Confirmed
+  behaviour-identical against real production data (§5.4)**, not just
+  argued: a throwaway script (never committed) re-ran the extracted
+  function against the two real, already-analyzed sessions
+  (`48d841fb-...`/promptVersion 1, `c850dc1d-...`/promptVersion 2) and
+  deep-compared `.session`/`.isDeloadCurrent`/`.exercises` against each
+  one's frozen `input_snapshot`. First pass reported a false mismatch on
+  `.exercises` — traced to Postgres `jsonb` not preserving object key
+  insertion order on round-trip, not a real behavioural difference; a
+  canonical (sorted-key) comparison then passed cleanly on both cases.
+  Typecheck, all 180 Vitest tests (167 prior + 13 new), and `vite build`
+  all clean throughout.
+- **Not yet built, on explicit instruction — everything past step 3 waits on
+  a genuinely complete week**: `weekAnalysisInput.ts` itself (the actual
+  payload assembler — only its two prerequisite pieces, the
+  `analysisInput.ts` extraction and the two pure modules, are done), step
+  5's dry run, step 6's latency measurement, `coachApiAuth.ts`,
+  `api/coach/analyze-week.ts`, `coachWeekPrompt.ts`, and the UI. All of
+  these need real per-exercise data from a finished week to mean anything —
+  none is blocked on more building or more review.
+
+**One live observation, not acted on**: partway through the prior session,
+the account's real Thursday PUSH 2 session (`2026-08-20`) was completed —
+confirmed on screen while signed into the live app for the §5.4 token
+extraction (17 sets logged). This moved the current week's picture from step
+1's diagnostic (2 of 5 expected sessions done) to 3 of 5. **Not re-verified
+or acted on** — re-running the completeness diagnostic against a genuinely
+finished week is still the open item for whenever `2026-08-17`–`23` actually
+closes out (Friday PULL 2 and Saturday LEGS remain).
+
+**Of TASKS §9's four open questions, three are now resolved or made
+concrete rather than merely "still open" in the abstract**: the
+`muscle_subgroup` vocabulary is decided — Adam approved
+`COACH-EXERCISE-TAGS.md` as-is, and it's now live in the database via
+migration 014; the `isolation` movement-pattern reading is likewise decided
+— Face Pull and Upright Row (the two rows it actually turned on) were
+approved as `isolation`, per the file's own flagging. **The candidate-week
+floor and no-cascade-on-the-weekly-table remain genuinely open** — neither
+came up for review this session, and both still stand exactly as TASKS §9
+states them.
+
+See "2026-08-19 session (Coach Weekly Analysis — technical planning)",
+"2026-08-20 session (Coach Weekly Analysis — step 1 diagnostic)", "2026-08-20
+session (Coach Weekly Analysis — build: migration, tagging pass, pure
+modules, extraction)", and "2026-08-20 session (Coach Weekly Analysis —
+migration 014, tag review closed out)" below. Everything below that predates
+the Weekly Analysis work and describes the completed daily feature.
+
 **Coach — Daily Session Analysis v1 is complete, as of 2026-08-18.** All
 seven steps of COACH-ANALYSIS-TASKS.md §4 (A: migration 012, B: shell +
 gating, C: Context tab, D: analysis-input assembly, E: serverless
@@ -8605,6 +8902,1590 @@ storage with no regenerate/delete, phase and weight CRUD, Haiku 4.5,
 single-account gating. Any future work on this feature (persona/tone,
 week/month/mesocycle analysis, in-session Q&A, SPEC §10's other ideas)
 is a new initiative, not a continuation of this one.
+
+---
+
+## 2026-08-19 session (Coach Weekly Analysis — technical planning)
+
+**Planning only. No implementation code was written, and none was asked
+for.** Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md,
+COACH-ANALYSIS-SPEC.md and COACH-ANALYSIS-TASKS.md first as instructed,
+then read the shipped Coach code directly (`analysisInput.ts`,
+`api/coach/analyze.ts`, `coachService.ts`, `coachPrompt.ts`,
+`CoachPage.tsx`, `CoachAnalysisTab.tsx`, `AnalysisDetail.tsx`,
+`useCoachAnalysis.ts`, migration 012) plus `scheduler.ts`,
+`sessionService.ts`'s `skipMissedSession`, `positionMatch.ts`,
+`referenceLogic.ts`, `weightLogic.ts`, `phaseLogic.ts`,
+`exerciseService.ts`, `PlanPage.tsx`'s `scheduledDays`, `Nav.tsx`,
+`vercel.json`, `tsconfig.api.json` and `001_v2_schema.sql`. Every claim
+in the new plan about existing code was read this session, not recalled.
+
+Output: **`COACH-WEEK-ANALYSIS-TASKS.md`** (~1,310 lines), structured to
+match COACH-ANALYSIS-TASKS.md — §0 what already exists and is reused,
+§1 tech approach with reasoning per choice, §2 migration 013 in full,
+§3 data models, §4 the batch tagging pass, §5 how much of
+`analysisInput.ts` is reusable, §6 nine-step implementation order, §7
+seventeen assumptions/decisions, §8 file list, §9 open questions.
+**Not reviewed yet — nothing is cleared to start.**
+
+### The decisions worth recording here, not just in the plan
+
+**Week completeness derives from `program.schedule`, not
+`v2_week_plans`** (TASKS §7.1). The spec says "every session the Weekly
+Plan expected," which reads like the `v2_week_plans` layer, but
+`v2_week_plans` carries no day-of-week and sessions are valid without a
+week plan at all (`v2_sessions.week_plan_id` is nullable). More
+decisively: `scheduler.ts:70` derives training days from
+`program.schedule[dow]`, which is what drives the missed-session prompt,
+which is the only path to `skipMissedSession` — the exact resolution
+mechanism the spec names. Using `v2_week_plans` would let a date be
+"expected" that no UI can ever skip-mark, making that week permanently
+unanalyzable. **Flagged limitation, not designed around:**
+`program.schedule` has no history, so changing it mid-meso retroactively
+changes what past weeks expected.
+
+**`in_progress` must NOT count as resolved** (TASKS §7.2) — a real
+divergence from `scheduler.ts:76–80`, which treats it as "handled".
+Right for a nag prompt, wrong here: analyzing a week containing a
+half-logged session would write a permanent, unregenerable record about
+partial data. Recorded loudly because reusing the scheduler's predicate
+looks like the obvious reuse.
+
+**`analysisInput.ts` needs exactly one change, and it is a pure move**
+(TASKS §5). `assembleAnalysisInput` is callable directly, once per
+session, unmodified — its candidate-session scoping to the same
+`workout_day_id` is already correct for a weekly caller (Push 1 compares
+to last week's Push 1), and it already takes an injected
+`SupabaseClient`. The only problem is its tail: it resolves
+`phase`/`weightTrend` as of *each session's* date, and a week wants one
+block. So `assembleSessionFacts` gets extracted (lines 233–375 verbatim)
+and `buildExercise` exported; `assembleAnalysisInput` becomes
+`assembleSessionFacts` + the phase/weight fetch + `buildAnalysisInput`,
+behaviour unchanged. **A free real-data regression check makes that
+provable rather than argued:** re-assemble the two existing production
+analyses' sessions and deep-compare `.session`/`.isDeloadCurrent`/
+`.exercises` against their frozen `input_snapshot` values (scoped to
+those three fields deliberately — `.phase`/`.weightTrend` read
+user-editable tables and may legitimately differ).
+
+**The payload is normalised, not duplicated per bucket** (TASKS §1.4).
+The spec's "in full, in both buckets" is a semantic requirement, not a
+serialisation one. Emitting each occurrence's full `PositionMatchResult`
+inside every bucket it belongs to roughly triples payload size and — the
+real reason — invites the model to double-count the same result. So:
+one flat `occurrences` array where every fact appears exactly once, each
+carrying its own tags and `bucketKeys`, plus a `buckets` index of
+occurrence ids.
+
+**Latency is the one place the week genuinely differs from daily**
+(TASKS §1.5). Real daily numbers already on record: 3151/729 at 14.2s,
+4510/984 at 19.5s, 4787/1018 at 13.6s, 5046/1078. A weekly payload is
+~5× the per-session content → ~12–16k input against the 60s cap, output
+still ~1–1.5k because the output is *selective*. Expected ~15–25s — a
+real margin, thinner than daily's. The E1-equivalent measurement is step
+6 and is the literal first action of the server work; **>~35s is a
+stop-and-report**.
+
+**Completeness must be re-derived server-side** (TASKS §1.3). Unlike
+daily, the request key (`weekStart`) is a client-computed string, not an
+existing row id. Trusting it would let a stale cache pay for and
+permanently store an analysis of a half-finished week, with no
+regeneration to fix it. Plus a Monday `CHECK` in the database, because
+`unique (user_id, week_start)` alone does not stop `2026-08-17` and
+`2026-08-18` both existing as "the same week."
+
+**No script for the tagging pass** (TASKS §4.1). ~50 rows, genuinely
+one-time (SPEC §9 defers tag-on-create). Claude proposes in-session into
+a committed `COACH-EXERCISE-TAGS.md`, Adam corrects the file, migration
+014 is generated from the corrected file keyed on `id` (not `name` —
+this library has real typos, e.g. "One-arm Dumbell Lateral Raise"). A
+throwaway API-calling script would buy reproducibility for a pass that
+runs once and then rot. The verification after 014 is not optional: a
+keyed `UPDATE` that matches nothing succeeds silently.
+
+**Schema choices**: `muscle_subgroup text[]` (not `jsonb`, not a
+junction table, not `enum[]`) with a `CHECK` forbidding `'{}'` and null
+elements — load-bearing, because it leaves exactly one representation of
+untagged (`NULL`) so the `muscle_group` fallback is one branch instead
+of two. `movement_pattern text` **with** a `CHECK` on SPEC §4's seven
+values, since that vocabulary is closed; `muscle_subgroup` gets none,
+since the spec only gives examples. Two indexes on the new table, not
+the daily table's three — the unique index already serves the list's
+`order by week_start desc`.
+
+**Adding columns to `exercises` is a cross-app change** (TASKS §7.13) —
+that table is shared with Northstar v2, whose source is not in this repo
+and was **not** read. Recorded as an assumption with the mitigation
+being the form of the change (nullable, no default, no NOT NULL, no
+trigger — identical to how `muscle_group` was added to the same shared
+table in 001) plus a verification step confirming no existing row's data
+changed.
+
+### Open questions the plan does not decide (TASKS §9)
+
+1. The 22-value `muscle_subgroup` vocabulary — decides what buckets can
+   ever exist; changing it after tagging means re-tagging.
+2. The candidate-week floor: deriving it from `COACH_ANALYSIS_START_DATE`
+   (week of 2026-08-17) means several weeks are immediately available at
+   ship rather than zero.
+3. `isolation` as a `movement_pattern` value — SPEC §4 lists it, but it
+   is a set-type, not a direction, so the seven values are not
+   orthogonal and accessories will get `isolation` over a direction.
+4. No cascade on `v2_coach_week_analyses` — the one place this plan is
+   knowingly inconsistent with the daily table's rule.
+
+### Also noted
+
+COACH-WEEK-ANALYSIS-SPEC.md §3 refers to "the note above this
+document" regarding Month; no such note exists in the file. Intent is
+unambiguous (Month is out of scope), so nothing is blocked — flagged in
+TASKS §0 only so it isn't read later as a missing requirement.
+
+---
+
+## 2026-08-20 session (Coach Weekly Analysis — step 1 diagnostic)
+
+Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md and
+COACH-WEEK-ANALYSIS-TASKS.md first as instructed. Ran TASKS §6 step 1
+only — the read-only completeness diagnostic — per explicit instruction
+to stop after it and wait for approval before starting step 2. No code,
+no migration, nothing written to the database.
+
+### How it was run
+
+No service-role key, DB connection string, or Supabase CLI link exists
+in this environment (unchanged from every prior session's note on
+this). Adam logged into the Supabase SQL Editor in the Browser pane;
+four read-only `SELECT`s were run there against production and read
+back from the results grid — `v2_programs`, `v2_mesocycles`,
+`v2_workout_days`, and `v2_sessions` filtered to `date >= '2026-08-17'`
+with no upper bound and no status filter, so nothing could be silently
+excluded.
+
+### Raw findings
+
+One program ("MESO 1.0"), `schedule`: Mon→PUSH 1, Tue→PULL 1, Wed→rest,
+Thu→PUSH 2, Fri→PULL 2, Sat→LEGS, Sun→rest — 5 training days/week. One
+mesocycle (also named "MESO 1.0"), `status: active`, `start_date:
+2026-07-05`, `end_date: NULL` — open-ended, so it covers `2026-08-17`
+onward with no gap to reason about. All 5 `workout_day_id`s the
+schedule references exist as real `v2_workout_days` rows belonging to
+the same program — the `scheduler.ts`-style stale guard never trips
+here.
+
+Sessions from `2026-08-17` onward: **exactly two rows exist, full
+stop.** `2026-08-17` (Monday, PUSH 1) — `completed`, `completed_at
+2026-08-17 10:24:46+00`. `2026-08-18` (Tuesday, PULL 1) — `completed`,
+`completed_at 2026-08-18 14:47:49+00`. No row of any status for
+`2026-08-20` (Thursday, PUSH 2 expected — **today**, genuinely not yet
+trained), `2026-08-21` (Friday, PULL 2), or `2026-08-22` (Saturday,
+LEGS) — all still ahead of today. `2026-08-19` and `2026-08-23` are the
+schedule's own rest days and correctly expect nothing.
+
+### The three questions step 1 exists to answer
+
+**(a) Does at least one week resolve as complete? No — currently zero,
+and this is not evidence the §7.1 definition is wrong.**
+`2026-08-17`–`2026-08-23` is the *only* candidate week (today,
+`2026-08-20`, falls inside it — no later week has begun), and only 4 of
+its 7 days have elapsed. 2 of 5 expected sessions are done; the third
+is today's and simply hasn't happened yet; the last two are genuinely
+in the future. There is no complete week in existence yet for the
+derivation to have gotten right or wrong — the honest reading is
+"nothing to resolve to yet," not "resolves incorrectly."
+
+**(b) Does the derivation match reality? Yes, as far as it is currently
+checkable.** The 5 expected dates (each tied to a `workout_day_id` that
+demonstrably exists) line up exactly with the 2 real sessions that
+exist — zero mismatches, zero surprises. What this run cannot yet
+confirm is the transition to `complete`, since no candidate week has
+actually finished. Re-checking that is the one part of step 1 still
+open — the natural moment is once `2026-08-17`–`23` closes out, likely
+around `2026-08-23` given both logged sessions so far were same-day.
+
+**(c) How many weeks are available at ship? Zero — directly
+contradicting TASKS §7.4's "several weeks, not zero" prediction.**
+That prediction, written the day before this diagnostic ran, implicitly
+assumed more time had passed since the `2026-08-17` floor than actually
+has — today is only 4 days in. This is exactly the class of mistake
+step 1 exists to catch before anything gets built on it: real
+production data ran should have run before that framing shipped, and
+now has. **`COACH-WEEK-ANALYSIS-TASKS.md` §7.4 has been corrected in
+place** (not left standing with a note) to state the real consequence:
+"To analyze" will most likely ship empty and fill in within days as
+this week's remaining 3 sessions resolve — neither the original
+several-available claim nor a permanently-empty one. §6 step 1 itself
+also got a "Run 2026-08-20 — real findings" addendum recording all of
+the above inline, so a future reader hits the correction at the exact
+point the plan originally speculated.
+
+### What this does and doesn't unblock
+
+The core completeness *concept* survives this check — nothing found
+here suggests §7.1's derivation logic is wrong, only that the
+documented prediction about ship-day list contents was premature. Per
+explicit instruction, **step 2 (migration 013) has not been started**
+and is not cleared to start until this is reviewed. The four open
+questions in TASKS §9 (muscle_subgroup vocabulary, the candidate-week
+floor, the `isolation` reading, no-cascade on the weekly table) are
+unaffected by this session and still stand as-is.
+
+---
+
+## 2026-08-20 session (Coach Weekly Analysis — build: migration, tagging pass, pure modules, extraction)
+
+Second session today. Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md and
+COACH-WEEK-ANALYSIS-TASKS.md first as instructed. Explicit scope from
+Adam: step 2 (migration 013), steps 1–2 of step 3's tagging pass (stop at
+the review gate), step 4 (the two pure modules), and step 5's extraction
+plus its real-data regression check — explicitly **not** step 5's dry
+run, step 6's latency measurement, or the live E2E check, since none of
+those can mean anything against the still-incomplete current week (per
+the prior session's step 1 diagnostic).
+
+### Step 2 — migration 013
+
+Wrote `supabase/migrations/013_v3_coach_week_analysis.sql` exactly per
+TASKS §2.3, then applied it by hand through the Supabase SQL Editor —
+the established path for this project.
+
+**A real Monaco-editor corruption bug hit and worked around, worth
+recording so a future session doesn't lose time to it again**: typing
+multi-line SQL with leading indentation into the SQL Editor's code
+editor caused progressive auto-indent compounding — each newline's
+indentation stacked on top of the previous line's, and at least one full
+line silently vanished from the typed content. Caught by reading the
+editor's content back before running, not assumed correct. Fix: type
+SQL as one flat statement per line, zero leading whitespace, and always
+verify by reading the editor back before clicking Run. Every query this
+session and last session followed that discipline once it was found;
+worth keeping as a standing note for any future direct-SQL-Editor work
+in this project.
+
+All six §2.4 verification checks run for real, not trusted from the
+apply:
+1. `information_schema.columns` on `exercises` — `muscle_subgroup`
+   `ARRAY`/`_text`, `movement_pattern` `text`, both nullable, no default.
+2. `information_schema.columns` on `v2_coach_week_analyses` — all 10
+   columns, types and defaults exactly as designed.
+3. `pg_indexes` — exactly two (the pkey and `v2_coach_week_analyses_week_uk`
+   on `(user_id, week_start)`), matching the plan's "two, not three"
+   design.
+4. `pg_policies` joined to `pg_class.relrowsecurity` — the "Users access
+   own rows" policy present, `relrowsecurity` genuinely `true`.
+5. **All three constraints proven by attempting to violate them**: an
+   insert with `week_start = '2026-08-18'` (a real Tuesday) →
+   `23514 violates check constraint "v2_coach_week_analyses_week_start_check"`,
+   0 rows. An `update exercises set muscle_subgroup = '{}'` on a real row
+   (Barbell Bench Press) → `23514 violates check constraint
+   "exercises_muscle_subgroup_chk"`, 0 rows. An `update exercises set
+   movement_pattern = 'bench'` on the same row → `23514 violates check
+   constraint "exercises_movement_pattern_chk"`, 0 rows.
+6. `count(muscle_subgroup)`/`count(movement_pattern)` across all 70 real
+   `exercises` rows for the account → both 0, confirming the two failed
+   test writes above left no trace and every existing row is genuinely
+   untouched. `muscle_group` distribution recorded as a snapshot: back 14,
+   biceps 6, calves 4, chest 12, core 4, forearms 1, glutes 2, hamstrings
+   4, other 1, quads 8, shoulders 8, triceps 6 (sums to 70).
+
+### Step 3, steps 1–2 only — the batch tagging pass
+
+Ran the exact `SELECT id, name, muscle_group, is_archived FROM exercises
+... ORDER BY muscle_group, name` TASKS §4.2 step 1 specifies, against
+production — all 70 rows, archived included. Proposed `muscle_subgroup`
++ `movement_pattern` for every row using the reasoning conventions TASKS
+§4.3 lays out (fly/pullover/raise → isolation regardless of prime-mover
+size; a compound press/pull tagged by what it structurally is, not by
+which muscle group the exercise happens to be filed under in this
+library; squat-pattern machines tagged `squat` same as free-weight
+squats), plus real exercise-science judgment per row (which head/region
+a joint angle or grip emphasizes — e.g. incline movements → upper_chest,
+neutral-grip curls → brachialis, overhead tricep work → long head, cable
+pushdowns → lateral head).
+
+Wrote `COACH-EXERCISE-TAGS.md` — all 70 rows tagged (0 deliberately left
+untagged), organized by `muscle_group` matching the query order, with 9
+rows flagged ⚠ as the genuinely debatable calls (One-arm Cable Lat Row,
+One-arm Cable Pullover, the Dips/Dip-machine pattern split, both Hip
+Thrusts' `hip_hinge` fit, Leg Press's `squat` call on a machine, Face
+Pull, Upright Row). The last two are exactly what §9's open question 3
+(the `isolation` reading) turns on — flagged explicitly as such, not
+buried.
+
+**Stopped here, at step 3's own review gate, exactly as instructed.**
+Migration 014 was not generated. Nothing has been written to
+`muscle_subgroup`/`movement_pattern` on any row.
+
+### Step 4 — `weekResolution.ts` + `weekBuckets.ts`, pure, with Vitest
+
+`weekResolution.ts`: `resolveWeek(weekStartInput, mesocycles, programs,
+sessions)`. Normalises the week start via `weekKey` (reused from
+`weightLogic.ts`, not a second implementation), then for each of the 7
+days finds the mesocycle covering that date, that meso's program, the
+scheduled `workoutDayId` for that day-of-week, and confirms the workout
+day still exists — the same stale guard `scheduler.ts:69` already has,
+applied identically. `isComplete` is one clause
+(`resolvedCount === expected.length && hasCompleted`) that — deliberately,
+not by accident — correctly handles both "vacuously resolved" edge cases
+from TASKS §7.1 without a separate guard: zero expected dates trivially
+satisfies "every date resolved" but fails "at least one completed", and
+an all-skipped week satisfies the first but not the second either.
+
+`weekBuckets.ts`: `bucketOccurrences(occurrences)`. Mechanical only — no
+function in this file returns a number derived from more than one
+occurrence, per §1.6's hard constraint. Subgroup axis: real tags first
+(a multi-tagged exercise lands in every bucket it names, unmodified),
+`muscleGroup` fallback second, `'untagged'` as the last resort when
+there's no tags row at all (§7.12 — an occurrence is never silently
+dropped). Pattern axis: no fallback at all (§7.9) — a null pattern or
+missing tags row means the occurrence simply isn't on that axis.
+
+13 new Vitest tests, all passing: `weekResolution.test.ts` covers all
+seven §6-step-4-listed cases including the two that most needed a real
+test rather than trust — the `in_progress`-doesn't-resolve divergence
+from `scheduler.ts` (§7.2), and a week straddling two mesocycles on two
+different programs, confirming each date resolves against its own
+covering meso rather than either meso's schedule bleeding into the
+other's dates. `weekBuckets.test.ts` covers all five listed cases.
+
+**A real design flaw caught and fixed while implementing, not before**:
+the plan's own `WeekAnalysisBucket`/`WeekBucketKind` (TASKS §3.2, written
+the day before) had a bucket's `kind` carry three values including
+`'muscle_group'` for a fallback bucket — but that's exactly what
+`isFallback: boolean` on the same object already said, for every bucket
+on the subgroup axis, with no case where the two fields could ever
+disagree. Simplified to two `kind` values in both the shipped
+`src/types/index.ts` and the plan document itself (§3.2 rewritten with
+the reasoning left in place, not silently corrected) — `kind` now
+answers "which axis", `isFallback` alone carries "real tag or fallback".
+
+### Step 5, §5.2 and §5.4 only — the `analysisInput.ts` extraction and its regression check
+
+`assembleSessionFacts(client, userId, sessionId)` extracted — a pure
+move of `analysisInput.ts`'s existing lines 233–375, unmodified logic,
+returning `{session, isDeloadCurrent, exercises}`. `assembleAnalysisInput`
+now composes that with the unchanged phase/weight fetch and
+`buildAnalysisInput` call — same public signature, same behaviour.
+`buildExercise` (previously private) now exported, so the eventual weekly
+payload builder can map through the exact same per-exercise logic the
+daily path uses rather than a second copy that could drift.
+
+**§5.4's real-data regression check ran for real, against production,
+not just reasoned about.** Blocked twice on permission classifiers along
+the way, both resolved by asking Adam directly rather than working
+around them: opening the live Overload app required Adam to sign in
+himself (a separate session from the Supabase dashboard tab — nothing
+persists between sessions per this project's standing note); reading the
+Supabase auth token out of the signed-in session's `localStorage` (to
+build a properly RLS-scoped client, matching `api/coach/analyze.ts`'s own
+construction) tripped the classifier as looking like credential
+extraction, even though it's a short-lived bearer JWT rather than a
+password — explained plainly and Adam approved it explicitly rather than
+routed around.
+
+Queried `v2_coach_session_analyses` for the two real analyses' exact
+`session_id`s first, since CONTEXT.md's own prior phrasing
+("`48d841fb-...` at promptVersion 1") turned out to be ambiguous between
+an analysis's own `id` and its `session_id` — worth resolving from the
+database rather than assuming: `48d841fb-4071-46a5-89e0-b3f1579f61cb` is
+the **session** id for the promptVersion-1 analysis (analysis id
+`3044110c-...`); `c850dc1d-efad-4b16-ab61-88706e871ff1` is the session id
+for promptVersion 2 (analysis id `413f76e5-...`).
+
+A throwaway script (`regressionCheckAnalysisInput.ts`, repo root, run via
+`npx tsx`, never committed) constructed a Supabase client scoped exactly
+like `api/coach/analyze.ts`'s real per-request client (anon key +
+`Authorization: Bearer <token>`), called the freshly-extracted
+`assembleAnalysisInput` for both real session ids, and deep-compared
+`.session`/`.isDeloadCurrent`/`.exercises` against each analysis's frozen
+`input_snapshot`. First run reported `exercises match: false` on both
+cases despite `session`/`isDeloadCurrent` matching exactly — traced to
+Postgres `jsonb` not preserving object key insertion order on round-trip,
+not a real behavioural difference (a freshly-constructed JS object and
+the same data read back from `jsonb` can have different key orders with
+identical content, which a naive `JSON.stringify` comparison would
+wrongly flag). Rewrote the comparison to canonicalize (recursively sort
+object keys, preserve array order) before comparing — **both cases then
+passed cleanly: `session match: true`, `isDeloadCurrent match: true`,
+`exercises match: true` for all 5 exercises on each session.** Script and
+the extracted token file both deleted immediately after
+(`git status` confirms neither was ever tracked).
+
+### Verification
+
+Typecheck (`tsc -p tsconfig.app.json && tsc -p tsconfig.api.json`) clean
+throughout — checked after every meaningful edit, not just once at the
+end. Full Vitest suite: 180 passing (167 prior + 13 new), 0 failing.
+`vite build` clean, same output shape as before (no new chunks — none of
+this session's code is imported from any client-reachable path yet).
+
+### One live observation, reported not acted on
+
+While signed into the live app for the token extraction, the real
+Thursday (`2026-08-20`) PUSH 2 session was visibly already complete on
+screen (17 sets logged) — meaning the current candidate week
+(`2026-08-17`–`23`) has moved from 2-of-5 to 3-of-5 resolved since the
+prior session's diagnostic ran a few hours earlier. Recorded in "Active
+work" above; **not re-verified or acted on**, since re-running the full
+completeness diagnostic against a genuinely finished week is explicitly
+still open, gated on Friday's and Saturday's sessions actually
+happening.
+
+### What's still not built, and why
+
+`weekAnalysisInput.ts` itself (the payload assembler combining
+`assembleSessionFacts`, `buildExercise`, the new tag query, and the two
+pure modules above), the dry run, the E1-equivalent latency measurement,
+`coachApiAuth.ts`, `api/coach/analyze-week.ts`, `coachWeekPrompt.ts`, the
+UI, and migration 014 — none of these were in this session's scope. The
+dry run and latency measurement need a genuinely complete week to run
+against meaningfully (none exists yet); migration 014 needs Adam's
+correction of `COACH-EXERCISE-TAGS.md` first. Nothing here is blocked on
+more building — it's blocked on real-world elapsed time and a human
+review step, which is a different kind of "not done yet" than a gap in
+the plan.
+
+---
+
+## 2026-08-20 session (Coach Weekly Analysis — migration 014, tag review closed out)
+
+Third Weekly Analysis session today. Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md
+and COACH-WEEK-ANALYSIS-TASKS.md first as instructed. Explicit instruction:
+`COACH-EXERCISE-TAGS.md` is approved as-is, including every flagged row —
+generate migration 014 keyed on `id`, apply it, verify per §4.2's four
+checks with real evidence, and record the prospective-only tag-correction
+asymmetry in CONTEXT.md before anything else. Scope stops there — step 5's
+dry run onward still waits on a genuinely complete week.
+
+### Migration 014 generated and cross-verified before ever touching the database
+
+Built `supabase/migrations/014_v3_exercise_tags.sql` — one keyed `UPDATE`,
+70 `VALUES` tuples, exactly the shape TASKS §4.2 step 4 specifies. Before
+applying anything, wrote a small Python cross-check comparing every id +
+`muscle_subgroup` + `movement_pattern` triple in the generated migration
+against the same triple parsed straight out of `COACH-EXERCISE-TAGS.md`:
+**70 ids in both files, zero duplicates, zero mismatches.** This is the
+same discipline as reading a diff before applying it — cheap, and it rules
+out a transcription slip between the reviewed markdown table and the SQL
+before that slip could reach production.
+
+### A real SQL-Editor reliability problem, hit and worked around — worth remembering for next time
+
+Typing the full 76-line migration as one `type` call **timed out after 30s**
+and left the pane in a stuck-looking state. A follow-up smaller batch typed
+into what looked like the same empty editor instead landed **merged into
+content from the timed-out call, which had actually gone through after
+all** — the editor's rendering lagged well behind the actual DOM state, so
+a screenshot taken right after the timeout showed an empty editor that
+wasn't actually empty. Editing the corrupted result (select-all, Ctrl+Home,
+Backspace) was also unreliable — several keyboard-navigation commands
+silently did nothing, matching an intermittent pattern from the migration
+013 session too.
+
+**What actually worked, reliably, every time**: abandon a suspect tab
+rather than try to fix it (opening a fresh tab is cheap and always starts
+genuinely blank); type in batches of roughly 5–10 VALUES rows (600–1300
+characters) rather than one giant paste; after every batch, `wait 1s` then
+`get_page_text` (not just a screenshot, which can also lag) and confirm the
+line-number range increased monotonically with no gaps or repeats before
+continuing. Applied this discipline for all ~10 batches this migration
+took and every single one came back clean. **Standing note for any future
+direct-SQL-Editor session in this project: don't trust a single large
+paste, and don't trust a screenshot taken immediately after an action —
+verify via `get_page_text` after a short wait, every time, before running
+anything.**
+
+### Applied and verified — all four §4.2 checks, real evidence not a clean-apply assumption
+
+Ran the migration (`Success. No rows returned` — the Editor's UI doesn't
+surface a Postgres-style `UPDATE 70` count directly, so getting an actual
+count for check 1 needed a follow-up query rather than trusting that
+message):
+
+1. `count(id) = 70, count(muscle_subgroup) = 70` for the account — exactly
+   the VALUES list's row count, not silently fewer from a keyed-update
+   miss.
+2. `null_count = 0` — matches `COACH-EXERCISE-TAGS.md`'s own stated "0
+   deliberately left untagged" exactly, a decided number, not a discovered
+   one.
+3. `select distinct unnest(muscle_subgroup)` → 21 rows. Cross-checked
+   against the 22-value proposed vocabulary: all 21 present and correctly
+   spelled, only `obliques` unused — correct, not a gap, since no exercise
+   in this 70-row library specifically targets it (no rotational/anti-
+   rotation movement exists in the account's library).
+4. `movement_pattern` distribution: `isolation` 33, `horizontal_push` 10,
+   `horizontal_pull` 7, `squat` 7, `hip_hinge` 5, `vertical_pull` 5,
+   `vertical_push` 3 — sums to 70, all seven values represented, no
+   collapse to a single dominant value that would signal a classification
+   failure rather than a real accessory-heavy library.
+
+### The prospective-only tag-correction asymmetry, recorded per explicit instruction
+
+A `v2_coach_week_analyses` row's `input_snapshot` is frozen at generation
+time (TASKS §3.1/§5.11's permanence discipline, inherited from the daily
+table). If `muscle_subgroup`/`movement_pattern` are corrected in a future
+re-tagging pass, every weekly analysis already generated keeps reflecting
+the tag exactly as it stood when that analysis ran — there is no
+retroactive update and no mechanism that would produce one. This is
+identical in shape to `prompt_version` on the daily table: the row is a
+permanent record of what the system produced at the time, not a live view
+of current state. Recorded explicitly in "Active work" (CONTEXT.md) so a
+future session doesn't mistake an old weekly analysis "disagreeing" with
+the library's current tags for a bug.
+
+### Step 3 is now fully closed out
+
+Nothing about the *plan* changed this session — no new design decisions,
+no corrections to `COACH-WEEK-ANALYSIS-TASKS.md`. This was pure execution
+of an already-approved artifact. Of TASKS §9's four open questions, two are
+now resolved as a direct consequence of the approval: the `muscle_subgroup`
+vocabulary (all 22 proposed values are now live, 21 in actual use) and the
+`isolation` movement-pattern reading (Face Pull and Upright Row, the two
+rows it decided, are now tagged `isolation` in production). The candidate-
+week floor and no-cascade-on-the-weekly-table were not part of this
+session's scope and remain open exactly as before.
+
+### Verification and scope discipline
+
+No code changes this session — schema and data only. `git status` shows
+exactly `supabase/migrations/014_v3_exercise_tags.sql` (new) plus
+`CONTEXT.md` (this update); nothing else touched. Per explicit instruction,
+did not proceed past this closeout — `weekAnalysisInput.ts`, the dry run,
+latency measurement, the server function, and the UI remain unbuilt,
+waiting on `2026-08-17`–`23` (or a later week) to actually finish.
+
+---
+
+## 2026-08-20 session (Coach Weekly Analysis — weekAnalysisInput.ts built and tested)
+
+Fourth Weekly Analysis session today. Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md
+and COACH-WEEK-ANALYSIS-TASKS.md first as instructed. Scope: build
+`weekAnalysisInput.ts` per §5.3, full Vitest coverage against constructed
+fixtures (explicitly not waiting for real data), one live read-only shape
+check on `text[]` columns, and correct the prior session's "everything past
+step 3" framing to the narrower "dry run onward." Explicitly not the dry
+run itself, step 6's latency measurement, step 7's function/prompt, or step
+9's live UI check — all four still wait on `2026-08-17`–`23` (or a later
+week) actually finishing.
+
+### Two small refactors to `analysisInput.ts` first, both pure moves
+
+Before writing the new file, exported `fetchIsDeload` (was private) and
+extracted the phase/weight row-mapping that used to be inlined in
+`assembleAnalysisInput` into two named, exported functions
+(`toPhaseEntries`, `toWeightEntries`). Reason: the weekly assembler needs
+both, and the project's own established discipline (already applied twice
+before, for `buildExercise` and `assembleSessionFacts`) is to export and
+reuse rather than risk a second copy that could drift.
+**Correction, made in the next session (below): this entry originally
+claimed "zero behaviour change — confirmed by the full prior 180-test suite
+still passing unchanged." That was an overstatement, caught on a direct
+question, not self-caught — the Vitest suite does not exercise
+`assembleAnalysisInput`'s fetch-layer body at all (`analysisInput.test.ts`
+only covers the pure `buildAnalysisInput`), so it could not have confirmed
+this. The actual §5.4 live-data regression check was not re-run at the time
+this entry was written. It has since been re-run and passed — see "2026-08-20
+session (Coach Weekly Analysis — §5.4 re-check + week-number call-site
+confirmation)" below.**
+
+### `weekAnalysisInput.ts` — the payload assembler
+
+`buildWeekAnalysisInput` (pure): fans out over completed sessions'
+`SessionFacts`, maps each exercise through `buildExercise`, looks up tags
+per exercise (a **missing** map key — not a key mapped to null fields — is
+kept as the distinct §7.12 signal all the way through to
+`weekBuckets.ts`'s `TaggableOccurrence.tags: null`), buckets, and resolves
+phase/weight once as of the week's *last session's* date. That "last
+session" deliberately includes a skipped session if it's the
+chronologically latest entry in the roster — a real design call, not
+mandated by the spec text, reasoned through in code comments: a skipped
+session is still a real date the week's story ran through, so excluding it
+would silently use an earlier date whenever the week's actual final session
+was the one that got skipped.
+
+`assembleWeekAnalysisInput` (the fetch layer): reads every session in
+`[weekStart, weekEnd]` with status `completed` or `skipped` (§7.3 —
+membership, not expectedness; deliberately does *not* re-check completeness
+itself, that stays `weekResolution.ts`'s job for whatever future caller
+uses both). Batches workout-day names, mesocycle names/start dates, and
+`is_deload` across the whole roster in three queries regardless of roster
+size; computes `weekNumber` via `differenceInCalendarWeeks(...,
+{weekStartsOn: 1})`, this app's one standing rule for week arithmetic;
+calls `assembleSessionFacts` only for completed sessions (a skipped session
+has no set logs); and issues the one genuinely new query in the whole
+feature — the exercise-tag read, exactly the shape §5.3 specifies,
+`.eq('user_id', userId).in('id', exerciseIds)`, same injected-client
+pattern as everything else here for the same cold-start-avoidance reason
+(`analysisInput.ts:21–35`'s documented risk).
+
+### Vitest — 11 new tests, 191 total, all against constructed fixtures
+
+Covered, deliberately, exactly what was asked plus natural extras a
+fixture-based approach makes cheap to add: the multi-tagged-exercise case,
+the muscle_group fallback case, the no-tags-row-at-all case (§7.12 — and
+specifically written to distinguish "no row" from "row with null fields",
+since a naive implementation could conflate the two and still produce the
+same *output* while being wrong about *why*), a null `movement_pattern`
+correctly absent from the pattern axis (§7.9), a week spanning a meso
+boundary (confirming per-session mesocycle name/week number don't bleed
+into each other), the same exercise trained twice as two independent
+occurrences, a skipped session in the roster contributing zero occurrences
+(§7.8), `isDeloadCurrent` not mixing across sessions, and — the case
+flagged as most likely to hide a real bug, matching exactly how the daily
+feature's own step D found its highest-value test — the phase/weight
+as-of date genuinely being the week's last session (a skipped one, dated
+after the only completed session) rather than the first session's date or
+today. Typecheck, all 191 tests, and `vite build` clean throughout; bundle
+size confirms `weekAnalysisInput.ts` is tree-shaken out, since nothing
+client-reachable imports it yet.
+
+### The one live check — run and confirmed, once the Supabase session became available
+
+`select id, name, muscle_subgroup, movement_pattern,
+jsonb_typeof(to_jsonb(muscle_subgroup)) as subgroup_json_type from
+exercises where muscle_subgroup is not null limit 5;` — `jsonb_typeof`
+reflects exactly how PostgREST serializes the column in its REST responses,
+so this answers the question without needing a live authenticated app
+session/token (a heavier ask than the SQL Editor alone). All 5 sampled rows
+(Barbell Bench Press, Incline Dumbell Press, Plank, Lat Pulldown (machine),
+Cable Lateral Raise) came back with `subgroup_json_type = array` — including
+the two-element case (`["upper_chest","front_delt"]`), not just
+single-element arrays, so the check exercised the actual multi-tag shape
+the bucketing logic depends on, not a degenerate case. **Confirms
+`weekAnalysisInput.ts`'s tag-row mapper is reading the real shape
+correctly**: `row.muscle_subgroup` is a native JS array as returned by
+PostgREST, matching `MuscleSubgroup[] | null` exactly, no parsing needed.
+Nothing in the code changed as a result — the mapper was already written
+this way — this closes out the one thing that was asked to be confirmed
+empirically rather than assumed.
+
+### Framing correction, per explicit instruction
+
+The prior two sessions' "everything past step 3" phrasing overstated the
+block. Corrected in "Active work" (CONTEXT.md) to name exactly the four
+things still waiting on real-world time — step 5's dry run, step 6's
+latency measurement, step 7's server function and prompt, and step 9's
+live UI check — all four gated on the same single fact (no complete week
+exists yet), not on anything left to design or build. Step 5's own code is
+now fully done and tested; only running it against something real remains.
+
+---
+
+## 2026-08-20 session (Coach Weekly Analysis — §5.4 re-check + week-number call-site confirmation)
+
+Fifth Weekly Analysis session today. Read CONTEXT.md first as instructed.
+Two confirmations requested, no new building.
+
+### 1. Was §5.4's regression check re-run after the two additional extractions? No — now it has been.
+
+The prior session's own entry claimed "zero behaviour change — confirmed by
+the full prior 180-test suite still passing unchanged" for the
+`fetchIsDeload` export and the `toPhaseEntries`/`toWeightEntries`
+extraction. **That claim was wrong, and did not survive a direct question:**
+`analysisInput.test.ts` only covers the pure `buildAnalysisInput` — nothing
+in the Vitest suite calls `assembleAnalysisInput` (the fetch-layer
+function whose actual body changed, since the inline phase/weight mapping
+was replaced with calls to the two new named functions). The 180 passing
+tests proved the *pure* builder was untouched; they proved nothing about
+the fetch layer. The real §5.4 check — a live, production-data
+regression — had not been re-run since the first extraction, two sessions
+ago.
+
+Re-ran it for real: extracted a fresh access token from the live app's
+`localStorage` (already signed in this session, no separate permission
+prompt this time), rebuilt the same throwaway comparison script
+(`regressionCheckAnalysisInput.ts`, repo root, run via `npx tsx`, deleted
+immediately after — never committed), and re-ran `assembleAnalysisInput`
+against the same two real, already-analyzed sessions
+(`48d841fb-4071-46a5-89e0-b3f1579f61cb` / promptVersion 1,
+`c850dc1d-efad-4b16-ab61-88706e871ff1` / promptVersion 2), deep-comparing
+`.session`/`.isDeloadCurrent`/`.exercises` against each analysis's frozen
+`input_snapshot` with the same canonical (sorted-key) comparison the first
+run needed (Postgres `jsonb` doesn't preserve key insertion order).
+
+**Result: both cases pass cleanly** — `session match: true`,
+`isDeloadCurrent match: true`, `exercises match: true` (5 exercises each),
+identical to the first run's result. The two extractions are confirmed
+behaviour-identical against real production data, not just argued from a
+test suite that couldn't have caught a regression here. Script and token
+file both deleted immediately after; `git status` confirms neither was
+ever tracked.
+
+**The corrected standard, worth stating plainly for future extractions in
+this feature:** a pure-function extraction (like `buildExercise`,
+`assembleSessionFacts`'s own split) is fully covered by Vitest passing,
+because the tests call the extracted logic directly. An extraction that
+touches a *fetch-layer* function's body — one that does I/O and therefore
+has no direct Vitest coverage — is **not** covered by "the test suite still
+passes" alone, no matter how mechanical the change looks. Only the live
+§5.4 regression check covers that. The two corrected entries above (in
+"Active work" and the prior session's own log) now say this explicitly
+rather than leaving the overstated version standing uncorrected.
+
+### 2. Week-number call site — confirmed, exact line shown
+
+`src/features/coach/weekAnalysisInput.ts:270`:
+
+```ts
+? differenceInCalendarWeeks(parseISO(s.date), parseISO(meso.startDate), { weekStartsOn: 1 }) + 1
+```
+
+`{ weekStartsOn: 1 }` is passed explicitly as the third argument, not
+relying on a default or a differently-configured import. Matches this
+app's one standing rule for week arithmetic (CONTEXT.md, "Key
+architectural rules") — confirmed by reading the actual call site, not by
+confirming the function name alone.
+
+### No code changed this session
+
+Both items were verification only. `git status` after cleanup shows
+exactly the same set of files as before this session started — `CONTEXT.md`
+plus the untracked Weekly Analysis files from prior sessions, nothing
+else.
+
+---
+
+## 2026-08-22 session (real bug — gym reference panel showed no LAST TIME for a ~2-3 week Legs gap; diagnosis only)
+
+Real bug report from live use, not planning work: skipped training "Legs"
+for two consecutive weeks, then trained it. The live gym reference panel
+showed no "last time" reference at all for its exercises — expected
+`LAST TIME — 2-3 weeks ago` with real numbers. The resulting Daily
+Session Analysis for that session was also poor, specifically because the
+model had no last-week/last-time data to reason against for the affected
+exercises. **Explicit instruction: diagnose only, do not fix, do not run
+Weekly Analysis's dry run until this is resolved** (that dry run is the
+next unblocked step and would run against the exact week containing this
+Legs session). No code changed this session.
+
+### 1. No recency cutoff exists in `resolveExerciseReference` — verified, not assumed
+
+Read fresh from the current file. `referenceLogic.ts:66`'s `past` filter
+is purely "is this session's date before today" — no lower bound. The
+`last_time` fallback (`:84-94`) takes `[...past].sort(byMostRecent)[0]`
+unconditionally; `first_time` (`:96`) is reachable **only** when `past` is
+empty, never because a session is merely old.
+`referenceLogic.test.ts:100-108` already asserts a **41-day-old** session
+resolves to `last_time` with `daysSince: 41`, not `first_time` — a 14-20
+day Legs gap is well inside tested "resolves to `last_time`" territory.
+The old `RECENT_DAYS=10`/`ABSENCE_DAYS=28` constants that would have
+created a cutoff were deliberately deleted in the v3 rewrite (`f9a42d1`,
+2026-08-08) — confirmed absent, not merely unused. **This bug class is
+architecturally ruled out**, not just unlikely.
+
+### 2. Real root cause — the fetch layer, not the resolver or the renderer
+
+Cross-checked with an independent Workflow-based adversarial review (8
+agents: 2 blind re-verifiers of points 1 and the render path, 3 blind
+root-cause hunters each chasing a different hypothesis, 3 refuters trying
+to kill each hunter's finding). `ExerciseReference.tsx`'s three
+`primary.type` branches (`:133-153`) are plain sibling conditionals with
+no extra guard — confirmed clean by a second, independent reader.
+
+**Leading finding, survived adversarial refutation with no contradicting
+code found:** `useSession.ts:150-152`'s `useExerciseReferenceSessions`
+wraps the real online fetch in a bare `try { return await
+fetchReferenceSessions(...) } catch { /* fall back to Dexie */ }` that
+**never rethrows** — any failure (network blip, Postgres error, anything)
+is silently absorbed. The hook's return type (`:143`) is `{ data,
+isLoading }` only, no `error`/`isError` ever reaches the UI. Because the
+query never rejects, `queryClient.ts:8`'s `retry: 1` never engages, and
+`refetchOnWindowFocus: false` (`:10` — its own comment: "user switches
+apps at the gym constantly") means a wrong result sticks for the full
+5-minute `staleTime` with no self-heal. The Dexie fallback depends on
+`primeOfflineCache` (`offlineCache.ts:40`), fired from a **separate,
+un-awaited** `useEffect` in `GymSession.tsx:114-119` that races the
+reference-sessions query rather than preceding it, gated only on
+`navigator.onLine` (link-layer, not real reachability — `useOnlineStatus.ts:4`)
+and itself silently swallowed on failure. Net effect: one transient
+failure at exactly the moment "live gym wifi" produces them → silent
+catch → a Dexie fallback that hasn't finished priming (or failed priming
+on the same bad connection) → empty `Map` → resolver correctly renders
+`FIRST_TIME` for data that genuinely exists in Supabase.
+
+**Second, lower-probability mechanism, also survived verification:** if
+the Legs *workout day itself* was ever deleted and recreated (not merely
+edited — `deleteWorkoutDay` (`programService.ts:172-175`) issues a real
+`DELETE`, and `v2_sessions.workout_day_id`'s FK is `ON DELETE SET NULL`,
+not cascade — `001_v2_schema.sql:99`), every historical Legs session
+becomes permanently unreachable to the `.eq('workout_day_id', ...)`
+candidate query, for every exercise in the day simultaneously — matches
+the symptom exactly but requires a deliberate two-step program edit the
+report doesn't mention. Flagged, not leaned on.
+
+### 3. Git history — TASKS.md's "untouched" claim, checked not assumed
+
+`referenceLogic.ts` has exactly 3 commits: `7b20f38` (2026-07-10),
+`f9a42d1` (2026-08-08, the v3 two-slot rewrite), `49a2c93` (2026-08-18).
+`49a2c93` **is** Coach-related (the fix that made `api/coach/analyze.ts`
+deployable under Node ESM) and **did** touch this file — `git show`
+confirms exactly one line changed, `from './sessionService'` →
+`from './sessionService.js'`, import-specifier only, zero logic change.
+CONTEXT.md's later "referenceLogic.ts untouched" claim (this file,
+"2026-08-18 session (Coach — coachPrompt.ts v2...)") is accurate about
+that specific session's own actions, not a claim that no Coach commit
+ever touched the file — worth stating precisely rather than leaving
+either reading unchallenged.
+
+### 4. Blast radius on the two permanent Daily analyses (`48d841fb`, `413f76e5`)
+
+Since no cutoff bug has ever existed in the resolver (the v3 rewrite that
+removed it predates both analyses, generated 2026-08-18, by 10 days), the
+specific bug class asked about — a wrong recency threshold — is
+architecturally ruled out for both, regardless of actual gap size. The
+*real* bug found above (silent fetch-swallow + Dexie race) also doesn't
+apply: `analysisInput.ts:306-318`'s candidate-session query is a separate,
+server-side implementation that does `if (error) throw error` — no
+catch-and-fall-back-to-local-cache exists there; a failure surfaces as a
+hard error, not a silently wrong answer. Could not pull the real
+per-exercise `daysSince` for every exercise in these two analyses this
+session — no DB access available (no authenticated browser session on
+this machine, no service-role key in `.env.local`). The one exercise this
+file already documents in per-field detail (Cable Reverse Biceps Curl,
+`48d841fb`) was a `last_week` case with all-skipped sets, not a gap case.
+
+### 5. Would this have poisoned Weekly Analysis's payload for the current week?
+
+`weekAnalysisInput.ts:285-286`'s `assembleWeekAnalysisInput` calls
+`assembleSessionFacts` (shared with the daily path,
+`analysisInput.ts:377`'s `resolveExerciseReference` call included) once
+per completed session in the week — identical mechanism, not a
+separate implementation. Which of the two mechanisms above actually
+fired changes the answer:
+- **Fetch-swallow/Dexie-race** (client-side, live-session only): does
+  **not** reach the server-side Coach path — it always throws on a real
+  error rather than silently substituting incomplete local data. The dry
+  run would be safe from this specific mechanism.
+- **Orphaned `workout_day_id`** (deleted-and-recreated day): **would**
+  equally corrupt the Weekly Analysis payload, via the identical
+  `.eq('workout_day_id', ...)` filter in `analysisInput.ts`'s own
+  candidate query — and that payload freezes permanently once generated
+  (`v2_coach_week_analyses` follows the same permanence discipline as the
+  daily table).
+
+**Not yet acted on, recommended before the dry run**: confirm the current
+Legs `workout_day_id` has been stable across the sessions in this window
+(rules out the second mechanism) — a cheap DB read, not a code change.
+
+### Status — diagnosis only, fix and dry run both still blocked
+
+No code touched. **Weekly Analysis's dry run (step 5 onward) stays
+blocked** pending review of this diagnosis and a decision on the fix —
+not just on "a complete week existing" as the prior framing said, now
+also on this. Related, not the root cause, noticed in passing:
+`scheduler.ts:13`'s `LOOKBACK_DAYS = 7` means a missed session more than
+a week old never surfaces in the app's own missed-sessions prompt — two
+skipped Legs weeks would have gone unprompted past the first week, purely
+a UI-nudge gap, unrelated to the reference-resolution bug above.
+
+---
+
+## 2026-08-22 session (continued — real Daily Analysis pulled; actual cause found, different from the leading hypothesis)
+
+Direct follow-through on the diagnosis above. Explicit instructions this
+round: #2 (workout-day delete/recreate) is closed — Adam confirmed
+directly the Legs day was never deleted or recreated, not to be
+re-verified by query. Pull whatever Daily Session Analysis exists for the
+Legs session and show its stored `input_snapshot`'s `reference.kind` per
+exercise. Diagnosis only, still no fix, dry run stays blocked.
+
+**Got live DB access this round** — the browser tab's `localStorage` held
+a valid, unexpired Supabase session token (someone signed in since the
+prior check found it empty); queried production directly via its REST
+endpoint rather than continuing to reason from code alone.
+
+**The real `v2_sessions` history for LEGS (`workout_day_id`
+`5ceee589-226a-4f75-8d63-c63f917578fb`, one single id across all 7 rows
+from 2026-07-11 through 2026-08-22 — independently consistent with "never
+deleted/recreated," though not queried to re-verify that specifically,
+per instruction) does not show two consecutive skipped weeks**:
+2026-07-11 completed, 07-18 completed, 07-25 **skipped**, 08-01 completed,
+08-08 **skipped**, 08-15 completed, 08-22 completed. Skips alternate with
+completions; no run of two.
+
+**But 2026-08-15 is `status: 'completed'` while its raw `v2_set_logs`
+tell a different story** — pulled directly, not inferred: all 5
+exercises, all sets, `is_skipped: true`, weight/reps/rir all null. A
+session where every set was individually skipped still lands as
+`'completed'`, not `'skipped'` — the real semantic gap behind "skipped
+Legs," not literally two consecutive skipped session-status rows.
+
+**One Daily Session Analysis exists**: `03371a01-8b09-466a-8b20-3cf28572e967`,
+generated 2026-08-22 12:24 UTC (31 min after session `a44e1f1e-...`,
+today's Legs, completed 11:54 UTC). **`reference.kind` is `"last_week"`
+(pointing to 2026-08-15) for all 5 exercises — zero `first_time`.** None
+of the three anticipated outcomes (new mechanism / server-path gap / no
+analysis) — the resolver and the server-side fetch both worked exactly as
+designed: 08-15 genuinely falls in the Monday-anchored previous week of
+08-22, a legitimate `last_week` candidate.
+
+**The actual cause of the poor analysis, confirmed against raw
+`v2_set_logs`, not the model's prose:**
+
+| exercise | 08-15 (reference) | 08-22 (current) | model's comment |
+|---|---|---|---|
+| Squat | 2 sets, both skipped | 2 sets, both skipped | "skipped in both this session and the reference session" — correct |
+| Leg Press | 2 sets, **both skipped** | 4 real sets | "was **not logged** last week" — false |
+| Adduction Machine | 2 sets, **both skipped** | 2 real sets | "was **not logged** last week" — false |
+| Seated Leg Curl | 2 sets, **both skipped** | 2 real sets | "was **not logged** last week" — false |
+| Leg Extension | 2 sets, **both skipped** | 2 real sets | "was **not logged** last week" — false |
+
+The `input_snapshot`'s `match` object is exactly right
+(`slotCountA: 0` on the reference side for all four, correctly reflecting
+"all sets skipped") — **not a payload bug**, same conclusion as the
+2026-08-18 Cable Reverse Biceps Curl diagnosis. The model invented "wasn't
+logged" to explain zero comparable sets on the reference side; it was
+logged, just skipped.
+
+**This is the same gap the 2026-08-18 session diagnosed and partially
+fixed, recurring in an uncovered shape.** `coachPrompt.ts` v2's
+"skipped in both weeks" instruction only covers the *symmetric* case
+(`matchedSlotCount`/`extraSlotsA`/`extraSlotsB` all zero on both sides).
+This session hit the *asymmetric* case — reference side all-skipped
+(`slotCountA: 0`), current side has real logged sets
+(`slotCountB: 2-4`) — which the prompt gives no instruction for, so the
+model filled the gap with a plausible but false claim, the same failure
+mode as before (reaching for the nearest available template when not
+given exact wording for a shape it's seeing).
+
+**Recommended fix scope, not implemented (superseded — see "2026-08-22
+session (fix: session-skip reclassification + reach-back + coachPrompt.ts
+v3)" below for what was actually built, once a wording-only v3 fix turned
+out not to be the right shape):**
+1. `coachPrompt.ts` v3 — extend the existing skip-handling paragraph to
+   also cover the asymmetric case: reference side all-skipped/zero,
+   current side has real sets → tell the model explicitly that last
+   week's attempt was skipped (not "unlogged"), and today's numbers are a
+   fresh data point, not a comparison. Same shape as the v2 fix, one more
+   `PROMPT_VERSION` bump.
+2. The client-side fetch-swallow hazard from the original diagnosis
+   (`useSession.ts:150-152`) is still real and independently verified,
+   but **unconfirmed and unfalsifiable as the cause of this specific
+   report** — nothing server-side would show it even if it fired live in
+   the gym. Worth fixing on its own merits regardless.
+3. Not a code bug — a product question: should an all-sets-skipped
+   session ever be allowed to land as `status: 'completed'`, or should it
+   auto-downgrade to `'skipped'`? Needs Adam's call, not a unilateral fix.
+
+No code changed this session. Weekly Analysis's dry run stays blocked —
+now on a decision about fix #1 above, not on the original hypothesis.
+
+---
+
+## 2026-08-22 session (fix: session-skip reclassification + meso-scoped reach-back + coachPrompt.ts v3 + the real Weekly Analysis dry run)
+
+Full build-and-verify session, explicit six-item scope from the diagnosis
+above. Order followed: 1–4 built and verified → week re-confirmed complete
+→ step 5's real dry run → 6 → 5 (per explicit note that 5 needs 6 first).
+Adversarial review run before closing out — one real, confirmed finding,
+fixed before this entry was written.
+
+### 1. Session completion reclassification + one-time backfill
+
+New pure `shouldClassifyAsSkipped(logs: {isSkipped: boolean}[]): boolean`
+in `sessionCompletion.ts` — `logs.length > 0 && logs.every(l => l.isSkipped)`
+(the `length > 0` guard deliberately excludes a zero-log completion, a
+different pre-existing case). Wired into `sessionService.ts`'s
+`completeSession` (now fetches `is_skipped` alongside `logged_at` and
+writes `status: 'skipped'` instead of `'completed'` when it applies,
+returning the real status so callers can react) and `useSession.ts`'s
+`useCompleteSession` offline branch (same check against cached Dexie logs,
+same documented narrower-fix caveat as `completedAt` already has for a
+session logged online then completed offline).
+
+**Backfill, executed and independently verified, not trusted from a
+"Success" response alone.** Ran via the live app's own authenticated REST
+session (browser `localStorage` held a valid token — no service-role key
+used or needed). Discovery query across all 32 `completed` sessions found
+exactly **one** match: `f4b02764-...` (2026-08-15, Legs — the exact session
+the earlier diagnosis identified). Applied the `PATCH`, then **re-ran the
+discovery query fresh** (not the same response) — zero remaining matches,
+31 `completed` sessions left, the target row confirmed `status: 'skipped'`
+with `completed_at`/`started_at`/`note` all preserved. Migration
+`015_v3_completed_all_skipped_backfill.sql` documents the equivalent SQL
+for the record (executed via REST this session, not the SQL Editor —
+no SQL Editor access available).
+
+### 2. Meso-scoped reach-back — one shared implementation
+
+New exported `resolveSecondaryReference(today, candidates, mesocycleId)`
+and `hasRealLoggedSet(session)` in `referenceLogic.ts` — the same layer
+`analysisInput.ts` already depends on, so both Coach paths *and* the live
+gym panel reuse it, not three separate implementations. `hasRealLoggedSet`
+mirrors `positionMatch.ts`'s `buildLoggedSlots` filter exactly
+(`!group.head.isSkipped`, head-only, no stage-level override) — confirmed
+by direct comparison during review. Given the exact same unfiltered
+candidate list the primary chain already receives, filters to the current
+mesocycle (`mesocycleId` match, dated before `today` — same boundary
+convention as the primary chain's own `past` filter) and returns one of
+three outcomes: `found` (most recent in-meso occurrence with a real set,
+`daysSince` included), `none_in_meso` (nothing in the current meso at
+all — the common path here, since it's usually how this triggers: the
+primary/reference session itself is from an *earlier* meso), or
+`all_skipped_in_meso` (at least one in-meso occurrence exists — possibly
+just the reference session itself — none real).
+
+`ReferenceSession` gained a `mesocycleId: string | null` field, threaded
+through every construction site: `sessionService.ts`'s two fetch functions
+(`fetchReferenceCandidateSessions`/`fetchReferenceSessions`, now selecting
+`mesocycle_id`), `useSession.ts`'s Dexie offline fallback (already cached
+via `offlineCache.ts` — no new caching code needed), and
+`analysisInput.ts`'s own local candidate-session builder (a deliberately
+separate implementation from `sessionService.ts`, per its own
+cold-start-avoidance header — both now carry the field, kept in sync by
+hand as that separation already requires).
+
+`analysisInput.ts`: `buildExercise` gained a 4th param,
+`currentMesocycleId`. `AnalysisInputExerciseSource` gained
+`secondaryCandidates` (the *same* array already built for the primary
+resolution, reused not re-fetched). New `AnalysisInputSecondaryReference`
+type + `secondaryReference` field on `AnalysisInputExercise`, populated
+only when `match.plain.slotCountA === 0 && match.dropsets.slotCountA ===
+0` (the reference side has zero real comparable sets on either stream —
+confirmed by review to be exactly the negation of `hasRealLoggedSet`) via
+a new `toSecondaryReference()` that also runs a full
+`matchSessionsByPosition` between the found secondary session and the
+*current* session, so the model gets the same rich weight/reps/rir/e1rm
+comparison shape it already knows how to read, not a lighter-weight
+invented format. `SessionFacts`/`BuildAnalysisInputArgs` both gained
+`currentMesocycleId`, deliberately **not** nested inside `.session` —
+confirmed by review to hold at runtime, not just in the types:
+`buildAnalysisInput`/`assembleSessionFacts` both construct their output
+`session` as a fresh literal (`{ id, date, workoutDayName }`), never a
+spread of the raw Supabase row that does carry `mesocycle_id`, so it can't
+leak into `AnalysisInput.session` or `WeekAnalysisSessionRoster`.
+
+`weekAnalysisInput.ts` inherits the whole fix with exactly two lines —
+threading `facts.currentMesocycleId` into its own `buildExercise` call and
+copying `built.secondaryReference` onto `WeekAnalysisOccurrence` — since it
+already reuses `buildExercise`/`assembleSessionFacts` from
+`analysisInput.ts` rather than a second implementation. Confirmed by
+review: `currentMesocycleId` is sourced per-session from each session's own
+`assembleSessionFacts` call, so a week spanning a meso boundary can't
+cross-contaminate.
+
+**Vitest**: 8 new tests in `referenceLogic.test.ts` (all three outcomes,
+meso-boundary exclusion — a real occurrence in a *previous* meso must never
+be found even when it's the only real data available, the no-current-meso
+defensive case, the skipped-head-with-real-stage case proving the
+head-only convention, same-date/future exclusion) and 8 new tests in
+`analysisInput.test.ts` (the existing working case where reach-back never
+triggers, a real reference with `secondaryCandidates` present but unused,
+found/none_in_meso/all_skipped_in_meso, the previous-meso-exclusion case
+again at this layer, and the no-current-mesocycle case). 212 tests total
+(was 191), typecheck and `vite build` both clean throughout.
+
+### 3. `coachPrompt.ts` v3 — verified against the real 2026-08-22 Legs session, twice
+
+`PROMPT_VERSION` 2 → 3. Extends the existing skip-handling paragraph:
+`secondaryReference`'s three kinds documented, `found` framed explicitly as
+elapsed time ("last actually trained N days ago," never a same-week
+delta, matching `ExerciseReference.tsx`'s live-panel wording so the two
+surfaces never disagree), `none_in_meso`/`all_skipped_in_meso` given
+distinct, non-interchangeable instructions.
+
+**Verified via a throwaway script** (`secondaryRefVerify.ts`, repo root,
+run via `npx tsx`, deleted immediately after — same category as prior
+sessions' `regressionCheckAnalysisInput.ts`/`promptV2Verify.ts`;
+credentials loaded from `.env.local` and a scratchpad-only token file, both
+also deleted after, no secret ever appeared in a shell command). Replayed
+the real session `a44e1f1e-...` (today's Legs) through the real
+`assembleAnalysisInput` and a real Haiku 4.5 call — **no permanent
+analysis created**, this session already had one
+(`03371a01-...`, generated earlier the same day, before any of today's
+fix). Ran *before* the backfill: all 5 exercises' `secondaryReference`
+resolved `found` with real numbers; the model's actual prose correctly
+said e.g. "Leg Press was skipped last week but logged 4 sets today.
+Comparing to the last real session 21 days ago (2026-08-01)..." for every
+previously-wrong exercise, and gave Squat a genuinely better answer than
+the v2 fix could ("the last actual session was 42 days ago... focus should
+be on rebuilding movement quality") instead of just "no training signal to
+assess." `input_tokens: 6330, output_tokens: 1229`.
+
+**Re-verified after the backfill** (zero-cost re-check, no second model
+call — the backfill changes primary-chain candidate eligibility too, not
+just the reach-back's own scope, since 2026-08-15 no longer qualifies as
+`completed`). Confirmed the *mechanism* shifted but the *outcome* stayed
+correct: 4 of 5 exercises' primary now resolves directly to `last_time`
+(2026-08-01, real data) with `secondaryReference: null` — reach-back isn't
+even needed for them anymore, a cleaner fix than before. Squat alone still
+needs it (`last_time` → 08-01, still `slotCountA: 0` since Squat was
+skipped there too → `secondaryReference: found`, 2026-07-11, 42 days).
+Both shapes present now are subsets of what the first, paid run already
+exercised, so no second generation call was made.
+
+### 4. `COACH-WEEK-ANALYSIS-TASKS.md` / CONTEXT.md — the coachWeekPrompt.ts note corrected
+
+`COACH-WEEK-ANALYSIS-TASKS.md` §7 now states explicitly:
+`coachWeekPrompt.ts` must carry the same `secondaryReference` handling
+from `WEEK_PROMPT_VERSION = 1`, not deferred — because `weekAnalysisInput.ts`
+builds every occurrence through the exact same `buildExercise` the daily
+path uses, `reference`/`match`/`secondaryReference` are already identical
+shapes on both payloads by construction, so the future prompt just needs
+to copy `coachPrompt.ts` v3's language nearly verbatim. This supersedes
+the narrower "asymmetric-skip wording tweak to the daily prompt only" note
+written in the diagnosis session above (marked there, not deleted, per
+this project's own precedent for corrected-in-place entries).
+
+### Dry run — real payload, read for real, per §5.2/§7.15
+
+Re-confirmed first: `weekResolution.ts`'s real `resolveWeek('2026-08-17',
+...)` against live mesocycles/programs/sessions (fetched via the dev
+server's unbundled module graph, same live-testing pattern this project's
+history already establishes) — `isComplete: true`, all 5 expected sessions
+(Mon PUSH1 → Sat LEGS) `completed`.
+
+**Ran the real dry run** — `assembleWeekAnalysisInput` against real
+production data, zero API spend. 5 sessions, 26 occurrences. Payload:
+49,301 characters, **22,501 tokens** (payload only — no system prompt
+yet, `coachWeekPrompt.ts` isn't built; measured via Anthropic's real
+`countTokens` endpoint, zero generation cost, not estimated from char
+count). **Reference-log row counts per §7.15**, the one thing this step
+was asked to measure and not fix: 63 / 76 / 102 / 69 / 32 = **342 total**
+across the week's 5 sessions — nowhere near PostgREST's default row cap,
+confirmed with real numbers as the spec asked, not speculation.
+
+**Read the payload for correctness**, not just its size — tags/buckets
+correct for all 26 occurrences (every exercise carries real
+`muscleGroup`/`muscleSubgroups`/`movementPattern`, matching migration
+014's tagging pass), phase (`cut`, day 96) and weight trend resolve as
+expected, `isDeload` false throughout (correct — no deload week this
+cycle). `reference.kind` is `last_week` for every occurrence except the 5
+Legs ones (`last_time`, post-backfill). `secondaryReference: found`
+appears exactly where expected — Squat (2026-08-22) and, as a genuine
+bonus beyond the original Legs bug, **Cable Reverse Biceps Curl** on
+*both* its occurrences (2026-08-18 and 2026-08-21) — the exact exercise
+the very first Coach diagnosis session (2026-08-18) found reading as "no
+prior session to compare against" for a real skipped-both-weeks case.
+That case now gets a real 39-day-old reference with real numbers
+(10kg×18@0) instead of nothing — confirmed via the same client-side path
+below, independently of the server-side dry run.
+
+### Item 6 (done before item 5, per explicit dependency) — `useExerciseReferenceSessions`'s silent swallow, fixed
+
+The queryFn's `catch` used to substitute Dexie data for *any* thrown
+error, no matter why. Now: on a thrown error, checks `navigator.onLine`
+(via `useOnlineStatus`) — if the browser reports itself online, **rethrows**
+rather than swallowing, so TanStack's global `retry: 1` gets a real second
+attempt and `isError` surfaces to the caller if that's also exhausted;
+only when genuinely offline does it fall through to the Dexie fallback,
+now tagged `isFromCache: true` so it's never silently indistinguishable
+from a normal result again. Hook also exposes `retry` (`query.refetch`).
+
+Review raised one concern here — an `isOnline` value captured stale by
+closure if connectivity drops mid-request — and **refuted it** after
+tracing the actual `@tanstack/query-core` source: `ensureQueryFn` re-reads
+`this.options.queryFn` fresh on every retry attempt (not a one-time
+capture), and `Query.setOptions()`/the observer's per-render `setOptions`
+call keep that fresh across renders; a genuinely-offline retry is also
+paused by TanStack's own `onlineManager`, not left to surface as `isError`.
+No fix needed — the design holds.
+
+### Item 5 — the live gym panel now shows the reach-back result
+
+The candidate-session fetch was already unbounded (no date limit, per its
+own long-standing comment) — nothing to widen there. What was missing:
+the client never *called* `resolveSecondaryReference` at all.
+`ExerciseReference.tsx` gained `mesocycleId`/`isError`/`onRetry`/
+`isFromCache` props: shows **"COULDN'T LOAD REFERENCE" + a RETRY tap
+target** instead of the old silent (and misleading) FIRST TIME render when
+`isError`; a small "OFFLINE · CACHED" tag when serving from the Dexie
+fallback; and a new panel — **"LAST ACTUALLY TRAINED Nd AGO"** with real
+numbers, or a one-line none-in-meso/all-skipped-in-meso note — computed
+exactly the same way the trigger works server-side
+(`primary.type !== 'first_time' && !hasRealLoggedSet(primary.session)`).
+Threaded through `ExerciseCard.tsx`/`PreviewExerciseCard.tsx`
+(prop-forwarding only) and `GymSession.tsx` (`mesocycleId` from the live
+session's own `session.mesocycleId`) / `SessionPreview.tsx` (from
+`weekPlan?.mesocycleId ?? null` — no session row exists yet to read it
+from; degrades to `none_in_meso` rather than crashing when that's also
+null, same defensive design as the pure function itself).
+
+**Verified against real production data via the client-side fetch path
+specifically** (not the server-side path already verified above — a
+genuinely different code path, `sessionService.ts`'s `fetchReferenceSessions`
+rather than `analysisInput.ts`'s own query), without mutating any session:
+called the real client `fetchReferenceSessions` + `resolveSecondaryReference`
+for Cable Reverse Biceps Curl against real data via the dev server's
+module graph. Confirmed: primary `last_week` (2026-08-11, no real sets),
+secondary `found` (2026-07-14, 39 days, real `10kg × 18 @ RIR 0` × 2) —
+matches the server-side dry run's payload exactly. Did not click through
+`CONTINUE SESSION` on the real completed Legs session to screenshot the
+live render — that would reopen and mutate a real production session row
+just to check a JSX label; judged disproportionate given the underlying
+data path is independently confirmed correct twice (server + client) and
+the rendering logic is a thin, typechecked, unit-tested wrapper around it.
+
+### Adversarial review before closing out
+
+Four-dimension Workflow-based review (pure logic; `analysisInput.ts`
+plumbing; client-side error handling; `coachPrompt.ts` text +
+whole-tree completeness grep), each finding adversarially re-verified by
+a separate agent instructed to refute it — same pattern this project used
+for the original `referenceLogic.ts` rewrite (Phase 3.3) and the Cable
+Reverse Biceps Curl diagnosis.
+
+**3 of 4 dimensions: no findings, confirmed clean on independent
+re-verification** (pure logic in `referenceLogic.ts`/`sessionCompletion.ts`;
+`analysisInput.ts`'s `currentMesocycleId`/`secondaryCandidates`/trigger-condition
+plumbing; the client `isOnline`-staleness concern, refuted by tracing
+actual TanStack source).
+
+**1 real, confirmed finding — fixed**: `coachPrompt.ts`'s original
+`all_skipped_in_meso` wording said "occurred more than once this
+mesocycle" / "skipped every time this cycle, not just once" — but
+`resolveSecondaryReference` can and does return `all_skipped_in_meso` with
+**exactly one** in-meso occurrence (the reference session itself), proven
+by this session's own test (`referenceLogic.test.ts:298-306`, one
+candidate). The prompt would have told the model to assert a repeat-skip
+pattern the payload doesn't actually guarantee. **Fixed**: both mentions
+(the field-shape description and the "what to write" instruction) now
+explicitly say not to state or imply a count — "no real attempt yet this
+mesocycle," not "every time"/"repeatedly." No real current data exercises
+this exact outcome (Squat and Cable Reverse Biceps Curl both resolve
+`found`), so no new paid model call was needed to validate the wording fix
+itself — typecheck and the full Vitest suite (212, unchanged) stayed clean.
+
+A second, minor item was flagged as pre-existing and out of this session's
+scope: `coachPrompt.ts`'s "`isDeloadReference` null only when first_time"
+line is slightly imprecise (it's also null when the reference session has
+no week plan attached) — predates this session's diff, not touched.
+
+### Status
+
+All six items built, verified (including two independent real-production-data
+checks — before and after the backfill — plus one real Haiku 4.5 call, plus
+a from-scratch adversarial review with one real finding fixed), typecheck/212
+Vitest tests/`vite build` all clean. Weekly Analysis's dry run (step 5) is
+now genuinely done — real payload built, read, and measured. Step 6
+(latency measurement) and step 7 (`coachApiAuth.ts`/`api/coach/analyze-week.ts`/
+`coachWeekPrompt.ts`) remain, per COACH-WEEK-ANALYSIS-TASKS.md's own
+ordering — not attempted this session, out of the six-item scope given.
+
+---
+
+## 2026-08-22 session (continued — two clarifications: which mechanism fired per exercise, and step 6's real latency)
+
+Two precise follow-ups, requested because the entry above stated outcomes
+without always naming the mechanism. Re-verified fresh against live
+production data rather than trusting the prior session's cached script
+output — both confirmed directly, not assumed.
+
+### 1. Which mechanism fired, per exercise — confirmed via a fresh direct call
+
+`analysisInput.ts`'s candidate-session query (`analysisInput.ts:404`)
+does filter `.eq('status', 'completed')` — confirmed by reading the exact
+line. Since the 015 backfill set 2026-08-15's status to `'skipped'`, that
+session is excluded from the candidate pool entirely; it never reaches
+`resolveExerciseReference`. Called the real `assembleAnalysisInput` fresh
+(dev server's module graph, today's real session `a44e1f1e-...`) and
+inspected `reference`/`match`/`secondaryReference` directly, per exercise:
+
+| exercise | primary resolves to | reference-side real data (`slotCountA`) | secondary reference triggered? |
+|---|---|---|---|
+| Squat | `last_time`, 2026-08-01 (21d) | 0 (also skipped there) | **yes** — `found`, 2026-07-11, 42d |
+| Leg Press | `last_time`, 2026-08-01 (21d) | 2 (real) | no |
+| Adduction Machine | `last_time`, 2026-08-01 (21d) | 2 (real) | no |
+| Seated Leg Curl | `last_time`, 2026-08-01 (21d) | 2 (real) | no |
+| Leg Extension | `last_time`, 2026-08-01 (21d) | 2 (real) | no |
+
+**Precisely: for 4 of the 5 originally-wrong exercises, the backfill alone
+fixed them.** Primary resolution shifted from `last_week` (08-15, the
+excluded session) directly to `last_time` (08-01), which has real,
+non-skipped data — `resolveSecondaryReference` is never even called for
+these four (`secondaryReference: null` because the trigger condition,
+`slotCountA === 0` on both streams, is false). **Squat is the only one of
+the five where the new reach-back logic does real work** — its primary
+also lands on 08-01, but Squat was skipped there too, so the trigger fires
+and `resolveSecondaryReference` walks back one more step to 07-11. Two
+distinct, independently-necessary fixes, not one fix doing double duty —
+confirmed per-exercise, not inferred from the aggregate output reading
+correctly.
+
+### 2. Step 6 — had NOT been run; run for real this session
+
+**Clarifying the prior report's "nowhere near any cap" language**: that
+referred specifically to the §7.15 reference-log **row count** (342 vs.
+PostgREST's row cap) — a data-completeness concern, not latency. The
+22,501-**token** figure was measured via `countTokens` (zero generation
+cost) and confirms the payload is well inside the model's context window —
+also not a latency measurement. Neither number says anything about
+wall-clock time against the 60s `maxDuration` cap. **Step 6 (the real,
+timed Haiku call) had not happened yet** — the prior entry's own "Status"
+section already said so explicitly ("Step 6 (latency measurement)... remain[s]").
+
+**Run for real this session**, same discipline as daily's E1 (throwaway
+script, repo root, `npx tsx`, deleted immediately after — never
+committed; no `coachWeekPrompt.ts` exists yet, so no system prompt was
+sent, matching daily E1's own precedent of running before `coachPrompt.ts`
+existed too; structured output used `CoachWeekAnalysisContent`'s real
+shape from COACH-WEEK-ANALYSIS-TASKS.md §3.2, same precedent as daily E1
+using `CoachAnalysisContent`'s shape before the prompt existed). Payload
+re-fetched fresh (`assembleWeekAnalysisInput`, same 49,301 characters as
+before — confirms the underlying data hasn't shifted since the dry run).
+
+**Result: 21,318ms (21.3s) wall-clock against the 60s cap — 38.7s of
+margin.** `model: claude-haiku-4-5-20251001` (pinning confirmed).
+`input_tokens: 22876`, `output_tokens: 1316` — input close to the
+payload-only `countTokens` estimate (22,501), the ~375-token gap being
+request/schema overhead. Comfortably inside TASKS §1.5's own ~15–25s
+expectation and nowhere near the ~35s stop-and-report threshold — no
+adjustment needed, reported plainly as instructed. Output was real,
+qualitatively reasonable structured JSON: 5 highlights, an `overall` field
+that read the week correctly (named the Squat comparison gap, called out
+"slight declines in horizontal rowing" and "variance in lat pulldown" —
+plausible, specific, not generic filler). Quality itself is step 9's
+question, not this one's — noted only as evidence the call produced a
+real, usable response, not a malformed one that happened to be fast.
+
+**Status**: step 6 is now done. Step 7 (`coachApiAuth.ts` extraction,
+`api/coach/analyze-week.ts`, `coachWeekPrompt.ts` — including the
+reach-back handling §4 item 4 above already specifies for it) remains,
+not attempted this session — out of scope for what was asked.
+
+---
+
+## 2026-08-23 session (Coach — step 7: coachWeekPrompt.ts + api/coach/analyze-week.ts, first real Weekly Analysis generated)
+
+Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md, and COACH-WEEK-ANALYSIS-TASKS.md
+first, as instructed. Built step 7 in full: the shared auth extraction,
+`coachWeekPrompt.ts` (all three required things from v1, not deferred),
+`api/coach/analyze-week.ts`, and the real, permanent, irreversible
+verification call against the genuine current week.
+
+### `coachApiAuth.ts` — extracted, `analyze.ts` refactored onto it
+
+New `src/features/coach/coachApiAuth.ts` exports `authorizeCoachRequest(req,
+res) → { supabase, userId } | null`, extracted from `api/coach/analyze.ts`'s
+method-check → bearer-parse → env-stripping → `createClient` try/catch →
+`getUser` → `COACH_USER_ID`-compare chain verbatim — all four of step G's
+adversarial-review hardening details preserved (invisible-char stripping on
+`COACH_USER_ID`, the `createClient` try/catch, not echoing upstream errors,
+and the `.eq('user_id', userId)` defence-in-depth convention every
+downstream query still follows itself). Lives in `src/features/coach/`, not
+`api/_lib/`, per TASKS §1.2's explicit reasoning. `analyze.ts` refactored
+onto it in the same change — never a period with two copies.
+
+**One deliberate, minor behavior refinement, not a regression**: daily's
+original handler checked `sessionId` *before* the auth chain; the shared
+helper checks auth *first*. A request missing both a valid bearer token and
+a `sessionId` now gets 401/403 instead of 400 — matches TASKS §1.3's own
+explicit ordering for the weekly handler ("authorize → validate...") and is
+the more correct security posture (auth before request-shape validation),
+not something either endpoint's real client (the app itself, which always
+sends both) would ever observe.
+
+### `weekResolution.ts` gained a fetch layer — `assembleWeekResolution`
+
+Same two-part shape as `analysisInput.ts`/`weekAnalysisInput.ts` (pure
+builder + thin fetch layer, one file) rather than embedding the fetch
+inline in the handler — makes the completeness re-derivation TASKS §1.3
+requires server-side a reusable, independently-callable function.
+Deliberately does **not** reuse `mesoService.ts`/`programService.ts`/
+`sessionService.ts` (all import the browser singleton `src/lib/supabase.ts`,
+fatal at a Vercel Node function's cold start) — hand-rolled raw row types
+and local mapping, same discipline `analysisInput.ts` already established.
+Fetches all mesocycles/programs/workout days for the user (unbounded, small
+tables at this app's scale) plus sessions scoped to the target week, then
+calls the existing pure `resolveWeek` unchanged.
+
+### `coachWeekPrompt.ts` — `WEEK_PROMPT_VERSION = 1`, all three required things included from this version
+
+Not deferred, per explicit instruction:
+1. **Selective highlights only** (SPEC §5) — "typically 3 to 6... never one
+   per bucket... a bucket with nothing notable simply gets no highlight,"
+   stated as one of the two rules that matter most, not buried in a later
+   section.
+2. **Never a blended metric** (SPEC §8's explicitly-rejected item) — the
+   other of the two rules that matter most: "There is no per-bucket average
+   volume, intensity, or 'score' anywhere in this input, and that is
+   deliberate... Reason across the real, disaggregated per-occurrence facts
+   inside a bucket directly."
+3. **Full reach-back/secondaryReference handling, all three outcomes** —
+   language mirrors `coachPrompt.ts` v3's nearly verbatim (found /
+   none_in_meso / all_skipped_in_meso, each with its own distinct, honest
+   framing, the same "do not state or imply a count" instruction for
+   `all_skipped_in_meso`), per the correction to the earlier session's
+   narrower note (COACH-WEEK-ANALYSIS-TASKS.md §7, corrected 2026-08-22).
+
+No persona/tone instruction, per explicit instruction — same
+clinical-by-default posture daily v1 shipped with; both prompts' tone
+question stays open together, deferred until real samples exist to
+calibrate against (TASKS §7.16).
+
+Output schema: `{ highlights: [{ bucketKind, bucketLabel, exerciseIds,
+headline, comment }], overall }` — `bucketKind` includes `"cross"` (SPEC
+§1's cross-bucket pattern, e.g. "compounds down, accessories up") alongside
+the two real bucket axes.
+
+### `api/coach/analyze-week.ts`
+
+Handler order exactly matches TASKS §7's summary: authorize → validate
+`weekStart` is a real Monday (regex + `weekKey` round-trip check — a date
+that doesn't equal its own Monday-normalised form is rejected with 400,
+`weekKey` reused rather than a second day-of-week check) → return any
+existing row for that week (idempotency) → re-derive completeness via the
+new `assembleWeekResolution`, `409` with a plain reason if incomplete →
+assemble via `assembleWeekAnalysisInput` → generate → insert, catching
+`23505` and returning the winning row on a race. Same §5.12-style
+mitigations as daily (TASKS §7.17): generated content returned in the
+error response and logged server-side rather than discarded on an insert
+failure; the one genuinely unrecoverable case (a hard `maxDuration` kill)
+stays an accepted risk, narrower margin than daily's (38.7s vs 45.8s,
+step 6's real measurement) but not a marginal one.
+
+`CoachWeekHighlight`/`CoachWeekAnalysisContent`/`CoachWeekAnalysis` added to
+`types/index.ts` (TASKS §3.2's shape exactly), importing `WeekAnalysisInput`
+from `weekAnalysisInput.ts` via `import type` — safe despite the apparent
+circularity (types/index.ts already does the identical thing for daily's
+`AnalysisInput`; `import type` is erased at compile, no runtime edge).
+
+**Import chain re-audited end-to-end**, same discipline TASKS §7.13
+established for the daily function: grepped every file reachable from
+`analyze-week.ts` for `lib/supabase` — the only matches are comments
+explaining *why* it's avoided, no real import. Cold-start-safe confirmed,
+not assumed.
+
+### Verification
+
+Typecheck (both `tsconfig.app.json`/`tsconfig.api.json`), all 212 Vitest
+tests, and `vite build` clean throughout (bundle size unchanged —
+`api/coach/analyze-week.ts` correctly excluded from the client bundle, as
+expected for anything under `api/`).
+
+**The real end-to-end call — not deployed to Vercel first, deliberately.**
+This session was not asked to commit or push, and this project's own
+standing rule is to commit only when explicitly asked — so rather than
+push+deploy to reach a live HTTP endpoint (daily's own precedent), the
+real handler function was invoked **directly**: same file, same imports,
+same logic, real Supabase auth/queries/insert, real Haiku 4.5 call —
+just via a local Node script constructing a minimal `VercelRequest`/
+`VercelResponse` in place of an actual HTTP round-trip (the one part of
+daily's precedent this doesn't re-exercise, and the one part already
+proven working — same `createClient`-from-env, same request/response
+shape). Credentials loaded from `.env.local` and a scratchpad-only token
+file, both deleted after, no secret ever appeared in a shell command;
+verification script deleted immediately after, never committed —
+confirmed via `git status` before and after.
+
+Ran in two stages: **(a)** a fresh, zero-cost re-check of week completeness
+via the real `assembleWeekResolution` — confirmed `isComplete: true` for
+2026-08-17–23 again today (2026-08-23, the week's own last day), not
+assumed from yesterday's check. **(b)** the real call.
+
+**Result: succeeded. `200`, real permanent row inserted** — id
+`0c9951ef-04f0-4358-8807-7b8a1aff8185`, `model:
+claude-haiku-4-5-20251001`, `prompt_version: 1`, `input_tokens: 25496`,
+`output_tokens: 1584`, `created_at: 2026-08-23T00:09:42.693507+00:00`.
+Re-ran the script immediately after to confirm idempotency for real (not
+assumed from the unique constraint alone): second call returned the
+identical row in 168ms, no second generation. **This is the first Weekly
+Analysis ever generated — permanent, no regeneration or deletion path,
+per SPEC §9.**
+
+**The full generated write-up:**
+
+> **Overall**: Week 8 of MESO 1.0 sits in the middle of a 96-day cut, and you're tracking pretty well. All five sessions completed as planned. Upper-body compounds are flat to slightly positive, which is the goal; isolation work is trending upward, especially shoulders and mid-chest. The one real concern is vertical lat work—Lat Pulldown dropped notably in the third set and Neutral Lat Pulldown's first-set gain masks softening in slots 2–3. You may want to audit fatigue in the next week or two, or rotate that variation out briefly. Back horizontal work (rows) is stable. Legs look solid considering the long gap since the last Squat session (21 days); Leg Press volume increased while main lifts stayed level. Cable Reverse Biceps Curl was completely skipped both pull sessions after 35 days off—if forearm training is part of your plan, reintroduce it next week. Bodyweight is holding at 72.9 kg with only one day logged, so no trend signal yet. Overall, this is a competent week for week 8 on a cut: no drama, compounds aren't sliding, and reps are creeping up on accessories where it matters.
+>
+> **Side delt work trending upward across both push sessions** (muscle_subgroup: side_delt): Cable Lateral Raise on PUSH 1 showed solid rep gains across all three sets (8→8, +5%, +7.5% e1rm on the back-off sets), and One-arm Dumbell Lateral Raise on PUSH 2 maintained control with consistent small gains (+2.5%, flat, +2.5%) and a clean dropset at the top. This pattern of steady improvement on shoulder isolation fits the cut phase well—delts respond well to higher-rep work, and you're holding strength on light weight.
+>
+> **Mid-chest isolation and press both moving forward** (muscle_subgroup: mid_chest): Pec Deck Fly jumped 8% on the heavy first set (70×7→70×10 e1rm), though the back-off set dipped slightly (-2.3%). Chest Press on PUSH 2 was consistently positive across all three sets (+5.6%, +2.8%, +5.9% e1rm), showing clean progression on the primary lift. This is good sign that mid-chest is responding despite the cut.
+>
+> **Back volume solid on horizontal work, vertical pull showing fatigue signs** (muscle_subgroup: lats): Cable Row lost reps across all three sets (-0%, -2.6%, -5% e1rm), and Lat Pulldown (machine) dropped notably on the final set (60×8→50×9, -14.5% e1rm). Neutral Lat Pulldown held up slightly better (+3.9% first set, small declines later), and Barbell Row was completely flat week-to-week. One-arm Cable Lat Row gained cleanly in the one logged set (+5%). The pattern suggests lat volume is adequate but the vertical pull variation may need a break or a slight deload—week 8 of the meso, on a cut, can accumulate fatigue fast.
+>
+> **Leg Press and extensions show offsetting trends** (muscle_subgroup: quads): Squat had no comparable data (was a rest week 21 days prior), so comparison is limited. Leg Press declined slightly on the first matched set (-5%) but improved on the second (+2.7%), and added two extra sets for more volume. Leg Extension improved the second set substantially (+5.8%) while the first dipped (-2.4%). The added volume on press suggests you're maintaining intensity here despite the deficit, though absolute load dips are small enough to be noise in a long mesocycle.
+>
+> **Cable Reverse Biceps Curl not logged this week** (muscle_subgroup: forearms): Last trained 35 days ago (mid-meso 1). No comparable data in either PULL 1 or PULL 2. This is a skip, not a new exercise—you have real prior data from July, so the complete absence is worth noting if you'd intended to track forearm work consistently.
+>
+> **Compound lifts stable; isolation work more responsive** (cross: compounds holding steady, accessories driving gains): Incline Dumbell Press and Chest Press both showed small mixed deltas (0%, -2.8%, 0% and +5.6%, +2.8%, +5.9% respectively), while isolated side delts, pec deck, and skull crushers all posted small clean gains. This is exactly what you'd expect mid-cut on week 8—compounds are holding their weight and reps, which is a win, while accessories have more room to improve on lighter loads. The dynamic matches a lifter managing fatigue and caloric deficit intelligently.
+
+**Quality read against the payload's real ground truth, not taken on
+trust** — six highlights (inside the "typically 3–6" guidance, not
+exhaustive), a genuine `"cross"`-kind highlight used correctly (a pattern
+spanning multiple buckets, not forced), no fabricated per-bucket average
+anywhere. Spot-checked the Cable Reverse Biceps Curl highlight's "35 days"
+claim against the actual `input_snapshot`: both PULL occurrences show
+`secondaryReference: { kind: "found", daysSince: 35, ... }` — exact match,
+not approximated.
+
+**One real, worth-recording imprecision, found by that same check, not
+hidden**: the Cable Reverse Biceps Curl highlight's *headline* says "not
+logged this week," which the prompt explicitly tells the model never to
+say — but the *comment* body correctly self-corrects ("This is a skip, not
+a new exercise"). Root cause, confirmed against the payload: both
+occurrences have `match.plain.slotCountA: 0` **and** `slotCountB: 0` —
+the current PULL sessions also had zero real sets for this exercise (the
+symmetric double-skip case), so `secondaryReference.match` has
+`matchedSlotCount: 0` too — no matched item ever reaches `slots[]`, only
+the count `extraSlotsA: 2`. The model correctly had no real weight/rep
+numbers to cite (and didn't fabricate any) but reached for looser headline
+phrasing than the comment body used. Not a payload bug — the same
+"symmetric case exposes only counts, not matched values" shape
+`coachPrompt.ts` v3 already handles correctly for the daily prompt when
+`secondaryReference` itself is absent; here it's `secondaryReference`
+present but internally symmetric, a one-level-deeper version of the same
+shape neither prompt currently calls out by name. Worth a future
+`WEEK_PROMPT_VERSION`/`PROMPT_VERSION` bump once more real samples confirm
+it recurs — not fixed this session, consistent with "observe real output
+before iterating," same posture as the still-open tone question.
+
+### Status
+
+Step 7 is built, typechecked, tested, and verified end-to-end against real
+production data — including the one real, permanent, irreversible
+generation SPEC §9 makes structurally unrepeatable. **Not yet deployed to
+Vercel** (`api/coach/analyze-week.ts` exists locally, verified by direct
+invocation, not via a live HTTPS endpoint) and **not committed** — this
+session was not asked to do either, per this project's standing "commit
+only when explicitly asked" rule. Step 8 (UI — the Session/Week sub-tab
+restructure) and step 9 (adversarial review, deploy, this file) remain.
+
+### Follow-up, same day — the one gap direct invocation couldn't close: real .js-extension audit
+
+Direct local invocation (above) proves the handler's *logic* is correct
+against real data, but Node's local module resolution can be more lenient
+than Vercel's actual Node builder — exactly the gap that produced the
+original `ERR_MODULE_NOT_FOUND` bug on daily's first deploy (`49a2c93`,
+2026-08-18), which local `npx tsx`/Vitest runs never caught either. So
+this was checked directly rather than inferred from the successful local
+call, same discipline TASKS §7.13 established for the daily function.
+
+Grepped all three of step 7's new files — `coachApiAuth.ts`,
+`api/coach/analyze-week.ts`, `coachWeekPrompt.ts` — for every relative
+import (`from '...'`, plus a separate exhaustive pass for `require(`/
+dynamic `import(` in case anything used a different form; none did).
+**All clean, nothing to fix:**
+- `coachApiAuth.ts` — zero relative imports (`@supabase/supabase-js` and
+  `@vercel/node` only, both package imports, no extension concern).
+- `coachWeekPrompt.ts` — zero imports of any kind (a self-contained string
+  + number constant).
+- `api/coach/analyze-week.ts` — 6 relative imports
+  (`coachApiAuth.js`/`weekResolution.js`/`weekAnalysisInput.js`/
+  `coachWeekPrompt.js`/`weightLogic.js`/`types/index.js`), every one
+  already carrying an explicit `.js` extension.
+
+**Bonus check, not asked for but same reachable chain**: `weekResolution.ts`
+(modified, not new, this session — added `assembleWeekResolution`) also
+confirmed clean, both its relative imports (`./weightLogic.js`,
+`../../types/index.js`) already extensioned, including the ones this
+session's own edit added.
+
+**One thing noticed in passing, not a defect**: `types/index.ts`'s two
+`import type` lines (`AnalysisInput` from `analysisInput`,
+`WeekAnalysisInput` from `weekAnalysisInput` — the second added this
+session, matching the first's pre-existing, un-extensioned form) lack
+`.js`. Not fixed, because it isn't the same bug class: `import type` is
+fully erased by the TypeScript compiler — no corresponding statement
+exists in the compiled JS output for Node to resolve at runtime, unlike
+the *value* imports `49a2c93` actually fixed. The daily `AnalysisInput`
+line has shipped in production, deployed, since 2026-08-18 with no
+`ERR_MODULE_NOT_FOUND` — empirical confirmation this specific shape is
+safe, not just a theoretical argument. Flagged here so a future session
+finds the reasoning rather than re-flagging it as a live risk.
+
+No code changed — typecheck/tests/build were already confirmed clean at
+the end of the prior entry and nothing here altered any file, so
+re-running them would only reconfirm the same state.
 
 ---
 
