@@ -1257,12 +1257,17 @@ See "2026-08-22 session (fix: session-skip reclassification +
 meso-scoped reach-back + coachPrompt.ts v3 + the real Weekly Analysis dry
 run)" below for the full account.**
 
-**Coach — Weekly Analysis: steps 1–7 now built and verified (step 7
-completed 2026-08-23 — `coachApiAuth.ts`/`api/coach/analyze-week.ts`/
-`coachWeekPrompt.ts`, first real Weekly Analysis ever generated, id
-`0c9951ef-...`, week 2026-08-17). Not yet deployed to Vercel or committed —
-not asked to do either this session. Step 8 (UI — Session/Week sub-tab
-restructure) and step 9 (adversarial review, deploy, this file) remain.**
+**Coach — Weekly Analysis: all nine steps built, reviewed, committed,
+pushed, deployed, and live-verified as of 2026-08-23.** Session/Week
+sub-tab UI live at `overload-v2-sage.vercel.app/coach`; the one real
+analysis (`0c9951ef-...`, week 2026-08-17) renders correctly end to end,
+including working exercise deep-links. **One thing genuinely still open,
+not a build gap**: the live-HTTPS generation path through
+`api/coach/analyze-week.ts` (an actual `ANALYZE` click through the
+deployed UI) has never been exercised — every real generation so far was
+local direct invocation. Stays open until the next week resolves
+(~2026-08-30). See "2026-08-23 session (Coach — step 8...)" below for the
+full account.
 `COACH-WEEK-ANALYSIS-SPEC.md` (Adam) and `COACH-WEEK-ANALYSIS-TASKS.md`
 (2026-08-19, still formally "awaiting review" though most of it has since
 been executed) are the pair. Steps 1–4 and the tagging pass (step 3) are
@@ -10486,6 +10491,205 @@ finds the reasoning rather than re-flagging it as a live risk.
 No code changed — typecheck/tests/build were already confirmed clean at
 the end of the prior entry and nothing here altered any file, so
 re-running them would only reconfirm the same state.
+
+---
+
+## 2026-08-23 session (Coach — step 8: Analysis tab restructure + Week sub-tab, adversarial review, deploy)
+
+Read CONTEXT.md, COACH-WEEK-ANALYSIS-SPEC.md, and COACH-WEEK-ANALYSIS-TASKS.md
+first, as instructed. Built step 8 in full (§8a + §8b), ran step 9's
+scoped adversarial review and fixed everything it found, committed,
+pushed, deployed, and live-verified everything provable right now.
+
+### 8a — Session sub-tab restructure, confirmed behaviour-neutral for real
+
+`CoachSessionAnalysisTab.tsx` is the old `CoachAnalysisTab.tsx`'s body
+moved verbatim — confirmed with an actual diff (not "the code didn't
+change" asserted from memory): `diff` between the two files with only the
+identifier renamed showed the *only* difference was a 5-line explanatory
+comment I added; the component itself is byte-for-byte identical.
+`CoachAnalysisTab.tsx` is now a thin Session/Week sub-tab container
+(default `session`, underline-style nested tab bar so the two-level
+hierarchy reads as page-tab > sub-tab, not two rows of equal weight).
+Live-verified against the deployed build below, not just the code-level
+diff.
+
+### 8b — Week sub-tab, same shape as Session, nothing new invented at this layer
+
+`coachWeekService.ts` — `fetchAnalyzableWeeks` reuses
+`COACH_ANALYSIS_START_DATE` (`coachService.ts`) exactly as-is, comparing
+instant-to-instant (`completedAt >= COACH_ANALYSIS_START_DATE`) the same
+way daily's own `fetchAnalyzableSessions` does — deliberately does **not**
+convert the cutoff into a "floor Monday" by hand (a real timezone-slip
+risk given the constant is a UTC instant representing local midnight in
+Poland), letting candidate weeks fall out naturally from which weeks
+contain a qualifying session. Fetches mesocycles/programs/workout days/
+sessions once (client-side, free to reuse `mesoService.ts`/
+`programService.ts` directly — no cold-start concern here, unlike
+`assembleWeekResolution`'s server-side equivalent), then calls the pure
+`resolveWeek` per candidate week and diffs against existing
+`v2_coach_week_analyses` rows, same pattern as daily's two-query diff.
+
+`useCoachWeekAnalysis.ts` / `CoachWeekAnalysisTab.tsx` mirror
+`useCoachAnalysis.ts`/`CoachSessionAnalysisTab.tsx` exactly — same
+key-hoisting, same `enabled: !!user`, same in-flight/error states keyed
+off mutation `variables`, same online-only empty state.
+
+`WeekAnalysisDetail.tsx` mirrors `AnalysisDetail.tsx`'s padding and
+provenance footer (TASKS §8b's explicit instruction, including not
+touching the pre-existing nested-padding quirk). Renders `content.overall`
+then each highlight — a bucket tag (`SIDE_DELT`, `CROSS`, etc., visually
+distinct styling for `'cross'` vs the two real bucket axes) plus headline,
+comment, and exercise chips. **`exerciseIds` filtered at render time
+against the real ids in `inputSnapshot.occurrences`** — a hallucinated id
+is silently dropped rather than producing a broken link or failing the
+whole view; unlike daily's per-exercise comments (one entry per real
+exercise, structurally guaranteed by the schema), a weekly highlight's
+`exerciseIds` is a free-form array the model populates itself, a real
+hallucination surface daily's shape doesn't have (TASKS §3.2's own note).
+
+### Step 9's adversarial review — scoped to the new attack surface, not a repeat of daily's checklist
+
+Three-dimension Workflow review pointed exactly where instructed: auth
+reuse, completeness re-derivation (the attack surface daily's function
+never had), and idempotency on `api/coach/analyze-week.ts` — each finding
+adversarially re-verified by a separate agent. **Auth: no findings** — all
+four of step G's hardening details survive the `coachApiAuth.ts`
+extraction intact, confirmed against the actual pre-extraction diff.
+
+**Five real, confirmed findings — all fixed before committing:**
+
+1. **HIGH — nondeterministic mesocycle-transition-day ambiguity,
+   `mesoForDate` (`weekResolution.ts`).** `useCreateMeso` stamps the old
+   meso's `end_date` and the new meso's `start_date` to the *same* "today"
+   (both inclusive bounds) — confirmed in `mesoService.ts`. On every
+   transition day, two mesocycles match the same date, and with no
+   `.order()` on the fetch, `.find()` silently returned whichever Postgres
+   happened to return first. If the two programs' schedules disagreed for
+   that weekday, the loser's expected session was dropped from
+   `expected[]` entirely — not misattributed, *removed from the
+   completeness requirement* — so an actually-incomplete week could
+   resolve `isComplete: true` and be permanently stored wrong (SPEC §9 has
+   no regeneration path). Verified as deterministic-in-occurrence (fires
+   on every transition, not a rare race). **Fixed**: `mesoForDate` now
+   finds every match and deterministically prefers the most recently
+   *started* meso, so the result no longer depends on unspecified row
+   order — verified with a direct node check confirming the same result
+   regardless of input array order. **Which program should actually
+   govern a shared boundary day is a real, separate product question this
+   does not resolve** — the underlying overlap is pre-existing, accepted
+   application-layer behaviour (`001_v2_schema.sql`: no DB exclusion
+   constraint prevents it), not something introduced or fully closed here.
+2. **MEDIUM — TOCTOU gap between the completeness check and the insert.**
+   `assembleWeekResolution` and `assembleWeekAnalysisInput` are
+   independent, unsynchronized queries with the ~21s Anthropic call
+   sitting between them; nothing re-validated completeness immediately
+   before the insert. Confirmed reachable by ordinary single-account
+   action, no attacker needed — `reopenSession` genuinely flips a
+   `completed` session back to `in_progress`, and if that happens to a
+   session in the week being analyzed while the request is in flight, the
+   stored row would describe a week that's no longer actually complete,
+   permanently. **Fixed**: `analyze-week.ts` now re-runs
+   `assembleWeekResolution` immediately before the insert; if the week is
+   no longer complete at that point, the generated content is logged
+   server-side and returned in a `409` rather than saved — same §7.17
+   accepted-risk treatment (money already spent, never silently
+   discarded) applied to the one new failure mode this closes.
+3. **LOW/robustness — a calendar-invalid `weekStart` crashed instead of
+   400.** `weekKey('2026-02-30')` passes the regex but throws an uncaught
+   `RangeError` inside `date-fns`'s `format` — reproduced directly with
+   `node -e` before and after the fix. **Fixed**: wrapped in try/catch,
+   returns a clean 400.
+4. **LOW — `v2_workout_days` query in `assembleWeekResolution` missing
+   `.eq('user_id', userId)`**, inconsistent with every other query in the
+   same function and with the equivalent lookup in `weekAnalysisInput.ts`.
+   Confirmed not exploitable (RLS covers it, and `program_id` is already
+   transitively user-scoped) but a real deviation from the project's own
+   defence-in-depth convention. **Fixed**: filter added.
+5. **LOW/cosmetic — misleading error message on a rare 23505
+   race-recovery failure.** If the re-select after a unique-constraint
+   race itself fails or returns nothing, the code fell through to "Analysis
+   was generated but failed to save" — backwards, since a 23505 means a
+   concurrent request's row *did* save. **Fixed**: a distinct message for
+   this specific branch.
+
+Typecheck, all 212 Vitest tests, and `vite build` clean after every fix.
+
+### Commit + push + deploy
+
+Two commits, both explicitly requested together and pushed together:
+`5f713b8` (the reach-back fix — session-skip reclassification,
+`resolveSecondaryReference`, `coachPrompt.ts` v3, the client-side error
+surfacing, migration 015) and `ac064ff` (the full Weekly Analysis feature
+through step 9 — everything from the payload assembler through this
+session's UI and review fixes, including the migrations/tagging doc/spec
+docs that had been sitting uncommitted since earlier sessions). Pushed to
+`origin/master` (`65db73f..ac064ff`). **Confirmed via `vercel ls --prod` /
+`vercel inspect`**: fresh Production deployment (`dpl_HWL32gxwAz58qBe6zuumWx19znBg`),
+`● Ready`, aliased to `overload-v2-sage.vercel.app` (the domain actually
+serving the app). Build output confirmed **both** `api/coach/analyze` and
+`api/coach/analyze-week` compiled as real Vercel functions — the first
+real deployment of `analyze-week.ts` since it was written.
+
+### Live verification — everything provable right now, nothing more attempted
+
+Against the deployed build, not local state:
+- **Session sub-tab**: renders the real, unchanged list — 5 real daily
+  analyses (more now exist than the 2 on record from earlier sessions;
+  real usage between sessions, not something this session did), "TO
+  ANALYZE" correctly empty. Regression confirmed live, not just via the
+  earlier diff.
+- **Week sub-tab, "To analyze"**: correctly empty, correct copy ("A week
+  becomes available once every session in it is completed or skipped.") —
+  the only complete week (2026-08-17) already has its one analysis, and no
+  other week is complete yet (today, 2026-08-23, is that same week's own
+  last day).
+- **Week sub-tab, "Analyses"**: shows exactly the one real analysis
+  (`0c9951ef-...`), overall text matching verbatim what was recorded in
+  the prior session's entry.
+- **Week detail view**: opened it live — `OVERALL` panel plus all 6
+  highlights rendered correctly, each with its real bucket tag
+  (`SIDE_DELT`/`MID_CHEST`/`LATS`/`QUADS`/`FOREARMS` styled one way,
+  `CROSS` visually distinct), real headline/comment text matching the
+  prior entry verbatim, and real exercise deep-link chips. **Clicked one**
+  ("Cable Lateral Raise") — navigated correctly to its real Exercise
+  Progress page (weight-trend chart, real set history), confirming the
+  hallucination-filtered `exerciseId` deep-link actually works end to end,
+  not just that it didn't crash. Provenance footer correct:
+  `claude-haiku-4-5-20251001 · prompt v1 · Aug 23, 2026 · 2:09 AM`.
+- Zero console errors and zero non-200 network requests across the entire
+  flow.
+- **Did not trigger a new real generation** — no complete, unanalyzed week
+  exists yet to trigger one against, per explicit instruction.
+
+### What remains genuinely unverified — recorded explicitly, not glossed over
+
+**The live-HTTPS generation path through `api/coach/analyze-week.ts` has
+never been exercised.** Every real, permanent test so far — the one real
+analysis that exists (`0c9951ef-...`) — was created via **direct local
+invocation** of the handler function (prior session), not a real HTTP
+POST through the deployed endpoint via the actual UI's `ANALYZE` button.
+This function is now deployed and its auth/completeness/idempotency logic
+has been read, tested, and adversarially reviewed — but the literal
+"click ANALYZE in the browser, the request actually leaves the browser,
+hits Vercel, and a new row comes back" path is unproven, matching exactly
+the gap daily's own history flagged before its step F/G live click-through
+(CONTEXT.md, 2026-08-18 — "the first time the *actual UI-driven* analyze
+flow... has been exercised at all"). **Stays open until the next week
+resolves (~2026-08-30) and a real, un-analyzed complete week exists to
+click ANALYZE against for the first time through the deployed endpoint.**
+Nothing to do about this sooner — there is no complete, unanalyzed week to
+test it against right now, and manufacturing one would mean fabricating
+session data, not a real test.
+
+### Status
+
+Step 8 built and live-verified. Step 9's review, fixes, and deploy are
+done. `COACH-WEEK-ANALYSIS-TASKS.md`'s full plan (steps 1–9) is now built,
+committed, pushed, and deployed. The one thing still genuinely open is the
+live-HTTPS generation path above — not a build gap, a real-world-time gap,
+same category as every other "needs a real complete week" wait this
+feature has had throughout.
 
 ---
 
