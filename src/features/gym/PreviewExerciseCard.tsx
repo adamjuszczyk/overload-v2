@@ -11,6 +11,10 @@ interface PreviewExerciseCardProps {
   plannedSets: WeekPlanSet[]
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
+  referenceMesocycleId: string | null
+  referenceIsError: boolean
+  referenceIsFromCache: boolean
+  onRetryReference: () => void
   today: string
 }
 
@@ -21,6 +25,10 @@ export default function PreviewExerciseCard({
   plannedSets,
   referenceSessions,
   referenceLoading,
+  referenceMesocycleId,
+  referenceIsError,
+  referenceIsFromCache,
+  onRetryReference,
   today,
 }: PreviewExerciseCardProps) {
   // Heads only, stages nested beneath (§2.7 item 7) — a planned dropset's
@@ -42,6 +50,10 @@ export default function PreviewExerciseCard({
             today={today}
             sessions={referenceSessions}
             isLoading={referenceLoading}
+            mesocycleId={referenceMesocycleId}
+            isError={referenceIsError}
+            isFromCache={referenceIsFromCache}
+            onRetry={onRetryReference}
             weightUnit={resolvedWeightUnit}
           />
         </div>

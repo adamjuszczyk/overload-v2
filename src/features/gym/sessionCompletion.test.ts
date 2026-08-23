@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deriveCompletedAt } from './sessionCompletion'
+import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
 describe('deriveCompletedAt', () => {
   it('returns null for zero eligible rows — must not fall back to wall-clock time', () => {
@@ -88,5 +88,30 @@ describe('deriveCompletedAt', () => {
       undefined as unknown as { loggedAt: string },
     ]
     expect(deriveCompletedAt(logs)).toBe('2026-08-11T10:00:00.000Z')
+  })
+})
+
+describe('shouldClassifyAsSkipped', () => {
+  it('false for zero rows — a session logged with nothing is a different, pre-existing case, not reclassified here', () => {
+    expect(shouldClassifyAsSkipped([])).toBe(false)
+  })
+
+  it('true when every row is skipped — the real 2026-08-15 Legs session shape (10 rows, all is_skipped)', () => {
+    const logs = Array.from({ length: 10 }, () => ({ isSkipped: true }))
+    expect(shouldClassifyAsSkipped(logs)).toBe(true)
+  })
+
+  it('false when even one row is a real (non-skipped) set', () => {
+    const logs = [{ isSkipped: true }, { isSkipped: true }, { isSkipped: false }]
+    expect(shouldClassifyAsSkipped(logs)).toBe(false)
+  })
+
+  it('false for a normal fully-logged session (no skips at all)', () => {
+    const logs = [{ isSkipped: false }, { isSkipped: false }, { isSkipped: false }]
+    expect(shouldClassifyAsSkipped(logs)).toBe(false)
+  })
+
+  it('true for a single all-skipped row', () => {
+    expect(shouldClassifyAsSkipped([{ isSkipped: true }])).toBe(true)
   })
 })

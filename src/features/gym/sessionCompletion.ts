@@ -58,3 +58,25 @@ export function deriveCompletedAt(logs: LoggedAtRow[]): string | null {
   }
   return latest?.loggedAt ?? null
 }
+
+// A session where every logged set was individually skipped is not
+// meaningfully "completed" — 2026-08-22's real-bug diagnosis found exactly
+// this: a session that landed as status 'completed' with all 10 of its
+// v2_set_logs rows is_skipped: true, which resolveExerciseReference then
+// correctly (by its own rules) treated as a legitimate LAST WEEK candidate —
+// producing an analysis that read "wasn't logged last week" for exercises
+// that WERE logged, just skipped. See CONTEXT.md. Fixing the semantic gap at
+// the source (never writing status: 'completed' for this shape) is more
+// robust than teaching every downstream consumer to special-case it.
+//
+// A session with ZERO logged sets is a different, pre-existing case (FINISH
+// SESSION has no gate requiring anything be logged first) — `.every()` on an
+// empty array is vacuously true, which would wrongly reclassify it, so this
+// requires at least one row.
+export interface SkippedRow {
+  isSkipped: boolean
+}
+
+export function shouldClassifyAsSkipped(logs: SkippedRow[]): boolean {
+  return logs.length > 0 && logs.every((log) => log.isSkipped)
+}

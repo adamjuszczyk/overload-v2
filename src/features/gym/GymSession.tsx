@@ -41,6 +41,10 @@ function ExerciseSection({
   sessionId,
   referenceSessions,
   referenceLoading,
+  referenceMesocycleId,
+  referenceIsError,
+  referenceIsFromCache,
+  onRetryReference,
   today,
   onLog,
   onUpdateSet,
@@ -52,6 +56,10 @@ function ExerciseSection({
   sessionId: string
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
+  referenceMesocycleId: string | null
+  referenceIsError: boolean
+  referenceIsFromCache: boolean
+  onRetryReference: () => void
   today: string
   onLog: (params: {
     exerciseId: string
@@ -86,6 +94,10 @@ function ExerciseSection({
       lastLogsLoading={lastLogsLoading}
       referenceSessions={referenceSessions}
       referenceLoading={referenceLoading}
+      referenceMesocycleId={referenceMesocycleId}
+      referenceIsError={referenceIsError}
+      referenceIsFromCache={referenceIsFromCache}
+      onRetryReference={onRetryReference}
       today={today}
       onLog={onLog}
       onUpdateSet={onUpdateSet}
@@ -138,7 +150,13 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // is a hook), so it's placed before the showComplete early return below,
   // fed by activeExercises so it also works from the offline-cached
   // exercise list.
-  const { data: referenceSessionsByExercise, isLoading: referenceLoading } = useExerciseReferenceSessions(
+  const {
+    data: referenceSessionsByExercise,
+    isLoading: referenceLoading,
+    isError: referenceIsError,
+    isFromCache: referenceIsFromCache,
+    retry: retryReference,
+  } = useExerciseReferenceSessions(
     workoutDay.id,
     activeExercises.map((pe) => pe.exerciseId),
     sessionId,
@@ -197,6 +215,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               sessionId={sessionId}
               referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
               referenceLoading={referenceLoading}
+              referenceMesocycleId={session?.mesocycleId ?? null}
+              referenceIsError={referenceIsError}
+              referenceIsFromCache={referenceIsFromCache}
+              onRetryReference={retryReference}
               today={today}
               onLog={(params) => {
                 // Phase 3.1 retires AUDIT M5's inference heuristic on this

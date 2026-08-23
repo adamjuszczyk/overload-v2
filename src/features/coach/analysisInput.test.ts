@@ -59,6 +59,7 @@ function makeExerciseSource(overrides: Partial<AnalysisInputExerciseSource> = {}
     reference: { type: 'first_time' },
     referenceLogs: null,
     isDeloadReference: null,
+    secondaryCandidates: [],
     ...overrides,
   }
 }
@@ -68,6 +69,7 @@ function baseArgs(overrides: Partial<BuildAnalysisInputArgs> = {}): BuildAnalysi
     session: { id: 'session-current', date: '2026-08-18', workoutDayName: 'Push 1' },
     isDeloadCurrent: false,
     exercises: [makeExerciseSource()],
+    currentMesocycleId: 'meso-1',
     phaseEntries: [],
     weightEntries: [],
     ...overrides,
@@ -85,7 +87,7 @@ describe('buildAnalysisInput — reference labelling (§5.5)', () => {
   it('last_week: labelled with the reference session, match computed from both logs', () => {
     const reference: PrimarySlot = {
       type: 'last_week',
-      session: { sessionId: 'session-ref', date: '2026-08-11', completedAt: null, logs: [] },
+      session: { sessionId: 'session-ref', date: '2026-08-11', completedAt: null, mesocycleId: 'meso-1', logs: [] },
     }
     const args = baseArgs({
       exercises: [
@@ -111,7 +113,7 @@ describe('buildAnalysisInput — reference labelling (§5.5)', () => {
   it('last_time: carries daysSince, distinguishing a gap from a clean weekly comparison', () => {
     const reference: PrimarySlot = {
       type: 'last_time',
-      session: { sessionId: 'session-ref', date: '2026-07-14', completedAt: null, logs: [] },
+      session: { sessionId: 'session-ref', date: '2026-07-14', completedAt: null, mesocycleId: 'meso-1', logs: [] },
       daysSince: 35,
     }
     const args = baseArgs({
@@ -140,6 +142,175 @@ describe('buildAnalysisInput — reference labelling (§5.5)', () => {
     })
     const result = buildAnalysisInput(args)
     expect(result.exercises[0].isDeloadReference).toBeNull()
+  })
+})
+
+describe('buildAnalysisInput — secondaryReference reach-back (2026-08-22 fix)', () => {
+  // Real reference session, but every logged set was skipped — the exact
+  // 2026-08-15 Legs shape this fix targets. Shared by every test below;
+  // only `secondaryCandidates` (and sometimes currentLogs) varies.
+  const allSkippedReference: AnalysisInputExerciseSource = {
+    exerciseId: 'ex1',
+    exerciseName: 'Squat',
+    currentLogs: [makeSetLog({ weight: 100, reps: 5, rir: 2 })],
+    reference: {
+      type: 'last_week',
+      session: { sessionId: 'session-ref', date: '2026-08-15', completedAt: null, mesocycleId: 'meso-1', logs: [] },
+    },
+    referenceLogs: [makeSetLog({ id: 'r1', sessionId: 'session-ref', isSkipped: true, weight: null, reps: null, rir: null })],
+    isDeloadReference: false,
+    secondaryCandidates: [],
+  }
+
+  it('the existing working case: primary already has real comparable sets — secondaryReference stays null, reach-back never runs', () => {
+    const result = buildAnalysisInput(baseArgs({ exercises: [makeExerciseSource()] }))
+    // makeExerciseSource's default reference is first_time (match is null,
+    // so the trigger can't fire either) — covers "never runs" from both the
+    // first_time side and the "nothing to reach back from" side.
+    expect(result.exercises[0].secondaryReference).toBeNull()
+  })
+
+  it('a real reference session with real sets does not trigger reach-back even with secondaryCandidates present', () => {
+    const args = baseArgs({
+      exercises: [
+        makeExerciseSource({
+          reference: {
+            type: 'last_week',
+            session: { sessionId: 'session-ref', date: '2026-08-11', completedAt: null, mesocycleId: 'meso-1', logs: [] },
+          },
+          referenceLogs: [makeSetLog({ id: 'r1', sessionId: 'session-ref', weight: 95 })],
+          secondaryCandidates: [
+            { sessionId: 'session-older', date: '2026-08-04', completedAt: null, mesocycleId: 'meso-1', logs: [{ head: makeSetLog({ id: 'o1', isSkipped: false }), stages: [] }] },
+          ],
+        }),
+      ],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].match!.plain.slotCountA).toBe(1)
+    expect(result.exercises[0].secondaryReference).toBeNull()
+  })
+
+  it('found: reach-back finds the most recent real occurrence within the current meso', () => {
+    const args = baseArgs({
+      currentMesocycleId: 'meso-1',
+      exercises: [
+        {
+          ...allSkippedReference,
+          secondaryCandidates: [
+            // Older, real — the one that should be found.
+            {
+              sessionId: 'session-older',
+              date: '2026-08-01',
+              completedAt: null,
+              mesocycleId: 'meso-1',
+              logs: [{ head: makeSetLog({ id: 'o1', sessionId: 'session-older', weight: 95, reps: 6, isSkipped: false }), stages: [] }],
+            },
+            // Even older, also real — must not win over the more recent one.
+            {
+              sessionId: 'session-oldest',
+              date: '2026-07-25',
+              completedAt: null,
+              mesocycleId: 'meso-1',
+              logs: [{ head: makeSetLog({ id: 'oo1', sessionId: 'session-oldest', weight: 90, isSkipped: false }), stages: [] }],
+            },
+            // The all-skipped primary itself — must not be re-selected.
+            {
+              sessionId: 'session-ref',
+              date: '2026-08-15',
+              completedAt: null,
+              mesocycleId: 'meso-1',
+              logs: [{ head: makeSetLog({ id: 'r1', sessionId: 'session-ref', isSkipped: true }), stages: [] }],
+            },
+          ],
+        },
+      ],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].secondaryReference).toMatchObject({
+      kind: 'found',
+      sessionId: 'session-older',
+      date: '2026-08-01',
+    })
+    if (result.exercises[0].secondaryReference?.kind === 'found') {
+      // 2026-08-18 (session date) - 2026-08-01
+      expect(result.exercises[0].secondaryReference.daysSince).toBe(17)
+      expect(result.exercises[0].secondaryReference.match.plain.slots[0].head.a.weight).toBe(95)
+    }
+  })
+
+  it('found: never reaches into a previous mesocycle, even when it has real data more recent than anything in the current one', () => {
+    const args = baseArgs({
+      currentMesocycleId: 'meso-1',
+      exercises: [
+        {
+          ...allSkippedReference,
+          secondaryCandidates: [
+            {
+              sessionId: 'session-prev-meso',
+              date: '2026-08-01', // more recent than nothing else exists, but wrong meso
+              completedAt: null,
+              mesocycleId: 'meso-0',
+              logs: [{ head: makeSetLog({ id: 'p1', sessionId: 'session-prev-meso', weight: 95, isSkipped: false }), stages: [] }],
+            },
+          ],
+        },
+      ],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].secondaryReference).toEqual({ kind: 'none_in_meso' })
+  })
+
+  it('none_in_meso: this exercise never appears anywhere in the current meso at all', () => {
+    const args = baseArgs({
+      currentMesocycleId: 'meso-1',
+      exercises: [{ ...allSkippedReference, secondaryCandidates: [] }],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].secondaryReference).toEqual({ kind: 'none_in_meso' })
+  })
+
+  it('all_skipped_in_meso: it appears this meso, but every occurrence — including the primary — was skipped', () => {
+    const args = baseArgs({
+      currentMesocycleId: 'meso-1',
+      exercises: [
+        {
+          ...allSkippedReference,
+          secondaryCandidates: [
+            {
+              sessionId: 'session-also-skipped',
+              date: '2026-08-08',
+              completedAt: null,
+              mesocycleId: 'meso-1',
+              logs: [{ head: makeSetLog({ id: 's1', sessionId: 'session-also-skipped', isSkipped: true }), stages: [] }],
+            },
+          ],
+        },
+      ],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].secondaryReference).toEqual({ kind: 'all_skipped_in_meso' })
+  })
+
+  it('there is no currentMesocycleId at all: resolves to none_in_meso rather than throwing', () => {
+    const args = baseArgs({
+      currentMesocycleId: null,
+      exercises: [
+        {
+          ...allSkippedReference,
+          secondaryCandidates: [
+            {
+              sessionId: 'session-older',
+              date: '2026-08-01',
+              completedAt: null,
+              mesocycleId: null,
+              logs: [{ head: makeSetLog({ id: 'o1', sessionId: 'session-older', isSkipped: false }), stages: [] }],
+            },
+          ],
+        },
+      ],
+    })
+    const result = buildAnalysisInput(args)
+    expect(result.exercises[0].secondaryReference).toEqual({ kind: 'none_in_meso' })
   })
 })
 
@@ -177,7 +348,7 @@ describe('buildAnalysisInput — session-level fields', () => {
           currentLogs: [makeSetLog({ exerciseId: 'ex2' })],
           reference: {
             type: 'last_week',
-            session: { sessionId: 'session-ref2', date: '2026-08-11', completedAt: null, logs: [] },
+            session: { sessionId: 'session-ref2', date: '2026-08-11', completedAt: null, mesocycleId: 'meso-1', logs: [] },
           },
           referenceLogs: [makeSetLog({ id: 'r2', exerciseId: 'ex2', sessionId: 'session-ref2' })],
         }),

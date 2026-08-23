@@ -30,11 +30,23 @@ export default function SessionPreview({
 
   // No active session yet — currentSessionId is null, same as the old
   // PreviewExerciseCard's own currentSessionId={null} usage.
-  const { data: referenceSessionsByExercise, isLoading: referenceLoading } = useExerciseReferenceSessions(
+  const {
+    data: referenceSessionsByExercise,
+    isLoading: referenceLoading,
+    isError: referenceIsError,
+    isFromCache: referenceIsFromCache,
+    retry: retryReference,
+  } = useExerciseReferenceSessions(
     workoutDay.id,
     programExercises.map((pe) => pe.exerciseId),
     null,
   )
+  // No session row exists yet to read mesocycle_id off of — the upcoming
+  // week plan's is the best available stand-in (null when there's no plan
+  // for this week, e.g. an off-schedule preview); resolveSecondaryReference
+  // degrades to `none_in_meso` rather than crashing on null, so this is
+  // never worse than the feature simply not showing here.
+  const previewMesocycleId = weekPlan?.mesocycleId ?? null
 
   return (
     <div className="pb-24">
@@ -90,6 +102,10 @@ export default function SessionPreview({
               plannedSets={plannedSets}
               referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
               referenceLoading={referenceLoading}
+              referenceMesocycleId={previewMesocycleId}
+              referenceIsError={referenceIsError}
+              referenceIsFromCache={referenceIsFromCache}
+              onRetryReference={retryReference}
               today={today}
             />
           )

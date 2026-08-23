@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveExerciseReference, type PrimarySlot } from '../gym/referenceLogic.js'
+import {
+  resolveExerciseReference,
+  resolveSecondaryReference,
+  type PrimarySlot,
+  type SecondaryReference,
+} from '../gym/referenceLogic.js'
 import type { ReferenceSession } from '../gym/sessionService.js'
 import { matchSessionsByPosition, type PositionMatchResult } from '../progress/positionMatch.js'
 import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic.js'
@@ -41,6 +46,19 @@ export type AnalysisInputReference =
   | { kind: 'last_week'; sessionId: string; date: string }
   | { kind: 'last_time'; sessionId: string; date: string; daysSince: number }
 
+// Reach-back (2026-08-22 fix, CONTEXT.md): the primary reference above can
+// legitimately resolve to a real session that had nothing comparable in it
+// (every set for this exercise was individually skipped — date-based session
+// selection and set-level comparability are deliberately separate concerns,
+// see referenceLogic.ts). When that happens, this searches backward within
+// the *current mesocycle only* (never a previous one — a different training
+// block's programming isn't a fair "last time" comparison) for the most
+// recent occurrence that actually has real logged data.
+export type AnalysisInputSecondaryReference =
+  | { kind: 'none_in_meso' } // this exercise never appears, with real data or not, anywhere in the current meso
+  | { kind: 'all_skipped_in_meso' } // it appears this meso, but every occurrence was skipped too
+  | { kind: 'found'; sessionId: string; date: string; daysSince: number; match: PositionMatchResult }
+
 export interface AnalysisInputExercise {
   exerciseId: string
   exerciseName: string
@@ -55,6 +73,13 @@ export interface AnalysisInputExercise {
   // null exactly when reference.kind === 'first_time' — matchSessionsByPosition
   // needs two sessions, and first_time has only one.
   match: PositionMatchResult | null
+  // Present exactly when `reference` resolved to a real session
+  // (last_week/last_time) but `match` shows zero real comparable sets on the
+  // reference side (`match.plain.slotCountA === 0 && match.dropsets.slotCountA
+  // === 0`) — null in every other case, including first_time (nothing to
+  // reach back from) and the ordinary case where the primary already had
+  // real data.
+  secondaryReference: AnalysisInputSecondaryReference | null
 }
 
 export interface AnalysisInput {
@@ -96,12 +121,26 @@ export interface AnalysisInputExerciseSource {
   // when reference.type === 'first_time'.
   referenceLogs: SetLog[] | null
   isDeloadReference: boolean | null
+  // The same unfiltered candidate list resolveExerciseReference itself
+  // consumed to resolve `reference` above — reused, not re-fetched, so
+  // buildExercise's reach-back (secondaryReference) is one implementation,
+  // not a second copy that could drift (COACH-WEEK-ANALYSIS-TASKS.md's own
+  // "reused verbatim" precedent for reference/match). Only ever walked when
+  // the primary's comparable sets turn out to be all-skipped.
+  secondaryCandidates: ReferenceSession[]
 }
 
 export interface BuildAnalysisInputArgs {
   session: { id: string; date: string; workoutDayName: string | null }
   isDeloadCurrent: boolean | null
   exercises: AnalysisInputExerciseSource[]
+  // The current session's own mesocycle (v2_sessions.mesocycle_id) — kept
+  // separate from `session` above (not nested inside it) so it can never
+  // accidentally leak into AnalysisInput.session's output shape, which
+  // deliberately omits it (buildAnalysisInput below assigns `args.session`
+  // straight through to the output). Needed only to scope the reach-back
+  // search to "within the current meso," never a previous one.
+  currentMesocycleId: string | null
   phaseEntries: PhaseEntry[]
   weightEntries: WeightEntry[]
 }
@@ -122,7 +161,35 @@ function toReference(ref: PrimarySlot): AnalysisInputReference {
   }
 }
 
-function buildExercise(source: AnalysisInputExerciseSource, currentSessionId: string, currentDate: string): AnalysisInputExercise {
+function toSecondaryReference(
+  secondary: SecondaryReference,
+  currentSessionId: string,
+  currentDate: string,
+  currentLogs: SetLog[],
+): AnalysisInputSecondaryReference {
+  if (secondary.type !== 'found') return { kind: secondary.type }
+  return {
+    kind: 'found',
+    sessionId: secondary.session.sessionId,
+    date: secondary.session.date,
+    daysSince: secondary.daysSince,
+    match: matchSessionsByPosition(
+      { sessionId: secondary.session.sessionId, date: secondary.session.date, logs: flattenGroups(secondary.session.logs) },
+      { sessionId: currentSessionId, date: currentDate, logs: currentLogs },
+    ),
+  }
+}
+
+// Exported so the weekly analysis path (COACH-WEEK-ANALYSIS-TASKS.md §5.2)
+// can map an AnalysisInputExerciseSource into reference/isDeloadReference/
+// match through the exact same function the daily path uses, rather than a
+// second copy that could drift.
+export function buildExercise(
+  source: AnalysisInputExerciseSource,
+  currentSessionId: string,
+  currentDate: string,
+  currentMesocycleId: string | null,
+): AnalysisInputExercise {
   const match =
     source.reference.type === 'first_time' || source.referenceLogs === null
       ? null
@@ -135,12 +202,28 @@ function buildExercise(source: AnalysisInputExerciseSource, currentSessionId: st
           { sessionId: currentSessionId, date: currentDate, logs: source.currentLogs },
         )
 
+  // Reach-back trigger: a real reference session was found, but it has zero
+  // real comparable sets on either stream — the exact shape the 2026-08-22
+  // fix targets (an all-skipped reference session read by the model as "not
+  // logged"). first_time never reaches here (match is null) — there is
+  // nothing to reach back from when no reference session exists at all.
+  const secondaryReference: AnalysisInputSecondaryReference | null =
+    match && match.plain.slotCountA === 0 && match.dropsets.slotCountA === 0
+      ? toSecondaryReference(
+          resolveSecondaryReference(currentDate, source.secondaryCandidates, currentMesocycleId),
+          currentSessionId,
+          currentDate,
+          source.currentLogs,
+        )
+      : null
+
   return {
     exerciseId: source.exerciseId,
     exerciseName: source.exerciseName,
     reference: toReference(source.reference),
     isDeloadReference: source.reference.type === 'first_time' ? null : source.isDeloadReference,
     match,
+    secondaryReference,
   }
 }
 
@@ -148,7 +231,9 @@ export function buildAnalysisInput(args: BuildAnalysisInputArgs): AnalysisInput 
   return {
     session: args.session,
     isDeloadCurrent: args.isDeloadCurrent,
-    exercises: args.exercises.map((ex) => buildExercise(ex, args.session.id, args.session.date)),
+    exercises: args.exercises.map((ex) =>
+      buildExercise(ex, args.session.id, args.session.date, args.currentMesocycleId),
+    ),
     phase: phaseAt(args.phaseEntries, args.session.date),
     weightTrend: recentWeightTrend(args.weightEntries, args.session.date, WEIGHT_TREND_WEEKS),
   }
@@ -208,8 +293,11 @@ function toSetLog(row: RawSetLogRow): SetLog {
 // Batch is_deload lookup for a set of week_plan_ids — one query regardless
 // of how many sessions/exercises need it. Sessions are valid without a
 // week plan (v2_sessions.week_plan_id is nullable), so the result maps a
-// missing/null plan id to `null` (unknown), not `false`.
-async function fetchIsDeload(
+// missing/null plan id to `null` (unknown), not `false`. Exported so the
+// weekly analysis path (COACH-WEEK-ANALYSIS-TASKS.md §5.3) reuses this
+// exact batched lookup for its own session roster rather than a second
+// copy that could drift.
+export async function fetchIsDeload(
   client: SupabaseClient,
   userId: string,
   weekPlanIds: (string | null)[],
@@ -225,16 +313,34 @@ async function fetchIsDeload(
   return new Map((data as { id: string; is_deload: boolean }[]).map((r) => [r.id, r.is_deload]))
 }
 
-export async function assembleAnalysisInput(
+// Everything assembleAnalysisInput needs EXCEPT the phase/weight fetch and
+// the final buildAnalysisInput call (COACH-WEEK-ANALYSIS-TASKS.md §5.2). A
+// pure move, not a rewrite — the body below is byte-identical to what this
+// function's namesake block did before the split, verbatim down to the
+// comments. Extracted because a weekly payload wants ONE phase/weight
+// resolution for the whole week (as of the week's own last session date),
+// not phaseAt/recentWeightTrend re-run and thrown away once per session —
+// which is what calling assembleAnalysisInput unmodified and discarding
+// .phase/.weightTrend would otherwise do.
+export interface SessionFacts {
+  session: { id: string; date: string; workoutDayName: string | null }
+  isDeloadCurrent: boolean | null
+  exercises: AnalysisInputExerciseSource[]
+  // See BuildAnalysisInputArgs.currentMesocycleId — kept as a sibling field
+  // (not nested inside `session`) for the same output-shape leak reason.
+  currentMesocycleId: string | null
+}
+
+export async function assembleSessionFacts(
   client: SupabaseClient,
   userId: string,
   sessionId: string,
-): Promise<AnalysisInput> {
+): Promise<SessionFacts> {
   // ── Current session + its set logs ──────────────────────────────────────────
   const { data: sessionRow, error: sessionError } = await client
     .from('v2_sessions')
     .select(
-      'id, date, workout_day_id, week_plan_id, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, exercises(name))',
+      'id, date, workout_day_id, week_plan_id, mesocycle_id, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, exercises(name))',
     )
     .eq('id', sessionId)
     .eq('user_id', userId)
@@ -244,6 +350,7 @@ export async function assembleAnalysisInput(
   const session = sessionRow as unknown as {
     id: string
     date: string
+    mesocycle_id: string | null
     workout_day_id: string | null
     week_plan_id: string | null
     v2_set_logs: RawSetLogRow[]
@@ -281,11 +388,17 @@ export async function assembleAnalysisInput(
   // Same scope as sessionService.ts's fetchReferenceCandidateSessions — no
   // date bound, so the last_week → last_time → first_time fallback chain
   // can find "most recent ever" when last week is empty.
-  let candidateSessions: { id: string; date: string; completed_at: string | null; week_plan_id: string | null }[] = []
+  let candidateSessions: {
+    id: string
+    date: string
+    completed_at: string | null
+    week_plan_id: string | null
+    mesocycle_id: string | null
+  }[] = []
   if (session.workout_day_id) {
     const { data, error } = await client
       .from('v2_sessions')
-      .select('id, date, completed_at, week_plan_id')
+      .select('id, date, completed_at, week_plan_id, mesocycle_id')
       .eq('user_id', userId)
       .eq('workout_day_id', session.workout_day_id)
       .eq('status', 'completed')
@@ -328,6 +441,7 @@ export async function assembleAnalysisInput(
   const dateBySessionId = new Map(candidateSessions.map((s) => [s.id, s.date]))
   const completedAtBySessionId = new Map(candidateSessions.map((s) => [s.id, s.completed_at]))
   const weekPlanIdBySessionId = new Map(candidateSessions.map((s) => [s.id, s.week_plan_id]))
+  const mesocycleIdBySessionId = new Map(candidateSessions.map((s) => [s.id, s.mesocycle_id]))
 
   function referenceSessionsFor(exerciseId: string): ReferenceSession[] {
     const bySession = referenceLogsByExerciseAndSession.get(exerciseId)
@@ -337,6 +451,7 @@ export async function assembleAnalysisInput(
         sessionId: sid,
         date: dateBySessionId.get(sid)!,
         completedAt: completedAtBySessionId.get(sid) ?? null,
+        mesocycleId: mesocycleIdBySessionId.get(sid) ?? null,
         logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
       }))
       .sort((a, b) => b.date.localeCompare(a.date))
@@ -371,8 +486,57 @@ export async function assembleAnalysisInput(
       reference: primary,
       referenceLogs,
       isDeloadReference,
+      secondaryCandidates: candidates,
     }
   })
+
+  return {
+    session: { id: session.id, date: session.date, workoutDayName },
+    isDeloadCurrent,
+    exercises,
+    currentMesocycleId: session.mesocycle_id,
+  }
+}
+
+// Row → domain mappers for the two Context-tab tables, extracted (pure move,
+// same discipline as assembleSessionFacts's own extraction) so the weekly
+// analysis path's single week-level phase/weight fetch
+// (COACH-WEEK-ANALYSIS-TASKS.md §5.3) reuses the exact same mapping rather
+// than a second copy that could drift.
+export type RawPhaseRow = { id: string; user_id: string; phase: string; start_date: string; created_at: string }
+export type RawWeightRow = { id: string; user_id: string; entry_date: string; weight_kg: number; kind: string; created_at: string }
+
+export function toPhaseEntries(rows: RawPhaseRow[]): PhaseEntry[] {
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    phase: r.phase as PhaseEntry['phase'],
+    startDate: r.start_date,
+    createdAt: r.created_at,
+  }))
+}
+
+export function toWeightEntries(rows: RawWeightRow[]): WeightEntry[] {
+  return rows.map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    entryDate: r.entry_date,
+    weightKg: r.weight_kg,
+    kind: r.kind as WeightEntry['kind'],
+    createdAt: r.created_at,
+  }))
+}
+
+// Unchanged signature, unchanged behaviour (verified against real production
+// data post-extraction — COACH-WEEK-ANALYSIS-TASKS.md §5.4): now
+// assembleSessionFacts + the phase/weight fetch + buildAnalysisInput,
+// instead of one block that did all three inline.
+export async function assembleAnalysisInput(
+  client: SupabaseClient,
+  userId: string,
+  sessionId: string,
+): Promise<AnalysisInput> {
+  const facts = await assembleSessionFacts(client, userId, sessionId)
 
   // ── Phase and weight context ──────────────────────────────────────────────────
   const [{ data: phaseRows, error: phaseError }, { data: weightRows, error: weightError }] = await Promise.all([
@@ -385,31 +549,14 @@ export async function assembleAnalysisInput(
   if (phaseError) throw phaseError
   if (weightError) throw weightError
 
-  const phaseEntries: PhaseEntry[] = (
-    phaseRows as { id: string; user_id: string; phase: string; start_date: string; created_at: string }[]
-  ).map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    phase: r.phase as PhaseEntry['phase'],
-    startDate: r.start_date,
-    createdAt: r.created_at,
-  }))
-
-  const weightEntries: WeightEntry[] = (
-    weightRows as { id: string; user_id: string; entry_date: string; weight_kg: number; kind: string; created_at: string }[]
-  ).map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    entryDate: r.entry_date,
-    weightKg: r.weight_kg,
-    kind: r.kind as WeightEntry['kind'],
-    createdAt: r.created_at,
-  }))
+  const phaseEntries = toPhaseEntries(phaseRows as RawPhaseRow[])
+  const weightEntries = toWeightEntries(weightRows as RawWeightRow[])
 
   return buildAnalysisInput({
-    session: { id: session.id, date: session.date, workoutDayName },
-    isDeloadCurrent,
-    exercises,
+    session: facts.session,
+    isDeloadCurrent: facts.isDeloadCurrent,
+    exercises: facts.exercises,
+    currentMesocycleId: facts.currentMesocycleId,
     phaseEntries,
     weightEntries,
   })

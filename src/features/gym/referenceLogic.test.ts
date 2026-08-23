@@ -1,9 +1,48 @@
 import { describe, it, expect } from 'vitest'
-import { resolveExerciseReference } from './referenceLogic'
+import { resolveExerciseReference, resolveSecondaryReference } from './referenceLogic'
 import type { ReferenceSession } from './sessionService'
+import type { SetLog } from '../../types'
+import type { SetGroup } from './setGroupLogic'
 
-function makeSession(sessionId: string, date: string, completedAt: string | null = null): ReferenceSession {
-  return { sessionId, date, completedAt, logs: [] }
+function makeSession(
+  sessionId: string,
+  date: string,
+  completedAt: string | null = null,
+  mesocycleId: string | null = null,
+  logs: SetGroup<SetLog>[] = [],
+): ReferenceSession {
+  return { sessionId, date, completedAt, mesocycleId, logs }
+}
+
+// Minimal SetLog stand-in — resolveSecondaryReference's hasRealLoggedSet only
+// ever reads `.isSkipped` on a group's head, so every other field is
+// irrelevant filler required only to satisfy the type.
+function makeLog(isSkipped: boolean): SetLog {
+  return {
+    id: 'log-' + Math.random(),
+    userId: 'u1',
+    sessionId: 's',
+    exerciseId: 'ex1',
+    weekPlanSetId: null,
+    setNumber: 1,
+    weight: isSkipped ? null : 100,
+    reps: isSkipped ? null : 8,
+    rir: isSkipped ? null : 2,
+    note: null,
+    isDropset: false,
+    parentSetId: null,
+    stageIndex: 0,
+    isWarmup: false,
+    setSeconds: null,
+    enteredUnit: null,
+    isSkipped,
+    loggedAt: '2026-08-01T10:00:00Z',
+    restSeconds: null,
+  }
+}
+
+function makeGroup(isSkipped: boolean): SetGroup<SetLog> {
+  return { head: makeLog(isSkipped), stages: [] }
 }
 
 describe('resolveExerciseReference — LAST WEEK (Monday-anchored, not a day count)', () => {
@@ -194,5 +233,80 @@ describe('resolveExerciseReference — defensive same-day/future filtering', () 
 
     expect(primary).toEqual({ type: 'first_time' })
     expect(thisWeek).toEqual([])
+  })
+})
+
+describe('resolveSecondaryReference — meso-scoped reach-back (2026-08-22 fix)', () => {
+  const today = '2026-08-22'
+
+  it('none_in_meso: no candidateId at all matches the current meso', () => {
+    const candidates = [makeSession('other', '2026-08-01', null, 'meso-0', [makeGroup(false)])]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result).toEqual({ type: 'none_in_meso' })
+  })
+
+  it('none_in_meso: zero candidates at all', () => {
+    expect(resolveSecondaryReference(today, [], 'meso-1')).toEqual({ type: 'none_in_meso' })
+  })
+
+  it('none_in_meso: there is no current mesocycle to search within', () => {
+    const candidates = [makeSession('s1', '2026-08-01', null, null, [makeGroup(false)])]
+    expect(resolveSecondaryReference(today, candidates, null)).toEqual({ type: 'none_in_meso' })
+  })
+
+  it('all_skipped_in_meso: occurrences exist this meso, but every one is skipped', () => {
+    const candidates = [
+      makeSession('s1', '2026-08-15', null, 'meso-1', [makeGroup(true)]),
+      makeSession('s2', '2026-08-08', null, 'meso-1', [makeGroup(true)]),
+    ]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result).toEqual({ type: 'all_skipped_in_meso' })
+  })
+
+  it('found: picks the most recent in-meso occurrence with a real logged set, with a real daysSince', () => {
+    const candidates = [
+      makeSession('older', '2026-08-01', null, 'meso-1', [makeGroup(false)]),
+      makeSession('newer', '2026-08-15', null, 'meso-1', [makeGroup(false)]),
+    ]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result.type).toBe('found')
+    if (result.type === 'found') {
+      expect(result.session.sessionId).toBe('newer')
+      expect(result.daysSince).toBe(7) // 2026-08-15 -> 2026-08-22
+    }
+  })
+
+  it('found: skips over an all-skipped occurrence that is more recent than a real one', () => {
+    const candidates = [
+      makeSession('real-but-older', '2026-08-01', null, 'meso-1', [makeGroup(false)]),
+      makeSession('skipped-but-newer', '2026-08-15', null, 'meso-1', [makeGroup(true)]),
+    ]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result.type).toBe('found')
+    if (result.type === 'found') expect(result.session.sessionId).toBe('real-but-older')
+  })
+
+  it('never reaches into a previous mesocycle, even when it is the only real data and more recent than anything in-meso', () => {
+    const candidates = [
+      makeSession('prev-meso-real', '2026-08-20', null, 'meso-0', [makeGroup(false)]),
+      makeSession('this-meso-skipped', '2026-08-01', null, 'meso-1', [makeGroup(true)]),
+    ]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result).toEqual({ type: 'all_skipped_in_meso' })
+  })
+
+  it('a group with a real head but the head itself skipped does not count — mirrors buildLoggedSlots exactly', () => {
+    // A dropset whose head is skipped is not "logged" by this project's own
+    // convention (positionMatch.ts's buildLoggedSlots), regardless of what
+    // its stages look like — no stage-level override here either.
+    const skippedHeadWithStage: SetGroup<SetLog> = { head: makeLog(true), stages: [makeLog(false)] }
+    const candidates = [makeSession('s1', '2026-08-15', null, 'meso-1', [skippedHeadWithStage])]
+    const result = resolveSecondaryReference(today, candidates, 'meso-1')
+    expect(result).toEqual({ type: 'all_skipped_in_meso' })
+  })
+
+  it('excludes a same-date-as-today or future candidate, same defensive convention as the primary chain', () => {
+    const candidates = [makeSession('s1', '2026-08-22', null, 'meso-1', [makeGroup(false)])]
+    expect(resolveSecondaryReference(today, candidates, 'meso-1')).toEqual({ type: 'none_in_meso' })
   })
 })

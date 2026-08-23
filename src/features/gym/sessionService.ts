@@ -2,7 +2,7 @@ import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { Session, SetLog, WeightUnit } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
-import { deriveCompletedAt } from './sessionCompletion'
+import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -179,22 +179,34 @@ export async function createSession(
 // makes completed_at slightly earlier than true, never wall-clock-inflated
 // like the bug this whole fix targets — so left as a known limitation
 // rather than a blocker.
-export async function completeSession(id: string, note: string | null): Promise<void> {
+export async function completeSession(
+  id: string,
+  note: string | null,
+): Promise<{ status: 'completed' | 'skipped' }> {
   const { data: logs, error: fetchError } = await supabase
     .from('v2_set_logs')
-    .select('logged_at')
+    .select('logged_at, is_skipped')
     .eq('session_id', id)
   if (fetchError) throw fetchError
 
-  const completedAt = deriveCompletedAt(
-    (logs ?? []).map((l) => ({ loggedAt: l.logged_at as string })),
+  const rows = logs ?? []
+  const completedAt = deriveCompletedAt(rows.map((l) => ({ loggedAt: l.logged_at as string })))
+  // A session where every logged set was skipped is not meaningfully
+  // "completed" — see sessionCompletion.ts's shouldClassifyAsSkipped header
+  // for the real bug this closes (CONTEXT.md, 2026-08-22).
+  const status: 'completed' | 'skipped' = shouldClassifyAsSkipped(
+    rows.map((l) => ({ isSkipped: l.is_skipped as boolean })),
   )
+    ? 'skipped'
+    : 'completed'
 
   const { error } = await supabase
     .from('v2_sessions')
-    .update({ status: 'completed', completed_at: completedAt, note })
+    .update({ status, completed_at: completedAt, note })
     .eq('id', id)
   if (error) throw error
+
+  return { status }
 }
 
 // Reopening a completed session used to leave started_at untouched, so both
@@ -441,6 +453,11 @@ export interface ReferenceSession {
   // remains the primary sort/window key everywhere; this is only consulted
   // when two sessions' dates are equal (see referenceLogic.ts's comparator).
   completedAt: string | null
+  // Which mesocycle this session belongs to (v2_sessions.mesocycle_id) —
+  // null when no meso was attached at the time. Needed so a reach-back
+  // search (referenceLogic.ts's resolveSecondaryReference) can scope
+  // "within the current mesocycle only" without a second query.
+  mesocycleId: string | null
   // Grouped, not flat (§2.7 item 10) — a stage never has to be re-grouped by
   // whatever renders this; built via setGroupLogic.groupSetLogs at the point
   // this ReferenceSession is constructed, online and offline both. Sorted by
@@ -463,10 +480,10 @@ async function fetchReferenceCandidateSessions(
   userId: string,
   workoutDayId: string,
   currentSessionId: string | null,
-): Promise<{ id: string; date: string; completed_at: string | null }[]> {
+): Promise<{ id: string; date: string; completed_at: string | null; mesocycle_id: string | null }[]> {
   let query = supabase
     .from('v2_sessions')
-    .select('id, date, completed_at')
+    .select('id, date, completed_at, mesocycle_id')
     .eq('user_id', userId)
     .eq('workout_day_id', workoutDayId)
     .eq('status', 'completed')
@@ -478,7 +495,7 @@ async function fetchReferenceCandidateSessions(
 
   const { data, error } = await query
   if (error) throw error
-  return data as { id: string; date: string; completed_at: string | null }[]
+  return data as { id: string; date: string; completed_at: string | null; mesocycle_id: string | null }[]
 }
 
 // Session-first, batched across every exercise sharing a workout day (v3
@@ -500,6 +517,7 @@ export async function fetchReferenceSessions(
   const sessionIds = candidateSessions.map((s) => s.id)
   const dateBySessionId = new Map(candidateSessions.map((s) => [s.id, s.date]))
   const completedAtBySessionId = new Map(candidateSessions.map((s) => [s.id, s.completed_at]))
+  const mesocycleIdBySessionId = new Map(candidateSessions.map((s) => [s.id, s.mesocycle_id]))
 
   const { data: logRows, error } = await supabase
     .from('v2_set_logs')
@@ -529,6 +547,7 @@ export async function fetchReferenceSessions(
         sessionId,
         date: dateBySessionId.get(sessionId)!,
         completedAt: completedAtBySessionId.get(sessionId) ?? null,
+        mesocycleId: mesocycleIdBySessionId.get(sessionId) ?? null,
         logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
       }))
       .sort((a, b) => b.date.localeCompare(a.date))

@@ -24,6 +24,12 @@ interface ExerciseCardProps {
   // THIS WEEK being a list rather than needing a pre-computed count.
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
+  // See ExerciseReference.tsx's own prop docs — threaded straight through,
+  // not re-derived here.
+  referenceMesocycleId: string | null
+  referenceIsError: boolean
+  referenceIsFromCache: boolean
+  onRetryReference: () => void
   today: string
   onLog: (params: {
     exerciseId: string
@@ -55,6 +61,10 @@ export default function ExerciseCard({
   lastLogsLoading,
   referenceSessions,
   referenceLoading,
+  referenceMesocycleId,
+  referenceIsError,
+  referenceIsFromCache,
+  onRetryReference,
   today,
   onLog,
   onUpdateSet,
@@ -365,6 +375,10 @@ export default function ExerciseCard({
             today={today}
             sessions={referenceSessions}
             isLoading={referenceLoading}
+            mesocycleId={referenceMesocycleId}
+            isError={referenceIsError}
+            isFromCache={referenceIsFromCache}
+            onRetry={onRetryReference}
             weightUnit={resolvedWeightUnit}
           />
         </div>

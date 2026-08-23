@@ -2,7 +2,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import type { SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import type { SetGroup } from './setGroupLogic'
-import { resolveExerciseReference } from './referenceLogic'
+import { resolveExerciseReference, resolveSecondaryReference, hasRealLoggedSet } from './referenceLogic'
 import { toDisplayWeight } from '../../lib/weightUnit'
 
 interface ExerciseReferenceProps {
@@ -14,6 +14,24 @@ interface ExerciseReferenceProps {
   // owns all of that boundary math.
   sessions: ReferenceSession[]
   isLoading: boolean
+  // The live session's own mesocycle (v2_sessions.mesocycle_id, or the
+  // upcoming week plan's for a preview with no session yet) — scopes the
+  // reach-back search to the current mesocycle only, same rule as
+  // analysisInput.ts's resolveSecondaryReference call. null (no meso, or a
+  // preview with no week plan yet) means the reach-back panel never shows —
+  // resolveSecondaryReference's own defensive `none_in_meso` handles this,
+  // not a crash.
+  mesocycleId: string | null
+  // Real bug this closes (CONTEXT.md, 2026-08-22): a genuine online-fetch
+  // failure used to be silently swallowed and indistinguishable from "no
+  // reference exists." Now surfaced explicitly instead of rendering FIRST
+  // TIME for data that may well exist but couldn't be fetched.
+  isError: boolean
+  onRetry: () => void
+  // True when `sessions` came from the offline Dexie fallback (genuinely
+  // offline, not a swallowed error) — shown as a small provenance note, not
+  // hidden the way it used to be.
+  isFromCache: boolean
   // Resolved unit for the exercise this reference panel belongs to (v3
   // §2.4) — log.weight is always canonical kg; this panel converts for
   // display, same as the live gym-screen rows next to it.
@@ -109,7 +127,24 @@ function Panel({
   )
 }
 
-export default function ExerciseReference({ today, sessions, isLoading, weightUnit }: ExerciseReferenceProps) {
+// "Last actually trained N ago" — coachPrompt.ts v3 frames the reach-back
+// result the same way (elapsed time, not a same-week delta); this mirrors
+// that wording so the live panel and the Coach write-up never disagree on
+// how to describe the identical underlying fact.
+function secondaryLabel(daysSince: number): string {
+  return `LAST ACTUALLY TRAINED ${daysSince === 0 ? 'TODAY' : `${daysSince}D AGO`}`
+}
+
+export default function ExerciseReference({
+  today,
+  sessions,
+  isLoading,
+  mesocycleId,
+  isError,
+  onRetry,
+  isFromCache,
+  weightUnit,
+}: ExerciseReferenceProps) {
   if (isLoading) {
     return (
       <div>
@@ -126,10 +161,56 @@ export default function ExerciseReference({ today, sessions, isLoading, weightUn
     )
   }
 
+  // Real bug this closes (CONTEXT.md, 2026-08-22): a failed fetch used to
+  // silently render as FIRST TIME, indistinguishable from genuinely having
+  // no history. Shown instead of the FIRST_TIME/last_week/last_time
+  // rendering below, not alongside it — `sessions` is empty on a real error
+  // (nothing to render anyway), and showing both would bury the one thing
+  // that actually needs the lifter's attention (tap to retry).
+  if (isError) {
+    return (
+      <div>
+        <p
+          className="text-xs font-bold tracking-widest mb-1"
+          style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
+        >
+          COULDN'T LOAD REFERENCE
+        </p>
+        <button
+          onClick={onRetry}
+          className="text-xs font-bold tracking-widest underline"
+          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+        >
+          RETRY
+        </button>
+      </div>
+    )
+  }
+
   const { primary, thisWeek } = resolveExerciseReference(today, sessions)
+
+  // Reach-back (2026-08-22 fix): only when a real reference session was
+  // found but it has nothing usable in it — mirrors analysisInput.ts's
+  // trigger (there, `match.plain.slotCountA === 0 && ...dropsets... === 0`;
+  // here, no `match` exists yet at this point in the render, so the
+  // equivalent check is directly on the primary session's own logs via the
+  // same hasRealLoggedSet rule referenceLogic.ts already uses internally).
+  const secondary =
+    primary.type !== 'first_time' && !hasRealLoggedSet(primary.session)
+      ? resolveSecondaryReference(today, sessions, mesocycleId)
+      : null
 
   return (
     <div className="space-y-2">
+      {isFromCache && (
+        <p
+          className="text-xs"
+          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', opacity: 0.7 }}
+        >
+          OFFLINE · CACHED
+        </p>
+      )}
+
       {primary.type === 'first_time' && (
         <p
           className="text-xs font-bold tracking-widest"
@@ -150,6 +231,24 @@ export default function ExerciseReference({ today, sessions, isLoading, weightUn
           groups={primary.session.logs}
           weightUnit={weightUnit}
         />
+      )}
+
+      {secondary?.type === 'found' && (
+        <Panel
+          label={secondaryLabel(secondary.daysSince)}
+          groups={secondary.session.logs}
+          weightUnit={weightUnit}
+        />
+      )}
+      {secondary?.type === 'none_in_meso' && (
+        <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          NOTHING THIS MESO TO COMPARE AGAINST
+        </p>
+      )}
+      {secondary?.type === 'all_skipped_in_meso' && (
+        <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          SKIPPED EVERY TIME THIS MESO
+        </p>
       )}
 
       {/* Rendered label is "EARLIER THIS WEEK", not "THIS WEEK" (which

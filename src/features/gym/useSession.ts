@@ -23,7 +23,7 @@ import {
   type ReferenceSession,
 } from './sessionService'
 import { groupSetLogs } from './setGroupLogic'
-import { deriveCompletedAt } from './sessionCompletion'
+import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -131,6 +131,82 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
   })
 }
 
+// Dexie-sourced fallback for useExerciseReferenceSessions below — same
+// shape fetchReferenceSessions produces online, sourced from Dexie (populated
+// by primeOfflineCache's session-first cache write) instead of Supabase.
+// `workoutDayId` isn't its own Dexie index, so narrow via the indexed
+// `status` field first, then filter — cheap at this app's single-user scale.
+// Only ever called when genuinely offline (see the queryFn below) — this is
+// deliberately the last resort, not a catch-all for any online failure.
+async function fetchReferenceSessionsFromCache(
+  userId: string,
+  workoutDayId: string,
+  exerciseIds: string[],
+  currentSessionId: string | null,
+): Promise<Map<string, ReferenceSession[]>> {
+  const completedCached = await db.sessions.where('status').equals('completed').toArray()
+  const eligible = completedCached.filter(
+    (s) => s.workoutDayId === workoutDayId && s.id !== (currentSessionId ?? ''),
+  )
+  if (eligible.length === 0) return new Map<string, ReferenceSession[]>()
+
+  const sessionIds = new Set(eligible.map((s) => s.id))
+  const dateBySessionId = new Map(eligible.map((s) => [s.id, s.date]))
+  const completedAtBySessionId = new Map(eligible.map((s) => [s.id, s.completedAt]))
+  const mesocycleIdBySessionId = new Map(eligible.map((s) => [s.id, s.mesocycleId]))
+
+  const cachedLogs = await db.set_logs.where('exerciseId').anyOf(exerciseIds).toArray()
+
+  const byExercise = new Map<string, Map<string, SetLog[]>>()
+  for (const l of cachedLogs) {
+    if (!sessionIds.has(l.sessionId)) continue
+    const setLog: SetLog = {
+      id: l.id,
+      userId,
+      sessionId: l.sessionId,
+      exerciseId: l.exerciseId,
+      weekPlanSetId: l.weekPlanSetId,
+      setNumber: l.setNumber,
+      weight: l.weight,
+      reps: l.reps,
+      rir: l.rir,
+      note: l.note,
+      isDropset: l.isDropset,
+      parentSetId: l.parentSetId,
+      stageIndex: l.stageIndex ?? 0,
+      isWarmup: l.isWarmup ?? false,
+      setSeconds: l.setSeconds ?? null,
+      enteredUnit: (l.enteredUnit ?? null) as SetLog['enteredUnit'],
+      isSkipped: l.isSkipped,
+      loggedAt: l.loggedAt,
+      restSeconds: l.restSeconds,
+    }
+    let bySession = byExercise.get(l.exerciseId)
+    if (!bySession) {
+      bySession = new Map()
+      byExercise.set(l.exerciseId, bySession)
+    }
+    const list = bySession.get(l.sessionId)
+    if (list) list.push(setLog)
+    else bySession.set(l.sessionId, [setLog])
+  }
+
+  const result = new Map<string, ReferenceSession[]>()
+  for (const [exerciseId, bySession] of byExercise) {
+    const refSessions: ReferenceSession[] = [...bySession.entries()]
+      .map(([sessionId, logs]) => ({
+        sessionId,
+        date: dateBySessionId.get(sessionId)!,
+        completedAt: completedAtBySessionId.get(sessionId) ?? null,
+        mesocycleId: mesocycleIdBySessionId.get(sessionId) ?? null,
+        logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+    result.set(exerciseId, refSessions)
+  }
+  return result
+}
+
 // Session-first, batched across every exercise in a workout day (v3 §2.3) —
 // one call per GymSession/SessionPreview, not one per exercise card. Feeds
 // the two-slot reference resolver (referenceLogic.ts): callers slice the
@@ -140,80 +216,43 @@ export function useExerciseReferenceSessions(
   workoutDayId: string,
   exerciseIds: string[],
   currentSessionId: string | null,
-): { data: Map<string, ReferenceSession[]>; isLoading: boolean } {
+): {
+  data: Map<string, ReferenceSession[]>
+  isLoading: boolean
+  // Real bug this closes (CONTEXT.md, 2026-08-22): the query used to catch
+  // ANY error — a genuine network drop, a Postgres error, anything — and
+  // silently substitute Dexie data with no signal anything went wrong,
+  // indistinguishable from "no reference exists." Now: a real failure while
+  // the browser reports itself online is NOT swallowed here — it rejects,
+  // TanStack's global retry:1 gets one real second attempt, and if that
+  // still fails this surfaces as `isError` instead of a silently-empty
+  // panel. The Dexie fallback below is reserved for the one case it's
+  // actually appropriate for — genuinely offline, where retrying is
+  // pointless — and `isFromCache` says so explicitly rather than leaving the
+  // fallback indistinguishable from a normal online result.
+  isError: boolean
+  isFromCache: boolean
+  retry: () => void
+} {
   const { user } = useAuth()
+  const isOnline = useOnlineStatus()
   const exerciseIdsKey = [...exerciseIds].sort().join(',')
 
   const query = useQuery({
     queryKey: ['v2_referenceSessions', workoutDayId, exerciseIdsKey, currentSessionId],
-    queryFn: async () => {
+    queryFn: async (): Promise<{ map: Map<string, ReferenceSession[]>; fromCache: boolean }> => {
       try {
-        return await fetchReferenceSessions(user!.id, workoutDayId, exerciseIds, currentSessionId)
-      } catch {
-        // Offline fallback — same shape, sourced from Dexie (populated by
-        // primeOfflineCache's session-first cache write) instead of
-        // Supabase. `workoutDayId` isn't its own Dexie index, so narrow via
-        // the indexed `status` field first, then filter — cheap at this
-        // app's single-user scale.
-        const completedCached = await db.sessions.where('status').equals('completed').toArray()
-        const eligible = completedCached.filter(
-          (s) => s.workoutDayId === workoutDayId && s.id !== (currentSessionId ?? ''),
-        )
-        if (eligible.length === 0) return new Map<string, ReferenceSession[]>()
-
-        const sessionIds = new Set(eligible.map((s) => s.id))
-        const dateBySessionId = new Map(eligible.map((s) => [s.id, s.date]))
-        const completedAtBySessionId = new Map(eligible.map((s) => [s.id, s.completedAt]))
-
-        const cachedLogs = await db.set_logs.where('exerciseId').anyOf(exerciseIds).toArray()
-
-        const byExercise = new Map<string, Map<string, SetLog[]>>()
-        for (const l of cachedLogs) {
-          if (!sessionIds.has(l.sessionId)) continue
-          const setLog: SetLog = {
-            id: l.id,
-            userId: user!.id,
-            sessionId: l.sessionId,
-            exerciseId: l.exerciseId,
-            weekPlanSetId: l.weekPlanSetId,
-            setNumber: l.setNumber,
-            weight: l.weight,
-            reps: l.reps,
-            rir: l.rir,
-            note: l.note,
-            isDropset: l.isDropset,
-            parentSetId: l.parentSetId,
-            stageIndex: l.stageIndex ?? 0,
-            isWarmup: l.isWarmup ?? false,
-            setSeconds: l.setSeconds ?? null,
-            enteredUnit: (l.enteredUnit ?? null) as SetLog['enteredUnit'],
-            isSkipped: l.isSkipped,
-            loggedAt: l.loggedAt,
-            restSeconds: l.restSeconds,
-          }
-          let bySession = byExercise.get(l.exerciseId)
-          if (!bySession) {
-            bySession = new Map()
-            byExercise.set(l.exerciseId, bySession)
-          }
-          const list = bySession.get(l.sessionId)
-          if (list) list.push(setLog)
-          else bySession.set(l.sessionId, [setLog])
-        }
-
-        const result = new Map<string, ReferenceSession[]>()
-        for (const [exerciseId, bySession] of byExercise) {
-          const refSessions: ReferenceSession[] = [...bySession.entries()]
-            .map(([sessionId, logs]) => ({
-              sessionId,
-              date: dateBySessionId.get(sessionId)!,
-              completedAt: completedAtBySessionId.get(sessionId) ?? null,
-              logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
-            }))
-            .sort((a, b) => b.date.localeCompare(a.date))
-          result.set(exerciseId, refSessions)
-        }
-        return result
+        const map = await fetchReferenceSessions(user!.id, workoutDayId, exerciseIds, currentSessionId)
+        return { map, fromCache: false }
+      } catch (err) {
+        // navigator.onLine is link-layer only, not real reachability — but
+        // that's exactly the right signal here: it distinguishes "no network
+        // to even attempt a retry against" (fall back) from "reports online,
+        // the request itself failed" (a real, worth-surfacing error — do not
+        // silently paper over it with possibly-stale local data).
+        if (isOnline) throw err
+        const map = await fetchReferenceSessionsFromCache(user!.id, workoutDayId, exerciseIds, currentSessionId)
+        return { map, fromCache: true }
       }
     },
     // No staleTime override, unlike the sibling useLastSessionLogs — this
@@ -227,7 +266,13 @@ export function useExerciseReferenceSessions(
     networkMode: 'offlineFirst',
   })
 
-  return { data: query.data ?? new Map(), isLoading: query.isLoading }
+  return {
+    data: query.data?.map ?? new Map(),
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isFromCache: query.data?.fromCache ?? false,
+    retry: () => void query.refetch(),
+  }
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
@@ -368,6 +413,17 @@ export function useCompleteSession() {
         const now = new Date().toISOString()
         const cachedLogs = await db.set_logs.where('sessionId').equals(id).toArray()
         const completedAt = deriveCompletedAt(cachedLogs.map((l) => ({ loggedAt: l.loggedAt })))
+        // Same narrower-fix caveat as completedAt just above: this Dexie
+        // cache only reliably holds rows for a session logged (at least
+        // partly) offline, so a session logged entirely online then
+        // completed offline has nothing here to classify from and falls
+        // back to 'completed' — never a false 'skipped', only a possible
+        // miss, consistent with the completedAt gap already documented here.
+        const status: 'completed' | 'skipped' = shouldClassifyAsSkipped(
+          cachedLogs.map((l) => ({ isSkipped: l.isSkipped })),
+        )
+          ? 'skipped'
+          : 'completed'
         const cached = findCachedSession(id)
         await db.sync_queue.add({
           table: 'v2_sessions',
@@ -375,25 +431,24 @@ export function useCompleteSession() {
           payload: {
             id,
             ...(cached ? cachedSessionToDbRow(cached) : {}),
-            status: 'completed',
+            status,
             completed_at: completedAt,
             note,
           },
           createdAt: now,
         })
         addPending(id)
-        return
+        return { status }
       }
       return completeSession(id, note)
     },
-    onSuccess: (_, { id }) => {
+    onSuccess: ({ status }, { id }) => {
       queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
-        old ? { ...old, status: 'completed' as const } : old,
+        old ? { ...old, status } : old,
       )
       queryClient.setQueriesData(
         { queryKey: ['v2_sessions'] },
-        (old: Session[] | undefined) =>
-          old?.map((s) => (s.id === id ? { ...s, status: 'completed' as const } : s)),
+        (old: Session[] | undefined) => old?.map((s) => (s.id === id ? { ...s, status } : s)),
       )
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
