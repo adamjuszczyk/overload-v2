@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { Plus } from 'lucide-react'
-import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit } from '../../types'
+import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit, FormRating } from '../../types'
 import SetRow from './SetRow'
 import RestTimerInline from './RestTimerInline'
 import { useRestTimerStore } from './restTimerStore'
@@ -19,6 +19,7 @@ export interface LogParams {
   // What unit the user actually typed the weight in (v3 §2.4) — null means
   // "the resolved default for this program-exercise", never an override.
   enteredUnit: WeightUnit | null
+  formRating: FormRating | null
 }
 
 interface SetGroupProps {
@@ -48,7 +49,7 @@ interface SetGroupProps {
   isDeleting: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
-  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null }) => void
+  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
   onDeleteHead: (group: Group<SetLog>) => void
   onDeleteStage: (stageId: string) => void
   restElapsed: number | null

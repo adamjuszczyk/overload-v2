@@ -15,6 +15,7 @@ import { useMesos } from '../programs/useMesos'
 import { useExerciseProgress, usePositionMatchedHeadline } from './useProgress'
 import { getExerciseE1rmComparison } from './progressService'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { FORM_SCALE } from '../gym/ratingScales'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import ExercisePicker from './ExercisePicker'
 import type { Exercise } from '../../types'
@@ -81,6 +82,13 @@ function SimpleTooltip({
   )
 }
 
+// Average form renders with its scale denominator always shown, never a
+// bare number (COACH-PERSONALIZATION-TASKS.md §2.2/§7.1) — a raw 2.8 reads
+// as a measured quantity rather than a position on a 4-point named scale.
+const FORM_SCALE_MAX = FORM_SCALE.values.length
+const formatFormTick = (v: number) => `${v}/${FORM_SCALE_MAX}`
+const formatFormTooltip = (v: number) => `${v.toFixed(1)} / ${FORM_SCALE_MAX}`
+
 // ─── Charts view ──────────────────────────────────────────────────────────────
 
 function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () => void }) {
@@ -116,6 +124,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
         volume: p.volume,
         rir: p.avgRir !== null ? Math.round(p.avgRir * 10) / 10 : null,
         rest: p.avgRestSeconds !== null ? Math.round(p.avgRestSeconds) : null,
+        form: p.avgFormRating !== null ? Math.round(p.avgFormRating.mean * 10) / 10 : null,
       })),
     [points, toDisplay],
   )
@@ -123,6 +132,9 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
   const last5 = useMemo(() => [...points].reverse().slice(0, 5), [points])
   const hasRir = points.some((p) => p.avgRir !== null)
   const hasRest = points.some((p) => p.avgRestSeconds !== null)
+  // A dimension with zero rated values across every session renders nothing
+  // at all — not the chart, not the axis (TASKS.md §7.3).
+  const hasForm = points.some((p) => p.avgFormRating !== null)
 
   return (
     <div>
@@ -316,6 +328,52 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             </div>
           )}
 
+          {/* Avg form */}
+          {hasForm && (
+            <div className="mt-7">
+              <p
+                className="text-xs font-bold tracking-widest mb-3"
+                style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+              >
+                AVG FORM
+              </p>
+              <ResponsiveContainer width="100%" height={120}>
+                <LineChart data={chartData} margin={CHART_MARGIN}>
+                  <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tick={TICK}
+                    axisLine={false}
+                    tickLine={false}
+                    width={36}
+                    domain={[1, FORM_SCALE_MAX]}
+                    tickFormatter={formatFormTick}
+                  />
+                  <Tooltip
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    content={(p: any) => <SimpleTooltip active={p.active} payload={p.payload} label={p.label} unit="" formatValue={formatFormTooltip} />}
+                    cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="form"
+                    stroke="var(--text-secondary)"
+                    strokeWidth={1.5}
+                    dot={{ fill: 'var(--text-secondary)', r: 2.5, strokeWidth: 0 }}
+                    connectNulls
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
           {/* Avg rest time */}
           {hasRest && (
             <div className="mt-7">
@@ -410,6 +468,14 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
                         style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
                       >
                         avg RIR {Math.round(session.avgRir * 10) / 10}
+                      </p>
+                    )}
+                    {session.avgFormRating !== null && (
+                      <p
+                        className="text-xs mt-0.5"
+                        style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+                      >
+                        avg form {Math.round(session.avgFormRating.mean * 10) / 10}/{session.avgFormRating.scaleMax}
                       </p>
                     )}
                   </div>

@@ -15,6 +15,12 @@ import {
 import { useMesos } from '../programs/useMesos'
 import { useMesoWeeklyProgress } from './useProgress'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { FORM_SCALE, ENERGY_SCALE, PUMP_SCALE } from '../gym/ratingScales'
+
+// Every average renders with its scale denominator, never a bare number
+// (COACH-PERSONALIZATION-TASKS.md §2.2/§7.1).
+const ratingTick = (max: number) => (v: number) => `${v}/${max}`
+const ratingTooltip = (max: number) => (v: number) => `${v.toFixed(1)} / ${max}`
 
 // ─── Shared chart constants ───────────────────────────────────────────────────
 
@@ -122,6 +128,7 @@ function MetricLineChart({
   color = 'var(--text-secondary)',
   tickFormatter,
   formatValue,
+  domain = [0, 'auto'],
 }: {
   title: string
   data: Record<string, unknown>[]
@@ -131,6 +138,7 @@ function MetricLineChart({
   color?: string
   tickFormatter?: (v: number) => string
   formatValue?: (v: number) => string
+  domain?: [number, number | 'auto']
 }) {
   return (
     <div>
@@ -150,7 +158,7 @@ function MetricLineChart({
             axisLine={false}
             tickLine={false}
             width={36}
-            domain={[0, 'auto']}
+            domain={domain}
             tickFormatter={tickFormatter}
           />
           <Tooltip
@@ -198,6 +206,9 @@ export default function MesoProgress() {
         reps: w.avgReps !== null ? Math.round(w.avgReps * 10) / 10 : null,
         rest: w.avgRestSeconds !== null ? Math.round(w.avgRestSeconds) : null,
         duration: w.avgDurationSeconds !== null ? Math.round(w.avgDurationSeconds) : null,
+        form: w.avgFormRating !== null ? Math.round(w.avgFormRating.mean * 10) / 10 : null,
+        energy: w.avgEnergyRating !== null ? Math.round(w.avgEnergyRating.mean * 10) / 10 : null,
+        pump: w.avgPumpRating !== null ? Math.round(w.avgPumpRating.mean * 10) / 10 : null,
       })),
     [weeks],
   )
@@ -211,6 +222,10 @@ export default function MesoProgress() {
   const hasReps = weeks.some((w) => w.avgReps !== null)
   const hasRest = weeks.some((w) => w.avgRestSeconds !== null)
   const hasDuration = weeks.some((w) => w.avgDurationSeconds !== null)
+  // A dimension with zero rated weeks renders nothing at all (TASKS.md §7.3).
+  const hasForm = weeks.some((w) => w.avgFormRating !== null)
+  const hasEnergy = weeks.some((w) => w.avgEnergyRating !== null)
+  const hasPump = weeks.some((w) => w.avgPumpRating !== null)
 
   if (mesosLoading) {
     return (
@@ -355,6 +370,48 @@ export default function MesoProgress() {
               color="var(--text-muted)"
               tickFormatter={formatRestTime}
               formatValue={formatRestTime}
+            />
+          )}
+
+          {hasForm && (
+            <MetricLineChart
+              title="AVG FORM / WEEK"
+              data={chartData}
+              dataKey="form"
+              deloadWeeks={deloadWeeks}
+              unit=""
+              color="var(--text-secondary)"
+              domain={[1, FORM_SCALE.values.length]}
+              tickFormatter={ratingTick(FORM_SCALE.values.length)}
+              formatValue={ratingTooltip(FORM_SCALE.values.length)}
+            />
+          )}
+
+          {hasEnergy && (
+            <MetricLineChart
+              title="AVG ENERGY / WEEK"
+              data={chartData}
+              dataKey="energy"
+              deloadWeeks={deloadWeeks}
+              unit=""
+              color="var(--text-secondary)"
+              domain={[1, ENERGY_SCALE.values.length]}
+              tickFormatter={ratingTick(ENERGY_SCALE.values.length)}
+              formatValue={ratingTooltip(ENERGY_SCALE.values.length)}
+            />
+          )}
+
+          {hasPump && (
+            <MetricLineChart
+              title="AVG PUMP / WEEK"
+              data={chartData}
+              dataKey="pump"
+              deloadWeeks={deloadWeeks}
+              unit=""
+              color="var(--text-secondary)"
+              domain={[1, PUMP_SCALE.values.length]}
+              tickFormatter={ratingTick(PUMP_SCALE.values.length)}
+              formatValue={ratingTooltip(PUMP_SCALE.values.length)}
             />
           )}
         </div>

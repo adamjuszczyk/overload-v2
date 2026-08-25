@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import SetGroup, { type LogParams } from './SetGroup'
 import ExerciseReference from './ExerciseReference'
@@ -48,8 +48,9 @@ interface ExerciseCardProps {
     // already knows which head it belongs to.
     parentSetId: string | null
     stageIndex: number
+    formRating: FormRating | null
   }) => Promise<SetLog>
-  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
+  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
 }
 
@@ -292,6 +293,7 @@ export default function ExerciseCard({
             restSeconds: null,
             setSeconds: null,
             enteredUnit: null,
+            formRating: null,
           },
           nextHeadNumber,
         )
@@ -313,6 +315,7 @@ export default function ExerciseCard({
           restSeconds: null,
           setSeconds: null,
           enteredUnit: null,
+          formRating: null,
         })
         nextStageIdx += 1
       }

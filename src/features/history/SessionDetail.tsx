@@ -5,6 +5,7 @@ import { useHistoryDetail, useDeleteSession } from './useHistory'
 import type { HistorySetRow } from './historyService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
+import { FORM_SCALE, ENERGY_SCALE, PUMP_SCALE } from '../gym/ratingScales'
 import type { MuscleGroup } from '../../types'
 
 const MUSCLE_LABEL: Record<MuscleGroup, string> = {
@@ -75,6 +76,17 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
 
   const ss = STATUS_STYLE[session.status as keyof typeof STATUS_STYLE] ?? STATUS_STYLE.planned
 
+  // Display-only — completed_at minus started_at, both already stored
+  // (COACH-PERSONALIZATION-SPEC.md §4). Same >0 guard as
+  // SessionTypeHistoryView.tsx's DURATION column: a session with no
+  // derivable duration (skipMissedSession, or a device clock producing
+  // <= 0) renders '—' rather than inventing a value (TASKS.md §7.5).
+  const durationSeconds =
+    session.startedAt && session.completedAt
+      ? (parseISO(session.completedAt).getTime() - parseISO(session.startedAt).getTime()) / 1000
+      : null
+  const hasEnergyOrPump = session.energyRating !== null || session.pumpRating !== null
+
   return (
     <div className="px-4 pt-8 pb-24">
       {backBtn}
@@ -139,6 +151,47 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
           {session.mesocycleName}
         </p>
       )}
+
+      {/* Session stats — duration always shown (with a dash fallback);
+          energy/pump only when rated, since a null here means "not rated",
+          not "rated none" (SPEC §7 "absence is data too" / TASKS.md §7.3). */}
+      <div className="flex items-center gap-4 mt-3">
+        <p
+          className="text-xs"
+          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+        >
+          DURATION{' '}
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {durationSeconds !== null && durationSeconds > 0 ? formatRestTime(durationSeconds) : '—'}
+          </span>
+        </p>
+        {hasEnergyOrPump && (
+          <>
+            {session.energyRating !== null && (
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+              >
+                ENERGY{' '}
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {ENERGY_SCALE.labels[session.energyRating]}
+                </span>
+              </p>
+            )}
+            {session.pumpRating !== null && (
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+              >
+                PUMP{' '}
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {PUMP_SCALE.labels[session.pumpRating]}
+                </span>
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Note */}
       {session.note && (
@@ -331,6 +384,17 @@ function HistorySetRowView({ set, isStage = false }: { set: HistorySetRow; isSta
               style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
             >
               RIR {set.rir}
+            </span>
+          )}
+
+          {/* Form — no rating is a legitimate "not rated" state (SPEC §7),
+              so nothing renders rather than a placeholder. */}
+          {set.formRating !== null && (
+            <span
+              className="text-xs shrink-0"
+              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+            >
+              {FORM_SCALE.labels[set.formRating]}
             </span>
           )}
 

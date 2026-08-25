@@ -22,6 +22,8 @@ type RawSetLogRow = {
   is_warmup?: boolean
   set_seconds?: number | null
   entered_unit?: string | null
+  // Absent until migration 016 has been applied.
+  form_rating?: string | null
 }
 
 type RawSessionRow = {
@@ -35,6 +37,9 @@ type RawSessionRow = {
   note: string | null
   started_at: string | null
   completed_at: string | null
+  // Absent until migration 016 has been applied.
+  energy_rating?: string | null
+  pump_rating?: string | null
 }
 
 export async function primeOfflineCache(params: {
@@ -101,6 +106,8 @@ export async function primeOfflineCache(params: {
             note: s.note,
             startedAt: s.started_at,
             completedAt: s.completed_at,
+            energyRating: s.energy_rating ?? null,
+            pumpRating: s.pump_rating ?? null,
           }),
         ),
       )
@@ -137,6 +144,7 @@ export async function primeOfflineCache(params: {
             restSeconds: row.rest_seconds,
             // Every cached row here comes from a status = 'completed' query.
             sessionStatus: 'completed',
+            formRating: row.form_rating ?? null,
           }),
         ),
       )

@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { Session, SetLog, WeightUnit } from '../../types'
+import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
@@ -37,6 +37,8 @@ type DbSetLog = {
   is_warmup?: boolean
   set_seconds?: number | null
   entered_unit?: string | null
+  // Absent until migration 016 has been applied.
+  form_rating?: string | null
 }
 
 type DbSession = {
@@ -52,6 +54,9 @@ type DbSession = {
   completed_at: string | null
   created_at: string
   v2_set_logs?: DbSetLog[]
+  // Absent until migration 016 has been applied.
+  energy_rating?: string | null
+  pump_rating?: string | null
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -88,6 +93,8 @@ function toSetLog(row: DbSetLog): SetLog {
     isSkipped: row.is_skipped,
     loggedAt: row.logged_at,
     restSeconds: row.rest_seconds,
+    // Same "column may not exist yet" fallback as stageIndex/isWarmup above.
+    formRating: (row.form_rating ?? null) as FormRating | null,
   }
 }
 
@@ -105,6 +112,9 @@ function toSession(row: DbSession): Session {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     setLogs: row.v2_set_logs?.map(toSetLog).sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)),
+    // Same "column may not exist yet" fallback as toSetLog's formRating.
+    energyRating: (row.energy_rating ?? null) as EnergyRating | null,
+    pumpRating: (row.pump_rating ?? null) as PumpRating | null,
   }
 }
 
@@ -182,6 +192,13 @@ export async function createSession(
 export async function completeSession(
   id: string,
   note: string | null,
+  // Optional, additive params, not a signature rewrite (TASKS.md §2.4) — two
+  // call sites: SessionComplete.tsx passes them; useAutoFinishSession.ts
+  // deliberately doesn't (an automatically finished session has no UI moment
+  // to collect a rating, so both stay null — the correct "not rated" state,
+  // not a gap).
+  energyRating: EnergyRating | null = null,
+  pumpRating: PumpRating | null = null,
 ): Promise<{ status: 'completed' | 'skipped' }> {
   const { data: logs, error: fetchError } = await supabase
     .from('v2_set_logs')
@@ -202,7 +219,7 @@ export async function completeSession(
 
   const { error } = await supabase
     .from('v2_sessions')
-    .update({ status, completed_at: completedAt, note })
+    .update({ status, completed_at: completedAt, note, energy_rating: energyRating, pump_rating: pumpRating })
     .eq('id', id)
   if (error) throw error
 
@@ -351,6 +368,7 @@ export async function logSet(params: {
   restSeconds: number | null
   setSeconds: number | null
   enteredUnit: WeightUnit | null
+  formRating: FormRating | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -378,6 +396,7 @@ export async function logSet(params: {
       rest_seconds: params.restSeconds,
       set_seconds: params.setSeconds,
       entered_unit: params.enteredUnit,
+      form_rating: params.formRating,
     })
     .select('*, exercises(*)')
     .single()
@@ -393,6 +412,7 @@ export async function updateSetLog(
     rir?: number | null
     note?: string | null
     setNumber?: number
+    formRating?: FormRating | null
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
@@ -401,6 +421,10 @@ export async function updateSetLog(
   if ('rir' in changes) patch.rir = changes.rir
   if ('note' in changes) patch.note = changes.note
   if ('setNumber' in changes) patch.set_number = changes.setNumber
+  // RIR is editable on an already-logged row (SetRow.tsx's isEditing block)
+  // — form must be too, or two controls that sit side by side behave
+  // inconsistently for no reason (TASKS.md §4 item 4).
+  if ('formRating' in changes) patch.form_rating = changes.formRating
 
   const { error } = await supabase.from('v2_set_logs').update(patch).eq('id', id)
   if (error) throw error

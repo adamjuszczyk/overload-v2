@@ -24,6 +24,7 @@ function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
     isSkipped: false,
     loggedAt: '2026-08-18T10:00:00Z',
     restSeconds: null,
+    formRating: null,
     ...overrides,
   }
 }

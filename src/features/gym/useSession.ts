@@ -5,7 +5,7 @@ import { db } from '../../lib/db'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
-import type { Session, SetLog, WeightUnit } from '../../types'
+import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating } from '../../types'
 import {
   fetchSessionsInRange,
   fetchSession,
@@ -77,6 +77,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               loggedAt: log.loggedAt,
               restSeconds: log.restSeconds,
               sessionStatus: 'completed',
+              formRating: log.formRating,
             }),
           ),
         )
@@ -121,6 +122,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               isSkipped: l.isSkipped,
               loggedAt: l.loggedAt,
               restSeconds: l.restSeconds,
+              formRating: (l.formRating ?? null) as SetLog['formRating'],
             }),
           )
       }
@@ -180,6 +182,7 @@ async function fetchReferenceSessionsFromCache(
       isSkipped: l.isSkipped,
       loggedAt: l.loggedAt,
       restSeconds: l.restSeconds,
+      formRating: (l.formRating ?? null) as SetLog['formRating'],
     }
     let bySession = byExercise.get(l.exerciseId)
     if (!bySession) {
@@ -335,6 +338,8 @@ export function useCreateSession() {
           completedAt: null,
           createdAt: startedAt,
           setLogs: [],
+          energyRating: null,
+          pumpRating: null,
         }
 
         await db.sessions.put({
@@ -348,6 +353,8 @@ export function useCreateSession() {
           note: null,
           startedAt,
           completedAt: null,
+          energyRating: null,
+          pumpRating: null,
         })
 
         await db.sync_queue.add({
@@ -389,7 +396,17 @@ export function useCompleteSession() {
 
   return useMutation({
     networkMode: 'always',
-    mutationFn: async ({ id, note }: { id: string; note: string | null }) => {
+    mutationFn: async ({
+      id,
+      note,
+      energyRating = null,
+      pumpRating = null,
+    }: {
+      id: string
+      note: string | null
+      energyRating?: EnergyRating | null
+      pumpRating?: PumpRating | null
+    }) => {
       if (!isOnline) {
         // completed_at derived the same way the online path derives it
         // (deriveCompletedAt, sessionCompletion.ts) — from this session's
@@ -434,13 +451,15 @@ export function useCompleteSession() {
             status,
             completed_at: completedAt,
             note,
+            energy_rating: energyRating,
+            pump_rating: pumpRating,
           },
           createdAt: now,
         })
         addPending(id)
         return { status }
       }
-      return completeSession(id, note)
+      return completeSession(id, note, energyRating, pumpRating)
     },
     onSuccess: ({ status }, { id }) => {
       queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
@@ -624,6 +643,7 @@ export function useLogSet(sessionId: string) {
       restSeconds: number | null
       setSeconds: number | null
       enteredUnit: WeightUnit | null
+      formRating: FormRating | null
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -666,6 +686,7 @@ export function useLogSet(sessionId: string) {
           // The session currently being logged into is always in progress —
           // must not be mistaken for a completed "last session" reference.
           sessionStatus: 'in_progress',
+          formRating: params.formRating,
         })
 
         await db.sync_queue.add({
@@ -690,6 +711,7 @@ export function useLogSet(sessionId: string) {
             rest_seconds: params.restSeconds,
             set_seconds: params.setSeconds,
             entered_unit: params.enteredUnit,
+            form_rating: params.formRating,
           },
           createdAt: loggedAt,
         })
@@ -716,6 +738,7 @@ export function useLogSet(sessionId: string) {
           isSkipped: params.isSkipped,
           loggedAt,
           restSeconds: params.restSeconds,
+          formRating: params.formRating,
         } satisfies SetLog
       }
 
@@ -754,6 +777,7 @@ export function useLogSet(sessionId: string) {
         isSkipped: params.isSkipped,
         loggedAt: new Date().toISOString(),
         restSeconds: params.restSeconds,
+        formRating: params.formRating,
       }
 
       queryClient.setQueryData(qk, (old: Session | undefined) => {
@@ -783,6 +807,7 @@ type SetLogChanges = {
   rir?: number | null
   note?: string | null
   setNumber?: number
+  formRating?: FormRating | null
 }
 
 export function useUpdateSetLog(sessionId: string) {

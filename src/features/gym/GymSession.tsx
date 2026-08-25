@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
-import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit } from '../../types'
+import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import {
   useActiveSession,
@@ -15,10 +15,12 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { db } from '../../lib/db'
 import { primeOfflineCache } from '../offline/offlineCache'
+import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
 import SessionComplete from './SessionComplete'
+import WorkoutNotesSheet from './WorkoutNotesSheet'
 import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
@@ -75,8 +77,9 @@ function ExerciseSection({
     enteredUnit: WeightUnit | null
     parentSetId: string | null
     stageIndex: number
+    formRating: FormRating | null
   }) => Promise<SetLog>
-  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number }) => void
+  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
 }) {
   const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
@@ -108,6 +111,7 @@ function ExerciseSection({
 
 export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber, today }: GymSessionProps) {
   const [showComplete, setShowComplete] = useState(false)
+  const [showNotesSheet, setShowNotesSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
 
   const { user } = useAuth()
@@ -169,31 +173,52 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   return (
     <div className="pb-24">
       {/* Session header */}
-      <div className="px-4 pt-8 pb-4">
-        <p
-          className="text-xs font-bold tracking-widest mb-1"
-          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-        >
-          {weekPlan?.isDeload ? 'DELOAD · ' : ''}WEEK {weekNumber}
-        </p>
-        <h1
-          className="text-3xl font-black tracking-tight"
-          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
-        >
-          {workoutDay.name}
-        </h1>
-        <p
-          className="mt-1 text-xs font-bold tracking-widest"
-          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
-        >
-          IN PROGRESS
-        </p>
-        <p
-          className="mt-1 text-xs font-bold tracking-widest"
-          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-        >
-          {formatRestTime(duration)}
-        </p>
+      <div className="px-4 pt-8 pb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p
+            className="text-xs font-bold tracking-widest mb-1"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {weekPlan?.isDeload ? 'DELOAD · ' : ''}WEEK {weekNumber}
+          </p>
+          <h1
+            className="text-3xl font-black tracking-tight"
+            style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
+          >
+            {workoutDay.name}
+          </h1>
+          <p
+            className="mt-1 text-xs font-bold tracking-widest"
+            style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+          >
+            IN PROGRESS
+          </p>
+          <p
+            className="mt-1 text-xs font-bold tracking-widest"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {formatRestTime(duration)}
+          </p>
+        </div>
+
+        {/* "Notes for the coach" has no meaning without a coach — the one
+            new coachGate.ts call site this initiative adds (SPEC §7,
+            TASKS §2.9). Everything else Coach-related on this screen
+            (form/energy/pump ratings) is ungated, first-class training
+            data like RIR. */}
+        {isCoachUser(user?.id) && (
+          <button
+            onClick={() => setShowNotesSheet(true)}
+            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold tracking-widest"
+            style={{
+              border: '1px solid var(--border)',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            NOTES
+          </button>
+        )}
       </div>
 
       {/* Rest timer */}
@@ -285,6 +310,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           {scrollToCurrentSetDirection === 'up' ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
           CURRENT SET
         </button>
+      )}
+
+      {showNotesSheet && (
+        <WorkoutNotesSheet sessionId={sessionId} onClose={() => setShowNotesSheet(false)} />
       )}
     </div>
   )

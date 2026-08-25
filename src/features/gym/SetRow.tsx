@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Check, Pencil, Trash2 } from 'lucide-react'
-import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit } from '../../types'
+import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit, FormRating } from '../../types'
 import { useOfflineStore } from '../offline/offlineStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useRestTimerStore } from './restTimerStore'
@@ -8,6 +8,8 @@ import { useSetTimerStore } from './setTimerStore'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
+import { FORM_SCALE } from './ratingScales'
+import RatingChips from './RatingChips'
 
 interface SetRowProps {
   setNumber: number
@@ -31,8 +33,9 @@ interface SetRowProps {
     restSeconds: number | null
     setSeconds: number | null
     enteredUnit: WeightUnit | null
+    formRating: FormRating | null
   }) => void
-  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null }) => void
+  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
   onDelete: () => void
   restElapsed: number | null   // seconds since last set logged (for rest_seconds)
 }
@@ -53,6 +56,7 @@ export default function SetRow({
   const [weight, setWeight] = useState('')
   const [reps, setReps] = useState('')
   const [rir, setRir] = useState('')
+  const [formRating, setFormRating] = useState<FormRating | null>(null)
   const [showExtra, setShowExtra] = useState(false)
   const [logError, setLogError] = useState('')
 
@@ -66,6 +70,7 @@ export default function SetRow({
   const [editReps, setEditReps] = useState('')
   const [editRir, setEditRir] = useState('')
   const [editNote, setEditNote] = useState('')
+  const [editFormRating, setEditFormRating] = useState<FormRating | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const pendingIds  = useOfflineStore((s) => s.pendingIds)
@@ -192,6 +197,7 @@ export default function SetRow({
           reps: r,
           rir: rv,
           note: editNote.trim() === '' ? null : editNote.trim(),
+          formRating: editFormRating,
         })
         setIsEditing(false)
       }
@@ -321,6 +327,10 @@ export default function SetRow({
             </button>
           </div>
 
+          <div className="pl-7">
+            <RatingChips scale={FORM_SCALE} value={editFormRating} onChange={setEditFormRating} label="FORM" />
+          </div>
+
           {logError && (
             <div className="pl-7">
               <span
@@ -442,6 +452,7 @@ export default function SetRow({
                 setEditReps(currentLog.reps != null ? String(currentLog.reps) : '')
                 setEditRir(currentLog.rir != null ? String(currentLog.rir) : '')
                 setEditNote(currentLog.note ?? '')
+                setEditFormRating(currentLog.formRating)
                 setLogError('')
                 setIsEditing(true)
               }}
@@ -508,6 +519,7 @@ export default function SetRow({
       restSeconds,
       setSeconds,
       enteredUnit: activeUnit === resolvedUnit ? null : activeUnit,
+      formRating,
     })
   }
 
@@ -525,6 +537,7 @@ export default function SetRow({
       restSeconds,
       setSeconds: null,
       enteredUnit: null,
+      formRating: null,
     })
   }
 
@@ -708,7 +721,8 @@ export default function SetRow({
       </div>
 
       {showExtra && (
-        <div className="flex items-center gap-2 pl-7 flex-wrap">
+        <div className="space-y-2 pl-7">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Achieved RIR */}
           <div className="flex items-center gap-1">
             <span
@@ -752,6 +766,14 @@ export default function SetRow({
               SKIP
             </button>
           )}
+        </div>
+
+        {/* Form rating — offered on stage rows too: a drop stage is a set
+            performed with some quality, even though its rating is excluded
+            from average-form (Progress computes heads-only, TASKS.md §7.2 —
+            the model still sees every stage's rating, per §7.2's "code
+            averages heads only; the model reads everything" split). */}
+        <RatingChips scale={FORM_SCALE} value={formRating} onChange={setFormRating} label="FORM" />
         </div>
       )}
     </div>

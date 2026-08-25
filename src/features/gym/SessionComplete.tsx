@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { CheckCircle } from 'lucide-react'
 import { useCompleteSession, useActiveSession } from './useSession'
+import { ENERGY_SCALE, PUMP_SCALE } from './ratingScales'
+import RatingChips from './RatingChips'
+import type { EnergyRating, PumpRating } from '../../types'
 
 interface SessionCompleteProps {
   sessionId: string
@@ -9,6 +12,8 @@ interface SessionCompleteProps {
 
 export default function SessionComplete({ sessionId, onBack }: SessionCompleteProps) {
   const [note, setNote] = useState('')
+  const [energyRating, setEnergyRating] = useState<EnergyRating | null>(null)
+  const [pumpRating, setPumpRating] = useState<PumpRating | null>(null)
   const { data: session } = useActiveSession(sessionId)
   const completeSession = useCompleteSession()
 
@@ -22,11 +27,28 @@ export default function SessionComplete({ sessionId, onBack }: SessionCompletePr
     setNote(session.note)
   }, [session?.note])
 
+  // Same pattern, same reason (v3 Personalization TASKS §4 item 5) — a
+  // reopened, previously-completed session's ratings must prefill rather
+  // than silently reset to "not rated" on re-completion.
+  const energyInitialisedRef = useRef(false)
+  useEffect(() => {
+    if (energyInitialisedRef.current || session?.energyRating == null) return
+    energyInitialisedRef.current = true
+    setEnergyRating(session.energyRating)
+  }, [session?.energyRating])
+
+  const pumpInitialisedRef = useRef(false)
+  useEffect(() => {
+    if (pumpInitialisedRef.current || session?.pumpRating == null) return
+    pumpInitialisedRef.current = true
+    setPumpRating(session.pumpRating)
+  }, [session?.pumpRating])
+
   const totalSets = session?.setLogs?.filter((l) => !l.isSkipped).length ?? 0
   const skipped = session?.setLogs?.filter((l) => l.isSkipped).length ?? 0
 
   async function handleComplete() {
-    await completeSession.mutateAsync({ id: sessionId, note: note.trim() || null })
+    await completeSession.mutateAsync({ id: sessionId, note: note.trim() || null, energyRating, pumpRating })
   }
 
   return (
@@ -76,6 +98,13 @@ export default function SessionComplete({ sessionId, onBack }: SessionCompletePr
             </p>
           </div>
         )}
+      </div>
+
+      {/* Energy / pump — optional, logged once at completion (SPEC §4),
+          deliberately not per-set like form. */}
+      <div className="mb-6 space-y-4">
+        <RatingChips scale={ENERGY_SCALE} value={energyRating} onChange={setEnergyRating} label="ENERGY (OPTIONAL)" />
+        <RatingChips scale={PUMP_SCALE} value={pumpRating} onChange={setPumpRating} label="PUMP (OPTIONAL)" />
       </div>
 
       {/* Note */}

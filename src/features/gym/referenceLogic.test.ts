@@ -38,6 +38,7 @@ function makeLog(isSkipped: boolean): SetLog {
     isSkipped,
     loggedAt: '2026-08-01T10:00:00Z',
     restSeconds: null,
+    formRating: null,
   }
 }
 

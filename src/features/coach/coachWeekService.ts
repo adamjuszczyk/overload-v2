@@ -54,6 +54,12 @@ function toSession(row: RawSessionRow): Session {
     startedAt: row.started_at,
     completedAt: row.completed_at,
     createdAt: row.created_at,
+    // Not selected by this query and not read by anything weekly (v3
+    // Personalization TASKS.md §7.10 — Weekly Analysis is untouched by this
+    // initiative) — hardcoded rather than fetched, since nothing here needs
+    // the real value.
+    energyRating: null,
+    pumpRating: null,
   }
 }
 

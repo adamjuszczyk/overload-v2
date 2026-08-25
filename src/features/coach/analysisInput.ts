@@ -264,6 +264,8 @@ type RawSetLogRow = {
   logged_at: string
   rest_seconds: number | null
   exercises: { name: string } | null
+  // Absent until migration 016 has been applied.
+  form_rating?: string | null
 }
 
 function toSetLog(row: RawSetLogRow): SetLog {
@@ -287,6 +289,11 @@ function toSetLog(row: RawSetLogRow): SetLog {
     isSkipped: row.is_skipped,
     loggedAt: row.logged_at,
     restSeconds: row.rest_seconds,
+    // Same "column may not exist yet" fallback as stageIndex/isWarmup above.
+    // Not yet read by the payload this module builds (v3 Personalization
+    // phase 5 wires it in) — extended now so the field isn't silently
+    // mapped to null once phase 5 does read it (TASKS.md §2.4).
+    formRating: (row.form_rating ?? null) as SetLog['formRating'],
   }
 }
 
@@ -340,7 +347,7 @@ export async function assembleSessionFacts(
   const { data: sessionRow, error: sessionError } = await client
     .from('v2_sessions')
     .select(
-      'id, date, workout_day_id, week_plan_id, mesocycle_id, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, exercises(name))',
+      'id, date, workout_day_id, week_plan_id, mesocycle_id, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, form_rating, exercises(name))',
     )
     .eq('id', sessionId)
     .eq('user_id', userId)
@@ -415,7 +422,7 @@ export async function assembleSessionFacts(
     const { data: refLogRows, error: refLogError } = await client
       .from('v2_set_logs')
       .select(
-        'id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, exercises(name)',
+        'id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, form_rating, exercises(name)',
       )
       .eq('user_id', userId)
       .in(

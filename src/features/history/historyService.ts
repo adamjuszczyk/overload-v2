@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { MuscleGroup, SessionStatus } from '../../types'
+import type { MuscleGroup, SessionStatus, FormRating, EnergyRating, PumpRating } from '../../types'
 import { groupByParent, type SetGroup } from '../gym/setGroupLogic'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,7 @@ export interface HistorySetRow {
   isDropset: boolean
   parentSetId: string | null
   stageIndex: number
+  formRating: FormRating | null
 }
 
 export interface HistoryExerciseGroup {
@@ -45,6 +46,12 @@ export interface HistoryExerciseGroup {
 
 export interface HistoryDetail extends HistoryRow {
   exerciseGroups: HistoryExerciseGroup[]
+  // Session-level, not per-set — deliberately on the detail shape only, not
+  // HistoryRow (COACH-PERSONALIZATION-TASKS.md §7.4): HistoryRow's list path
+  // reads a separate summary view that doesn't carry these columns, and
+  // adding them there would need a view migration this phase doesn't do.
+  energyRating: EnergyRating | null
+  pumpRating: PumpRating | null
 }
 
 // ─── Raw DB row types ─────────────────────────────────────────────────────────
@@ -62,6 +69,7 @@ type RawLogFull = {
   parent_set_id: string | null
   stage_index: number
   logged_at: string
+  form_rating: FormRating | null
   exercises: { id: string; name: string; muscle_group: string | null } | null
 }
 
@@ -74,6 +82,8 @@ type RawSessionFull = {
   completed_at: string | null
   workout_day_id: string | null
   mesocycle_id: string | null
+  energy_rating: EnergyRating | null
+  pump_rating: PumpRating | null
   v2_set_logs: RawLogFull[]
   v2_mesocycles: { id: string; name: string } | null
 }
@@ -167,10 +177,10 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     .from('v2_sessions')
     .select(`
       id, date, status, note, started_at, completed_at,
-      workout_day_id, mesocycle_id,
+      workout_day_id, mesocycle_id, energy_rating, pump_rating,
       v2_set_logs(
         id, exercise_id, set_number, weight, reps, rir,
-        rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at,
+        rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at, form_rating,
         exercises(id, name, muscle_group)
       ),
       v2_mesocycles(id, name)
@@ -240,6 +250,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       isDropset: log.is_dropset,
       parentSetId: log.parent_set_id,
       stageIndex: log.stage_index,
+      formRating: log.form_rating,
     })
   }
 
@@ -278,6 +289,8 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     setCount: activeLogs.filter((l) => l.parent_set_id == null).length,
     muscleGroups,
     exerciseGroups,
+    energyRating: session.energy_rating,
+    pumpRating: session.pump_rating,
   }
 }
 

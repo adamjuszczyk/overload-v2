@@ -39,6 +39,12 @@ interface CachedSession {
   note: string | null
   startedAt: string | null
   completedAt: string | null
+  // v3 Coach Personalization phase 1 — plain fields, not indexes, same
+  // no-version-bump precedent as stageIndex/isWarmup/setSeconds/enteredUnit
+  // below. Rows cached before this shipped won't have them; readers must
+  // treat undefined as null, same rule as those fields.
+  energyRating: string | null
+  pumpRating: string | null
 }
 
 interface CachedSetLog {
@@ -63,6 +69,11 @@ interface CachedSetLog {
   // Status of the session this log belongs to, at time of caching — lets the
   // offline "last session" fallback exclude the current in-progress session.
   sessionStatus: string
+  // v3 Coach Personalization phase 1 — plain field, not an index, same
+  // no-version-bump precedent as stageIndex/isWarmup/setSeconds/enteredUnit
+  // above. Rows cached before this shipped won't have it; readers must
+  // treat undefined as null, same rule as those fields.
+  formRating: string | null
 }
 
 interface SyncQueueItem {

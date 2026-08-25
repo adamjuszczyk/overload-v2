@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { queryClient } from '../../lib/queryClient'
 import { headsOnly } from '../gym/setGroupLogic'
 import { fetchSession } from '../gym/sessionService'
+import { averageRating, FORM_SCALE, ENERGY_SCALE, PUMP_SCALE, type RatingAverage } from '../gym/ratingScales'
+import type { FormRating, EnergyRating, PumpRating } from '../../types'
 import { compareE1rmWindow, type E1rmComparison, type E1rmSetInput } from './e1rm'
 import {
   matchSessionsByPosition,
@@ -22,6 +24,7 @@ export interface ExerciseSessionPoint {
   avgRestSeconds: number | null
   setCount: number
   avgReps: number
+  avgFormRating: RatingAverage | null
   topSet: { weight: number; reps: number; rir: number | null }
 }
 
@@ -49,6 +52,9 @@ export interface WeekPoint {
   avgReps: number | null
   avgRestSeconds: number | null
   avgDurationSeconds: number | null
+  avgFormRating: RatingAverage | null
+  avgEnergyRating: RatingAverage | null
+  avgPumpRating: RatingAverage | null
   isDeload: boolean
 }
 
@@ -64,6 +70,7 @@ type RawSetLogRow = {
   is_skipped: boolean
   is_warmup: boolean
   parent_set_id: string | null
+  form_rating: FormRating | null
   logged_at: string
   v2_sessions: {
     id: string
@@ -97,7 +104,7 @@ async function fetchAllExerciseSetLogRows(
     const { data, error } = await supabase
       .from('v2_set_logs')
       .select(
-        'id, session_id, weight, reps, rir, rest_seconds, is_skipped, is_warmup, parent_set_id, logged_at, v2_sessions(id, date, status, mesocycle_id, v2_week_plans(is_deload))',
+        'id, session_id, weight, reps, rir, rest_seconds, is_skipped, is_warmup, parent_set_id, form_rating, logged_at, v2_sessions(id, date, status, mesocycle_id, v2_week_plans(is_deload))',
       )
       .eq('user_id', userId)
       .eq('exercise_id', exerciseId)
@@ -204,6 +211,7 @@ export async function fetchExerciseProgress(
           : null,
       setCount: headLogs.length,
       avgReps: headLogs.reduce((s, l) => s + l.reps!, 0) / headLogs.length,
+      avgFormRating: averageRating(FORM_SCALE, headLogs.map((l) => l.form_rating)),
       topSet: { weight: topLog.weight!, reps: topLog.reps!, rir: topLog.rir },
     })
 
@@ -368,6 +376,8 @@ type RawSession = {
   date: string
   started_at: string | null
   completed_at: string | null
+  energy_rating: EnergyRating | null
+  pump_rating: PumpRating | null
   v2_set_logs: Array<{
     weight: number | null
     reps: number | null
@@ -375,6 +385,7 @@ type RawSession = {
     rest_seconds: number | null
     is_skipped: boolean
     parent_set_id: string | null
+    form_rating: FormRating | null
   }>
 }
 
@@ -387,7 +398,7 @@ export async function fetchMesoWeeklyProgress(
     supabase
       .from('v2_sessions')
       .select(
-        'id, date, started_at, completed_at, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id)',
+        'id, date, started_at, completed_at, energy_rating, pump_rating, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id, form_rating)',
       )
       .eq('user_id', userId)
       .eq('mesocycle_id', mesoId)
@@ -408,16 +419,21 @@ export async function fetchMesoWeeklyProgress(
   )
 
   // Group set_logs by week number, computed from session date vs meso start.
-  // Session durations are tracked in a parallel map, keyed the same way —
-  // a duration is a per-session figure (started_at/completed_at), not a
-  // per-set-log one, so it can't live in the same flattened array as
-  // weekMap's set_logs.
+  // Session durations, energy and pump are tracked in parallel maps, keyed
+  // the same way — each is a per-session figure (started_at/completed_at,
+  // energy_rating, pump_rating), not a per-set-log one, so none of them can
+  // live in the same flattened array as weekMap's set_logs.
   const weekMap = new Map<number, RawSession['v2_set_logs']>()
   const weekDurations = new Map<number, number[]>()
+  const weekEnergyRatings = new Map<number, (EnergyRating | null)[]>()
+  const weekPumpRatings = new Map<number, (PumpRating | null)[]>()
   for (const session of (sessions ?? []) as RawSession[]) {
     const wk = differenceInCalendarWeeks(parseISO(session.date), parseISO(mesoStartDate), { weekStartsOn: 1 }) + 1
     const existing = weekMap.get(wk) ?? []
     weekMap.set(wk, [...existing, ...session.v2_set_logs])
+
+    weekEnergyRatings.set(wk, [...(weekEnergyRatings.get(wk) ?? []), session.energy_rating])
+    weekPumpRatings.set(wk, [...(weekPumpRatings.get(wk) ?? []), session.pump_rating])
 
     // completed_at is already the fixed, logged-at-derived value (post
     // 2026-08-11 fix + backfill, CONTEXT.md) — read directly, no
@@ -460,6 +476,13 @@ export async function fetchMesoWeeklyProgress(
           : null,
       avgDurationSeconds:
         durations.length > 0 ? durations.reduce((s, d) => s + d, 0) / durations.length : null,
+      // Form averages across the week's *sets* (same valid/heads-only set
+      // avgReps/avgRir already use); energy and pump average across the
+      // week's *sessions* — one rating per completed session, not per set
+      // (TASKS.md §6 step 7).
+      avgFormRating: averageRating(FORM_SCALE, valid.map((l) => l.form_rating)),
+      avgEnergyRating: averageRating(ENERGY_SCALE, weekEnergyRatings.get(weekNumber) ?? []),
+      avgPumpRating: averageRating(PUMP_SCALE, weekPumpRatings.get(weekNumber) ?? []),
       isDeload: deloadWeeks.has(weekNumber),
     })
   }

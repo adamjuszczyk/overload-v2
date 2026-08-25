@@ -130,6 +130,13 @@ export interface Session {
   completedAt: string | null
   createdAt: string
   setLogs?: SetLog[]         // populated on full session load
+
+  // Optional, once per completed session (COACH-PERSONALIZATION-SPEC §4/§5)
+  // — required keys, nullable types, same "absence is data too" reasoning as
+  // SetLog.formRating above. 'none' (rated, no energy/pump) is distinct from
+  // null (not rated) — TASKS §7.3.
+  energyRating: EnergyRating | null
+  pumpRating: PumpRating | null
 }
 
 // ─── SetLog ───────────────────────────────────────────────────────────────────
@@ -165,7 +172,23 @@ export interface SetLog {
   isSkipped: boolean
   loggedAt: string           // ISO timestamp — source of truth for rest time
   restSeconds: number | null
+
+  // Optional, per-set (COACH-PERSONALIZATION-SPEC §4/§5) — required key,
+  // nullable type: null = not rated, never a default (§7 "absence is data
+  // too"). Forces every SetLog mapper to say what it produces (v3
+  // Personalization TASKS §4.1) rather than silently defaulting to null.
+  formRating: FormRating | null
 }
+
+// ─── Coach Personalization ratings (v3, phase 1) ───────────────────────────
+// Vocabularies fixed by COACH-PERSONALIZATION-SPEC §4, confirmed by Adam
+// before build (2026-08-25) — see COACH-PERSONALIZATION-TASKS.md §2.1/§7.11.
+// A rated 'none' (energy/pump) is a real signal, not the same as an unrated
+// NULL — see that doc's §7.3.
+
+export type FormRating = 'rushed' | 'normal' | 'controlled' | 'extra_controlled'
+export type EnergyRating = 'none' | 'low' | 'normal' | 'high' | 'supreme'
+export type PumpRating = 'none' | 'some' | 'good' | 'extreme'
 
 // ─── Scheduling ───────────────────────────────────────────────────────────────
 
@@ -236,6 +259,21 @@ export interface WeeklyWeightAverage {
   averageKg: number
   source: 'manual' | 'daily'     // which rule produced it (COACH-ANALYSIS-TASKS §5.3)
   dailyCount: number             // 0 when source === 'manual'
+}
+
+// ─── Coach Notes (Personalization phase 3) ─────────────────────────────────
+// Raw, freeform, timestamped input — deliberately not the same thing as
+// Coach Memory (COACH-PERSONALIZATION-SPEC.md §4). sessionId is set for a
+// sidebar-sourced note, null for a general (Context tab) one. curatedAt is
+// the phase-4 curation watermark — null means "never seen by a curation
+// run" (not yet built; always null for every note through phase 3).
+export interface CoachNote {
+  id: string
+  userId: string
+  body: string
+  sessionId: string | null
+  curatedAt: string | null
+  createdAt: string
 }
 
 export interface CoachExerciseComment {
@@ -341,5 +379,136 @@ export interface CoachWeekAnalysis {
   promptVersion: number              // WEEK_PROMPT_VERSION, independent of daily's
   inputTokens: number | null
   outputTokens: number | null
+  createdAt: string
+}
+
+// ─── Coach Memory (Personalization phase 4) ────────────────────────────────
+// A separate, curated, standing store the daily analysis prompt reads in
+// full (COACH-PERSONALIZATION-SPEC.md §4) — never the same rows as
+// v2_coach_notes (TASKS §9.2): curation reads notes and writes memory, a
+// note's own body is never rewritten.
+
+export type MemoryEntrySource = 'curation' | 'manual'
+export type MemoryEntryStatus = 'active' | 'expired'
+
+// Row shape for v2_coach_memory_entries (migration 018). `source` is
+// provenance, not permission — curation may update or expire any entry
+// regardless of source (TASKS §2.7). The user's own delete is a hard
+// delete; only curation's expire is soft (TASKS §9.4) — there is
+// deliberately no "deleted" status here, only 'active'/'expired'.
+export interface CoachMemoryEntry {
+  id: string
+  userId: string
+  body: string
+  source: MemoryEntrySource
+  status: MemoryEntryStatus
+  createdAt: string
+  updatedAt: string
+}
+
+// One uncurated note as the curation call sees it (§5.3 step 3). `session`
+// is present only for a sidebar-sourced note, so the model can place it in
+// time — read from v2_history_session_summary, the same denormalised
+// date/workoutDayName coachService.ts's AnalyzableSession already uses.
+export interface CurationNoteInput {
+  id: string
+  body: string
+  createdAt: string
+  session: { date: string; workoutDayName: string | null } | null
+}
+
+// One active memory entry as the curation call sees it (§5.3 step 5).
+export interface CurationMemoryInput {
+  id: string
+  body: string
+  source: MemoryEntrySource
+}
+
+// Exactly what the model is shown — persisted verbatim as
+// v2_coach_curation_runs.input_snapshot, same "what did the model actually
+// see" reasoning as AnalysisInput/WeekAnalysisInput (§3.3, daily §5.11).
+export interface CurationInput {
+  notes: CurationNoteInput[]
+  memory: CurationMemoryInput[]
+}
+
+// What the model returns — one decision per note it chose to act on (never
+// one-per-note structurally; zero, one, or several notes may collapse into
+// a single decision, or produce none at all). Applied by code, never by the
+// model (§2.8): only ids present in `memory` above may appear in an
+// `update`/`expire`, enforced by curationApply.ts's planCurationApply
+// regardless of what the model returns (§5.3 step 7).
+export type CurationDecision =
+  | { op: 'add'; body: string; reason: string }
+  | { op: 'update'; id: string; body: string; reason: string }
+  | { op: 'expire'; id: string; reason: string }
+
+// The model's response shape before it becomes a real CurationDecision — the
+// structured-output schema can't express "id/body required iff op is
+// update/add" as a TypeScript discriminated union, so `id`/`body` are
+// required-but-nullable regardless of `op`, and a row whose fields don't
+// match its own `op` (e.g. `update` with a null id) is dropped rather than
+// coerced. This is genuinely what got stored/returned (see
+// v2_coach_curation_runs.decisions below), so it needs its own type rather
+// than force-fitting CurationDecision.
+export interface CurationRawDecision {
+  op: string
+  id: string | null
+  body: string | null
+  reason: string
+}
+
+// What code actually did with the model's decisions, after id validation —
+// distinct from the raw CurationDecision[] the model returned (that list is
+// stored unfiltered in v2_coach_curation_runs.decisions; this is
+// v2_coach_curation_runs.applied) so a run row can always answer both "what
+// did the model say" and "what actually happened", independently. This is a
+// refinement of TASKS §4.4's single `decisions` field on CurationResult —
+// deliberate, since §4.4 itself is marked "shape settled, detail deferred"
+// and §5.3 step 11's literal return value is `{ applied, rejectedIds,
+// notesCurated }`, not `{ decisions, ... }`.
+export interface CurationApplied {
+  added: { id: string; body: string }[]
+  updated: { id: string; body: string }[]
+  expired: { id: string }[]
+}
+
+// The api/coach/curate-memory.ts response body (§5.3 step 11), also what
+// v2_coach_curation_runs.applied plus the two summary fields represent
+// together.
+export interface CurationResult {
+  applied: CurationApplied
+  // Ids the model referenced that were not in the `memory` it was sent.
+  // Dropped, never applied — same defence WeekAnalysisDetail.tsx already
+  // applies to hallucinated exerciseIds.
+  rejectedIds: string[]
+  notesCurated: number
+}
+
+// Row shape for v2_coach_curation_runs (migration 018). The one table in
+// this plan the spec doesn't name (TASKS §7.6) — provenance for a process
+// that mutates a standing store instead of appending a permanent record,
+// same reasoning that put input_snapshot/model/prompt_version/token counts
+// on the other two AI surfaces (daily §5.11).
+export interface CoachCurationRun {
+  id: string
+  userId: string
+  inputSnapshot: CurationInput
+  // Genuinely the raw, unfiltered model output (CurationRawDecision[], not
+  // CurationDecision[]) — including any row toDecisions() dropped for not
+  // matching its own op (e.g. an `update` with a null id). Fixed to actually
+  // be unfiltered during this project's phase-4 adversarial review: it
+  // previously stored the post-toDecisions *filtered* list, silently
+  // contradicting this exact comment — a dropped decision left no trace
+  // anywhere (not here, not in rejectedIds, since it never reached
+  // planCurationApply). `applied` below is the filtered, validated record of
+  // what code actually did with it.
+  decisions: CurationRawDecision[]
+  applied: CurationApplied
+  model: string
+  promptVersion: number
+  inputTokens: number | null
+  outputTokens: number | null
+  noteCount: number
   createdAt: string
 }
