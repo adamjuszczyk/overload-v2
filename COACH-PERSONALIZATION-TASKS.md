@@ -726,24 +726,56 @@ rest.
    patch each `update`'s `body` and `updated_at`; set each `expire`'s
    `status`. Every write carries `.eq('user_id', userId)` alongside RLS, the
    defence-in-depth pattern every query in this feature uses.
-9. **Stamp `curated_at = now()`** on exactly the note ids read in step 3 —
-   by id list, not by a `curated_at is null` re-filter, so a note created
-   while the model was thinking is not silently marked as seen.
-10. **Insert the run row** with `input_snapshot`, `decisions`, `applied`,
-    `model` (from `response.model`, not the request constant),
-    `prompt_version`, token counts and `note_count`.
+9. **Insert the run row** with `input_snapshot`, `decisions`, `applied`,
+   `model` (from `response.model`, not the request constant),
+   `prompt_version`, token counts and `note_count`.
+10. **Stamp `curated_at = now()`** on exactly the note ids read in step 3 —
+    by id list, not by a `curated_at is null` re-filter, so a note created
+    while the model was thinking is not silently marked as seen.
 11. **Return** `{ applied, rejectedIds, notesCurated }` so the UI can say what
     changed rather than just "done".
 
-**Ordering note on steps 8–10:** there is no transaction across PostgREST
-calls, so a failure between them leaves partial state. The order above makes
-every partial state safe-ish in the same direction: memory changes land
-first, then notes are marked as consumed, then the audit row. A crash before
-step 9 means a re-run re-reads the same notes and may duplicate an entry —
-visible, editable, and deletable by hand, which is the whole point of SPEC
-§7's "visible and correctable, always". The reverse order would silently
-consume notes that produced nothing. Recorded in §7.7 rather than solved with
-machinery.
+**Ordering note on steps 8–10 — corrected 2026-08-25, during this feature's
+first adversarial review, after the original text below shipped exactly as
+written.** There is no transaction across PostgREST calls, so a failure
+between them leaves partial state; the order has to make every partial state
+safe-ish in the same direction. Steps 9 and 10 above are swapped from this
+plan's original order (memory changes, **then stamp notes, then insert the
+run row**) — the run row now lands before the stamp.
+
+**What the original reasoning got right:** memory changes must land first.
+Reversing *that* would silently consume notes that produced nothing, which
+is the one failure mode genuinely worse than anything the plan below
+accepts.
+
+**What the original reasoning missed:** it argued only about the window
+*before* step 9 ("a crash before step 9 means a re-run re-reads the same
+notes and may duplicate an entry — visible, editable, and deletable by
+hand") and never examined the window *between* the original step 9 and step
+10 — i.e. between the notes being stamped and the run row being inserted.
+That window is not the same failure class. A crash there leaves the note's
+`curated_at` already non-null, so `v2_coach_notes_uncurated_idx`'s `where
+curated_at is null` predicate (§3.2) permanently excludes it from every
+future run — unlike the crash-before-original-step-9 case, this one is
+**not** retryable — while zero `v2_coach_curation_runs` row exists to say
+why the memory entry changed, defeating §7.6's entire stated reason that
+table exists. The original text's "safe-ish in the same direction" claim
+covered two of the three step-boundaries and missed the third because it
+was never separately reasoned through — an oversight, not a considered
+trade-off, confirmed live via a mocked failure-injection test against the
+real handler (not a re-read of this document) during the 2026-08-25
+adversarial review; see CONTEXT.md's "phase 4 adversarial review" session
+entries for the reproduction.
+
+**Why the swap fixes it without introducing a new failure class:** putting
+the run-row insert before the stamp means a crash in that same window now
+leaves the note un-stamped instead of stamped — which folds it back into the
+*already-accepted*, already-argued-safe class above (a re-run re-reads the
+same notes, may duplicate an entry, visible and correctable by hand). No
+crash window is left that produces a permanent, silent, unexplained state
+change. Recorded in §7.7 rather than solved with machinery, same as before —
+only the ordering that makes "recorded, not solved with machinery" actually
+true has changed.
 
 ### 5.4 Model configuration
 
@@ -1054,11 +1086,18 @@ Three, in decreasing likelihood:
   the same second could both pass. Accepted at well under a cent per
   occurrence, one deliberate click per week, and a visible, editable,
   deletable result — the same accepted-risk class as daily §5.12.
-- **A crash between applying decisions and stamping `curated_at`.** A re-run
-  re-reads the same notes and may add a duplicate entry. Visible and
-  correctable by hand, which SPEC §7 makes a first-class property rather than
-  a consolation. Deliberately ordered this way — the reverse order would
-  silently consume notes that produced nothing, which is the worse failure.
+- **A crash between applying decisions and stamping `curated_at`** — which,
+  after §5.3's 2026-08-25 ordering correction, now also spans the run-row
+  insert (memory changes → run row → stamp, not memory changes → stamp →
+  run row as originally written here). A re-run re-reads the same notes and
+  may add a duplicate entry. Visible and correctable by hand, which SPEC §7
+  makes a first-class property rather than a consolation. Deliberately
+  ordered this way — the reverse order would silently consume notes that
+  produced nothing, which is the worse failure. (The original order shipped
+  here had a second, worse gap inside this same window — a crash between the
+  stamp and the run-row insert left notes permanently un-retryable with no
+  audit row ever explaining why. See §5.3's ordering note for the full
+  correction.)
 - **A hard `maxDuration` kill.** Genuinely unrecoverable, exactly as in both
   prior features, and the reason the latency measurement (§5.4) is the first
   action of phase 4's server work rather than a later sanity check.

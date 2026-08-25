@@ -12433,6 +12433,193 @@ logs a handful of genuine notes and taps UPDATE MEMORY himself.
 This `CONTEXT.md` update itself — to be committed and pushed as a separate
 `docs:` commit immediately after this entry is finalized, per this
 session's own stated plan above.
+
+---
+
+## 2026-08-25 session (continued — four confirmations on the phase 4 adversarial review, no new building)
+
+Read CONTEXT.md first, as instructed. Adam asked four specific confirmations
+on the prior session's work — no new building, no new deploy.
+
+### Confirmation 1 — the `applyMemoryChanges` fix, proven precisely, not just described
+
+Question: on a partial failure mid-loop, does `applied` now report *exactly*
+which writes succeeded before the failure, and does the handler still
+surface a real error rather than silently treating a partial failure as
+success?
+
+Re-created a fresh throwaway mocked-execution test (same harness shape as
+the prior session's, deleted again immediately after — `git status`
+confirms no trace) and ran it for real rather than reasoning from the code.
+Scenario: three scripted writes — an `add` (succeeds), an `update` on
+`mem-A` (succeeds), an `update` on `mem-B` (fails) — sent through the real,
+unmodified handler. Actual captured output:
+
+```
+HTTP status: 500
+Response body: {
+  "error": "Curation was generated but did not finish applying — some changes may already be saved",
+  "applied": {
+    "added": [ { "id": "mem-new-1", "body": "a genuinely new fact" } ],
+    "updated": [ { "id": "mem-A", "body": "entry A NEW" } ],
+    "expired": []
+  }
+}
+```
+
+Cross-checked against the call log (ground truth of what was actually sent
+to the fake database): the insert and mem-A's update calls really were
+issued (and their queued responders returned no error), mem-B's update call
+was issued and its responder returned an error, and neither the audit-row
+insert nor the notes-stamp were ever reached (confirms `runCurationSteps`
+stopped at the first failure, which is the single `applyMemoryChanges` step,
+since the throw happens inside *its own* internal loop, not at the
+step-array level).
+
+**Answer: yes to both halves of the question.** `applied` reports exactly
+the add and the mem-A update — the two writes that genuinely landed — and
+omits mem-B, whose write never landed. The response status is a real `500`
+with an explicit error string, never a `200`; nothing in this path treats a
+partial failure as success. This is the same fix from the prior session,
+now proven with fresh, printed evidence rather than only the prior session's
+narrative description.
+
+### Confirmation 2 — TASKS.md's "Ordering note on steps 8–10": had NOT been updated; fixed now
+
+Checked directly: the prior session updated `api/coach/curate-memory.ts`'s
+own inline comments and CONTEXT.md, but never touched
+`COACH-PERSONALIZATION-TASKS.md` itself. §5.3's numbered step list still
+read "9. Stamp `curated_at`… 10. Insert the run row…" (the *original*,
+superseded order) and the "Ordering note on steps 8–10" paragraph still
+argued only about the window *before* the original step 9 — a real,
+confirmed staleness that would have misled a future reader into thinking the
+shipped code still matches the original plan.
+
+**Fixed this session.** §5.3's step list now reads step 9 = insert the run
+row, step 10 = stamp `curated_at` (matching the shipped code). The "Ordering
+note" paragraph is rewritten in place to: state what the original reasoning
+got right (memory changes must land first — reversing that would silently
+consume notes that produced nothing, still the worse failure); state
+precisely what it missed (it only reasoned about the crash window *before*
+the original step 9, and never separately examined the window *between* the
+original step 9 and step 10 — i.e. between the stamp and the run-row insert
+— which is a different, non-retryable failure class, not the same one
+reasoned about); and explain why the swap closes it (a crash in that same
+window now leaves the note un-stamped instead of stamped, folding it back
+into the already-accepted, already-argued-safe retry class). Also lightly
+updated §7.7's matching bullet to note the run-row insert now sits inside
+that accepted-risk window too, with a pointer to §5.3 for the full
+correction, rather than duplicating it.
+
+### Confirmation 3 — `v2_coach_curation_runs.decisions` vs `.applied`, shown from a real test run, not described
+
+Question: does `.decisions` now genuinely store the raw, unfiltered model
+output, distinct from `.applied`, restoring the three-way
+`input_snapshot`/`decisions`/`applied` distinction §3.3 was designed around?
+
+Same fresh throwaway harness, second scenario: scripted a model response
+with two decisions — one schema-valid-but-op-incomplete (`{op:'update',
+id:null, body:'the model hedged and could not pick an id', reason:'ambiguous
+match'}`, which `toDecisions()` drops before it ever becomes a real
+`CurationDecision`) and one genuinely valid `add`. Ran the real handler
+through to a successful `200`, and captured the *actual object* passed to
+`supabase.from('v2_coach_curation_runs').insert(...)` by wrapping the fake
+client's `.from()` for that one table. Actual captured output:
+
+```json
+{
+  "user_id": "11111111-1111-4111-8111-111111111111",
+  "input_snapshot": {
+    "notes": [ { "id": "note-1", "body": "one clear fact, one ambiguous one", "createdAt": "2026-08-20T00:00:00Z", "session": null } ],
+    "memory": []
+  },
+  "decisions": [
+    { "op": "update", "id": null, "body": "the model hedged and could not pick an id", "reason": "ambiguous match" },
+    { "op": "add", "id": null, "body": "the one valid new fact", "reason": "clearly new" }
+  ],
+  "applied": {
+    "added": [ { "id": "mem-new-1", "body": "the one valid new fact" } ],
+    "updated": [],
+    "expired": []
+  },
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_version": 1,
+  "input_tokens": 80,
+  "output_tokens": 40,
+  "note_count": 1
+}
+```
+
+**Answer: confirmed, with the actual stored shape shown above, not just
+claimed.** `.decisions` genuinely holds both raw entries — including the one
+`toDecisions()` dropped, with its `id: null` intact exactly as the model
+returned it — while `.applied` holds only the one write that was actually
+validated and made it to the database. The two fields are visibly different
+lengths and shapes, not the same array reused under two names, and
+`.input_snapshot` sits alongside both as the third, independent leg of the
+distinction. `rejectedIds` in the response is correctly `[]` here — the
+dropped decision never reached `planCurationApply` at all (it had no `id` to
+reject; §5.3 step 7's rejection path is specifically for a *present* but
+*unrecognised* id, a different case from an *absent* id), which is itself
+consistent with this session's Finding from the prior review (that gap is
+what made `.decisions` need to carry the raw output in the first place —
+`rejectedIds` alone can't surface it).
+
+Throwaway test file (`curateMemoryConfirmation.temp.test.ts`) deleted
+immediately after capturing this output; `npx vitest run` re-confirmed
+**233/233 passing** and `git status` confirmed no trace left behind.
+
+### Confirmation 4 — explicit, standing open item: the deployed endpoint's full generation path has never been exercised over real HTTPS
+
+Recorded plainly, so it is not conflated with the prior session's real `200`
+check, which proved something narrower:
+
+**What has been proven over real HTTPS against the deployed
+`overload-v2-sage.vercel.app` build:** exactly one path — the zero-uncurated-
+notes early return (§5.3 step 4). That request exercises real auth
+(`authorizeCoachRequest`, real bearer token, real `COACH_USER_ID` compare),
+real RLS, and a real Supabase read that happens to come back empty. It
+**never reaches, and cannot prove anything about, the Anthropic call, the
+`toDecisions`/`planCurationApply` validation step, `applyMemoryChanges`'s
+writes, the audit-row insert, or the notes-stamp** — every one of those
+sits after the `notes.length === 0` early return and is structurally
+unreachable while zero real Coach Notes exist.
+
+**What HAS been tested, and how:**
+- The full generation path's *logic* — id validation, partial-failure
+  ordering, the `applied`-accuracy fix, the decisions/applied distinction —
+  has been tested **locally, against the real handler, with Supabase and
+  Anthropic fully mocked** (this session and the prior one). This is real
+  execution of real code, but it is not a network round-trip anywhere, and
+  the "model" in every one of these tests is a hand-scripted fixture, never
+  a real Anthropic response.
+- The prompt's real latency and a real Anthropic response's rough shape were
+  measured once, locally, against a synthetic payload, before phase 4's code
+  even existed (`curationLatencyCheck.ts`, the phase 4 build session) — 6.3s
+  wall-clock, real API call, but again no database, no HTTP round-trip to
+  this app's own deployed endpoint, and it predates every fix in this
+  session.
+
+**What has never happened, anywhere, at any point in this feature line: a
+real Coach Note, read by the real deployed endpoint, sent to a real
+Anthropic call, with real decisions applied to real `v2_coach_memory_entries`
+rows, over a real HTTPS request.** Zero real Coach Notes exist in production
+(confirmed again as recently as the prior session's live UI check — "No
+notes yet."), and none have been fabricated to force this path, per the
+same standing instruction that has held for every phase 4 session so far.
+
+**This stays explicitly open — not closed by this session's work, and not
+implied closed by the deploy or by any check run so far** — until Adam logs
+a handful of genuine notes on the deployed app and taps UPDATE MEMORY
+himself. At that point, the first thing worth checking against real output
+is the same rough edge flagged in the phase-4-build session's synthetic
+latency check: the model's occasional tendency to propose a redundant
+`expire` decision with no id attached (correctly dropped by
+`planCurationApply` either way, but worth a look at real output quality).
+
+---
+
+## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
