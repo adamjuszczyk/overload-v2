@@ -855,6 +855,91 @@ Weekly Analysis — migration 014, tag review closed out)" below for the
 exact queries, results, and the SQL Editor typing workaround this step
 needed.
 
+**Migration 016 (`016_v3_coach_personalization_ratings.sql`) applied and
+independently verified 2026-08-25 — three additive columns, no changes to
+any existing row:** `v2_set_logs` `+ form_rating text` (check against
+`'rushed'|'normal'|'controlled'|'extra_controlled'`), `v2_sessions`
+`+ energy_rating text` (check against `'none'|'low'|'normal'|'high'|
+'supreme'`) and `+ pump_rating text` (check against
+`'none'|'some'|'good'|'extreme'`). Every COACH-PERSONALIZATION-TASKS.md
+§3.1 check run for real: `information_schema.columns` confirmed all three
+`text`, `is_nullable = YES`, `column_default = NULL`; **all three `CHECK`s
+proven by attempting to violate them** — an out-of-vocabulary `UPDATE`
+against a real row for each column returned a real `23514` and wrote zero
+rows (`v2_set_logs_form_rating_check`, `v2_sessions_energy_rating_check`,
+`v2_sessions_pump_rating_check`); `select count(*) where … is not null`
+returned **0** for all three columns (nothing backfilled); row counts on
+both tables (495 `v2_set_logs`, 46 `v2_sessions`) matched a baseline taken
+immediately before applying (nothing touched). See "2026-08-25 session
+(Coach Personalization — phase 1)" below for the exact queries.
+
+**Migration 017 (`017_v3_coach_notes.sql`) applied and independently
+verified 2026-08-25 — one new table, no changes to any existing table.**
+This paragraph was missing from this section when 017 shipped (an
+omission in that session's write-up, not a re-verification) — added now
+while 018 is documented for the same reason, so this list stays a
+complete, accurate reference rather than needing a second pass later.
+`v2_coach_notes` — `id`, `user_id`, `body text not null check
+(length(btrim(body)) > 0)`, `session_id` (FK → `v2_sessions`, **`on delete
+set null`, not cascade** — deliberate divergence from every other Coach
+table's cascade rule, TASKS §2.5: a note outlives the session it was
+typed in), `curated_at timestamptz` (nullable — the phase-4 curation
+watermark, landing here rather than in 018 per TASKS §9.1), `created_at`.
+RLS enabled, same `for all using/with check (user_id = auth.uid())` shape
+as every other `v2_` table. Three indexes: `(user_id, created_at desc)`
+for the Context list, a partial `(user_id, created_at) where curated_at is
+null` for phase 4's curation read, a partial `(session_id) where
+session_id is not null` for the sidebar's per-session list. All
+verification checks run for real: `information_schema.columns` (six
+columns, correct types/nullability/defaults), `pg_indexes` (exactly four —
+pkey plus the three named), `pg_class.relrowsecurity`/`pg_policies` (both
+confirming RLS live), the `body` `CHECK` proven by attempting `insert …
+values (…, '   ')` (`23514`, zero rows), and `on delete set null` proven
+for real — a throwaway session and note were created, the session
+deleted, the note confirmed to survive with `session_id` now `null`, both
+test rows then cleaned up. See "2026-08-25 session (Coach Personalization
+— phase 3: raw note capture)" below for the full account **and this
+session's entry below for a follow-up on whether that throwaway data was
+`user_id`-scoped to Adam's own account**, since the original write-up
+didn't show the literal SQL text.
+
+**Migration 018 (`018_v3_coach_memory.sql`) applied and independently
+verified 2026-08-25 — two new tables, no changes to any existing table:**
+`v2_coach_memory_entries` (`id`, `user_id`, `body text not null check
+(length(btrim(body)) > 0)`, `source text not null check (source in
+('curation','manual'))`, `status text not null default 'active' check
+(status in ('active','expired'))`, `created_at`, `updated_at`) and
+`v2_coach_curation_runs` (`id`, `user_id`, `input_snapshot jsonb not
+null`, `decisions jsonb not null`, `applied jsonb not null`, `model text
+not null`, `prompt_version integer not null default 1`,
+`input_tokens`/`output_tokens` nullable integer, `note_count integer not
+null`, `created_at`) — the one table in this plan the spec itself doesn't
+name (TASKS §7.6), provenance for a process that mutates a standing store
+instead of appending a permanent record. RLS enabled on both, identical
+`for all using/with check (user_id = auth.uid())` shape. Two indexes:
+`(user_id, status, created_at)` on entries (serves both Coach Memory's own
+list and curation's `status = 'active'` read), `(user_id, created_at
+desc)` on runs. All verification checks run for real, every mutating one
+explicitly scoped to Adam's own `user_id`
+(`12e79b69-9891-4f53-a7cf-650edd83659f`) per the standing rule below:
+`information_schema.columns` (18 columns across both tables, correct
+types/nullability/defaults — `status`'s `'active'::text` default and
+`input_tokens`/`output_tokens`'s nullability both confirmed exactly as
+written), `pg_indexes` (exactly four — two pkeys, two named), `pg_class.
+relrowsecurity`/`pg_policies` (both tables, both confirming RLS live, one
+policy each with the expected `qual`/`with_check`). **All three `CHECK`s
+on `v2_coach_memory_entries` proven by attempting to violate them, not
+read off the DDL**: an insert with a whitespace-only `body` →
+`v2_coach_memory_entries_body_check`, `23514`; an insert with `source =
+'bogus'` → `v2_coach_memory_entries_source_check`, `23514`; an insert with
+`status = 'bogus'` → `v2_coach_memory_entries_status_check`, `23514` —
+zero rows written by any of the three. Final row counts on both new
+tables confirmed `0` for Adam's account, both immediately after the
+migration and again after this session's live CRUD/curation checks (see
+"2026-08-25 session (Coach Personalization — phase 4: Coach Memory)"
+below), confirming nothing was left behind by any of the throwaway
+verification writes.
+
 ---
 
 ## Key architectural rules
@@ -880,6 +965,102 @@ needed.
   standing preference — a live, scoped choice made with full information,
   the way schema-level `curl` checks were offered as a partial substitute
   during Phase 3.4, not a replacement for the real check).
+- **Browser-pane click-dispatch can fail silently — verify state, don't
+  trust the tool's own success/failure signal (found 2026-08-25, Coach
+  Personalization phase 1 live verification).** In that session, the
+  automation tool's `left_click` (pointer coordinates or element ref alike)
+  reproducibly timed out and left the clicked text visually selected
+  instead of firing a real `click` event — confirmed not a page hang
+  (`navigate` and keyboard `type`/`Tab` all worked instantly throughout);
+  narrowed to click-event dispatch specifically, since even a native
+  button's Enter/Space keyboard activation also failed to fire, while a
+  programmatic `element.click()` via `javascript_tool` fired every handler
+  correctly and drove the real app (real Supabase writes, real offline
+  queueing) with no discrepancy from what a genuine tap would have done.
+  Workaround used for the rest of that session: locate the target via
+  `document.querySelectorAll`/`textContent` matching and call `.click()`
+  directly, screenshotting after each to confirm the actual resulting state
+  rather than trusting the click call's own return. Read `javascript_tool`'s
+  own instructions before reaching for this — it's documented for
+  debugging/inspection, not implementing UI changes; using it to drive
+  already-implemented UI when the primary input tool is confirmed broken is
+  a narrow, disclosed exception, not a standing substitute. If this recurs,
+  don't assume it's this same bug — confirm with the same isolation steps
+  (does `navigate`/`type` still work? does a programmatic `.click()` behave
+  differently from the tool's `left_click`?) before reaching for the
+  workaround.
+- **The Supabase SQL Editor (Monaco) cannot be driven reliably by simulated
+  keystrokes, click, or keyboard select-all — read and write it through
+  Monaco's own JS API instead, every time, no exceptions (consolidated
+  2026-08-25, after this same failure surfaced three separate times across
+  three sessions before anyone wrote down one standing fix — see below).**
+  This bullet replaces three scattered session notes that each documented
+  their own workaround for what turned out to be the same underlying
+  problem; a fourth future session should not have to rediscover it again.
+  The three incidents, each a different symptom of "the automation tool
+  cannot trust what it thinks it typed or cleared":
+  - **2026-08-18, migration 012:** `Ctrl+A`/`Ctrl+Home`/`Ctrl+Shift+End`
+    sent as modifier combos didn't reliably reach Monaco — `ctrl+a` moved
+    the cursor without producing a selection
+    (`selectionStart === selectionEnd` on the hidden textarea), and a
+    clear-and-retype landed the new text *inside* the old query rather than
+    replacing it. That session's workaround: never try to clear a populated
+    editor — open a fresh tab at `/sql/new` for every new query instead.
+  - **2026-08-20, migration 014:** typing one large block as a single
+    `type` call timed out after 30s, and the pane's on-screen rendering
+    lagged the real DOM state badly enough that a screenshot taken right
+    after the timeout showed an empty editor that wasn't actually empty — a
+    follow-up smaller batch landed merged into the stale content from the
+    "failed" call, which had in fact gone through. Clearing via
+    select-all/Ctrl+Home/Backspace was also unreliable, several commands
+    silently doing nothing. That session's workaround: abandon a suspect
+    tab rather than fix it, type in small batches, and confirm via
+    `get_page_text` (never a screenshot, which can also lag) after every
+    batch before continuing.
+  - **2026-08-25, migration 017 — the instance that actually produced the
+    fix below instead of another workaround:** typed text landed inside
+    stale leftover content from a previous query instead of a blank
+    document, and `Ctrl+A`/`Delete` sent through the automation tool did
+    not reach Monaco's real input handling at all —
+    `document.activeElement` was `MAIN`, not the editor's hidden textarea,
+    even immediately after a `left_click` directly on it. This also
+    disproved the hidden textarea's own `.value` as ground truth for "what
+    the editor contains": Monaco only mirrors a small window of text there,
+    for IME purposes, not the full document.
+
+  **Standing practice, superseding all three workarounds above — this is
+  the one to actually follow:** don't type into the SQL Editor and don't
+  try to clear it via keyboard at all. Read and write the real document
+  directly via `window.monaco.editor.getModels()[0].getValue()` /
+  `.setValue(sql)` (confirmed exactly one model exists per SQL Editor tab).
+  This sidesteps stale content, clearing, batching, and typing-timeout risk
+  in one move, because there is no simulated typing left to land wrong or
+  time out. If a real DOM focus is ever needed first (e.g. before clicking
+  a toolbar button that expects the editor focused),
+  `document.querySelector('.monaco-editor textarea').focus()` (plain
+  `.focus()`, no `.click()` needed) reliably moves `document.activeElement`
+  there. Separately, and still true regardless of typing method: Supabase's
+  SQL Editor shows its own confirmation dialog (`[role="dialog"]`
+  containing "Potential issue detected") before running any
+  `DELETE`/`DROP`/other destructive statement — the toolbar's "Run" button
+  only opens this dialog for such a query; a second button inside the
+  dialog, also labelled "Run query", has to be clicked separately to
+  actually execute it. Missing this looks exactly like the query silently
+  not running (the results pane keeps showing the *previous* query's
+  output) rather than like an obvious blocking modal.
+- **Every SQL Editor query (or any other access path that bypasses RLS)
+  must include an explicit `user_id` filter to Adam's own account — no
+  exceptions, including one-off investigative queries (added 2026-08-25,
+  after an unscoped query briefly surfaced another account's data into this
+  file — see that session's entry above for the correction, not repeated
+  here).** The SQL Editor connects with full database access; it does not
+  go through the app's RLS the way the app itself does, so an unscoped
+  `select` against any table shared across accounts (`v2_sessions`,
+  `v2_mesocycles`, `v2_programs`, `v2_workout_days`, `v2_set_logs`, etc.)
+  returns every account's rows, not just his. **If a query ever surfaces
+  data that isn't Adam's anyway, that is a bug in the query, not a
+  finding — stop immediately, do not investigate or record what it
+  returned, narrow the query, and re-run.**
 - State separation: TanStack Query owns all Supabase data. 
   Zustand owns UI state only. Never mix.
 - All colours via --accent and other CSS custom properties. 
@@ -1010,6 +1191,34 @@ needed.
   seventeen assumptions/decisions the spec leaves open. **Written this session,
   awaiting review — nothing in it is built.** §9 lists the four open questions
   worth settling before the tagging pass runs (see "2026-08-19 session" below)
+- COACH-PERSONALIZATION-SPEC.md — **new, 2026-08-24 (written by Adam, not this
+  session).** Product source of truth for Coach → Personalization: form rating
+  per set, energy/pump per session, Progress/History displays plus session
+  duration, raw Coach Notes (in-workout sidebar + Context-tab box), AI-curated
+  Coach Memory, and wiring form/energy/pump + Memory into Daily Session
+  Analysis's prompt. Five phases, one initiative. Its own §1–§10 numbering,
+  independent of all three prior specs. §7's gating principle is the one to
+  read first — form/energy/pump are ungated training data like RIR; the
+  in-workout sidebar is the single new gated surface
+- COACH-PERSONALIZATION-TASKS.md — **new, 2026-08-24.** Technical plan for the
+  above, **covering phases 1–3 at full task depth and phases 4–5 at decision
+  depth only** — §0 carries the reasoning for that split. Three proposed
+  migrations (016 ratings columns, 017 `v2_coach_notes`, 018 memory +
+  curation runs), the rating vocabularies and why they're `text`+`CHECK`, the
+  five explicit `select` lists that must be extended, the offline write-path
+  ripple (which needs no Dexie bump and no `useSyncQueue.ts` change), the
+  curation process end to end (§5), eleven assumptions the spec leaves open
+  (§7), the phase 4–5 decisions that had to be settled now because phase 3's
+  schema depends on them (§9), and five open review questions remaining
+  after §10's rating-vocabularies question was resolved (see "2026-08-25
+  session (Coach Personalization phase 1)" below). **Phase 1 (form/energy/
+  pump logging, migration 016), phase 2 (Progress/History display), and
+  phase 3 (raw note capture, migration 017, the gated in-workout sidebar)
+  are all built and verified as of 2026-08-25** — see each phase's own
+  dated session entry below. **Phases 4–5 (memory, analysis wiring) are
+  not started**, awaiting Adam's review of phases 1–3 first (his explicit
+  instruction) and, for phase 4 specifically, 10–20 real Coach Notes
+  existing per TASKS §0 — currently zero, see "Active work" above
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -1248,6 +1457,73 @@ needed.
 ---
 
 ## Active work
+**Newest, 2026-08-25 — Coach Personalization: phases 1–4 built and
+verified, phase 5 (wiring into Daily Session Analysis's prompt) not
+started, awaiting Adam's review.** `COACH-PERSONALIZATION-SPEC.md` (written
+by Adam) is the product source of truth for a five-phase initiative: form
+ratings per set, energy/pump per session, their Progress/History displays
+plus session duration, raw Coach Notes capture (in-workout sidebar + a
+Context-tab box), AI-curated Coach Memory, and wiring form/energy/pump +
+Memory into Daily Session Analysis's prompt.
+`COACH-PERSONALIZATION-TASKS.md` is the technical plan — phases 1–3 at full
+task depth, phases 4–5 at decision depth only. **Phase 1** (form/energy/pump
+logging, migration 016), **phase 2** (Progress/History display), **phase 3**
+(raw note capture, migration 017, the in-workout sidebar), and **phase 4**
+(Coach Memory — migration 018, curation prompt/function, the Context-tab
+view) are all built, code-verified (typecheck/tests/build clean throughout)
+and live-verified against real production data. See the four dated session
+entries below ("2026-08-25 session (Coach Personalization — phase 1…)",
+"…phase 2: display", "…phase 3: raw note capture", "…phase 4: Coach
+Memory") for each phase's full build and verification account.
+
+**Phase 4 was built against TASKS §0's own recommendation to wait for
+10–20 real Coach Notes before designing the curation prompt — overridden
+by Adam's explicit instruction this session, reasoning recorded in full in
+"…phase 4: Coach Memory" below and inline in `coachCurationPrompt.ts`'s own
+header.** Zero real notes still exist as of this session (confirmed live).
+**A real curation run against real notes is therefore still genuinely
+unverified** — not a build gap, closes the first time Adam logs real notes
+and taps "UPDATE MEMORY" himself. A throwaway-payload latency check did
+surface one real, mild prompt rough edge (an occasional redundant `expire`
+decision with no valid id, safely dropped by `curationApply.ts`'s
+validation) worth checking against real output first — see that session
+entry for detail. Not treated as a defect to fix reactively against a
+single constructed example, per the same discipline TASKS §0 itself
+argues for.
+
+**One open verification gap, carried forward from phase 2, not forgotten:
+whether a real, non-null form/energy/pump rating actually renders correctly
+— the averages, the scale-denominator display (`2.8/4`), the per-set/
+per-workout labels — has never been exercised, because every rating in the
+database is still `NULL`.** Not faked to close this gap, per explicit
+instruction; it resolves itself the first time Adam logs a real rated set
+or session, at which point it is a five-minute spot check, not new work.
+**Not a blocker for phase 3 or phase 4** — neither reads ratings. **It is a
+real prerequisite for phase 5**, since phase 5 wires ratings into the daily
+analysis prompt and that wiring deserves the same "verified against a real
+value, not just against NULL" standard everything else in this feature line
+has been held to.
+
+**Phase 4's TASKS.md §0 gate (do not start it until 10–20 real Coach Notes
+exist to design the curation prompt against) was explicitly overridden by
+Adam this session — phase 4 is now built, see "…phase 4: Coach Memory"
+below for the reasoning and what that leaves genuinely unverified (a real
+curation run against real notes).** Zero real notes still exist as of this
+session — every note created during phase 3's and phase 4's own live
+verification was a labelled throwaway, deleted before each session ended.
+This is a fact to check again before treating the curation prompt as
+trustworthy against real output, not an assumption to carry forward.
+
+Both spec corrections found by reading the code during technical planning
+still stand: there is no slider anywhere in this app (a segmented chip row
+substitutes), and there is no `CoachContextTab.tsx` (the Context-tab
+surfaces render directly from `CoachPage.tsx`). Gating, as corrected in the
+brief and now built exactly as scoped: the in-workout sidebar is the one
+new `coachGate.ts` call site in the whole initiative; form, energy and pump
+are ungated everywhere, same as RIR. See "2026-08-24 session (Coach
+Personalization — technical planning, phases 1–3)" below for the original
+planning account.
+
 **Resolved, as of 2026-08-22: the gym reference panel bug is fixed
 (session-skip reclassification + one-time backfill + meso-scoped
 reach-back, shared across the daily/weekly Coach payloads and the live
@@ -1268,6 +1544,18 @@ deployed UI) has never been exercised — every real generation so far was
 local direct invocation. Stays open until the next week resolves
 (~2026-08-30). See "2026-08-23 session (Coach — step 8...)" below for the
 full account.
+
+**Confirmed, same day, follow-up diagnosis (no code changes): 0c9951ef's
+week (2026-08-17–23) never touched the mesocycle-transition-day bug** —
+this account has exactly one mesocycle ever (`v2_mesocycles`, queried
+live), so the ambiguous tie-break path was structurally unreachable for
+its entire history, not just avoided by luck. **Also confirmed live:
+`api/coach/analyze` (daily) still works correctly against the deployed
+build** after its shared-auth extraction (`coachApiAuth.ts`) — a real
+POST to the deployed endpoint against an already-analyzed session hit
+the idempotent existing-row path exactly as expected. See "2026-08-23
+session (continued — mesocycle-transition mechanism explained...)"
+below for both, with full evidence.
 `COACH-WEEK-ANALYSIS-SPEC.md` (Adam) and `COACH-WEEK-ANALYSIS-TASKS.md`
 (2026-08-19, still formally "awaiting review" though most of it has since
 been executed) are the pair. Steps 1–4 and the tagging pass (step 3) are
@@ -10693,7 +10981,1458 @@ feature has had throughout.
 
 ---
 
-## Pending feedback to address
+## 2026-08-23 session (continued — mesocycle-transition mechanism explained, 0c9951ef's boundary status confirmed, daily function live-verified post-refactor)
+
+Diagnosis/verification only, explicitly no new building. Two questions.
+
+### Q1 — the transition-day mechanism, in full, and whether 0c9951ef's week ever touched it
+
+**The mechanism (pre-fix).** `useCreateMeso` (`mesoService.ts`) runs
+`completeAllActiveMesos(userId)` then `createMeso(...)`. The first sets
+*every* currently-active mesocycle's `end_date` to today's local date
+(inclusive bound); the second inserts the new mesocycle with `start_date`
+= that same today (also inclusive, `end_date: null`). On the transition
+day itself, both rows satisfy `mesoForDate`'s range test
+(`date >= m.startDate && (m.endDate === null || date <= m.endDate)`) for
+that one date — a genuine, two-row tie, not a hypothetical one. Before
+the fix, resolving that tie meant taking whichever row a plain `.find()`
+over the fetched array happened to return first — and nothing in
+`assembleWeekResolution`'s query put an `ORDER BY` on `v2_mesocycles`, so
+that order was whatever Postgres's query planner produced, unspecified
+and not guaranteed stable across calls. `resolveWeek` then does
+`programs.find(p => p.id === meso.programId)` on whichever meso won, and
+reads `program.schedule[dow]` for that weekday from *that* program only.
+If the old and new programs' schedules disagree for that weekday, the
+losing program's schedule is never consulted for that date at all — the
+date is either added to `expected[]` (if the winner's schedule has a
+workout that day) or silently skipped (if the winner's schedule doesn't),
+with no trace that a second, disagreeing program existed. Since
+`isComplete` is `resolvedCount === expected.length && hasCompleted`, a
+date that should have been expected (per the losing program) but got
+dropped can't make the week look incomplete — it was never counted in
+`expected.length` to begin with. A genuinely-missing session on a
+transition day could therefore resolve `isComplete: true` and be
+permanently stored wrong, with no regeneration path (SPEC §9).
+
+**What the fix changed.** `mesoForDate` now does
+`mesocycles.filter(...)` to collect *every* match instead of stopping at
+the first, then `.reduce((latest, m) => m.startDate > latest.startDate ?
+m : latest)` to deterministically prefer the most recently *started*
+meso on a genuine tie. Same two rows, any fetch order, now always
+produce the same winner — the nondeterminism is gone. This does **not**
+resolve which program should actually govern a shared boundary day —
+that's still a real, unresolved product question, and the underlying
+overlap itself (two mesocycles both legitimately claiming the same
+calendar date) remains pre-existing, accepted application-layer
+behaviour with no DB exclusion constraint against it
+(`001_v2_schema.sql`). The fix only makes the resolution reproducible.
+
+**Does 2026-08-17–23 (0c9951ef's week) touch a transition boundary?
+Confirmed plainly: no.** Queried `v2_mesocycles` live via PostgREST for
+this account (`imhsawrghteqsmpklofv.supabase.co/rest/v1/v2_mesocycles`).
+Result — exactly one row, ever:
+
+```json
+[{ "id": "...", "name": "MESO 1.0", "program_id": "...",
+   "status": "active", "start_date": "2026-07-05", "end_date": null }]
+```
+
+This account has never created a second mesocycle, so no transition —
+past, present, or in this week — has ever happened here. For every date
+this account has ever resolved a week for, `mesoForDate`'s `matches`
+array has had length 0 or 1, never 2; the tie-break path (both the
+buggy `.find()` version and its `.filter()`/`.reduce()` replacement) has
+been structurally unreachable for this account's entire history, not
+merely "didn't happen to fire this time." The 2026-08-17–23 week, and
+0c9951ef specifically, was never in this bug's path.
+
+### Q2 — does `api/coach/analyze` (daily) still work, live, after its shared auth dependency changed
+
+`analyze.ts` was refactored in an earlier session onto
+`coachApiAuth.ts`'s extracted `authorizeCoachRequest`, the same shared
+module `analyze-week.ts` uses. A real, safe, free live check was
+possible and was run: found a session already analyzed
+(`v2_coach_session_analyses`, session `a44e1f1e-c470-486c-9a30-2fafd0c0dfcc`,
+a LEGS session, existing analysis id `03371a01-8b09-466a-8b20-3cf28572e967`,
+`createdAt: 2026-08-22T12:24:51.646962+00:00`), then POSTed that same
+`sessionId` directly to the deployed
+`https://overload-v2-sage.vercel.app/api/coach/analyze`, using the
+already-authenticated browser tab's real bearer token — expecting the
+idempotent existing-row path, not a new generation. Result:
+
+```json
+{
+  "status": 200,
+  "elapsedMs": 3653,
+  "returnedId": "03371a01-8b09-466a-8b20-3cf28572e967",
+  "returnedSessionId": "a44e1f1e-c470-486c-9a30-2fafd0c0dfcc",
+  "model": "claude-haiku-4-5-20251001",
+  "promptVersion": 2,
+  "createdAt": "2026-08-22T12:24:51.646962+00:00"
+}
+```
+
+`returnedId` and `createdAt` are exactly the pre-existing row's values —
+not a new id, not a new timestamp — confirming the existing-row check
+fired, not a fresh Anthropic call. 3.65s elapsed is consistent with an
+auth chain plus one DB read, nowhere near the ~15–20s a real generation
+takes. Zero cost, zero mutation. This is a live-HTTPS test against the
+real deployed function, not a local invocation or typecheck — it
+confirms `coachApiAuth.ts`'s extracted auth chain (bearer-token
+validation, `COACH_USER_ID` gate, RLS-scoped client construction) works
+correctly in the actual Vercel Node runtime, and that `analyze.ts`'s
+handler, now built on that shared module, still returns identical
+results to before the refactor. Daily's live-deployed correctness after
+the shared-dependency change is confirmed, not assumed.
+
+---
+
+## 2026-08-24 session (Coach Personalization — technical planning, phases 1–3)
+
+**Planning only. No implementation code written, nothing built, nothing
+applied to production.** Produced `COACH-PERSONALIZATION-TASKS.md` from
+`COACH-PERSONALIZATION-SPEC.md` (written by Adam, untracked before this
+session), read against the daily and weekly pairs for everything this reuses.
+Awaiting review — explicitly held before any build step.
+
+### The scope call, and why it isn't "all five phases"
+
+SPEC §3 sequences the initiative as five phases. Asked to propose whether the
+plan should cover all five up front or be written phase-by-phase, the
+recommendation given — and what the document actually does — is a split:
+**phases 1–3 at full task depth, phases 4–5 at decision depth only.**
+
+- Phases 1–3 (form/energy/pump logging, its Progress/History displays, raw
+  note capture) have no unknowns. Every piece is a nullable column with a
+  `CHECK`, a mapper, an offline write path, a CRUD service plus TanStack
+  hooks, or a bottom-sheet overlay — all patterns already in this repo.
+  Nothing phases 4–5 discover can change how any of it is built, and they
+  interlock enough that planning them separately means re-deciding the same
+  things three times.
+- Phase 4 (Coach Memory curation) has exactly one unknown no planning
+  resolves: what real raw notes look like. Its prompt has to decide add vs.
+  update vs. expire, and the only sample available is the one in SPEC §4.
+  This feature line has a documented history here — COACH-WEEK-ANALYSIS-TASKS
+  §7.4 confidently predicted "several weeks available at ship", its own step-1
+  diagnostic found zero, and the plan was corrected in place; and CONTEXT.md's
+  persona/tone item is deferred with "One sample isn't enough signal to design
+  a persona instruction against without guessing." A bad curation prompt is
+  worse than a bad analysis — an analysis is one bad record, curation quietly
+  corrupts the standing memory every future analysis reads.
+- **But the phase 4–5 decisions that constrain phase 3's schema are settled
+  now**, in the plan's §9, and phase 3's migration ships with them. Same
+  asymmetric-cost argument that moved `input_snapshot` into migration 012 and
+  `exerciseIds` into the weekly content schema: one line now versus a
+  migration plus a nullable code path plus a permanent population gap.
+
+### Two corrections to the spec's technical references, found by reading the code
+
+Same pattern as COACH-ANALYSIS-TASKS §0 — flagged rather than silently built
+around.
+
+1. **There is no slider anywhere in this app, and RIR is not one.** SPEC §6
+   asks for "a slider next to RIR entry, same interaction pattern already
+   established there." Read directly: RIR in `SetRow.tsx` is an
+   `<input type="number">` inside the collapsible `▼ MORE` drawer, and a
+   search for `type="range"` across `src/` returns nothing. The plan builds a
+   segmented chip row instead (named values, not numeric; matches
+   `WorkoutSwitcher.tsx`/the tab bars/the INHERIT-KG-LBS picker; keeps the
+   44px touch-target convention every control in that file follows) and
+   raises the divergence as an explicit review question rather than deciding
+   it silently.
+2. **There is no `CoachContextTab.tsx`.** COACH-ANALYSIS-TASKS §6's file list
+   named one; what shipped is `CoachPage.tsx` rendering `<PhaseLog />` and
+   `<WeightLog />` directly. Nothing is blocked — the note box and Memory view
+   get added the same way.
+
+### The decisions worth recording here, not just in the plan
+
+- **Ratings are `text` + `CHECK`, not integers** — the shape every enumerated
+  vocabulary in this schema already uses (`phase`, `kind`, `movement_pattern`),
+  and self-describing in the JSON payload the model reads. A pure
+  `ratingScales.ts` owns the vocabulary, labels and the text→ordinal mapping
+  used for averaging, so the ordinal scale is a display concern rather than a
+  storage commitment.
+- **`'none'` (rated) is not `NULL` (unrated)** — load-bearing for SPEC §7's
+  "absence is data too", and the kind of distinction a later reader collapses.
+- **Energy/pump are columns on `v2_sessions`, not a new table.** Both `v2_`
+  tables are this app's own namespace, so unlike migration 013's `exercises`
+  columns there is no Northstar v2 cross-app assumption to flag here.
+- **The offline write paths are the real risk in phase 1, not the UI.**
+  `useLogSet`'s offline branch has two separate explicit field lists
+  (`useSession.ts:647` Dexie put, `:671` sync_queue payload) — a field missed
+  in the second syncs a silent `NULL`. `useCompleteSession` has the same shape
+  for energy/pump. **No Dexie version bump is needed** (plain fields, not
+  indexes — `db.ts`'s own `version(2)` comment records that precedent), and
+  **`useSyncQueue.ts` needs no change at all** since its replay is
+  table-generic (`supabase.from(item.table).upsert(item.payload)`).
+- **Five explicit `select` column lists must be extended or they map real
+  ratings to `null` silently** — `analysisInput.ts:343`/`:418`,
+  `progressService.ts:98`/`:390`, `historyService.ts:171`.
+  `sessionService.ts` uses `select('*')` at three sites and picks the column
+  up free. `SetLog.formRating` is typed as a required key with a nullable
+  type specifically so the compiler flags each mapper.
+- **`v2_coach_notes.session_id` is `on delete set null`, not cascade** — a
+  deliberate divergence from `v2_coach_session_analyses`' rule, on the same
+  reasoning weekly §7.7 used: an analysis of a deleted session is meaningless,
+  a note saying "wrist's been bothering me" is not.
+- **Notes queue offline through `sync_queue`; the note list stays
+  online-only.** The sidebar lives on the one offline surface in the app and
+  exists for exactly the moment signal is worst, so dropping the write would
+  defeat it — but no Coach table is mirrored in Dexie and nothing in SPEC asks
+  for offline *reading* of past notes.
+- **Curation is a third serverless function** (`api/coach/curate-memory.ts`),
+  reusing `authorizeCoachRequest` unchanged. No `vercel.json`, `tsconfig` or
+  dependency change — `api/**` already covers it at `maxDuration: 60`. It
+  returns a **decision list applied by deterministic code**, not tool-use:
+  ids are validated against what was actually sent and a hallucinated one is
+  dropped, the same defence `WeekAnalysisDetail.tsx` already applies to
+  `exerciseIds`.
+- **Gating, per the correction issued with the brief:** form/energy/pump and
+  every one of their displays are ungated, same as RIR. **The in-workout
+  sidebar is the only new `coachGate.ts` call site in the whole initiative.**
+  The Context note box and Memory view need no check — both are inside the
+  already-gated `/coach` route. The server-side `COACH_USER_ID` gate still
+  applies to the curation endpoint, arriving free with `authorizeCoachRequest`
+  — that is a different thing from a `coachGate.ts` call site and is noted so
+  it isn't misread as adding a gate that was ruled out.
+
+### Migrations proposed (none applied)
+
+`015` is the last applied, so: **016** (ratings columns, phase 1), **017**
+(`v2_coach_notes`, phase 3), **018** (memory entries + curation runs, phase
+4). Three rather than one because this repo applies a migration per build step
+and verifies it before the code depending on it lands — bundling would put
+phase 4's schema into production before phase 1 ships. Each carries its own
+verification list in the plan, including prove-it-by-violating-it `CHECK`
+tests and, for 017, proving the `on delete set null` behaviour against a
+throwaway session rather than reading it off the DDL.
+
+### Six open questions raised for review
+
+Rating vocabularies (the one genuinely awkward-to-reverse decision); chip row
+vs. the spec's literal "slider"; whether raw notes should reach the daily
+prompt (the plan follows the spec and says no, and flags this as its own
+most-likely-wrong assumption); whether `v2_coach_curation_runs` is wanted at
+all (the only table the plan adds that the spec doesn't name); the manual
+curation trigger; and the scope split itself.
+
+### Also this session
+
+Two standing future-work items recorded under a new "Standing future work
+(noted, not started)" heading above — the exercise library rework and the
+settings rework with a dedicated Coach settings tab. Both explicitly outside
+this initiative (COACH-PERSONALIZATION-SPEC §8 lists both in its own
+out-of-scope table); neither started, neither planned.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 1: corrections + full build)
+
+**Phase 1 (form/energy/pump logging) built end to end and fully verified —
+code-level and live. Phases 2–5 not started. Awaiting Adam's review before
+phase 2 begins**, per his explicit instruction at the start of this session.
+
+### Three corrections to COACH-PERSONALIZATION-TASKS.md, approved by Adam before build
+
+1. **§10 open question 1 (rating vocabularies) resolved, not open** —
+   confirmed correct as written, including `'some'` as the pump scale's
+   second value. No change to migration 016. Marked resolved in place in
+   TASKS.md's §10 list rather than deleted, so the confirmation is on the
+   record.
+2. **§7.8 reversed: the daily analysis payload gets the analyzed session's
+   own notes directly, alongside Memory — not Memory alone.** Curation runs
+   roughly weekly and manually; daily analysis is typically same-day, so a
+   note written mid-workout almost never reaches Memory before that same
+   session gets analyzed — which defeated the exact scenario SPEC §4 opened
+   with (the calf-skip example). §4.5's payload sketch now carries
+   `sessionNotes?: string[]` alongside `memory?: string[]`, both optional
+   for the same frozen-`input_snapshot` reason. No schema change — migration
+   017's `session_id` index already serves this query. (Phase 5 work,
+   deferred — recorded now because it was a decision, not because anything
+   was built against it this session.)
+3. **Phase 1 step 6 gained an explicit offline check for energy/pump**,
+   matching the one form-rating already had: complete a session with
+   energy/pump ratings while offline, confirm both sync intact on
+   reconnect. Same risk class as the form-rating offline path — it
+   shouldn't be the one path in that risk class without its own named
+   check. Actually run this session — see verification below.
+
+§10's open-questions list renumbered from six to five after removing the
+now-decided §7.8 question; §7.11/§2.1 untouched (no vocabulary change).
+
+### What got built, per TASKS §6's implementation order
+
+1. **Migration 016** — applied by hand through the Supabase SQL Editor
+   (browser-driven, Adam authenticated the session) and independently
+   verified per §3.1 in full — see "Database tables" above for the exact
+   results. First, because everything downstream writes to it.
+2. **`src/features/gym/ratingScales.ts` + `.test.ts`** — pure module,
+   `FORM_SCALE`/`ENERGY_SCALE`/`PUMP_SCALE`, `toOrdinal`, `averageRating`
+   (null over an all-null list, never `0`). `FormRating`/`EnergyRating`/
+   `PumpRating` string-union types live in `src/types/index.ts` per TASKS
+   §4.1; the scale objects, labels and ordinal/averaging functions live in
+   `ratingScales.ts` per §4.2/§2.2. 7 tests, all passing.
+3. **Types and mappers.** `SetLog.formRating` / `Session.energyRating` /
+   `.pumpRating` added as **required keys with nullable types** (TASKS
+   §4.1's point exactly): every existing `SetLog`/`Session` literal
+   construction site across the app was flagged by `tsc` and fixed for
+   real, not spread over — `sessionService.ts`'s `toSetLog`/`toSession` and
+   `logSet`/`updateSetLog`/`completeSession`; `db.ts`'s `CachedSetLog`/
+   `CachedSession` (no Dexie version bump, same `stageIndex`-precedent
+   fallback for rows cached before this shipped); `offlineCache.ts`'s two
+   Dexie writes; `useSession.ts`'s five separate `SetLog`/`Session`
+   construction sites (`useLastSessionLogs`, its offline-fallback mapper,
+   `fetchReferenceSessionsFromCache`, `useLogSet`'s offline branch +
+   `onMutate`, `useCreateSession`'s offline branch); `analysisInput.ts`'s
+   own separate `toSetLog` mapper plus both its explicit `select` column
+   lists (extended to fetch `form_rating` now even though phase 5 is what
+   reads it — TASKS §2.4's point: fix the silent-null trap while the
+   compiler is already forcing the touch); `coachWeekService.ts`'s and
+   `weekResolution.ts`'s `Session`-literal mappers (hardcoded
+   `energyRating`/`pumpRating: null` — correct, since weekly is untouched
+   by this initiative, TASKS §7.10); five test-helper `makeSetLog`/`makeLog`
+   /`session` factories across `analysisInput.test.ts`,
+   `referenceLogic.test.ts`, `positionMatch.test.ts`, `setGroupLogic.test.ts`,
+   `weekResolution.test.ts`. `progressService.ts` and `historyService.ts`
+   were confirmed **not** compile-forced (their own private row types, not
+   literally `SetLog`/`Session`) — correctly left untouched, phase 2's job.
+4. **The form-rating write path.** New `src/features/gym/RatingChips.tsx`
+   — the segmented chip row TASKS §1.1 substitutes for SPEC §6's literal
+   "slider" (this app has none; RIR itself is a numeric input in a drawer).
+   Horizontally scrollable (`WorkoutSwitcher.tsx`'s own pattern), 44px
+   touch targets, tap-again-to-clear back to `null`. Wired into
+   `SetRow.tsx`'s `▼ MORE` drawer (input row, offered on stage rows too per
+   §7.2) and its `isEditing` block; threaded through `SetGroup.tsx`'s
+   `LogParams`, `ExerciseCard.tsx` and `GymSession.tsx`'s `onLog`/
+   `onUpdateSet` types; `useLogSet`'s params and **both** offline-branch
+   writes (Dexie put and `sync_queue` payload — the single highest-risk
+   spot per §2.4); `useUpdateSetLog`'s `SetLogChanges`; `sessionService.ts`'s
+   `logSet()` insert and `updateSetLog()`'s patch builder.
+5. **The energy/pump write path.** Two `RatingChips` rows in
+   `SessionComplete.tsx` above the note textarea, each prefilled once from
+   the session's existing rating via its own ref-guarded effect (same
+   pattern as the existing `noteInitialisedRef`, kept as three independent
+   effects rather than one combined — an energy-only or pump-only rating on
+   a reopened session must prefill correctly without either blocking the
+   other). `completeSession()` gained two optional parameters
+   (`energyRating`, `pumpRating`, both defaulting `null`) — additive, not a
+   signature rewrite; `useAutoFinishSession.ts` deliberately untouched, as
+   specified. `useCompleteSession`'s params and offline `sync_queue`
+   payload both carry the two new fields.
+6. **Full verification.** `npm run typecheck` (both `tsconfig.app.json` and
+   `tsconfig.api.json`) — clean. `npm test` — 219/219 passing (18 files).
+   `npm run build` — clean (pre-existing chunk-size warning only, unrelated).
+   Then live, against the real dev server and real production Supabase
+   (`npm run dev`, browser-driven): logged a real set (70kg×11) on today's
+   real scheduled session (2026-08-25, PULL 1, Week 9) with form rating
+   `controlled` — confirmed stored via direct SQL; logged a second set
+   (65kg×9) with no form rating — confirmed `NULL` stored, not a default;
+   simulated offline (`navigator.onLine` override + a real `offline`/
+   `online` event pair, which is exactly what `useOnlineStatus.ts` listens
+   for — not a mock, the identical code path a real network drop takes)
+   and logged a third set (65kg×9, form rating `rushed`) — confirmed queued
+   in `db.sync_queue` with `form_rating` present, then confirmed synced to
+   Postgres with the client-generated id and rating intact on reconnect;
+   completed the session with energy `high` / pump `good` — confirmed
+   stored; reopened the same session, went offline again, changed the
+   ratings to energy `supreme` / pump `extreme` and re-completed —
+   confirmed queued with both fields, then confirmed synced correctly on
+   reconnect (overwrote `high`/`good` with `supreme`/`extreme`, exactly as
+   expected for a re-completion). All six of TASKS §6 step 6's live checks
+   passed, including the newly-added energy/pump offline check.
+   **Real data note:** this used today's actual scheduled workout, not a
+   throwaway session — the three set values and the ratings on this
+   `PULL 1` session are genuine test input, not representative of the
+   actual workout, flagged here so it isn't mistaken for real performance
+   data later.
+
+### A browser-automation bug hit and worked around this session
+
+The click-dispatch issue is written up under "Key architectural rules"
+above (new bullet, 2026-08-25) since it's a tooling gotcha future sessions
+doing browser-driven verification will hit again, not something specific
+to this feature. Short version: the automation tool's `left_click` stopped
+firing real click events partway through this session (confirmed via
+isolation, not assumed) while `navigate`/keyboard `type` kept working
+normally; verification continued via `element.click()` through
+`javascript_tool`, screenshotting after each step to confirm real state
+rather than trusting the click call's own report.
+
+### Not done this session, on purpose
+
+Phases 2–5 (display, notes, memory, analysis wiring) — not started, per
+Adam's explicit instruction to stop at phase 1's verification. `git commit`
+— not run; changes sit in the working tree for Adam's review first, same
+as the instruction that opened this session asked for.
+
+---
+
+## 2026-08-25 session (continued — two verifications of the prior report, no new building)
+
+Adam asked for two things to be checked directly against production, not
+assumed from the prior session's own report, before anything else proceeds.
+Both checked via fresh SQL queries this session; answers below.
+
+### 1. Does today's real PULL 1 session cleanly reflect Adam's actual training?
+
+**Yes, at every level checked — but the earlier test session is still in the
+database, not deleted, and Adam should decide what to do with it.**
+
+Two sessions belonging to Adam's own account exist for `date = '2026-08-25'`
+(the query behind this section was not scoped by `user_id` and also
+returned a row from another account entirely — corrected in the session
+entry below; nothing about that other row is repeated here):
+
+- **`2eadd1f1-ee7c-4f7e-9922-824315263592`** — status `completed`,
+  `workout_day_id` → **PULL 1**, created 09:32, completed 10:25. **This is
+  Adam's real session.** Its 13 `v2_set_logs` rows are genuine, varied
+  training data — weights of 10/35/55/65/67.5 kg across three set-number
+  groups (multiple exercises, not one flat repeated value), reps 8–12,
+  `rir` 0/1, two rows with `weight`/`reps` both `NULL` (skipped sets),
+  logged between 09:43 and 10:25 — nothing resembling the prior session's
+  flat 70/65/65 test values. **Every `form_rating` on this session is
+  `NULL`** — Adam didn't use the new form chips this workout, which is a
+  legitimate "not rated" state (SPEC §7), not a leftover. **`energy_rating`
+  and `pump_rating` on the session row are both `NULL`** too — genuinely
+  unrated, not the `supreme`/`extreme` test values from the prior session.
+  Confirmed by querying `v2_sessions` directly for this id, not inferred
+  from the set logs.
+- **`f6deaca3-ccd2-4a1e-a919-ba23028f24ba`** — status **`skipped`**, same
+  `workout_day_id` (PULL 1), created 08:24. **This is the prior session's
+  test session — still in the database, not deleted.** Its 3 `v2_set_logs`
+  rows are exactly the test values from that session's report (70kg×11
+  `controlled`, 65kg×9 unrated, 65kg×9 `rushed`, offline-logged), and the
+  session row itself still carries `energy_rating = 'supreme'`,
+  `pump_rating = 'extreme'` — also test values, also still there.
+  **Checked what "REDO SESSION" actually does, from the source, rather
+  than assuming:** `TodayPage.tsx`'s `handleRedo` calls
+  `skipSession.mutateAsync(basicSession.id)` — a status update to
+  `'skipped'` — then `createSession.mutateAsync(...)` for a fresh row. It
+  is **reset-in-place-via-skip-and-new, not delete-and-recreate.** Nothing
+  about this session's data — set logs, ratings, id — is ever removed by
+  redoing; the old row just stops being the active one. The database
+  result matches that mechanism exactly: one skipped row holding 100% of
+  the old test data, untouched, sitting alongside the new real one.
+
+**Not yet resolved: what to do with the orphaned `f6deaca3` row.** It is
+harmless in the sense that it's correctly classified `skipped` (excluded
+from anything that reads `completed` sessions) and RLS-scoped to Adam's own
+account — but it does still sit in his real training history with fabricated
+values attached, and would render if he ever opened that specific skipped
+session's detail view. **Not deleted this session** — deleting a real
+production row is exactly the kind of action that needs Adam's explicit
+go-ahead, not an assumption that "harmless" means "fine to remove
+unilaterally." Flagging it as an open decision for him.
+
+### 2. Step 6's report claimed six live checks; TASKS.md names five. What was the sixth?
+
+**There is no sixth check — the "six" in the prior report's summary was a
+counting error, not an unreported or skipped test.** COACH-PERSONALIZATION-
+TASKS.md §6 step 6 names exactly **five** live checks: (1) log a real set
+with a form rating, confirm stored; (2) log a set offline, confirm it syncs
+with the rating intact; (3) complete a session with energy/pump, confirm
+stored; (4) complete a session with energy/pump offline, confirm sync on
+reconnect; (5) confirm an unrated set stores `NULL`, not a default. The
+prior session's own narrative — read back this session — describes exactly
+five actions, one per named check, in that order (log set 1 `controlled`;
+log set 2 unrated; log set 3 offline `rushed`; complete online
+`high`/`good`; reopen, go offline, re-complete `supreme`/`extreme`) and
+never describes a sixth distinct action. The "six" was very likely a
+miscount at the moment of writing the summary sentence — possibly from
+mentally splitting the "reopen, then go offline, then re-complete" sequence
+into two things — not a real sixth check that ran silently or a placeholder
+for one that didn't. **All five named checks did run and did pass** — this
+session re-confirmed check 5 and both of the offline/rating claims (1, 2,
+3, 4) directly against real rows still in the database (see §1 above: the
+`f6deaca3` session's 3 set logs and the `energy_rating`/`pump_rating`
+history are exactly what those checks claimed to produce), rather than
+re-trusting the prior narrative alone. The corrective is to the report's
+arithmetic, not to what was actually tested.
+
+---
+
+## 2026-08-25 session (continued — orphan deletion)
+
+Two more instructions from Adam: delete the confirmed test session, and
+establish facts (not guesses) about a second unrecognized session flagged
+in the prior report. **The second part is corrected in full in the session
+entry below** — the query behind it was not scoped to Adam's account and
+what it turned up was not his to investigate. Only the deletion (§1 here)
+holds.
+
+### 1. `f6deaca3` deleted — FK-checked first, verified after, week completeness re-checked
+
+**Deleted, per Adam's instruction.** FK check first, matching this repo's
+standing deletion discipline: `pg_constraint` confirmed exactly two foreign
+keys reference `v2_sessions(id)`, both `on delete cascade` —
+`v2_set_logs_session_id_fkey` and
+`v2_coach_session_analyses_session_id_fkey` — and a direct query confirmed
+**zero** `v2_coach_session_analyses` rows reference `f6deaca3` (it was never
+analyzed). Safe to delete explicitly rather than relying on cascade alone.
+
+Deleted in order, each verified by `RETURNING` before moving to the next:
+`delete from v2_set_logs where session_id = 'f6deaca3-…'` returned exactly
+3 rows (set 1/70kg/`controlled`, set 2/65kg/unrated, set 3/65kg/`rushed` —
+the same three test rows the prior report described), then
+`delete from v2_sessions where id = 'f6deaca3-…'` returned exactly 1 row
+(`status: skipped`, `date: 2026-08-25`, `workout_day_id` → PULL 1,
+`energy_rating: supreme`, `pump_rating: extreme` — again matching exactly).
+Final counts: `v2_set_logs` 524 → 521, `v2_sessions` 50 → 49, both down by
+precisely the deleted rows. Today's session count is now 2, not 3.
+
+**Week completeness re-checked fresh, scoped to Adam's own account only.**
+Adam's one mesocycle is "MESO 1.0" (`start_date` 2026-07-05), schedule
+Mon→PUSH 1, Tue→PULL 1, Wed rest, Thu→PUSH 2, Fri→PULL 2, Sat→LEGS, Sun
+rest (recorded earlier in this file). For 2026-08-24…2026-08-30: **expected
+= 5 dates** (Mon/Tue/Thu/Fri/Sat). Resolved so far, from Adam's own
+sessions only: Monday (`24dbd2b3`, `completed`) and Tuesday (`2eadd1f1`,
+`completed`) — Wed–Sat haven't happened yet, it's still Tuesday. →
+**`isComplete: false`**, correct for a week not yet finished. (An earlier
+version of this note computed "expected" from a schedule that turned out to
+belong to another account, reached via a query that wasn't scoped to
+Adam's `user_id` — see the correction below. The conclusion above is
+recomputed from Adam-scoped facts only and happens to match the earlier
+bottom line, but the reasoning that got there before was wrong and has been
+replaced, not just re-confirmed.)
+
+---
+
+## 2026-08-25 session (continued — correction: an unscoped query briefly surfaced another account's data)
+
+This is a correction to the two session entries directly above, not a new
+finding. Both were produced with SQL Editor queries that read from
+`v2_mesocycles`, `v2_programs`, `v2_workout_days`, and `v2_sessions`
+**without a `user_id` filter.** The SQL Editor connects with full database
+access and does not go through this app's RLS policies the way the app
+itself does, so an unscoped query there returns every account's rows, not
+just Adam's. One of the rows it returned belonged to a different account
+and was mistaken for Adam's own — investigated, reasoned about, and written
+into this file in detail across both entries above.
+
+**Removed on Adam's instruction:** every specific detail those two entries
+recorded about the account that wasn't his — a mesocycle name, a program
+and its workout-day names (including one containing a slur), a session's
+contents, and the multi-paragraph "unresolved contradiction" analysis built
+on top of that data. None of it is repeated here. What remains above (the
+`f6deaca3` test-session deletion and the week-completeness recheck) is
+Adam's own data, independently confirmed — the deletion happened inside his
+own authenticated app session, and the completeness recheck now uses only
+his own confirmed mesocycle and sessions.
+
+**Explicitly scoped check run this session, nothing broader:**
+`select id, name, status, start_date, end_date from v2_mesocycles where
+user_id = '12e79b69-…'` (Adam's own id). **Result: exactly one row — "MESO
+1.0," `active`, `start_date` 2026-07-05.** That's the whole check, and the
+whole result.
+
+**Nothing belonging to any other account was touched, renamed, or otherwise
+acted on** — the prior entry's framing of that data as something needing a
+decision from Adam is itself retracted; it was never his to decide.
+
+**Standing rule going forward (also recorded under "Key architectural
+rules" earlier in this file): every query run through the SQL Editor, or through any other
+path that bypasses RLS, must include an explicit `user_id` filter to
+Adam's own account.** If a query ever surfaces another account's data
+anyway, that's a bug in the query — stop immediately, don't investigate or
+record what it returned.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 2: display)
+
+**Phase 2 (Progress/History display of form/energy/pump/duration) built
+end to end per COACH-PERSONALIZATION-TASKS.md §6 steps 7–10, and verified
+at the code level and live against real production data — but only the
+"nothing rendered" states could be confirmed live, since every rating in
+the database is still `NULL` (see phase 1's session entries above).
+Awaiting Adam's review before phase 3 begins**, per his explicit
+instruction opening this session, same discipline as phase 1's stop point.
+
+### What got built, per TASKS §6 steps 7–10
+
+7. **`progressService.ts`.** `form_rating` added to
+   `fetchAllExerciseSetLogRows`'s select and to `RawSetLogRow`;
+   `ExerciseSessionPoint.avgFormRating: RatingAverage | null` computed from
+   `headLogs` exactly like `avgRir`/`avgReps` already are (§7.2 — stages
+   excluded, warmups not, matching this codebase's actual existing
+   behaviour rather than a stricter rule invented for this feature).
+   `energy_rating`/`pump_rating` added to `fetchMesoWeeklyProgress`'s
+   `v2_sessions` select and `form_rating` to its nested `v2_set_logs`
+   select; `WeekPoint` gained `avgFormRating`/`avgEnergyRating`/
+   `avgPumpRating: RatingAverage | null`. Form averages across the week's
+   *sets* (via the same `valid` heads-only/not-skipped array `avgReps`
+   already uses); energy and pump average across the week's *sessions* via
+   two new parallel maps (`weekEnergyRatings`/`weekPumpRatings`), keyed by
+   week number the same way `weekDurations` already is — one rating per
+   completed session, not per set.
+8. **`ExerciseProgress.tsx` and `MesoProgress.tsx`.** A new "AVG FORM" line
+   chart on the exercise view (same shape as the existing AVG RIR chart,
+   y-domain `[1, 4]`) plus an `avg form 2.8/4` line in the LAST 5 SESSIONS
+   list beside the existing `avg RIR` line — both gated on `hasForm`
+   (zero rated sessions → the whole chart/line is absent, never a `0`).
+   Three new per-week charts on the meso dashboard — AVG FORM / WEEK,
+   AVG ENERGY / WEEK, AVG PUMP / WEEK — each gated the same way
+   (`hasForm`/`hasEnergy`/`hasPump`), each with its own scale domain
+   (form/pump `[1,4]`, energy `[1,5]`) and tick/tooltip formatters that
+   always show the denominator (`2.8 / 4`, never a bare number — TASKS
+   §2.2/§7.1). `MetricLineChart` gained an optional `domain` prop
+   (defaulting to the existing `[0, 'auto']`) so the three new charts could
+   set their own without touching the four already-shipped ones.
+9. **`historyService.ts`.** `form_rating` added to `fetchHistoryDetail`'s
+   `v2_set_logs` select and onto `HistorySetRow`; `energy_rating`/
+   `pump_rating` added to the same query's `v2_sessions` select and onto
+   **`HistoryDetail`, not `HistoryRow`** (TASKS §7.4 — `HistoryRow`'s list
+   path reads a separate summary view, `v2_history_session_summary`, that
+   doesn't carry these columns, and adding them there would need a view
+   migration this phase doesn't do).
+10. **`SessionDetail.tsx`.** Per-set form rendered as a label beside the
+    existing `RIR n` (e.g. `CONTROLLED`), absent entirely when `null` — a
+    genuine "not rated" set, not a placeholder. A new stats row under the
+    mesocycle name: `DURATION` always shown (computed from
+    `startedAt`/`completedAt`, the identical `formatRestTime` +
+    `duration > 0` guard `SessionTypeHistoryView.tsx`'s own DURATION column
+    already uses, `—` when not derivable — TASKS §7.5), plus `ENERGY`/
+    `PUMP` shown only when rated (independently — a session could have one
+    without the other) since a `null` here means "not rated," not "rated
+    none" (SPEC §7 "absence is data too" / TASKS §7.3 — never conflate the
+    two).
+
+### Verification
+
+`npm run typecheck` (both `tsconfig.app.json` and `tsconfig.api.json`) —
+clean. `npm test` — 219/219 passing (18 files, unchanged from phase 1;
+none of phase 2's changes touched tested pure logic beyond what
+`ratingScales.test.ts` already covers). `npm run build` — clean
+(pre-existing chunk-size warning only).
+
+**Live verification — real data, no fabrication, exactly as instructed.**
+Logging into Adam's real account required his own password, which this
+session does not enter under any circumstance (a hard rule, not a
+per-task judgment call) — Adam signed into this session's own dev-server
+preview himself (`npm run dev` via `.claude/launch.json`, autoPort-assigned
+since another session's dev server already held 5173) and confirmed when
+ready. Checked, all against real production Supabase data:
+
+- **Progress → Exercise → Barbell Row** (a real exercise with 5+ real
+  logged sessions): TOP WEIGHT, AVG RIR and AVG REST TIME charts, plus the
+  LAST 5 SESSIONS list, all rendered correctly. **No AVG FORM chart and no
+  `avg form` line in the sessions list** — correct, since every real
+  `form_rating` in the database is still `NULL` (confirmed directly by SQL
+  in phase 1's own verification session). Not a bug: `hasForm` correctly
+  evaluated false and suppressed the whole section, rather than rendering
+  an empty chart or a `0`.
+- **Progress → Meso Overview → MESO 1.0**: TOTAL SETS, AVG RIR, AVG REPS,
+  AVG REST TIME and AVG WORKOUT DURATION per-week charts all rendered with
+  real values across weeks 2–9. **No AVG FORM / WEEK, AVG ENERGY / WEEK, or
+  AVG PUMP / WEEK charts** — correct, same reason.
+- **History → today's real PULL 1 session
+  (`2eadd1f1-ee7c-4f7e-9922-824315263592`)**: real exercises, sets, weights,
+  reps and RIR all rendered correctly. **`DURATION 53min 0s`** rendered —
+  a real, correctly computed value (09:32 → 10:25, matching phase 1's own
+  session-creation/completion timestamps exactly), proving the
+  duration-display code path itself works against real data even though
+  this particular field isn't a rating. **No ENERGY/PUMP row and no
+  per-set form labels** — correct, since this session's `energy_rating`,
+  `pump_rating` and every set's `form_rating` are all confirmed `NULL` in
+  Postgres (phase 1's own verification). No console errors; the query
+  itself visibly succeeded (a `select` typo or bad column name would have
+  produced "FAILED TO LOAD SESSION," not a fully-rendered detail view with
+  a correctly computed duration).
+
+**What remains genuinely unverified, and why it can't be closed from this
+session:** whether a *real, non-null* rating actually renders correctly —
+the "AVG FORM" chart with real points, the `2.8/4`-style denominator
+display, the per-set form label, the ENERGY/PUMP stats row with real
+values — none of that has been exercised against real data, because no
+set or session in the database carries a rating yet. **Not faked to close
+this gap** — the task instructions were explicit that fabricating rated
+data to test this is out of bounds. This is a real, open verification gap,
+not an oversight: it closes the first time Adam logs a set or completes a
+session with an actual form/energy/pump rating, at which point it's a
+five-minute check, not new work.
+
+### Not done this session, on purpose
+
+Phase 3 (raw note capture) — not started, per Adam's explicit instruction
+to stop at phase 2's verification and get his review first. `git commit`
+— not run; phase 1's and phase 2's changes both sit together in the
+working tree for his review.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 3: raw note capture)
+
+**Phase 3 (raw note capture — migration 017, Coach Notes CRUD, the Context-
+tab box, and the gated in-workout sidebar) built end to end per
+COACH-PERSONALIZATION-TASKS.md §6 steps 12–16, and fully live-verified
+against real production data — every one of step 16's six named checks
+ran for real, not assumed.** Also recorded here per Adam's explicit
+instruction this session: Phase 2's real-rating display path is still
+unverified (every rating is `NULL`) — carried forward in "Active work"
+above as an open, non-blocking item, not silently dropped. Awaiting Adam's
+review before phase 4 begins, which additionally waits on 10–20 real Coach
+Notes existing (TASKS §0) — **currently zero**, since every note created
+during this session's live verification was a labelled throwaway, deleted
+before the session ended.
+
+### What got built, per TASKS §6 steps 12–16
+
+12. **Migration 017** (`017_v3_coach_notes.sql`) — `v2_coach_notes`
+    (`id`, `user_id`, `body`, `session_id` nullable, `curated_at` nullable,
+    `created_at`), RLS enabled with a single `for all` own-rows policy, and
+    three indexes (`user_idx` for the Context list, a partial `uncurated_idx`
+    for phase 4's future curation read, a partial `session_idx` for the
+    sidebar's per-session list) — exactly as specified, no changes.
+    **Applied browser-driven through the Supabase SQL Editor**, the same
+    shape as migration 016: Adam signed into the Dashboard himself (this
+    session never touches his password, by hard rule), and the SQL itself
+    was written via `window.monaco.editor.getModels()[0].setValue(...)`
+    rather than simulated keystrokes — **found this session that simulated
+    typing into the SQL Editor is unreliable**: it landed inside stale
+    leftover query text from a previous session instead of a blank
+    document, and `Ctrl+A`/`Delete` sent through the browser-automation
+    tool didn't reach Monaco's real input handling either (confirmed via
+    `document.activeElement` — it was `MAIN`, not the editor's textarea).
+    Recorded under "Key architectural rules" below as a new, more severe
+    instance of the existing click-dispatch bug, with the working
+    alternative (Monaco's own `editor.getModels()[0]`/`.setValue()` API,
+    `document.querySelector('.monaco-editor textarea').focus()` first if a
+    real click is still needed) written down for the next session that
+    needs the SQL Editor. **Every verification query in §3.2 ran and
+    passed**: `information_schema.columns` matched exactly (six columns,
+    correct types/nullability/defaults); `pg_indexes` returned exactly
+    four (pkey + the three named); `pg_class.relrowsecurity` is `true` and
+    `pg_policies` shows exactly the one `"Users access own rows"` policy
+    with the expected `qual`/`with_check`; the `body` `CHECK` was proven by
+    actually attempting `insert … values (…, '   ')` — a real `23514`
+    (`violates check constraint "v2_coach_notes_body_check"`), zero rows
+    written; and `on delete set null` was proven for real, not read off the
+    DDL — a throwaway session and note were created, the session deleted,
+    and the note confirmed to survive with `session_id` now `null`, then
+    both test rows were cleaned up and final counts confirmed back at zero.
+13. **`coachNotesService.ts` + `useCoachNotes.ts` + `CoachNote`** (the
+    `CoachNote` type landing in `src/types/index.ts`, TASKS §4.3 exactly).
+    CRUD in `coachContextService.ts`'s shape (snake_case DB row type,
+    camelCase public interface, explicit `.eq('user_id', userId)`
+    alongside RLS, plain rethrow). `useCreateCoachNote` is the one hook
+    that isn't a plain wrapper — it follows `useLogSet`'s offline pattern
+    exactly (a shared ref carries one client-generated id from the
+    `onMutate` optimistic cache entry into whichever branch actually
+    writes it), because it's the one mutation in this feature that has to
+    work with zero network: offline, it writes through `db.sync_queue`
+    (`table: 'v2_coach_notes'`, `operation: 'upsert'`) with the exact same
+    shape `useLogSet`'s offline branch already uses; online, the same id
+    goes straight into a real insert. `useSyncQueue.ts` needed zero
+    changes — its replay is table-generic, confirmed live this session (see
+    below). `useUpdateCoachNote`/`useDeleteCoachNote` are plain
+    invalidate-on-success mutations, same shape as
+    `useUpdatePhaseEntry`/`useDeletePhaseEntry`.
+14. **`CoachNotes.tsx`** — the Context-tab entry box plus the list,
+    edit/delete per entry with the identical inline-confirm CRUD
+    conventions `PhaseLog.tsx` already uses, rendered directly by
+    `CoachPage.tsx`'s `context` branch alongside `<PhaseLog />` and
+    `<WeightLog />`. Online-only (`REQUIRES A CONNECTION` when offline,
+    same convention `CoachSessionAnalysisTab.tsx` already uses) — the note
+    *list* isn't mirrored in Dexie (TASKS §2.6), and a general note here
+    isn't the signal-is-worst case the sidebar exists for. No new gate
+    check, already inside the gated `/coach` route.
+15. **`WorkoutNotesSheet.tsx` + its trigger in `GymSession.tsx`** — the
+    bottom-sheet overlay following `MissedSessionPrompt.tsx`'s exact
+    pattern (`fixed inset-0 z-50 flex items-end`, `rounded-t-2xl`,
+    grab-handle bar, `maxHeight: '70dvh'`, backdrop-click to dismiss).
+    Reads the *same* `useCoachNotes()` cache `CoachNotes.tsx` reads,
+    filtered client-side to the active session's id — one store, two entry
+    points, exactly per SPEC §5. The trigger is a small `NOTES` button in
+    the session header, rendered **only when `isCoachUser(user?.id)`** —
+    the one new `coachGate.ts` call site this whole initiative adds
+    (TASKS §2.9); everything else Coach-related on the workout screen
+    (the form-rating chips) is ungated, first-class training data like RIR.
+16. **Full verification.** `npm run typecheck` (both `tsconfig.app.json`
+    and `tsconfig.api.json`) — clean. `npm test` — 219/219 passing,
+    unchanged (nothing in phase 3 touched tested pure logic). `npm run
+    build` — clean (same pre-existing chunk-size warning). Then live,
+    against the real dev server and real production Supabase, Adam signed
+    in himself throughout:
+    - **A note from the sidebar lands with the right `session_id`.**
+      Reopened today's real completed PULL 1 session
+      (`2eadd1f1-…`, via TODAY's CONTINUE SESSION — confirmed this is
+      reset-in-place, not delete-and-recreate, so nothing about the
+      session's real logged sets was touched), opened NOTES, submitted a
+      clearly labelled throwaway note. Confirmed via direct SQL: `body`
+      correct, `session_id` = `2eadd1f1-…` exactly.
+    - **A note from the Context tab lands with `session_id` null.**
+      Submitted a second labelled throwaway note from `/coach`'s Context
+      tab. Confirmed via SQL: same table, `session_id` `NULL`.
+    - **Both appear in the Context list** — visually confirmed, the
+      session-linked note showing a `· FROM SESSION` tag the general one
+      correctly lacks.
+    - **A note written offline syncs on reconnect, intact.** Simulated
+      offline the same way phase 1's verification did (a real
+      `navigator.onLine` override plus a genuine `offline` event, not a
+      mock) and submitted a third labelled note from the sidebar.
+      Confirmed queued in `db.sync_queue` (via a direct IndexedDB read)
+      with the exact payload shape expected, and confirmed **not yet** in
+      Postgres (2 rows, not 3) while still "offline" — proving the offline
+      branch genuinely took a different path rather than the real network
+      silently succeeding underneath the spoofed flag. Reconnected (a real
+      `online` event); `db.sync_queue` emptied itself and the note landed
+      in Postgres under the *same* client-generated id, body and
+      `session_id` intact.
+    - **Edit works** (not one of the six named checks, but exercised
+      anyway since TASKS §6 step 14 calls for it) — changed one note's
+      body via the Context tab's inline edit form, confirmed the new text
+      persisted.
+    - **Delete works** — all three labelled throwaway notes deleted via
+      the Context tab's UI (not SQL), confirmed back to zero rows in
+      Postgres afterward.
+    - **The sidebar button is genuinely absent for a non-Coach account —
+      checked by signing in as one, not by reading the conditional.** This
+      needed a real second account with a real in-progress session, which
+      this session didn't have ready-made: Adam signed into a second
+      account of his own
+      (`sch0gunjr.2nd@gmail.com`, `ef5607ca-…`) that had no program at
+      all. Rather than substitute a weaker check, a minimal throwaway
+      program/workout-day/exercise/mesocycle was built through the app's
+      own UI (not seeded via SQL) so a real session could be started —
+      the resulting `GymSession` header's interactive-element list was
+      read directly and confirmed to contain **no `NOTES` button anywhere**,
+      the same header that shows `NOTES` immediately for Adam's own
+      account. `/coach` also independently confirmed `CoachLocked` renders
+      for this account, exercising the identical `isCoachUser(user?.id)`
+      call the sidebar trigger uses. **All test data cleaned up
+      afterward** at Adam's explicit instruction — session, mesocycle,
+      program, workout day and program-exercise row all deleted via
+      explicit `user_id`-scoped SQL, each step verified by `RETURNING`,
+      final counts confirmed back to zero across all four tables checked.
+
+### A more severe instance of the browser-automation click bug, and the fix
+
+Recorded in full under "Key architectural rules" below (new bullet,
+2026-08-25): simulated keystrokes into the Supabase SQL Editor's Monaco
+instance are not reliable — text can land inside stale leftover content
+from a previous query instead of a blank document, and `Ctrl+A`/`Delete`
+sent through the automation tool did not reach the editor's real focus
+target even after a direct `element.click()`/`.focus()` (confirmed via
+`document.activeElement`, and via `window.monaco.editor.getModels()`
+directly, which turned out to be the reliable read/write path this session
+switched to). Not the same failure mode as 2026-08-25's earlier
+click-dispatch bug (that one was about `left_click`/keyboard activation on
+ordinary buttons, worked around with `element.click()`; this one is about
+Monaco specifically not reflecting either simulated keystrokes or its own
+hidden textarea's `.value` as ground truth). The fix that worked for the
+rest of this session: read and write the query text via
+`window.monaco.editor.getModels()[0]`'s `.getValue()`/`.setValue()`
+directly, and click the toolbar "Run" button via `element.click()` same as
+elsewhere — but watch for Supabase's own destructive-query confirmation
+dialog (`[role="dialog"]` containing "Potential issue detected") on any
+`DELETE`/`DROP`/etc., which needs its own `Run query` button clicked
+separately from the toolbar one.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 4: Coach Memory)
+
+Read CONTEXT.md first, as instructed. Two verifications requested before any
+building, then the rest of phase 4 in full.
+
+### Verification 1 — the Monaco/SQL Editor pattern, now actually consolidated
+
+Confirmed: it was **not** consolidated before this session. Three separate
+session write-ups existed, each documenting its own workaround for what
+turned out to be the same underlying problem, and only the most recent one
+(migration 017's) had been promoted into "Key architectural rules" — without
+referencing or subsuming the other two:
+
+- 2026-08-18, migration 012 — `Ctrl+A`/`Ctrl+Home`/`Ctrl+Shift+End` not
+  reliably reaching Monaco as modifier combos.
+- 2026-08-20, migration 014 — a large single `type` call timing out with the
+  pane's rendering lagging the real DOM state, producing a silent-merge
+  corruption.
+- 2026-08-25, migration 017 — typed text landing inside stale leftover
+  content, `Ctrl+A`/`Delete` never reaching Monaco's real input handling at
+  all.
+
+**Fixed under "Key architectural rules" this session** — the migration-017
+bullet is rewritten to name all three incidents explicitly (with dates and
+symptoms) and state one standing practice that supersedes all three
+workarounds: read/write the SQL Editor exclusively through
+`window.monaco.editor.getModels()[0].getValue()`/`.setValue()`, never via
+simulated keystrokes or keyboard select-all. This session then used exactly
+that practice for every migration-018 query below (see next section) —
+real, immediate use, not just a rewritten note.
+
+### Verification 2 — were phase 3's two destructive SQL tests `user_id`-scoped?
+
+**Cannot be fully confirmed from the record, and that's being said plainly
+rather than assumed fine.** Phase 3's write-up (migration 017 session,
+above) describes two throwaway destructive tests run directly in the SQL
+Editor — the `body` `CHECK` violation (`insert … values (…, '   ')`) and the
+`on delete set null` proof (a throwaway session and note created, the
+session deleted) — but elides the literal SQL both times ("…"), so the
+actual `user_id` value used in either statement isn't recorded anywhere in
+CONTEXT.md. Indirect evidence points toward it being fine: the `CHECK`
+insert returned `23514` (a check-constraint violation), not `23503` (a
+foreign-key violation) — since `user_id` is `not null references
+auth.users(id)`, a bogus or missing `user_id` would have failed the FK
+first, before ever reaching the `body` check, so *some* real `auth.users`
+id was supplied. Adam's own account was the only one signed into that
+browser session throughout (a hard rule this project has never violated:
+this session never touches his password), and every other check in that
+same write-up that names a `user_id` explicitly uses his real id. But
+"probably fine, by inference" is different from "confirmed," and the
+literal query text simply isn't in the record — unlike, say, this session's
+migration-018 checks below, or the correction entry's `where user_id =
+'12e79b69-…'` query, which are quoted in full. **Recorded here as a real,
+unresolved documentation gap, not closed by assumption.** Going forward,
+any destructive test's literal SQL (not just its result) should be pasted
+into CONTEXT.md, exactly as this session's migration-018 checks are below —
+cheap, and it's the difference between this kind of question being
+answerable later versus not.
+
+### Phase 4 built in full, against explicit instruction to override
+COACH-PERSONALIZATION-TASKS.md §0's own recommendation to wait
+
+TASKS §0 recommended writing the phase 4–5 task detail (and, implicitly, the
+curation prompt) only once 10–20 real Coach Notes existed to design the
+add/update/expire judgment call against — reasoning that a bad curation
+prompt "quietly corrupts the standing memory that every future analysis
+reads." **Zero real notes exist** (confirmed again this session — see the
+live UI check below, "No notes yet."). Adam's explicit instruction this
+session overrides that recommendation, with reasoning recorded here per his
+own framing: Coach Memory is fully visible, editable, and deletable by
+design (SPEC §7) — unlike a permanent analysis row, a rough first-draft
+prompt carries the same recoverable risk every other prompt in this project
+has already shipped with (`coachPrompt.ts` v1, `coachWeekPrompt.ts` v1), not
+a special case that needs real data before code can exist. The add/update/
+expire judgment call still can't be tuned against constructed fixtures no
+matter when the file is written, so waiting only delays construction — it
+doesn't reduce the risk. **`coachCurationPrompt.ts`'s own file header
+records this same reasoning**, so it travels with the code, not just this
+log.
+
+Built per TASKS §3.3/§5/§6, phases-4-file-list plus this session's own
+judgment calls where §4.4 was explicitly marked "shape settled, detail
+deferred":
+
+- **`supabase/migrations/018_v3_coach_memory.sql`** — `v2_coach_memory_
+  entries` + `v2_coach_curation_runs`, applied and independently verified;
+  full detail in "Database tables" above.
+- **`coachCurationPrompt.ts`** — `CURATION_PROMPT_VERSION = 1`, a genuine
+  first-draft system prompt covering every point TASKS §5.5 named: decide
+  add/update/expire per note (explicitly allowed to produce zero decisions —
+  "most raw notes are exactly that, raw"), never invent an id, expire only
+  on an explicit signal (not silence), preserve the conditional reasoning
+  the wrist example is the test case for, and treat note body text strictly
+  as data to reason about, never as instructions to the model.
+- **`curationApply.ts` + `.test.ts`** (10 new tests, not named in TASKS §8's
+  file list — that list predates this level of design detail, TASKS §0).
+  Pulls the two genuinely judgment-free parts of §5.3 out of the handler
+  into pure, tested functions: `planCurationApply` (id validation/rejection
+  against the exact set of memory ids sent to the model, add/update/expire
+  routing, empty-body and blank-update guards) and `runCurationSteps` (the
+  §5.3 steps-8–10 ordering — memory writes, then notes stamped, then the
+  audit row — expressed as a stop-at-first-failure sequence a test can
+  drive with mock steps). This is the same LLM-only-for-judgment split this
+  project already follows elsewhere (`weekBuckets.ts`, `positionMatch.ts`).
+- **`api/coach/curate-memory.ts`** — the full §5.2/§5.3 flow: authorize →
+  60s rate-limit guard → read uncurated notes (empty → return early, never
+  call the model) → read active memory → one Haiku 4.5 call, structured
+  output → `planCurationApply` validates every decision → apply via
+  `runCurationSteps` in the safe-partial-failure order → return `{ applied,
+  rejectedIds, notesCurated }`. No service-role key, `authorizeCoachRequest`
+  reused verbatim, same as both existing handlers.
+- **`coachMemoryService.ts` / `useCoachMemory.ts` / `CoachMemory.tsx`** —
+  CRUD (`coachNotesService.ts`'s exact shape) plus `curateMemory()`
+  (`coachWeekService.ts`'s `analyzeWeek()` shape: POST with the caller's own
+  bearer token, no request body needed since the function re-reads
+  everything itself). `CoachMemory.tsx` renders under Context, below
+  `CoachNotes`: an "ADD ENTRY" manual-add form (SPEC §4's "add, correct, or
+  delete any entry directly"), the "UPDATE MEMORY (N NEW)" curation trigger
+  — count derived from `useCoachNotes()`'s own `curatedAt` field rather than
+  a second query, disabled at zero — active entries with edit/delete, and a
+  collapsed "N EXPIRED" section with restore/delete. A hand edit flips
+  `source` to `'manual'` per TASKS §2.7; restore only flips `status`, since
+  restoring isn't a content edit.
+- **`CoachPage.tsx`** — `<CoachMemory />` added alongside `<CoachNotes />` in
+  the Context tab branch.
+- **`src/types/index.ts`** — `CoachMemoryEntry`, `CurationNoteInput`,
+  `CurationMemoryInput`, `CurationInput`, `CurationDecision`,
+  `CurationApplied`, `CurationResult`, `CoachCurationRun`. One deliberate
+  refinement of TASKS §4.4's draft shape, noted inline in the type comment:
+  `CurationResult`'s field is `applied: CurationApplied` (added/updated/
+  expired, after id validation), not `decisions`, matching §5.3 step 11's
+  literal `{ applied, rejectedIds, notesCurated }` return — the raw,
+  unfiltered model output is stored separately as `CurationDecision[]`, so a
+  run row can always answer both "what did the model say" and "what
+  actually happened."
+
+### Latency measured first, per §5.4 — literally before `curate-memory.ts` existed
+
+A throwaway script (`curationLatencyCheck.ts`, deleted immediately after,
+never committed — confirmed via `git status`) called Haiku 4.5 directly with
+the real `coachCurationPrompt.ts` system prompt and a **synthetic** payload
+modeled on SPEC §4's own wrist example — three fictional notes, one
+fictional memory entry, all ids prefixed `-synthetic-`, nothing touching the
+database or any real table at any point. This is deliberately not the same
+thing as "fabricating notes to force a real curation run" (which this
+session was explicitly told not to do): no note, memory entry, or curation
+run was ever created anywhere; the script only measures this prompt shape's
+latency and sanity-checks structured output, the same way E1 measured daily
+analysis latency before `coachPrompt.ts`/`api/coach/analyze.ts` were wired
+together.
+
+**Result: 6,306ms (6.3s) wall-clock against the 60s `maxDuration` cap —
+53.7s of margin, the most comfortable of any of the three AI surfaces so
+far.** `input_tokens: 1761`, `output_tokens: 106` — matches §5.4's "likely
+well under 2k input tokens" estimate closely. Output was structurally valid
+and qualitatively reasonable (correctly synthesized the wrist-caution note
+into an `add`), but also surfaced a real, mild rough edge worth recording
+rather than patching reactively against one synthetic example: the model
+proposed an `expire` decision with `id: null` — trying to "close out" the
+wrist caution as a separate action even though nothing about it existed yet
+in `memory` to expire (the `add` decision already fully captured the
+resolution). `planCurationApply`'s id validation drops this cleanly and
+correctly (an `expire` with no valid id is rejected, same as any
+hallucinated id) — no corruption resulted, just a slightly noisy output.
+**Not fixed in the prompt this session** — tuning `coachCurationPrompt.ts`
+against a single constructed example is exactly the trap TASKS §0 warns
+against; flagged here as a concrete data point for the real v2 revision once
+genuine notes exist to design against.
+
+### Verified without real notes, exactly as scoped
+
+`npm run typecheck` (both tsconfigs) — clean. `npm test` — **229/229
+passing** (19 files; +10 from `curationApply.test.ts`, unchanged elsewhere).
+`npm run build` — clean (same pre-existing chunk-size warning as every prior
+session). Migration 018 independently verified against live production
+schema — full detail in "Database tables" above, every mutating check
+explicitly scoped to Adam's own `user_id`.
+
+**Live check: curation correctly returns an empty result and never calls
+the model, confirmed structurally, not just from reading the code.** A
+second throwaway script (`curateMemoryLiveCheck.ts`, deleted immediately
+after) imported the real `api/coach/curate-memory.ts` handler and invoked
+it directly (no HTTP, no `vercel dev`, no deploy — the same "local direct
+invocation" practice Weekly Analysis's own pre-deploy dry run used) with a
+mock `VercelRequest`/`VercelResponse` and a real, fresh access token for
+Adam's own account (extracted from the running dev server's own
+`localStorage` session, confirmed matching his known user id before use).
+Deliberately run with `ANTHROPIC_API_KEY` forcibly cleared inside the script
+itself — if the code path had reached the Anthropic call, it would have
+failed loudly on the missing key instead of silently succeeding, so a clean
+result is structural proof the model was never reached, not an assumption.
+**Result: `200`, `{"applied":{"added":[],"updated":[],"expired":[]},
+"rejectedIds":[],"notesCurated":0}`** — exactly the step-4 empty-result
+path, confirmed live against real production Supabase (real
+`authorizeCoachRequest`, real RLS, real "zero uncurated notes" read). A
+follow-up count query confirmed zero rows in both new tables afterward —
+the check made no writes anywhere, as designed.
+
+**Live UI round-trip, real production Supabase, Adam signed in throughout**
+(`/coach` → Context tab): confirmed **"No notes yet"** and **"No memory
+entries yet"** — the real, current state, not assumed. Added a clearly
+labelled throwaway memory entry via the UI ("THROWAWAY TEST ENTRY — phase 4
+live verification, to be deleted before session ends"), confirmed via
+direct SQL it landed with `source = 'manual'`; edited it via the UI
+(appended `[EDITED]`), confirmed the change persisted with `source` still
+`'manual'`; deleted it via the UI, confirmed via SQL the row count is back
+to `0`. The "UPDATE MEMORY" trigger correctly rendered disabled (`0 NEW`,
+reduced opacity) throughout, matching zero uncurated notes. **Restore was
+not live-exercised** — no expired entry exists to restore, and none was
+manufactured via SQL to test it, on the same reasoning as not fabricating
+notes: it would mean writing fake data into the exact table this feature is
+about. Restore's code path mirrors edit/delete's already-verified mutation
+shape exactly (same service/hook/RLS pattern), so this is a real,
+low-severity gap, not a build gap — recorded rather than silently closed.
+
+**What remains genuinely unverified, and why:** a real curation run against
+real notes has never happened — zero real Coach Notes exist (confirmed
+live, above), and none were fabricated to force one, per explicit
+instruction. This closes the first time Adam logs a handful of genuine
+notes and taps "UPDATE MEMORY" himself; at that point the synthetic-payload
+finding above (the model's occasional redundant-`expire`-with-no-id
+tendency) is the first thing worth checking against real output.
+
+### Not committed
+
+`git commit` not run — every phase 1–4 change (this session's plus the
+uncommitted phase 1–3 work already in the tree) sits together in the
+working tree for Adam's review, same discipline every phase in this
+initiative has followed.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 4 deploy-readiness checks)
+
+Read CONTEXT.md first, as instructed. Two specific checks requested before
+phase 4 is ready to deploy, explicitly **not** proceeding to phase 5 or any
+commit/deploy decision until both are done and reviewed.
+
+### Check 1 — `.js`-extension audit on phase 4's new files, applied for the first time here
+
+This audit has precedent from two earlier steps (daily's step E, where the
+missing-extension bug was originally found live on first deploy —
+`ERR_MODULE_NOT_FOUND`, before the auth check could even run — and weekly's
+step 7/8, a clean re-audit of its three new files) but had never been run
+against phase 4's new files until this session. Grepped all four named
+files for every relative import (`^import`, plus a separate exhaustive pass
+for `require(`/dynamic `import(`; neither form appears anywhere in this
+codebase).
+
+**All clean — nothing to fix:**
+- **`coachCurationPrompt.ts`** — zero imports of any kind (a self-contained
+  string + number constant, same shape as `coachWeekPrompt.ts`).
+- **`curationApply.ts`** — one relative import, `import type { CurationDecision
+  } from '../../types'`, no `.js`. **Not a defect, same established
+  exception** the weekly audit already recorded for `types/index.ts`'s own
+  `AnalysisInput`/`WeekAnalysisInput` imports: `import type` is fully erased
+  by the TypeScript compiler, so no corresponding statement exists in the
+  compiled JS for Node to resolve at runtime — the bug class this audit
+  guards against (a *value* import Node's ESM resolver has to actually
+  follow) doesn't apply.
+- **`api/coach/curate-memory.ts`** — 4 relative imports
+  (`coachApiAuth.js`, `coachCurationPrompt.js`, `curationApply.js`,
+  `types/index.js`), every one already carrying an explicit `.js` —
+  including the one `import type` among them (`types/index.js`), which
+  didn't strictly need it but has it anyway, matching this file's other
+  three imports' style rather than standing out.
+- **`coachMemoryService.ts`** — one relative import,
+  `from '../../lib/supabase'`, no `.js`. **Not a defect, different reason
+  than `curationApply.ts`'s**: this is a *value* import, but the file
+  itself is never reachable from `api/**`'s dependency graph —
+  `api/coach/curate-memory.ts` does not import it, directly or
+  transitively; it's a client-side service consumed only by
+  `useCoachMemory.ts` → `CoachMemory.tsx`, which Vite bundles for the
+  browser, not Vercel's Node function builder. Confirmed by checking
+  `curate-memory.ts`'s own import list (above) rather than assumed.
+  Matches `coachNotesService.ts`'s identical, already-shipped,
+  already-deployed style exactly (`import { supabase } from
+  '../../lib/supabase'`, no extension) — the correct pattern for this
+  category of file, not an oversight.
+
+No code changed — everything was already correct.
+
+### Check 2 — `api/coach/curate-memory.ts`'s own auth path, live-tested directly
+
+**Not inferred from `authorizeCoachRequest` being proven on the other two
+endpoints, as instructed.** Daily's own live 403 proof (step E) needed a
+temporary, restored-afterward `COACH_USER_ID` swap on **Vercel Production
+itself**, redeployed twice, because no second real account existed at the
+time. That mechanism isn't available here without deploying — out of scope
+per this session's explicit instruction not to make any deploy decision yet
+— so this used the same **local direct invocation** practice already
+established for phase 4's empty-notes check instead: the real, imported
+`handler` from `api/coach/curate-memory.ts`, called directly with a mock
+`VercelRequest`/`VercelResponse`, no HTTP, no `vercel dev`, no deploy. The
+`COACH_USER_ID` mismatch case below overrides only this throwaway script's
+own `process.env` for the duration of one call — never `.env.local`, never
+any deployed environment — restored immediately after, confirmed via
+`git status` that nothing changed on disk.
+
+Required a fresh real session: the browser's prior localStorage session had
+been cleared (a new preview tab, this project's browser state doesn't
+persist across tool restarts — the same caveat CONTEXT.md has recorded
+before). Asked Adam to sign back in on the local dev server himself — this
+session still never touches his password — then extracted a fresh access
+token the same way as phase 4's earlier live checks.
+
+Four cases run against the real handler, in order:
+
+| Case | Request | Expected | Actual |
+|---|---|---|---|
+| A | No `Authorization` header at all | `401 Missing bearer token` | `401 {"error":"Missing bearer token"}` ✅ |
+| B | `Authorization: Bearer not-a-real-token-xyz` (present, garbage) | `401 Invalid or expired session` | `401 {"error":"Invalid or expired session"}` ✅ |
+| C | Real, genuinely valid token for Adam's account, but `COACH_USER_ID` locally mismatched to a dummy UUID for this one call | `403 Not authorized for Coach analysis` | `403 {"error":"Not authorized for Coach analysis"}` ✅ |
+| D | Same real valid token, real `COACH_USER_ID` restored (control) | The same empty-result `200` the prior session's check already confirmed | `200 {"applied":{"added":[],"updated":[],"expired":[]},"rejectedIds":[],"notesCurated":0}` ✅ |
+
+Case D matters as much as A–C: without it, a rejection in A–C could just as
+easily mean "the handler is broken" as "the handler correctly rejected
+this." Getting the identical, already-proven-correct empty result back
+under real conditions confirms A–C rejected for the reason claimed, not for
+some unrelated fault. **All four passed exactly as expected — `curate-
+memory.ts`'s own auth path, both the token-validity gate and the
+`COACH_USER_ID` gate, is confirmed live and directly, not inferred.**
+
+Throwaway script (`authRejectionLiveCheck.ts`) deleted immediately after,
+never committed — confirmed via `git status`.
+
+### Status — awaiting review, exactly as instructed
+
+Both checks done, nothing else touched. **Not proceeding to phase 5. No
+commit/deploy decision made.** Phase 4's code is unchanged from the prior
+session (this session was verification-only) and still sits entirely in
+the working tree, alongside phases 1–3, for Adam's review.
+
+---
+
+## 2026-08-25 session (Coach Personalization — phase 4 adversarial review, commit, deploy, live verification)
+
+Read CONTEXT.md first, as instructed. Scoped adversarial review pointed at
+the new attack surface — `api/coach/curate-memory.ts` getting the deepest
+pass (rate-limit guard, steps 8–10 partial-failure ordering under real
+failure simulation, id validation against a deliberately adversarial
+payload), plus a lighter sanity pass on phases 1–3's offline write paths and
+`coachGate.ts`'s sidebar check — then commit, push, deploy, and live-verify
+all four phases together.
+
+### Deep review method: a mocked-execution test harness against the real handler, not just curationApply.ts's existing tests
+
+`curationApply.test.ts` already covers `planCurationApply`/`runCurationSteps`
+in isolation, but "real failure simulation" means exercising the actual
+`api/coach/curate-memory.ts` handler — its Supabase call sequence, its
+response shaping, its logging — under injected failures, which those tests
+structurally cannot do. Wrote a throwaway Vitest file
+(`curateMemoryAdversarial.temp.test.ts`, deleted at the end of this
+session, same discipline as every prior throwaway script in this feature
+line) that:
+
+- Mocked `@supabase/supabase-js`'s `createClient` (a bare specifier,
+  resolved identically regardless of the `.js`-suffixed relative import
+  path the handler itself uses — mocking `coachApiAuth.ts` directly by its
+  relative path was tried first and did not intercept, most likely a
+  resolution-cache mismatch between the two different relative specifiers
+  reaching the same file; abandoned once the supabase-js-level mock worked
+  cleanly) to return a fake client whose `.auth.getUser()` and `.from(table)`
+  are fully scripted per test, so the REAL `authorizeCoachRequest` still
+  runs — real header parsing, real `COACH_USER_ID` compare — against fake
+  data, rather than bypassing auth.
+- Mocked `@anthropic-ai/sdk` so `messages.create()` returns a fully
+  controlled structured-output payload per test.
+- A small hand-rolled fake query-builder records every `.from(table)` call
+  chain into a call log and resolves per-table, per-call-order queued
+  responses (or errors) — close enough to real supabase-js chaining
+  (`select/eq/gte/is/in/order/limit/update/insert` + thenable) to drive the
+  handler's actual control flow.
+- Imported the real, unmodified `handler` export from
+  `api/coach/curate-memory.ts` and called it directly with a mock
+  `VercelRequest`/`VercelResponse`, then asserted on `res.status`/`res.json`
+  **and** on the call log (so the difference between "no write happened" and
+  "a write happened but the response didn't reflect it" is directly
+  visible).
+
+### Finding 1 (confirmed, fixed) — rate-limit guard: no bug, verified correct through the real handler
+
+Three cases run against the real handler: a recent `v2_coach_curation_runs`
+row present → `409`, never reaches the notes read; no recent row → passes
+through to the (real, in this test) empty-notes `200` path without ever
+calling the model; the rate-limit query itself erroring → clean `500`, not a
+silent pass-through. All three passed on the first correct mock setup — no
+code change needed here, but now backed by an execution-based check instead
+of only a read.
+
+### Finding 2 (confirmed, fixed) — id validation against a hallucinated-id payload: no bug, verified correct end-to-end
+
+Scripted a model response with a hallucinated `update` id and a hallucinated
+`expire` id (neither ever sent in `memory`) alongside one genuinely valid
+`expire`. Confirmed via the call log — not just the response body — that no
+`update`/`delete` write was ever attempted against either hallucinated id,
+while the valid expire's write did happen, and confirmed the hallucinated
+ids DO legitimately appear once each inside the audit-row insert's raw
+`decisions` (the intended "what the model said" trail) without ever being
+applied. No code change needed here either.
+
+### Finding 3 (confirmed, FIXED — real bug) — a mid-loop write failure inside `applyMemoryChanges` made the reported `applied` state lie about what had already been written
+
+Scripted two valid `update` decisions (`mem-A`, `mem-B`); `mem-A`'s write
+"succeeds" per the mock, `mem-B`'s throws. Ground truth from the call log:
+`mem-A`'s update really was sent. The handler's `500` response, before the
+fix: `"applied":{"added":[],"updated":[],"expired":[]}` — completely empty,
+contradicting the call log. Root cause: `applyMemoryChanges` built local
+`added`/`updated`/`expired` arrays and only returned them on full success;
+the handler's `applied = await applyMemoryChanges(...)` assignment therefore
+never completed when the function threw partway through its own internal
+loop, so the outer binding stayed at its initial empty value — silently
+contradicting this exact function's own design intent, stated in §5.3/§7.7,
+that "the already-applied memory changes are returned rather than
+discarded." **Fixed** in `api/coach/curate-memory.ts`: `applyMemoryChanges`
+now takes the `applied` object as a parameter and mutates it in place
+(`.push` on each successful write) instead of building-then-returning, so a
+throw at any point leaves every write that really landed visible to the
+caller. Re-ran the same scripted failure after the fix — `applied.updated`
+now correctly reports `[{id:'mem-A', body:'entry A NEW'}]`.
+
+### Finding 4 (confirmed, FIXED — real bug, found chasing Finding 3) — a crash between stamping notes and inserting the audit row left notes permanently un-curatable with zero audit trail
+
+A different, worse failure window than the one §7.7 explicitly names ("a
+crash between applying decisions and stamping curated_at… may add a
+duplicate entry [on retry], visible and correctable by hand" — recoverable).
+Scripted: memory update succeeds, notes get stamped `curated_at` (succeeds),
+then the audit-row insert fails. Ground truth confirmed via the call log:
+the note really was stamped. Consequence, traced rather than assumed: that
+note's `curated_at` is now non-null, so `v2_coach_notes_uncurated_idx`
+(`where curated_at is null`) will never surface it to a future run again —
+unlike the crash-before-stamp case, this is **not** retryable — and no
+`v2_coach_curation_runs` row was ever inserted, so nothing anywhere records
+why the memory entry changed, directly defeating §7.6's stated reason the
+run table exists at all. **Fixed** by reordering steps in
+`api/coach/curate-memory.ts`: the audit-row insert now runs **before** the
+notes are stamped `curated_at` (TASKS.md §5.3 originally ordered these the
+other way). This converts a crash in this window into the *already-accepted*
+class instead: the run row (with accurate `applied`, thanks to Finding 3's
+fix) already exists, and the notes simply stay uncurated for a safe,
+visible, correctable retry. Proved both directions with two rewritten mocked
+tests: audit-insert failing now leaves notes deliberately unstamped (a test
+with no second `v2_coach_notes` responder queued, so an unwanted stamp
+attempt would itself throw "no queued response"), and notes-stamp failing
+now leaves an accurate run row behind. This ordering change is a genuine,
+reasoned deviation from TASKS.md's own written plan — recorded here rather
+than silently diverging, and documented with the same reasoning inline in
+`api/coach/curate-memory.ts`'s own comments so it travels with the code.
+
+### Four more findings from a parallel general-correctness pass + phase 1–3/coachGate sanity pass (Workflow, 7 agents, 555.8k tokens)
+
+Ran a background review workflow alongside the above: one agent doing a
+general adversarial pass over `curate-memory.ts` / `curationApply.ts` /
+`coachCurationPrompt.ts` / `coachMemoryService.ts` (explicitly told the three
+areas above were being deep-tested elsewhere, so it should look for
+everything else), plus two light-sanity-pass agents — phase 1–3's offline
+write paths (every field list TASKS §2.4/§2.6 calls out: `SetRow.tsx` →
+`GymSession.tsx` → `useSession.ts`'s two offline branches →
+`sessionService.ts` → `db.ts` → `offlineCache.ts`, plus
+`coachNotesService.ts`/`useCoachNotes.ts`'s offline note queueing) and
+`coachGate.ts`'s sidebar/Context gating. Every finding from the first agent
+was independently adversarially re-verified by a second agent instructed to
+try to refute it, reading the real code fresh. **The two sanity-pass agents
+came back clean — zero findings, as expected for surfaces already
+live-verified multiple times** — so nothing further changed there.
+
+All four general-pass findings held up under adversarial re-verification and
+were fixed:
+
+- **A well-formed-but-wrong-shaped model response (`{}` or
+  `{"decisions": null}`) threw an uncaught `TypeError` past every try/catch
+  in the handler**, skipping the intended clean `502` and this file's own
+  error-logging convention entirely. `Array.isArray()`-checked before
+  `toDecisions()` now; falls through to the existing `502` path instead.
+- **`v2_coach_curation_runs.decisions` silently did not match its own
+  migration comment** ("exactly what it returned, unfiltered") — a
+  schema-valid-but-op-incomplete decision (e.g. an `update` with a null id)
+  was dropped by `toDecisions()` before ever reaching what got persisted,
+  leaving zero trace anywhere it had been attempted. Fixed by persisting the
+  true raw, unfiltered `rawDecisions` instead of the post-filter `decisions`
+  variable; added an exported `CurationRawDecision` type (`types/index.ts`)
+  and retyped `CoachCurationRun.decisions` to it, with a comment explaining
+  the fix and why the type is genuinely `CurationRawDecision[]` and not
+  `CurationDecision[]`.
+- **Duplicate same-op decisions for the same memory id were not
+  deduplicated** — two `update` decisions for the same id both landed in the
+  applied/audit record, the first entry's `body` describing a value the
+  second write immediately overwrote in the real database. Fixed in
+  `planCurationApply` (`curationApply.ts`): `toUpdate`/`toExpire` are now
+  built via a `Map` keyed by id (last decision wins, matching the real
+  sequential-write outcome exactly), and `rejectedIds` is deduplicated the
+  same way. Confirmed an `update` + `expire` for the *same* id still both
+  apply correctly (disjoint columns, not a duplicate to collapse). Added 4
+  new permanent tests to `curationApply.test.ts` covering this.
+- **`coachMemoryService.ts`'s `curateMemory()` had no guard against a
+  non-JSON response body** — `await res.json()` unconditionally, no
+  try/catch; a genuine platform-level timeout under `vercel.json`'s 60s
+  `maxDuration` (one Anthropic call + up to two sequential Supabase writes)
+  is a real, not hypothetical, way to get a non-JSON body back, and the
+  resulting raw `SyntaxError` would have reached `CoachMemory.tsx`'s error
+  banner verbatim instead of a friendly message. Fixed with a try/catch that
+  falls back to `throw new Error('Curation failed')`.
+
+### Verification after all six fixes
+
+`npm run typecheck` (both tsconfigs) — clean. `npx vitest run` —
+**233/233 passing** (19 files; +4 from the new `planCurationApply` dedup
+tests, unchanged elsewhere). `npm run build` — clean (same pre-existing
+chunk-size warning as every prior session). Throwaway
+`curateMemoryAdversarial.temp.test.ts` deleted before the final typecheck/
+test/build pass, confirmed via `git status` it left no trace.
+
+### Committed and pushed
+
+One commit, `c22961e`, all four phases together (43 files) plus this
+session's six fixes — `CONTEXT.md` deliberately held out of this commit for
+a separate docs commit at the end, matching this project's established
+feat/docs split (e.g. `ac064ff` / `01d2de1`). Pushed to `origin/master`
+(`01d2de1..c22961e`).
+
+### Deploy confirmed via `vercel ls` / `vercel inspect`, not assumed from the push succeeding
+
+New deployment `dpl_EXdyfNuGPftPLEDdsvwxYo1kepnZ` went `● Building` →
+`● Ready` (34s) within a few minutes of the push.
+`vercel inspect https://overload-v2-sage.vercel.app` (the canonical
+production alias) resolves directly to this exact deployment id, and its
+Builds list is `api/coach/analyze`, `api/coach/analyze-week`,
+**`api/coach/curate-memory` (687.86KB)** — cross-checked against
+`vercel inspect` on the immediately prior `● Ready` production deployment
+(2 days old), whose Builds list has only the first two. This is genuinely
+the first deploy of the curation endpoint, not a re-verification of one
+already live.
+
+### Live verification against the deployed build (`overload-v2-sage.vercel.app`)
+
+Adam signed into his own account himself (this session never touched his
+password, same standing rule as every prior credential moment in this
+project).
+
+- **Context tab renders correctly.** `/coach` → CONTEXT: PHASE LOG, WEIGHT
+  LOG, WEEKLY AVERAGES all present as before, plus **COACH NOTES** ("No
+  notes yet.") and **COACH MEMORY** ("No memory entries yet.", UPDATE MEMORY
+  button correctly rendered disabled at 0 new) — screenshotted, not just
+  read from the accessibility tree.
+- **Sidebar NOTES button confirmed present for Adam's account, live, not
+  read from a conditional.** No session was in progress, so the only
+  available path was resuming today's already-completed PULL 1 (Week 9, 11
+  sets logged, 2 skipped) — confirmed with Adam first, since this flips a
+  real session's status back to "in progress" until re-completed (logged
+  sets themselves stay intact per the app's own confirmation copy). Resumed
+  it, confirmed the `NOTES` button renders in the session header,
+  screenshotted it, clicked it — the real `WorkoutNotesSheet` "SESSION
+  NOTES" bottom sheet opened correctly — closed it without adding a note,
+  scrolled to `FINISH SESSION`, and completed it again via
+  `SessionComplete.tsx` without changing anything (left the pre-filled
+  Energy: LOW / Pump: SOME exactly as they already were — a live,
+  incidental re-confirmation that phase 1's prefill-on-reopen behaviour
+  still works — and left the note field blank). Confirmed back on `/today`
+  it reads identically to before: "SESSION COMPLETE · WEEK 9 · PULL 1 · 11
+  sets logged · 2 skipped." No training data was altered.
+- **Sidebar NOTES button / COACH tab confirmed absent for a non-coach
+  account, signed into directly** (id `ef5607ca-fe49-4400-87ec-e2e697475e7e`,
+  distinct from Adam's `12e79b69-9891-4f53-a7cf-650edd83659f`; Adam signed
+  in himself). No `COACH` link in the nav at all — gated by the exact same
+  `isCoachUser(user?.id)` call the sidebar button uses (`coachGate.ts`, one
+  function, confirmed via this session's code read), so a real `false` here
+  is conclusive for both call sites, not just the nav tab. This account has
+  no program configured, so an actual `GymSession` screen couldn't be
+  opened to see the header directly; asked Adam whether to set up a program
+  on the test account purely to check pixel-for-pixel — he judged the
+  shared-gate-function proof sufficient and declined, so that's the
+  standard this check was held to, recorded rather than silently upgraded.
+  Bonus, unplanned confirmation: this account's Settings → About footer
+  reads **`BUILD c22961e · Aug 25, 2026 19:10`** — the exact commit hash
+  just deployed, independently confirming the live site is running this
+  session's code.
+- **One real, genuine `200` from the deployed `curate-memory.ts` endpoint,
+  over actual HTTPS, not local invocation** — the first time this specific
+  endpoint has been hit that way; every prior check of it (this feature
+  line's phase 4 sessions) used direct handler import, never a real network
+  round-trip to the deployed function. Extracted Adam's own live session
+  token from the browser's `localStorage` (same practice as every prior
+  live check in this project) and issued a real `fetch()` POST from the
+  deployed page's own origin to `/api/coach/curate-memory`. Result:
+  `200 {"applied":{"added":[],"updated":[],"expired":[]},"rejectedIds":[],
+  "notesCurated":0}` — the same empty-result path confirmed locally before
+  (still zero real Coach Notes exist), now proven over the real deployed
+  path: real HTTPS, real Vercel routing, real `authorizeCoachRequest`, real
+  RLS, real Supabase read returning zero uncurated notes.
+
+### What is still genuinely unverified, unchanged from before this session
+
+A real curation run against real notes has never happened — zero real Coach
+Notes exist, and none were fabricated to force one, per the same standing
+instruction as every prior phase 4 session. This closes the first time Adam
+logs a handful of genuine notes and taps UPDATE MEMORY himself.
+
+### Not yet committed
+
+This `CONTEXT.md` update itself — to be committed and pushed as a separate
+`docs:` commit immediately after this entry is finalized, per this
+session's own stated plan above.
 From real usage (one day):
 - Warmup sets handling
 - Edit logged set RIR after logging (partially fixed — E1 done)
@@ -10717,6 +12456,36 @@ From real usage (one day):
   `PROMPT_VERSION` bump once 4–5 more real analyses exist to calibrate
   tone against.** One sample (today's) isn't enough signal to design a
   persona instruction against without guessing.
+
+---
+
+## Standing future work (noted, not started)
+Tracks that are real and agreed but have no plan document, no schema, and no
+code. Recorded here so they aren't rediscovered as ideas or mistaken for
+scope inside whatever feature is currently in flight. Neither is part of the
+Coach Personalization initiative — COACH-PERSONALIZATION-SPEC.md §8 lists
+both in its own out-of-scope table for exactly this reason.
+
+- **Exercise library rework.** Choosing which exercises to download rather
+  than seeding the whole `DEFAULT_EXERCISES` list, and categorized libraries
+  instead of one flat per-user list. Today `exercises` is a flat shared table
+  (shared with Northstar v2), seeded at 47 rows plus hand-added ones, with
+  `muscle_group` plus the Weekly-Analysis tag columns
+  (`muscle_subgroup`/`movement_pattern`, migrations 013/014) as the only
+  categorization that exists. Interacts with the tagging pass — a
+  download-on-demand model needs an answer for how newly downloaded exercises
+  get tagged, which COACH-WEEK-ANALYSIS-SPEC.md §9 currently defers
+  ("tag-on-create flow… new exercises fall back to `muscle_group`").
+  **Not started.**
+- **Settings rework, with a dedicated Coach settings tab.** Settings is one
+  flat page today (theme, accent colour, rest timer, weight unit,
+  auto-finish, `measure_set_time`). Every Coach-related setting that has come
+  up so far has instead been an env var (`VITE_COACH_USER_ID`) or a hardcoded
+  constant (`COACH_ANALYSIS_START_DATE`, `PROMPT_VERSION`), so nothing is
+  currently blocked — but the Coach section keeps accumulating things that
+  would naturally be settings, and a Coach tab is where they'd go. Also the
+  natural home for TASKS §5.6's fallback if the eighth nav tab ever stops
+  fitting. **Not started.**
 
 ---
 
