@@ -28,9 +28,9 @@ Agreed explicitly: one coherent build, not ten scattered side-quests — but sti
 
 **Session duration** — `completed_at` minus `started_at`, both already stored. A display-only gap, not a new logging requirement.
 
-**Coach Notes** — raw, freeform text, timestamped, entered either mid-workout (the sidebar) or at any other time (a text box under the Context tab). This is not the same thing as Coach Memory — it's the unfiltered input Memory is built from. A note doesn't have to be well-formed or scoped to anything; "wrist's been bothering me, being cautious with forearm work especially during this cut" is a valid note, exactly as messy as real reasoning actually is.
+**Coach Notes** — raw, freeform text, timestamped, entered mid-workout via the sidebar. **Amended in v1.1 (§11): this is now the only entry point.** Originally this section also described a Context tab text box writing to the same store; that box was reworked to write directly to Coach Memory instead (see §11), since v1's real usage showed the two-step "note now, curate later" path added a manual step for a general fact that has no reason to wait. Coach Notes remains purely staging input — this session's own raw notes reach that session's own analysis directly (unfiltered, immediate), and every note also feeds curation into Memory automatically. It is not the same thing as Coach Memory. A note doesn't have to be well-formed or scoped to anything; "wrist's been bothering me, being cautious with forearm work especially during this cut" is a valid note, exactly as messy as real reasoning actually is.
 
-**Coach Memory** — a separate, curated, standing store the model reads in full on every analysis call. Freeform text, not structured fields — the wrist example is precisely why: "cautious about forearm work because of a past injury, especially during a cut" doesn't fit into an exercise/muscle-group/date-range shape without losing the conditional reasoning that makes it useful. A dedicated curation process (not the analysis-generation call itself — a separate job, so neither task gets diluted) reads new notes and decides whether to add, update, or let something in memory expire. Fully visible and editable by the account it belongs to — add, correct, or delete any entry directly, independent of what the curation process decided. No retrieval logic: the full memory list gets included in every call. Selective retrieval is a real engineering problem for a memory list large enough to need it — that's not this list, not for a long time.
+**Coach Memory** — a separate, curated, standing store the model reads in full on every analysis call. Freeform text, not structured fields — the wrist example is precisely why: "cautious about forearm work because of a past injury, especially during a cut" doesn't fit into an exercise/muscle-group/date-range shape without losing the conditional reasoning that makes it useful. A dedicated curation process (not the analysis-generation call itself — a separate job, so neither task gets diluted) reads new notes and decides whether to add, update, or let something in memory expire. **Amended in v1.1 (§11): curation now runs automatically, immediately after each analysis, instead of behind a manual "Update Memory" button.** Fully visible and editable by the account it belongs to — add, correct, or delete any entry directly, independent of what the curation process decided, including adding a new entry directly with no AI involved at all (the Context tab's general-note replacement, §11). No retrieval logic: the full memory list gets included in every call. Selective retrieval is a real engineering problem for a memory list large enough to need it — that's not this list, not for a long time.
 
 ## 5. Data storage decision
 
@@ -49,11 +49,11 @@ Agreed explicitly: one coherent build, not ten scattered side-quests — but sti
 
 **History** — form rating per set, energy and pump per workout, session duration per workout.
 
-**The sidebar** — opens from within an active workout session. For this version, genuinely just a notepad: freeform text in, timestamped, nothing more. Explicitly a foundation for a richer, more interactive version later (see §10), not a finished feature.
+**The sidebar** — opens from within an active workout session. For this version, genuinely just a notepad: freeform text in, timestamped, nothing more. Explicitly a foundation for a richer, more interactive version later (see §10), not a finished feature. **Unaffected by v1.1 (§11)** — still the only way a raw Coach Note gets written, still writes to the same store, still gated by `coachGate.ts`.
 
-**The Context tab text box** — a second entry point into the exact same Coach Notes store, for anything that isn't tied to a specific workout in progress.
+**The Context tab text box** — ~~a second entry point into the exact same Coach Notes store~~ **amended in v1.1 (§11): writes directly into Coach Memory instead**, for a standing fact that isn't tied to a specific workout and doesn't need curation's judgment call applied to it.
 
-**Coach Memory's own view** — a list, under Context, showing every current memory entry with edit and delete available directly, same as phase and weight entries already work.
+**Coach Memory's own view** — a list, under Context, showing every current memory entry with add, edit, and delete available directly, same as phase and weight entries already work. No separate "run curation" control here anymore (§11) — curation is automatic.
 
 ## 7. Design principles
 
@@ -88,13 +88,44 @@ Agreed explicitly: one coherent build, not ten scattered side-quests — but sti
 
 - Form rating can be logged per set (optional), energy and pump per completed workout (optional) — all absent by default, never blocking a workout
 - Progress shows average form per exercise and per-week form/energy/pump; History shows per-set form, per-workout energy/pump, and session duration
-- Notes can be entered mid-workout (sidebar) or generally (Context tab text box), both landing in the same Coach Notes store
-- A separate curation process turns raw notes into Memory entries — additions, updates, or expirations — without that logic living inside analysis generation itself
+- Notes can be entered mid-workout via the sidebar, landing in the Coach Notes store; a general standing fact is entered directly into Coach Memory instead (§11)
+- A separate curation process turns raw notes into Memory entries — additions, updates, or expirations — without that logic living inside analysis generation itself; it runs automatically immediately after analysis (§11), not behind a manual trigger
 - Memory is fully visible, editable, and deletable directly by the account it belongs to
 - Daily Session Analysis's prompt reads form/energy/pump ratings (when present) and the full current Memory list, reasoning with them the way SPEC §8's principles describe — including honest, hedged inference when form data is absent but the numbers suggest something
 - Form/energy/pump sliders, their Progress/History displays, and session duration are available to every account, gated or not — same as RIR
 - The in-workout sidebar is the one addition to the (ungated) workout screen that requires a `coachGate.ts` check; everything else Coach-specific (Context tab, Memory's view) is already covered by the existing `/coach` route gate
 
+## 11. v1.1 — Notes/Memory restructure and exercise swap (2026-08-27)
+
+Two changes, agreed and built together, neither anticipated by v1's original scope. Both are corrections/additions to the *design*, not a new phase — v1's five phases (§3) all shipped; this is what real usage of the shipped v1 surfaced.
+
+### 11.1 Notes/Memory restructure
+
+**What changed.** v1 gave Coach Notes a browsable list under the Context tab, with edit and delete, and a manual "Update Memory" button that ran curation on demand. Real usage (one real curation run, five real notes, §7.6/§7.7's already-accepted risk model) showed three things didn't earn their complexity:
+
+- **The notes list had no real audience.** Once curated (or superseded by a same-session `sessionNotes` read straight into analysis, §7.8), a raw note's job is done. Nobody was going back to read old notes — they exist purely as input, not a record worth browsing.
+- **The Context tab's general note box was a needless detour.** A standing fact typed outside a workout ("cautious with X because of Y") doesn't need curation's judgment call — it *is* already the well-formed, standing-context shape Memory holds. Routing it through Notes just delayed it reaching Memory until the next manual curation run.
+- **"Manual before automatic" (§8/TASKS §5.1's original reasoning) stopped being the safer choice once curation was trusted.** The one real run produced two correct entries (with a lossiness finding worth a future prompt revisit, not a trust problem — CONTEXT.md's 2026-08-27 review). Making curation the automatic second half of the one ANALYZE action removes a manual step without removing any of the judgment, validation, or audit trail (`v2_coach_curation_runs`, §7.6) that made it safe to automate.
+
+**What v1.1 actually does**, replacing §4/§6's now-superseded description:
+
+- The Context tab's general note box is gone. Coach Memory's own "ADD ENTRY" (already present in v1, unchanged) is now the *only* way to write a general standing fact directly — no AI, immediate, exactly like a phase or weight log entry.
+- The Coach Notes browsable list is gone. `v2_coach_notes` stays exactly as it was (schema unchanged) — it's internal staging now: the sidebar writes to it, this session's own analysis reads this session's own notes from it, and curation reads and stamps it. Nothing browses it anymore, and nothing needs to.
+- The sidebar is completely unaffected — still the only way a raw, mid-workout note gets written, still gated, still online-and-offline capable.
+- Curation runs automatically, once, right after each fresh analysis generation — the "one ANALYZE click does both" design this section is named for. It still never reprocesses a note it's already seen (`curated_at`, unchanged mechanism), and a curation failure never turns a successful analysis into a failed response — the analysis the lifter asked for and already has is never held hostage by the automatic step riding along after it.
+- The manual "Update Memory" button is gone from the UI, but the underlying curation endpoint stays reachable on its own — useful for direct verification, the same way every other AI surface in this app has been checked against real deployed behavior.
+
+### 11.2 Swap exercise for this session only
+
+**New capability, not in v1's original scope at all.** Real usage exposed the exact gap this closes on 2026-08-27 itself: a broken Chest Press machine forced a genuine equipment substitution mid-session, logged under the original exercise's id because there was no other option — which `sessionNotes` (§7.8) could explain to the model after the fact, but which the *lifter* had no first-class way to record as "I'm doing a different exercise right now" while it was happening.
+
+- A swap action lives on the exercise itself (not a per-set control) — tapping it opens a picker filtered to exercises sharing the original's muscle group, or an inline "create new" for that same muscle group.
+- Confirming a swap does two things: marks the original exercise's remaining sets for today as skipped (reusing the exact same mechanism as the existing "skip rest of exercise" action), and adds the chosen exercise as an extra, unplanned exercise for this session — the exact same concept as an on-demand extra *set*, one level up, applied to a whole exercise instead.
+- **Session-only, by construction.** Nothing about a swap writes to the workout day template or the week's plan — the replacement exercise exists only as logged sets for this session. Next week's plan generation reads only the template/plan layer, never session logs, so it is structurally incapable of being affected.
+- The replacement resolves its own reference history independently (first-time if it's never been logged in this slot before, a real comparison otherwise) — it is not treated as a continuation of the exercise it replaced.
+
+This document's §6/§10 are not otherwise rewritten for this addition — it's a new, additive capability on the already-ungated workout screen, gated by nothing new (same posture as form/energy/pump: first-class training data, not a Coach-only concept).
+
 ---
 
-This document is the source of truth for this initiative's v1. Claude Code should read this before any technical planning begins.
+This document is the source of truth for this initiative. v1's five phases (§3) and v1.1 (§11) have both shipped. Claude Code should read this before any technical planning begins.

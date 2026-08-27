@@ -9,12 +9,18 @@ import { useCoachNotes, useCreateCoachNote } from '../coach/useCoachNotes'
 // exact pattern — fixed inset-0 backdrop, rounded-t-2xl sheet, grab-handle
 // bar, maxHeight 70dvh, backdrop-click to dismiss.
 //
-// Reads the same useCoachNotes() cache CoachNotes.tsx (Context tab) reads —
-// one store, two entry points (SPEC §5) — filtered client-side to this
-// session's notes. That cache is what makes this work offline: the create
-// mutation's onMutate pushes the new note into it immediately, so "this
-// session's notes" shows what was just written even with zero network,
-// without this component needing its own offline-aware fetch.
+// This is the *only* Coach Notes entry point left after the Notes/Memory
+// restructure (SPEC v1.1) — the Context tab's old general note box
+// (CoachNotes.tsx) was removed; a general standing fact now goes straight
+// into Coach Memory instead (CoachMemory.tsx's ADD ENTRY), no AI involved,
+// while a genuinely session-scoped note still comes through here and still
+// reaches v2_coach_notes exactly as before, unaffected by the restructure.
+//
+// Filters useCoachNotes()'s full-list cache client-side to this session's
+// notes. That cache is what makes this work offline: the create mutation's
+// onMutate pushes the new note into it immediately, so "this session's
+// notes" shows what was just written even with zero network, without this
+// component needing its own offline-aware fetch.
 
 interface WorkoutNotesSheetProps {
   sessionId: string

@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { authorizeCoachRequest } from '../../src/features/coach/coachApiAuth.js'
 import { assembleAnalysisInput } from '../../src/features/coach/analysisInput.js'
 import { COACH_SYSTEM_PROMPT, PROMPT_VERSION } from '../../src/features/coach/coachPrompt.js'
+import { runCuration } from '../../src/features/coach/curationRunner.js'
 import type { CoachAnalysisContent, CoachSessionAnalysis } from '../../src/types/index.js'
 
 // Vercel serverless function (COACH-ANALYSIS-TASKS.md §4 step E). Single
@@ -18,6 +19,24 @@ import type { CoachAnalysisContent, CoachSessionAnalysis } from '../../src/types
 // scoped to the caller's own access token, same as every RLS-scoped client
 // elsewhere in this app — v2_coach_session_analyses' "own rows only" policy
 // does the rest.
+//
+// Notes/Memory restructure (COACH-PERSONALIZATION-SPEC.md v1.1): a fresh
+// analysis (never an idempotent re-return of an existing row — see the
+// insert branch below) is now immediately followed by an automatic
+// curation run, reusing curationRunner.ts's runCuration() unchanged from
+// what api/coach/curate-memory.ts itself calls. This is the "one click does
+// both" design: ANALYZE both generates the analysis and folds this
+// session's own notes into Memory, without a second manual step. Curation's
+// own latency (~6s measured) stacks onto analysis's (~14-20s measured) well
+// inside the 60s maxDuration cap — see CONTEXT.md for the combined
+// measurement this design was checked against before shipping. A curation
+// failure here is logged and swallowed, never surfaced as an analyze
+// failure: the analysis itself already generated and saved successfully,
+// which is what the caller asked for and paid for, and an automatic
+// bonus-step failure must not take that down with it. curated_at (migration
+// 017) is what keeps a later automatic run from ever reprocessing a note
+// this or a prior run already curated, whether the run was triggered
+// manually (the old UPDATE MEMORY button, since removed) or automatically.
 
 // Pinned snapshot, not the `claude-haiku-4-5` alias — `model` is stored per
 // row (§1.6), so provenance matters. E1 (§4) measured this exact model at
@@ -200,6 +219,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       generated: content,
     })
     return
+  }
+
+  // ── Automatic curation, the second half of the one ANALYZE action. Runs
+  // only on this fresh-generation path — never on the idempotent early
+  // returns above (an existing row, or the race-safe re-select on 23505) —
+  // since those aren't "a successful analysis and save" happening right now,
+  // they're a cache hit. Failure here is logged only; it must never change
+  // this endpoint's own response, since the analysis above already
+  // succeeded and was saved. ─────────────────────────────────────────────
+  try {
+    const curationOutcome = await runCuration(supabase, userId)
+    if (curationOutcome.kind === 'error') {
+      console.error('Automatic curation after analysis failed', {
+        sessionId,
+        userId,
+        status: curationOutcome.status,
+        error: curationOutcome.error,
+      })
+    }
+  } catch (err) {
+    console.error('Automatic curation after analysis threw', { sessionId, userId, error: err })
   }
 
   res.status(200).json(toCoachSessionAnalysis(insertedRow as CoachSessionAnalysisRow))

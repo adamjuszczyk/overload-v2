@@ -1,10 +1,15 @@
 import { supabase } from '../../lib/supabase'
-import type { CoachMemoryEntry, CurationResult } from '../../types'
+import type { CoachMemoryEntry } from '../../types'
 
-// CRUD for v2_coach_memory_entries plus the POST to
-// api/coach/curate-memory.ts (COACH-PERSONALIZATION-TASKS.md §6, phase 4),
-// following coachNotesService.ts's exact shape for the CRUD half and
-// coachWeekService.ts's analyzeWeek() shape for the generate-call half.
+// CRUD for v2_coach_memory_entries (COACH-PERSONALIZATION-TASKS.md §6,
+// phase 4), following coachNotesService.ts's exact shape.
+//
+// No client-side call into api/coach/curate-memory.ts here — the Notes/
+// Memory restructure (COACH-PERSONALIZATION-SPEC.md v1.1) removed the
+// "UPDATE MEMORY" button that used to be curation's only manual trigger;
+// curation now runs automatically, server-side, as part of
+// api/coach/analyze.ts (see curationRunner.ts). The endpoint itself is
+// still live for direct/diagnostic use, just no longer called from the app.
 
 type DbCoachMemoryEntry = {
   id: string
@@ -85,38 +90,4 @@ export async function restoreCoachMemoryEntry(id: string, userId: string): Promi
     .eq('id', id)
     .eq('user_id', userId)
   if (error) throw error
-}
-
-// ─── Curate — POST to the serverless function (§5.1/§5.2) ──────────────────
-//
-// The client sends no body at all — the function re-reads the caller's own
-// uncurated notes and current memory itself, server-side (§5.3 steps 3/5).
-
-export async function curateMemory(): Promise<CurationResult> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  if (!session) throw new Error('Not signed in')
-
-  const res = await fetch('/api/coach/curate-memory', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({}),
-  })
-  // res.json() throws a raw SyntaxError on a non-JSON body — a real
-  // possibility here specifically, since this endpoint runs one Anthropic
-  // call plus up to two sequential Supabase writes inside vercel.json's 60s
-  // maxDuration, and a genuine platform-level timeout/gateway failure
-  // returns a non-JSON body the handler never gets a chance to shape. Found
-  // during this session's adversarial review: without this guard, that
-  // SyntaxError reaches CoachMemory.tsx's error banner verbatim instead of
-  // the friendly message every other failure path here produces.
-  let responseBody: unknown
-  try {
-    responseBody = await res.json()
-  } catch {
-    throw new Error('Curation failed')
-  }
-  if (!res.ok) throw new Error((responseBody as { error?: string })?.error ?? 'Curation failed')
-  return responseBody as CurationResult
 }

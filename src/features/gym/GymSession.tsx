@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
-import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating } from '../../types'
+import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import {
   useActiveSession,
@@ -51,6 +51,7 @@ function ExerciseSection({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  onSwap,
 }: {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
@@ -81,6 +82,7 @@ function ExerciseSection({
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
+  onSwap: (exercise: Exercise) => void
 }) {
   const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
     programExercise.exerciseId,
@@ -105,6 +107,7 @@ function ExerciseSection({
       onLog={onLog}
       onUpdateSet={onUpdateSet}
       onDeleteSet={onDeleteSet}
+      onSwap={onSwap}
     />
   )
 }
@@ -113,6 +116,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const [showComplete, setShowComplete] = useState(false)
   const [showNotesSheet, setShowNotesSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — exercises
+  // just chosen via a swap, before any set has been logged for them yet.
+  // Seeded here so the new exercise's card appears the instant a swap is
+  // confirmed; once at least one set is actually logged for it, the derived
+  // list below (from allCurrentLogs) picks it up too, so it survives a
+  // refresh the same way an "extra set" (ADD SET) already does — no new
+  // table, no new persisted flag, same "derive extra-ness from what's
+  // actually logged" precedent SetGroup's weekPlanSetId-null sets already
+  // established one level down.
+  const [pendingSwapExercises, setPendingSwapExercises] = useState<Exercise[]>([])
 
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
@@ -146,6 +159,26 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
 
+  // Extra, unplanned exercises added via swap (SPEC v1.1 "Part C") — the
+  // exercise-level equivalent of an "extra set": never written to
+  // v2_program_exercises, so next week's plan is untouched by construction
+  // (weekPlanService.ts's copy-forward only ever reads v2_week_plans/
+  // v2_week_plan_sets, never v2_set_logs). Union of "chosen this session,
+  // not logged yet" (pendingSwapExercises) and "already has at least one
+  // real log this session" (derived from allCurrentLogs, keyed by
+  // exerciseId so a page refresh recovers it without pendingSwapExercises)
+  // — deduplicated by exercise id, since the same exercise naturally moves
+  // from the first bucket into the second the moment its first set lands.
+  const templateExerciseIds = new Set(sortedExercises.map((pe) => pe.exerciseId))
+  const extraExerciseById = new Map<string, Exercise>()
+  for (const ex of pendingSwapExercises) extraExerciseById.set(ex.id, ex)
+  for (const log of allCurrentLogs) {
+    if (log.exercise && !templateExerciseIds.has(log.exerciseId) && !extraExerciseById.has(log.exerciseId)) {
+      extraExerciseById.set(log.exerciseId, log.exercise)
+    }
+  }
+  const extraExercises = [...extraExerciseById.values()]
+
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } =
     useScrollToCurrentSet()
 
@@ -153,7 +186,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // §2.3) — not one query per exercise card. Must run unconditionally (this
   // is a hook), so it's placed before the showComplete early return below,
   // fed by activeExercises so it also works from the offline-cached
-  // exercise list.
+  // exercise list. Extra (swapped-in) exercise ids are included too, so a
+  // real prior occurrence of one still resolves a real reference instead of
+  // silently falling back to first_time just because the id was never
+  // asked about.
   const {
     data: referenceSessionsByExercise,
     isLoading: referenceLoading,
@@ -162,12 +198,48 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     retry: retryReference,
   } = useExerciseReferenceSessions(
     workoutDay.id,
-    activeExercises.map((pe) => pe.exerciseId),
+    [...activeExercises.map((pe) => pe.exerciseId), ...extraExercises.map((ex) => ex.id)],
     sessionId,
   )
 
   if (showComplete) {
     return <SessionComplete sessionId={sessionId} onBack={() => setShowComplete(false)} />
+  }
+
+  // Shared by every ExerciseSection below, template and extra alike — same
+  // mutations, same session, only which exercise differs.
+  function handleLog(params: Omit<Parameters<typeof logSet.mutateAsync>[0], 'note'>) {
+    // Phase 3.1 retires AUDIT M5's inference heuristic on this write path:
+    // ExerciseCard/SetGroup's ADD STAGE tap already knows which head it
+    // belongs to and passes parentSetId (and stageIndex) directly — no more
+    // guessing from ordering. See CONTEXT.md's "ADD STAGE / inference-
+    // heuristic limitation" note for why this was inference-only before
+    // this phase. 007's historical backfill keeps using inference — it has
+    // no other option for data written before this shipped.
+    //
+    // mutateAsync (not mutate) so ExerciseCard can await the resulting real
+    // id — needed both for "skip whole exercise" to chain a head's real id
+    // into its stages' parentSetId, and to anchor the inline rest timer
+    // (SPEC §4.3) to the specific row that was just logged.
+    return logSet.mutateAsync({ ...params, note: null }).then((log) => {
+      useRestTimerStore.getState().setAnchor(log.id)
+      return log
+    })
+  }
+  function handleUpdateSet(id: string, changes: Parameters<typeof updateSetLog.mutate>[0]['changes']) {
+    updateSetLog.mutate({ id, changes })
+  }
+  function handleDeleteSet(id: string) {
+    return deleteSetLog.mutateAsync(id)
+  }
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — the original
+  // exercise's card has already skipped its own remaining sets by the time
+  // this fires (ExerciseCard.tsx's handleConfirmSwap does that first); this
+  // just registers the chosen replacement so it renders as an extra card
+  // below. Guards against double-registering the same exercise id (e.g. two
+  // different template exercises swapped to the same replacement).
+  function handleSwap(exercise: Exercise) {
+    setPendingSwapExercises((prev) => (prev.some((e) => e.id === exercise.id) ? prev : [...prev, exercise]))
   }
 
   return (
@@ -245,28 +317,48 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               referenceIsFromCache={referenceIsFromCache}
               onRetryReference={retryReference}
               today={today}
-              onLog={(params) => {
-                // Phase 3.1 retires AUDIT M5's inference heuristic on this
-                // write path: ExerciseCard/SetGroup's ADD STAGE tap already
-                // knows which head it belongs to and passes parentSetId (and
-                // stageIndex) directly — no more guessing from ordering. See
-                // CONTEXT.md's "ADD STAGE / inference-heuristic limitation"
-                // note for why this was inference-only before this phase.
-                // 007's historical backfill keeps using inference — it has
-                // no other option for data written before this shipped.
-                //
-                // mutateAsync (not mutate) so ExerciseCard can await the
-                // resulting real id — needed both for "skip whole exercise"
-                // to chain a head's real id into its stages' parentSetId,
-                // and to anchor the inline rest timer (SPEC §4.3) to the
-                // specific row that was just logged.
-                return logSet.mutateAsync({ ...params, note: null }).then((log) => {
-                  useRestTimerStore.getState().setAnchor(log.id)
-                  return log
-                })
-              }}
-              onUpdateSet={(id, changes) => updateSetLog.mutate({ id, changes })}
-              onDeleteSet={(id) => deleteSetLog.mutateAsync(id)}
+              onLog={handleLog}
+              onUpdateSet={handleUpdateSet}
+              onDeleteSet={handleDeleteSet}
+              onSwap={handleSwap}
+            />
+          )
+        })}
+
+        {/* Extra, unplanned exercises added via swap this session (SPEC
+            v1.1 "Part C") — same synthetic-ProgramExercise-plus-empty-plan
+            composition as any exercise with no plan attached; nothing in
+            ExerciseCard/SetGroup needs to know this one didn't come from
+            the day's template. */}
+        {extraExercises.map((ex, i) => {
+          const syntheticProgramExercise: ProgramExercise = {
+            id: `extra-${ex.id}`,
+            workoutDayId: workoutDay.id,
+            userId: user?.id ?? '',
+            exerciseId: ex.id,
+            exercise: ex,
+            position: sortedExercises.length + i,
+            targetReps: null,
+            weightUnit: null,
+          }
+          return (
+            <ExerciseSection
+              key={syntheticProgramExercise.id}
+              programExercise={syntheticProgramExercise}
+              plannedSets={[]}
+              allCurrentLogs={allCurrentLogs}
+              sessionId={sessionId}
+              referenceSessions={referenceSessionsByExercise.get(ex.id) ?? []}
+              referenceLoading={referenceLoading}
+              referenceMesocycleId={session?.mesocycleId ?? null}
+              referenceIsError={referenceIsError}
+              referenceIsFromCache={referenceIsFromCache}
+              onRetryReference={retryReference}
+              today={today}
+              onLog={handleLog}
+              onUpdateSet={handleUpdateSet}
+              onDeleteSet={handleDeleteSet}
+              onSwap={handleSwap}
             />
           )
         })}

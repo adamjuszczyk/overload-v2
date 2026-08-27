@@ -1,28 +1,31 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import { useCoachNotes } from './useCoachNotes'
 import {
   useCoachMemory,
   useCreateCoachMemoryEntry,
   useUpdateCoachMemoryEntry,
   useDeleteCoachMemoryEntry,
   useRestoreCoachMemoryEntry,
-  useCurateMemory,
 } from './useCoachMemory'
 
 // The Context tab's entry point into Coach Memory (COACH-PERSONALIZATION-
-// TASKS.md §6, phase 4) — the curation trigger plus the full list, edit/
-// delete/restore, same inline-CRUD conventions PhaseLog.tsx/WeightLog.tsx/
-// CoachNotes.tsx already use. Online-only, same "REQUIRES A CONNECTION"
-// convention as CoachNotes.tsx (SPEC §4's memory list has no offline need —
-// TASKS §2.10, no Dexie change for this phase).
+// TASKS.md §6, phase 4; reworked by the Notes/Memory restructure, SPEC
+// v1.1) — the full list plus edit/delete/restore, same inline-CRUD
+// conventions PhaseLog.tsx/WeightLog.tsx use. Online-only, same "REQUIRES A
+// CONNECTION" convention as every other Coach surface (SPEC §4's memory
+// list has no offline need — TASKS §2.10, no Dexie change).
 //
-// The uncurated-note count for the trigger button (TASKS §5.1's "3 NEW
-// NOTES") is derived from useCoachNotes()'s own data (curatedAt === null)
-// rather than a second query — the notes list is already fetched by
-// CoachNotes.tsx on the same tab, and useCurateMemory invalidates that
-// query on success so the count updates without a dedicated endpoint.
+// No curation trigger here anymore — curation runs automatically as part of
+// api/coach/analyze.ts (curationRunner.ts), not from a button on this page.
+// ADD ENTRY is now this app's *only* way to write a general (non-workout)
+// standing fact directly — it replaces the Context tab's old general note
+// box (CoachNotes.tsx, deleted), which used to stage a note for later
+// curation. There's no AI involved in ADD ENTRY, same as a phase or weight
+// log entry: it's a direct, immediate write to v2_coach_memory_entries with
+// source: 'manual'. The in-workout sidebar (WorkoutNotesSheet.tsx) is
+// unchanged and still writes raw, session-scoped notes to v2_coach_notes —
+// those still get folded into memory by curation, just automatically now.
 
 function fmt(iso: string): string {
   return format(parseISO(iso), 'MMM d, yyyy · h:mm a')
@@ -30,13 +33,11 @@ function fmt(iso: string): string {
 
 export default function CoachMemory() {
   const isOnline = useOnlineStatus()
-  const { data: notes = [] } = useCoachNotes()
   const { data: entries = [], isLoading } = useCoachMemory()
   const createEntry = useCreateCoachMemoryEntry()
   const updateEntry = useUpdateCoachMemoryEntry()
   const deleteEntry = useDeleteCoachMemoryEntry()
   const restoreEntry = useRestoreCoachMemoryEntry()
-  const curate = useCurateMemory()
 
   const [showForm, setShowForm] = useState(false)
   const [body, setBody] = useState('')
@@ -72,7 +73,6 @@ export default function CoachMemory() {
     )
   }
 
-  const uncuratedCount = notes.filter((n) => n.curatedAt === null).length
   const activeEntries = entries.filter((e) => e.status === 'active')
   const expiredEntries = entries.filter((e) => e.status === 'expired')
 
@@ -122,47 +122,16 @@ export default function CoachMemory() {
         >
           COACH MEMORY
         </p>
-        <div className="flex gap-2">
-          {!showForm && (
-            <button
-              onClick={openAddForm}
-              className="text-xs font-bold px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: 'var(--surface-raised)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
-            >
-              ADD ENTRY
-            </button>
-          )}
+        {!showForm && (
           <button
-            onClick={() => curate.mutate()}
-            disabled={curate.isPending || uncuratedCount === 0}
+            onClick={openAddForm}
             className="text-xs font-bold px-3 py-1.5 rounded-lg"
-            style={{
-              backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
-              fontFamily: 'var(--font-mono)',
-              opacity: curate.isPending || uncuratedCount === 0 ? 0.4 : 1,
-            }}
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
           >
-            {curate.isPending ? 'CURATING…' : uncuratedCount === 0 ? 'UPDATE MEMORY' : `UPDATE MEMORY (${uncuratedCount} NEW)`}
+            ADD ENTRY
           </button>
-        </div>
+        )}
       </div>
-
-      {curate.isError && (
-        <p className="text-xs mb-3" style={{ color: 'var(--error)' }}>
-          {(curate.error as Error).message}
-        </p>
-      )}
-
-      {curate.isSuccess && curate.data && (
-        <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-          {curate.data.notesCurated === 0
-            ? 'Nothing to curate.'
-            : `Curated ${curate.data.notesCurated} note${curate.data.notesCurated === 1 ? '' : 's'} — ` +
-              `${curate.data.applied.added.length} added, ${curate.data.applied.updated.length} updated, ` +
-              `${curate.data.applied.expired.length} expired.`}
-        </p>
-      )}
 
       {showForm && (
         <form

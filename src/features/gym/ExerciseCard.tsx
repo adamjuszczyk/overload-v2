@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import SetGroup, { type LogParams } from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
+import SwapExerciseSheet from './SwapExerciseSheet'
 import { useRestTimerStore } from './restTimerStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex, type SetGroup as Group } from './setGroupLogic'
@@ -52,6 +53,12 @@ interface ExerciseCardProps {
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — called once
+  // the swap is confirmed and the original exercise's remaining sets have
+  // already been skipped (see handleConfirmSwap below). GymSession.tsx owns
+  // what happens next: rendering the chosen exercise as an extra, unplanned
+  // exercise card, same "extra set" concept as ADD SET one level up.
+  onSwap: (exercise: Exercise) => void
 }
 
 export default function ExerciseCard({
@@ -70,6 +77,7 @@ export default function ExerciseCard({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  onSwap,
 }: ExerciseCardProps) {
   const { startedAt, start: startTimer } = useRestTimerStore()
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
@@ -83,6 +91,12 @@ export default function ExerciseCard({
   // any already-planned stages under them, both.
   const [isSkippingExercise, setIsSkippingExercise] = useState(false)
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
+
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — reuses
+  // handleSkipExercise below unchanged (a swap IS "skip the rest of this
+  // exercise", plus registering a replacement), so it shares the same
+  // in-flight flag rather than introducing a second one.
+  const [showSwapSheet, setShowSwapSheet] = useState(false)
 
   // A head is a set with no parent — the stage-exclusion rule (TASKS.md
   // §2.1 / CONTEXT.md "Key architectural rules"): a drop stage is never
@@ -329,6 +343,33 @@ export default function ExerciseCard({
     (row) => !row.group || row.group.stages.length < row.plannedStages.length,
   )
 
+  // Same "anything left" question, as a count rather than a boolean — shown
+  // in SwapExerciseSheet's confirm step so swapping mid-exercise is honest
+  // about how many remaining sets are about to be marked skipped.
+  const remainingPlannedCount = plannedRows.reduce((sum, row) => {
+    const headRemaining = row.group ? 0 : 1
+    const stagesRemaining = Math.max(0, row.plannedStages.length - (row.group?.stages.length ?? 0))
+    return sum + headRemaining + stagesRemaining
+  }, 0)
+
+  // Swap: skip whatever's left of the original exercise (same function "skip
+  // rest of exercise" already uses — a swap that produced zero unfinished
+  // rows is a harmless no-op loop), then hand the chosen replacement up to
+  // GymSession.tsx. Sequential and awaited so a skip failure doesn't still
+  // register the swap as if it had gone through.
+  async function handleConfirmSwap(newExercise: Exercise) {
+    setShowSwapSheet(false)
+    setIsSkippingExercise(true)
+    try {
+      await handleSkipExercise()
+      onSwap(newExercise)
+    } catch (err) {
+      console.error('Failed to swap exercise', err)
+    } finally {
+      setIsSkippingExercise(false)
+    }
+  }
+
   // Display numbers run sequentially top-to-bottom (planned section first,
   // then extra) purely for the row badge — the setNumber actually sent on
   // a head log is computed fresh from totalLoggedHeads at click time.
@@ -351,7 +392,7 @@ export default function ExerciseCard({
       className="rounded-xl overflow-hidden"
       style={{ border: '1px solid var(--border)' }}
     >
-      <ExerciseHeader programExercise={programExercise} />
+      <ExerciseHeader programExercise={programExercise} onSwapClick={() => setShowSwapSheet(true)} />
 
       {/* Two reference panels, side by side — but PlanTargetsPanel collapses
           entirely when this exercise has no plan (post-launch fix,
@@ -506,6 +547,17 @@ export default function ExerciseCard({
           )
         )}
       </div>
+
+      {showSwapSheet && (
+        <SwapExerciseSheet
+          currentExerciseId={programExercise.exerciseId}
+          currentExerciseName={programExercise.exercise?.name ?? 'this exercise'}
+          muscleGroup={programExercise.exercise?.muscleGroup ?? 'other'}
+          remainingSetCount={remainingPlannedCount}
+          onConfirm={handleConfirmSwap}
+          onClose={() => setShowSwapSheet(false)}
+        />
+      )}
     </div>
   )
 }

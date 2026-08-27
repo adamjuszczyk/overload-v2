@@ -310,8 +310,30 @@ describe('matchSessionsByPosition — e1RM delta (step 4, reusing e1rm.ts)', () 
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 90, reps: 12, rir: null })] })
     const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
     const result = matchSessionsByPosition(a, b)
-    expect(result.plain.slots[0].head.a).toEqual({ weight: 90, reps: 12, rir: null, isWarmup: false })
+    expect(result.plain.slots[0].head.a).toEqual({ weight: 90, reps: 12, rir: null, isWarmup: false, formRating: null })
     expect(result.plain.slots[0].head.e1rmA).toBeNull()
+  })
+
+  it('carries formRating through on both sides — Coach Personalization phase 5 (§4.5)', () => {
+    const a = session({
+      sessionId: 'a',
+      logs: [makeLog({ id: 'a-1', setNumber: 1, formRating: 'rushed' })],
+    })
+    const b = session({
+      sessionId: 'b',
+      logs: [makeLog({ id: 'b-1', setNumber: 1, formRating: 'extra_controlled' })],
+    })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots[0].head.a.formRating).toBe('rushed')
+    expect(result.plain.slots[0].head.b.formRating).toBe('extra_controlled')
+  })
+
+  it('formRating is null when the set was not rated', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1 })] })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots[0].head.a.formRating).toBeNull()
+    expect(result.plain.slots[0].head.b.formRating).toBeNull()
   })
 })
 
@@ -459,9 +481,9 @@ describe('buildPositionMatchTable', () => {
     expect(table.plain).toHaveLength(1)
     expect(table.plain[0].slotIndex).toBe(1)
     expect(table.plain[0].cells).toEqual([
-      { sessionId: 'a', value: { weight: 100, reps: 10, rir: 2, isWarmup: false } },
-      { sessionId: 'b', value: { weight: 105, reps: 10, rir: 2, isWarmup: false } },
-      { sessionId: 'c', value: { weight: 110, reps: 10, rir: 2, isWarmup: false } },
+      { sessionId: 'a', value: { weight: 100, reps: 10, rir: 2, isWarmup: false, formRating: null } },
+      { sessionId: 'b', value: { weight: 105, reps: 10, rir: 2, isWarmup: false, formRating: null } },
+      { sessionId: 'c', value: { weight: 110, reps: 10, rir: 2, isWarmup: false, formRating: null } },
     ])
     expect(table.dropsets).toEqual([])
   })
@@ -472,7 +494,7 @@ describe('buildPositionMatchTable', () => {
     // what was logged.
     const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 100, rir: null })] })
     const table = buildPositionMatchTable([a])
-    expect(table.plain[0].cells[0].value).toEqual({ weight: 100, reps: 10, rir: null, isWarmup: false })
+    expect(table.plain[0].cells[0].value).toEqual({ weight: 100, reps: 10, rir: null, isWarmup: false, formRating: null })
     expect(table.plain[0].cells[0]).not.toHaveProperty('deltaPercent')
     expect(table.plain[0].cells[0]).not.toHaveProperty('e1rm')
   })

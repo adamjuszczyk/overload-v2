@@ -19,7 +19,7 @@
 // comparison side — deltaPercent is (e1rmB - e1rmA) / e1rmA × 100, same sign
 // convention as e1rm.ts's compareE1rmWindow (positive = improvement).
 
-import type { SetLog } from '../../types/index.js'
+import type { SetLog, FormRating } from '../../types/index.js'
 import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic.js'
 import { calculateE1rm } from './e1rm.js'
 
@@ -41,6 +41,9 @@ export interface PositionMatchSetValue {
   reps: number | null
   rir: number | null
   isWarmup: boolean
+  // Coach Personalization phase 5 (COACH-PERSONALIZATION-TASKS.md §4.5) —
+  // null = not rated, same "absence is data too" convention as SetLog.formRating.
+  formRating: FormRating | null
 }
 
 export interface PositionMatchItemResult {
@@ -113,7 +116,7 @@ export function buildLoggedSlots(logs: SetLog[]): SetGroup<SetLog>[] {
 }
 
 function toSetValue(log: SetLog): PositionMatchSetValue {
-  return { weight: log.weight, reps: log.reps, rir: log.rir, isWarmup: log.isWarmup }
+  return { weight: log.weight, reps: log.reps, rir: log.rir, isWarmup: log.isWarmup, formRating: log.formRating }
 }
 
 // Step 4: per-item e1RM delta. Eligibility mirrors e1rm.ts's isEligibleSet

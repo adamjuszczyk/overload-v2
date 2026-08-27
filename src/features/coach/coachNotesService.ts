@@ -1,11 +1,20 @@
 import { supabase } from '../../lib/supabase'
 import type { CoachNote } from '../../types'
 
-// CRUD for v2_coach_notes (COACH-PERSONALIZATION-TASKS.md §6 step 13),
-// following coachContextService.ts's exact shape: snake_case DB row type
-// kept separate from the camelCase public interface, explicit
+// v2_coach_notes access (COACH-PERSONALIZATION-TASKS.md §6 step 13),
+// following coachContextService.ts's shape: snake_case DB row type kept
+// separate from the camelCase public interface, explicit
 // .eq('user_id', userId) defence-in-depth alongside RLS on every query,
 // plain `if (error) throw error` rethrow.
+//
+// Read-and-create only, deliberately — the Notes/Memory restructure
+// (COACH-PERSONALIZATION-SPEC.md v1.1) removed the Context tab's browsable
+// "Coach Notes" list along with its edit/delete actions (CoachNotes.tsx,
+// deleted). A raw note is now purely staging input for the session's own
+// analysis and for curation — it's never presented back to the user to
+// review or correct once written, so there is no remaining caller for an
+// update/delete on this table. If that ever changes, re-add them; there is
+// no reason to carry unused mutation functions until then.
 
 type DbCoachNote = {
   id: string
@@ -58,22 +67,4 @@ export async function createCoachNote(
     .single()
   if (error) throw error
   return toCoachNote(data as DbCoachNote)
-}
-
-export async function updateCoachNote(id: string, userId: string, body: string): Promise<void> {
-  const { error } = await supabase
-    .from('v2_coach_notes')
-    .update({ body })
-    .eq('id', id)
-    .eq('user_id', userId)
-  if (error) throw error
-}
-
-export async function deleteCoachNote(id: string, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('v2_coach_notes')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', userId)
-  if (error) throw error
 }

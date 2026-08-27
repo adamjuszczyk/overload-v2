@@ -1327,5 +1327,269 @@ Five, in rough order of how expensive they are to change later.
 and decided by Adam before phase 1 build (2026-08-25): see §7.8 and §4.5. No
 longer listed above as an open question.
 
-Nothing above has been built. Nothing is cleared to start until this document
-is reviewed.
+Nothing above (§§0–10) was built when originally written — phases 1–5 have
+since all shipped and are live, per CONTEXT.md's session-by-session record.
+§11 below documents what was built on top of that shipped v1, 2026-08-27.
+
+---
+
+## 11. 2026-08-27 — Notes/Memory restructure, exercise swap, coachPrompt v5
+
+Three parts, built and verified together in one session, **held for review —
+not committed, not deployed, and the real ANALYZE button was never
+pressed.** Full narrative and real-output evidence in CONTEXT.md's
+2026-08-27 session entry; this section is the technical record of what
+changed and why.
+
+### 11.1 coachPrompt.ts → PROMPT_VERSION 5
+
+Two fixes, both diagnosed against v4's first real generation (the prior
+session's real dry run against real PUSH-2 data, CONTEXT.md):
+
+1. **Equipment hallucination.** v4's real output called the reference
+   session's numbers "barbell work" — the reference was actually the same
+   Chest Press *machine*. The payload has no equipment field anywhere.
+   Added an explicit instruction (a new payload-shape bullet plus a new
+   "Equipment" paragraph in "What to write") not to invent equipment type or
+   detail beyond what `exerciseName` or `sessionNotes`/`memory` literally
+   say.
+2. **False independent confirmation between `memory` and `sessionNotes`.**
+   v4's output wrote "your session notes confirm X, which aligns with the
+   memory flag" — but that memory entry was itself curated directly from
+   this same session's own notes. The payload can't currently distinguish a
+   same-session-curated entry from a genuinely standing one, so
+   "confirms"/"aligns with" phrasing risks stating one fact twice as if two
+   sources agreed. Added an instruction against that specific framing when
+   the two overlap.
+
+**Verified against the same real PUSH-2 scenario**, replayed via a
+throwaway script (`combinedDryRun.temp.ts`, deleted immediately after) that
+reconstructed the real payload from data read directly off the live local
+app (History's session detail and per-exercise side-by-side views — not a
+live-token DB read; Adam chose this reconstruction approach after the
+browser tool's classifier blocked raw token extraction again this session,
+same block a prior session also hit) and called the real, shipped
+`matchSessionsByPosition` plus the real `COACH_SYSTEM_PROMPT` (v5) via one
+real Anthropic call. New Chest Press comment: "a different implement and
+angle than whatever the reference machine was" (no invented equipment) and
+"your session note confirms the incline smith felt heavier than
+expected... your standing memory already flags this implement as a
+caution" (memory read as background context informing forward guidance,
+never phrased as independent corroboration of the same fact). Both fixes
+confirmed working on the real scenario that diagnosed them.
+
+### 11.2 Notes/Memory restructure
+
+**Decision: `v2_coach_notes` needed no schema change.** Investigated
+directly (per the brief's instruction) rather than assumed — its three
+remaining real consumers (sidebar writes via `useCreateCoachNote`;
+session-scoped reads in `analysisInput.ts`; curation's uncurated-read and
+stamp in the new `curationRunner.ts`) are exactly the same three the table
+was already built for. Removing the browsable list UI removed a *consumer*,
+not a *use* — the table stays internal staging, unchanged.
+
+**Removed** (all now-dead code, not left in place unused):
+- `src/features/coach/CoachNotes.tsx` — deleted. Its two jobs (general note
+  box, browsable list) both went away: the note box's job moved to
+  `CoachMemory.tsx`'s "ADD ENTRY" (already existed, unchanged — confirmed by
+  direct investigation before building anything, so nothing needed to be
+  built from scratch here per §11's own brief); the browsable list's job
+  simply ended, per SPEC §11.1's reasoning.
+- `coachNotesService.ts`'s `updateCoachNote`/`deleteCoachNote` and
+  `useCoachNotes.ts`'s `useUpdateCoachNote`/`useDeleteCoachNote` — their
+  only caller was the deleted list. `fetchCoachNotes`/`createCoachNote` and
+  their hooks stay (sidebar + curation + analysis still need them).
+- `coachMemoryService.ts`'s `curateMemory()` (the client POST wrapper) and
+  `useCoachMemory.ts`'s `useCurateMemory()` — the "UPDATE MEMORY" button was
+  their only caller.
+- `CoachPage.tsx`'s `<CoachNotes />` render call.
+
+**Curation extraction — `src/features/coach/curationRunner.ts` (new).**
+`api/coach/curate-memory.ts`'s entire flow (rate-limit guard through the
+apply-and-stamp sequence) moved into `runCuration(supabase, userId):
+Promise<CurationRunOutcome>`, a typed-outcome function with zero HTTP
+concerns. Two callers:
+- `api/coach/curate-memory.ts` — now a thin wrapper: authorize, call
+  `runCuration`, map its outcome to the exact HTTP status codes it always
+  returned. **Kept live and independently reachable** rather than deleted,
+  specifically because this project's own verification technique
+  (`fetch()` a real deployed endpoint with a real bearer token) has relied
+  on hitting this exact endpoint directly in every phase-4 session so far.
+- `api/coach/analyze.ts` — calls `runCuration` once, only on the
+  fresh-generation path (never the idempotent early-return branches — an
+  existing-row return isn't "a successful analysis and save happening
+  right now"), wrapped in try/catch. A curation failure is logged and
+  never changes the analyze response — the analysis already generated and
+  saved is what the caller asked for and must not be taken down by an
+  automatic bonus step riding along after it.
+
+**Structure decision: one function, sequential, not two chained client
+calls — justified by real measured latency, not assumed.** Real numbers
+already on record (CONTEXT.md): daily analysis 13.6s–19.5s across several
+real runs (E1 baseline 14.2s); curation 6.3s (synthetic payload) /
+unmeasured-but-comparable for the one real run (2004 input tokens, similar
+order to the 1761-token synthetic measurement). Combined worst-case
+~19.5s + ~7s ≈ 26.5s, comfortably inside the 60s `maxDuration` cap with
+~33s of margin — not a marginal reading. Wiring it into `analyze.ts`
+server-side (rather than the client calling `curate-memory` a second time
+after `analyze` succeeds) was chosen because: (1) the brief's own framing —
+"Wire curation into api/coach/analyze.ts" — names the server file
+specifically; (2) a server-side sequential call is one HTTP round-trip
+instead of two, simpler for the client and for offline/error handling; (3)
+the shared `curationRunner.ts` module keeps both handlers thin and avoids
+duplicating the flow, so the "each handler stays one flow" review-surface
+argument (TASKS §2.8) that originally justified three separate files still
+holds — the flows are still separate, just callable from two places.
+
+**Already-curated-notes handling — confirmed, not newly built.** The
+mechanism (`curated_at is null` read, stamped by id list after apply) is
+unchanged from the shipped phase-4 code, and is exactly what already
+prevents reprocessing regardless of trigger (manual, formerly, or
+automatic, now). Verified two ways: (1) a throwaway mocked test
+(`curationAlreadyCurated.temp.test.ts`, deleted immediately after) against
+the real, shipped `runCuration()`, modeling Adam's actual real state (5
+already-curated notes from run `1be92d90-...`, one brand-new uncurated
+note) — confirmed only the new note reaches the model payload and only its
+id gets stamped; (2) live, on the real local app: the real Coach Memory
+list shows exactly the 2 real entries that run produced, with no
+"outstanding notes" signal anywhere (the count UI itself was removed along
+with the button, per §11 above) and no new notes written since.
+
+**UI (`CoachMemory.tsx`)** — "UPDATE MEMORY" button, its success/error
+banners, and the `uncuratedCount` derivation (which needed `useCoachNotes()`
+just to compute it) all removed. "ADD ENTRY" — already fully built in v1,
+confirmed by direct investigation before this session assumed otherwise —
+needed no new capability, just becomes the sole general-fact entry point
+per SPEC §11.1.
+
+**New files:**
+```
+src/features/coach/curationRunner.ts   the shared curation flow, typed outcome
+```
+**Deleted:**
+```
+src/features/coach/CoachNotes.tsx
+```
+**Modified:** `api/coach/curate-memory.ts` (thin wrapper), `api/coach/analyze.ts`
+(automatic curation call), `CoachMemory.tsx`, `CoachPage.tsx`,
+`coachNotesService.ts`, `useCoachNotes.ts`, `coachMemoryService.ts`,
+`useCoachMemory.ts`, `WorkoutNotesSheet.tsx` (comment only — its own
+mechanism is unaffected).
+
+### 11.3 Swap exercise for this session only
+
+**Investigated before designing anything** (per the brief's instruction),
+confirming the brief's own proposed mechanism holds with no adjustment
+needed:
+- `GymSession.tsx` renders one card per `programExercise` from
+  `useProgramExercises(workoutDay.id)` (the *template*), not from logged
+  sets — so an exercise appearing mid-session with no template entry needs
+  the render loop to know about it, but nothing about `logSet`/
+  `v2_set_logs` itself constrains `exercise_id` to the template. The read
+  side (`fetchSession`) already returns any exercise's logs unfiltered.
+- No prior "extra exercise" concept existed — only "extra set"
+  (`weekPlanSetId == null` on an already-templated exercise, ADD SET).
+  Swap extends that same idea one level up.
+- `copySetsWithGrouping` (next week's plan generator) reads only
+  `v2_week_plans`/`v2_week_plan_sets`, never `v2_set_logs`/`v2_sessions` —
+  confirming a swap done purely via `logSet` calls, never
+  `useAddProgramExercise`, cannot affect next week's plan by construction.
+- `resolveExerciseReference` correctly resolves a zero-history exercise to
+  `first_time` with no special-casing required — confirmed by reading the
+  function, not assumed.
+- `ExercisePicker.tsx` already has the exact "filter by muscle_group" UI
+  pattern needed, reusable as a style/structure reference (its own mutation
+  target — `v2_program_exercises` — is wrong for this use, so its action
+  couldn't be reused directly).
+
+**Where the trigger lives.** Investigated the active-workout UI structure
+specifically to answer this rather than defaulting to SetRow's `▼ MORE`
+drawer (RIR/form/SKIP) — found nothing exercise-level exists there today;
+the one place already representing "this whole exercise" is
+`ExerciseHeader.tsx` (name, muscle group, the existing History icon). A new
+swap icon (`Repeat2`) sits there, optional-prop-gated (`onSwapClick?`) so
+`PreviewExerciseCard.tsx`'s read-only mirror of this header — used for a
+session that hasn't started, where swapping has no meaning — simply omits
+the prop rather than needing a disabled state.
+
+**Mechanism, as built:**
+- `SwapExerciseSheet.tsx` (new) — a two-step bottom sheet (pick-or-create,
+  then confirm), matching `WorkoutNotesSheet.tsx`'s visual convention (this
+  folder's own precedent, not `ExercisePicker.tsx`'s). Filtered to the
+  being-swapped exercise's `muscleGroup` (the coarse field every exercise
+  has), excluding itself and archived rows. "Create new" reuses
+  `useCreateExercise()` unchanged, fixed to the same muscle group. A
+  confirm step (not instant-add, unlike `ExercisePicker.tsx`) because
+  confirming also skips real remaining sets — a genuine, if easily
+  reversible, side effect worth stating plainly first, including the exact
+  remaining-set count.
+- `ExerciseCard.tsx` owns the flow: `handleConfirmSwap` calls the existing
+  `handleSkipExercise` (unchanged — a swap **is** "skip the rest of this
+  exercise" plus registering a replacement, so it reuses that function
+  rather than duplicating skip logic), then calls a new `onSwap` prop.
+- `GymSession.tsx` owns the result: `pendingSwapExercises` state (chosen
+  this session, not yet logged) unioned with exercises derived from
+  `allCurrentLogs` that aren't in the template — the same "derive
+  extra-ness from what's actually logged" precedent `ExerciseCard.tsx`'s
+  own `extraSlotCount` already established for extra *sets*, now applied to
+  extra *exercises*. This is why the extra card survives a refresh once at
+  least one set is logged, and why it needs no persisted flag anywhere: a
+  synthetic `ProgramExercise` (`id: extra-<exerciseId>`, real `exerciseId`,
+  `exercise` object, empty `targetReps`/`weightUnit`) with `plannedSets: []`
+  is all `ExerciseCard`/`SetGroup`/`PlanTargetsPanel` need to render it
+  correctly — none of that chain needed to change to support this.
+- `useExerciseReferenceSessions`'s `exerciseIds` list is extended to
+  include extra exercises, so a real prior occurrence (in a *different*
+  session, this workout day) still resolves instead of only ever falling
+  back to the safe-but-uninformative `?? []` default.
+
+**Verified live, real, on the real 2026-08-27 PUSH-2 session (reopened via
+"Continue Session," not "Redo," per its own "all logged sets stay intact"
+guarantee):** tapped SWAP on the real Chest Press card — the picker
+correctly listed **Incline Smith Press**, the exact real exercise this
+session's actual substitution should have used (per the prior session's own
+finding, CONTEXT.md); confirmed the swap (0 remaining sets to skip, since
+this real session was already fully logged — a real, honest no-op skip);
+logged one real set (30kg × 8) under the new Incline Smith Press card,
+which showed **FIRST TIME** before logging, confirming independent
+reference resolution; confirmed via the PROGRAM tab that PUSH 2's template
+still lists only the original 6 exercises with Chest Press unchanged at
+position 01 — next week's plan is provably untouched; deleted the test set,
+confirmed the extra card disappeared entirely (purely derived, no
+orphaned state); re-completed the session with its real, unchanged Energy
+HIGH / Pump GOOD / 19 sets, restoring it to its exact original state.
+
+**Not tested live: a real sidebar note.** Deliberately skipped — Coach
+Notes now has no UI path to edit or delete an entry (§11.2), so a test note
+written for real would have had no way to be cleaned up afterward and would
+have permanently entered Adam's real note history (and been eligible for a
+future real curation run to read). `WorkoutNotesSheet.tsx` itself received
+zero functional changes this session (comment only), and its write path
+was already proven extensively with real data in prior sessions — CONTEXT.md's
+2026-08-27 session entry confirms this reasoning was Adam's own call, not
+a silent scope-narrowing.
+
+**New files:**
+```
+src/features/gym/SwapExerciseSheet.tsx
+```
+**Modified:** `ExerciseHeader.tsx` (optional swap trigger), `ExerciseCard.tsx`
+(swap state, `handleConfirmSwap`, `remainingPlannedCount`), `GymSession.tsx`
+(`pendingSwapExercises`, extra-exercise derivation and rendering, shared
+`handleLog`/`handleUpdateSet`/`handleDeleteSet`/`handleSwap`).
+
+**Deliberately unchanged:** `sessionService.ts`, `weekPlanService.ts`,
+`referenceLogic.ts`, `ExercisePicker.tsx`, every migration — the whole
+point of the "session-only, derived-from-logs" design is that none of these
+needed to change for the feature to work correctly.
+
+### 11.4 Verification summary
+
+Typecheck (both `tsconfig.app.json` and `tsconfig.api.json`), `npx vitest
+run` (241/241, unchanged count — no new committed tests were added; the two
+new tests described above were throwaway, deleted immediately after use,
+same discipline as every prior adversarial-review session in this feature
+line), and `tsc -b && vite build` all clean throughout, re-run after every
+part. Every throwaway script/test file confirmed deleted via `git status`
+before moving on. **Status: built and verified, not committed, not pushed,
+not deployed. The real ANALYZE button was never pressed.**

@@ -10,7 +10,15 @@ import { matchSessionsByPosition, type PositionMatchResult } from '../progress/p
 import { groupSetLogs, type SetGroup } from '../gym/setGroupLogic.js'
 import { phaseAt } from './phaseLogic.js'
 import { recentWeightTrend } from './weightLogic.js'
-import type { SetLog, PhaseEntry, WeightEntry, ResolvedPhase, WeeklyWeightAverage } from '../../types/index.js'
+import type {
+  SetLog,
+  PhaseEntry,
+  WeightEntry,
+  ResolvedPhase,
+  WeeklyWeightAverage,
+  EnergyRating,
+  PumpRating,
+} from '../../types/index.js'
 
 // Analysis input assembly (COACH-ANALYSIS-TASKS.md §4 step D). Two parts,
 // deliberately kept in one file per the plan's own framing ("pure, plus a
@@ -83,7 +91,17 @@ export interface AnalysisInputExercise {
 }
 
 export interface AnalysisInput {
-  session: { id: string; date: string; workoutDayName: string | null }
+  session: {
+    id: string
+    date: string
+    workoutDayName: string | null
+    // Coach Personalization phase 5 (TASKS §4.5) — required keys, nullable
+    // types, same "absence is data too" convention as Session.energyRating/
+    // pumpRating (types/index.ts) and SetLog.formRating: null = not rated,
+    // never a default.
+    energyRating: EnergyRating | null
+    pumpRating: PumpRating | null
+  }
   // Session-level, not per-exercise — every exercise in one session shares
   // the same current-week deload flag by construction.
   isDeloadCurrent: boolean | null
@@ -97,7 +115,17 @@ export interface AnalysisInput {
   weightTrend: WeeklyWeightAverage[]
   // Deliberately absent: session.note. SPEC §8/§9 — only structured set
   // data plus phase/weight context are reasoning inputs in v1; session-level
-  // mood/pump/note text is explicitly out of scope.
+  // mood/pump/note text is explicitly out of scope (now superseded for
+  // ratings by phase 5 — session.note itself is still out of scope).
+  //
+  // Optional on purpose (TASKS §4.5) — every input_snapshot frozen before
+  // PROMPT_VERSION 4 was written without either key, and those rows are
+  // permanent (SPEC §9). A freshly assembled payload (assembleAnalysisInput,
+  // below) always populates both as arrays, empty or not — the optionality
+  // is for reading old stored rows back through this type, not for a live
+  // assembly ever omitting them.
+  sessionNotes?: string[]
+  memory?: string[]
 }
 
 // How many trailing weeks of weight-trend context to include. Not specified
@@ -131,7 +159,13 @@ export interface AnalysisInputExerciseSource {
 }
 
 export interface BuildAnalysisInputArgs {
-  session: { id: string; date: string; workoutDayName: string | null }
+  session: {
+    id: string
+    date: string
+    workoutDayName: string | null
+    energyRating: EnergyRating | null
+    pumpRating: PumpRating | null
+  }
   isDeloadCurrent: boolean | null
   exercises: AnalysisInputExerciseSource[]
   // The current session's own mesocycle (v2_sessions.mesocycle_id) — kept
@@ -143,6 +177,11 @@ export interface BuildAnalysisInputArgs {
   currentMesocycleId: string | null
   phaseEntries: PhaseEntry[]
   weightEntries: WeightEntry[]
+  // Both optional — default to [] in buildAnalysisInput below, so every
+  // existing caller/test that doesn't care about notes/memory needs no
+  // change. Oldest → newest, bodies only (§4.5's "no ids" reasoning).
+  sessionNotes?: string[]
+  memory?: string[]
 }
 
 function toReference(ref: PrimarySlot): AnalysisInputReference {
@@ -236,6 +275,8 @@ export function buildAnalysisInput(args: BuildAnalysisInputArgs): AnalysisInput 
     ),
     phase: phaseAt(args.phaseEntries, args.session.date),
     weightTrend: recentWeightTrend(args.weightEntries, args.session.date, WEIGHT_TREND_WEEKS),
+    sessionNotes: args.sessionNotes ?? [],
+    memory: args.memory ?? [],
   }
 }
 
@@ -330,7 +371,20 @@ export async function fetchIsDeload(
 // which is what calling assembleAnalysisInput unmodified and discarding
 // .phase/.weightTrend would otherwise do.
 export interface SessionFacts {
-  session: { id: string; date: string; workoutDayName: string | null }
+  session: {
+    id: string
+    date: string
+    workoutDayName: string | null
+    // Coach Personalization phase 5 (TASKS §4.5) — read here, alongside the
+    // existing session fields, but NOT spread wholesale into
+    // WeekAnalysisOccurrence by weekAnalysisInput.ts (which destructures
+    // only id/date/workoutDayName from this object) — unlike formRating
+    // (carried via buildExercise → matchSessionsByPosition →
+    // PositionMatchSetValue), these two do not reach the weekly payload
+    // (TASKS §7.10).
+    energyRating: EnergyRating | null
+    pumpRating: PumpRating | null
+  }
   isDeloadCurrent: boolean | null
   exercises: AnalysisInputExerciseSource[]
   // See BuildAnalysisInputArgs.currentMesocycleId — kept as a sibling field
@@ -347,7 +401,7 @@ export async function assembleSessionFacts(
   const { data: sessionRow, error: sessionError } = await client
     .from('v2_sessions')
     .select(
-      'id, date, workout_day_id, week_plan_id, mesocycle_id, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, form_rating, exercises(name))',
+      'id, date, workout_day_id, week_plan_id, mesocycle_id, energy_rating, pump_rating, v2_set_logs(id, user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, note, is_dropset, parent_set_id, stage_index, is_warmup, is_skipped, logged_at, rest_seconds, form_rating, exercises(name))',
     )
     .eq('id', sessionId)
     .eq('user_id', userId)
@@ -360,6 +414,8 @@ export async function assembleSessionFacts(
     mesocycle_id: string | null
     workout_day_id: string | null
     week_plan_id: string | null
+    energy_rating: string | null
+    pump_rating: string | null
     v2_set_logs: RawSetLogRow[]
   }
 
@@ -498,7 +554,13 @@ export async function assembleSessionFacts(
   })
 
   return {
-    session: { id: session.id, date: session.date, workoutDayName },
+    session: {
+      id: session.id,
+      date: session.date,
+      workoutDayName,
+      energyRating: (session.energy_rating ?? null) as EnergyRating | null,
+      pumpRating: (session.pump_rating ?? null) as PumpRating | null,
+    },
     isDeloadCurrent,
     exercises,
     currentMesocycleId: session.mesocycle_id,
@@ -538,6 +600,12 @@ export function toWeightEntries(rows: RawWeightRow[]): WeightEntry[] {
 // data post-extraction — COACH-WEEK-ANALYSIS-TASKS.md §5.4): now
 // assembleSessionFacts + the phase/weight fetch + buildAnalysisInput,
 // instead of one block that did all three inline.
+// Coach Personalization phase 5 (TASKS §4.5) — bodies only, no ids (§9.5):
+// the daily prompt reasons with these, it never edits them, so an id would
+// only invite a citation the output schema has no slot for.
+type RawMemoryBodyRow = { body: string }
+type RawNoteBodyRow = { body: string }
+
 export async function assembleAnalysisInput(
   client: SupabaseClient,
   userId: string,
@@ -545,19 +613,45 @@ export async function assembleAnalysisInput(
 ): Promise<AnalysisInput> {
   const facts = await assembleSessionFacts(client, userId, sessionId)
 
-  // ── Phase and weight context ──────────────────────────────────────────────────
-  const [{ data: phaseRows, error: phaseError }, { data: weightRows, error: weightError }] = await Promise.all([
+  // ── Phase/weight context, active Coach Memory, and this session's own
+  // Coach Notes — all user- or session-scoped reads, fetched together
+  // (TASKS §4.5, §7.8 reversed 2026-08-25: the analyzed session's own notes
+  // reach the daily prompt directly, not gated on curation status, since
+  // curation's roughly-weekly cadence structurally cannot reach a same-day
+  // analysis) ────────────────────────────────────────────────────────────────
+  const [
+    { data: phaseRows, error: phaseError },
+    { data: weightRows, error: weightError },
+    { data: memoryRows, error: memoryError },
+    { data: noteRows, error: noteError },
+  ] = await Promise.all([
     client.from('v2_coach_phase_entries').select('id, user_id, phase, start_date, created_at').eq('user_id', userId),
     client
       .from('v2_coach_weight_entries')
       .select('id, user_id, entry_date, weight_kg, kind, created_at')
       .eq('user_id', userId),
+    client
+      .from('v2_coach_memory_entries')
+      .select('body')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: true }),
+    client
+      .from('v2_coach_notes')
+      .select('body')
+      .eq('user_id', userId)
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true }),
   ])
   if (phaseError) throw phaseError
   if (weightError) throw weightError
+  if (memoryError) throw memoryError
+  if (noteError) throw noteError
 
   const phaseEntries = toPhaseEntries(phaseRows as RawPhaseRow[])
   const weightEntries = toWeightEntries(weightRows as RawWeightRow[])
+  const memory = (memoryRows as RawMemoryBodyRow[]).map((r) => r.body)
+  const sessionNotes = (noteRows as RawNoteBodyRow[]).map((r) => r.body)
 
   return buildAnalysisInput({
     session: facts.session,
@@ -566,5 +660,7 @@ export async function assembleAnalysisInput(
     currentMesocycleId: facts.currentMesocycleId,
     phaseEntries,
     weightEntries,
+    sessionNotes,
+    memory,
   })
 }

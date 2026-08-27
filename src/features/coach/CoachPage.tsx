@@ -5,7 +5,6 @@ import CoachLocked from './CoachLocked'
 import CoachAnalysisTab from './CoachAnalysisTab'
 import PhaseLog from './PhaseLog'
 import WeightLog from './WeightLog'
-import CoachNotes from './CoachNotes'
 import CoachMemory from './CoachMemory'
 
 // Two-tab shell (COACH-ANALYSIS-TASKS.md §4 step B) — same pattern
@@ -72,7 +71,6 @@ export default function CoachPage() {
         <>
           <PhaseLog />
           <WeightLog />
-          <CoachNotes />
           <CoachMemory />
         </>
       )}

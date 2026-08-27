@@ -67,7 +67,13 @@ function makeExerciseSource(overrides: Partial<AnalysisInputExerciseSource> = {}
 
 function baseArgs(overrides: Partial<BuildAnalysisInputArgs> = {}): BuildAnalysisInputArgs {
   return {
-    session: { id: 'session-current', date: '2026-08-18', workoutDayName: 'Push 1' },
+    session: {
+      id: 'session-current',
+      date: '2026-08-18',
+      workoutDayName: 'Push 1',
+      energyRating: null,
+      pumpRating: null,
+    },
     isDeloadCurrent: false,
     exercises: [makeExerciseSource()],
     currentMesocycleId: 'meso-1',
@@ -316,22 +322,54 @@ describe('buildAnalysisInput — secondaryReference reach-back (2026-08-22 fix)'
 })
 
 describe('buildAnalysisInput — session-level fields', () => {
-  it('passes through session id/date/workoutDayName and isDeloadCurrent verbatim', () => {
+  it('passes through session id/date/workoutDayName/energyRating/pumpRating and isDeloadCurrent verbatim', () => {
     const result = buildAnalysisInput(
       baseArgs({
-        session: { id: 'session-current', date: '2026-08-18', workoutDayName: 'Pull 2' },
+        session: {
+          id: 'session-current',
+          date: '2026-08-18',
+          workoutDayName: 'Pull 2',
+          energyRating: 'high',
+          pumpRating: 'good',
+        },
         isDeloadCurrent: true,
       }),
     )
-    expect(result.session).toEqual({ id: 'session-current', date: '2026-08-18', workoutDayName: 'Pull 2' })
+    expect(result.session).toEqual({
+      id: 'session-current',
+      date: '2026-08-18',
+      workoutDayName: 'Pull 2',
+      energyRating: 'high',
+      pumpRating: 'good',
+    })
     expect(result.isDeloadCurrent).toBe(true)
   })
 
   it('workoutDayName can be null (no workout day on the session)', () => {
     const result = buildAnalysisInput(
-      baseArgs({ session: { id: 'session-current', date: '2026-08-18', workoutDayName: null } }),
+      baseArgs({
+        session: { id: 'session-current', date: '2026-08-18', workoutDayName: null, energyRating: null, pumpRating: null },
+      }),
     )
     expect(result.session.workoutDayName).toBeNull()
+  })
+
+  it("a rated 'none' for energy/pump is a real signal, distinct from an unrated null (§7.3)", () => {
+    const result = buildAnalysisInput(
+      baseArgs({
+        session: {
+          id: 'session-current',
+          date: '2026-08-18',
+          workoutDayName: 'Push 1',
+          energyRating: 'none',
+          pumpRating: 'none',
+        },
+      }),
+    )
+    expect(result.session.energyRating).toBe('none')
+    expect(result.session.pumpRating).toBe('none')
+    expect(result.session.energyRating).not.toBeNull()
+    expect(result.session.pumpRating).not.toBeNull()
   })
 
   it('does not include a session note field at all — SPEC §8/§9 excludes it from v1 reasoning inputs', () => {
@@ -368,7 +406,7 @@ describe('buildAnalysisInput — phase and weight context resolve as of the sess
     // A later maintain phase (started 2026-08-15, after the session) must
     // not be what "current" resolves to.
     const args = baseArgs({
-      session: { id: 'session-current', date: '2026-08-05', workoutDayName: null },
+      session: { id: 'session-current', date: '2026-08-05', workoutDayName: null, energyRating: null, pumpRating: null },
       phaseEntries: [
         makePhaseEntry({ id: 'cut', phase: 'cut', startDate: '2026-06-23' }),
         makePhaseEntry({ id: 'bulk', phase: 'bulk', startDate: '2026-08-04' }),
@@ -382,7 +420,7 @@ describe('buildAnalysisInput — phase and weight context resolve as of the sess
 
   it("resolves weight trend as of the session's date, excluding weeks after it", () => {
     const args = baseArgs({
-      session: { id: 'session-current', date: '2026-08-05', workoutDayName: null },
+      session: { id: 'session-current', date: '2026-08-05', workoutDayName: null, energyRating: null, pumpRating: null },
       weightEntries: [
         makeWeightEntry({ id: 'w1', entryDate: '2026-08-03', weightKg: 82 }), // week of Aug 3 — before session
         makeWeightEntry({ id: 'w2', entryDate: '2026-08-20', weightKg: 79 }), // week of Aug 17 — after session
@@ -396,7 +434,7 @@ describe('buildAnalysisInput — phase and weight context resolve as of the sess
 
   it('weightTrend entries carry source and dailyCount so the model can tell a stated figure from an inferred one', () => {
     const args = baseArgs({
-      session: { id: 'session-current', date: '2026-08-18', workoutDayName: null },
+      session: { id: 'session-current', date: '2026-08-18', workoutDayName: null, energyRating: null, pumpRating: null },
       weightEntries: [
         makeWeightEntry({ id: 'w1', entryDate: '2026-08-17', weightKg: 81, kind: 'weekly_average' }),
         makeWeightEntry({ id: 'w2', entryDate: '2026-08-10', weightKg: 80, kind: 'daily' }),
@@ -414,5 +452,33 @@ describe('buildAnalysisInput — phase and weight context resolve as of the sess
     const result = buildAnalysisInput(baseArgs({ phaseEntries: [], weightEntries: [] }))
     expect(result.phase).toEqual({ current: null, previous: null })
     expect(result.weightTrend).toEqual([])
+  })
+})
+
+describe('buildAnalysisInput — sessionNotes and memory (Coach Personalization phase 5, §4.5)', () => {
+  it('defaults to empty arrays when neither is passed — the real absence path (nothing built or deployed yet)', () => {
+    const result = buildAnalysisInput(baseArgs())
+    expect(result.sessionNotes).toEqual([])
+    expect(result.memory).toEqual([])
+  })
+
+  it('passes through real sessionNotes bodies, oldest to newest, verbatim', () => {
+    const result = buildAnalysisInput(
+      baseArgs({ sessionNotes: ['wrist felt off on the first set', 'better by the third'] }),
+    )
+    expect(result.sessionNotes).toEqual(['wrist felt off on the first set', 'better by the third'])
+  })
+
+  it('passes through real memory bodies, oldest to newest, verbatim — bodies only, no ids', () => {
+    const result = buildAnalysisInput(
+      baseArgs({ memory: ['Cautious with forearm work due to a wrist issue, especially during a cut.'] }),
+    )
+    expect(result.memory).toEqual(['Cautious with forearm work due to a wrist issue, especially during a cut.'])
+  })
+
+  it('sessionNotes and memory are independent — one populated, the other still empty', () => {
+    const result = buildAnalysisInput(baseArgs({ sessionNotes: ['note-only'] }))
+    expect(result.sessionNotes).toEqual(['note-only'])
+    expect(result.memory).toEqual([])
   })
 })

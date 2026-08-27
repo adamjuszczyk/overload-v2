@@ -4,19 +4,15 @@ import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { db } from '../../lib/db'
-import {
-  fetchCoachNotes,
-  createCoachNote,
-  updateCoachNote,
-  deleteCoachNote,
-} from './coachNotesService'
+import { fetchCoachNotes, createCoachNote } from './coachNotesService'
 import type { CoachNote } from '../../types'
 
 // TanStack Query hooks for Coach Notes (COACH-PERSONALIZATION-TASKS.md §6
-// step 13), following useCoachContext.ts's shape for the read/update/delete
-// hooks: hoisted key constant, `enabled: !!user`, invalidate on success.
+// step 13). Read-and-create only — see coachNotesService.ts's header for why
+// there's no update/delete here after the Notes/Memory restructure removed
+// the one caller that used them (CoachNotes.tsx's browsable list).
 //
-// useCreateCoachNote is the one exception — it needs to work while offline
+// useCreateCoachNote is the interesting one — it needs to work while offline
 // (the sidebar's whole reason for existing, TASKS §2.4/§2.6), so it follows
 // useSession.ts's useLogSet pattern instead: a shared ref carries the same
 // id from the optimistic onMutate entry into whichever branch actually
@@ -109,21 +105,5 @@ export function useCreateCoachNote() {
         old ? old.map((n) => (n.id === note.id ? note : n)) : [note],
       )
     },
-  })
-}
-
-export function useUpdateCoachNote() {
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: string }) => updateCoachNote(id, user!.id, body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: COACH_NOTES_KEY }),
-  })
-}
-
-export function useDeleteCoachNote() {
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: (id: string) => deleteCoachNote(id, user!.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: COACH_NOTES_KEY }),
   })
 }

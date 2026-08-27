@@ -7,7 +7,6 @@ import {
   updateCoachMemoryEntry,
   deleteCoachMemoryEntry,
   restoreCoachMemoryEntry,
-  curateMemory,
 } from './coachMemoryService'
 
 // TanStack Query hooks for Coach Memory (COACH-PERSONALIZATION-TASKS.md §6,
@@ -16,11 +15,9 @@ import {
 // Coach Memory is online-only, same as the notes list (TASKS §2.6) and
 // every other Coach surface under /coach.
 //
-// useCurateMemory also invalidates the notes key: a successful run advances
-// curated_at on every note it read, which changes useCoachNotes()'s data
-// (and, via its curatedAt field, the "N NEW NOTES" count CoachMemory.tsx
-// derives from it) even though it never touched v2_coach_notes through this
-// client.
+// No curation hook here — see coachMemoryService.ts's header for why
+// (curation is automatic now, wired into api/coach/analyze.ts server-side,
+// not a client-triggered mutation).
 
 const COACH_MEMORY_KEY = ['v2_coachMemory']
 
@@ -62,17 +59,5 @@ export function useRestoreCoachMemoryEntry() {
   return useMutation({
     mutationFn: (id: string) => restoreCoachMemoryEntry(id, user!.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: COACH_MEMORY_KEY }),
-  })
-}
-
-const COACH_NOTES_KEY = ['v2_coachNotes']
-
-export function useCurateMemory() {
-  return useMutation({
-    mutationFn: curateMemory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: COACH_MEMORY_KEY })
-      queryClient.invalidateQueries({ queryKey: COACH_NOTES_KEY })
-    },
   })
 }

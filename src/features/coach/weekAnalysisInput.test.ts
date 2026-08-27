@@ -5,7 +5,8 @@ import {
   type WeekAnalysisSessionRoster,
 } from './weekAnalysisInput'
 import type { SessionFacts, AnalysisInputExerciseSource } from './analysisInput'
-import type { PhaseEntry, WeightEntry, ExerciseTags } from '../../types'
+import type { PhaseEntry, WeightEntry, ExerciseTags, SetLog } from '../../types'
+import type { PrimarySlot } from '../gym/referenceLogic'
 
 function makeExerciseSource(overrides: Partial<AnalysisInputExerciseSource> = {}): AnalysisInputExerciseSource {
   return {
@@ -22,7 +23,7 @@ function makeExerciseSource(overrides: Partial<AnalysisInputExerciseSource> = {}
 
 function makeSessionFacts(overrides: Partial<SessionFacts> = {}): SessionFacts {
   return {
-    session: { id: 'session-1', date: '2026-08-17', workoutDayName: 'Push 1' },
+    session: { id: 'session-1', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
     isDeloadCurrent: false,
     exercises: [makeExerciseSource()],
     currentMesocycleId: 'meso-1',
@@ -134,11 +135,11 @@ describe('buildWeekAnalysisInput — tag bucketing wired end-to-end', () => {
         sessions: [makeRosterEntry({ id: 's-a', date: '2026-08-17' }), makeRosterEntry({ id: 's-b', date: '2026-08-20' })],
         completedSessionFacts: [
           makeSessionFacts({
-            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1' },
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
             exercises: [makeExerciseSource({ exerciseId: 'bench' })],
           }),
           makeSessionFacts({
-            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2' },
+            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2', energyRating: null, pumpRating: null },
             exercises: [makeExerciseSource({ exerciseId: 'bench' })],
           }),
         ],
@@ -164,7 +165,7 @@ describe('buildWeekAnalysisInput — session roster (§7.8)', () => {
           makeRosterEntry({ id: 's-a', date: '2026-08-17', status: 'completed' }),
           makeRosterEntry({ id: 's-b', date: '2026-08-18', status: 'skipped' }),
         ],
-        completedSessionFacts: [makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1' } })],
+        completedSessionFacts: [makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null } })],
       }),
     )
     expect(result.sessions).toHaveLength(2)
@@ -180,8 +181,8 @@ describe('buildWeekAnalysisInput — session roster (§7.8)', () => {
           makeRosterEntry({ id: 's-b', date: '2026-08-20', mesocycleName: 'MESO 2.0', weekNumber: 1 }),
         ],
         completedSessionFacts: [
-          makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1' } }),
-          makeSessionFacts({ session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 1' } }),
+          makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null } }),
+          makeSessionFacts({ session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 1', energyRating: null, pumpRating: null } }),
         ],
       }),
     )
@@ -200,12 +201,12 @@ describe('buildWeekAnalysisInput — session roster (§7.8)', () => {
         ],
         completedSessionFacts: [
           makeSessionFacts({
-            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1' },
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
             isDeloadCurrent: true,
             exercises: [makeExerciseSource({ exerciseId: 'ex-a' })],
           }),
           makeSessionFacts({
-            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2' },
+            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2', energyRating: null, pumpRating: null },
             isDeloadCurrent: false,
             exercises: [makeExerciseSource({ exerciseId: 'ex-b' })],
           }),
@@ -233,7 +234,7 @@ describe('buildWeekAnalysisInput — phase/weight resolved once for the week (§
           makeRosterEntry({ id: 's-a', date: '2026-08-17', status: 'completed' }),
           makeRosterEntry({ id: 's-b', date: '2026-08-22', status: 'skipped' }),
         ],
-        completedSessionFacts: [makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1' } })],
+        completedSessionFacts: [makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null } })],
         phaseEntries: [
           makePhaseEntry({ id: 'p-early', phase: 'cut', startDate: '2026-01-01' }),
           makePhaseEntry({ id: 'p-late', phase: 'bulk', startDate: '2026-08-21' }),
@@ -258,5 +259,89 @@ describe('buildWeekAnalysisInput — phase/weight resolved once for the week (§
     )
     expect(result.occurrences).toHaveLength(0)
     expect(result.phase.current).toMatchObject({ id: 'p1' })
+  })
+})
+
+// ─── Coach Personalization phase 5 field leakage (TASKS §7.10) ─────────────
+// weekAnalysisInput.ts itself gets no changes in phase 5 — this suite exists
+// to CONFIRM, not just argue, exactly what §7.10 flagged as a caveat: since
+// this module builds every occurrence through buildExercise (the same
+// function the daily path uses), formRating starts appearing in weekly
+// payloads by construction once phase 5 adds it to PositionMatchSetValue.
+// The open question phase 5's build asked: is it ONLY formRating, or does
+// energyRating/pumpRating (added to SessionFacts.session alongside it) leak
+// through too? Answer, confirmed below: only formRating. energyRating/
+// pumpRating live on SessionFacts.session, but buildWeekAnalysisInput only
+// ever reads facts.session.id/.date/.workoutDayName off that object — it
+// never spreads session wholesale into WeekAnalysisOccurrence, and
+// WeekAnalysisInput has no top-level session field at all.
+function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
+  return {
+    id: 'log-1',
+    userId: 'u1',
+    sessionId: 's-a',
+    exerciseId: 'ex1',
+    weekPlanSetId: null,
+    setNumber: 1,
+    weight: 100,
+    reps: 8,
+    rir: 2,
+    note: null,
+    isDropset: false,
+    parentSetId: null,
+    stageIndex: 0,
+    isWarmup: false,
+    setSeconds: null,
+    enteredUnit: null,
+    isSkipped: false,
+    loggedAt: '2026-08-17T10:00:00Z',
+    restSeconds: null,
+    formRating: null,
+    ...overrides,
+  }
+}
+
+describe('buildWeekAnalysisInput — Coach Personalization phase 5 field leakage (§7.10)', () => {
+  it('formRating reaches the weekly match by construction; energyRating/pumpRating do not', () => {
+    const reference: PrimarySlot = {
+      type: 'last_week',
+      session: { sessionId: 'session-ref', date: '2026-08-10', completedAt: null, mesocycleId: 'meso-1', logs: [] },
+    }
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: {
+              id: 's-a',
+              date: '2026-08-17',
+              workoutDayName: 'Push 1',
+              energyRating: 'high',
+              pumpRating: 'good',
+            },
+            exercises: [
+              makeExerciseSource({
+                reference,
+                referenceLogs: [makeSetLog({ id: 'r1', sessionId: 'session-ref', formRating: 'rushed' })],
+                currentLogs: [makeSetLog({ id: 'c1', sessionId: 's-a', formRating: 'extra_controlled' })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    )
+
+    const occ = result.occurrences[0]
+    // formRating: present, exactly as §7.10 flagged — reused verbatim
+    // through buildExercise -> matchSessionsByPosition -> PositionMatchSetValue.
+    expect(occ.match).not.toBeNull()
+    expect(occ.match!.plain.slots[0].head.a.formRating).toBe('rushed')
+    expect(occ.match!.plain.slots[0].head.b.formRating).toBe('extra_controlled')
+
+    // energyRating/pumpRating: absent from the whole payload, not just from
+    // this occurrence — the strongest check available, since it also proves
+    // no other part of buildWeekAnalysisInput spreads facts.session in.
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('energyRating')
+    expect(serialized).not.toContain('pumpRating')
   })
 })
