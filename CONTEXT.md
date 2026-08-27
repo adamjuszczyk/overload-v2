@@ -13567,14 +13567,27 @@ Typecheck (both projects), `npx vitest run` (241/241, unchanged), and
 
 All four gates judged clean — the two adversarial findings are real but
 low-severity and non-blocking, consistent with this feature line's
-existing accepted-risk posture (TASKS §7.7). Committed and pushed the full
-held-for-review bundle (Parts A/B/C from the prior 2026-08-27 session:
-`coachPrompt.ts` v5, the Notes/Memory restructure incl.
-`curationRunner.ts`, and swap-exercise-for-this-session-only), deployed,
-and live-verified the deployed build the same way every prior deploy in
-this project has been checked. See the next entry for the deploy/live-
-verification record and the final plain answer on whether the real
-ANALYZE button is safe to press.
+existing accepted-risk posture (TASKS §7.7). Committed
+(`1af368e`, "feat: Coach v1.1 — coachPrompt v5, Notes/Memory restructure,
+exercise swap") and pushed to `origin/master`
+(`bbd1364..1af368e`). Deploy confirmed via `vercel inspect --wait`:
+`dpl_2DeAkqH3LHWgbi5Anh9qowgw6P2S`, production, **Ready**, all three Coach
+functions built fresh (`api/coach/analyze`, `api/coach/analyze-week`,
+`api/coach/curate-memory` — the last now 687.84KB, down from its prior
+size, matching its new thin-wrapper shape post-`curationRunner.ts`
+extraction). Live at `overload-v2-sage.vercel.app`. **Live verification
+done by Adam directly** on the production URL ("i checked myself, all
+shipped") rather than a Claude-driven walkthrough — offered the usual
+browser-pane check first; Adam chose to verify himself instead.
+
+**Verdict: the real ANALYZE button on the real 2026-08-27 PUSH-2 session
+is safe to press.** All four review gates passed against real data, the
+two real findings from the adversarial review are accepted, non-blocking
+edge cases (a rare `maxDuration`-timing false-failure symptom, and a
+5-minute Coach Memory cache staleness — neither affects correctness or
+causes data loss), the combined dry run's real output was accurate and
+free of the previously-found hallucination/double-confirmation issues,
+and the deploy is live and confirmed working.
 
 ---
 
