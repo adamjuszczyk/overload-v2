@@ -11754,7 +11754,7 @@ ready. Checked, all against real production Supabase data:
   produced "FAILED TO LOAD SESSION," not a fully-rendered detail view with
   a correctly computed duration).
 
-**What remains genuinely unverified, and why it can't be closed from this
+~~**What remains genuinely unverified, and why it can't be closed from this
 session:** whether a *real, non-null* rating actually renders correctly —
 the "AVG FORM" chart with real points, the `2.8/4`-style denominator
 display, the per-set form label, the ENERGY/PUMP stats row with real
@@ -11764,7 +11764,13 @@ this gap** — the task instructions were explicit that fabricating rated
 data to test this is out of bounds. This is a real, open verification gap,
 not an oversight: it closes the first time Adam logs a set or completes a
 session with an actual form/energy/pump rating, at which point it's a
-five-minute check, not new work.
+five-minute check, not new work.~~ — **Closed 2026-08-28**, once real
+rated data existed (the 2026-08-27 PUSH-2 session). All of it renders
+correctly: the AVG FORM chart, the LAST 5 SESSIONS `avg form 3.8/4` line,
+all three MESO OVERVIEW weekly charts (form/energy/pump, each with its
+scale denominator, energy confirmed `3.0 / 5` via tooltip), and History's
+per-set form labels plus the session's ENERGY/PUMP row. See "2026-08-28
+session" below for the real evidence.
 
 ### Not done this session, on purpose
 
@@ -13588,6 +13594,69 @@ edge cases (a rare `maxDuration`-timing false-failure symptom, and a
 causes data loss), the combined dry run's real output was accurate and
 free of the previously-found hallucination/double-confirmation issues,
 and the deploy is live and confirmed working.
+
+---
+
+## 2026-08-28 session (Coach Personalization — Phase 2 real-rating display, closed)
+
+Read CONTEXT.md first, as instructed. One check, no building: confirm
+Phase 2's rating display (COACH-PERSONALIZATION-TASKS.md §6 steps 7–10,
+built 2026-08-25) against real non-null ratings, now that the 2026-08-27
+PUSH-2 session provides them — the exact gap the 2026-08-25 phase-2 entry
+left explicitly open ("closes the first time Adam logs a set... at which
+point it's a five-minute check, not new work"). Checked live against the
+local dev server, whose Progress/History source files are byte-identical
+to what's deployed (`git status` clean, `ExerciseProgress.tsx`/
+`MesoProgress.tsx`/`historyService.ts`/`SessionDetail.tsx`/
+`progressService.ts` all last touched in commit `c22961e`, already live).
+
+**Progress → Exercise → Chest Press** (real 4 real sets from the Aug 27
+PUSH-2 session, ratings `controlled`/`extra_controlled`×3): the **AVG
+FORM** chart renders with its scale denominator on every tick (`1/4`,
+`1.75/4`, `2.5/4`, `3.25/4`, `4/4`) and a real plotted dot at Aug 27, just
+under the `4/4` line. The **LAST 5 SESSIONS** list shows **`avg form
+3.8/4`** for Aug 27 — a real, non-blank, denominator-carrying value.
+Hand-checked the number: 1 `controlled` (=3) + 3 `extra_controlled` (=4)
+→ (3+4+4+4)/4 = 3.75, which rounds to display as `3.8/4` — matches
+exactly.
+
+**Progress → Meso Overview → MESO 1.0**: all three new weekly charts —
+**AVG FORM / WEEK**, **AVG ENERGY / WEEK**, **AVG PUMP / WEEK** — render
+with correctly scaled, denominator-labelled axes (form/pump `1/4`…`4/4`,
+energy `1/5`…`5/5`) and a single real data point each at W9 (the week
+containing both Aug 27 PUSH-2 and Aug 28 PULL-2, both now rated). Tapped
+the AVG ENERGY point directly: tooltip reads **`W9: 3.0 / 5`** — an exact,
+correctly formatted real value, not a bare number.
+
+**History → Aug 27, 2026 · PUSH 2** (`bdb87d0d-...`): session-level
+**`ENERGY HIGH`** and **`PUMP GOOD`** both render as real labels. Every
+one of the session's real sets — all 4 Chest Press sets, Dips, all 4 heads
+plus both dropset stages of One-arm Dumbell Lateral Raise, both Incline
+Skullcrusher sets, all 3 Bench Supported Incline Cable Fly sets, all 3
+Seated Machine Calf Raise sets — shows its correct per-set form label
+(`CONTROLLED` or `EXTRA CONTROLLED`), matching the real stored
+`form_rating` values exactly, set for set.
+
+**Noted, out of scope, not flagged as a rating-display bug:** this same
+session's `DURATION` row reads `—` rather than a real duration. Not
+investigated further — duration isn't a rating and wasn't part of what
+this check covers, and it has a plausible, already-documented explanation
+independent of any display code: this specific session was reopened
+during the 2026-08-27 swap-exercise-testing session (`reopenSession()`
+shifts `started_at` forward by the prior idle gap on every reopen), and
+its real `started_at` (`15:35:24`) now sits after its real `completed_at`
+(`12:33:18`) — the existing `duration > 0` guard (TASKS §7.5) correctly
+refuses to render a negative number rather than inventing one. Mentioned
+for transparency since it was visible on the same screen; not something
+found broken, not touched.
+
+**Verdict: Phase 2's rating display is confirmed correct against real
+data on every axis checked — chart, list line, weekly aggregate, and
+per-set/per-session History labels — all with their scale denominators,
+none bare, none blank where a real rating exists.** Nothing rendered
+incorrectly; nothing needed fixing. The 2026-08-25 phase-2 entry's open
+verification gap is marked closed above, in place, with this session's
+evidence.
 
 ---
 
