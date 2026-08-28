@@ -13735,6 +13735,171 @@ both depended only on `date`, never on either timestamp.
 
 ---
 
+## 2026-08-28 session (continued — the real ANALYZE button, pressed for real: v2_coach_session_analyses confirmed)
+
+Read CONTEXT.md first, as instructed. Adam pressed the real `ANALYZE`
+button on the real 2026-08-27 PUSH-2 session. Pulled the real, saved row
+directly via the Supabase SQL editor (same technique as every prior
+session's live check). Confirmation only, nothing fixed.
+
+### 1–2. Which session, which prompt version, full generated text
+
+Real row `39d3c864-35dc-48b9-9ba6-ae2cfd7124c4`: `session_id
+bdb87d0d-6aaa-4db2-b71f-c4538612fc35` — **the real PUSH-2 session,
+confirmed.** `model claude-haiku-4-5-20251001`, **`prompt_version 5`**,
+`input_tokens 8549`, `output_tokens 1334`, `created_at
+2026-08-27T20:04:28.114723+00:00` (≈22:04 Poland time — roughly 11
+minutes after the prior session's deploy went live; this is the first
+real generation against the shipped restructure). Full generated text,
+verbatim:
+
+> **Chest Press:** "A significant step back in absolute load: the
+> reference session hit 41.25 kg for 8 reps (52.25 e1rm), but this
+> session went 32.5 kg for 3 reps on the opening set (35.75 e1rm)—a ~31%
+> drop in estimated max. This was a planned equipment swap: the chest
+> press machine was unavailable, so you switched to a low incline smith
+> (logged as weight per side), which is a different implement and likely
+> accounts for much of the delta. The session notes flag that the first
+> set felt unexpectedly heavy and defeated you, prompting an extra fourth
+> set to chase the work. All three matched sets dropped 30–37% in e1rm
+> compared to last week, and crucially, the smith incline irritates your
+> shoulder slightly per your memory—something to monitor. The good news:
+> you logged every set as controlled form despite the weight cut, showing
+> technical discipline on an unfamiliar bar angle. The added fourth set
+> signals intent to preserve volume after the opening miss."
+>
+> **Dips:** "Bodyweight dips held flat week-over-week: 9 reps both
+> sessions, zero RIR in both. This time logged as controlled form versus
+> no rating last week, suggesting you executed with better technical
+> awareness despite matching the rep count. No meaningful change in
+> output, but the form quality signal is a small positive in a session
+> where the main lift took a hit."
+>
+> **One-arm Dumbell Lateral Raise:** "All three main sets held at 7.5 kg
+> × 11 reps, zero RIR, flat versus last week—identical output with
+> upgraded form control (logged as controlled on all three, no prior
+> rating). The dropset head dropped from 13 reps to 11 (a small 4.6%
+> e1rm dip), and an extra stage was added this session during the drop.
+> Overall volume is stable to slightly up (the extra drop stage adds
+> work), and form discipline improved across the board on unchanged
+> loads—a solid holding pattern during a 101-day cut, where maintaining
+> shoulder health and control matters."
+>
+> **Incline Skullcrusher:** "Minimal regression: first set dropped from
+> 35 kg × 11 (RIR 1, ~49 e1rm) to 35 kg × 10 (RIR 0, ~46.7 e1rm)—a 4.8%
+> e1rm dip. The second set held at 35 kg × 9 flat. Both sets logged as
+> controlled form this session versus no prior rating. You're 101 days
+> into a cut, bodyweight down slightly week-over-week (72.9 to 72.4 kg),
+> and rep erosion on a triceps-dominant lift is not unexpected. The
+> narrow margin of slippage and maintained form control suggest solid
+> fatigue management rather than a problem."
+>
+> **Bench Supported Incline Cable Fly:** "Essentially held: all three
+> sets at 10 kg with reps of 13, 11, and 11 matching or near-matching
+> last week (13, 10, 11 prior). The second set actually ticked up one rep
+> (10 to 11), and all three sets logged as controlled form. A stable,
+> well-controlled finisher during a cut—minimal fatigue bleed-through on
+> an isolation piece."
+>
+> **Seated Machine Calf Raise:** "Completely flat: 40 kg × 12 reps across
+> all three sets, identical to last week, zero RIR both times, now logged
+> as controlled form. Calf work holding steady on a 101-day cut with
+> slowly drifting bodyweight is a strong sign of stable lower-leg output;
+> the form upgrade is a bonus signal of technical consistency."
+>
+> **Overall:** "This was a mechanically disrupted session that reads as a
+> controlled adaptation: the chest press machine malfunction forced an
+> equipment substitution mid-workout to a low incline smith (10–15
+> degrees), and the switch hit you hard—the first set defeated you,
+> triggering a decision to add a fourth set and dig harder. Absolute load
+> on the Chest Press fell roughly 30% in e1rm, but this was an
+> equipment-driven change, not a strength collapse; you logged strict
+> form control despite the surprise difficulty, and the extra volume
+> attempt signals effort in the face of an unexpected obstacle. Secondary
+> movers—Dips, Lateral Raises, Skullcrusher, Incline Cable Fly, and Calf
+> Raise—all held or slightly improved, with every exercise this session
+> logged as controlled or extra-controlled form, a standout consistency.
+> The incline smith irritates your shoulder slightly (noted in memory),
+> something to monitor going forward. You are 101 days into a cut with
+> bodyweight trending downward (72.9 → 72.4 kg), so modest rep/RIR
+> tightening on compound pressing is expected fatigue accumulation, not a
+> red flag. High energy and good pump in a session compromised by
+> logistics but met with technical discipline and volume intent."
+
+### 3. The two previously-fixed issues — checked, not assumed
+
+**Invented equipment detail (the "barbell" hallucination, v4):** the
+string "barbell" appears nowhere in this real output. Every equipment
+reference — "the chest press machine," "a low incline smith," "an
+unfamiliar bar angle" — is licensed directly by `exerciseName` or the
+real `sessionNotes` text ("chest press machine broken. switched to low
+incline smith..."), never invented. **Clean.**
+
+**Memory presented as independently confirming the same-session notes
+that created it:** checked every place memory and the shoulder-irritation
+fact appear. Both mentions ("crucially, the smith incline irritates your
+shoulder slightly **per your memory**—something to monitor" in the Chest
+Press comment; "The incline smith irritates your shoulder slightly
+**(noted in memory)**" in the overall) cite memory alone, as forward-
+looking standing context — never paired with "confirms"/"aligns with"
+against the session notes. The session notes are cited separately, for a
+*different* fact (the unexpectedly heavy first set → the added fourth
+set). The two sources are never presented as agreeing with each other on
+the same claim. **Clean — the `PROMPT_VERSION 5` fix held on the first
+real, permanent generation it was ever used for.**
+
+### 4. Did automatic curation run, and what did it do
+
+Queried `v2_coach_curation_runs`, `v2_coach_notes`, and
+`v2_coach_memory_entries` directly. At the moment this analysis was
+generated (`2026-08-27T20:04:28`), all 5 real notes already carried
+`curated_at` timestamps from `15:44:54` that same day (the original real
+`UPDATE MEMORY` run, `1be92d90-...`, run earlier that day under the
+pre-restructure code, before Parts A/B/C deployed) — genuinely zero
+uncurated notes existed at generation time. **No `v2_coach_curation_runs`
+row exists anywhere between `15:44:54` (Aug 27) and `13:30:43` (Aug 28)**
+— exactly the signature `curationRunner.ts`'s own step 4 free-exit
+produces (zero uncurated notes → return success early, `notesCurated: 0`,
+never call the model, never insert a run row). **Confirmed: curation ran
+automatically as part of this request and correctly did nothing — a
+genuine clean no-op, exactly as expected**, not merely assumed from the
+prior session's already-known note count.
+
+**One honest caveat, not glossed over:** Vercel's runtime log retention
+on this project's plan has already rolled past `2026-08-27T20:04:28` —
+`vercel logs` only reaches back a few hours, so a direct server-log
+confirmation that `runCuration()` actually executed (versus, say, an
+early, silently-swallowed throw producing an identical "no row" DB
+signature) isn't obtainable after the fact. Mitigating that residual
+doubt: the exact same, unmodified code path **did** run successfully the
+very next day — a second, real `v2_coach_curation_runs` row
+(`d2f95ebc-e0b6-4549-af1b-b26f011c32f6`, `2026-08-28T13:30:43`, triggered
+by an unrelated later analyze call) shows a real note (`68eb27f6-...`,
+created that morning from real Aug 28 usage) fed to a real model call
+that returned `decisions: []` — a different, also-clean no-op, this time
+with direct proof the model genuinely ran. The same code working
+correctly immediately before and after this specific request makes a
+silent failure exactly at this one call very unlikely, though not
+log-verified.
+
+### 5. Anything unexpected in the round trip
+
+None found. Exactly one `v2_coach_session_analyses` row exists for this
+session (no duplicate-insert race). Content is well-formed, all six
+exercises present with real ids matching the real payload, token counts
+are real and reasonable. No `rejectedIds`, no partial-failure markers, no
+orphaned state anywhere in the notes/memory/curation-run tables tied to
+this request. The only two curation-relevant rows near this event both
+account for themselves cleanly (§4).
+
+### Status
+
+**All five points confirmed plainly, nothing fixed, nothing needed
+fixing.** The real ANALYZE button on the real PUSH-2 session produced
+exactly what the prior sessions' review and dry runs predicted it would.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
