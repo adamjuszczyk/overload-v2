@@ -13900,6 +13900,21 @@ exactly what the prior sessions' review and dry runs predicted it would.
 
 ---
 
+## 2026-08-28 session (continued — Weekly Analysis's mildly prescriptive highlight phrasing, settled)
+
+Documentation only. A settled design decision, not a pending item: Weekly
+Analysis's first real output leaned mildly prescriptive in places
+("reintroduce it next week," "audit fatigue in the next week or two, or
+rotate that variation out"), edging toward territory the future
+plan-creator feature is meant to own. Reviewed against the real generated
+text and decided — leave it as-is, no prompt change needed, closed rather
+than left open awaiting more samples. Recorded where it belongs:
+`COACH-WEEK-ANALYSIS-SPEC.md` §5 ("Mildly prescriptive highlight
+phrasing") and §8, not this pending-feedback list — this feature
+*describes*, it never writes to a plan.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling

@@ -44,6 +44,8 @@ One new table, matching `v2_coach_session_analyses`'s shape and discipline: `v2_
 
 **Selective highlights, not exhaustive coverage** — the output is a small number of things actually worth saying, each backed by real evidence from its bucket ("side delt work improved this week — [reasoning from the real numbers]"), not a systematic walk through every trained muscle group. A muscle group with nothing notable to say about it simply doesn't get a highlight.
 
+**Mildly prescriptive highlight phrasing — reviewed against real output, kept as-is.** The first real Weekly Analysis generated highlights that lean slightly prescriptive ("reintroduce it next week," "audit fatigue in the next week or two, or rotate that variation out") — phrasing that edges toward territory a future plan-creator feature (§10) is eventually meant to own outright (actually changing next week's programming, not just describing this week's). Reviewed directly against that real generated text and **decided, not deferred: leave the phrasing as-is, no prompt change.** This analysis feature's job is to describe and explain what a real week's numbers mean, in the voice of a coach talking to the lifter — a coach naturally phrases an observation as a forward-looking suggestion sometimes, and nothing here writes to a plan, changes a program, or removes the lifter's own judgment from what happens next. The line stays real: a future plan-creator *acting* on next week's programming is a materially different thing from this feature *describing* a pattern in language that happens to gesture forward. Not an open question awaiting more samples to calibrate against (contrast the Daily Session Analysis persona/tone item, CONTEXT.md's "Pending feedback to address," which genuinely is still open) — this one was checked against real output and closed.
+
 ## 6. The key UI concept
 
 The Week sub-tab mirrors Session's existing shape exactly: a **To analyze** list (weeks that are complete and not yet analyzed) and an **Analyses** list (saved, permanent write-ups), each opening a read-only detail view. Same manual-trigger, same in-flight/error states, same no-regenerate/no-delete discipline — nothing new invented at the UI layer, all of it reused.
@@ -69,6 +71,7 @@ Month is not present in this structure — added as its own sub-tab only when it
 - **No fabricated precision.** A muscle-group-level number that doesn't actually exist as a real, coherent quantity (like a "chest score" blending an incline press's contribution with a fly's) is worse than no number — it was considered and rejected, not deferred.
 - **Selective over exhaustive**, matching the "coach talking to you about what mattered" framing this whole feature line is built around.
 - **Stable classification lives in stored data, not live inference** — even where the model clearly has the knowledge, because week-over-week comparability depends on the same exercise being classified the same way every time.
+- **This feature describes, it does not act.** A highlight may read as mildly forward-looking coach's advice; it never writes to a plan or a program. See §5's "Mildly prescriptive highlight phrasing" — reviewed against real output and settled, not left open.
 
 ## 9. Explicitly out of scope for v1
 
