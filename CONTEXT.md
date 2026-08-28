@@ -13660,6 +13660,81 @@ evidence.
 
 ---
 
+## 2026-08-28 session (continued — real PUSH-2 session's started_at/completed_at anomaly: blast-radius check)
+
+Read CONTEXT.md first, as instructed. One question, no building: does
+anything analysis-relevant read the real 2026-08-27 PUSH-2 session's raw
+`started_at`/`completed_at` directly, given `started_at` (`15:35:24`) now
+sits *after* `completed_at` (`12:33:18`) — the anomaly the same-day
+`DURATION —` finding surfaced? Or does everything key off the session's
+discrete `date` field instead? Read every function in scope, not assumed.
+
+**`weekResolution.ts`'s completeness logic (`resolveWeek`).** Reads
+`sessions.map((s) => [s.date, s.status])` only — `statusByDate`,
+`resolvedCount`, and `hasCompleted` never touch `startedAt`/`completedAt`.
+`assembleWeekResolution` does fetch and map both columns onto the
+`Session[]` array it passes in (required by the generic `Session` type
+shape), but `resolveWeek`'s own logic — the actual completeness
+computation — never reads either field. **Confirmed unused.**
+
+**Phase/weight-as-of resolution.** Daily: `buildAnalysisInput` calls
+`phaseAt(args.phaseEntries, args.session.date)` and
+`recentWeightTrend(args.weightEntries, args.session.date, ...)` — both
+keyed on `session.date`. Weekly: `weekAnalysisInput.ts`'s
+`lastSessionDate(sessions, weekEnd)` resolves "the week's last session" by
+`sessions.reduce((max, s) => (s.date > max ? s.date : max), ...)` — a
+plain string comparison on `date`, never a timestamp. **Confirmed
+date-only on both paths.**
+
+**"Chronologically last session" for reference matching
+(`referenceLogic.ts`).** `resolveExerciseReference`'s window logic
+(`lastWeekCandidates`, `thisWeek`) filters and sorts by `date` alone via
+`byMostRecent`. `startedAt` does not appear anywhere in this file — it is
+not even part of the `ReferenceSession` shape. `completedAt` *is* read,
+but only inside `byMostRecent`'s tiebreaker, and only when two candidate
+sessions share the exact same `date` (AUDIT A3/E8's same-day-multi-workout
+case) — `byMostRecent`'s first comparison is always `date`, falling
+through to `completedAt` only on an exact tie. **Two reasons this can't
+touch the real PUSH-2 session:** (1) checked its real candidate-session
+list directly (already pulled via SQL in the prior session's dry run) —
+no other session shares `2026-08-27`, so the tiebreaker never engages for
+it either as the resolved session or as a candidate being compared; (2)
+even if it did, the field read there is `completed_at`
+(`12:33:18` — itself a normal, unaffected value), never the anomalous
+`started_at`.
+
+**Whether the raw timestamps reach the model at all.** Checked both
+payload shapes directly, not assumed: `AnalysisInput.session` (daily) is
+built from an explicit field list — `{ id, date, workoutDayName,
+energyRating, pumpRating }` — no spread, no timestamps.
+`WeekAnalysisSessionRoster` (weekly) — `{ id, date, workoutDayName,
+status, isDeload, mesocycleName, weekNumber }` — same. Neither
+`coachPrompt.ts` nor `coachWeekPrompt.ts` mentions `startedAt`/duration
+anywhere (`durationDays` in both is *phase* duration, computed from the
+phase's own `startDate` to the session's `date` — an unrelated field with
+a confusingly similar name). `positionMatch.ts` (the e1RM/slot-matching
+logic every reference comparison ultimately runs through) references no
+session-level timestamp at all.
+
+**Verdict: confirmed clean, zero risk.** Every analysis-relevant path —
+week completeness, daily and weekly phase/weight-as-of resolution,
+reference-session selection, and the model payload itself — keys off the
+session's discrete `date` field (weekly completeness also uses `status`).
+The only real reads of `started_at`/`completed_at` anywhere near this
+session are: `SessionDetail.tsx`'s `DURATION` display (already covered,
+correctly renders `—` rather than a negative number); `coachService.ts`'s/
+`coachWeekService.ts`'s "to analyze" list cutoff filter
+(`completed_at >= COACH_ANALYSIS_START_DATE`), which reads `completed_at`
+only — a normal, unaffected value for this session, so the session
+correctly still appears in "TO ANALYZE"; and `reopenSession()`'s own
+idle-gap-shift math, which is what *produced* the anomaly in the first
+place, not a read that could be affected by it. Nothing found. Nothing
+fixed. This closes with zero risk to anything already verified — the real
+combined dry run and the real curation review from the prior sessions
+both depended only on `date`, never on either timestamp.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
