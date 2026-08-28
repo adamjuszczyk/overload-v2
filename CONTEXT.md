@@ -13924,6 +13924,20 @@ From real usage (one day):
   `PROMPT_VERSION` bump once 4–5 more real analyses exist to calibrate
   tone against.** One sample (today's) isn't enough signal to design a
   persona instruction against without guessing.
+- **Chest Press substitution described inconsistently within the same
+  real analysis.** The real 2026-08-27 PUSH-2 analysis (row
+  `39d3c864-...`, `PROMPT_VERSION 5`, CONTEXT.md's "the real ANALYZE
+  button, pressed for real" session entry) calls the Chest Press → Low
+  Incline Smith Press substitution "a planned equipment swap" in the
+  Chest Press exercise comment, but the overall summary correctly says
+  the machine malfunction "forced" the substitution — matching what the
+  real session notes actually say ("chest press machine broken"). An
+  internal inconsistency between two parts of the same generated text,
+  not a fabricated fact (nothing else about the substitution is
+  invented — see the same session entry's §3). **Not touched this
+  session, not urgent** — worth a look at a future `PROMPT_VERSION`
+  revision, same tracked-but-untouched status as the tone-calibration
+  item above.
 
 ---
 
