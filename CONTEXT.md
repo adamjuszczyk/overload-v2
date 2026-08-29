@@ -940,6 +940,52 @@ migration and again after this session's live CRUD/curation checks (see
 below), confirming nothing was left behind by any of the throwaway
 verification writes.
 
+**Migration 019 (`019_v3_exercise_libraries.sql`) applied and
+independently verified 2026-08-29 — two new tables, three additive
+columns on the shared `exercises` table, no changes to any existing
+row:** `v2_exercise_libraries` (`id`, `slug text not null unique`, `name
+text not null`, `description`, `is_listed boolean not null default
+true`, `position integer not null default 0`, `created_at`) and
+`v2_exercise_library_items` (`id`, `library_id uuid not null references
+v2_exercise_libraries(id) on delete cascade`, `name text not null`,
+`muscle_group text not null`, `muscle_subgroup text[]`,
+`movement_pattern text` — same seven-value `CHECK` as migration 013's
+column of the same name, `position integer not null default 0`,
+`created_at`) — both ship empty in this migration (EXERCISE-LIBRARY-
+SPEC.md §7, content is a later migration), both RLS-enabled with exactly
+one `SELECT` policy (`using (true)`) and **no write policy at all** —
+unlike every other `v2_` table in this project, these two have no
+`user_id` and no app-side writer. `exercises` gains `status text not null
+default 'active' check (status in ('active','lost'))`,
+`source_library_id uuid references v2_exercise_libraries(id) on delete
+restrict`, and `lost_at timestamptz`, plus `exercises_lost_at_chk check
+((status = 'lost') = (lost_at is not null))`. All nine of EXERCISE-
+LIBRARY-TASKS.md §3.1's checks run for real against production, scoped to
+Adam's own `user_id` throughout: schema/defaults exact;
+`status`/`source_library_id`/`lost_at` landed correctly on all 70
+existing rows (`70` active, `0` otherwise, `0` with either provenance
+column set — 019 establishes no provenance, that's migration 020's job);
+indexes exact (pkeys plus the three named); RLS/policy shape exact on
+both tables. **The read-only property proved for real, through the anon
+key, not read off `pg_policies`**: a PostgREST `select` against
+`v2_exercise_libraries` returned `200`/`[]`, an `insert` returned
+`401`/`42501` ("new row violates row-level security policy"). **All three
+new `CHECK`s and the new FK proven by attempting to violate them**, each
+against one real existing row (`ea8fbc9f-…` / "Barbell Bench Press"),
+never read off the DDL: `status = 'bogus'` → `23514`
+(`exercises_status_chk`); `status = 'lost'` with `lost_at` null → `23514`
+(`exercises_lost_at_chk`); `status = 'active'` with `lost_at` set →
+`23514` (same constraint, both directions caught); `source_library_id` =
+a random `gen_random_uuid()` → `23503`
+(`exercises_source_library_fk`) — zero rows written by any of the four,
+confirmed by re-reading the same row afterward. Final row counts
+(`exercises` 70, `v2_program_exercises` 26, `v2_set_logs` 476) matched a
+baseline taken immediately before applying, on all three tables. See
+"2026-08-29 session (continued — two follow-up diagnostics closed out,
+migration 019 applied and verified)" below for the full account,
+including the two pre-migration diagnostic follow-ups this session closed
+out first.
+
 ---
 
 ## Key architectural rules
@@ -1219,6 +1265,39 @@ verification writes.
   not started**, awaiting Adam's review of phases 1–3 first (his explicit
   instruction) and, for phase 4 specifically, 10–20 real Coach Notes
   existing per TASKS §0 — currently zero, see "Active work" above
+- EXERCISE-LIBRARY-SPEC.md — **new, 2026-08-28 (written by Adam, not this
+  session).** Product source of truth for the Exercise Library rework:
+  multiple curated global libraries (preview / download / delete per
+  library) replacing the single all-or-nothing Download button; a
+  three-state exercise lifecycle (active / lost / gone) where deleting an
+  exercise with real history moves it to **Lost Exercises** instead of
+  destroying it; reassignment of a lost exercise's whole history onto
+  another exercise, behind a real confirmation step; and a first-class tag
+  editing screen for `muscle_subgroup`/`movement_pattern`, which have had
+  no UI anywhere since migrations 013/014 added them. Not Coach-gated. Its
+  own §1–§8 numbering, independent of all four prior specs. §5 leaves
+  exactly one question open for technical planning: how the existing 70
+  exercises get retroactive library provenance
+- EXERCISE-LIBRARY-TASKS.md — **new, 2026-08-28, revised same day once
+  Adam settled its four open questions.** Technical plan for the above:
+  four proposed migrations (019 schema, 020 the reviewed legacy provenance
+  data, 021 the reassignment function, 022 the reassignment audit table
+  added once §11.2 was decided), §0's three corrections to the spec's own
+  technical references, a real answer to §5's open question (§4 — the
+  computed 46/24 split), reassignment specified statement-by-statement
+  with its two collision cases (§5), what the confirmation must say and
+  confirm (§6), a ten-step implementation order (§8), ten assumptions the
+  spec doesn't cover (§9), and §11's four questions all settled rather than
+  open as of a same-day revision (see "2026-08-28 session (continued —
+  Exercise Library rework decisions locked in)" below). **§8 step 1 (the
+  read-only diagnostic against production) is now done, 2026-08-29** — the
+  46/24 split confirmed unchanged against the live table, plus two real
+  corrections found and fixed in place: four archived rows, not two
+  (§4.2), and the `created_at` clustering cross-check's real shape — one
+  42-row bulk batch on 2026-08-12, not a single 46-row seed (§4.3) — see
+  "2026-08-29 session (Exercise Library rework — §8 step 1)" below.
+  **Still nothing built, no migration file exists on disk** — step 1 is a
+  diagnostic, not implementation, and steps 2–10 haven't started
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -13915,10 +13994,461 @@ phrasing") and §8, not this pending-feedback list — this feature
 
 ---
 
+## 2026-08-28 session (Exercise Library rework — technical planning only, no code)
+
+Read CONTEXT.md first as instructed, then EXERCISE-LIBRARY-SPEC.md (new,
+written by Adam), then COACH-PERSONALIZATION-SPEC.md/TASKS.md for the
+swap-exercise picker pattern this reuses and
+COACH-WEEK-ANALYSIS-SPEC.md/TASKS.md for the existing
+`muscle_subgroup`/`movement_pattern` schema. **Produced
+EXERCISE-LIBRARY-TASKS.md. No implementation code written, no migration
+file created on disk, nothing applied to production, nothing committed.**
+Read-only investigation of the codebase plus one local computation (§4
+below); no queries run against the live database this session.
+
+### Three corrections to the spec's own technical references (TASKS §0)
+
+Same category as COACH-ANALYSIS-TASKS §0 and
+COACH-PERSONALIZATION-TASKS §1 — the product reasoning holds in all three
+cases, the technical claim attached to it doesn't, and building to the
+claim as written would produce the wrong thing:
+
+1. **Reassignment is not "the same underlying mechanism as swap-exercise"**
+   (SPEC §5). Swap-exercise re-points *nothing* — it skips remaining sets
+   and logs new rows under a different `exercise_id`; its own plan
+   (COACH-PERSONALIZATION-TASKS §11.3) lists `sessionService.ts`,
+   `weekPlanService.ts` and every migration as deliberately unchanged.
+   There is no `UPDATE` in it to generalise. What genuinely reuses is
+   `SwapExerciseSheet.tsx`'s **picker** — which is what SPEC §6 asks for
+   one line later.
+2. **`v2_week_plan_sets` can't be "re-pointed"** (SPEC §5 lists it among
+   the tables that get updated). It has no `exercise_id` column — it
+   references `program_exercise_id` and inherits identity from there.
+   **Only two tables in the whole schema reference `exercises(id)`:**
+   `v2_program_exercises.exercise_id` and `v2_set_logs.exercise_id`
+   (verified by grep across `supabase/migrations/*.sql`, not assumed).
+3. **"Gone" is not a storable status** (SPEC §5 asks for a three-value
+   status column). A hard-deleted exercise has no row to carry one. Plan
+   stores two (`active`/`lost`) and represents `gone` as row absence, with
+   all three nameable in the type layer.
+
+### The §5 open question, answered with a computed number rather than a guess
+
+SPEC §5's one explicit open question — how the existing 70 exercises get
+retroactive library provenance. Proposal: **a synthetic unlisted
+`legacy-default` library, with exactly those exercises whose name matches a
+`DEFAULT_EXERCISES` entry attached to it**, under the same case- and
+whitespace-insensitive rule `importDefaultExercises` already uses to decide
+"already present in this account's library".
+
+Computed this session by diffing `defaultExercises.ts` against the 70 live
+names recorded in `014_v3_exercise_tags.sql`'s per-row comments (which were
+themselves generated by reading production directly, precisely because this
+library has real typos like "Incline Dumbell Press"):
+
+- `DEFAULT_EXERCISES` is **46** entries, not 47 — the 47th `name:`
+  occurrence in that file is the `DefaultExercise` interface. This file's
+  "Standing future work" entry said 47 and has been corrected.
+- **All 46 default names are present verbatim** among the 70 live rows.
+- **24 live rows have no default match** — hand-added.
+- **Zero ambiguous or near-miss matches.** The four closest pairs (`Squat`
+  vs `Back Squat`/`Front Squat`, `Cable Row` vs `Seated Cable Row`,
+  `Incline Dumbell Press` vs `Incline Dumbbell Bench Press`) are genuinely
+  different movements or equipment, all landing correctly on the
+  hand-added side.
+- Both archived rows (`Incline Dumbbell Bench Press`, `Leg Curl`) match
+  default names and are proposed as legacy — same reading
+  COACH-WEEK-ANALYSIS-TASKS §4.2 step 1 already applied when it tagged
+  archived rows too.
+
+The split goes through the same review gate `COACH-EXERCISE-TAGS.md`
+established (propose to a reviewable file → Adam reviews → a separate
+keyed-on-`id` migration writes the approved values), with `created_at`
+batch clustering included in the file as a cross-check on the name match
+rather than as the primary rule.
+
+**Caveat recorded in the plan, not glossed:** this doesn't claim those 46
+rows were literally inserted by the seed function — it claims they're
+name-identical to a default entry and would be treated as the same
+exercise by every existing code path. Step 1 of the implementation order
+re-derives all of this against live production before migration 020 is
+written.
+
+### The findings that shaped the reassignment design (TASKS §5)
+
+Four things found by reading the code that the spec couldn't have known,
+each of which changes what the implementation has to do:
+
+1. **A dropset stage carries the *same* `set_number` as its head**
+   (`ExerciseCard.tsx:211`). So `set_number` is a total order over
+   *groups*, not rows, and any renumbering has to move a head and its
+   stages together.
+2. **There is no unique constraint on `(session_id, exercise_id,
+   set_number)`** — 007's audit found 0 duplicates in practice, but nothing
+   in the schema prevents them. A naive one-statement merge therefore
+   produces two set #1s silently, breaking every consumer that orders by
+   `set_number` (`positionMatch.ts`, `ExerciseCard.tsx`'s display
+   numbering, `fetchExerciseSetHistory`'s total-order requirement that
+   `historyPagination.ts` depends on). **And the swap-exercise feature
+   makes this the expected case, not an edge case** — a swap logs the
+   replacement in the *same session* as the original, which is exactly the
+   shape of the real 2026-08-27 PUSH-2 session. Reassigning one onto the
+   other, the single most likely reassignment there is, hits it on the
+   first try.
+3. **Deleting a colliding `v2_program_exercises` row destroys plan data
+   silently.** `v2_week_plan_sets.program_exercise_id` is `on delete
+   cascade` and `v2_set_logs.week_plan_set_id` is `on delete set null`, so
+   deleting the source row first cascades away its planned sets *and*
+   unlinks every real logged set that pointed at them — history survives,
+   the planned-vs-actual linkage doesn't, and nothing errors. The plan
+   moves the plan sets onto the survivor **first**, then deletes.
+4. **The offline sync queue can hold a `v2_set_logs` upsert carrying a
+   literal `exercise_id`** (`useSession.ts:692`), and `useSyncQueue.ts`
+   dead-letters after 3 failed attempts — so replaying one after its
+   exercise was hard-deleted **discards a real logged set permanently**.
+   The plan reuses migration 010's exact queue-empty gate as a blocking
+   preflight, and records honestly that it only covers *this* device.
+
+Also decided: reassignment runs as **one `plpgsql` function via
+`.rpc()` — the first in this repo** (`grep '\.rpc('` across `src/` and
+`api/` returns nothing), `SECURITY INVOKER` so RLS still applies, with
+explicit `user_id = auth.uid()` predicates on top. Justified rather than
+incidental: `supabase-js` has no multi-statement transaction, and a partial
+merge is worse than no merge. The `select … for update` on the source
+`exercises` row is load-bearing — an FK-satisfying `INSERT` into
+`v2_set_logs` takes `FOR KEY SHARE` on the parent row, which conflicts with
+`FOR UPDATE`, so no new log can appear against the exercise mid-merge.
+
+### What the plan deliberately does not touch
+
+`v2_coach_session_analyses` / `v2_coach_week_analyses` (`content`,
+`input_snapshot`) and `v2_coach_notes` / `v2_coach_memory_entries` bodies
+all stay frozen through a merge — the same provenance asymmetry
+`prompt_version` and migration 014's tag note already carry, applied with
+more force here because a merge is a bigger rewrite than a rename. The
+consequence is stated rather than buried: an analysis written before a
+merge keeps describing the pre-merge world, and the confirmation says so.
+
+### Two prior deferrals this plan closes
+
+- **COACH-WEEK-ANALYSIS-TASKS §7.11** ("no in-app tagging UI, and no change
+  to `Exercise`/`exerciseService.ts`/Library") — closed by the plan's
+  step 5. The `muscle_subgroup` vocabulary, which currently exists only as
+  prose in §4.3 and as literals inside migration 014, moves into
+  `src/lib/exerciseTags.ts` as its single app-side source of truth. §7.10's
+  asymmetry survives intact — pattern stays DB-enforced *and* mirrored in
+  TS, subgroup stays app-layer only.
+- **COACH-WEEK-ANALYSIS-SPEC §9** ("how do newly downloaded exercises get
+  tagged") — answered by giving library catalog items their own tag
+  columns, so a downloaded exercise arrives pre-tagged.
+
+### Open for review
+
+Four questions in TASKS §11. **All four settled the same day — see the
+next session entry below.** Nothing built as a result of settling them;
+they are decisions recorded in the plan, not implementation.
+
+---
+
+## 2026-08-28 session (continued — Exercise Library rework decisions locked in)
+
+Read CONTEXT.md first as instructed. Documentation only, no building — the
+task was to record four decisions Adam made on EXERCISE-LIBRARY-TASKS.md
+§11's open questions, all approved exactly as recommended, plus one
+addition to this file's "Standing architectural risk" entry. No migration
+file created, no code written, no queries run against production.
+
+**All four §11 questions locked in, all approved as proposed, no changes
+to what was recommended:**
+
+1. **Reassignment confirmation friction — type-the-target-name.** §6.2
+   updated in place from "the proposal" to "decided."
+2. **A `v2_exercise_reassignments` audit row — yes.** The one decision with
+   real follow-on content, since approving it meant actually specifying the
+   table rather than just agreeing to it in principle: a new migration
+   (**022**, applied *before* 021 since 021's function body writes to it),
+   a new step 6 in the reassignment function's order of operations (§5.3 —
+   written unconditionally, including on the should-be-unreachable
+   `source_deleted = false` branch, which is the case it's most useful
+   for), and touch-points added to §5.1, §7.2 (explicitly **no** TS type
+   yet — the row is server-written and no v1 screen reads it back), §8's
+   verification step, and §10's file list. TASKS.md is now four migrations
+   (019/020/021/022), not three — this file's own EXERCISE-LIBRARY-TASKS.md
+   entry above is corrected to match.
+3. **`is_archived` and `status` stay orthogonal — no consolidation in v1.**
+   The one decision needing no document changes beyond §11 itself: §2.3's
+   design already implements orthogonality exactly as approved. §11.3 now
+   records that this was reviewed and confirmed, not merely assumed by the
+   plan that proposed it.
+4. **Restore-from-Lost ships in v1.** §9.4 updated from "recommended" to
+   "decided." §8's implementation order step 7 (previously worded as the
+   delete direction only) is corrected to explicitly cover both directions
+   of the active/lost transition, since §11.4's own text now claims that
+   step already scoped it — the earlier wording didn't literally say so,
+   so it was fixed in place rather than leaving the cross-reference wrong.
+
+**The architectural-risk addition.** One paragraph added to "Standing
+architectural risk" above: `source_library_id` (EXERCISE-LIBRARY-TASKS.md
+§2.4) is the first FK from the shared `exercises` table into a
+`v2_`-namespaced one — every column added to that table before this one
+(`muscle_group`, the tag columns, the planned `status`/`lost_at`) was
+co-located data, nothing Northstar needed to know existed. An FK is a
+stronger dependency in kind, not just degree, and is worth naming
+specifically for any future cross-repo audit rather than only covered by
+the existing bullet's general language. Flagged, not fixed — same
+not-urgent status as the rest of that entry, and not yet live since none
+of this is built.
+
+**Not done this session, and not asked for:** no migration files written to
+disk, no code, no live queries, no further review of the rest of the plan
+(§§1–10 stand as Adam originally reviewed them — only §11's four items and
+their direct touch-points changed). Step 1 of §8's implementation order
+(the read-only diagnostic against production) remains the next actual step
+whenever building starts.
+
+---
+
+## 2026-08-29 session (Exercise Library rework — §8 step 1, the read-only diagnostic against production)
+
+Read CONTEXT.md, EXERCISE-LIBRARY-SPEC.md and EXERCISE-LIBRARY-TASKS.md
+first as instructed. Ran TASKS.md §8's step 1 for real, against production
+— the diagnostic that confirms or corrects §4.2's proposal before schema
+work starts. No code, no migration files, nothing written to the database.
+
+**Blocked at the start, then unblocked by Adam.** The Supabase SQL Editor
+browser session wasn't authenticated (confirmed twice — the editor shell
+briefly rendered, then redirected to sign-in; the local Supabase CLI had no
+access token either; the anon key alone is useless against RLS-scoped
+tables without a real session). Per this file's own standing rule, that's a
+stop-and-report condition, not something to route around — entering
+credentials is one of the actions this session is never allowed to take
+regardless of instruction. Reported the blocker plainly and waited; Adam
+signed in himself and confirmed. Every query below ran after that, against
+the real `Overload` project, `PRODUCTION` environment, scoped
+`user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'`. All four checks read
+and wrote via `window.monaco.editor.getModels()[0].setValue(sql)` per the
+standing SQL Editor practice — Monaco confirmed to have exactly one model,
+same as every prior session.
+
+### 1. The 70/46/24 split — confirmed against the live table, unchanged
+
+`select column_name, data_type, is_nullable, column_default from
+information_schema.columns where table_schema = 'public' and table_name =
+'exercises'` → exactly 8 columns (`id`, `user_id`, `name`, `muscle_group`,
+`is_archived`, `created_at`, `muscle_subgroup`, `movement_pattern`) — this
+also answers check 4 below.
+
+A CTE query joining the live `exercises` rows against a literal `VALUES`
+list of all 46 `DEFAULT_EXERCISES` names (extracted fresh from
+`defaultExercises.ts` via a small Node script this session, not retyped by
+hand), matched case/whitespace-insensitively — the identical rule
+`importDefaultExercises` itself uses — returned in one row: `live_total =
+70`, `default_total = 46`, `matched_count = 46`, `hand_added_count = 24`,
+`defaults_missing_from_live = 0`. **Exactly what last session's
+migration-014-comment-based analysis predicted**, now confirmed by a live
+production query rather than a static file. The 24 hand-added names were
+also pulled directly and matched last session's list name-for-name.
+
+### 2. The archived rows — real correction: four, not two
+
+Last session's write-up said "both archived rows" — that came from
+migration 014's own trailing comments, which only flag "(archived)" on the
+two rows that were already archived when 014 was *written* (2026-08-20).
+Querying `is_archived = true` directly against the live table returns
+**four**: `Incline Dumbbell Bench Press`, `Leg Curl`, `Seated Calf Raise`,
+`Standing Calf Raise` — the other two were archived sometime after 014
+shipped. All four still match a default name by the same rule, so **the
+46/24 split itself is unaffected** — this was an undercount in last
+session's *write-up*, not a wrong classification.
+
+What makes this a genuinely satisfying finding rather than a loose end:
+**each of the four has a near-collision counterpart among the 24
+hand-added, active exercises** — `Incline Dumbell Press`, `Seated Leg
+Curl`, `Seated Machine Calf Raise`, `Standing Machine Calf Raise`,
+respectively. Read together, this is exactly the pattern you'd expect if
+Adam archived each generic imported default in favour of the more specific
+variant he actually trains. One of the four (`Incline Dumbbell Bench
+Press`/`Incline Dumbell Press`) is a pair EXERCISE-LIBRARY-TASKS.md §4.2
+already listed as a "distinct equipment" near-miss — now explained rather
+than just noted. The other three are new. **The account's real
+near-collision count is seven, not four** — EXERCISE-LIBRARY-TASKS.md §4.2/
+§4.4 corrected in place.
+
+### 3. The `created_at` clustering cross-check — real shape, not the predicted one
+
+TASKS.md §4.3 predicted "the seed inserts all 46 rows in one batch, so they
+share a near-identical timestamp." **The real data shows something more
+specific and, once seen, more informative:**
+
+- **42 of the 46 legacy-matched rows share one identical timestamp down to
+  the microsecond** — `2026-08-12 01:26:26.632424+00`, confirmed via
+  `count(distinct created_at) = 1` scoped to that group. In Postgres,
+  `now()` is evaluated once per statement, so this is the unambiguous
+  fingerprint of a single bulk `INSERT`, not 42 separate one-at-a-time
+  additions.
+- **The other 4 legacy-matched rows (`Dips`, `Barbell Row`, `Leg Press`,
+  `Leg Extension`) carry distinct, individually-stamped timestamps from
+  2026-07-03**, interleaved in the same few-minute windows as 23 of the 24
+  hand-added rows (all 24 hand-added timestamps are likewise individually
+  distinct — none share a timestamp with any other row, live or hand-added
+  — consistent with one-at-a-time entry via ADD EXERCISE, not a batch
+  insert).
+- Put together, the account's entire creation history has exactly two
+  shapes, not one gradual one: **27 individually-timestamped rows across
+  2026-07-03/07-05** (23 hand-added + these 4 legacy-matches, all
+  one-at-a-time), **then one 42-row bulk batch on 2026-08-12.** There was
+  never a single 46-row seed event. 46 (all defaults) − 4 (already present
+  by name from July) = 42 — exactly the batch size found. This is
+  self-consistent with **`importDefaultExercises()`** (the manual
+  Library-screen "download defaults" button, shipped 2026-08-10 per this
+  file's own 2026-08-11 entry) having been tapped once, roughly two days
+  after it shipped, correctly skipping the 4 names already present and
+  inserting the other 42 in one statement — not the automatic
+  `seedDefaultExercisesIfEmpty()` that only ever fires once at account
+  creation. That account-creation seed, if it had run for real, would have
+  produced all 46 in one batch on day one, not 42 five weeks later.
+
+**Net effect on the classification: none.** The name-match rule was never
+resting on this cross-check for its validity — TASKS.md §4.3 argued it
+holds on its own terms regardless. What changes is narrower and honestly
+reported: the cross-check independently corroborates 42 of the 46 with a
+real, strong batch signature (just five weeks later and via a different
+code path than assumed), and gives no corroboration either way for the
+remaining 4 — those rest on the name match alone, which is exactly what
+§4.3 already said was an acceptable, recoverable basis to act on.
+EXERCISE-LIBRARY-TASKS.md §4.3/§4.4 corrected in place with the real
+numbers and the real mechanism.
+
+### 4. No pre-existing `status`-like column — confirmed clean
+
+Covered by check 1's schema query above: exactly 8 columns exist today,
+none named `status`, `lost_at`, `source_library_id`, or anything else
+lifecycle-shaped. Migration 019 (§3.1) is clear to add all three with no
+naming collision.
+
+### What this changes, and what it doesn't
+
+**Doesn't change:** the 46/24 legacy/hand-created split, the name-match
+rule as the primary classification mechanism, the migration 019/020/021/022
+plan, or anything in §11's four locked-in decisions from the prior session.
+**Does change, and is now corrected in EXERCISE-LIBRARY-TASKS.md directly**
+(not left as a discrepancy between this file and that one): §4.2's archived-
+row count and its explanation, §4.3's clustering-cross-check table row and
+narrative, §4.4 steps 2–3's description of what the review file should
+actually say, and §8 step 1 marked done with a pointer back to this entry.
+`EXERCISE-LIBRARY-PROVENANCE.md` (the actual §4.4 review artefact, step 3 of
+§8's implementation order) is still not written — this diagnostic is what
+step 1 exists to settle *before* that file is generated, so it isn't
+carrying stale assumptions into Adam's review.
+
+**Not done, not asked for:** no `EXERCISE-LIBRARY-PROVENANCE.md`, no
+migration 019 written or applied, no further steps of §8's implementation
+order.
+
+## 2026-08-29 session (continued — two follow-up diagnostics closed out, migration 019 applied and verified)
+
+Read CONTEXT.md first as instructed. Picked up directly from this file's
+own same-day diagnostic entry above: two claims in it were stated as fact
+without a dedicated confirming query, and needed closing out *before* 019,
+per instruction — not folded into this file uncorrected if either turned
+out wrong. Both were run read-only, against production, scoped
+`user_id = '12e79b69-…'`, before anything was applied. Neither
+contradicted the prior write-up.
+
+### 1. Archived-row near-collision check — all four pairs confirmed
+
+A single query joined the four archived rows against their claimed active
+counterparts by exact name match (`Incline Dumbbell Bench Press` →
+`Incline Dumbell Press`, `Leg Curl` → `Seated Leg Curl`, `Seated Calf
+Raise` → `Seated Machine Calf Raise`, `Standing Calf Raise` → `Standing
+Machine Calf Raise`). All four counterparts exist and are `is_archived =
+false` — pass on every pair, nothing to correct.
+
+### 2. Clustering gap — the unnamed outlier is `Incline Smith Press`
+
+TASKS.md §4.3/§4.4 described "23 of the 24" hand-added rows as sitting
+inside the 2026-07-03/07-05 individual-insert cluster, without ever
+naming the 24th. Listing all 24 hand-added rows (computed directly —
+NOT EXISTS against the 46 `DEFAULT_EXERCISES` names, extracted fresh from
+`defaultExercises.ts` via a small Node script, same practice as last
+session) by `created_at` shows the real shape: two tight windows on
+2026-07-03 (13:49:34–13:51:32, 10 rows; 21:22:38–21:26:23, 13 rows — the
+second window also holding all 4 individually-stamped legacy matches,
+confirmed by a direct query on those four names), plus one single row two
+days later — **`Incline Smith Press`, `2026-07-05 17:15:15.294376+00`** —
+sitting alone, not interleaved with anything. That fourth-of-25-total
+outlier is what "23 of the 24" was always referring to; it just wasn't
+named. `EXERCISE-LIBRARY-TASKS.md` §8 step 1 corrected in place with
+both results (a short addendum, not a rewrite — nothing about the
+classification changes).
+
+### 3. Migration 019 — applied and verified, all nine §3.1 checks
+
+Migration file written to
+`supabase/migrations/019_v3_exercise_libraries.sql`, byte-identical to
+the SQL block in EXERCISE-LIBRARY-TASKS.md §3.1 (confirmed via a
+base64 round-trip into the Monaco model and a `val === sql` equality
+check before running, same rigor as prior migrations' "diffed by eye"
+practice, done here as an exact string comparison instead). Applied via
+the Supabase SQL Editor — Adam's dashboard session was already
+authenticated this time (no sign-in blocker, unlike this file's own
+2026-08-29 diagnostic entry above), `Overload` project, `PRODUCTION`,
+read/write via `window.monaco.editor.getModels()[0]` per the standing
+practice. Ran clean: "Success. No rows returned."
+
+A pre-migration baseline was taken first: `exercises` 70,
+`v2_program_exercises` 26, `v2_set_logs` 476 (all scoped to Adam's
+`user_id`). All nine checks then run for real, not read off the DDL:
+
+1. `information_schema.columns` — `status text not null default
+   'active'::text`, `source_library_id uuid` nullable, `lost_at
+   timestamptz` nullable on `exercises`; both new tables' columns exactly
+   as written (types, nullability, defaults).
+2. `status = 'active'` count → **70**; `status <> 'active'` count → **0**.
+3. `source_library_id is not null` → **0**; `lost_at is not null` → **0**.
+4. `pg_indexes` on both new tables — pkeys plus the named `slug` unique,
+   `..._name_uk`, and `..._library_idx` indexes, nothing extra.
+5. `pg_class.relrowsecurity` true on both new tables; `pg_policies` shows
+   exactly one `SELECT` policy each, no insert/update/delete policy.
+6. **Read-only proved for real**, not from the policy list: a PostgREST
+   request with the anon key — `select` on `v2_exercise_libraries` → `200`,
+   `[]` (ships empty per SPEC §7, correct); `insert` → `401`,
+   `{"code":"42501", "message":"new row violates row-level security
+   policy..."}`. Exactly the asymmetry the migration's RLS policy claims.
+7. All three `CHECK`s proven by attempting to violate them (each scoped to
+   Adam's own `user_id`, against one existing row, id
+   `ea8fbc9f-ac7c-45fd-b222-d693f3bafbae` / "Barbell Bench Press"):
+   `status = 'bogus'` → `23514` on `exercises_status_chk`; `status =
+   'lost'` with `lost_at` null → `23514` on `exercises_lost_at_chk`;
+   `status = 'active'` with `lost_at` set → `23514` on the same
+   constraint (both directions of the equality check correctly caught by
+   one constraint). Zero rows written by any of the three — confirmed
+   afterward by re-reading that same row: still `active` /
+   `source_library_id` null / `lost_at` null, untouched.
+8. `exercises_source_library_fk` proven by setting a random
+   `gen_random_uuid()` → `23503`, zero rows written.
+9. Row counts re-checked post-migration: `exercises` 70,
+   `v2_program_exercises` 26, `v2_set_logs` 476 — identical to the
+   baseline. Nothing touched beyond the new columns/tables/constraints
+   themselves.
+
+**`EXERCISE-LIBRARY-TASKS.md` §8 step 2 marked done in place**, with the
+same level of detail as step 1's own completion note. Step 3
+(`EXERCISE-LIBRARY-PROVENANCE.md` → review gate → migration 020) is next
+and blocks on Adam, unchanged from what §8 already said.
+
+**Not done, not asked for:** no `EXERCISE-LIBRARY-PROVENANCE.md`, no
+migration 020/021/022, no further steps of §8's implementation order, no
+UI work.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
-- Edit logged set RIR after logging (partially fixed — E1 done)
+- ~~Edit logged set RIR after logging~~ — **fully resolved**, confirmed
+  during Coach Personalization: `SetRow.tsx`'s existing edit flow already
+  supported this, and the form rating was built to match it.
 - ~~Rest timer counts set time too (timer starts wrong moment)~~ —
   **fixed by Phase 3.2's optional Start Set flow (2026-08-07)**, opt-in via
   the `measure_set_time` Settings toggle. Off keeps today's original
@@ -13963,17 +14493,22 @@ scope inside whatever feature is currently in flight. Neither is part of the
 Coach Personalization initiative — COACH-PERSONALIZATION-SPEC.md §8 lists
 both in its own out-of-scope table for exactly this reason.
 
-- **Exercise library rework.** Choosing which exercises to download rather
-  than seeding the whole `DEFAULT_EXERCISES` list, and categorized libraries
-  instead of one flat per-user list. Today `exercises` is a flat shared table
-  (shared with Northstar v2), seeded at 47 rows plus hand-added ones, with
-  `muscle_group` plus the Weekly-Analysis tag columns
-  (`muscle_subgroup`/`movement_pattern`, migrations 013/014) as the only
-  categorization that exists. Interacts with the tagging pass — a
-  download-on-demand model needs an answer for how newly downloaded exercises
-  get tagged, which COACH-WEEK-ANALYSIS-SPEC.md §9 currently defers
-  ("tag-on-create flow… new exercises fall back to `muscle_group`").
-  **Not started.**
+- ~~**Exercise library rework.**~~ **No longer standing future work as of
+  2026-08-28 — it now has a spec (EXERCISE-LIBRARY-SPEC.md, written by
+  Adam) and a technical plan (EXERCISE-LIBRARY-TASKS.md, written this
+  session and awaiting review).** Still not built, but it is a planned
+  initiative now rather than an idea. Two corrections to what this bullet
+  used to say, both found while planning: the seed list is **46** entries,
+  not 47 (`defaultExercises.ts`'s 47th `name:` occurrence is the
+  `DefaultExercise` interface itself), and the account's 70 live rows split
+  **46 seed-name-matching / 24 hand-added** — see EXERCISE-LIBRARY-TASKS.md
+  §4.2 for how that was computed. The tagging-pass interaction this bullet
+  flagged is answered rather than inherited: library catalog items carry
+  their own tags, so a downloaded exercise arrives pre-tagged, which closes
+  COACH-WEEK-ANALYSIS-SPEC.md §9's deferred "how do newly downloaded
+  exercises get tagged" question (TASKS §2.2). §9's *other* deferral — no
+  in-app tagging UI (COACH-WEEK-ANALYSIS-TASKS.md §7.11) — is closed by the
+  same plan's step 5.
 - **Settings rework, with a dedicated Coach settings tab.** Settings is one
   flat page today (theme, accent colour, rest timer, weight unit,
   auto-finish, `measure_set_time`). Every Coach-related setting that has come
@@ -13983,6 +14518,54 @@ both in its own out-of-scope table for exactly this reason.
   would naturally be settings, and a Coach tab is where they'd go. Also the
   natural home for TASKS §5.6's fallback if the eighth nav tab ever stops
   fitting. **Not started.**
+
+---
+
+## Standing architectural risk (noted, not started)
+Distinct in category from "Standing future work" above — that list is
+feature-level (exercise library, settings rework); this is a schema/
+infrastructure coupling that constrains changes across projects, not a
+feature this repo could build on its own.
+
+- **Overload, Northstar, and Atlas share one Supabase project, and in
+  places literal tables** — `exercises` is confirmed shared with
+  Northstar v2 (see "Exercise library rework" above). Atlas was
+  originally the intended integration layer that justified this shared
+  schema; Atlas is now dead. The coupling has no remaining active
+  purpose but still constrains every schema change to shared tables,
+  and this repo cannot fully verify safety against Northstar's side
+  since Northstar's source isn't visible from here. **Not urgent, but a
+  real standing risk** — any real fix needs cross-repo investigation
+  this project hasn't done before. **Not started.**
+  **Flagged 2026-08-28, for any future cross-repo audit:**
+  EXERCISE-LIBRARY-TASKS.md §2.4 proposes `exercises.source_library_id`
+  as a foreign key into `v2_exercise_libraries` — a `v2_`-namespaced
+  table. Every column added to `exercises` before this one
+  (`muscle_group`, `muscle_subgroup`, `movement_pattern`, and the
+  planned `status`/`lost_at`) is co-located data on the shared row
+  itself, nothing Northstar's own schema needs to know exists. An FK
+  is a stronger dependency in kind, not just degree: it makes a row in
+  a table Northstar can insert into *reference* a table that only
+  exists in this repo's migrations. Northstar inserting an `exercises`
+  row still works today (the column is nullable), but the coupling this
+  bullet already describes now has one concrete instance worth naming
+  specifically rather than only in the abstract. Not built yet — this is
+  a plan-stage flag, not a live constraint.
+
+---
+
+## Current priority tiers (as set by Adam, 2026-08-28)
+
+- **Near-term:** in-session Q&A with a real interactive sidebar; wiring
+  form/energy/pump/Memory into Weekly Analysis; exercise library rework.
+- **Later:** AI equipment substitution, bundled with the plan creator and
+  volume/intensity planning; tone calibration, bundled with the
+  planned/forced wording fix and the settings rework; warmup sets
+  handling; selective memory retrieval (deprioritized, not dropped — real
+  and worth doing once the memory list is actually large enough to need
+  it, not scheduled before then).
+- **Not planned:** month analysis; live mid-workout energy/pump;
+  swap-exercise mid-set.
 
 ---
 
