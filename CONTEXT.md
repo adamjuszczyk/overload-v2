@@ -14441,6 +14441,65 @@ and blocks on Adam, unchanged from what §8 already said.
 migration 020/021/022, no further steps of §8's implementation order, no
 UI work.
 
+## 2026-08-29 session (continued — migration 019 committed discretely, EXERCISE-LIBRARY-PROVENANCE.md generated per §8 step 3)
+
+Read CONTEXT.md first as instructed.
+
+### 1. Migration 019 + its verification committed as a discrete unit
+
+The working tree also had an unrelated, separately in-progress thread
+(Coach Personalization wired into Weekly Analysis — `COACH-ANALYSIS-SPEC.md`,
+`COACH-WEEK-ANALYSIS-SPEC.md`/`TASKS.md`, `src/features/coach/*.ts`)
+sitting uncommitted in the same files as CONTEXT.md's own edits. Rather
+than commit everything together, the Exercise Library thread (spec, plan,
+the §8 step 1 diagnostic, this session's two follow-ups, and migration
+019) was isolated into its own commit: `CONTEXT.md`'s two unrelated
+insertions (the Coach Personalization Weekly session entry and its
+pending-feedback bullet) were temporarily removed, the reduced file plus
+`EXERCISE-LIBRARY-SPEC.md`/`EXERCISE-LIBRARY-TASKS.md`/
+`019_v3_exercise_libraries.sql` were staged and committed
+(`87ad6d2`, "docs: Exercise Library rework — spec/plan, migration 019
+applied and verified"), then the removed Coach content was restored to
+the working tree exactly as it was — confirmed via a byte-diff against a
+pre-surgery backup — so that thread remains uncommitted and untouched,
+ready for whenever it's ready to land on its own.
+
+### 2. `EXERCISE-LIBRARY-PROVENANCE.md` generated — the §4.4/§8 step 3 review gate
+
+Read directly from production `exercises` (not `defaultExercises.ts`,
+same reasoning as `COACH-EXERCISE-TAGS.md`), all 70 rows, scoped
+`user_id = '12e79b69-…'`. Grouped by `muscle_group` in the same shape
+`COACH-EXERCISE-TAGS.md` used for the equivalent tagging review: **46
+`legacy` / 24 `hand-created`, 0 ambiguous, 4 archived (all `legacy`), 7
+near-collision pairs (13 flagged rows), 0 rows where the name-match and
+`created_at` signals disagree.** Every id, name, `created_at`,
+`is_archived`, classification, and matched default name was scripted
+directly off the live query result (not retyped by hand) and then
+independently diffed cell-by-cell against that same result after writing
+the file — **0 mismatches across all 70 rows**, confirming the document
+says what the database actually contains.
+
+The insertion-history section states the now-fully-confirmed shape from
+this session's earlier follow-up (above): **28 individually-inserted rows
+(24 hand-created + 4 legacy matches) + 42 bulk-inserted rows = 70
+exactly**, with `Incline Smith Press` named explicitly as the one
+hand-created row outside the two tight 2026-07-03 windows. This closes
+both of the prior diagnostic's open items *inside* the review document
+itself, not just in this file's session log — a reviewer reading only
+`EXERCISE-LIBRARY-PROVENANCE.md` gets the corrected numbers, not the
+ones §4.3/§4.4 originally predicted.
+
+**Nothing written to `source_library_id`.** Per §4.4 step 4, this file is
+the review gate itself — migration 020 is not written until Adam reviews
+and corrects it. `EXERCISE-LIBRARY-TASKS.md` §8 step 3 is next in the
+implementation order and blocks on that review, unchanged from what §8
+already said.
+
+**Not done, not asked for:** migration 020 not written or applied, no
+further steps of §8's implementation order, no UI work, nothing about
+the unrelated Coach Personalization Weekly thread touched beyond the
+commit-isolation described above.
+
 ---
 
 ## Pending feedback to address

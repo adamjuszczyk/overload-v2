@@ -1305,10 +1305,16 @@ a real violation (`23514` ×3, `23503` ×1), zero rows written by any of
 them; `exercises`/`v2_program_exercises`/`v2_set_logs` row counts (70/26/
 476) unchanged from the pre-migration baseline.
 
-**3. `EXERCISE-LIBRARY-PROVENANCE.md` → review gate → migration 020**
-(§4.4, §4.5). Blocks on Adam. Nothing after this depends on it *except*
-library delete, so steps 4–6 can proceed in parallel with the review if
-that is preferable.
+**3. `EXERCISE-LIBRARY-PROVENANCE.md` generated, 2026-08-29 — awaiting
+Adam's review.** All 70 rows, read directly from production, grouped by
+`muscle_group` per §4.4's shape: 46 `legacy` / 24 `hand-created`, 0
+ambiguous, 4 archived, 7 near-collision pairs flagged ⚠, 0 signal
+disagreements. Cell-by-cell diffed against the live query result after
+writing — 0 mismatches. **Migration 020 not written — blocks on Adam's
+review and corrections (§4.4 step 4), same gate migration 014 went
+through as `COACH-EXERCISE-TAGS.md`.** Nothing after this depends on it
+*except* library delete, so steps 4–6 can proceed in parallel with the
+review if that is preferable.
 
 **4. `src/lib/exerciseTags.ts` + Vitest.** Pure, no React, no Supabase —
 the same precedent as `setGroupLogic.ts` / `e1rm.ts` / `ratingScales.ts`.
