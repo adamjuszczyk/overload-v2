@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import type { Exercise, MuscleGroup } from '../../types'
+import type { Exercise, MuscleGroup, MuscleSubgroup, MovementPattern } from '../../types'
 import { useCreateExercise, useUpdateExercise } from './useExercises'
+import { MOVEMENT_PATTERNS, MOVEMENT_PATTERN_LABELS } from '../../lib/exerciseTags'
+import TagChipGrid from './TagChipGrid'
+import MuscleSubgroupPicker from './MuscleSubgroupPicker'
 
 const MUSCLE_GROUPS: MuscleGroup[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -24,6 +27,16 @@ const MUSCLE_LABELS: Record<MuscleGroup, string> = {
   other: 'OTHER',
 }
 
+const SECTION_LABEL_STYLE = {
+  display: 'block',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '2px',
+  color: 'var(--text-muted)',
+  marginBottom: 10,
+} as const
+
 interface Props {
   exercise?: Exercise
   onClose: () => void
@@ -33,12 +46,35 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
   const isEdit = !!exercise
   const [name, setName] = useState(exercise?.name ?? '')
   const [muscleGroup, setMuscleGroup] = useState<MuscleGroup>(exercise?.muscleGroup ?? 'chest')
+  const [muscleSubgroups, setMuscleSubgroups] = useState<MuscleSubgroup[] | null>(
+    exercise?.muscleSubgroups ?? null,
+  )
+  const [movementPattern, setMovementPattern] = useState<MovementPattern | null>(
+    exercise?.movementPattern ?? null,
+  )
   const [nameError, setNameError] = useState('')
 
   const create = useCreateExercise()
   const update = useUpdateExercise()
   const isPending = create.isPending || update.isPending
   const mutationError = create.error || update.error
+
+  function toggleSubgroup(tag: MuscleSubgroup) {
+    setMuscleSubgroups((current) => {
+      const list = current ?? []
+      const next = list.includes(tag) ? list.filter((t) => t !== tag) : [...list, tag]
+      // never [] (ExerciseTags' own convention) — no subgroups selected is
+      // "untagged", the same state as never having opened this section.
+      return next.length > 0 ? next : null
+    })
+  }
+
+  function toggleMovementPattern(pattern: MovementPattern) {
+    // Tapping the already-selected pattern clears it back to null — the
+    // same "there is always a way back to unrated/untagged" convention
+    // RatingChips.tsx already uses, since movement_pattern is nullable too.
+    setMovementPattern((current) => (current === pattern ? null : pattern))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -48,11 +84,12 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
       return
     }
     setNameError('')
+    const tags = { muscleSubgroups, movementPattern }
     try {
       if (isEdit && exercise) {
-        await update.mutateAsync({ id: exercise.id, name: trimmed, muscleGroup })
+        await update.mutateAsync({ id: exercise.id, name: trimmed, muscleGroup, tags })
       } else {
-        await create.mutateAsync({ name: trimmed, muscleGroup })
+        await create.mutateAsync({ name: trimmed, muscleGroup, tags })
       }
       onClose()
     } catch {
@@ -182,51 +219,35 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
 
           {/* Muscle group grid */}
           <div style={{ marginBottom: 32 }}>
-            <label
-              style={{
-                display: 'block',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '2px',
-                color: 'var(--text-muted)',
-                marginBottom: 10,
-              }}
-            >
-              MUSCLE GROUP
-            </label>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 8,
-              }}
-            >
-              {MUSCLE_GROUPS.map((mg) => {
-                const active = muscleGroup === mg
-                return (
-                  <button
-                    key={mg}
-                    type="button"
-                    onClick={() => setMuscleGroup(mg)}
-                    style={{
-                      height: 42,
-                      background: active ? 'var(--accent-muted)' : 'var(--surface)',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
-                      borderRadius: 9,
-                      cursor: 'pointer',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: '1px',
-                      color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                    }}
-                  >
-                    {MUSCLE_LABELS[mg]}
-                  </button>
-                )
-              })}
-            </div>
+            <label style={SECTION_LABEL_STYLE}>MUSCLE GROUP</label>
+            <TagChipGrid
+              values={MUSCLE_GROUPS}
+              labels={MUSCLE_LABELS}
+              selected={[muscleGroup]}
+              onToggle={setMuscleGroup}
+            />
+          </div>
+
+          {/* Movement pattern — single-select, DB-enforced vocabulary
+              (migration 013's CHECK, mirrored in exerciseTags.ts). Nullable:
+              untagged is a real, valid state, not a missing default. */}
+          <div style={{ marginBottom: 32 }}>
+            <label style={SECTION_LABEL_STYLE}>MOVEMENT PATTERN</label>
+            <TagChipGrid
+              values={MOVEMENT_PATTERNS}
+              labels={MOVEMENT_PATTERN_LABELS}
+              selected={movementPattern ? [movementPattern] : []}
+              onToggle={toggleMovementPattern}
+            />
+          </div>
+
+          {/* Muscle subgroup — multi-select, app-layer-only vocabulary
+              (no DB CHECK — EXERCISE-LIBRARY-TASKS.md §8 step 4/§9.10).
+              Grouped into exerciseTags.ts's six categories for a
+              sensibly-ordered grid rather than one 22-chip wall. */}
+          <div style={{ marginBottom: 32 }}>
+            <label style={SECTION_LABEL_STYLE}>MUSCLE SUBGROUP</label>
+            <MuscleSubgroupPicker selected={muscleSubgroups ?? []} onToggle={toggleSubgroup} />
           </div>
 
           {mutationError && (

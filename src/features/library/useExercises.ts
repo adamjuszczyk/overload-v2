@@ -10,7 +10,7 @@ import {
   setExerciseArchived,
   fetchExerciseCount,
   seedDefaultExercisesIfEmpty,
-  importDefaultExercises,
+  type ExerciseTagFields,
 } from './exerciseService'
 
 export function useExercises(includeArchived = false) {
@@ -25,8 +25,15 @@ export function useExercises(includeArchived = false) {
 export function useCreateExercise() {
   const { user } = useAuth()
   return useMutation({
-    mutationFn: ({ name, muscleGroup }: { name: string; muscleGroup: MuscleGroup }) =>
-      createExercise(user!.id, name, muscleGroup),
+    mutationFn: ({
+      name,
+      muscleGroup,
+      tags,
+    }: {
+      name: string
+      muscleGroup: MuscleGroup
+      tags?: ExerciseTagFields
+    }) => createExercise(user!.id, name, muscleGroup, tags),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
   })
 }
@@ -37,11 +44,13 @@ export function useUpdateExercise() {
       id,
       name,
       muscleGroup,
+      tags,
     }: {
       id: string
       name: string
       muscleGroup: MuscleGroup
-    }) => updateExercise(id, name, muscleGroup),
+      tags?: ExerciseTagFields
+    }) => updateExercise(id, name, muscleGroup, tags),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
   })
 }
@@ -83,16 +92,4 @@ export function useSeedDefaultExercisesIfEmpty() {
     attempted.current = true
     seed.mutate()
   }, [count, seed])
-}
-
-// Explicit Library-screen action (SPEC §9 / post-launch fix, 2026-08-10) —
-// distinct from the fresh-account auto-seed above: reachable on any account
-// at any time, diffs against what's already there instead of only firing
-// once on an empty library.
-export function useImportDefaultExercises() {
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: () => importDefaultExercises(user!.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
-  })
 }

@@ -1,7 +1,8 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
+import { withUserLock } from '../../lib/locks'
 import { DEFAULT_EXERCISES } from './defaultExercises'
-import type { Exercise, MuscleGroup } from '../../types'
+import type { Exercise, MuscleGroup, MuscleSubgroup, MovementPattern } from '../../types'
 
 type DbExercise = {
   id: string
@@ -10,6 +11,8 @@ type DbExercise = {
   muscle_group: string | null
   is_archived: boolean
   created_at: string
+  muscle_subgroup: MuscleSubgroup[] | null
+  movement_pattern: MovementPattern | null
 }
 
 function toExercise(row: DbExercise): Exercise {
@@ -20,7 +23,18 @@ function toExercise(row: DbExercise): Exercise {
     muscleGroup: toMuscleGroup(row.muscle_group),
     isArchived: row.is_archived,
     createdAt: row.created_at,
+    muscleSubgroups: row.muscle_subgroup,
+    movementPattern: row.movement_pattern,
   }
+}
+
+// Optional tag fields for createExercise/updateExercise. Both keys are
+// independently optional so a caller that only touches one axis (e.g.
+// ExerciseTagList.tsx toggling a single muscle_subgroup chip) never has to
+// know or guess the other's current value just to avoid clobbering it.
+export interface ExerciseTagFields {
+  muscleSubgroups?: MuscleSubgroup[] | null
+  movementPattern?: MovementPattern | null
 }
 
 export async function fetchExercises(includeArchived: boolean): Promise<Exercise[]> {
@@ -35,24 +49,50 @@ export async function createExercise(
   userId: string,
   name: string,
   muscleGroup: MuscleGroup,
+  tags?: ExerciseTagFields,
 ): Promise<Exercise> {
   const { data, error } = await supabase
     .from('exercises')
-    .insert({ user_id: userId, name: name.trim(), muscle_group: muscleGroup })
+    .insert({
+      user_id: userId,
+      name: name.trim(),
+      muscle_group: muscleGroup,
+      muscle_subgroup: tags?.muscleSubgroups ?? null,
+      movement_pattern: tags?.movementPattern ?? null,
+    })
     .select()
     .single()
   if (error) throw error
   return toExercise(data as DbExercise)
 }
 
+// tags is deliberately optional, and each of its two keys independently so
+// too (EXERCISE-LIBRARY-TASKS.md §2.6) — an omitted key means "leave this
+// column untouched", not "clear it". Only a key that's actually present in
+// the `tags` object (even as an explicit `null`, meaning "untag this axis")
+// reaches the update payload; omitting it entirely must never overwrite an
+// existing tag with null. This is the one-line mistake with a silent,
+// data-destroying outcome the plan calls out by name — every existing
+// caller before this session (ExerciseForm.tsx's plain rename/re-group
+// path) passed no tags at all and must keep working exactly as before.
 export async function updateExercise(
   id: string,
   name: string,
   muscleGroup: MuscleGroup,
+  tags?: ExerciseTagFields,
 ): Promise<Exercise> {
+  const payload: {
+    name: string
+    muscle_group: MuscleGroup
+    muscle_subgroup?: MuscleSubgroup[] | null
+    movement_pattern?: MovementPattern | null
+  } = { name: name.trim(), muscle_group: muscleGroup }
+  if (tags && 'muscleSubgroups' in tags) payload.muscle_subgroup = tags.muscleSubgroups
+  if (tags && 'movementPattern' in tags) payload.movement_pattern = tags.movementPattern
+
   const { data, error } = await supabase
     .from('exercises')
-    .update({ name: name.trim(), muscle_group: muscleGroup })
+    .update(payload)
     .eq('id', id)
     .select()
     .single()
@@ -94,62 +134,28 @@ export async function seedDefaultExercises(userId: string): Promise<void> {
 // against, so seeding is a plain check-then-insert — two tabs (or a PWA
 // auto-update reload) racing this on the same browser could otherwise both
 // see count===0 and both insert the full default set (found via
-// adversarial review). navigator.locks serializes same-browser callers so
-// the loser re-checks the *real* count after the winner's insert has
-// landed, instead of trusting a count read before the lock was acquired.
-// This does not protect against two genuinely different devices seeding
-// the same brand-new account at the same instant — that residual window
-// is accepted rather than closed with a new production constraint.
+// adversarial review). withUserLock serializes same-browser callers so the
+// loser re-checks the *real* count after the winner's insert has landed,
+// instead of trusting a count read before the lock was acquired. This does
+// not protect against two genuinely different devices seeding the same
+// brand-new account at the same instant — that residual window is accepted
+// rather than closed with a new production constraint.
 export async function seedDefaultExercisesIfEmpty(userId: string): Promise<void> {
-  const run = async () => {
+  await withUserLock(`overload-seed-exercises-${userId}`, async () => {
     const count = await fetchExerciseCount()
     if (count > 0) return
     await seedDefaultExercises(userId)
-  }
-  if (typeof navigator !== 'undefined' && navigator.locks) {
-    await navigator.locks.request(`overload-seed-exercises-${userId}`, run)
-  } else {
-    await run()
-  }
+  })
 }
 
-// Explicit, user-triggered import (post-launch fix, 2026-08-10) — the
-// original seed (above) only ever runs once, automatically, on a brand-new
-// account. An account that started before that existed, or that archived
-// its way down to an empty-looking library, had no way to pull the same
-// default list in later. Reuses DEFAULT_EXERCISES/the same insert shape as
-// seedDefaultExercises rather than a second copy of either. Diffs by name
-// (case/whitespace-insensitive, since two exercises differing only in
-// casing is more likely a duplicate than two distinct movements) against
-// every existing row, archived included — an archived exercise still means
-// "already present in this account's library", same reasoning
-// fetchExerciseCount already documents for the empty-account check.
-export async function importDefaultExercises(userId: string): Promise<{ added: number; skipped: number }> {
-  const run = async () => {
-    const existing = await fetchExercises(true)
-    const existingNames = new Set(existing.map((ex) => ex.name.trim().toLowerCase()))
-    const toAdd = DEFAULT_EXERCISES.filter((d) => !existingNames.has(d.name.trim().toLowerCase()))
-
-    if (toAdd.length > 0) {
-      const rows = toAdd.map(({ name, muscleGroup }) => ({
-        user_id: userId,
-        name,
-        muscle_group: muscleGroup,
-      }))
-      const { error } = await supabase.from('exercises').insert(rows)
-      if (error) throw error
-    }
-
-    return { added: toAdd.length, skipped: DEFAULT_EXERCISES.length - toAdd.length }
-  }
-
-  // Same double-tap/double-tab race seedDefaultExercisesIfEmpty already
-  // guards against — this is a manual button tap rather than an
-  // effect-on-mount, so the window is much narrower, but the guard is one
-  // line to reuse and a double-insert here is exactly as permanent (no
-  // hard-delete) as the original race it was written for.
-  if (typeof navigator !== 'undefined' && navigator.locks) {
-    return navigator.locks.request(`overload-seed-exercises-${userId}`, run)
-  }
-  return run()
+// The case/whitespace-insensitive name identity rule every "does the user
+// already have this" diff in this feature applies — originally inline in
+// the now-retired importDefaultExercises (EXERCISE-LIBRARY-TASKS.md §1),
+// extracted so libraryService.ts's downloadLibrary (§8 step 6) applies the
+// exact same rule rather than a second copy.
+export function diffNewByName<T extends { name: string }>(
+  candidates: readonly T[],
+  existingNames: ReadonlySet<string>,
+): T[] {
+  return candidates.filter((c) => !existingNames.has(c.name.trim().toLowerCase()))
 }

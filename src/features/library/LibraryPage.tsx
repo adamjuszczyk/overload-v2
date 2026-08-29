@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Plus, Download } from 'lucide-react'
+import { Plus, Library } from 'lucide-react'
 import type { Exercise, MuscleGroup } from '../../types'
-import { useExercises, useImportDefaultExercises } from './useExercises'
-import { useToastStore } from '../notifications/toastStore'
+import { useExercises } from './useExercises'
 import ExerciseList from './ExerciseList'
 import ExerciseForm from './ExerciseForm'
+import ExerciseTagList from './ExerciseTagList'
+import LibraryCatalog from './LibraryCatalog'
 
 const MUSCLE_GROUPS: MuscleGroup[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -13,31 +14,25 @@ const MUSCLE_GROUPS: MuscleGroup[] = [
 ]
 
 type FormState = null | { mode: 'create' } | { mode: 'edit'; exercise: Exercise }
+// SPEC §3: a single scrollable list with inline editing *and* a
+// per-exercise detail view, user's choice — this is that choice.
+// 'list' is the existing display+archive+edit-via-sheet flow, now with a
+// tag-aware ExerciseForm.tsx; 'tags' is the new fast inline tag-review
+// pass across every exercise at once (EXERCISE-LIBRARY-TASKS.md §2.6/§8
+// step 5).
+type ViewMode = 'list' | 'tags'
 
 export default function LibraryPage() {
   const [filter, setFilter] = useState<MuscleGroup | 'all'>('all')
   const [showArchived, setShowArchived] = useState(false)
   const [formState, setFormState] = useState<FormState>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [showLibraries, setShowLibraries] = useState(false)
 
   const { data: exercises = [], isLoading, error } = useExercises(showArchived)
-  const importDefaults = useImportDefaultExercises()
-  const showToast = useToastStore((s) => s.show)
 
   const filtered =
     filter === 'all' ? exercises : exercises.filter((ex) => ex.muscleGroup === filter)
-
-  function handleImportDefaults() {
-    importDefaults.mutate(undefined, {
-      onSuccess: ({ added, skipped }) => {
-        showToast(
-          added === 0
-            ? `All ${skipped} default exercises already in your library`
-            : `Added ${added} default exercise${added === 1 ? '' : 's'} · ${skipped} already there`,
-        )
-      },
-      onError: () => showToast('Could not import default exercises'),
-    })
-  }
 
   return (
     <div
@@ -70,15 +65,13 @@ export default function LibraryPage() {
           LIBRARY
         </span>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          {/* Import default exercises (SPEC §9 / post-launch fix,
-              2026-08-10) — the seeded default list used to be reachable
-              only automatically, once, on a brand-new account. This inserts
-              whatever's missing by name and reports the result via toast,
-              safe to tap on any account at any time. */}
+          {/* Libraries — replaces the old single "import defaults" button
+              (EXERCISE-LIBRARY-TASKS.md §8 step 6). Opens the real catalog:
+              every listed library previewable and downloadable on its own,
+              instead of one all-or-nothing seed list. */}
           <button
-            onClick={handleImportDefaults}
-            disabled={importDefaults.isPending}
-            aria-label="Import default exercises"
+            onClick={() => setShowLibraries(true)}
+            aria-label="Browse exercise libraries"
             style={{
               width: 40,
               height: 40,
@@ -88,12 +81,11 @@ export default function LibraryPage() {
               background: 'var(--surface-overlay)',
               border: '1px solid var(--border-strong)',
               borderRadius: 11,
-              cursor: importDefaults.isPending ? 'default' : 'pointer',
+              cursor: 'pointer',
               color: 'var(--text-secondary)',
-              opacity: importDefaults.isPending ? 0.6 : 1,
             }}
           >
-            <Download size={18} strokeWidth={2.5} />
+            <Library size={18} strokeWidth={2.5} />
           </button>
           <button
             onClick={() => setFormState({ mode: 'create' })}
@@ -138,6 +130,42 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {/* List / tags mode toggle */}
+      <div style={{ padding: '0 20px 12px', flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            background: 'var(--surface)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 9,
+            padding: 3,
+          }}
+        >
+          {(['list', 'tags'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setViewMode(mode)}
+              style={{
+                flex: 1,
+                height: 32,
+                background: viewMode === mode ? 'var(--accent-muted)' : 'transparent',
+                border: 'none',
+                borderRadius: 7,
+                cursor: 'pointer',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: '1.5px',
+                color: viewMode === mode ? 'var(--accent)' : 'var(--text-muted)',
+              }}
+            >
+              {mode === 'list' ? 'LIST' : 'EDIT TAGS'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Exercise list */}
       <div
         className="hide-scrollbar"
@@ -174,12 +202,14 @@ export default function LibraryPage() {
           </p>
         )}
 
-        {!isLoading && !error && (
+        {!isLoading && !error && viewMode === 'list' && (
           <ExerciseList
             exercises={filtered}
             onEdit={(ex) => setFormState({ mode: 'edit', exercise: ex })}
           />
         )}
+
+        {!isLoading && !error && viewMode === 'tags' && <ExerciseTagList exercises={filtered} />}
 
         {!isLoading && !error && (
           <div style={{ padding: '20px 0 32px', textAlign: 'center' }}>
@@ -209,6 +239,8 @@ export default function LibraryPage() {
           onClose={() => setFormState(null)}
         />
       )}
+
+      {showLibraries && <LibraryCatalog onClose={() => setShowLibraries(false)} />}
     </div>
   )
 }

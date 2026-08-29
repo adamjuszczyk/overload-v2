@@ -25,6 +25,38 @@ export interface Exercise {
   muscleGroup: MuscleGroup
   isArchived: boolean
   createdAt: string
+  // exercises.muscle_subgroup / .movement_pattern (migration 013), surfaced
+  // here so the editing UI (EXERCISE-LIBRARY-TASKS.md §8 step 5) can read an
+  // exercise's current tags the same way it reads muscleGroup — same null =
+  // untagged convention ExerciseTags below already uses.
+  muscleSubgroups: MuscleSubgroup[] | null
+  movementPattern: MovementPattern | null
+}
+
+// ─── Exercise Library ─────────────────────────────────────────────────────────
+// v2_exercise_libraries / v2_exercise_library_items (migration 019,
+// EXERCISE-LIBRARY-TASKS.md §2.1/§2.2). Global, curated catalogs — no
+// userId, read-only to the app. A library previews its items and can be
+// downloaded; downloading copies each item into the user's own `exercises`
+// (§8 step 6).
+
+export interface ExerciseLibrary {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  isListed: boolean
+  position: number
+}
+
+export interface ExerciseLibraryItem {
+  id: string
+  libraryId: string
+  name: string
+  muscleGroup: MuscleGroup
+  muscleSubgroup: MuscleSubgroup[] | null
+  movementPattern: MovementPattern | null
+  position: number
 }
 
 // ─── Program ──────────────────────────────────────────────────────────────────

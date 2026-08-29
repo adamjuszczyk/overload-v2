@@ -1,6 +1,14 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { Program, WorkoutDay, ProgramExercise, WeeklySchedule, WeightUnit } from '../../types'
+import type {
+  Program,
+  WorkoutDay,
+  ProgramExercise,
+  WeeklySchedule,
+  WeightUnit,
+  MuscleSubgroup,
+  MovementPattern,
+} from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +36,8 @@ type DbExerciseJoin = {
   muscle_group: string | null
   is_archived: boolean
   created_at: string
+  muscle_subgroup: MuscleSubgroup[] | null
+  movement_pattern: MovementPattern | null
 }
 
 type DbProgramExercise = {
@@ -92,6 +102,8 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
           muscleGroup: toMuscleGroup(ex.muscle_group),
           isArchived: ex.is_archived,
           createdAt: ex.created_at,
+          muscleSubgroups: ex.muscle_subgroup,
+          movementPattern: ex.movement_pattern,
         }
       : undefined,
   }

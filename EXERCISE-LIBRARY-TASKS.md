@@ -556,7 +556,15 @@ COACH-PERSONALIZATION-TASKS.md §3.1), which means proving constraints by
 
 ### 3.2 Migration 020 — `020_v3_exercise_legacy_provenance.sql`
 
-Cannot be written until §4's proposal is reviewed. Shape and content: §4.
+**Written and applied, 2026-08-29 — see CONTEXT.md's dated session entry
+for the full account.** Generated directly from
+`EXERCISE-LIBRARY-PROVENANCE.md` as reviewed and approved by Adam (no
+corrections), not from §4's classification rule restated in prose. One
+`insert` creating the `legacy-default` library row (unlisted), one keyed
+`update … from (values …)` over the 46 approved legacy ids — same shape
+as migration 014, name in a trailing comment per row. All five of §4.5's
+checks passed against production. Shape and content as originally
+proposed: §4.
 
 ### 3.3 Migration 021 — `021_v3_reassign_exercise_fn.sql`
 
@@ -1305,43 +1313,95 @@ a real violation (`23514` ×3, `23503` ×1), zero rows written by any of
 them; `exercises`/`v2_program_exercises`/`v2_set_logs` row counts (70/26/
 476) unchanged from the pre-migration baseline.
 
-**3. `EXERCISE-LIBRARY-PROVENANCE.md` generated, 2026-08-29 — awaiting
-Adam's review.** All 70 rows, read directly from production, grouped by
-`muscle_group` per §4.4's shape: 46 `legacy` / 24 `hand-created`, 0
+**3. `EXERCISE-LIBRARY-PROVENANCE.md` generated, reviewed, approved (no
+corrections), and migration 020 applied and verified. Done, 2026-08-29 —
+see CONTEXT.md's dated session entries for the full account.** The
+review file: all 70 rows, read directly from production, grouped by
+`muscle_group` per §4.4's shape — 46 `legacy` / 24 `hand-created`, 0
 ambiguous, 4 archived, 7 near-collision pairs flagged ⚠, 0 signal
-disagreements. Cell-by-cell diffed against the live query result after
-writing — 0 mismatches. **Migration 020 not written — blocks on Adam's
-review and corrections (§4.4 step 4), same gate migration 014 went
-through as `COACH-EXERCISE-TAGS.md`.** Nothing after this depends on it
-*except* library delete, so steps 4–6 can proceed in parallel with the
-review if that is preferable.
+disagreements, cell-by-cell diffed against the live query result after
+writing (0 mismatches). Adam reviewed and approved it as-is — the 46/24
+split, all four archived-row near-collisions, and the insertion-history
+breakdown were independently re-verified row-by-row against the
+document's own tables before approval. Migration 020 was then generated
+from that approved file (not the classification rule restated in prose)
+and applied: all five of §4.5's checks passed — `legacy` count exactly
+46, `hand-created` (`source_library_id is null`) exactly 24, `is_listed`
+count 0, `status <> 'active'` count 0, `exercises` row count still 70
+with a 5-row spot-check confirming `muscle_group`/`muscle_subgroup`/
+`movement_pattern` untouched.
 
-**4. `src/lib/exerciseTags.ts` + Vitest.** Pure, no React, no Supabase —
+**4. `src/lib/exerciseTags.ts` + Vitest. Done, 2026-08-29 — see CONTEXT.md's
+dated session entry for the full account.** Pure, no React, no Supabase —
 the same precedent as `setGroupLogic.ts` / `e1rm.ts` / `ratingScales.ts`.
-The one test that matters: the seven `movement_pattern` values in TS match
-013's `CHECK` exactly. A drift there is a runtime `23514` from a UI that
-looks fine.
+Exports `MOVEMENT_PATTERNS`/`MOVEMENT_PATTERN_LABELS` (7 values, reusing
+the existing `MovementPattern` type from `types/index.ts` rather than
+redefining it) and `MUSCLE_SUBGROUP_GROUPS`/`MUSCLE_SUBGROUPS`/
+`MUSCLE_SUBGROUP_LABELS` (22 values grouped into §4.3's six categories),
+plus `muscleSubgroupLabel()` for the one case `MuscleSubgroup`'s
+deliberate string-not-union looseness requires a safe fallback lookup.
+The one test that matters — the seven `movement_pattern` values in TS
+match 013's `CHECK` exactly, read from the migration file directly, not
+retyped from memory — passes, along with 16 other real Vitest cases (no
+duplicates, complete label coverage, the muscle_subgroup grouping matches
+§4.3 verbatim, cross-checked against every value migration 014 actually
+applied, the unknown-tag fallback degrades instead of throwing). 17/17
+new tests pass, 270/270 full suite, both `tsconfig.app.json` and
+`tsconfig.api.json` typecheck clean. Step 5 (tag editing UI) intentionally
+not started.
 
-**5. Tag editing.** `ExerciseForm.tsx` extended (per-exercise view),
-`ExerciseTagList.tsx` new (list view), a mode toggle on `LibraryPage.tsx`,
-`updateExercise`/`useUpdateExercise` extended with the
-don't-blank-on-omit rule (§2.6). **Deliberately first among the UI work**:
-it is the only part with no destructive path, it exercises the new
-vocabulary module against real data, and it independently closes
-COACH-WEEK-ANALYSIS-TASKS.md §7.11's deferral — so it has standalone value
-even if everything after it slips.
+**5. Tag editing. Done, 2026-08-29 — see CONTEXT.md's dated session entry
+for the full account.** `ExerciseForm.tsx` extended (per-exercise view,
+its own muscle-group grid refactored onto the same new shared component
+rather than left as a second copy), `ExerciseTagList.tsx` new (list view,
+accordion rows, auto-save per tap), a mode toggle on `LibraryPage.tsx`,
+`updateExercise`/`useUpdateExercise` extended with the don't-blank-on-omit
+rule (§2.6) — live-verified against real production data in both
+directions (a subgroup-only edit left the pattern untouched and vice
+versa, each confirmed after a genuine full page reload, not just client
+cache). **Deliberately first among the UI work**: it is the only part
+with no destructive path, it exercises the new vocabulary module against
+real data, and it independently closes COACH-WEEK-ANALYSIS-TASKS.md
+§7.11's deferral — so it has standalone value even if everything after it
+slips.
+**Coverage gap closed 2026-08-29 (continued session), before step 6
+started** — this step shipped with zero automated tests despite the
+don't-blank-on-omit rule's own "one-line mistake with a silent,
+data-destroying outcome" framing. `exerciseService.test.ts` (new, mocks
+the Supabase client for the first time in this suite) now covers both
+directions of the omit-vs-explicit-null contract for `updateExercise`,
+plus `createExercise`'s contrasting no-such-distinction behaviour; light
+`@testing-library/react` component tests (`jsdom`/`@testing-library/react`
+added as dev dependencies, the suite's first) cover `TagChipGrid.tsx`'s
+single-/multi-select rendering, that `MuscleSubgroupPicker.tsx` renders
+`exerciseTags.ts`'s six categories and 22 tags directly rather than a
+hardcoded copy, and that `ExerciseTagList.tsx` auto-saves on a single tap
+with no confirm step. See CONTEXT.md's dated session entry.
 
-**6. The library list, preview, and download.** `libraryService.ts` +
-`useLibraries.ts` + `LibraryCatalog.tsx`, replacing the single Download
-button on `LibraryPage.tsx`. Download reuses `importDefaultExercises`'
-name-diff and its `navigator.locks` guard, sets `source_library_id`, and
-copies tags across.
-**Verified against a throwaway seeded library** — a temporary
-`v2_exercise_library_items` insert of 3–4 rows, downloaded for real,
-checked for correct `source_library_id` and copied tags, then the
-downloaded exercises and the temporary rows deleted. Otherwise "download
-works" is proven only against an empty table, which proves nothing (§2.2).
-Every mutating step scoped to Adam's own `user_id`.
+**6. The library list, preview, and download. Done, 2026-08-29 — see
+CONTEXT.md's dated session entry for the full account.** `libraryService.ts`
++ `useLibraries.ts` + `LibraryCatalog.tsx` built; the single Download button
+on `LibraryPage.tsx` replaced with a "Libraries" entry point opening the new
+catalog sheet. Download reuses `exerciseService.ts`'s name-diff rule and
+`navigator.locks` guard for real — both were extracted into shared helpers
+(`diffNewByName` in `exerciseService.ts`, `withUserLock` in the new
+`src/lib/locks.ts`) rather than copied a second/third time, and
+`importDefaultExercises`/`useImportDefaultExercises` (the function this new
+flow replaces — SPEC §1's "single button") were deleted rather than left
+unreachable. Each download sets `source_library_id` and copies
+`muscle_subgroup`/`movement_pattern` across from the library item.
+**Verified against a throwaway seeded library** — a temporary, `is_listed`
+library plus 4 `v2_exercise_library_items` rows (inserted via the Supabase
+SQL Editor, since neither table has an app-side write policy), downloaded
+for real through the live dev-server UI against production, confirmed
+correct `source_library_id` and copied tags on the resulting `exercises`
+rows via a direct SQL join, then the downloaded exercises, the temporary
+items, and the temporary library all deleted — `exercises` row count
+verified back at 70 afterward. Proving download works against an empty
+table would have proven nothing (§2.2). Every mutating step scoped to
+Adam's own `user_id`.
+**Not done, not asked for:** step 7 (delete + Lost Exercises) not started,
+per explicit instruction to stop after step 6.
 
 **7. Delete + Lost Exercises, without reassignment.** The three-state
 transition and its preflight (zero-history → hard delete; has-history →

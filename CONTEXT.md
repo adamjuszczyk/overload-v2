@@ -986,6 +986,33 @@ migration 019 applied and verified)" below for the full account,
 including the two pre-migration diagnostic follow-ups this session closed
 out first.
 
+**Migration 020 (`020_v3_exercise_legacy_provenance.sql`) applied and
+independently verified 2026-08-29 — one new row, one column written on
+46 of the 70 existing `exercises` rows, nothing else touched:** an
+`insert` into `v2_exercise_libraries` creates the synthetic
+`slug = 'legacy-default'` / `name = 'Original Default List'` row,
+`is_listed = false` (never offered for preview or download — it has no
+catalog content, it exists only as a provenance FK target); a keyed
+`update … from (values …)` then sets `source_library_id` on exactly the
+46 rows `EXERCISE-LIBRARY-PROVENANCE.md` classified `legacy` — keyed on
+`id`, name in a trailing comment per row, byte-for-byte migration 014's
+shape, generated from that file's approved `classification` column, not
+from the classification rule restated in prose (46/46 ids diffed against
+the file before running: 0 missing, 0 extra, 0 duplicates). All five of
+EXERCISE-LIBRARY-TASKS.md §4.5's checks run for real against production,
+scoped to Adam's own `user_id`: `source_library_id` matching the
+`legacy-default` library id → **46**; `source_library_id is null` → **24**
+(46 + 24 = 70); `v2_exercise_libraries where is_listed` → **0**;
+`status <> 'active'` → **0** (020 establishes provenance only, moves
+nothing to Lost); `exercises` row count still **70**, with a 5-row spot-
+check across five different muscle groups confirming
+`muscle_group`/`muscle_subgroup`/`movement_pattern` byte-identical to a
+pre-migration baseline — 020 wrote exactly the one column it claims to.
+See "2026-08-29 session (continued — EXERCISE-LIBRARY-PROVENANCE.md
+approved and committed, migration 020 written, applied, and verified)"
+below for the full account, including how the provenance review itself
+was approved and committed first.
+
 ---
 
 ## Key architectural rules
@@ -14499,6 +14526,507 @@ already said.
 further steps of §8's implementation order, no UI work, nothing about
 the unrelated Coach Personalization Weekly thread touched beyond the
 commit-isolation described above.
+
+## 2026-08-29 session (continued — EXERCISE-LIBRARY-PROVENANCE.md approved and committed, migration 020 written, applied, and verified)
+
+Read CONTEXT.md first as instructed.
+
+### 1. `EXERCISE-LIBRARY-PROVENANCE.md` approved (no corrections) and committed
+
+Adam reviewed the file generated last session and approved it as-is — the
+46/24 split, all four archived-row near-collision counterparts, and the
+28-individual/42-bulk insertion-history breakdown were each independently
+re-verified row-by-row against the document's own tables and matched
+exactly. Committed as its own discrete unit (`f133867`, "docs: Exercise
+Library legacy provenance review approved (no corrections)"), isolated
+from the same still-in-progress Coach Personalization Weekly thread the
+same way migration 019's commit was: `CONTEXT.md`'s two unrelated
+insertions were temporarily removed, the reduced file plus
+`EXERCISE-LIBRARY-PROVENANCE.md`/`EXERCISE-LIBRARY-TASKS.md` staged and
+committed, then the removed content restored — **confirmed byte-identical
+against a pre-surgery backup via `cmp`** before moving on, same rigor as
+last time.
+
+### 2. Migration 020 — written from the approved file, applied, verified
+
+`supabase/migrations/020_v3_exercise_legacy_provenance.sql` written
+per §4.4 step 5's shape: one `insert` creating the `legacy-default`
+library row (`is_listed = false`), one keyed `update … from (values …)`
+over the 46 approved legacy ids — **keyed on `id`, not name, with the
+exercise name in a trailing comment per row, mirroring migration 014's
+exact shape**, in the same muscle-group order `EXERCISE-LIBRARY-
+PROVENANCE.md` used. **The 46 ids were extracted programmatically from
+`EXERCISE-LIBRARY-PROVENANCE.md`'s own `classification` column — the
+approved file, not the classification rule restated in prose — and
+diffed against the migration file's `VALUES` list before running: 46/46
+match, 0 missing, 0 extra, 0 duplicates.**
+
+Applied via the Supabase SQL Editor (already authenticated), read/write
+via `window.monaco.editor.getModels()[0]`, content verified byte-identical
+via the same base64-round-trip `val === sql` check used for migration
+019. Ran clean: "Success. No rows returned." A pre-migration baseline was
+taken first (`exercises` 70, `with_source_lib` 0, `v2_exercise_libraries`
+0 rows, `status <> 'active'` 0) plus a 5-row spot-check of
+`muscle_group`/`muscle_subgroup`/`movement_pattern` on a sample crossing
+every affected muscle group.
+
+**All five of §4.5's checks then run for real against production:**
+
+1. `source_library_id = (select id from v2_exercise_libraries where slug
+   = 'legacy-default')` count → **46**, exactly the approved count,
+   matching the `VALUES` list length.
+2. `source_library_id is null` count → **24**. 46 + 24 = 70.
+3. `select count(*) from v2_exercise_libraries where is_listed` → **0** —
+   the legacy library is not offered for download.
+4. `status <> 'active'` count → **0** — 020 established provenance only,
+   moved nothing into Lost.
+5. `exercises` row count still **70**; the same 5-row sample
+   (`Back Squat`, `Barbell Row`, `Incline Dumbbell Bench Press`,
+   `Leg Curl`, `Tricep Pushdown`) re-queried post-migration shows
+   `muscle_group`/`muscle_subgroup`/`movement_pattern` **byte-identical**
+   to the pre-migration baseline — 020 wrote exactly the one column it
+   claims to.
+
+The library row itself was also read back directly: `slug =
+'legacy-default'`, `name = 'Original Default List'`, `is_listed = false`,
+and the multi-line `||`-concatenated `description` landed intact with no
+truncation or join artifacts at the concatenation points.
+
+**`EXERCISE-LIBRARY-TASKS.md` §3.2 and §8 step 3 both marked done in
+place**, same level of detail as every prior migration's completion note.
+
+**Not done, not asked for, explicitly out of scope per instruction:**
+migration 020's `.sql` file itself was not committed this session (only
+`EXERCISE-LIBRARY-PROVENANCE.md` was asked to be committed) — it sits
+alongside the CONTEXT.md/TASKS.md updates describing it, uncommitted,
+ready for an explicit commit instruction next. No deletion, no Lost-
+exercise handling, no reassignment (021/022) — 020 only tags provenance.
+No UI work. Nothing about the unrelated Coach Personalization Weekly
+thread touched beyond the same commit-isolation technique.
+
+## 2026-08-29 session (continued — EXERCISE-LIBRARY-TASKS.md §8 step 4: src/lib/exerciseTags.ts + Vitest)
+
+Read CONTEXT.md first as instructed. Built only §8 step 4 — the pure
+vocabulary module for `exercises.muscle_subgroup`/`.movement_pattern` —
+and stopped there, per instruction; step 5 (the tag-editing UI) not
+started.
+
+### Read directly, not retyped from memory, per instruction
+
+- **`movement_pattern`'s seven values**: read straight from
+  `supabase/migrations/013_v3_coach_week_analysis.sql`'s
+  `exercises_movement_pattern_chk` — `horizontal_push`, `vertical_push`,
+  `horizontal_pull`, `vertical_pull`, `hip_hinge`, `squat`, `isolation`.
+  **Also found `MovementPattern` already exists as this exact union in
+  `src/types/index.ts`** (added alongside `MuscleSubgroup`/`ExerciseTags`
+  during Coach Weekly Analysis's own tagging work) — reused it rather than
+  redefining a second copy, same "single source of truth" reasoning the
+  task itself argues for.
+- **`muscle_subgroup`'s 22 values**: read from
+  COACH-WEEK-ANALYSIS-TASKS.md §4.3's proposal (grouped into six
+  categories — chest/back/shoulders/arms/legs/core) and independently from
+  migration 014's actual literal `'{...}'::text[]` values (extracted
+  programmatically, not by eye — 21 distinct values found). **Reconciled:
+  no discrepancy.** Every value migration 014 ever wrote is among §4.3's
+  22; the one value never applied to a real row is `obliques` (no
+  rotational/oblique-specific exercise exists on this account) — present
+  in the vocabulary as a legitimate, if so-far-unused, proposal value, not
+  dropped.
+- **`src/lib/muscleGroup.ts`** already exists (a small `toMuscleGroup`
+  null-coalescing helper, unrelated to this module) and
+  **`ExerciseForm.tsx`** already has its own inline `MUSCLE_GROUPS`/
+  `MUSCLE_LABELS` constants for the 12-value `MuscleGroup` type — neither
+  touched. This module is scoped to `muscle_subgroup`/`movement_pattern`
+  only, per the task; `MuscleGroup`'s own vocabulary already has an
+  established (if not yet centralized) home and wasn't asked for here.
+
+### Built: `src/lib/exerciseTags.ts`
+
+Pure, no React, no Supabase — same precedent as `setGroupLogic.ts`,
+`e1rm.ts`, `ratingScales.ts`. Exports:
+- `MOVEMENT_PATTERNS` / `MOVEMENT_PATTERN_LABELS` — the 7-value vocabulary
+  and its display labels (`'hip_hinge'` → `'HIP HINGE'`, matching
+  `ExerciseForm.tsx`'s uppercase-with-spaces convention).
+- `MuscleSubgroupCategory` (the six §4.3 buckets) with
+  `MUSCLE_SUBGROUP_CATEGORIES`/`MUSCLE_SUBGROUP_CATEGORY_LABELS`,
+  `MUSCLE_SUBGROUP_GROUPS` (the 22 values grouped by category — a `const`
+  object typed via `as const satisfies Record<...>`, with the 22-value
+  `MuscleSubgroupTag` union *derived* from it via an indexed-access type
+  rather than retyped, so the grouping and the flat vocabulary cannot
+  drift apart), the flattened `MUSCLE_SUBGROUPS`, and
+  `MUSCLE_SUBGROUP_LABELS`.
+- `muscleSubgroupLabel(tag: MuscleSubgroup): string` — the one place a
+  *stored* value (typed as the loose `MuscleSubgroup = string`, not this
+  module's literal union) gets safely labelled: known tags return the
+  dictionary label, anything this module doesn't recognise degrades to an
+  uppercased, space-joined fallback instead of throwing or type-erroring.
+  No equivalent exists for `movement_pattern` — that vocabulary is
+  DB-enforced, so a real `MovementPattern` value can always index
+  `MOVEMENT_PATTERN_LABELS` directly. **This asymmetry is the point**
+  (§7.10, restated in this task's own instructions): `movement_pattern`
+  stays DB-enforced by 013's `CHECK` *and* is now mirrored here;
+  `muscle_subgroup` stays app-layer-only, and no DB constraint was added
+  for it as part of this work.
+
+The category grouping itself (`chest`/`back`/`shoulders`/`arms`/`legs`/
+`core`) is deliberately coarser than the app's 12-value `MuscleGroup` —
+no separate `biceps`/`triceps`/`forearms` or
+`quads`/`hamstrings`/`glutes`/`calves` buckets — because that's the exact
+grouping §4.3 itself specifies, and inventing a finer split not present in
+either source would be reconstruction, not the "read directly" the task
+asked for. It's presentational only, not a filter keyed to an exercise's
+own `muscleGroup`: migration 014 already tags real rows across category
+lines (Incline Barbell Bench Press: `chest` muscle_group, `upper_chest` +
+`front_delt` subgroups — the exact multi-tag case COACH-WEEK-ANALYSIS-
+TASKS.md §4.4 calls out by name).
+
+### Built: `src/lib/exerciseTags.test.ts` — 17 real cases, not a smoke test
+
+Same rigor as `ratingScales.test.ts`. Beyond the structural checks
+(exact value/order match, no duplicates, complete label coverage, no
+extra label keys): **the critical test** asserts `MOVEMENT_PATTERNS`
+equals migration 013's seven values verbatim; a dedicated case cross-
+checks every value migration 014 actually wrote against `MUSCLE_SUBGROUPS`
+(all present); another confirms `obliques` is included despite zero real
+usage; and three cases exercise `muscleSubgroupLabel()` — a known tag, an
+unrecognised multi-word tag (`'some_future_tag'` → `'SOME FUTURE TAG'`),
+and an unrecognised single-word tag (`'neck'` → `'NECK'`) — proving the
+degrade-not-throw behaviour actually works, not just that it's typed to.
+
+### Verified
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **270/270 passing** (253 pre-existing + 17 new), 20 test
+files, no regressions.
+
+**Not done, not asked for:** step 5 (tag editing UI —
+`ExerciseForm.tsx`'s multi-select chip grid, the new
+`ExerciseTagList.tsx`, `updateExercise`'s don't-blank-on-omit extension)
+not started, per explicit instruction to stop after step 4. Nothing
+committed this session — `src/lib/exerciseTags.ts`/`.test.ts` and the
+CONTEXT.md/TASKS.md updates describing them sit alongside migration 020's
+still-uncommitted `.sql` file, ready for an explicit commit instruction.
+Nothing about the unrelated Coach Personalization Weekly thread touched.
+
+## 2026-08-29 session (continued — EXERCISE-LIBRARY-TASKS.md §8 step 5: tag editing UI)
+
+Read CONTEXT.md first as instructed. Built only §8 step 5 — the tag
+editing UI — and stopped there; step 6 (library list/preview/download)
+not started.
+
+### Found: `Exercise` couldn't carry tags yet — three more construction sites than expected
+
+Adding `muscleSubgroups`/`movementPattern` to the `Exercise` interface
+(needed so the edit UI can read an exercise's current tags) surfaced two
+`Exercise`-object construction sites beyond `exerciseService.ts`'s own
+`toExercise()`, both caught by `tsc`, not by inspection:
+`sessionService.ts`'s `toSetLog` (the joined exercise on a set log) and
+`programService.ts`'s `toProgramExercise` (the joined exercise on a
+program exercise). Both already `select('*, exercises(*))`-join the full
+`exercises` row, so `muscle_subgroup`/`movement_pattern` were already
+present in the real Supabase response — only each file's local
+`DbExercise`/`DbExerciseJoin` type and mapper were out of date. Extended
+both the same way `exerciseService.ts` was; no query changes needed, no
+behavior change for either file's existing callers.
+
+### Built: the shared chip grid, extracted rather than duplicated
+
+`TagChipGrid.tsx` (new) — `ExerciseForm.tsx`'s muscle-group grid, pulled
+out verbatim (identical styling/interaction) into a generic
+`values`/`labels`/`selected`/`onToggle` component with no opinion on
+single- vs multi-select — that's entirely the caller's `selected` array
+length and `onToggle` handler. `ExerciseForm.tsx`'s own muscle-group grid
+was refactored onto it (not left as a second copy) alongside the two new
+uses, exactly matching the task's "that same component" instruction
+rather than a same-looking-but-separate control. `MuscleSubgroupPicker.tsx`
+(new) composes six labelled `TagChipGrid`s, one per
+`exerciseTags.ts` category, for the 22-value grouped grid — the grouping
+logic itself stays in `exerciseTags.ts`; this component only lays it out.
+
+### Built: `ExerciseForm.tsx` extended (per-exercise view)
+
+Two new sections — MOVEMENT PATTERN (`TagChipGrid` fed
+`MOVEMENT_PATTERNS`, single-select via a toggle-to-null handler mirroring
+`RatingChips.tsx`'s existing "tap the active chip to clear" convention)
+and MUSCLE SUBGROUP (`MuscleSubgroupPicker`, multi-select, collapsing back
+to `null` rather than `[]` when the last chip is deselected — `ExerciseTags`'
+own "null = untagged, never []" convention). Both create and edit now pass
+tags through; tagging stays optional either way (an untouched exercise
+just keeps its null tags from creation, correctable anytime, exactly as
+asked).
+
+### Built: `ExerciseTagList.tsx` — new, not folded into `ExerciseList.tsx`
+
+One row per exercise: name, muscle group, and a compact live summary
+(`HORIZONTAL PUSH · MID CHEST, LOWER CHEST`, or `UNTAGGED`) collapsed by
+default, expanding in place (accordion, one row open at a time) to the
+same two `TagChipGrid`/`MuscleSubgroupPicker` controls `ExerciseForm.tsx`
+uses. Every chip tap fires its own `updateExercise` mutation immediately
+— the same auto-save-on-tap convention `ExerciseList.tsx`'s archive
+toggle already uses, no separate save step. **This is the real call site
+the don't-blank-on-omit rule exists for**: unlike `ExerciseForm.tsx`
+(which always resends both tag axes together, loaded from the same
+exercise), a chip tap here edits exactly one axis and omits the other
+from the `tags` payload entirely, relying on `updateExercise` to leave
+the omitted column untouched rather than null it.
+
+### Built: `exerciseService.ts` — `updateExercise`/`createExercise` extended
+
+`ExerciseTagFields` (`{ muscleSubgroups?, movementPattern? }`, both
+independently optional) added to both functions. `updateExercise`'s
+payload only sets `muscle_subgroup`/`movement_pattern` keys that are
+actually present on the passed `tags` object (`'key' in tags`, not
+`!== undefined`, so an explicit `null` — "untag this axis" — still lands,
+while an omitted key never reaches the Supabase `.update()` call at all).
+`createExercise` takes the same optional `tags` and writes them plainly
+(no omit-vs-null distinction needed for a fresh insert). Mode toggle
+(`LIST`/`EDIT TAGS`) added to `LibraryPage.tsx`, sharing the existing
+muscle-group filter and archived-toggle state across both views;
+`ExerciseTagList` receives the same already-filtered `exercises` array
+`ExerciseList` does.
+
+### Confirmed ungated (§9.9)
+
+`grep`-confirmed no `coachGate` reference anywhere in any new or changed
+file this session.
+
+### Verified
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **270/270 passing**, no regressions (this step added UI, not
+new pure-module logic, so no new test files — `exerciseTags.test.ts`
+already covers the vocabulary these controls consume).
+
+**Live-verified against real production data**, dev server + browser,
+per this step's own instruction (no destructive path here, so no
+throwaway-data setup needed — ordinary exercises, restored afterward):
+- Opened `ExerciseForm.tsx` for **Back Squat**, confirmed all 7 movement
+  patterns and all 22 subgroups (grouped into the correct 6 categories)
+  rendered; selected SQUAT + QUADS, saved, closed and reopened the form
+  fresh — both persisted (Back Squat already carried `squat`/
+  `{quads,glutes}` from migration 014; net result matched that original
+  state exactly).
+- **The don't-blank-on-omit contract, both directions, each confirmed
+  after a genuine full page reload** (not client cache) — on **Chest
+  Press** (migration 014 baseline: `horizontal_push` / `mid_chest`):
+  toggling only `LOWER CHEST` on in list mode left the pattern at
+  `HORIZONTAL PUSH` after reload; toggling only the pattern to
+  `ISOLATION` afterward left the subgroups at `MID CHEST, LOWER CHEST`
+  after reload. Neither single-axis edit blanked the other.
+- Restored both exercises to their pre-session (migration 014) tag state
+  afterward — Chest Press back to `horizontal_push`/`mid_chest`, Back
+  Squat confirmed already at `squat`/`{quads,glutes}` — so this session's
+  live testing left no test-artifact tags in production.
+- No console errors at any point.
+
+**Not done, not asked for:** step 6 (library list/preview/download) not
+started, per explicit instruction to stop after step 5. Nothing
+committed this session — the tag-editing UI files sit alongside migration
+020's `.sql` file and `src/lib/exerciseTags.ts`/`.test.ts`, all still
+uncommitted from prior sessions, ready for an explicit commit
+instruction. Nothing about the unrelated Coach Personalization Weekly
+thread touched.
+
+## 2026-08-29 session (continued — step 5's coverage gap closed, then
+EXERCISE-LIBRARY-TASKS.md §8 step 6: library list/preview/download)
+
+Read CONTEXT.md first as instructed. Two things this session, in order:
+close step 5's zero-test gap, then build only step 6, stopping before
+step 7 (delete + Lost Exercises).
+
+### Part 1 — step 5's coverage gap
+
+Step 5 (tag editing UI, prior session) shipped with no automated tests at
+all despite `updateExercise`'s don't-blank-on-omit rule being explicitly
+flagged as "a one-line mistake with a silent, data-destroying outcome."
+One live-verified pass against production doesn't survive a future
+refactor of that signature.
+
+**`exerciseService.test.ts` (new)** — this suite's first test file that
+mocks the Supabase client (every prior test is pure logic with no I/O).
+`vi.mock('../../lib/supabase')` swaps in a chainable stand-in builder
+whose `.insert`/`.update` are `vi.fn`s, so each test reads
+`.mock.calls[0][0]` to see the literal payload object `updateExercise`/
+`createExercise` sent — not just the values for keys they touched, but
+which keys they touched at all. Covers, for `updateExercise`: omitting
+`muscleSubgroups` leaves `muscle_subgroup` **absent from the payload
+entirely** (not nulled); the same for `movementPattern`/`movement_pattern`;
+an **explicit** `null` for either reaches the payload as `null` (untag
+that axis); the omitted-vs-explicit-null distinction exercised together in
+one call (one axis omitted, the other explicitly cleared); calling with no
+`tags` argument at all — every pre-existing caller's exact shape — touches
+neither column (`payload` equals exactly `{ name, muscle_group }`); and
+resending both axes together (`ExerciseForm.tsx`'s shape) writes both. For
+`createExercise`: no omit-vs-null distinction exists there (a fresh insert
+has nothing to leave untouched) — omitting tags entirely, or omitting just
+one axis, both write `null` for the omitted axis(es), documented as the
+deliberate contrast with `updateExercise`. 11 tests.
+
+**Component tests (new)** — `jsdom` and `@testing-library/react` added as
+dev dependencies (this suite's first component tests); `vitest.config.ts`
+widened to include `.tsx`, staying on `environment: 'node'` by default with
+each component test opting into `jsdom` per-file via a
+`// @vitest-environment jsdom` docblock, so the ~290 pure-logic tests don't
+pay jsdom's setup cost. No `@vitejs/plugin-react` needed either — esbuild's
+default automatic JSX runtime (already `tsconfig.app.json`'s `"jsx":
+"react-jsx"`) transforms the three simple presentational components fine
+without it.
+- `TagChipGrid.test.tsx` — asserts the component renders every value/label,
+  that `selected` with one value renders exactly one chip active
+  (single-select shape) and with two renders both (multi-select shape,
+  reading `style.background` directly since styling is inline, not
+  classed), and that tapping any chip — active or not — just reports that
+  chip's value via `onToggle`, proving the component owns no add/remove
+  logic of its own. 4 tests.
+- `MuscleSubgroupPicker.test.tsx` — asserts against
+  `MUSCLE_SUBGROUP_CATEGORIES`/`_LABELS`/`MUSCLE_SUBGROUPS` imported live
+  from `exerciseTags.ts`, not a list retyped in the test, so the test can't
+  pass on a coverage gap if a category is added/renamed there; confirms
+  all 22 tags render as chips, that a tag from one category and one from
+  another (`upper_chest` + `front_delt`, migration 014's own worked
+  example) can both be active at once, and that any chip's tap reports
+  through the same `onToggle`. 4 tests.
+- `ExerciseTagList.test.tsx` — mocks `./useExercises`'s `useUpdateExercise`
+  directly (no `QueryClientProvider` needed, since the component itself
+  never calls `useQuery`), so `mutate` calls are inspectable with no real
+  mutation wiring. Confirms chip grids are hidden until a row is expanded,
+  that a single chip tap calls `mutate` exactly once with the expected
+  payload and with no confirm button rendered anywhere, and — the real
+  don't-blank-on-omit call site — that a subgroup tap's payload omits
+  `movementPattern` entirely. 4 tests.
+
+### Verified (Part 1)
+
+`npm run typecheck` clean. `npm test`: **293/293 passing** (270 prior + 23
+new), 24 test files, no regressions.
+
+### Part 2 — §8 step 6: the library list, preview, and download
+
+**Built `libraryService.ts`** — `fetchLibraries()` (`v2_exercise_libraries`
+where `is_listed = true`, ordered by `position` — the legacy provenance
+library from migration 020 is `is_listed = false` and correctly never
+appears), `fetchLibraryItems(libraryId)`, and `downloadLibrary(userId,
+libraryId)`. Download does **not** reimplement the name-diff rule or the
+`navigator.locks` double-tap guard the task called out by name — both were
+extracted out of `exerciseService.ts` into real shared helpers first:
+`diffNewByName<T>()` (exported from `exerciseService.ts`) and
+`withUserLock()` (new `src/lib/locks.ts`, generic — not exercise-specific).
+`seedDefaultExercisesIfEmpty` was refactored onto `withUserLock` too (same
+lock key, same behaviour, just no longer a second inline copy of the
+guard). Each downloaded row gets `source_library_id` set to the library it
+came from and `muscle_subgroup`/`movement_pattern` copied straight from the
+library item (EXERCISE-LIBRARY-TASKS.md §2.2/§2.4/§9.7 — arrives
+pre-tagged, never re-tagged on a later download).
+
+**`importDefaultExercises`/`useImportDefaultExercises` deleted, not left
+unreachable.** These are exactly the "single button that copies in the
+entire default seed list" EXERCISE-LIBRARY-SPEC.md §1 says this whole
+feature replaces, and after the button that called them was removed
+(below), nothing in the app called them anymore — confirmed by grep before
+deleting. `seedDefaultExercisesIfEmpty` (the separate brand-new-account
+auto-seed, unrelated to the manual button) is untouched and still fires
+exactly as before.
+
+**Types added to `types/index.ts`** — `ExerciseLibrary` and
+`ExerciseLibraryItem`, matching §7.2's shape. Deliberately did **not** add
+`status`/`sourceLibraryId`/`lostAt` to the `Exercise` interface itself this
+session — §7.2 groups those three together, but nothing in step 6 needs to
+*read* `source_library_id` back through the app's own `Exercise` type
+(download only *writes* it via a raw insert payload); that read-side
+surface belongs to step 7, per the explicit instruction to stop before it.
+
+**Built `useLibraries.ts`** — `useLibraries()`, `useLibraryItems(libraryId,
+enabled)` (lazy — only fetched once a library row is expanded, not
+up front for every listed library), `useDownloadLibrary()` (invalidates
+`['exercises']` on success, same pattern every other exercise mutation
+hook already uses).
+
+**Built `LibraryCatalog.tsx`** — same full-screen slide-up sheet pattern
+`ExerciseForm.tsx` already established. Each library is an accordion row
+(name, description, chevron-to-expand preview, a separate download button
+so the two taps don't conflict — `stopPropagation` on the download
+button's click). Preview renders each item's name, muscle group, and a
+tag summary built the same way `ExerciseTagList.tsx`'s collapsed-row
+summary is. Empty states at both levels: "NO LIBRARIES YET" (the real,
+expected state in production today — zero libraries are `is_listed`) and
+per-library "NO EXERCISES IN THIS LIBRARY YET".
+
+**`LibraryPage.tsx`** — the old Download icon button (and its
+`handleImportDefaults`/`useImportDefaultExercises` wiring) replaced with a
+"Libraries" icon button (`lucide-react`'s `Library` icon) that opens
+`LibraryCatalog` in the same conditionally-mounted-sheet style
+`ExerciseForm` already uses.
+
+### Confirmed ungated (§9.9)
+
+`grep`-confirmed no `coachGate` reference anywhere in any new or changed
+file this session.
+
+### Verified (Part 2)
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **293/293 passing**, no regressions. `npm run build` also run
+or real (not just typecheck) — clean production build, no new warnings
+beyond the pre-existing >500kB chunk-size notice.
+
+**Live-verified against real production data, dev server + browser, per
+the hard gate — and against a real throwaway seeded library, not an empty
+one, exactly as instructed (§2.2's point: proving download works against
+an empty catalog proves nothing):**
+- Browser tooling confirmed working first (dev server already had a live
+  authenticated session against production, same as every prior session).
+- Since neither `v2_exercise_libraries` nor `v2_exercise_library_items`
+  has an app-side write policy (§2.1/§2.2 — read-only to the app by
+  design), the throwaway seed had to go through the Supabase SQL Editor
+  (Monaco `getModels()[0].setValue()`, per the standing practice above —
+  no typing, no keyboard clearing), same access path every migration has
+  used. One statement inserted a temporary `is_listed = true` library
+  (`slug = 'temp-verify-step6'`) plus 4 library items via a `with lib as
+  (insert ... returning id) insert into v2_exercise_library_items select
+  ...` CTE — deliberately covering both tag shapes: three items with real
+  `muscle_subgroup`/`movement_pattern` values (including one crossing
+  category lines, chest + shoulders, mirroring migration 014's own
+  worked example) and one with neither, to prove the untagged path too.
+- In the live app: opened Library → tapped the new Libraries button →
+  "TEMP Step 6 Verification" appeared (confirming `fetchLibraries()`'s
+  `is_listed` filter and the empty-state path both work — the catalog
+  correctly showed "NO LIBRARIES YET" *before* the seed existed, checked
+  first). Expanded its preview — all 4 items rendered with the exact
+  correct tag summaries (`CHEST · ISOLATION · UPPER CHEST, FRONT DELT`,
+  down to the untagged item showing just `CALVES`, no trailing separator).
+  Tapped Download.
+- Confirmed via SQL: a query joining `exercises` to
+  `v2_exercise_libraries` on `source_library_id`, filtered to the temp
+  library's `slug` and Adam's own `user_id`, returned exactly 4 rows —
+  proving `source_library_id` was written correctly for every downloaded
+  row (a wrong id on any row would have dropped it from that join).
+- Back in the app: reloaded the Library list (not just trusted the cache)
+  — all 4 `Temp Verify …` exercises present in LIST view with correct
+  muscle groups, and in EDIT TAGS view with correct tag summaries,
+  confirming the full round trip (library item → downloaded `exercises`
+  row → `toExercise()` → UI) works end to end, not just at the database
+  layer.
+- **Cleanup, verified rather than assumed:** deleted the 4 downloaded
+  exercises (scoped to Adam's `user_id` and the temp library's
+  `source_library_id`), the 4 temporary library items, and the temporary
+  library row itself — one script, in that order (exercises before the
+  library, since `source_library_id`'s FK is `on delete restrict`). The
+  Supabase SQL Editor's own "Potential issue detected" confirmation dialog
+  appeared for the `DELETE`s as documented above; its own "Run query"
+  button clicked to actually execute. A follow-up count query confirmed
+  `lib_count = 0`, `item_count = 0`, `exercise_count = 0` (temp rows), and
+  `total_exercises = 70` — back to the exact pre-session baseline. A fresh
+  reload of the live app confirmed no `Temp Verify` text anywhere and the
+  Libraries catalog back to "NO LIBRARIES YET".
+- No console errors at any point.
+
+**Not done, not asked for:** step 7 (delete + Lost Exercises) not started,
+per explicit instruction to stop after step 6. Nothing committed this
+session — every file this session and prior uncommitted sessions touched
+(migration 020's `.sql`, `src/lib/exerciseTags.ts`/`.test.ts`/`locks.ts`,
+the tag-editing UI, this session's new tests, and step 6's new files) sits
+uncommitted together, ready for an explicit commit instruction. Nothing
+about the unrelated Coach Personalization Weekly thread touched.
 
 ---
 

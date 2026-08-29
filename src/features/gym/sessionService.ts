@@ -1,6 +1,15 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
-import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating } from '../../types'
+import type {
+  Session,
+  SetLog,
+  WeightUnit,
+  FormRating,
+  EnergyRating,
+  PumpRating,
+  MuscleSubgroup,
+  MovementPattern,
+} from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
@@ -13,6 +22,8 @@ type DbExercise = {
   user_id: string
   is_archived: boolean
   created_at: string
+  muscle_subgroup: MuscleSubgroup[] | null
+  movement_pattern: MovementPattern | null
 }
 
 type DbSetLog = {
@@ -75,6 +86,8 @@ function toSetLog(row: DbSetLog): SetLog {
           muscleGroup: toMuscleGroup(row.exercises.muscle_group),
           isArchived: row.exercises.is_archived,
           createdAt: row.exercises.created_at,
+          muscleSubgroups: row.exercises.muscle_subgroup,
+          movementPattern: row.exercises.movement_pattern,
         }
       : undefined,
     weekPlanSetId: row.week_plan_set_id,
