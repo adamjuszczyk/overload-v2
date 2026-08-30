@@ -16722,6 +16722,38 @@ just confirms the fix didn't disturb anything else). Live confirmation —
 below once the deploy that carries this commit is actually live, not
 assumed from the documented routing order alone.
 
+### Part 3 — deploy and live verification
+
+Both commits (`e239010` docs, `4b888d4` fix) pushed together
+(`33ccd1d..4b888d4`), one Vercel deploy: `dpl_2dZoSqbSNhjsu468uJAzuNyYvSZS`,
+target production, **Ready**, aliased to `overload-v2-sage.vercel.app`.
+
+All four checks the brief named, plus a few adjacent ones, live:
+- `GET /library` (fresh direct navigation via the browser, not
+  client-side routing from `/`) → **200**, and the page actually renders
+  the real Library catalog (all 71 exercises, tag filters, LIST/EDIT TAGS
+  toggle) — not just a 200 with an empty or wrong shell.
+- `POST /api/coach/analyze-week` (unauthenticated) → **401, not 200** —
+  the rewrite does not swallow the real serverless function.
+- `GET /sw.js` → 200, `GET /manifest.webmanifest` → 200, and both icon
+  paths the manifest itself declares (`/icon-192.png`, `/icon-512.png`)
+  → 200 — the PWA's own files still resolve as real static assets.
+- `GET /` → 200 (unchanged) and `GET /progress` (a second client-side
+  route, not named in the brief but checked anyway) → 200, confirming the
+  fix isn't `/library`-specific.
+- A genuinely nonexistent path (`/this-route-does-not-exist`) → 200,
+  serving the app shell — correct SPA catch-all behavior, not a new hole
+  (the app's own client router is what would show a not-found state, if
+  it has one; that's unchanged by this fix either way).
+- **`WEEK_PROMPT_VERSION`** — this deploy carried no analysis-generating
+  change, so re-confirmed unchanged: still `2` in the deployed
+  `coachWeekPrompt.ts`, and `v2_coach_week_analyses` still shows exactly
+  the one `prompt_version 1` row from Part 1, nothing added.
+
+**This session did not trigger real Weekly Analysis generation** — stays
+a manual `ANALYZE` click through the live app, Adam's own action, same
+standing reason as every prior session.
+
 ---
 
 ## Pending feedback to address
