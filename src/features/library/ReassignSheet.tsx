@@ -4,7 +4,7 @@ import { format, parseISO } from 'date-fns'
 import type { Exercise, ReassignPreview } from '../../types'
 import { useExercises, useCreateExercise } from './useExercises'
 import { useReassignPreview, useReassignBlockers, useReassignExerciseHistory } from './useReassign'
-import type { ReassignBlockers } from './reassignService'
+import { ReassignBlockedError, type ReassignBlockers } from './reassignService'
 import { useToastStore } from '../notifications/toastStore'
 
 // Reassignment's confirmation sheet (EXERCISE-LIBRARY-TASKS.md §6, §8 step
@@ -24,6 +24,14 @@ import { useToastStore } from '../notifications/toastStore'
 // differently-cased or padded paste does not silently satisfy it — and P3/
 // P4 (§5.2) disable the button with their own explanation rather than let
 // the RPC refuse after the tap.
+//
+// That P3/P4 read is a snapshot taken when the target is picked, so it is
+// not the last word: reassignExerciseHistory() re-runs the same check
+// immediately before the RPC, and a ReassignBlockedError coming back from it
+// means the state changed while this sheet sat open. handleConfirm() folds
+// those fresh blockers back into the same state the selection-time check
+// writes, so the inline explanation appears and the button re-disables — the
+// merge never ran, so there is nothing to undo.
 
 interface ReassignSheetProps {
   sourceExercise: Exercise
@@ -116,7 +124,20 @@ export default function ReassignSheet({ sourceExercise, onClose }: ReassignSheet
           )
           onClose()
         },
-        onError: () => showToast(`Could not merge ${sourceExercise.name} into ${targetName}`),
+        onError: (error) => {
+          // The merge-time P3/P4 re-check refused, i.e. the selection-time
+          // snapshot went stale while this sheet was open. Re-render the same
+          // explanation that check already has copy for, using what was just
+          // observed rather than what was true at pick time. Nothing was
+          // written — the RPC was never reached — so say so plainly instead
+          // of reporting a failure the lifter would have to go and verify.
+          if (error instanceof ReassignBlockedError) {
+            setBlockers(error.blockers)
+            showToast('Merge cancelled — nothing was changed')
+            return
+          }
+          showToast(`Could not merge ${sourceExercise.name} into ${targetName}`)
+        },
       },
     )
   }

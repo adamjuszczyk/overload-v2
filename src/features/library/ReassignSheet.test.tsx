@@ -2,8 +2,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import type { Exercise, ReassignPreview } from '../../types'
-import type { ReassignBlockers } from './reassignService'
-import ReassignSheet from './ReassignSheet'
+
+// ReassignSheet.tsx imports ReassignBlockedError as a value, so the real
+// reassignService module is evaluated here. Stub the two stores it pulls in
+// at module load — lib/supabase throws without env vars, lib/db opens
+// Dexie — rather than mocking the error class itself, which would let these
+// tests keep passing against a class the component no longer throws.
+vi.mock('../../lib/supabase', () => ({ supabase: { from: vi.fn(), rpc: vi.fn() } }))
+vi.mock('../../lib/db', () => ({ db: { sync_queue: { count: vi.fn() } } }))
+
+const { ReassignBlockedError } = await import('./reassignService')
+type ReassignBlockers = import('./reassignService').ReassignBlockers
+const { default: ReassignSheet } = await import('./ReassignSheet')
 
 // EXERCISE-LIBRARY-TASKS.md §8 step 9 — the confirmation sheet for the one
 // irreversible action in the feature. Three things are worth locking down
@@ -283,5 +293,75 @@ describe('ReassignSheet — P3/P4 blockers gate the control even with a matching
 
     expect(screen.getByText(/in-progress session/i)).toBeTruthy()
     expect(mergeButtonDisabled()).toBe(true)
+  })
+})
+
+// The selection-time P3/P4 read above is a snapshot. This is what happens
+// when it goes stale while the sheet sits open — a set logged offline in
+// another tab, a session started — and reassignService.ts's merge-time
+// re-check refuses instead of the RPC firing on it. The check itself is
+// reassignService.test.ts's job; what matters here is that the sheet turns
+// that refusal back into the same disabled control and the same explanation
+// the selection-time check would have produced, rather than a bare failure.
+describe('ReassignSheet — a blocker appearing between selection and confirm', () => {
+  async function setUpArmedConfirmStep() {
+    allExercises = [TARGET]
+    previewMutateAsyncMock.mockResolvedValue(preview())
+    blockersMutateAsyncMock.mockResolvedValue(CLEAR_BLOCKERS)
+    await pickTarget()
+    fireEvent.change(screen.getByLabelText('Type Incline Smith Press to confirm'), {
+      target: { value: 'Incline Smith Press' },
+    })
+    // Nothing visible on screen says this merge cannot proceed.
+    expect(mergeButtonDisabled()).toBe(false)
+    expect(screen.queryByText(/unsynced sets/i)).toBeNull()
+  }
+
+  function respondWith(error: unknown) {
+    reassignMutateMock.mockImplementation((_vars: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(error),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'MERGE HISTORY' }))
+  }
+
+  it('re-disables MERGE HISTORY and shows the unsynced-sets explanation', async () => {
+    await setUpArmedConfirmStep()
+    respondWith(new ReassignBlockedError({ hasUnsyncedSets: true, hasSessionInProgress: false }))
+
+    await waitFor(() => expect(screen.getByText(/unsynced sets/i)).toBeTruthy())
+    expect(mergeButtonDisabled()).toBe(true)
+    expect(showToastMock).toHaveBeenCalledWith('Merge cancelled — nothing was changed')
+  })
+
+  it('re-disables MERGE HISTORY and shows the in-progress-session explanation', async () => {
+    await setUpArmedConfirmStep()
+    respondWith(new ReassignBlockedError({ hasUnsyncedSets: false, hasSessionInProgress: true }))
+
+    await waitFor(() => expect(screen.getByText(/in-progress session/i)).toBeTruthy())
+    expect(mergeButtonDisabled()).toBe(true)
+  })
+
+  it('the typed name is still satisfied — it is the blocker, not the gate, that re-disabled it', async () => {
+    await setUpArmedConfirmStep()
+    respondWith(new ReassignBlockedError({ hasUnsyncedSets: true, hasSessionInProgress: false }))
+
+    await waitFor(() => expect(mergeButtonDisabled()).toBe(true))
+    expect((screen.getByLabelText('Type Incline Smith Press to confirm') as HTMLInputElement).value).toBe(
+      'Incline Smith Press',
+    )
+  })
+
+  it('an ordinary RPC failure is not reported as a blocker', async () => {
+    await setUpArmedConfirmStep()
+    respondWith(new Error('network down'))
+
+    await waitFor(() =>
+      expect(showToastMock).toHaveBeenCalledWith('Could not merge Chest Press into Incline Smith Press'),
+    )
+    expect(screen.queryByText(/unsynced sets/i)).toBeNull()
+    expect(screen.queryByText(/in-progress session/i)).toBeNull()
+    // Still armed: the merge failed for an unrelated reason, so retrying is
+    // the right affordance — nothing about the preflight state changed.
+    expect(mergeButtonDisabled()).toBe(false)
   })
 })

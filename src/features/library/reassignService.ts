@@ -2,14 +2,70 @@ import { supabase } from '../../lib/supabase'
 import { db } from '../../lib/db'
 import type { ReassignPreview, ReassignResult } from '../../types'
 
+// P3/P4 (§5.2) — the blocking preflights, checked right before the
+// confirmation sheet allows the tap rather than surfacing as a failure
+// after it (§6.2). Both describe a state that resolves on its own.
+export interface ReassignBlockers {
+  // P3 — a queued v2_set_logs upsert carries a literal exercise_id
+  // (useSession.ts:692); replayed after the source row is hard-deleted by
+  // the merge, it violates the FK and useSyncQueue.ts dead-letters it,
+  // discarding a real logged set permanently. Client-side/this-device only
+  // — §5.6 documents the residual second-device window this doesn't close.
+  hasUnsyncedSets: boolean
+  // P4 — a live session could be logging under either exercise while the
+  // merge runs. §5.3 step 1's row lock closes the window inside the
+  // transaction, but a session mid-workout should not be silently
+  // renumbered underneath the lifter without warning first.
+  hasSessionInProgress: boolean
+}
+
+export async function checkReassignBlockers(): Promise<ReassignBlockers> {
+  const [unsyncedCount, sessionResult] = await Promise.all([
+    db.sync_queue.count(),
+    supabase.from('v2_sessions').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+  ])
+  if (sessionResult.error) throw sessionResult.error
+  return {
+    hasUnsyncedSets: unsyncedCount > 0,
+    hasSessionInProgress: (sessionResult.count ?? 0) > 0,
+  }
+}
+
+// Thrown in place of calling the RPC when P3/P4 hold at merge time. Carries
+// the fresh blockers so the caller can render the same explanation the
+// confirmation sheet already shows for the selection-time check, rather than
+// reporting an irreversible action as having failed for an unknown reason.
+export class ReassignBlockedError extends Error {
+  readonly blockers: ReassignBlockers
+  constructor(blockers: ReassignBlockers) {
+    super('Reassignment blocked by an unsynced set or an in-progress session')
+    this.name = 'ReassignBlockedError'
+    this.blockers = blockers
+  }
+}
+
 // reassign_exercise_history() (migration 021, EXERCISE-LIBRARY-TASKS.md §5,
 // §8 step 8) — the repo's first .rpc() call. Merges a lost exercise's entire
 // logged history onto an active target in one all-or-nothing transaction;
 // see the migration file for the full mechanics (§5.3). Client-side, all
-// this does is call it and translate the returned row — no retry, no
-// optimistic update, since a partial success here is meaningless (the RPC
-// itself either commits everything or raises).
+// this does is re-check P3/P4, call it, and translate the returned row — no
+// retry, no optimistic update, since a partial success here is meaningless
+// (the RPC itself either commits everything or raises).
+//
+// The P3/P4 re-check lives here, immediately before .rpc(), and not only in
+// ReassignSheet.tsx's selectTarget(): that snapshot is taken when a target is
+// picked and goes stale while the sheet sits open. A set logged offline, or a
+// session started, on this same device in that window would otherwise slip
+// through a blocked=false that stopped being true minutes ago — narrow, but
+// the failure it guards (P3's dead-lettered set log) is silent and permanent.
+// Guarding the RPC wrapper rather than its caller means there is no path to
+// the merge that skips the check. Fails closed: a check that errors raises
+// rather than reading as clear. §5.6's second-device window is unaffected —
+// this closes the same-device one only.
 export async function reassignExerciseHistory(sourceId: string, targetId: string): Promise<ReassignResult> {
+  const blockers = await checkReassignBlockers()
+  if (blockers.hasUnsyncedSets || blockers.hasSessionInProgress) throw new ReassignBlockedError(blockers)
+
   const { data, error } = await supabase.rpc('reassign_exercise_history', {
     p_source: sourceId,
     p_target: targetId,
@@ -104,35 +160,6 @@ export async function previewReassign(sourceId: string, targetId: string): Promi
     affectedWorkoutDays,
     overlappingSessionCount,
     frozenAnalysisCount,
-  }
-}
-
-// P3/P4 (§5.2) — the blocking preflights, checked right before the
-// confirmation sheet allows the tap rather than surfacing as a failure
-// after it (§6.2). Both describe a state that resolves on its own.
-export interface ReassignBlockers {
-  // P3 — a queued v2_set_logs upsert carries a literal exercise_id
-  // (useSession.ts:692); replayed after the source row is hard-deleted by
-  // the merge, it violates the FK and useSyncQueue.ts dead-letters it,
-  // discarding a real logged set permanently. Client-side/this-device only
-  // — §5.6 documents the residual second-device window this doesn't close.
-  hasUnsyncedSets: boolean
-  // P4 — a live session could be logging under either exercise while the
-  // merge runs. §5.3 step 1's row lock closes the window inside the
-  // transaction, but a session mid-workout should not be silently
-  // renumbered underneath the lifter without warning first.
-  hasSessionInProgress: boolean
-}
-
-export async function checkReassignBlockers(): Promise<ReassignBlockers> {
-  const [unsyncedCount, sessionResult] = await Promise.all([
-    db.sync_queue.count(),
-    supabase.from('v2_sessions').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
-  ])
-  if (sessionResult.error) throw sessionResult.error
-  return {
-    hasUnsyncedSets: unsyncedCount > 0,
-    hasSessionInProgress: (sessionResult.count ?? 0) > 0,
   }
 }
 
