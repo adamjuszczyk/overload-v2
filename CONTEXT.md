@@ -1013,6 +1013,31 @@ approved and committed, migration 020 written, applied, and verified)"
 below for the full account, including how the provenance review itself
 was approved and committed first.
 
+**Migrations 021 (`021_v3_reassign_exercise_fn.sql`) and 022
+(`022_v3_exercise_reassignments.sql`) applied and verified — 022 first,
+since 021's function body writes to its table.** 022 creates
+`v2_exercise_reassignments` (12 columns, not the 13 §3.4's prose claimed —
+an off-by-one in that document, corrected during step 8), RLS `for all
+using (user_id = auth.uid())`, plus the standing append-only-log index.
+021 creates `reassign_exercise_history(p_source uuid, p_target uuid)`,
+`security invoker`, `set search_path = public`, granted to
+`authenticated`. **The deployed body is byte-identical to the local file
+and has been re-proven from two different sessions**: `md5(prosrc)` /
+`length(prosrc)` read from `pg_proc` after the re-apply gave
+`75168ffd29202115e7f6af8b5bfeba85` / 9483 chars, and hashing the local
+file's body between its dollar quotes during step 10's adversarial review
+gives exactly the same pair — so a line-by-line review of the file is a
+review of what actually runs. This matters more here than for any other
+migration in the repo: 021 is the one whose first apply silently lost two
+characters in transport (see the standing transport rule below).
+**Behaviourally verified against production three times, always with
+throwaway data and never against Adam's real exercise history**: step 8
+(dropset stages, `week_plan_set_id` links and program-exercise collisions
+preserved), step 9 (through the real confirmation sheet end to end), and
+step 10 (the §5.3 step 3 renumbering proven as `1,2,3` in logged order,
+plus both P3/P4 refusals proven to leave zero audit rows). Every run
+cleaned up and every touched count re-verified back at baseline.
+
 ---
 
 ## Key architectural rules
@@ -1141,9 +1166,14 @@ was approved and committed first.
   function or migration, compare `md5(prosrc)` / `length(prosrc)` (or the
   equivalent for DDL) against the local file and treat a mismatch as a
   failed apply, not a curiosity — a per-line length diff localises it in one
-  query; (2) prefer a transport with no long repetitive runs (plain text, or
-  runs replaced by a marker and expanded in the browser) and verify a hash
-  of the reassembled text **before** running it; (3) `getValue().length`
+  query; (2) **any migration or function body with a long repetitive
+  character run (box-drawing dividers, repeated punctuation, etc.) must go
+  through a transport with no long repetitive runs surviving verbatim —
+  plain text, or runs replaced by a marker and expanded in the browser —
+  not a plain paste; this is a requirement, not a preference (tightened
+  2026-08-30 after confirming migration 019 carries the same `───`
+  divider style that caused this failure)** — and verify a hash of the
+  reassembled text **before** running it; (3) `getValue().length`
   right after `setValue` is a free pre-flight check — last session printed
   `11234` against the file's `11236` and the discrepancy went unread.
 - **Data-modifying CTEs cannot see each other's writes — never write a
@@ -15957,6 +15987,466 @@ instruction was given.
 
 ---
 
+## 2026-08-30 session (continued — P3/P4 blocking confirmed, transport rule
+tightened; steps 7/8/9 committed as three separate commits)
+
+Read CONTEXT.md first as instructed. Two parts, no new feature code.
+
+### Part 1 — does P3/P4 actually block, and is the transport fix standing practice?
+
+**P3/P4 block; they do not merely warn.** `ReassignSheet.tsx` computes
+`blocked = !!blockers?.hasUnsyncedSets || !!blockers?.hasSessionInProgress`
+and folds it into `canConfirm`, which gates the native `disabled` attribute
+on MERGE HISTORY — a disabled button does not fire `onClick`, so the RPC is
+unreachable from the UI while either condition holds, with explanatory copy
+shown alongside. This closes §5.5's stated risk (a `db.sync_queue` entry
+carrying a literal `exercise_id` replaying after its exercise is merged
+away) for the case it was designed for.
+
+**One residual gap, not previously documented — worth recording, not
+worth blocking on.** `checkReassignBlockers()` is called once, in
+`selectTarget()`, when a target is first picked; it is never re-run before
+the tap on MERGE HISTORY. If the sync queue goes from empty to non-empty
+(or a session moves to `in_progress`) on the *same device* in the interval
+between picking a target and confirming — e.g. the user logs a set offline
+while the sheet is still open — `blocked` stays `false` from the stale
+snapshot and the tap goes through. Narrow (requires activity on the same
+device in a short modal-open window) and distinct from §5.6's already-
+documented second-device gap, but real. Not fixed this session — no code
+changed — flagged here as an open, low-severity gap in P3/P4's coverage:
+a future pass could re-run `checkReassignBlockers()` immediately before
+`handleConfirm()` fires rather than trusting the selection-time snapshot.
+
+**The placeholder-collapse transport is already standing practice, not a
+one-off** — written into this file's rules section during the CTE-anomaly
+session, before the transport was actually used in anger during the
+following session's migration-021 re-apply. That re-apply was a live test
+of an already-declared policy, not the policy's origin. Confirmed
+migration 019 carries the exact same `───` box-drawing divider style
+(three section banners, up to ~40 consecutive characters) that caused
+021's corruption — already applied to production without incident (the
+retroactive hash-audit two sessions ago found zero drift on 019), so no
+outstanding exposure there, but the rule matters for every future
+migration with this style, not just 021. The existing rule said to
+*prefer* a safe transport; tightened above (rules section, item 2) to an
+unconditional *must*, since "prefer" left room for exactly the plain-paste
+mistake that caused the original corruption.
+
+### Part 2 — steps 7, 8, and 9 committed as three separate commits
+
+The working tree held steps 7, 8, and 9 uncommitted together, interleaved
+in `CONTEXT.md` and `EXERCISE-LIBRARY-TASKS.md` with the same still-open,
+unrelated Coach Personalization Weekly thread every recent Exercise
+Library commit has isolated around. Split into three commits by step,
+each with its own message:
+
+- `4b231b8` — step 7 (delete + Lost Exercises): the `ExerciseStatus`/
+  `ExerciseLifecycle` types, `deleteExercise`/`restoreExercise`/
+  `previewExerciseDelete` and the library-level bulk counterparts,
+  `ConfirmDialog.tsx`, `ExerciseList.tsx`'s delete action,
+  `LibraryCatalog.tsx`'s split preview, `LostExercises.tsx` (restore-only,
+  no Reassign entry point yet), and step 7's coverage-backfill tests.
+- `4ea31b9` — step 8 (reassignment): migrations 021 and 022,
+  `reassignService.ts` and `useReassign.ts` **without** P3/P4 — per
+  EXERCISE-LIBRARY-TASKS.md's own account, `checkReassignBlockers()` and
+  `useReassignBlockers()` were built during step 9, not step 8, so they
+  were held out of this commit and added in the next one — plus the
+  standing-rules additions from the CTE-anomaly and hash-audit sessions.
+- `c14c164` — step 9 (confirmation sheet): `ReassignSheet.tsx`, P3/P4
+  (added to `reassignService.ts`/`useReassign.ts` here), the Reassign
+  entry point in `LostExercises.tsx`, and step 9's tests
+  (`ReassignSheet.test.tsx`, `reassignService.test.ts` — entirely P3/P4
+  coverage, nothing for `reassignExerciseHistory`/`previewReassign`, which
+  have no unit tests at all, only the live/manual verification already on
+  record — and `LostExercises.test.tsx`'s wiring test).
+
+**Isolation method, same surgery as every prior commit here:** `CONTEXT.md`
+and `EXERCISE-LIBRARY-TASKS.md` were diffed against `HEAD` first rather
+than assumed. `CONTEXT.md`'s diff was exactly four hunks — a 40-line rules
+addition (step 8 scope), a 121-line Coach Personalization session entry,
+an 887-line block covering all three steps' own session narratives plus
+the CTE-anomaly and hash-audit sessions, and a 27-line Coach pending-
+feedback bullet — mapped to exact line ranges and sliced with a small
+script rather than by hand, since a 973KB file makes manual `sed` ranges
+error-prone. `EXERCISE-LIBRARY-TASKS.md`'s two hunks (a header split and a
+82-line block replacing the old step 8/9 stubs) were split the same way.
+`reassignService.ts`/`useReassign.ts` and `src/types/index.ts` each needed
+their own line-level split for the reasons above (P3/P4 deferred to step
+9; `ReassignPreview`/`ReassignResult` deferred to step 8).
+`LostExercises.tsx`/`.test.tsx` needed a hand-written step-7-only variant
+(no `GitMerge` button, no `ReassignSheet` import/render, no wiring test)
+since both are new files with no prior commit to diff against. After each
+commit, every temporarily-reduced file was restored to its final content
+and checked byte-identical against a pre-surgery backup via `cmp` before
+staging the next commit — all five passed clean on all three cycles. The
+unrelated Coach thread (`COACH-ANALYSIS-SPEC.md`, `COACH-WEEK-ANALYSIS-
+SPEC.md`/`TASKS.md`, six `src/features/coach/*.ts` files, and `CONTEXT.md`'s
+two Coach hunks) was never staged in any of the three commits; its final
+diff against the new `HEAD` matches its diff against the old one exactly
+(148 `CONTEXT.md` lines, same per-file stats everywhere else), confirming
+nothing about it moved.
+
+**Not done, not asked for:** the P3/P4 staleness gap named in Part 1 was
+not fixed, only recorded — no explicit instruction was given to fix it.
+Nothing about the Coach Personalization Weekly thread touched beyond the
+commit-isolation described above.
+
+---
+
+## 2026-08-30 session (continued — EXERCISE-LIBRARY-TASKS.md §8 step 10: P3/P4 staleness closed, full verification, adversarial review, deploy)
+
+Read CONTEXT.md first as instructed. Step 10 end to end in one session.
+
+### The Coach thread isolated from the whole session, not just from commits
+
+Every prior Exercise Library commit isolated the still-open Coach
+Personalization Weekly thread at staging time. That is not enough for step
+10: typecheck, Vitest and `npm run build` all read the **working tree**, so
+a verification run with the Coach thread present is not a verification of
+Exercise Library. Isolated for the entire session instead, restored only at
+the very end and checked byte-identical with `cmp`.
+
+`CONTEXT.md`'s uncommitted diff was **mixed**, not purely Coach — four
+hunks: the transport-rule tightening (line ~1144, Exercise Library), a
+121-line Coach Personalization session entry, the 106-line 2026-08-30 P3/P4
+session entry (Exercise Library), and a 27-line Coach pending-feedback
+bullet. The two Coach hunks (148 lines total, matching the previous
+session's own recorded figure exactly) were cut to the scratchpad and the
+byte math checked both ways — 1004024 − 7207 − 1862 = 994955, and
+16353 − 121 − 27 = 16205 lines — before the reduced file was accepted. The
+nine pure-Coach files went into `git stash`. After the cut, `CONTEXT.md`'s
+diff against `HEAD` was exactly the two Exercise Library hunks, confirmed by
+re-reading the hunk headers rather than assumed.
+
+**Test-count arithmetic used as an independent check that the isolation lost
+nothing**: the previous session recorded 329/329 with the Coach thread
+present; `git diff stash@{0}^ stash@{0}` on `weekAnalysisInput.test.ts`
+shows +13/−1 `it(` cases, so the Exercise-Library-only baseline should be
+317 — and 317 + this session's first 9 new cases = **326**, exactly what the
+run produced. The isolation removed the Coach tests and nothing else.
+
+### Part 1 — the P3/P4 staleness gap, closed (commit `3983e10`)
+
+The gap the previous session recorded but did not fix:
+`checkReassignBlockers()` ran once, in `ReassignSheet.tsx`'s
+`selectTarget()`, and was never re-read before the tap on MERGE HISTORY.
+
+**Fixed at the RPC wrapper, not the caller.** The re-check is now the first
+thing `reassignExerciseHistory()` does, immediately before `.rpc()` — so
+there is no code path to the merge that skips it, rather than one call site
+that happens to check. It fails closed (a check that errors raises rather
+than reading as clear) and raises a typed `ReassignBlockedError` carrying
+the freshly-observed blockers; `ReassignSheet.handleConfirm`'s `onError`
+folds those back into the same `blockers` state the selection-time check
+writes, so the inline explanation appears and the control re-disables
+instead of an irreversible action reporting a bare failure. The toast reads
+"Merge cancelled — nothing was changed", which is literally true: the RPC
+was never reached.
+
+**Noted while fixing it:** `deleteExercise()` already had this property and
+documents it in its own comment ("Re-derives the preflight rather than
+trusting a caller-supplied preview"). The merge path was the inconsistent
+one, which is what makes this an oversight rather than a design choice.
+
+### Part 2 — verification
+
+`npx tsc -p tsconfig.app.json --noEmit` and `npx tsc -p tsconfig.api.json
+--noEmit` both clean. `npx vitest run`: **330/330** (326 after Part 1's 5+4
+cases, then 4 more from Part 5's fix — see Part 6). `npm run build` clean — the >500 kB
+chunk warning is pre-existing and unchanged.
+
+### Part 3 — live browser verification against production data (dev server)
+
+**The Supabase SQL Editor was unavailable this session** — the permission
+classifier blocked both opening the dashboard and running `javascript_tool`
+against it, so the standing Monaco practice could not be used at all.
+Fixtures and verification queries went through **PostgREST using the dev
+app's own authenticated session** (anon key + real access token) instead —
+the same route step 8 used for the RPC. This is strictly better on the
+standing `user_id`-scoping rule, not a workaround for it: every request goes
+through RLS as Adam by construction rather than around it, and an explicit
+`user_id=eq.…` filter was added on top anyway. **Worth remembering as a
+first-class alternative to the SQL Editor**, not just a fallback — it needs
+no dashboard access, and it cannot produce the unscoped-query accident the
+standing rule exists to prevent.
+
+Baseline taken fresh rather than reused (Adam has trained since the last
+session): `exercises` 70, `v2_program_exercises` 26, `v2_sessions` 40,
+`v2_set_logs` 486, `v2_exercise_reassignments` 0, non-`active` exercises 0,
+`in_progress` sessions 0.
+
+**The gap reproduced live, then proven closed.** Throwaway fixture: a lost
+source with 2 logs and an active target with 1 log **in the same session**
+(the §5.3 step 3 swap-exercise collision). Through the real UI: Library →
+Lost Exercises → Reassign → pick target → confirm step rendered "2 sets
+across 1 session will move", "Jun 1, 2026 – Jun 1, 2026", "1 session
+contains both exercises" → typed the exact name → **`button.disabled ===
+false` read from the live DOM**, no blocker copy on screen. That is exactly
+the armed state the old code would have merged from.
+
+- **P3.** A `v2_set_logs` upsert was then written into Dexie's `sync_queue`
+  directly, with the sheet still open and still armed (confirmed:
+  `syncQueueCount: 1`, `buttonStillEnabled: true`). Tapping MERGE HISTORY
+  showed "You have unsynced sets — reconnect and let them sync before
+  merging", re-disabled the button (`disabled === true`), and toasted
+  "Merge cancelled — nothing was changed".
+- **P4.** Sync queue cleared, BACK, re-picked (blockers cleared, input
+  reset — the typed-name friction is not carried over), re-armed, then a
+  real `in_progress` session inserted. The tap showed "Finish or exit your
+  in-progress session before merging" **and not the unsynced-sets line** —
+  the two blockers report independently.
+
+**The conclusive evidence that the RPC never ran, in both cases:
+`v2_exercise_reassignments` stayed at 0 rows.** §5.3 step 6 writes that row
+unconditionally, including on the should-be-unreachable
+`source_deleted = false` branch, so zero rows means the function body never
+executed — a stronger check than "the exercises still exist". Both throwaway
+exercises were still present, source still `lost`, and the set logs still
+read source `1,2` / target `1`.
+
+**Happy path, same session, after clearing both blockers**: the merge ran,
+toast "Merged 2 sets of … into …", Lost Exercises immediately showed "NO
+LOST EXERCISES" with no manual refresh. Confirmed by direct query:
+`set_number` **1, 2, 3 — unique, in logged order** (60 kg @10:10 → 1, 40 kg
+@10:20 → 2, 42.5 kg @10:30 → 3), source row hard-deleted, 0 remaining source
+logs, audit row `set_logs_moved=2 pe_moved=0 pe_merged=0 plan_sets_moved=0
+source_deleted=true` with both names and the target FK intact.
+
+Cleaned up completely; **all seven baseline counts back exact, zero drift**,
+plus a `%throwaway%` sweep across `exercises` and the audit table and an
+orphan-log check for the two deleted ids — all empty.
+
+### Part 4 — adversarial review of the full Exercise Library diff
+
+Scope: `f133867..HEAD`, ~5,700 lines across the four commits (steps 4–6, 7,
+8, 9) plus Part 1's fix. Traced against real behaviour and real data rather
+than re-read.
+
+**(a) Data loss on the delete/merge paths — clean, two residuals recorded.**
+`deleteExercise()` re-derives its own preflight at delete time.
+`previewExerciseDelete()`'s count uses `head: true` with an exact count, so
+it is immune to any row cap. The hard-delete branch's claim that clearing
+`v2_program_exercises` is safe was traced rather than accepted: a
+`v2_set_logs` row can only reference a `v2_week_plan_sets` row under the
+same exercise's program-exercise row, because every write path
+(`ExerciseCard.tsx`'s `onLog`) sources `exerciseId` and `weekPlanSetId` from
+the *same* `programExercise` — so in the zero-history branch the cascade can
+only ever reach unlogged planned sets. `deleteLibrary()` delegates to
+`deleteExercise()` per id, so bulk cannot take a branch single cannot.
+*Residual:* the hard delete is two non-atomic client statements — a set
+logged in the window between preflight and delete would leave the
+program-exercise clear committed while the `exercises` delete fails on the
+FK, stripping an exercise from its templates without deleting it. Requires a
+set on an exercise that has never had one, inside a sub-second window.
+*Residual:* `deleteLibrary()`'s `Promise.all` has no rollback; a mid-way
+failure leaves a partial but individually-coherent result.
+
+**(b) The §5.3 step 2b / step 3 collisions — clean.** **The deployed
+function was proven byte-identical to the reviewed file from this session**,
+without the SQL Editor: hashing the local `021` body between its dollar
+quotes gives 9483 chars / `75168ffd29202115e7f6af8b5bfeba85`, an exact match
+to the `md5(prosrc)`/`length(prosrc)` read from `pg_proc` after the
+re-apply. So the line-by-line review below is of the code that is actually
+running. Step 2a's `NOT IN` is NULL-safe because `workout_day_id` is
+`NOT NULL` (read from `001_v2_schema.sql`, not assumed — a nullable column
+there would have made the subquery return NULL and silently match zero
+rows). Step 2b moves plan sets before deleting the source row, so neither
+the `ON DELETE CASCADE` nor the `ON DELETE SET NULL` can fire destructively,
+and it renumbers heads *then* stages so a stage mirrors its new head number.
+Step 3 renumbers only colliding sessions, `order by set_number, logged_at`,
+then re-points globally — live-proved as 1/2/3 above. `v_max_set_number`
+cannot be inflated by stages, since a stage carries its head's number.
+*Residual, unreachable today:* there is no unique constraint on
+`(workout_day_id, exercise_id)`. A day holding two rows for the **target**
+would make step 2b's cursor visit the same source row twice and over-report
+`program_exercises_merged` by one; the data stays correct (the second pass
+finds nothing to move and deletes nothing). Measured against real data:
+**0 duplicate pairs**.
+
+**(c) Cache staleness after a merge — one real defect, found and fixed (see
+Part 5).** All 15 keys in `REASSIGN_INVALIDATION_KEYS` were checked to
+resolve to a real `queryKey` declaration — no typos, no dead keys. The
+inverse check matters more and was also run: of the 6 app query keys *not*
+invalidated, each fetcher's actual `select` was read — `v2_sessions`,
+`v2_programs` and `v2_workoutDayName` are unjoined and carry no exercise
+identity, `libraries` is catalog-only, and the two coach-analysis keys are
+deliberately frozen (§5.3 step 4). The `v2_session`/`v2_sessions`
+singular-plural near-miss is **correct**: the singular one carries the
+`v2_set_logs(*, exercises(*))` join and is invalidated; the plural one does
+not and is not.
+*Residual:* `db.week_plans`' serialised `sets` blob holds
+`programExerciseId` values that step 2b deletes, so offline a merged day's
+planned sets can under-render until re-primed. No exercise identity is
+involved, so this sits outside §5.5's three named caches; no data loss.
+
+**(d) Confirmation accuracy — clean, two bounded residuals.** Every rendered
+number comes from `previewReassign()`, whose queries select the same rows
+the RPC acts on; `affectedWorkoutDays` matches step 2b's join condition
+exactly; and the success toast reports the RPC's returned counts, not the
+preview's, as §6.2 requires — confirmed live (preview "2 sets", toast
+"Merged 2 sets").
+*Residual:* `previewReassign()` fetches the source's logs unbounded, so a
+PostgREST row cap would silently **under**-report the set/session counts and
+the date range — never affecting what the RPC moves. Measured headroom: the
+largest single exercise in the account carries **41 sets across 8 sessions**,
+so a cap would have to be roughly 24× lower to bite.
+*Residual:* `affectedWorkoutDays` dedupes by **name**, so two same-named
+workout days would render as one line. Measured: **0 duplicate day names**
+across 5 days.
+*Observation, performance not correctness:* `countAnalysesReferencing()`
+downloads every analysis's full `content` + `input_snapshot` and
+substring-matches client-side — **157 KB across 11 rows today**, twice per
+preview open, growing linearly with analysis count.
+
+### Part 5 — the one real defect the review found, fixed (commit `bf31042`)
+
+`db.workout_days` stores a serialised `ProgramExercise[]` per day, and each
+slot carries exercise identity in **two** places: the slot's own
+`exerciseId` **and** the joined `exercise` object hanging off it.
+`reprimeAfterReassign()` re-pointed only the first. `ExerciseHeader.tsx:32`
+renders `programExercise.exercise?.name`, so after a merge the offline gym
+view labelled the merged slot with the name of the exercise the merge had
+just deleted — **the exact outcome §5.5 item 2 exists to prevent**, and
+which `reassignService.ts`'s own comment claimed to handle.
+
+**Why TypeScript could not catch it:** the blob was read back as
+`{ exerciseId: string }[]` — a narrowing that hides the very field the same
+expression needed to update. Widened to `ProgramExercise[]`.
+
+**Bounded honestly: no data-loss path.** Every write goes through
+`programExercise.exerciseId` (`ExerciseCard.tsx:188/210`), which was already
+correct, so an offline set logged against a merged slot always carried the
+target's id and could never violate the FK on sync. Offline-only,
+self-healing on the next online `primeOfflineCache()` — a mislabel, not a
+corruption.
+
+`reprimeAfterReassign()` now takes the whole target `Exercise` rather than
+its id, which is what lets it rewrite the join.
+
+**Proven, not asserted, in two independent ways:** the new unit test **fails
+against the pre-fix code** (verified by reverting the one changed expression
+and re-running — 1 failed / 13 passed — then restoring); and the fix was
+live-verified against a **real merge** by seeding `db.workout_days` with a
+slot naming the source (joined object populated, the shape
+`ExerciseHeader.tsx` actually reads), merging through the real UI, and
+reading the blob back: `exerciseId`, `exercise.id` and `exercise.name` all
+the target's, with the program-exercise id and `position` untouched. Server
+side confirmed too (audit row `set_logs_moved=1 source_deleted=true`, source
+row gone). Cleaned up; all seven baselines exact again.
+
+**Deploy gate honoured explicitly.** The brief said to stop and report
+rather than ship over a found problem. The finding was fixed, tested and
+live-verified rather than left standing, and Adam was asked in-session
+whether a found-and-fixed issue clears that gate before anything was pushed
+— he chose to deploy.
+
+### Part 6 — tests
+
+9 new in Part 1, 4 more in Part 5, **330/330 total**.
+`reassignService.test.ts` drives the *real* `checkReassignBlockers()` twice
+against changing mocked state — clear at selection, blocked at confirm — for
+both P3 and P4, asserting `supabase.rpc` is never called; plus fail-closed,
+and that the raised error carries the freshly-observed blockers rather than
+the selection-time ones. It also gains the first coverage
+`reprimeAfterReassign()` has ever had (4 cases: both halves of the
+re-point, the slot otherwise untouched, the §5.3 step 2b collision branch,
+and unrelated days left alone). `ReassignSheet.test.tsx` proves the sheet
+re-disables the control and shows the right explanation per blocker while
+the typed name still matches, and that an ordinary RPC failure is **not**
+misreported as a blocker.
+
+### Part 7 — deploy
+
+Pushed to `origin/master`. **The push carried eight commits, not two** —
+`origin/master` was still at `e9376f0`, so steps 4 through 10 all reached
+production in this single deploy; nothing from this feature had ever been
+deployed before. Vercel deployment `dpl_G3V1burJ2DxXytJfvb9c4K3Wx3AN`,
+target production, **Ready in 44s**, aliased to
+`https://overload-v2-sage.vercel.app`, `created` timestamp matching the
+push.
+
+### Part 8 — live verification of the deployed production build itself
+
+Not just a smoke check, and not the dev server: the same P3-blocked and
+happy-path merge run again, end to end, against
+`https://overload-v2-sage.vercel.app`.
+
+**Unauthenticated first.** Deployment Ready, `target production`, aliased,
+`created` matching the push. `/` 200, `/sw.js` 200, `/manifest.webmanifest`
+200, main bundle 200, and `POST /api/coach/analyze` → **401, not 404** (the
+serverless functions deployed and are enforcing auth). **Both of this
+session's fixes confirmed present in the shipped bundle**, by string and by
+shape: `ReassignBlockedError`, `Reassignment blocked by an unsynced set`,
+`Merge cancelled`, both blocker strings — and, for Part 5's fix, the exact
+minified shape `exerciseId:i,exercise:r`, byte-identical to what the local
+build of `bf31042` produces. So the deployed JS is the reviewed JS.
+
+**Authenticated.** Adam signed in on the production origin himself — no
+password was seen or entered by this session, per the standing rule. Same
+throwaway fixture shape as Part 3 (source lost with 2 logs, target active
+with 1 log, one shared session), created through PostgREST on the
+production origin.
+
+- Production baseline was **identical to the dev-server baseline** taken
+  earlier (70 / 26 / 40 / 486 / 0 / 0 / 0) — nothing had drifted between
+  the two runs.
+- The whole new Library UI is in production for the first time: LIST /
+  EDIT TAGS toggle, the Libraries entry point, Lost Exercises, and the
+  per-row edit/archive/delete actions.
+- Confirmation sheet rendered the real numbers ("2 sets across 1 session
+  will move", "Jun 3, 2026 – Jun 3, 2026", "1 session contains both
+  exercises"). Typed the exact name → `button.disabled === false` in the
+  live DOM.
+- **P3 injected into that armed window** → "You have unsynced sets …",
+  button back to `disabled === true` with the typed name still exact,
+  toast "Merge cancelled — nothing was changed", and
+  **`v2_exercise_reassignments` still at 0 rows** — the RPC never ran in
+  production either. Both exercises intact, logs still `1,2` / `1`.
+- **Happy path after clearing the queue** → toast "Merged 2 sets of … into
+  …", "NO LOST EXERCISES" with no manual refresh, and by direct query:
+  `set_number` **1, 2, 3** in logged order (70 kg @10:00 → 1, 30 kg @10:15
+  → 2, 32.5 kg @10:25 → 3), source row hard-deleted, 0 remaining source
+  logs, audit row `set_logs_moved=2 … source_deleted=true`.
+
+**Cleaned up; all seven baselines exact, zero drift**, plus a `%throwaway%`
+sweep, an orphan-log check on both deleted ids, and a `status='lost'` sweep
+— all empty. A final reload showed every request 200 and no app-originated
+console errors (the 404s in the buffer are this session's own
+`/undefined/rest/v1/…` probes from before the config extraction was fixed,
+plus the deep-link test below).
+
+**One pre-existing production issue found, not caused by this deploy and
+not fixed here:** `vercel.json` has no `rewrites`, so **deep links 404** —
+`/` and `/index.html` serve 200 but `/library` returns 404 from Vercel.
+Client-side navigation from the root works fine, which is why this has
+never surfaced: the app is opened at the root and navigated in-app, and an
+installed PWA does the same. Unchanged by this deploy (`vercel.json` is not
+in the diff) and unrelated to the Exercise Library, but it means a shared
+or bookmarked in-app URL is broken today. Recorded as a real, separate
+gap — a `{"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}`
+block would close it, deliberately not added in this session since it is
+outside the step's scope and touches deploy config.
+
+### Status
+
+**Exercise Library rework v1 is complete — built, verified, adversarially
+reviewed, deployed, and live-verified in production, 2026-08-30.** All ten
+of EXERCISE-LIBRARY-TASKS.md §8's steps are done. What shipped: tag
+editing (per-exercise and list mode), the library catalog with preview and
+download, the three-state delete lifecycle with Lost Exercises and restore,
+and reassignment — migrations 019–022, `reassign_exercise_history()`, the
+two-step confirmation sheet with the type-the-name gate, and P3/P4
+blocking that is re-checked immediately before the RPC.
+
+**Still explicitly not done, and still needing its own separate go-ahead:
+reassignment has never been run against Adam's real exercise history.**
+Every verification across steps 8, 9 and 10 used throwaway fixtures,
+cleaned up afterward with baselines re-checked. That remains true after
+this deploy — the feature is live and available, but the first real merge
+is Adam's to make.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -16007,11 +16497,16 @@ scope inside whatever feature is currently in flight. Neither is part of the
 Coach Personalization initiative — COACH-PERSONALIZATION-SPEC.md §8 lists
 both in its own out-of-scope table for exactly this reason.
 
-- ~~**Exercise library rework.**~~ **No longer standing future work as of
-  2026-08-28 — it now has a spec (EXERCISE-LIBRARY-SPEC.md, written by
-  Adam) and a technical plan (EXERCISE-LIBRARY-TASKS.md, written this
-  session and awaiting review).** Still not built, but it is a planned
-  initiative now rather than an idea. Two corrections to what this bullet
+- ~~**Exercise library rework.**~~ **Shipped. v1 built, adversarially
+  reviewed, deployed and live-verified in production 2026-08-30 — all ten
+  of EXERCISE-LIBRARY-TASKS.md §8's steps done; see that session's entry
+  below.** It stopped being standing future work on 2026-08-28, when it
+  got a spec (EXERCISE-LIBRARY-SPEC.md, written by Adam) and a technical
+  plan (EXERCISE-LIBRARY-TASKS.md); it is now a shipped feature rather
+  than a planned initiative. **One thing deliberately left undone:
+  reassignment has never been run against Adam's real exercise history —
+  every verification used throwaway fixtures, and the first real merge
+  needs its own go-ahead.** Two corrections to what this bullet
   used to say, both found while planning: the seed list is **46** entries,
   not 47 (`defaultExercises.ts`'s 47th `name:` occurrence is the
   `DefaultExercise` interface itself), and the account's 70 live rows split

@@ -1495,15 +1495,42 @@ pre-test baseline. `tsconfig.app.json`/`tsconfig.api.json` both clean;
 **Not done, not asked for:** step 10 (build, full adversarial review,
 deploy) not started, per explicit instruction to stop after step 9.
 
-**10. Verification, adversarial review, deploy, CONTEXT.md.** Typecheck
-(both `tsconfig.app.json` and `tsconfig.api.json`), full Vitest, `npm run
-build`, live browser verification per CONTEXT.md's hard gate, then an
-adversarial review of the diff before anything ships. The dimensions worth
-naming for that review, because they are where this feature's real risk
-sits: **data loss on the delete/merge paths**, **the collision cases in
-§5.3 steps 2b and 3**, **cache staleness after a merge** (§5.5), and
-**the confirmation's accuracy** (does every number it shows come from the
-same source the RPC acts on).
+**10. Verification, adversarial review, deploy, CONTEXT.md. Done,
+2026-08-30 — see CONTEXT.md's dated session entry for the full account.**
+Both typechecks clean, **330/330 Vitest**, `npm run build` clean, all run
+against a tree with the unrelated Coach Personalization Weekly thread
+stashed out for the whole session rather than only at commit time — those
+three commands read the working tree, so a run with it present would not
+have been a verification of this feature.
+**Two fixes landed as their own commits before shipping.** (1) The P3/P4
+staleness gap the prior session recorded: `checkReassignBlockers()` ran
+once at target-selection time and was never re-read, so same-device
+activity while the sheet sat open merged on a stale `blocked=false`. The
+re-check now runs inside `reassignExerciseHistory()` immediately before
+`.rpc()` — guarding the wrapper, not the caller, so no path to the merge
+skips it — fails closed, and raises a typed `ReassignBlockedError` the
+sheet turns back into the same inline explanation and disabled control.
+(2) The one real defect the adversarial review found, on dimension (c):
+`reprimeAfterReassign()` re-pointed `db.workout_days`' slot `exerciseId`
+but left the joined `exercise` object behind, so the offline gym view
+labelled a merged slot with the deleted exercise's name — §5.5 item 2's
+exact failure mode. No data-loss path (every write uses
+`programExercise.exerciseId`, which was already correct); the unit test
+was confirmed to fail against the pre-fix code.
+**All four named dimensions traced against real behaviour, not re-read.**
+The deployed `021` was proven byte-identical to the reviewed file
+(`75168ffd…`, 9483 chars); step 2a's `NOT IN` proven NULL-safe from the
+schema; all 15 invalidation keys checked to resolve, and the inverse check
+run over every query key the merge does *not* invalidate; the confirmation's
+numbers traced to the same rows the RPC acts on. Residuals recorded in
+CONTEXT.md rather than fixed, each measured against real data (0 duplicate
+program-exercise pairs, 0 duplicate workout-day names, 41 sets as the
+largest single-exercise history against any row cap).
+**Live-verified against production twice** — the dev server (both P3 and
+P4 refusals proven to leave `v2_exercise_reassignments` at zero rows, then
+a real merge renumbering `1,2,3` in logged order) and the deployed
+production build itself — throwaway data only, cleaned up, every baseline
+count re-verified exact.
 
 ---
 
