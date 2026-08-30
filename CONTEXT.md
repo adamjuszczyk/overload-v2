@@ -16696,6 +16696,32 @@ Recorded as a docs-only commit — nothing to typecheck/test/build
 differently, so verification for this part is the read/query above, not
 a build step.
 
+### Part 2 — `/library` 404 on direct navigation, fixed
+
+Flagged, not fixed, at the end of the Exercise Library step-10 deploy
+(this file, above): `vercel.json` had no `rewrites`, so any client-side
+route besides `/` 404s in production on direct navigation or refresh —
+invisible until now because the app has only ever been opened at root.
+Added the standard Vercel SPA catch-all:
+
+```json
+"rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+```
+
+Deliberately the simplest form, not a negative-lookahead exclusion list —
+Vercel's own documented routing order checks the filesystem (static
+assets in the build output) and Serverless Functions (everything under
+`api/`) *before* applying `rewrites`, so a real file or a real function
+still wins over the catch-all; only a path matching neither falls through
+to `index.html`. `tsc -p tsconfig.app.json --noEmit` and `tsc -p
+tsconfig.api.json --noEmit` both clean, full Vitest suite **342/342**,
+`npm run build` clean (`vercel.json` isn't typechecked or bundled, so this
+just confirms the fix didn't disturb anything else). Live confirmation —
+`/library` actually returning 200, and the rewrite *not* swallowing
+`/api/coach/analyze-week`, `/sw.js`, or the manifest — recorded separately
+below once the deploy that carries this commit is actually live, not
+assumed from the documented routing order alone.
+
 ---
 
 ## Pending feedback to address
