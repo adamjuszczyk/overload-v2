@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { db } from '../../lib/db'
-import type { ReassignPreview, ReassignResult } from '../../types'
+import type { Exercise, ProgramExercise, ReassignPreview, ReassignResult } from '../../types'
 
 // P3/P4 (§5.2) — the blocking preflights, checked right before the
 // confirmation sheet allows the tap rather than surfacing as a failure
@@ -184,7 +184,9 @@ async function countAnalysesReferencing(
 // otherwise keep showing the pre-merge world offline until an unrelated
 // event happened to touch them. No Dexie version bump — row content only.
 
-export async function reprimeAfterReassign(sourceId: string, targetId: string): Promise<void> {
+export async function reprimeAfterReassign(sourceId: string, target: Exercise): Promise<void> {
+  const targetId = target.id
+
   // db.exercises — the source identity no longer exists once merged; drop
   // it rather than guess a replacement value.
   await db.exercises.delete(sourceId)
@@ -199,21 +201,32 @@ export async function reprimeAfterReassign(sourceId: string, targetId: string): 
   await db.set_logs.where('exerciseId').equals(sourceId).delete()
 
   // db.workout_days — the serialised ProgramExercise[] blob embeds joined
-  // exercise identity per slot (§1). Re-point any slot naming the source;
-  // if the day already had a slot for the target (the §5.3 step 2b merge
+  // exercise identity per slot (§1), in TWO places: the slot's own
+  // exerciseId AND the joined `exercise` object hanging off it. Re-pointing
+  // only the id leaves the join naming the exercise the merge just deleted,
+  // and ExerciseHeader.tsx renders `programExercise.exercise?.name` — so the
+  // offline gym view would label the merged slot with the dead exercise,
+  // which is the exact outcome §5.5 item 2 exists to prevent. Both are
+  // re-pointed together here, which is why this takes the whole target
+  // Exercise rather than just its id.
+  //
+  // If the day already had a slot for the target (the §5.3 step 2b merge
   // collision), drop the source's (now server-deleted) slot instead of
-  // producing two slots for one exercise.
+  // producing two slots for one exercise — the surviving slot already
+  // carries the target's own correct join.
   const days = await db.workout_days.toArray()
   await Promise.all(
     days.map(async (day) => {
-      const exercises = day.exercises as { exerciseId: string }[] | undefined
+      const exercises = day.exercises as ProgramExercise[] | undefined
       if (!Array.isArray(exercises)) return
       const hasSource = exercises.some((pe) => pe.exerciseId === sourceId)
       if (!hasSource) return
       const hasTarget = exercises.some((pe) => pe.exerciseId === targetId)
       const next = hasTarget
         ? exercises.filter((pe) => pe.exerciseId !== sourceId)
-        : exercises.map((pe) => (pe.exerciseId === sourceId ? { ...pe, exerciseId: targetId } : pe))
+        : exercises.map((pe) =>
+            pe.exerciseId === sourceId ? { ...pe, exerciseId: targetId, exercise: target } : pe,
+          )
       await db.workout_days.update(day.id, { exercises: next })
     }),
   )

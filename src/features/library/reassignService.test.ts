@@ -14,11 +14,24 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 const syncQueueCountMock = vi.fn()
+const workoutDaysToArrayMock = vi.fn()
+const workoutDaysUpdateMock = vi.fn()
+const exercisesDeleteMock = vi.fn()
+const setLogsDeleteMock = vi.fn()
 vi.mock('../../lib/db', () => ({
-  db: { sync_queue: { count: (...args: unknown[]) => syncQueueCountMock(...args) } },
+  db: {
+    sync_queue: { count: (...args: unknown[]) => syncQueueCountMock(...args) },
+    exercises: { delete: (...args: unknown[]) => exercisesDeleteMock(...args) },
+    // where('exerciseId').equals(id).delete() — the one chained Dexie call here.
+    set_logs: { where: () => ({ equals: () => ({ delete: (...a: unknown[]) => setLogsDeleteMock(...a) }) }) },
+    workout_days: {
+      toArray: (...args: unknown[]) => workoutDaysToArrayMock(...args),
+      update: (...args: unknown[]) => workoutDaysUpdateMock(...args),
+    },
+  },
 }))
 
-const { checkReassignBlockers, reassignExerciseHistory, ReassignBlockedError } = await import('./reassignService')
+const { checkReassignBlockers, reassignExerciseHistory, ReassignBlockedError, reprimeAfterReassign } = await import('./reassignService')
 
 // A thenable stand-in for supabase-js's query builder, matching
 // exerciseService.test.ts's makeChain — `.select(..., {count, head:true})`
@@ -37,6 +50,10 @@ beforeEach(() => {
   fromMock.mockReset()
   rpcMock.mockReset()
   syncQueueCountMock.mockReset()
+  workoutDaysToArrayMock.mockReset()
+  workoutDaysUpdateMock.mockReset()
+  exercisesDeleteMock.mockReset()
+  setLogsDeleteMock.mockReset()
 })
 
 const RPC_ROW = {
@@ -179,5 +196,75 @@ describe('reassignExerciseHistory — P3/P4 re-checked immediately before the RP
 
     await expect(reassignExerciseHistory('src-1', 'tgt-1')).rejects.toThrow('offline')
     expect(rpcMock).not.toHaveBeenCalled()
+  })
+})
+
+// §5.5 item 2 — db.workout_days' serialised ProgramExercise[] blob carries
+// exercise identity in two places per slot: the slot's own exerciseId AND the
+// joined `exercise` object. Re-pointing only the first leaves the offline gym
+// view rendering the name of the exercise the merge just deleted, since
+// ExerciseHeader.tsx reads programExercise.exercise?.name — the precise
+// outcome §5.5 exists to prevent. Found by §8 step 10's adversarial review.
+describe('reprimeAfterReassign — the offline workout-day blob (§5.5 item 2)', () => {
+  const TARGET = {
+    id: 'tgt-1', userId: 'u1', name: 'Incline Smith Press', muscleGroup: 'chest',
+    isArchived: false, createdAt: '2026-01-01T00:00:00Z', muscleSubgroups: null,
+    movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null,
+  } as never
+
+  function slot(exerciseId: string, name: string) {
+    return {
+      id: 'pe-' + exerciseId, workoutDayId: 'day-1', userId: 'u1', exerciseId,
+      exercise: { id: exerciseId, userId: 'u1', name, muscleGroup: 'chest', isArchived: false },
+      position: 0, targetReps: null, weightUnit: null,
+    }
+  }
+
+  it('re-points BOTH the slot id and its joined exercise object', async () => {
+    workoutDaysToArrayMock.mockResolvedValue([{ id: 'day-1', exercises: [slot('src-1', 'Chest Press')] }])
+
+    await reprimeAfterReassign('src-1', TARGET)
+
+    const [dayId, changes] = workoutDaysUpdateMock.mock.calls[0]
+    expect(dayId).toBe('day-1')
+    expect(changes.exercises[0].exerciseId).toBe('tgt-1')
+    // The half-fix this test exists to catch: id updated, join left behind.
+    expect(changes.exercises[0].exercise.id).toBe('tgt-1')
+    expect(changes.exercises[0].exercise.name).toBe('Incline Smith Press')
+  })
+
+  it('keeps the slot itself otherwise intact — position and pe id are unchanged', async () => {
+    const original = { ...slot('src-1', 'Chest Press'), position: 3 }
+    workoutDaysToArrayMock.mockResolvedValue([{ id: 'day-1', exercises: [original] }])
+
+    await reprimeAfterReassign('src-1', TARGET)
+
+    const changed = workoutDaysUpdateMock.mock.calls[0][1].exercises[0]
+    expect(changed.id).toBe('pe-src-1')
+    expect(changed.position).toBe(3)
+  })
+
+  it('on a §5.3 step 2b collision drops the source slot rather than producing two for one exercise', async () => {
+    workoutDaysToArrayMock.mockResolvedValue([
+      { id: 'day-1', exercises: [slot('src-1', 'Chest Press'), slot('tgt-1', 'Incline Smith Press')] },
+    ])
+
+    await reprimeAfterReassign('src-1', TARGET)
+
+    const next = workoutDaysUpdateMock.mock.calls[0][1].exercises
+    expect(next).toHaveLength(1)
+    expect(next[0].exerciseId).toBe('tgt-1')
+  })
+
+  it('leaves days that never listed the source untouched', async () => {
+    workoutDaysToArrayMock.mockResolvedValue([{ id: 'day-2', exercises: [slot('other-1', 'Dips')] }])
+
+    await reprimeAfterReassign('src-1', TARGET)
+
+    expect(workoutDaysUpdateMock).not.toHaveBeenCalled()
+    // The other two caches are unconditional — the source identity is gone
+    // server-side either way.
+    expect(exercisesDeleteMock).toHaveBeenCalledWith('src-1')
+    expect(setLogsDeleteMock).toHaveBeenCalled()
   })
 })

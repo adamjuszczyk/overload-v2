@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import type { Exercise } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import { previewReassign, reassignExerciseHistory, reprimeAfterReassign, checkReassignBlockers } from './reassignService'
 
@@ -38,11 +39,14 @@ const REASSIGN_INVALIDATION_KEYS: readonly string[] = [
   'v2_sessionTypeHistory',
 ]
 
+// Takes the whole target Exercise, not just its id: reprimeAfterReassign has
+// to rewrite the joined exercise object embedded in db.workout_days' slots,
+// not only the slot's exerciseId (see reassignService.ts).
 export function useReassignExerciseHistory() {
   return useMutation({
-    mutationFn: async ({ sourceId, targetId }: { sourceId: string; targetId: string }) => {
-      const result = await reassignExerciseHistory(sourceId, targetId)
-      await reprimeAfterReassign(sourceId, targetId)
+    mutationFn: async ({ sourceId, target }: { sourceId: string; target: Exercise }) => {
+      const result = await reassignExerciseHistory(sourceId, target.id)
+      await reprimeAfterReassign(sourceId, target)
       return result
     },
     onSuccess: () => {

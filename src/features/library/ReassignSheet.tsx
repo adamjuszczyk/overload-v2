@@ -114,7 +114,7 @@ export default function ReassignSheet({ sourceExercise, onClose }: ReassignSheet
     if (!pending) return
     const targetName = pending.name
     reassign.mutate(
-      { sourceId: sourceExercise.id, targetId: pending.id },
+      { sourceId: sourceExercise.id, target: pending },
       {
         onSuccess: (result) => {
           showToast(

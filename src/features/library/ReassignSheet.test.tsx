@@ -259,8 +259,10 @@ describe('ReassignSheet — the typed-name confirm gate (§6.2/§11.1)', () => {
     fireEvent.change(input, { target: { value: 'Incline Smith Press' } })
     fireEvent.click(screen.getByRole('button', { name: 'MERGE HISTORY' }))
 
+    // The whole target Exercise, not just its id — reprimeAfterReassign needs
+    // it to rewrite the joined exercise object in db.workout_days' slots.
     expect(reassignMutateMock).toHaveBeenCalledWith(
-      { sourceId: 'src-1', targetId: 'tgt-1' },
+      { sourceId: 'src-1', target: TARGET },
       expect.anything(),
     )
   })
