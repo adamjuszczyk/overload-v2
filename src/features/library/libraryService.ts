@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { withUserLock } from '../../lib/locks'
-import { fetchExercises, diffNewByName } from './exerciseService'
+import { fetchExercises, diffNewByName, previewExerciseDelete, deleteExercise } from './exerciseService'
 import type { ExerciseLibrary, ExerciseLibraryItem, MuscleSubgroup, MovementPattern } from '../../types'
 
 // v2_exercise_libraries / v2_exercise_library_items (migration 019,
@@ -109,4 +109,50 @@ export async function downloadLibrary(
 
     return { added: toAdd.length, skipped: items.length - toAdd.length }
   })
+}
+
+// "Delete a library" means delete *my copies* of its exercises, never the
+// catalog row (EXERCISE-LIBRARY-TASKS.md §9.1 — v2_exercise_libraries has
+// no write policy at all, so the app is structurally incapable of the other
+// reading). It is a bulk version of the single exercise delete, not a
+// separate mechanism: every currently-active exercise sourced from this
+// library independently either hard-deletes (zero history) or moves to
+// 'lost' (§9.2). Already-lost exercises from this library are left alone —
+// they've already had this decision made for them.
+async function fetchActiveExerciseIdsFromLibrary(libraryId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('exercises')
+    .select('id')
+    .eq('source_library_id', libraryId)
+    .eq('status', 'active')
+  if (error) throw error
+  return (data as { id: string }[]).map((row) => row.id)
+}
+
+export interface LibraryDeletePreview {
+  toDeleteCount: number
+  toLostCount: number
+}
+
+// The split preview (§6.3/§9.2) — must be shown before the action is
+// confirmed, since which exercises will hard-delete versus move to Lost is
+// not predictable from outside. Reuses previewExerciseDelete per exercise
+// rather than a parallel bulk query, so a library delete and a single
+// delete can never disagree about which branch a given exercise takes.
+export async function previewLibraryDelete(libraryId: string): Promise<LibraryDeletePreview> {
+  const ids = await fetchActiveExerciseIdsFromLibrary(libraryId)
+  const previews = await Promise.all(ids.map((id) => previewExerciseDelete(id)))
+  return {
+    toDeleteCount: previews.filter((p) => p.outcome === 'gone').length,
+    toLostCount: previews.filter((p) => p.outcome === 'lost').length,
+  }
+}
+
+export async function deleteLibrary(libraryId: string): Promise<{ deleted: number; lost: number }> {
+  const ids = await fetchActiveExerciseIdsFromLibrary(libraryId)
+  const outcomes = await Promise.all(ids.map((id) => deleteExercise(id)))
+  return {
+    deleted: outcomes.filter((o) => o === 'gone').length,
+    lost: outcomes.filter((o) => o === 'lost').length,
+  }
 }

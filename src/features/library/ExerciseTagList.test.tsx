@@ -24,6 +24,9 @@ const EXERCISE: Exercise = {
   createdAt: '2026-01-01T00:00:00Z',
   muscleSubgroups: ['mid_chest'],
   movementPattern: 'horizontal_push',
+  status: 'active',
+  sourceLibraryId: null,
+  lostAt: null,
 }
 
 describe('ExerciseTagList', () => {

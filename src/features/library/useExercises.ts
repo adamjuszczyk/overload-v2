@@ -10,6 +10,10 @@ import {
   setExerciseArchived,
   fetchExerciseCount,
   seedDefaultExercisesIfEmpty,
+  fetchLostExercises,
+  previewExerciseDelete,
+  deleteExercise,
+  restoreExercise,
   type ExerciseTagFields,
 } from './exerciseService'
 
@@ -59,6 +63,42 @@ export function useSetExerciseArchived() {
   return useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       setExerciseArchived(id, archived),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
+  })
+}
+
+// Lost Exercises (§8 step 7) — a dedicated list, not a filtered view of
+// useExercises(): fetchExercises() always excludes status = 'lost' (§2.3),
+// so this is the only place those rows are ever read back.
+export function useLostExercises() {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['exercises', 'lost'],
+    queryFn: fetchLostExercises,
+    enabled: !!user,
+  })
+}
+
+// An on-demand preview, not a cached query — fired once, right before a
+// confirm dialog opens, so useMutation's isPending/data shape fits better
+// here than useQuery's background-refetch one.
+export function useExerciseDeletePreview() {
+  return useMutation({ mutationFn: (id: string) => previewExerciseDelete(id) })
+}
+
+// Invalidating the whole ['exercises'] key (not just ['exercises', false])
+// refreshes both the active list and the Lost list in one go — exactly the
+// two lists a delete moves a row between.
+export function useDeleteExercise() {
+  return useMutation({
+    mutationFn: (id: string) => deleteExercise(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
+  })
+}
+
+export function useRestoreExercise() {
+  return useMutation({
+    mutationFn: (id: string) => restoreExercise(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['exercises'] }),
   })
 }

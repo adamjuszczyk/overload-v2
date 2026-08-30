@@ -24,6 +24,9 @@ type DbExercise = {
   created_at: string
   muscle_subgroup: MuscleSubgroup[] | null
   movement_pattern: MovementPattern | null
+  status: string
+  source_library_id: string | null
+  lost_at: string | null
 }
 
 type DbSetLog = {
@@ -88,6 +91,9 @@ function toSetLog(row: DbSetLog): SetLog {
           createdAt: row.exercises.created_at,
           muscleSubgroups: row.exercises.muscle_subgroup,
           movementPattern: row.exercises.movement_pattern,
+          status: row.exercises.status === 'lost' ? 'lost' : 'active',
+          sourceLibraryId: row.exercises.source_library_id,
+          lostAt: row.exercises.lost_at,
         }
       : undefined,
     weekPlanSetId: row.week_plan_set_id,

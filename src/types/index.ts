@@ -18,6 +18,17 @@ export type WeightUnit = 'kg' | 'lbs'
 
 // ─── Exercise ─────────────────────────────────────────────────────────────────
 
+// The two stored values (exercises.status, migration 019, not null default
+// 'active') — every real row is one or the other, never both, never neither
+// (EXERCISE-LIBRARY-TASKS.md §2.3/§7.1).
+export type ExerciseStatus = 'active' | 'lost'
+
+// All three real-world states, including 'gone' — a hard-deleted row has no
+// row left to carry a status, so 'gone' is a value the *type* layer can name
+// (a delete-preview result, e.g.) that the *column* never holds
+// (EXERCISE-LIBRARY-TASKS.md §0.3/§7.1).
+export type ExerciseLifecycle = ExerciseStatus | 'gone'
+
 export interface Exercise {
   id: string
   userId: string
@@ -31,6 +42,13 @@ export interface Exercise {
   // untagged convention ExerciseTags below already uses.
   muscleSubgroups: MuscleSubgroup[] | null
   movementPattern: MovementPattern | null
+  // exercises.status / .source_library_id / .lost_at (migration 019,
+  // EXERCISE-LIBRARY-TASKS.md §7.2/§8 step 7) — the Lost Exercises lifecycle
+  // and library provenance. sourceLibraryId is null for a hand-created
+  // exercise; lostAt is null exactly when status is 'active'.
+  status: ExerciseStatus
+  sourceLibraryId: string | null
+  lostAt: string | null
 }
 
 // ─── Exercise Library ─────────────────────────────────────────────────────────

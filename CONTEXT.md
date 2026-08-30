@@ -15028,6 +15028,273 @@ the tag-editing UI, this session's new tests, and step 6's new files) sits
 uncommitted together, ready for an explicit commit instruction. Nothing
 about the unrelated Coach Personalization Weekly thread touched.
 
+## 2026-08-29 session (continued — steps 4-6 committed, then
+EXERCISE-LIBRARY-TASKS.md §8 step 7: delete + Lost Exercises, no
+reassignment)
+
+Read CONTEXT.md first as instructed. Two things this session, in order:
+commit everything uncommitted for Exercise Library as one unit, then build
+only step 7, stopping before step 8 (migrations 021/022, reassignment).
+
+### Part 1 — steps 4-6 committed as one unit, isolated from the Coach thread
+
+Same surgery migration 019's and `EXERCISE-LIBRARY-PROVENANCE.md`'s commits
+already used (`87ad6d2`, `f133867`, both above): the working tree had the
+same still-in-progress, unrelated Coach Personalization Weekly thread
+sitting uncommitted in `COACH-ANALYSIS-SPEC.md`, `COACH-WEEK-ANALYSIS-
+SPEC.md`/`TASKS.md`, and six `src/features/coach/*.ts` files, interleaved
+with `CONTEXT.md`'s own session log. Diffed `CONTEXT.md` against `HEAD`
+first rather than assuming which hunks were which — 4 hunks, 676 lines
+added total. One (the migration-020 summary near the top) and the bulk of
+a second (four consecutive Exercise Library session entries) were already
+Exercise Library's own; exactly two were the Coach thread's — the full
+"2026-08-28 session (continued — Coach Personalization wired into Weekly
+Analysis…)" entry (121 lines) and the `coachWeekPrompt.ts`
+`WEEK_PROMPT_VERSION 2` pending-feedback bullet (27 lines) — the identical
+two insertions the migration-019 commit's own account already named by
+description, confirming the categorization rather than requiring a fresh
+judgment call.
+
+Backed up `CONTEXT.md` to the scratchpad, `sed -i`-deleted both Coach
+hunks by exact line range (verified via `diff` against the backup
+afterward: exactly 148 lines removed, nothing else touched), staged the
+reduced file alongside every Exercise-Library-owned file (`EXERCISE-
+LIBRARY-TASKS.md`, `package.json`/`package-lock.json`, `vitest.config.ts`,
+`src/types/index.ts`, `src/lib/exerciseTags.ts`/`.test.ts`/`locks.ts`, all
+of `src/features/library/*` new and changed, `sessionService.ts`/
+`programService.ts`'s `Exercise`-shape extensions), confirmed with `git
+diff --cached --name-only | grep -i coach` that nothing Coach-related was
+staged, and committed
+(`50cf68d`, "feat: Exercise Library rework — tag editing UI, coverage
+backfill, library catalog/download" — 26 files, 3154 insertions). Restored
+`CONTEXT.md`'s removed content via a plain `cp` from the backup and
+**confirmed byte-identical with `cmp`** before continuing — the Coach
+thread remains exactly as uncommitted and untouched as it was.
+
+### Part 2 — §8 step 7: delete + Lost Exercises, without reassignment
+
+**Data model** (§7.1/§7.2): `ExerciseStatus`/`ExerciseLifecycle` added to
+`types/index.ts`; `Exercise` gains `status`/`sourceLibraryId`/`lostAt`.
+`tsc` surfaced the same two non-`exerciseService.ts` construction sites
+last session's tag work found (`sessionService.ts`'s `toSetLog`,
+`programService.ts`'s `toProgramExercise`) plus one test fixture
+(`ExerciseTagList.test.tsx`) — all three extended the same way, no query
+changes needed since migration 019 already added the columns.
+`fetchExercises()` now filters `status = 'active'` unconditionally
+(regardless of the archived toggle — EXERCISE-LIBRARY-TASKS.md §2.3's
+rule), which is what makes a lost exercise disappear from every existing
+list (Library LIST/EDIT TAGS, both `ExercisePicker.tsx`s, `SwapExerciseSheet.tsx`)
+for free, with no per-screen change — the one accepted side effect worth
+naming: Progress/History's exercise picker can no longer be used to reach
+a *lost* exercise's own history chart, since it shares `fetchExercises()`
+too. The data itself stays fully queryable (history views query
+`v2_set_logs` directly, unaffected), it just has no picker entry point
+while lost — not asked for and not built this session.
+
+**Found: a plain-delete FK a naive implementation would have hit for
+real.** `v2_program_exercises.exercise_id` and `v2_set_logs.exercise_id`
+both reference `exercises(id)` with **no `ON DELETE` clause**
+(`001_v2_schema.sql` — i.e. `NO ACTION`/restrict), not `cascade`. A
+zero-history exercise still listed in any workout day's template would
+therefore make a plain `delete from exercises` fail outright. §9.3's own
+reasoning ("blocking the delete while referenced was rejected... makes
+removing an old exercise from an old program impossible") generalizes past
+its literal reassignment context: `deleteExercise()`'s hard-delete branch
+clears any referencing `v2_program_exercises` rows first (cascading away
+only their *unlogged, future-planned* `v2_week_plan_sets` — safe precisely
+because zero real history means no logged set could depend on that plan
+data). The **lost** branch deliberately does *not* touch
+`v2_program_exercises` — leaving a lost exercise's template references
+dangling until a future reassignment (§8, not built here) re-points them
+is the accepted design (§9.3's own "a lost exercise never has template
+rows" phrasing, read as implying the opposite of the chosen design).
+Verified for real, not just reasoned about — see below.
+
+**Built:**
+- `exerciseService.ts` — `fetchLostExercises()`, `previewExerciseDelete()`
+  (the one preflight: a live `v2_set_logs` count, returning
+  `ExerciseLifecycle`'s `'lost' | 'gone'`), `deleteExercise()` (re-derives
+  the preflight rather than trusting a stale caller-supplied one, same
+  reasoning §5.2/§6.2 give reassignment's own counts), `restoreExercise()`
+  (no preflight — the reversible direction, §9.4/§11.4).
+- `libraryService.ts` — `previewLibraryDelete()`/`deleteLibrary()`, both
+  bulk-over-single: every active exercise sourced from a library
+  independently goes through the exact same `previewExerciseDelete`/
+  `deleteExercise` a single delete uses, not a parallel bulk
+  implementation, so the two paths can never disagree about which branch a
+  given exercise takes.
+- `src/components/ConfirmDialog.tsx` (new, shared) — the "different and
+  lighter thing" §6.3 describes: one step, no typed-name friction (that
+  stays reassignment-only, step 8). `danger` switches red vs the app's
+  normal accent so a truly irreversible outcome (hard delete) reads
+  differently from a reversible one (move to Lost).
+- `ExerciseList.tsx` — a third row action (`Trash2`, alongside the
+  existing edit/archive icons). Tapping it fires `previewExerciseDelete`
+  immediately and only opens `ConfirmDialog` once the real preflight
+  result is back, so the copy always matches what's about to happen
+  ("has no logged history and will be permanently deleted" vs. "has N
+  logged sets... moved to Lost Exercises... you can restore it anytime").
+- `LostExercises.tsx` (new) — list + restore, reached from a new
+  `LibraryPage.tsx` header icon (`ArchiveX`, "View lost exercises").
+  Restore is a single un-confirmed tap (`RotateCcw`), matching the app's
+  existing auto-save-on-tap convention for reversible, low-risk actions —
+  deliberately no dialog for the safe direction.
+- `LibraryCatalog.tsx` — a delete (`Trash2`) button per library row,
+  alongside download. Always previews first; a library with nothing
+  downloaded from it gets a toast ("You haven't downloaded any exercises
+  from…") instead of an empty confirm. Otherwise shows the real split
+  (§6.3's own example shape: "N deleted permanently (no history), M moved
+  to Lost Exercises (history preserved)") before the single confirm step.
+
+**Live-verified against production with three constructed throwaway
+cases, exactly as instructed — nothing tested against Adam's real
+exercises directly:**
+1. **Zero-history delete, deliberately still referenced by a program** — a
+   temp exercise added to a temp program/workout day/program-exercise
+   (not one of Adam's real programs, to keep this fully isolated). Tapping
+   Delete in the live UI correctly showed **DELETE EXERCISE** (red). First
+   attempt actually clicked the wrong row (a stale element ref after the
+   list re-rendered mid-interaction landed the tap on the real **T-Bar
+   Row**) — caught because the dialog named T-Bar Row explicitly before
+   any data changed, exactly the safety property this dialog exists to
+   provide; cancelled, re-targeted correctly by fresh coordinates.
+   Confirmed for the actual temp exercise: verified via SQL afterward that
+   the `exercises` row was gone **and** its `v2_program_exercises` row was
+   gone too, with no FK error at any point — the hazard found above,
+   closed for real.
+2. **Has-history delete, then restore** — a second temp exercise with one
+   real `v2_set_logs` row (a standalone temp session with no mesocycle/
+   plan, so it couldn't affect Adam's real schedule or streaks). Delete
+   correctly showed **MOVE TO LOST EXERCISES** (accent-coloured, not red)
+   with the real count ("has 1 logged set"). Confirmed: SQL showed
+   `status = 'lost'`, `lost_at` set, the set log **untouched** (still
+   exactly 1 row). Reloaded the Library list — the exercise was gone from
+   LIST/EDIT TAGS, as expected. Opened the new Lost Exercises screen — it
+   appeared with the correct muscle group and lost date. Tapped Restore —
+   disappeared from Lost immediately; reloaded the main list — reappeared
+   there; SQL confirmed `status = 'active'`, `lost_at = null`, and the set
+   log still exactly 1 row, byte-for-byte the same data throughout.
+3. **Library-delete split preview** — reused step 6's throwaway-library
+   pattern (a temporary `is_listed` library, this time with two items: one
+   left zero-history, one given a real logged set via SQL after
+   downloading both through the live UI). Tapping the new delete button on
+   the library row correctly fetched the split preview and showed **"1
+   deleted permanently (no history), 1 moved to Lost Exercises (history
+   preserved)"** — the exact numbers matching the deliberately mixed
+   fixture. Confirmed: SQL showed the zero-history one gone entirely and
+   the has-history one `status = 'lost'` with its set log intact.
+
+**Cleanup, verified rather than assumed.** The session-delete step of
+cleanup was rewritten mid-session after noticing the first draft would
+have matched on `date = today` — safe against Adam's real data only by
+coincidence (no other completed session on 2026-08-29 with zero set
+logs), not by construction. Re-derived the temp session's exact id from
+the set logs that referenced it (queried and confirmed *before* deleting
+those set logs) and deleted by literal id instead. Final sweep confirmed
+zero rows left behind across `exercises` (name or status-based), `v2_programs`,
+`v2_workout_days`, the temp `v2_sessions` row by id, and
+`v2_exercise_libraries`; `exercises` row count back to the exact
+pre-session baseline, **70**; spot-checked `Barbell Bench Press` and
+`T-Bar Row` (the accidental near-miss from case 1) both confirmed
+untouched, `status = 'active'`.
+
+### Confirmed ungated (§9.9)
+
+`grep`-confirmed no `coachGate` reference anywhere in any new or changed
+file this session.
+
+### Verified
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **293/293 passing**, no regressions (no new pure-logic module
+this step, so no new test files — the delete/restore/preview functions are
+thin Supabase calls in the same style `setExerciseArchived`/
+`updateExercise` already have no dedicated unit tests for, verified live
+instead per the three cases above).
+
+**Not done, not asked for:** step 8 (migrations 021/022, reassignment) not
+started, per explicit instruction to stop after step 7. Step 7's work is
+**not committed** this session — no commit instruction was given for it,
+unlike Part 1 above. Nothing about the unrelated Coach Personalization
+Weekly thread touched beyond the commit-isolation described in Part 1.
+
+---
+
+## 2026-08-29 session (continued — Part 1: step 7's two gaps closed (test
+coverage, an undisclosed delete side effect); Part 2: EXERCISE-LIBRARY-
+TASKS.md §8 step 8 — migrations 021/022 and reassignment built and verified)
+
+Read CONTEXT.md first as instructed. Two parts, in order: close two gaps
+left by step 7 (zero new tests despite real destructive-adjacent logic; a
+confirm dialog that didn't disclose a side effect found during step 7's own
+implementation), then build only §8 step 8 — stopping before step 9 (the
+confirmation sheet), per explicit instruction.
+
+### Part 1a — test coverage for step 7's delete/restore/preview logic
+
+`exerciseService.test.ts` extended with three new `describe` blocks
+(`previewExerciseDelete`, `deleteExercise`, `restoreExercise`), using a new
+per-table `fromMock.mockImplementation` dispatcher (`makeChain`) rather than
+the file's existing single-table `makeBuilder`, since these three functions
+touch up to three tables (`v2_set_logs`, `v2_program_exercises`, `exercises`)
+in one call. Specifically proves, per the instruction's own emphasis: the
+zero-history hard-delete path calls `v2_program_exercises.delete().eq
+('exercise_id', id)` — asserted via the actual mock call and its argument,
+plus `mock.invocationCallOrder` confirming it fires *before*
+`exercises.delete()` — "confirm a program reference is actually cleared,
+not just that delete doesn't throw," not inferred from a lack of thrown
+error. Also: the has-history lost-transition path (`status`/`lost_at`
+payload, no delete call at all), `previewExerciseDelete`'s classification
+for both branches (including that the new program-lookup query never fires
+on the `'lost'` branch), and `restoreExercise`'s payload.
+`libraryService.test.ts` (new) mocks `previewExerciseDelete`/
+`deleteExercise` from `exerciseService.ts` (not re-testing their own
+classification logic) to prove `previewLibraryDelete`/`deleteLibrary`
+correctly sort a mixed set of zero-history and has-history exercises into
+the right counts, order-independent, plus the empty-library and
+all-has-history edge cases. Two light component tests added as suggested
+rather than required: `LostExercises.test.tsx` (restore fires the mutation
+immediately, no confirm step) and `LibraryCatalog.test.tsx` (an all-zero
+split-preview shows a toast instead of an empty dialog; a mixed split shows
+both counts and confirming fires the bulk delete). **15 new tests, all
+passing; full suite 308/308** (up from step 7's 293/293), `tsconfig.app.json`
+and `tsconfig.api.json` both clean.
+
+### Part 1b — the delete confirm dialog didn't disclose a real side effect
+
+Checked `ExerciseList.tsx`'s confirm copy for the exact case named: a
+zero-history exercise that's still referenced by a program template. It
+said only "has no logged history and will be permanently deleted. This
+cannot be undone" — no mention that `deleteExercise()`'s hard-delete branch
+(found during step 7, see above) also clears the referencing
+`v2_program_exercises` row(s) first. Fixed at the source rather than
+guessed client-side: `previewExerciseDelete()` (`exerciseService.ts`) now
+also queries `v2_program_exercises` → `v2_workout_days` → `v2_programs`
+(a nested embed, cast through a `DbProgramReference` type since supabase-js
+without a generated `Database` type infers the embed as one-to-many rather
+than the real one-to-one — same reasoning every other query in this file
+casts through a plain interface) for the affected program names, **only on
+the `'gone'` branch** (the `'lost'` branch never touches
+`v2_program_exercises`, so there's nothing to disclose there). Returns a new
+`programNames: string[]` on `ExerciseDeletePreview`. `ExerciseList.tsx`'s
+`DeleteConfirmState` carries it through, and the hard-delete dialog now
+appends, only when non-empty: *"It will also be removed from the workout
+template for **`<name>`**."* (or *"these workout templates: …"* when more
+than one).
+
+**Live-verified in the real running app**, not just unit-tested: a
+throwaway zero-history exercise (`__throwaway_ui_delete_check__`) inserted
+via SQL into a throwaway program/workout day/program-exercise row (not one
+of Adam's real programs), then deleted through the actual Library UI.
+Screenshot confirmed the dialog read exactly *"`__throwaway_ui_delete_check__`
+has no logged history and will be permanently deleted. This cannot be
+undone. It will also be removed from the workout template for
+`__throwaway_ui_program__`."* Confirming the delete produced the expected
+"deleted" toast and removed the row from the list; the fixture (exercise,
+program, workout day, program-exercise row) was then cleaned up via SQL and
+`exercises`/`v2_program_exercises` row counts confirmed back at the exact
+pre-session baseline (70/26).
+
 ---
 
 ## Pending feedback to address

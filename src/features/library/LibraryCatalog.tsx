@@ -1,9 +1,17 @@
 import { useState } from 'react'
-import { X, ChevronDown, Download } from 'lucide-react'
+import { X, ChevronDown, Download, Trash2 } from 'lucide-react'
 import type { ExerciseLibrary } from '../../types'
 import { MOVEMENT_PATTERN_LABELS, muscleSubgroupLabel } from '../../lib/exerciseTags'
-import { useLibraries, useLibraryItems, useDownloadLibrary } from './useLibraries'
+import {
+  useLibraries,
+  useLibraryItems,
+  useDownloadLibrary,
+  useLibraryDeletePreview,
+  useDeleteLibrary,
+} from './useLibraries'
+import type { LibraryDeletePreview } from './libraryService'
 import { useToastStore } from '../notifications/toastStore'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 // The library list, preview, and download (EXERCISE-LIBRARY-TASKS.md §8
 // step 6) — replaces LibraryPage.tsx's old single "import defaults" button
@@ -144,7 +152,12 @@ function LibraryRow({ library }: { library: ExerciseLibrary }) {
   const [expanded, setExpanded] = useState(false)
   const { data: items = [], isLoading: itemsLoading } = useLibraryItems(library.id, expanded)
   const download = useDownloadLibrary()
+  const deletePreview = useLibraryDeletePreview()
+  const deleteLibrary = useDeleteLibrary()
   const showToast = useToastStore((s) => s.show)
+
+  const [previewingDelete, setPreviewingDelete] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<LibraryDeletePreview | null>(null)
 
   function handleDownload(e: React.MouseEvent) {
     // Stops the row's own onClick (expand/collapse) from also firing —
@@ -162,7 +175,39 @@ function LibraryRow({ library }: { library: ExerciseLibrary }) {
     })
   }
 
+  // The split (§6.3/§9.2) must be visible before the action is confirmed,
+  // so this always fetches previewLibraryDelete() first rather than opening
+  // a dialog straight away — a library with nothing downloaded from it gets
+  // a toast instead of an empty confirm.
+  async function handleDeleteTap(e: React.MouseEvent) {
+    e.stopPropagation()
+    setPreviewingDelete(true)
+    try {
+      const preview = await deletePreview.mutateAsync(library.id)
+      if (preview.toDeleteCount === 0 && preview.toLostCount === 0) {
+        showToast(`You haven't downloaded any exercises from ${library.name}`)
+        return
+      }
+      setConfirmDelete(preview)
+    } catch {
+      showToast(`Could not check ${library.name}`)
+    } finally {
+      setPreviewingDelete(false)
+    }
+  }
+
+  function handleConfirmDelete() {
+    deleteLibrary.mutate(library.id, {
+      onSuccess: ({ deleted, lost }) => {
+        showToast(`${library.name}: ${deleted} deleted, ${lost} moved to Lost Exercises`)
+        setConfirmDelete(null)
+      },
+      onError: () => showToast(`Could not delete ${library.name}'s exercises`),
+    })
+  }
+
   return (
+    <>
     <div
       style={{
         background: 'var(--surface)',
@@ -248,6 +293,28 @@ function LibraryRow({ library }: { library: ExerciseLibrary }) {
         >
           <Download size={16} strokeWidth={2.5} />
         </button>
+        <button
+          type="button"
+          onClick={handleDeleteTap}
+          disabled={previewingDelete}
+          aria-label={`Delete exercises downloaded from ${library.name}`}
+          style={{
+            width: 36,
+            height: 36,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'var(--surface-overlay)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 9,
+            cursor: previewingDelete ? 'default' : 'pointer',
+            color: 'var(--text-secondary)',
+            opacity: previewingDelete ? 0.6 : 1,
+          }}
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
 
       {expanded && (
@@ -314,5 +381,25 @@ function LibraryRow({ library }: { library: ExerciseLibrary }) {
         </div>
       )}
     </div>
+
+    {confirmDelete && (
+      <ConfirmDialog
+        title="DELETE LIBRARY EXERCISES"
+        body={
+          <>
+            This removes every exercise you downloaded from{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>{library.name}</strong>:{' '}
+            {confirmDelete.toDeleteCount} deleted permanently (no history), {confirmDelete.toLostCount} moved to
+            Lost Exercises (history preserved).
+          </>
+        }
+        confirmLabel="REMOVE"
+        danger={confirmDelete.toDeleteCount > 0}
+        isPending={deleteLibrary.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
+    )}
+    </>
   )
 }

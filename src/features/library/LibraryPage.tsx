@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Plus, Library } from 'lucide-react'
+import { Plus, Library, ArchiveX } from 'lucide-react'
 import type { Exercise, MuscleGroup } from '../../types'
 import { useExercises } from './useExercises'
 import ExerciseList from './ExerciseList'
 import ExerciseForm from './ExerciseForm'
 import ExerciseTagList from './ExerciseTagList'
 import LibraryCatalog from './LibraryCatalog'
+import LostExercises from './LostExercises'
 
 const MUSCLE_GROUPS: MuscleGroup[] = [
   'chest', 'back', 'shoulders', 'biceps', 'triceps',
@@ -28,6 +29,7 @@ export default function LibraryPage() {
   const [formState, setFormState] = useState<FormState>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [showLibraries, setShowLibraries] = useState(false)
+  const [showLost, setShowLost] = useState(false)
 
   const { data: exercises = [], isLoading, error } = useExercises(showArchived)
 
@@ -86,6 +88,27 @@ export default function LibraryPage() {
             }}
           >
             <Library size={18} strokeWidth={2.5} />
+          </button>
+          {/* Lost Exercises entry point (EXERCISE-LIBRARY-TASKS.md §8 step
+              7) — a dedicated screen, not a filter on this list, since
+              fetchExercises() now always excludes status = 'lost'. */}
+          <button
+            onClick={() => setShowLost(true)}
+            aria-label="View lost exercises"
+            style={{
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'var(--surface-overlay)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 11,
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            <ArchiveX size={18} strokeWidth={2.5} />
           </button>
           <button
             onClick={() => setFormState({ mode: 'create' })}
@@ -241,6 +264,8 @@ export default function LibraryPage() {
       )}
 
       {showLibraries && <LibraryCatalog onClose={() => setShowLibraries(false)} />}
+
+      {showLost && <LostExercises onClose={() => setShowLost(false)} />}
     </div>
   )
 }

@@ -38,6 +38,9 @@ type DbExerciseJoin = {
   created_at: string
   muscle_subgroup: MuscleSubgroup[] | null
   movement_pattern: MovementPattern | null
+  status: string
+  source_library_id: string | null
+  lost_at: string | null
 }
 
 type DbProgramExercise = {
@@ -104,6 +107,9 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
           createdAt: ex.created_at,
           muscleSubgroups: ex.muscle_subgroup,
           movementPattern: ex.movement_pattern,
+          status: ex.status === 'lost' ? 'lost' : 'active',
+          sourceLibraryId: ex.source_library_id,
+          lostAt: ex.lost_at,
         }
       : undefined,
   }

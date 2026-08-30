@@ -1403,7 +1403,8 @@ Adam's own `user_id`.
 **Not done, not asked for:** step 7 (delete + Lost Exercises) not started,
 per explicit instruction to stop after step 6.
 
-**7. Delete + Lost Exercises, without reassignment.** The three-state
+**7. Delete + Lost Exercises, without reassignment. Done, 2026-08-29 — see
+CONTEXT.md's dated session entry for the full account.** The three-state
 transition and its preflight (zero-history → hard delete; has-history →
 `lost`) **in both directions — including restore (§9.4/§11.4, decided
 in scope)**, the Lost Exercises list (with its restore action), and
@@ -1411,6 +1412,24 @@ library delete's split preview. Reassignment is deliberately *not* in this
 step: the state machine and the "never destroy history" property are worth
 proving on their own, before the one irreversible operation in the feature
 is layered on top.
+**Found and closed during implementation**: `v2_program_exercises.exercise_id`/
+`v2_set_logs.exercise_id` both reference `exercises(id)` with no `ON
+DELETE` clause (plain `NO ACTION`, `001_v2_schema.sql`), so a zero-history
+exercise still listed in any program's template would make a naive hard
+delete fail on the FK. `deleteExercise()`'s hard-delete branch clears
+referencing `v2_program_exercises` rows first (§9.3's "blocking the delete
+was rejected" reasoning, generalized past its literal reassignment
+context); the lost branch deliberately leaves them dangling, matching
+§9.3's own "a lost exercise [can have] template rows" reading, so
+reassignment's §5.3 step 2 still has real work to do when it eventually
+runs. Verified live against a temp exercise deliberately left in a temp
+program template — confirmed gone with no FK error, both rows.
+**Verified against three constructed throwaway cases** (zero-history
+delete while still in a program; has-history delete then restore, history
+byte-identical throughout; library-delete split preview against a mixed
+temp library) — all against production, none against Adam's real
+exercises, all cleaned up and confirmed back to the 70-row baseline
+afterward.
 
 **8. Migrations 021 + 022, and reassignment.** The function (§5.3),
 `reassignService.ts`, the preview query, cache invalidation and Dexie
