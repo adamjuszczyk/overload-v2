@@ -1121,6 +1121,46 @@ was approved and committed first.
   actually execute it. Missing this looks exactly like the query silently
   not running (the results pane keeps showing the *previous* query's
   output) rather than like an obvious blocking modal.
+- **Verify an applied migration by hashing it against the local file — the
+  transport can silently drop characters, and it already has (found
+  2026-08-29 while auditing migration 021).** Migration 021 was applied by
+  pasting a ~15KB base64 blob into a tool call, decoding it in the browser
+  and `setValue`-ing it into Monaco. The deployed function body came out
+  **2 characters shorter than the source file** and nobody noticed for a
+  session, because the loss was invisible: in base64 a run of `─` (U+2500)
+  is the 4-character group `4pSA` repeated, so **dropping one whole group
+  stays byte-aligned** — one character vanishes and nothing else corrupts.
+  The damage landed on the file's two **longest repetitive runs** (28 and
+  22 consecutive `─`); the third-longest (20) survived. Both losses fell
+  inside `--` comments, so this was luck, not safety: the same failure
+  inside a repetitive stretch of executable SQL would have deployed code
+  that differs from what was reviewed. Neither Monaco's `setValue`/
+  `getValue` round-trip nor the base64→`atob`→`TextDecoder` decode is
+  lossy — both were tested and are exact; the loss is in reproducing a long
+  repetitive blob verbatim. **Standing practice:** (1) after applying any
+  function or migration, compare `md5(prosrc)` / `length(prosrc)` (or the
+  equivalent for DDL) against the local file and treat a mismatch as a
+  failed apply, not a curiosity — a per-line length diff localises it in one
+  query; (2) prefer a transport with no long repetitive runs (plain text, or
+  runs replaced by a marker and expanded in the browser) and verify a hash
+  of the reassembled text **before** running it; (3) `getValue().length`
+  right after `setValue` is a free pre-flight check — last session printed
+  `11234` against the file's `11236` and the discrepancy went unread.
+- **Data-modifying CTEs cannot see each other's writes — never write a
+  fixture (or a migration) that assumes they can (found 2026-08-29).** Every
+  sub-statement of one `WITH` clause runs under a **single snapshot**, so an
+  `UPDATE` in one CTE cannot see a row `INSERT`ed by a sibling CTE in the
+  same statement; `RETURNING` is the only channel between them. Reading a
+  sibling's `RETURNING` output works (`where id = (select id from ins)`
+  resolves to a real uuid) — what silently fails is the `UPDATE`'s own scan
+  of the table, which matches **zero rows** and reports success. Reproduced
+  6/6, deterministic. Correct shape: sequential statements (in `plpgsql`, a
+  `DO` block with local variables — `insert … returning id into v_src;` then
+  `update … where id = v_src;`), which is what fixture creation in this repo
+  now uses. Note the same rule is *load-bearing-correct* in
+  `021_v3_reassign_exercise_fn.sql` step 2a, where a subquery must see
+  pre-merge state — so this is a rule to reason with, not one to design
+  around.
 - **Every SQL Editor query (or any other access path that bypasses RLS)
   must include an explicit `user_id` filter to Adam's own account — no
   exceptions, including one-off investigative queries (added 2026-08-25,
@@ -15294,6 +15334,488 @@ undone. It will also be removed from the workout template for
 program, workout day, program-exercise row) was then cleaned up via SQL and
 `exercises`/`v2_program_exercises` row counts confirmed back at the exact
 pre-session baseline (70/26).
+
+### Part 2 — §8 step 8: migrations 021 + 022, and reassignment
+
+Read §5 in full before writing anything, per instruction — confirmed its
+own §0.1 framing is accurate: there is no existing re-point mechanism to
+generalize from, and this really is new work.
+
+**Migration 022** (`022_v3_exercise_reassignments.sql`) applied first,
+verbatim from TASKS.md §3.4's schema. **Correction to the plan document
+itself, found while verifying**: §3.4's verification block says "13
+columns"; the table as specified (there and everywhere else in the plan)
+has **12** — `id, user_id, source_exercise_id, source_exercise_name,
+target_exercise_id, target_exercise_name, set_logs_moved,
+program_exercises_moved, program_exercises_merged, plan_sets_moved,
+source_deleted, created_at`. Off-by-one in the plan's prose, not a schema
+mistake; the migration matches the schema block exactly and
+`information_schema.columns` confirms 12. Otherwise every check in §3.4
+passed: `pg_indexes` — exactly the pkey plus
+`v2_exercise_reassignments_user_created_idx`; `pg_class.relrowsecurity` —
+true; `pg_policies` — exactly one, `"Users access own rows"`, `cmd = ALL`,
+`qual`/`with_check` both `(user_id = auth.uid())`; the `target_exercise_id`
+FK's `on delete set null` proven for real (a throwaway target exercise, a
+throwaway reassignment row referencing it, the target deleted, the row
+confirmed to survive with `target_exercise_id` null and
+`target_exercise_name` still `'__throwaway_022_fk_target__'`), then both
+cleaned up.
+
+**Migration 021** (`021_v3_reassign_exercise_fn.sql`) — the
+`reassign_exercise_history(p_source uuid, p_target uuid)` function,
+assembled from §5.3's per-step SQL fragments and reasoning (the plan gives
+each step's statements individually with narrative connecting them, not one
+runnable function body). Notable synthesis decisions beyond a literal
+transcription: step 2b's per-collision, per-week-plan renumbering
+(`row_number() over (order by set_number)` offset by the survivor's max,
+heads first then stages mirroring their head's new number, matching §5.3's
+"these two updates must run in this order") and step 3's identical shape
+for `v2_set_logs` keyed by session instead of week plan
+(`order by set_number, logged_at`, per §5.3's own ordering rule) had no
+complete SQL in the plan and were written from its narrative description.
+Also added, not explicitly in the plan's SQL but necessary for correctness/
+safety: `set search_path = public` on the function (pinned rather than
+inherited, standard practice for any SQL-callable function) and an explicit
+`grant execute on function reassign_exercise_history(uuid, uuid) to
+authenticated` (this is the repo's first Postgres function — nothing
+establishes whether this project's default privileges already cover it, so
+made explicit rather than assumed). Verified: `pg_proc.prosecdef = false`
+(SECURITY INVOKER, not DEFINER, exactly as specified), `proconfig =
+["search_path=public"]`, argument/return-type signature matches exactly,
+and `has_function_privilege('authenticated', ..., 'execute')` → `true`.
+
+**Verified against constructed throwaway data, never against Adam's real
+history, exactly as instructed.** Built the specific case §5.3 calls out as
+the single most likely real reassignment (the swap-exercise collision):
+two temporary exercises, a temporary program/workout day containing **both**
+as program-exercise rows (the §5.3 step 2b merge-collision case), a
+temporary mesocycle/week-plan with a planned dropset (head + stage) under
+the source's program-exercise row and one plain planned set under the
+target's, and a temporary session logging both exercises — the source with
+a dropset (head + stage, the head linked via `week_plan_set_id` to its
+planned-set counterpart) and the target with one plain set (establishing
+the `set_number` collision `intersect`/renumbering has to resolve). Source
+marked `status = 'lost'` (a fixture-creation quirk below).
+
+Called the real deployed RPC through the real authenticated path, not the
+SQL Editor (which runs as `postgres` and has no `auth.uid()`): extracted the
+live session's access token from the dev app's own `localStorage`
+(`sb-imhsawrghteqsmpklofv-auth-token`, the same technique this project has
+used before — CONTEXT.md's Coach Personalization phase-5 session) and
+called `POST /rest/v1/rpc/reassign_exercise_history` directly via `fetch`
+with the anon key + `Authorization: Bearer <token>`, from the dev app's own
+page context. Result: `{set_logs_moved: 2, program_exercises_moved: 0,
+program_exercises_merged: 1, plan_sets_moved: 2, source_deleted: true}` —
+exactly the predicted counts (both source logs collide with the target's
+session, so 0 plain re-points and 1 merge; both planned sets belong to the
+one colliding program-exercise pair). Then, by direct query, confirmed
+every property the instruction named: **`set_number` unique per head**
+(target's original head stayed `1`; the source's former head/stage pair
+both became `2`, correctly sharing one number as a stage must) in both
+`v2_set_logs` and `v2_week_plan_sets`; **`parent_set_id`/`stage_index`
+preserved on the dropset stage** (still points at its head's own,
+unrenumbered id; `stage_index` unchanged at `1`) and identically for
+`parent_week_plan_set_id`/`stage_index` on the plan side; **`week_plan_set_id`
+links preserved** on both set-logs (still resolve to the same plan-set rows,
+now living under the target's program-exercise row); **automatic source-row
+deletion** (`exercises`/`v2_program_exercises` rows for the source both
+gone; `v2_program_exercises` remaining-count for the source exercise = 0);
+and **a matching `v2_exercise_reassignments` row** — right names
+(`__throwaway_021_source__`/`__throwaway_021_target__`), right counts
+(identical to the RPC's own returned row), `source_deleted = true`. Then
+deleted the audit row, the temporary session (cascading its set logs), the
+temporary mesocycle (cascading week-plan/plan-sets), the temporary program
+(cascading workout day/program-exercise), and the target exercise (source
+already gone), and confirmed every count — `exercises`, `v2_program_exercises`,
+`v2_set_logs`, `v2_week_plan_sets`, `v2_exercise_reassignments`, plus a
+name-`LIKE '%throwaway%'` sweep across every touched table — back at the
+exact pre-test baseline (70/26/476/564/0).
+
+**Two things found during this verification pass, recorded rather than
+silently worked around:**
+- **A destructive-query linter false positive.** Every multi-CTE fixture-
+  creation query (`with x as (insert into v2_program_exercises …) …`)
+  triggered Supabase's "creates a table without enabling Row Level
+  Security" dialog, naming `v2_program_exercises` — a table that has had
+  RLS enabled since migration 002 and contains no `CREATE TABLE` anywhere
+  in the query. Read as the linter's static analysis misparsing a `WITH …
+  AS (INSERT …)` CTE name as a table definition. "Run without RLS" was the
+  correct choice each time (there is no new table for RLS to apply to);
+  distinct from the legitimate "Potential issue detected" destructive-
+  operation dialog (`DELETE`/the function's own `DELETE`s), which appeared
+  separately and as expected.
+  **Confirmed a genuine false positive 2026-08-29 (continued), by query
+  rather than by reasoning** — `pg_class.relrowsecurity` for
+  `v2_program_exercises` is `true` with exactly 1 policy, so the warning's
+  premise ("clients using anon or authenticated keys may be able to access
+  it") is false; and `pg_tables` shows **0** tables named after any CTE
+  alias used in those queries, with `public`'s table count unchanged at 44,
+  so no table was created by them either. Not a real finding dismissed too
+  quickly.
+- **An unexplained one-off: a data-modifying CTE's `UPDATE` didn't take
+  effect despite being referenced in the final `SELECT`.** The original
+  fixture-creation query included `lost_upd as (update exercises set
+  status = 'lost', lost_at = now() where id = (select id from src_ex)
+  returning id)`, referenced as `(select id from lost_upd) as
+  lost_confirmed_id` in the final select list — which per documented
+  Postgres semantics should force it to execute. The first RPC call against
+  the fixture failed with "source exercise … is not lost (status=active)",
+  and a direct query confirmed `status = 'active'`, `lost_at = null` —
+  the update never landed. Worked around by re-issuing the same `UPDATE` as
+  a standalone statement (which worked immediately), rather than diagnosed
+  further; this did not affect the fixture's validity or the verification
+  above, since the standalone `UPDATE` ran and was confirmed before the RPC
+  was called again. Flagged for a future session in case it recurs — no
+  root cause identified this session (possibly related to the same "Run
+  without RLS" dialog path this query also went through, but that's a
+  guess, not a finding).
+  **ROOT-CAUSED 2026-08-29 (continued) — see "the CTE anomaly, root-caused"
+  entry below. Not a Postgres bug, not intermittent, and not in migration
+  021: it is documented CTE snapshot semantics, hit by throwaway fixture
+  SQL only.** Two claims in this bullet are corrected there: the "Run
+  without RLS" guess is wrong (ruled out by control), and "should force it
+  to execute" conflates two things — referencing the CTE *did* execute it;
+  it simply matched **zero rows**, because an `UPDATE` in one CTE cannot
+  see a row `INSERT`ed by a sibling CTE in the same statement.
+
+**Client-side, per §5.5:** `src/types/index.ts` gains `ReassignPreview`/
+`ReassignResult`. `reassignService.ts` (new) — `reassignExerciseHistory()`
+(the `.rpc()` wrapper), `previewReassign()` (P5's real counts: set/session
+counts and date range from a direct `v2_set_logs` query; overlapping-session
+count via the same source/target-session-intersection logic the RPC itself
+uses; affected-workout-days via the same source/target-program-exercise-
+collision join the RPC's step 2b uses — so the preview's "will merge"
+predictions structurally can't diverge from what the RPC will actually
+merge on; a best-effort `frozenAnalysisCount` via a plain substring match
+of the source exercise's uuid against `v2_coach_session_analyses`/
+`v2_coach_week_analyses`'s `content`/`input_snapshot` JSON, simpler and just
+as exact as a recursive `jsonb_path` query for a uuid needle), and
+`reprimeAfterReassign()` (the Dexie re-prime — deletes `db.exercises`'s
+source row, deletes `db.set_logs` rows under the source's id outright rather
+than attempting to mirror the server's renumbering client-side, and
+rewrites/drops the source's slot in every cached `db.workout_days.exercises`
+blob). `useReassign.ts` (new) — `useReassignPreview()`, and
+`useReassignExerciseHistory()` whose `onSuccess` invalidates all 15 query
+keys §5.5 names (`['exercises']`, `['v2_session']`, `['v2_programExercises']`,
+`['v2_workoutDays']`, `['v2_weekPlan']`, `['v2_allWeekPlans']`,
+`['v2_history']`, `['v2_historyDetail']`, `['v2_exerciseProgress']`,
+`['v2_mesoProgress']`, `['v2_referenceSessions']`, `['v2_lastSetLogs']`,
+`['v2_positionMatchTable']`, `['v2_positionMatchedHeadline']`,
+`['v2_sessionTypeHistory']` — all 15 confirmed as real, currently-used key
+prefixes by grepping every `queryKey:`/`invalidateQueries` call in `src/`
+before writing the list, not copied from the plan's prose unchecked).
+No Dexie version bump (row content only, per §5.5 item 3). No TS type added
+for `v2_exercise_reassignments` (§7.2/§11.2 — written server-side only, no
+v1 screen reads it back).
+
+### Verified
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **308/308 passing** (the 15 new Part 1 tests plus everything
+pre-existing, no regressions).
+
+**Not done, not asked for:** step 9 (the confirmation sheet, `ReassignSheet.tsx`)
+not started, per explicit instruction to stop after step 8. The client-side
+preflights P3 (sync queue empty) and P4 (no in-progress session) are UI-gating
+concerns for that sheet and were not built this session — only P5's preview
+numbers, which step 8 explicitly named. Nothing committed this session; no
+commit instruction was given.
+
+---
+
+## 2026-08-29 session (continued — the CTE anomaly, root-caused; migration
+021 audited and cleared; merge re-verified 3×)
+
+Read CONTEXT.md first as instructed. A deep audit, not a patch: find the
+actual root cause of the previous entry's "unexplained one-off" before
+touching migration 021's shipped function body, and do not proceed to step
+9 until it is resolved or explicitly accepted. **It is resolved.** No
+change was made to the function's logic — see step 4 below for why that is
+the correct outcome rather than a dodged one.
+
+### Step 1 — is the potentially-broken code live? **No.**
+
+Stated plainly, because everything else depends on it: **the shape that
+misbehaved was never in migration 021.** It existed only in a throwaway
+*fixture-creation* query typed into the SQL Editor to build test data.
+"Worked around" last session meant re-issuing that fixture's `UPDATE` as a
+standalone statement — **the function itself was never edited, before or
+after**. There is no version of 021 in which the misbehaving construct was
+ever deployed.
+
+**But comparing source to production surfaced a separate, real finding.**
+Rather than eyeball the local file, the live body was hashed:
+`md5(prosrc)` and `length(prosrc)` from `pg_proc` versus the local file's
+`as $$ … $$` body. They did **not** match — production **9483** chars,
+local **9485**. Localised by comparing per-line lengths (230 lines on both
+sides): exactly **two lines differ, each one character shorter in
+production**, and both are **pure `--` comment banner lines**. Every
+executable line is byte-identical. The two lines had lost exactly one
+`─` (U+2500) each.
+
+**Traced to the transport, with a prediction that held.** Ruled out in
+order: Monaco's `setValue`/`getValue` round-trip (tested with box-drawing
+runs of 24–32 chars — lossless, `identical: true`); and the
+base64→`atob`→`TextDecoder` decode path (tested on the exact two lines —
+302 codepoints in, 302 out). What remained was the ~15KB base64 blob
+reproduced verbatim in last session's tool call. In base64, a run of `─`
+encodes as the 4-character group `4pSA` repeated — so **dropping one whole
+group stays byte-aligned and silently removes exactly one character while
+corrupting nothing else.** Prediction: the damage should land on the
+*longest repetitive runs*. Checked: the two affected lines hold runs of
+**28** and **22** consecutive `─` — the two longest in the file — and the
+third-longest (**20**) survived intact, as did every shorter run. That is
+the mechanism.
+
+**Last session had the evidence and missed it**: its own output shows
+`getValue().length` → `11234` against the file's `11236`. A 2-character
+loss was visible at apply time and went unexamined.
+
+**Resolved by reconciling the file to the deployed body**, not by
+re-applying: the difference is decorative comment padding with zero
+semantic effect, and a migration file is a record of what was actually
+applied, so the file should match it. Done programmatically (hand-typing a
+28-dash run is precisely the hazard just diagnosed) — one `─` removed from
+each of the two banners. Local body md5 now equals production's
+`75168ffd29202115e7f6af8b5bfeba85`, 9483 chars, **exact match**. Source and
+production are now byte-identical, so a future audit hashing them gets a
+clean result instead of chasing this ghost.
+
+### Steps 2–3 — hypothesis, then reproduction
+
+**Hypothesis (correct):** Postgres executes every sub-statement of a single
+`WITH` clause under **one snapshot**, so CTEs cannot see one another's
+effects on the target tables; `RETURNING` is the only channel between them.
+The fixture query did `ins as (INSERT … RETURNING id)` alongside
+`upd as (UPDATE exercises … WHERE id = (SELECT id FROM ins))` — the
+`WHERE` resolved to a real uuid (reading a sibling CTE's `RETURNING` output
+is supported), but the `UPDATE`'s *scan of `exercises`* ran against a
+snapshot in which that row does not exist. Zero rows matched.
+
+**Reproduced immediately, and the missing evidence recovered.** Re-running
+the exact shape and inspecting **every** output column (last session's
+results grid truncated after 3 columns, which is why this was never seen):
+`ins_id` a real uuid, `upd_id` **NULL**, `upd_rowcount` **0**, and the row
+itself `status = 'active'`, `lost_at` null.
+
+**Determinism and controls** — all three live possibilities the brief named
+were tested, not assumed:
+
+| Case | Shape | Result |
+|---|---|---|
+| A0–A5 (**6 runs**) | `INSERT` in one CTE + `UPDATE` in a sibling CTE targeting the new row | **failed 6/6** — `status` stayed `active` |
+| B (control) | Same `UPDATE`-in-CTE, but the row was created by a **prior statement** | **worked** — `lost` |
+| C (control) | Correct pattern: `INSERT` then `UPDATE` as **sequential statements** | **worked** — `lost` |
+
+So: **deterministic, not intermittent** (6/6, zero successes); **not a
+misread of the verification query** (the RPC itself independently reported
+`status=active`, and `upd_rowcount = 0` is the write path's own report);
+and **not "UPDATE-in-a-CTE doesn't work"** (control B proves it commits
+fine when its target is visible). The previous entry's "Run without RLS
+dialog" guess is **ruled out** — controls B and C went through the same
+dialog path and both succeeded.
+
+### Step 2 applied to 021 itself — checked, and cleared with evidence
+
+The function has **three** data-modifying CTEs, all the same shape:
+`with X as (UPDATE … RETURNING 1) SELECT count(*) INTO … FROM X` (step 2a
+`moved`, step 2b `repointed`, step 3 `repointed`). In every one, the CTE is
+the statement's only writer and the outer query consumes **only its
+`RETURNING` output** — the documented-correct channel. **Nowhere does a
+later clause in the same statement depend on seeing an earlier CTE's
+write.** The remaining two `WITH`s (`head_renumber`, ×2) are read-only CTEs
+feeding an `UPDATE … FROM`, updating each row at most once by `id`.
+
+The one place 021 reads a table it also writes in the same statement is
+step 2a's `workout_day_id not in (select … from v2_program_exercises where
+exercise_id = p_target)`. **The snapshot rule is load-bearing-correct
+there**: that subquery *must* see pre-merge state, i.e. which days already
+held the target before any re-pointing. If it could see the `UPDATE`'s own
+writes, a row just re-pointed to the target would make its own day look
+"already has target" and change which rows qualify. **The very semantics
+that broke the fixture query are what make step 2a correct.**
+
+Conversely, the head→stage renumbering pairs in steps 2b and 3 are
+**separate statements**, so the stage update *does* see the renumbered
+heads (a later statement in the same transaction sees earlier command ids)
+— demonstrated by control C and confirmed in all three end-to-end runs
+below.
+
+### Step 4 — the correct fix is no change to 021
+
+The bug was in throwaway test scaffolding, never in shipped code, so there
+is nothing in the function to fix. Restructuring 021 anyway would be
+exactly the "restructure until the symptom goes away" the brief warned
+against — and would mean editing the one irreversible operation in this
+feature for no identified defect. **Function body unchanged** (beyond the
+two decorative comment characters reconciled in step 1, which alter no
+statement). The real fix is to the **fixture-writing practice**: fixture
+creation now uses a `plpgsql DO` block with local variables and sequential
+statements (`insert … returning id into v_src;` then `update … where id =
+v_src;`), which is control C's proven-correct shape.
+
+### Step 5 — full merge re-verified, three times, on a stronger fixture
+
+Rebuilt from scratch with **more coverage than step 8's original pass**,
+which only ever exercised the collision path. Each fixture now has two
+workout days: **day 1 holds both exercises** (§5.3 step 2b merge collision)
+and **day 2 holds only the source** (§5.3 step 2a plain re-point, never
+previously tested — last session's run returned `program_exercises_moved:
+0`, so that branch had no coverage at all).
+
+- **Runs 1 and 2** (identical fixtures, determinism check): both returned
+  `{set_logs_moved: 2, program_exercises_moved: 1, program_exercises_merged:
+  1, plan_sets_moved: 2, source_deleted: true}`. Run 1 was verified **by row
+  id** (ids captured pre-merge, so "preserved" means the same row, not a
+  lookalike): target's original log keeps `set_number` 1; the former source
+  head becomes 2 with `week_plan_set_id` intact; the stage becomes 2 with
+  `parent_set_id`, `stage_index` and `week_plan_set_id` all intact; heads
+  `[1,2]` unique; the source's day-1 program-exercise row deleted; day 2
+  re-pointed with its plan set still linked; **0 orphaned plan sets**; audit
+  row exact.
+- **Run 3** (harder variant: **two** source heads plus a stage on the
+  second, on both the log and plan side) returned `{3, 1, 1, 3, true}` and
+  renumbered exactly as designed — `{100kg→1, 80kg→2, 70kg→3, 50kg→3}`:
+  target keeps 1, the two source heads take 2 and 3 in original order, and
+  the stage follows *its own* head to 3. Same shape on the plan side
+  (`[{1,stage0},{2,stage0},{3,stage0},{3,stage1}]`). This is the real test
+  of `row_number() over (order by set_number, logged_at)` and of the
+  head-then-stage statement ordering; the single-head fixture could not
+  distinguish a correct implementation from several wrong ones.
+
+All against throwaway data only — **Adam's real exercise history was never
+touched**. Every fixture cleaned up afterward (FK-safe order: audit →
+sessions → mesocycles → programs → exercises) and the account confirmed
+back at its exact baseline: **exercises 70, v2_program_exercises 26,
+v2_set_logs 476, v2_week_plan_sets 564**, audit rows 0, lost exercises 0,
+zero `zzmerge-`/`zzprobe-` leftovers in any table, zero orphaned plan sets.
+
+### Incidental finding, relevant to the eventual real-data run
+
+`select … group by workout_day_id, exercise_id having count(*) > 1` over
+Adam's real `v2_program_exercises` returns **0**. This matters because step
+2a re-points **per row**, not per day: if a single workout day ever listed
+the same exercise twice, both rows would be re-pointed and the day would end
+up listing the target twice. Not a defect the function introduces from clean
+data (anomaly-in, anomaly-out), and the account has no such rows — but it is
+now a checked precondition rather than an assumption.
+
+### Verified
+
+`npm run typecheck` (`tsconfig.app.json` then `tsconfig.api.json`) clean.
+`npm test`: **308/308 passing**. No application code changed this session —
+the only file edits are two comment characters in
+`021_v3_reassign_exercise_fn.sql` and this file.
+
+**Step 9 (the confirmation sheet) deliberately not started** — the brief
+gated it on this being resolved, and it now is, but starting it was not in
+scope for this session. Nothing committed; no commit instruction was given.
+
+---
+
+## 2026-08-29 session (continued — retroactive hash-audit of migrations 013,
+014, 019, 020, 022; migration 021 re-applied and re-verified with a safer
+transport)
+
+Read CONTEXT.md first as instructed. Two verification tasks, no functional
+code changes intended or made.
+
+### Part 1 — retroactive hash-check, every migration applied before the
+base64 transport bug was found
+
+**013, 019, 022 (pure/mostly-DDL) — schema introspected and compared
+field-by-field against the local files, not eyeballed:** every check
+constraint (`pg_get_constraintdef`), FK (including `on delete` actions),
+index (`pg_indexes.indexdef`), RLS policy (`qual`/`with_check`/`cmd`),
+`relrowsecurity` flag, and column (`information_schema.columns` —
+type/nullability/default) for `v2_coach_week_analyses`, `v2_exercise_libraries`,
+`v2_exercise_library_items`, `v2_exercise_reassignments`, and the columns
+013/019 added to `exercises` (`muscle_subgroup`, `movement_pattern`,
+`status`, `source_library_id`, `lost_at`) — **17 constraints, 4 indexes, 4
+policies, 22 columns, all byte-for-byte identical to what the migration
+files specify.** (Comments in plain DDL files aren't stored by Postgres
+anywhere — unlike 021's function body, there is no live counterpart to hash
+them against, so this DDL-equivalent check covers everything that *is*
+stored: constraint/index/policy definition text and column metadata.) Zero
+drift found.
+
+**014 and 020 (data-writing migrations) — the actual production row values
+compared against each migration's own VALUES list**, transcribed into a
+verification query and diff-checked against the local file byte-for-byte
+*before* being run (extracted both into normalized `id|subgroups|pattern`
+triples and diffed with the shell, so the query provably tests what the
+migration file actually says, not a hand-retyped approximation of it):
+- **014** (70-row `muscle_subgroup`/`movement_pattern` tag UPDATE): all 70
+  ids present, **zero mismatches** — including **Back Squat** and **Chest
+  Press**, the two exercises the tag-editing-UI verification session
+  (above) deliberately mutated and claimed to have restored. This
+  independently confirms that restoration was exact, rather than trusting
+  the earlier narrative.
+- **020**: the `legacy-default` library row's `description` text (the one
+  containing an em dash and built from four concatenated literals) verified
+  by `length`/`md5` computed from the local file via a Python script reading
+  it directly off disk (never retyped by hand, precisely to avoid
+  re-introducing a transcription risk while auditing for one) — **exact
+  match** (270 chars, `md5 8ac1d914f043e891e5f4709618024fb5`). The 46-id
+  `source_library_id` provenance UPDATE — **zero mismatches**.
+
+**Conclusion: no drift anywhere in 013/014/019/020/022.** The 021 corruption
+found earlier this session was an isolated event tied to that specific apply
+(a ~15KB base64 blob with long repetitive comment-banner runs), not a
+symptom of a systemic problem with every past migration.
+
+### Part 2 — migration 021 re-applied from the local file, with a
+transport designed not to repeat the failure, then re-verified
+
+Purpose: find out whether the base64-transport corruption is reproducible or
+was a one-off, per the standing question the earlier root-cause entry left
+open.
+
+**Transport used, deliberately different from the base64 blob that failed
+last time:** local file read directly off disk; any run of 4+ identical
+non-whitespace characters (the `─` banner runs — 27, 21, 20, 7, 5, 5 chars
+long, post-013-session's own 1-char trims) replaced with a compact
+`RUN:<n>:<codepoint>` placeholder token *before* the text ever
+left this session's tooling, so no long repetitive run had to survive
+verbatim through any transport step — the exact mitigation the earlier
+root-cause entry recommended. Round-tripped locally (placeholder → expanded
+== original, byte for byte) before being sent anywhere. Sent to the browser
+as plain UTF-8 (JSON-escaped, not base64), where it was expanded back and
+verified against the file's real SHA-256
+(`9c3ac174467cfbcca3be60a2c533bb05ee95f407fe69ebaa1cf2f7b374389661`, 11234
+chars) **using the browser's own
+`crypto.subtle.digest`, before it ever touched the Monaco editor** — a
+stronger, earlier check than the previous session's post-hoc `length()`
+comparison. Only after that hash matched was the text `setValue`'d into
+Monaco (round-tripped again: `getValue()` identical to source) and run.
+
+**Result: clean.** `CREATE OR REPLACE FUNCTION` + the `GRANT` both
+succeeded ("Success. No rows returned"). Immediate post-apply check —
+`md5(prosrc)`/`length(prosrc)` from `pg_proc` — **9483 chars,
+`75168ffd29202115e7f6af8b5bfeba85`, exact match to local**, plus
+`prosecdef = false` (SECURITY INVOKER, unchanged), `proconfig =
+["search_path=public"]` (unchanged), `authenticated` still has execute
+(unchanged). **The corruption did not recur.** This is consistent with the
+root cause already identified (a base64-specific 4-char-group alignment
+failure) rather than a general transport-layer defect — this apply used a
+different transport precisely to avoid that specific failure mode, so this
+result confirms the avoidance worked, not that base64 itself would have
+been safe this time too.
+
+**No functional change to the database**: the function body, `SECURITY
+INVOKER`, `search_path`, and grant were already exactly this before the
+re-apply (Part 2 of the earlier root-cause session had already reconciled
+local-to-production) — this re-apply round-tripped production back to the
+identical state it started in, deliberately, to test the transport rather
+than to fix anything.
+
+### Verified
+
+No application code touched. `git status` unaffected by this session
+(CONTEXT.md is the only file this session wrote). No test suite run — no
+`src/` or `supabase/migrations/*.sql` file content changed.
+
+---
 
 ---
 

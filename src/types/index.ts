@@ -77,6 +77,41 @@ export interface ExerciseLibraryItem {
   position: number
 }
 
+// ─── Reassignment ─────────────────────────────────────────────────────────────
+// reassign_exercise_history() (migration 021, EXERCISE-LIBRARY-TASKS.md §5/§7.2)
+// merges a lost exercise's entire history onto an active target. Preview is a
+// client-side read for the confirmation copy (§6.1) — it is re-derived by the
+// RPC at merge time, so a number shown here can never be the number actually
+// acted on; only the RPC's own returned counts are authoritative.
+
+export interface ReassignPreview {
+  setCount: number
+  sessionCount: number
+  firstDate: string | null
+  lastDate: string | null
+  // Workout days where source and target already share a program-exercise
+  // row — the §5.3 step 2b merge case ("the day will list one exercise
+  // where it lists two now"), not every day the source merely appears in.
+  affectedWorkoutDays: string[]
+  // Sessions logging both exercises already — the swap-exercise collision
+  // (§5.3 step 3), the single most likely reassignment this app will see.
+  overlappingSessionCount: number
+  // Coach analyses whose frozen content/input_snapshot names the source
+  // exercise — they keep describing it under its old identity forever (§5.3
+  // step 4). Best-effort count, not a live join.
+  frozenAnalysisCount: number
+}
+
+// The RPC's returned row (§5.1) — what actually happened, as opposed to
+// ReassignPreview's beforehand estimate.
+export interface ReassignResult {
+  setLogsMoved: number
+  programExercisesMoved: number
+  programExercisesMerged: number
+  planSetsMoved: number
+  sourceDeleted: boolean
+}
+
 // ─── Program ──────────────────────────────────────────────────────────────────
 
 export type WeeklySchedule = Record<DayOfWeek, string | null>

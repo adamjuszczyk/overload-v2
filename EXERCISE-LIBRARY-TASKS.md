@@ -1431,19 +1431,38 @@ temp library) — all against production, none against Adam's real
 exercises, all cleaned up and confirmed back to the 70-row baseline
 afterward.
 
-**8. Migrations 021 + 022, and reassignment.** The function (§5.3),
-`reassignService.ts`, the preview query, cache invalidation and Dexie
-re-prime (§5.5). §3.4's audit table (022) is applied ahead of 021, since
-021's function body writes to it in step 6.
-**Verified against constructed throwaway data first, never against real
-history**: create two temporary exercises, log real sets under both in the
-same session (reproducing the swap-exercise collision case deliberately —
-§5.3 step 3), merge, then verify `set_number` uniqueness per group,
-preserved `parent_set_id`/`stage_index`, preserved `week_plan_set_id`
-links, automatic source deletion, **and a matching `v2_exercise_reassignments`
-row — right counts, right names, `source_deleted = true`**. Then clean up,
-including the audit row. Only after that, against real data, and only with
-Adam's explicit go-ahead.
+**8. Migrations 021 + 022, and reassignment. Done, 2026-08-29 — see
+CONTEXT.md's dated session entry for the full account.** The function
+(§5.3), `reassignService.ts`, the preview query, cache invalidation and
+Dexie re-prime (§5.5) all built. §3.4's audit table (022) applied ahead of
+021 as planned, since 021's function body writes to it in step 6.
+**Verified against constructed throwaway data only, never against real
+history**: two temporary exercises, a temporary program/workout day
+containing both (the §5.3 step 2b merge collision) with a planned dropset
+under the source and a plain planned set under the target, and a session
+logging both (the §5.3 step 3 swap-exercise set_logs collision) — called
+through the real deployed RPC via the dev app's own authenticated session
+(anon key + the real access token, not the SQL Editor, which has no
+`auth.uid()`). Every property verified by direct query: `set_number`
+unique per head in both `v2_set_logs` and `v2_week_plan_sets` (a stage
+correctly sharing its head's number is not a violation), `parent_set_id`/
+`stage_index` and `parent_week_plan_set_id`/`stage_index` preserved
+unchanged on both dropset stages, `week_plan_set_id` links preserved,
+automatic source-row deletion (`source_deleted = true`), and a matching
+`v2_exercise_reassignments` audit row with the right names and counts.
+Cleaned up completely afterward, including the audit row — every touched
+table back at the exact pre-test baseline. One correction found in this
+document during verification: §3.4's own checklist says 13 columns; the
+table as specified (here and in the migration) has 12 — an off-by-one in
+this prose, not in the schema. Also closed, on top of what this step
+originally scoped: step 7's own two gaps (zero test coverage on the
+delete/restore/preview logic, and a delete confirm dialog that didn't
+disclose the hard-delete path's program-reference clearing) — see
+CONTEXT.md for both.
+**Not done, not asked for:** the real-data run mentioned below (against
+Adam's actual exercise history) — that still needs its own explicit
+go-ahead, separately, once Adam has reviewed this step's throwaway
+verification.
 
 **9. The confirmation sheet** (§6). Built after the RPC exists so its copy
 renders real preview numbers rather than placeholders — the counts are the
