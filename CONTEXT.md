@@ -16650,6 +16650,54 @@ read against the three failure modes named in Step 7 above.
 
 ---
 
+## 2026-08-30 session (continued — WEEK_PROMPT_VERSION collision check, /library 404 fix)
+
+Read CONTEXT.md first as instructed. Working tree was clean before
+starting (only `supabase/.temp/`, unrelated local CLI state) — no
+in-progress work to isolate. Two unrelated fixes, committed and verified
+separately per this project's per-scope convention.
+
+### Part 1 — WEEK_PROMPT_VERSION collision check: none found, no change made
+
+The brief's premise was that a prior handoff had recorded Weekly Analysis
+as "v1, deployed, `WEEK_PROMPT_VERSION 2`" — i.e. that production might
+already have been stamping analyses version 2 with the pre-Phase-5 prompt
+before this thread ever touched the file, which would mean the just-
+shipped Phase 5 deploy's "1 → 2" bump collided with those existing rows.
+Checked for real rather than trusted:
+
+- **Live source, read directly**: `coachWeekPrompt.ts:71` —
+  `export const WEEK_PROMPT_VERSION = 2` — confirmed on disk, matching
+  `origin/master`'s `HEAD` (`33ccd1d`, this thread's own prior commit).
+- **Full git history of the file** — exactly two commits have ever
+  touched it: `ac064ff` (the original build, 2026-08-23), which set
+  `WEEK_PROMPT_VERSION = 1`, and `1e94286` (Phase 5, this session's
+  immediately prior commit), which bumped it to `2`. No intermediate
+  commit ever set it to any other value — the "already at 2
+  pre-Phase-5" premise has no basis in the code's actual history.
+- **Production queried directly** — `v2_coach_week_analyses`, via the
+  live app's own authenticated session token (extracted from
+  `localStorage`'s `sb-imhsawrghteqsmpklofv-auth-token`, the anon key
+  pulled from the deployed JS bundle itself, no service-role key used or
+  seen), `select=id,week_start,prompt_version,model,created_at`. **Exactly
+  one row exists, full stop**: `0c9951ef-...`, `week_start 2026-08-17`,
+  **`prompt_version 1`**, created `2026-08-23T00:09:42Z` — the same one
+  real generation this file has already recorded elsewhere ("Coach —
+  Weekly Analysis... the one real analysis... 0c9951ef-...").
+
+**No collision — the actual sequence is exactly the two-commit history
+above, and the only real row in production is stamped version 1, not 2.**
+`WEEK_PROMPT_VERSION` stayed at `2`; nothing was changed. This is now the
+verified version history, so it doesn't need re-deriving from a summary
+again: **v1 (2026-08-23, `ac064ff`) → the one real generation
+(`0c9951ef`, week 2026-08-17, stamped v1) → v2 (2026-08-30, `1e94286`,
+Phase 5's ratings/memory/notes wiring) → no real generation at v2 yet.**
+Recorded as a docs-only commit — nothing to typecheck/test/build
+differently, so verification for this part is the read/query above, not
+a build step.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
