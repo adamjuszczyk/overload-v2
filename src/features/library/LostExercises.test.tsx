@@ -21,10 +21,28 @@ vi.mock('../notifications/toastStore', () => ({
   useToastStore: (selector: (s: { show: typeof showToastMock }) => unknown) => selector({ show: showToastMock }),
 }))
 
+// ReassignSheet.tsx has its own dedicated test file (ReassignSheet.test.tsx)
+// covering the confirm gate, the picker, and the preview numbers — mocked
+// here to a bare stand-in so this file only proves the entry-point wiring:
+// tapping Reassign opens it for the tapped exercise, and it closes.
+const reassignSheetPropsSpy = vi.fn()
+vi.mock('./ReassignSheet', () => ({
+  default: (props: { sourceExercise: Exercise; onClose: () => void }) => {
+    reassignSheetPropsSpy(props.sourceExercise)
+    return (
+      <div>
+        <span>REASSIGN SHEET OPEN</span>
+        <button onClick={props.onClose}>close reassign sheet</button>
+      </div>
+    )
+  },
+}))
+
 afterEach(() => {
   cleanup()
   restoreMutateMock.mockReset()
   showToastMock.mockReset()
+  reassignSheetPropsSpy.mockReset()
 })
 
 const LOST_EXERCISE: Exercise = {
@@ -67,5 +85,20 @@ describe('LostExercises', () => {
 
     opts.onSuccess()
     expect(showToastMock).toHaveBeenCalledWith('Chest Press restored to your active library')
+  })
+
+  it('tapping Reassign opens ReassignSheet for that exercise, and closing it clears the state', () => {
+    lostExercises = [LOST_EXERCISE]
+    render(<LostExercises onClose={() => {}} />)
+
+    expect(screen.queryByText('REASSIGN SHEET OPEN')).toBeNull()
+
+    fireEvent.click(screen.getByTitle('Reassign'))
+
+    expect(screen.getByText('REASSIGN SHEET OPEN')).toBeTruthy()
+    expect(reassignSheetPropsSpy).toHaveBeenCalledWith(LOST_EXERCISE)
+
+    fireEvent.click(screen.getByText('close reassign sheet'))
+    expect(screen.queryByText('REASSIGN SHEET OPEN')).toBeNull()
   })
 })

@@ -107,6 +107,35 @@ export async function previewReassign(sourceId: string, targetId: string): Promi
   }
 }
 
+// P3/P4 (§5.2) — the blocking preflights, checked right before the
+// confirmation sheet allows the tap rather than surfacing as a failure
+// after it (§6.2). Both describe a state that resolves on its own.
+export interface ReassignBlockers {
+  // P3 — a queued v2_set_logs upsert carries a literal exercise_id
+  // (useSession.ts:692); replayed after the source row is hard-deleted by
+  // the merge, it violates the FK and useSyncQueue.ts dead-letters it,
+  // discarding a real logged set permanently. Client-side/this-device only
+  // — §5.6 documents the residual second-device window this doesn't close.
+  hasUnsyncedSets: boolean
+  // P4 — a live session could be logging under either exercise while the
+  // merge runs. §5.3 step 1's row lock closes the window inside the
+  // transaction, but a session mid-workout should not be silently
+  // renumbered underneath the lifter without warning first.
+  hasSessionInProgress: boolean
+}
+
+export async function checkReassignBlockers(): Promise<ReassignBlockers> {
+  const [unsyncedCount, sessionResult] = await Promise.all([
+    db.sync_queue.count(),
+    supabase.from('v2_sessions').select('id', { count: 'exact', head: true }).eq('status', 'in_progress'),
+  ])
+  if (sessionResult.error) throw sessionResult.error
+  return {
+    hasUnsyncedSets: unsyncedCount > 0,
+    hasSessionInProgress: (sessionResult.count ?? 0) > 0,
+  }
+}
+
 // §5.3 step 4 / §6.1 item 9 — a written analysis embeds exercise identity as
 // {exerciseId, exerciseName} inside its frozen content/input_snapshot JSON
 // (analysisInput.ts), at a nesting depth that differs between daily and

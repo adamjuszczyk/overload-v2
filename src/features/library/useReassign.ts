@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
-import { previewReassign, reassignExerciseHistory, reprimeAfterReassign } from './reassignService'
+import { previewReassign, reassignExerciseHistory, reprimeAfterReassign, checkReassignBlockers } from './reassignService'
 
 // On-demand, same reasoning as useExerciseDeletePreview/useLibraryDeletePreview
 // — fired once, right before ReassignSheet.tsx's confirmation step renders.
@@ -8,6 +8,13 @@ export function useReassignPreview() {
   return useMutation({
     mutationFn: ({ sourceId, targetId }: { sourceId: string; targetId: string }) => previewReassign(sourceId, targetId),
   })
+}
+
+// P3/P4 (§5.2/§6.2) — fired alongside the preview, on-demand, so the
+// confirmation step can disable MERGE HISTORY with an explanation rather
+// than let the RPC refuse after the tap.
+export function useReassignBlockers() {
+  return useMutation({ mutationFn: () => checkReassignBlockers() })
 }
 
 // §5.5 — every query key that embeds exercise identity, broad on purpose:

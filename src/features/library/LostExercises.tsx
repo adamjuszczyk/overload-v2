@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
-import { X, RotateCcw } from 'lucide-react'
+import { X, RotateCcw, GitMerge } from 'lucide-react'
 import type { Exercise, MuscleGroup } from '../../types'
 import { useLostExercises, useRestoreExercise } from './useExercises'
 import { useToastStore } from '../notifications/toastStore'
+import ReassignSheet from './ReassignSheet'
 
 const MUSCLE_LABELS: Record<MuscleGroup, string> = {
   chest: 'CHEST',
@@ -25,11 +27,14 @@ const MUSCLE_LABELS: Record<MuscleGroup, string> = {
 // preflight, no confirm dialog — a single tap moves the row back to
 // 'active', the same auto-save-on-tap convention this app already uses for
 // low-risk mutations (ExerciseTagList's chip taps, ExerciseList's archive
-// toggle). Reassignment (§8 step 9) is deliberately not built yet.
+// toggle). Reassignment (§8 step 9) opens ReassignSheet.tsx, the one
+// irreversible action in the feature — its own two-step confirm, not
+// borrowed here.
 export default function LostExercises({ onClose }: { onClose: () => void }) {
   const { data: exercises = [], isLoading, error } = useLostExercises()
   const restore = useRestoreExercise()
   const showToast = useToastStore((s) => s.show)
+  const [reassigning, setReassigning] = useState<Exercise | null>(null)
 
   function handleRestore(ex: Exercise) {
     restore.mutate(ex.id, {
@@ -200,6 +205,26 @@ export default function LostExercises({ onClose }: { onClose: () => void }) {
                 </div>
 
                 <button
+                  onClick={() => setReassigning(ex)}
+                  title="Reassign"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    borderRadius: 8,
+                    flexShrink: 0,
+                  }}
+                >
+                  <GitMerge size={15} />
+                </button>
+
+                <button
                   onClick={() => handleRestore(ex)}
                   title="Restore"
                   disabled={restore.isPending}
@@ -223,6 +248,8 @@ export default function LostExercises({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         )}
+
+        {reassigning && <ReassignSheet sourceExercise={reassigning} onClose={() => setReassigning(null)} />}
       </div>
     </div>
   )

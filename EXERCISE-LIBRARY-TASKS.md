@@ -1464,10 +1464,36 @@ Adam's actual exercise history) — that still needs its own explicit
 go-ahead, separately, once Adam has reviewed this step's throwaway
 verification.
 
-**9. The confirmation sheet** (§6). Built after the RPC exists so its copy
-renders real preview numbers rather than placeholders — the counts are the
-part most likely to be subtly wrong, and a confirmation with a wrong number
-in it is worse than no number.
+**9. The confirmation sheet. Done, 2026-08-29 — see CONTEXT.md's dated
+session entry for the full account.** `ReassignSheet.tsx` (new) — the
+picker reuses `SwapExerciseSheet.tsx`'s pick-or-create shape but, per
+§9.6, offers every active exercise (same-muscle-group first) rather than
+filtering to one group; the confirm step renders all nine §6.1 items plus
+the §9.6 cross-group note, every number sourced from `previewReassign()`'s
+real result. `MERGE HISTORY` (`--error`, not `--accent`) stays disabled
+until the typed text exactly equals the target's name — case- and
+whitespace-sensitive (§6.2/§11.1). **P3/P4 (§5.2) built here for the first
+time** — `checkReassignBlockers()` (new) checks `db.sync_queue.count()`
+and a live `v2_sessions` `in_progress` count, disabling the control with
+its own explanation rather than letting the RPC refuse after the tap.
+`LostExercises.tsx` gets the Reassign entry point.
+**Verified against constructed throwaway data, never against Adam's real
+history**: two throwaway exercises, a program/workout-day collision (§5.3
+step 2b) and two sessions — one source-only, one with both exercises
+logged (§5.3 step 3's renumbering case) — run through the real deployed
+RPC via the actual dev app UI end to end (sign-in, Library → Lost
+Exercises → Reassign → pick → typed-name gate proven live via
+`button.disabled` → MERGE HISTORY), not a script. Confirmed by direct SQL
+afterward: `set_number` unique (`1,2`, not `1,1`) in the shared session,
+the collision resolved to one `v2_program_exercises` row, automatic source
+deletion, and a matching `v2_exercise_reassignments` audit row. One real
+bug found live and fixed: the affected-workout-days/overlapping-session
+lines had a hardcoded plural verb, wrong on the (most common) singular
+case. Cleaned up completely; every touched count back at its exact
+pre-test baseline. `tsconfig.app.json`/`tsconfig.api.json` both clean;
+329/329 Vitest passing (21 new cases across three files).
+**Not done, not asked for:** step 10 (build, full adversarial review,
+deploy) not started, per explicit instruction to stop after step 9.
 
 **10. Verification, adversarial review, deploy, CONTEXT.md.** Typecheck
 (both `tsconfig.app.json` and `tsconfig.api.json`), full Vitest, `npm run

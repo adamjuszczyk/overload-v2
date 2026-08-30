@@ -15817,6 +15817,144 @@ No application code touched. `git status` unaffected by this session
 
 ---
 
+## 2026-08-29 session (continued — EXERCISE-LIBRARY-TASKS.md §8 step 9: the confirmation sheet)
+
+Read CONTEXT.md first as instructed. Built §8 step 9 only, per explicit
+instruction to stop before step 10 (final verification/deploy).
+
+**`ReassignSheet.tsx` (new)** — the two-step picker-then-confirm sheet §6
+specifies. Picker reuses `SwapExerciseSheet.tsx`'s exact shape (pick an
+existing exercise or create one via `useCreateExercise()`), but per §9.6
+offers every active exercise rather than filtering to the source's own
+muscle group — same-group candidates sort first, and a cross-group pick
+adds its own line to the confirmation rather than being blocked. Confirm
+step renders all nine §6.1 items plus the §9.6 cross-group note, every
+number sourced from `previewReassign()`'s real query result (no
+placeholders): direction, real set/session counts, date range, the
+permanent/irreversible line, the "one continuous exercise" explanation,
+the source-deletion line, the affected-workout-days line (§5.3 step 2b),
+the overlapping-session/renumbering line (§5.3 step 3), and the
+frozen-analysis count. Confirm control (`MERGE HISTORY`, styled `--error`
+not `--accent`) stays disabled until the typed text exactly equals the
+target's name — case- and whitespace-sensitive, no trimming — per §6.2/
+§11.1's decided type-the-name friction.
+
+**P3/P4 (§5.2) built for the first time this session** — step 8 explicitly
+left these as step 9's job. `reassignService.ts` gains
+`checkReassignBlockers()`: `db.sync_queue.count() > 0` for P3 (unsynced
+sets), a `v2_sessions` count where `status = 'in_progress'` for P4. Both
+fire alongside the preview when a target is picked (`useReassign.ts` gains
+`useReassignBlockers()`) and disable `MERGE HISTORY` with their own inline
+explanation — the sheet never presents a button that's going to refuse,
+per §6.2.
+
+**Entry point**: `LostExercises.tsx` gets a Reassign action (new
+`GitMerge` icon button, alongside the existing Restore) that opens
+`ReassignSheet.tsx` for that row.
+
+**One real bug found during live verification, fixed before finishing**:
+the affected-workout-days and overlapping-session lines hardcoded a plural
+verb ("*day* currently **list** both exercises", "1 session **contain**
+both exercises") regardless of count — wrong grammar on the single-day/
+single-session case, which is also the most common one. Fixed to agree
+with the actual count.
+
+### Tests
+
+`reassignService.test.ts` (new, 5 cases) — `checkReassignBlockers()`, both
+signals independently and together, plus that a query error propagates
+rather than reading as clear. `ReassignSheet.test.tsx` (new, 15 cases) —
+the typed-name gate (exact match enables; wrong case, leading/trailing
+whitespace, and a partial prefix all correctly do not), the picker's
+pick-vs-create paths, that rendered numbers are the actual preview result
+for *that* target (not a stale value from a previous pick — verified by
+picking two different targets with different mocked results in sequence),
+and that P3/P4 disable the control independently of a matching typed name.
+`LostExercises.test.tsx` extended with one wiring test (tapping Reassign
+opens the sheet for the tapped exercise; `ReassignSheet.tsx` itself is
+mocked out here, since it has its own dedicated test file).
+
+### Live-verified end to end, throwaway data only, cleaned up after
+
+Built via the Supabase SQL Editor (`window.monaco.editor…setValue()`, per
+the standing Monaco practice) as a sequence of separate top-level
+statements, not a multi-CTE query — the shape the prior session's
+root-caused CTE-snapshot anomaly said to avoid: two exercises
+(`__throwaway_step9_source__`/`__throwaway_step9_target__`), a program +
+workout day with both as program-exercise rows on the same day (the §5.3
+step 2b collision, and the case that exercises the confirmation's
+affected-workout-days line), and two sessions — one with only the source
+logged, one with both (the §5.3 step 3 renumbering case, and the
+confirmation's overlapping-session line) — then the source flipped to
+`lost` as its own standalone statement, after the logs existed.
+
+Signing in was needed for the real app session (this conversation's
+browser profile had no stored Overload auth) — Adam signed in himself; no
+password was seen or entered by this session, per the standing rule
+against handling credentials. From there, the entire flow ran through the
+actual dev app, not a script: Library → Lost Exercises → Reassign → picked
+`__throwaway_step9_target__` → confirm step rendered exactly "2 sets
+across 2 sessions will move", "Jun 1, 2026 – Jul 1, 2026",
+"`__throwaway_step9_day__` currently lists both exercises", "1 session
+contains both exercises" (matching a direct SQL count taken beforehand) →
+typed a trailing-space variant of the target's name (`MERGE HISTORY`
+confirmed still disabled via `button.disabled` in the live DOM, not just
+by eye) → typed the exact name (confirmed enabled) → tapped MERGE HISTORY.
+
+**Result, confirmed by direct SQL query immediately after**: toast read
+"Merged 2 sets of `__throwaway_step9_source__` into
+`__throwaway_step9_target__`"; `exercises` row count for the two throwaway
+names dropped from 2 to 1 (source auto-deleted); the target's
+`v2_program_exercises` row count is 1 (the collision correctly resolved to
+one row, not two); the two set-logs in the shared session hold
+`set_number` `1,2` — unique, not `1,1` — both now under the target's
+`exercise_id`; the `v2_exercise_reassignments` audit row reads
+`set_logs_moved=2 pe_moved=0 pe_merged=1 plan_sets_moved=0
+source_deleted=true`, exactly the counts the collision-only fixture
+predicts. The Library UI itself reflected the merge immediately (Lost
+Exercises showed "NO LOST EXERCISES" right after the toast, no manual
+refresh) — the `['exercises']` cache invalidation and `onClose()` in
+`useReassign.ts`/`ReassignSheet.tsx` both confirmed working live, not just
+in a mocked unit test.
+
+**Cleaned up completely afterward**: the audit row, the throwaway program
+(cascading its workout day and remaining program-exercise row), the two
+throwaway sessions (cascading their set logs), and the target exercise
+itself (source was already gone). Every touched count verified back at
+its exact pre-test baseline — `exercises` 71→70, `v2_programs` 2→1,
+`v2_sessions` 41→39, `v2_set_logs` 479→476 (476 also matches the number
+recorded as baseline several sessions ago), `v2_exercise_reassignments`
+1→0 — plus a `%throwaway_step9%` sweep across `exercises`/`v2_programs`/
+`v2_workout_days` and an orphaned-`v2_program_exercises` check, all zero.
+**Not run against Adam's real exercise history this session, as
+instructed** — that still needs its own separate go-ahead.
+
+This fixture deliberately reused less of step 8's scaffolding than the
+instruction's "reusing the fixture pattern from step 8" might suggest at
+first read: no dropset/week-plan-set scaffolding, since that specific
+mechanic (parent_set_id/stage_index/week_plan_set_id preservation) was
+already proven three times over in the prior two sessions and this step's
+job is the *sheet* wiring, not re-deriving the RPC's own correctness. What
+was reused is the methodology those sessions established — sequential
+statements over multi-CTE, `user_id`-scoped everything, verify-then-clean-
+up-then-reverify-baseline — applied to a lighter fixture sized for what
+step 9 actually needed to prove.
+
+### Verified
+
+`npx tsc -p tsconfig.app.json --noEmit` and `npx tsc -p tsconfig.api.json
+--noEmit` both clean. `npx vitest run`: **329/329 passing** (15 new
+`ReassignSheet.test.tsx` cases, 5 new `reassignService.test.ts` cases, 1
+new `LostExercises.test.tsx` case, everything pre-existing unchanged, no
+regressions).
+
+**Not done, not asked for:** step 10 (`npm run build`, full adversarial
+review, deploy, and this file's own step-10 write-up) not started, per
+explicit instruction to stop after step 9 — typecheck/Vitest above were
+run because this session's own instructions asked for them directly, not
+because step 10 was reached. Nothing committed this session; no commit
+instruction was given.
+
 ---
 
 ## Pending feedback to address
