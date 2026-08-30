@@ -16568,6 +16568,88 @@ is Adam's to make.
 
 ---
 
+## 2026-08-30 session (continued — Weekly Analysis Phase 5 shipped: verification, commit, deploy)
+
+Read CONTEXT.md first as instructed. Purpose of this session: get the
+held Weekly Analysis Phase 5 wiring (COACH-WEEK-ANALYSIS-TASKS.md §12 —
+built and adversarially reviewed in the "2026-08-28 session (continued —
+Coach Personalization wired into Weekly Analysis...)" entry above) live,
+and set up the review that follows. **No new feature code written this
+session.**
+
+**Step 1 — confirmed clean.** `git status`/`git log` showed Exercise
+Library's v1 work (through commit `b834352`) already fully committed and
+matching `origin/master`; the only uncommitted work in the tree was this
+Phase 5 thread.
+
+**Step 2 — checked the tagging-vocabulary drift risk named in the brief,
+found none.** `src/lib/exerciseTags.ts` (Exercise Library step 4, commit
+`50cf68d`) is the only commit that has ever touched that file, and its own
+header comment states it derived `MUSCLE_SUBGROUP_GROUPS` directly from
+COACH-WEEK-ANALYSIS-TASKS.md §4.3's proposal, verbatim, and confirms it
+agrees exactly with what migration 014 actually wrote. `weekAnalysisInput.ts`
+doesn't import a second copy of that vocabulary — it reads
+`muscle_subgroup`/`movement_pattern` straight off the DB row as loosely-typed
+strings and hands them to `weekBuckets.ts`'s `bucketOccurrences`, which was
+untouched by both this diff and Exercise Library's. Nothing to reconcile;
+proceeded.
+
+**Step 3 — confirmed already done.** `WEEK_PROMPT_VERSION` was already
+bumped 1 → 2 in the held diff, same convention as `coachPrompt.ts`'s
+`PROMPT_VERSION` bumps (a version constant plus a dated changelog comment
+above it explaining what changed and why).
+
+**Step 4 — full verification, clean.** `tsc -p tsconfig.app.json --noEmit`
+and `tsc -p tsconfig.api.json --noEmit` both clean. Full Vitest suite:
+**342/342** (up from the 253 recorded at §12.6 — the difference is
+Exercise Library's own tests, added and committed since). `npm run build`
+(`tsc -b && vite build`) clean.
+
+**Step 5 — committed as its own discrete commit.** `1e94286`, `feat:
+Weekly Analysis Phase 5 — Coach Personalization wired in (memory, notes,
+ratings, weekly averages)` — the ten files the held diff touched (code,
+`WEEK_PROMPT_VERSION`, and the SPEC/TASKS/CONTEXT documentation of that
+work), nothing else. `supabase/.temp/` stayed untracked and unstaged —
+local Supabase CLI state, unrelated to this feature.
+
+**Step 6 — deployed and confirmed live.** Pushed to `origin/master`
+(`b834352..1e94286`). Vercel deployment `dpl_gbmEitrmkRc2qym1G6XZGKgnjChE`,
+target production, **Ready**, `created` timestamp matching the push,
+aliased to `overload-v2-sage.vercel.app`, with all three Coach serverless
+functions present in the build output (`api/coach/analyze`,
+`api/coach/analyze-week`, `api/coach/curate-memory`). Live-checked
+unauthenticated: `/` 200, `/sw.js` 200, `POST /api/coach/analyze-week` →
+**401, not 404** — the endpoint deployed and is enforcing auth, same
+evidence pattern as Exercise Library's own Part 8.
+
+**Step 7 — deliberately stopped here, per the brief.** This week's actual
+Weekly Analysis generation was **not** triggered. That is a manual
+`ANALYZE` click through the live app, Adam's own action — the same reason
+given in this file's standing note about live-session-token extraction
+being unreliable through a browser safety classifier for this kind of
+flow. **When Adam runs it, the real generated output needs to be read in
+full, not summarized**, checking specifically for the three failure modes
+only ever caught before by reading actual generated text: equipment
+hallucination, false memory/note corroboration (`memory` and a same-week
+`notes` entry presented as if they independently confirm each other), and
+inconsistency between "planned" and "forced" wording for the same
+substitution — the exact cross-section narrative-consistency failure
+named in "Pending feedback to address" below, which `WEEK_PROMPT_VERSION 2`
+does not claim to fix and which remains open at both the daily and weekly
+level.
+
+### Status
+
+**Weekly Analysis Phase 5 is shipped — code live in production,
+2026-08-30.** Form/energy/pump ratings, Coach Memory, and dated Coach
+Notes now reach the weekly prompt, mirroring Daily's own Phase 5.
+**Generation itself is still pending: no real week has been analyzed at
+`WEEK_PROMPT_VERSION 2` yet.** That first run is Adam's manual trigger to
+make, and its output is the next thing that needs a full, non-summarized
+read against the three failure modes named in Step 7 above.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
