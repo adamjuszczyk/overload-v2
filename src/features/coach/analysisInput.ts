@@ -378,10 +378,18 @@ export interface SessionFacts {
     // Coach Personalization phase 5 (TASKS §4.5) — read here, alongside the
     // existing session fields, but NOT spread wholesale into
     // WeekAnalysisOccurrence by weekAnalysisInput.ts (which destructures
-    // only id/date/workoutDayName from this object) — unlike formRating
-    // (carried via buildExercise → matchSessionsByPosition →
-    // PositionMatchSetValue), these two do not reach the weekly payload
-    // (TASKS §7.10).
+    // only id/date/workoutDayName off THIS object when building an
+    // occurrence). Unlike formRating (carried via buildExercise →
+    // matchSessionsByPosition → PositionMatchSetValue), these two never
+    // reach the weekly payload through this particular object — but they do
+    // reach it: weekAnalysisInput.ts's own WeekAnalysisSessionRoster carries
+    // real energyRating/pumpRating per session, populated from a separate
+    // fetch-layer query in assembleWeekAnalysisInput (its own
+    // energy_rating/pump_rating select on the sessions-in-range query), not
+    // from this SessionFacts.session object. See
+    // COACH-WEEK-ANALYSIS-TASKS.md §12 for the wiring; §7.10 there
+    // describes the earlier state, before that section, where they didn't
+    // reach the weekly payload at all.
     energyRating: EnergyRating | null
     pumpRating: PumpRating | null
   }
@@ -606,6 +614,23 @@ export function toWeightEntries(rows: RawWeightRow[]): WeightEntry[] {
 type RawMemoryBodyRow = { body: string }
 type RawNoteBodyRow = { body: string }
 
+// Exported so the weekly analysis path (COACH-WEEK-ANALYSIS-TASKS.md's own
+// personalization wiring) reuses the exact same full-active-list query
+// rather than a second copy that could drift — this query's shape is
+// identical for both callers (every active entry, oldest first), unlike the
+// notes query below, which daily scopes to one session and weekly scopes to
+// every session in the week being analyzed.
+export async function fetchActiveMemory(client: SupabaseClient, userId: string): Promise<string[]> {
+  const { data, error } = await client
+    .from('v2_coach_memory_entries')
+    .select('body')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data as RawMemoryBodyRow[]).map((r) => r.body)
+}
+
 export async function assembleAnalysisInput(
   client: SupabaseClient,
   userId: string,
@@ -622,7 +647,7 @@ export async function assembleAnalysisInput(
   const [
     { data: phaseRows, error: phaseError },
     { data: weightRows, error: weightError },
-    { data: memoryRows, error: memoryError },
+    memory,
     { data: noteRows, error: noteError },
   ] = await Promise.all([
     client.from('v2_coach_phase_entries').select('id, user_id, phase, start_date, created_at').eq('user_id', userId),
@@ -630,12 +655,7 @@ export async function assembleAnalysisInput(
       .from('v2_coach_weight_entries')
       .select('id, user_id, entry_date, weight_kg, kind, created_at')
       .eq('user_id', userId),
-    client
-      .from('v2_coach_memory_entries')
-      .select('body')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: true }),
+    fetchActiveMemory(client, userId),
     client
       .from('v2_coach_notes')
       .select('body')
@@ -645,12 +665,10 @@ export async function assembleAnalysisInput(
   ])
   if (phaseError) throw phaseError
   if (weightError) throw weightError
-  if (memoryError) throw memoryError
   if (noteError) throw noteError
 
   const phaseEntries = toPhaseEntries(phaseRows as RawPhaseRow[])
   const weightEntries = toWeightEntries(weightRows as RawWeightRow[])
-  const memory = (memoryRows as RawMemoryBodyRow[]).map((r) => r.body)
   const sessionNotes = (noteRows as RawNoteBodyRow[]).map((r) => r.body)
 
   return buildAnalysisInput({

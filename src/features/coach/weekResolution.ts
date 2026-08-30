@@ -252,10 +252,13 @@ export async function assembleWeekResolution(
     startedAt: s.started_at,
     completedAt: s.completed_at,
     createdAt: s.created_at,
-    // Not selected by this query and not read by anything weekly (v3
-    // Personalization TASKS.md §7.10 — Weekly Analysis is untouched by this
-    // initiative) — hardcoded rather than fetched, same as
-    // coachWeekService.ts's own toSession.
+    // Not selected by this query, and not read by resolveWeek's own
+    // completeness logic (date/status only) — hardcoded rather than
+    // fetched, same as coachWeekService.ts's own toSession. Distinct from
+    // weekAnalysisInput.ts's own WeekAnalysisSessionRoster, which does carry
+    // real per-session energy/pump ratings now that Weekly Analysis reads
+    // Coach Personalization data — this Session object exists only to drive
+    // resolveWeek, never the analysis payload itself.
     energyRating: null,
     pumpRating: null,
   }))

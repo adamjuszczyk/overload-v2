@@ -1393,3 +1393,301 @@ are to change later:
 
 Nothing above has been built. Nothing is cleared to start until this document is
 reviewed.
+
+---
+
+## 12. Coach Personalization wiring into Weekly Analysis (2026-08-28)
+
+Everything in §§1–9 above shipped and has been live since 2026-08-23 (CONTEXT.md).
+This section documents a separate, later change: closing
+COACH-PERSONALIZATION-SPEC.md §8/§9's explicit deferral ("Wiring form/energy/pump
+and Memory into Weekly Analysis's prompt — Deferred, Daily gets proven first").
+Daily's own wiring shipped and was verified against real production data
+first (`coachPrompt.ts` `PROMPT_VERSION` 4 → 5, CONTEXT.md 2026-08-25/27) —
+this closes the deferral now that it has.
+
+### 12.1 What already flowed, and what didn't — checked directly, not assumed
+
+Before building anything, the actual current state of every field this
+change touches was read directly from source, not inferred from the spec
+docs:
+
+- **`formRating`** — already reached the weekly payload, by construction.
+  Every `WeekAnalysisOccurrence` is built through `buildExercise`
+  (`analysisInput.ts`) — the exact function the daily path uses — which
+  chains through `matchSessionsByPosition` into `PositionMatchSetValue`,
+  and that type already carries `formRating` per set (added by Coach
+  Personalization phase 1, before Weekly's own build). `weekAnalysisInput.
+  test.ts` already had a dedicated test proving this (§7.10's own
+  "field leakage" suite). The gap was never the payload — it was that
+  `coachWeekPrompt.ts` never told the model `formRating` existed on `match`
+  items at all, so real data sat on the wire unused.
+- **`energyRating`/`pumpRating`** — fetched, but silently dropped before
+  reaching the model. `assembleSessionFacts` (`analysisInput.ts`) already
+  selects `energy_rating`/`pump_rating` per session into
+  `SessionFacts.session`, and `analysisInput.ts` carried an explicit
+  comment documenting exactly this: "NOT spread wholesale into
+  WeekAnalysisOccurrence... these two do not reach the weekly payload
+  (TASKS §7.10)." `buildWeekAnalysisInput` only ever read
+  `facts.session.id`/`.date`/`.workoutDayName` off that object. This was a
+  documented, deliberate scope cut (§7.10 below, as it stood before this
+  section), not a bug — but it is exactly the gap this change closes.
+- **Coach Memory and Coach Notes** — not fetched at all anywhere in
+  `weekAnalysisInput.ts`. No `v2_coach_memory_entries` or `v2_coach_notes`
+  query existed in the week path before this change.
+- **A real permanent row already exists without any of this.** CONTEXT.md
+  records a real Weekly Analysis generation ("Weekly Analysis's first real
+  output leaned mildly prescriptive") at `WEEK_PROMPT_VERSION 1`, with its
+  `input_snapshot` frozen before this change — same permanence discipline
+  as daily (§2.2). This is why every new `WeekAnalysisInput` field below is
+  optional, not required — see 12.2.
+
+### 12.2 New/changed payload shape
+
+Additive to `WeekAnalysisInput` (`weekAnalysisInput.ts`) — nothing existing
+removed or reshaped:
+
+```ts
+// Required key, nullable type on WeekAnalysisSessionRoster — mirrors
+// AnalysisInput.session.energyRating/pumpRating's exact precedent
+// (analysisInput.ts), which made the same choice for the identical
+// session-level fields when daily's phase 5 landed. A skipped session's DB
+// row simply has both columns NULL — no separate branch needed.
+energyRating: EnergyRating | null
+pumpRating: PumpRating | null
+
+// One raw Coach Note whose session falls within the week. Unlike daily's
+// sessionNotes (bodies only — one session in scope), a week spans several
+// sessions, so each note carries enough to place it against the right day.
+// No id, same "no ids" reasoning as daily's sessionNotes/memory (TASKS
+// §4.5/§9.5 of COACH-PERSONALIZATION-TASKS.md).
+export interface WeekAnalysisNote {
+  body: string
+  sessionDate: string
+  workoutDayName: string | null
+}
+
+// All five optional on WeekAnalysisInput, same reasoning as
+// AnalysisInput.sessionNotes?/memory? (COACH-PERSONALIZATION-TASKS.md
+// §4.5): the real WEEK_PROMPT_VERSION-1 row from 12.1 permanently lacks
+// them. A freshly assembled payload always populates all five as real
+// values ([] / null, never omitted) — the optionality exists only for
+// reading old stored rows back through this type.
+memory?: string[]
+notes?: WeekAnalysisNote[]
+avgFormRating?: RatingAverage | null
+avgEnergyRating?: RatingAverage | null
+avgPumpRating?: RatingAverage | null
+```
+
+`RatingAverage` (`{ mean, scaleMax, count }`) is `ratingScales.ts`'s
+existing type, reused directly, not redefined.
+
+### 12.3 Where the averages are computed, and why
+
+Inside the **pure builder** (`buildWeekAnalysisInput`), not the fetch
+layer — from `args.completedSessionFacts` (form) and `args.sessions`
+(energy/pump, once populated by the fetch layer per 12.4). This keeps the
+averaging fully unit-testable against constructed fixtures, matching this
+document's own standing preference (§6 step 4's reasoning for why
+`weekResolution.ts`/`weekBuckets.ts` are pure) and the brief's own
+requirement for fixture-based average tests.
+
+Reused, not reimplemented: `averageRating` + `FORM_SCALE`/`ENERGY_SCALE`/
+`PUMP_SCALE` (`src/features/gym/ratingScales.ts`) — already the one shared
+implementation of the mean/ordinal/null-handling math, already used
+identically by both of `progressService.ts`'s existing consumers
+(`fetchExerciseProgress`, `fetchMesoWeeklyProgress`). No extraction was
+needed for this piece — it was already factored out before this change.
+
+**Form's "valid set" filter is intentionally not extracted further.**
+`fetchMesoWeeklyProgress`'s own `valid` filter (`!is_skipped && weight
+!== null && reps !== null`, on top of `headsOnly` for the stage-exclusion
+rule) is a two-line predicate already inlined at two call sites in
+`progressService.ts`, operating on raw snake_case Supabase rows. The week
+path operates on domain `SetLog` objects (camelCase) instead — a
+structurally different shape. Rather than force a generic
+accessor-parameterized abstraction over a two-line predicate across three
+call sites with two different row shapes, `weekAnalysisInput.ts` reuses the
+already-shared, already-generic `headsOnly` (`setGroupLogic.ts`) directly
+and writes the same `!isSkipped && weight !== null && reps !== null` check
+inline, with a comment pointing at the precedent. The genuinely
+drift-prone part — the mean/ordinal/null-count math — is what's shared;
+this trivial filter is not, deliberately.
+
+Energy/pump average one rating per **completed** session
+(`args.sessions.filter((s) => s.status === 'completed')`), matching
+`fetchMesoWeeklyProgress`'s own `weekEnergyRatings`/`weekPumpRatings` maps
+exactly. A rated `'none'` counts toward the average (ordinal 1); an
+unrated `null` is excluded from both the numerator and the count — TASKS
+§7.3 of COACH-PERSONALIZATION-TASKS.md, carried over unchanged.
+
+### 12.4 Fetch-layer changes
+
+`assembleWeekAnalysisInput` (`weekAnalysisInput.ts`):
+
+- The sessions-in-range query now selects `energy_rating, pump_rating`
+  alongside its existing columns, and the roster-building map carries them
+  straight through onto each `WeekAnalysisSessionRoster` entry.
+- A new query against `v2_coach_notes`, `.in('session_id', sessionIds)`
+  where `sessionIds` is every session in the week's roster (completed and
+  skipped alike — a note could in principle be attached to a session that
+  was later reopened/reworked, and excluding skipped-session ids would be
+  an arbitrary, undocumented narrowing the brief didn't ask for). Skipped
+  the same way the `workoutDayIds`/`mesocycleIds`/`exerciseIds` lookups
+  above it already skip their own queries when there is nothing to scope
+  to. Each returned note is mapped to its `sessionDate`/`workoutDayName`
+  via lookup maps built from the same `sessionsRaw`/`workoutDayNameById`
+  data already in scope — no second round-trip.
+- **General (session_id null) notes are structurally excluded**, not
+  filtered after the fact — a Postgres `IN` filter never matches a `NULL`
+  column, so `.in('session_id', sessionIds)` naturally returns only
+  session-attached notes. This is correct, not incidental: Coach
+  Personalization v1.1 (COACH-PERSONALIZATION-SPEC.md §11.1) routes every
+  general/standing fact directly into Coach Memory now, not into
+  `v2_coach_notes` — a note with no session has nothing to date it against
+  and was never "attached to any session within the week" to begin with.
+- Memory is fetched via a newly extracted `fetchActiveMemory(client,
+  userId)` (`analysisInput.ts`) — the exact query `assembleAnalysisInput`'s
+  daily path already ran inline, pulled out so both callers share one
+  implementation rather than a second copy that could drift. Daily's own
+  behavior is unchanged; this is a pure extraction, not a rewrite (same
+  discipline as `assembleSessionFacts`'s own extraction in §5.2 above).
+
+### 12.5 `coachWeekPrompt.ts` — `WEEK_PROMPT_VERSION` 1 → 2
+
+Bumped, with the new payload fields documented in "Input payload shape"
+(sessions' `energyRating`/`pumpRating`, `match` items' `formRating` — the
+data that was already there but undocumented per 12.1 — `avgFormRating`/
+`avgEnergyRating`/`avgPumpRating`, `memory`, `notes`) and four new "What to
+write" instructions: **Form**, **Energy and pump**, **Equipment**, and
+**Memory and notes** — closely mirroring `coachPrompt.ts` v5's equivalent
+sections, adapted for the week's multi-session/multi-bucket shape (e.g.
+"Energy and pump" reasons per-session and via the week average, not a
+single session's rating; "Memory and notes" reasons about a note tied to
+one day within the week, not one all-encompassing session).
+
+**Two fixes ship correct from `WEEK_PROMPT_VERSION 2`, not deferred to a
+future v3 the way daily needed a real v4 → v5 cycle to find them**
+(CONTEXT.md, 2026-08-27 — `coachPrompt.ts` v5): the equipment-hallucination
+guard and the memory/notes false-independent-confirmation guard. Both were
+diagnosed against daily's own first real generation and apply identically
+here, since this payload carries the exact same shapes (no equipment field
+anywhere; a memory entry that can be curated directly from this week's own
+notes before the analysis runs) daily's did. Shipping both from day one
+rather than waiting for a real weekly generation to make the same mistake
+first is the explicit point of this section's existence — the brief that
+drove this change named both fixes by number and required they ship
+correct from the start.
+
+### 12.6 Verification
+
+Typecheck (`tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.api.json
+--noEmit`) clean. Full Vitest suite: 253/253 passed (up from 241 before
+this change; see §12.8 for how 252 became 253), including
+constructed-fixture coverage in `weekAnalysisInput.test.ts` for:
+per-session energy/pump reaching the roster; `avgFormRating` correctly
+excluding drop stages and skipped/unlogged sets, matching
+`fetchMesoWeeklyProgress`'s own rule, and correctly combining sets across
+every session and exercise in the week (not just the first of each);
+`avgEnergyRating`/`avgPumpRating` correctly averaging one rating per
+completed session — proven by its own `status === 'completed'` filter,
+not merely by `averageRating`'s incidental null-filter (§12.8) — including
+the rated-`'none'`-counts-but-unrated-`null`-doesn't case; all three
+averages correctly `null` (not zero) when nothing was rated, including
+the case where real sets exist but none carry a `formRating`; memory
+passing through unchanged and defaulting to `[]`; and notes carrying
+distinct per-note `sessionDate`/`workoutDayName` so two notes from
+different days in the same week stay distinguishable, plus the same
+defaulting-to-`[]` case. `npm run build` (`tsc -b && vite build`) clean.
+
+The superseded suite this replaced (§7.10's "field leakage" test, which
+had asserted `energyRating`/`pumpRating` were *absent* from the serialized
+payload) was rewritten rather than left contradicting the new, intended
+behavior.
+
+**Held, not deployed — same discipline as Daily Session Analysis's own
+Phase 5 (COACH-ANALYSIS-TASKS.md).** No real complete week has existed to
+dry-run this against since this change landed; the one real weekly
+generation on record (12.1) predates it. Held until a real complete week
+exists to verify against before anything goes live, exactly the standard
+Daily's Phase 5 was held to.
+
+### 12.7 §7.10 superseded
+
+§7.10 above ("Weekly Analysis is untouched") described the deliberate
+scope cut this section closes. It is left in place as the historical
+record of that decision (and remains accurate for the period it
+describes — 2026-08-25 through 2026-08-28) rather than rewritten; this
+section is the record of what changed and when. The two stale in-code
+comments citing §7.10 as blanket justification for hardcoding
+`energyRating`/`pumpRating` null on generic `Session` objects
+(`coachWeekService.ts`'s `toSession`, `weekResolution.ts`'s own
+session-row mapper) were corrected in place — both hardcodings remain
+correct (`resolveWeek`'s completeness logic never reads either field,
+regardless of this change), but now point at why, rather than at a claim
+this section has since superseded.
+
+### 12.8 Adversarial review, before this closed
+
+A four-dimension `Workflow` review (payload correctness, prompt fidelity
+against `coachPrompt.ts` v5's precedent, test coverage against the
+brief's own bar, and consistency with both spec/tasks doc pairs) ran
+against the diff, each finding independently adversarially verified
+(two skeptical verifier passes per finding, default-to-refute) before
+being reported. First run mostly hit a session usage-limit mid-flight (9
+of 10 agent calls errored, only the test-coverage review dimension
+completed) — re-run in full once the limit reset. Second run: 10/10
+agents clean, 3 confirmed findings, 0 refuted.
+
+**payload-correctness and spec-consistency: clean, nothing found.**
+
+**prompt-fidelity, medium — a documentation overclaim, corrected.** This
+section's own first draft (and the matching passages in
+COACH-WEEK-ANALYSIS-SPEC.md §12 and `weekAnalysisInput.ts`'s
+`WeekAnalysisNote` doc comment, and this session's CONTEXT.md entry)
+framed dated week-scoped notes as "the direct fix" for CONTEXT.md's
+"Chest Press substitution described inconsistently" pending-feedback
+item. On direct inspection that claim doesn't hold: that finding was a
+single, already-unambiguous session's note characterized two different
+ways in two parts of the *same generated output* ("a planned equipment
+swap" in one exercise comment, correctly "forced" in the overall summary)
+— a cross-section narrative-consistency failure the model itself
+produced, not a note misattributed to the wrong day. Dating solves a real
+and different problem (which day a note belongs to across a multi-session
+week, something daily's single-session `sessionNotes` never had to
+solve) but does nothing to stop the same cross-section contradiction from
+recurring at the weekly level, even against a correctly-dated note.
+**Corrected, not left standing:** every place that made the overclaim now
+says plainly that this failure mode is untouched by this change and
+remains open at both the daily and weekly level — the same
+tracked-but-unaddressed status CONTEXT.md's "Pending feedback to address"
+already gives it. No new fix was invented for it here — the daily-level
+version of the same issue is itself deliberately left open pending more
+real samples, and inventing a bespoke weekly-only fix for a problem the
+brief never named would be exactly the kind of scope creep this
+project's discipline avoids elsewhere.
+
+**prompt-fidelity, low — an imprecise field description, corrected.**
+`coachWeekPrompt.ts`'s `avgFormRating`/`avgEnergyRating`/`avgPumpRating`
+paragraph described `count` as "how many rated sets (form) or completed
+sessions (energy/pump)" — the "rated" qualifier present for form's
+clause, missing from energy/pump's, when `count` is actually rated
+completed sessions (a completed-but-unrated session doesn't add to it,
+per `ratingScales.ts`'s own null-filtering `averageRating`). Reworded to
+state that explicitly.
+
+**test-coverage, low — a coverage gap, closed.** No test distinguished
+`buildWeekAnalysisInput`'s own `completedSessions = args.sessions.filter
+((s) => s.status === 'completed')` line from `averageRating`'s own
+incidental null-filtering, because every constructed `'skipped'` roster
+fixture in the suite also happened to carry `energyRating`/`pumpRating:
+null` — the two filters were indistinguishable to every existing test. A
+mutant that dropped the status filter entirely (averaging over every
+session and relying on `averageRating` to drop the unrated ones) would
+have passed the whole suite unnoticed. Closed with a dedicated fixture: a
+`'skipped'` session carrying a non-null rating — impossible in production
+(a skipped session's real `v2_sessions` row is never rated, since it
+never reached the completion screen) but type-valid, and exactly the kind
+of synthetic case a pure-function unit test should exercise independent
+of what production data happens to always correlate.

@@ -3,6 +3,7 @@ import {
   buildWeekAnalysisInput,
   type BuildWeekAnalysisInputArgs,
   type WeekAnalysisSessionRoster,
+  type WeekAnalysisNote,
 } from './weekAnalysisInput'
 import type { SessionFacts, AnalysisInputExerciseSource } from './analysisInput'
 import type { PhaseEntry, WeightEntry, ExerciseTags, SetLog } from '../../types'
@@ -40,6 +41,8 @@ function makeRosterEntry(overrides: Partial<WeekAnalysisSessionRoster> = {}): We
     isDeload: false,
     mesocycleName: 'MESO 1.0',
     weekNumber: 1,
+    energyRating: null,
+    pumpRating: null,
     ...overrides,
   }
 }
@@ -262,19 +265,13 @@ describe('buildWeekAnalysisInput — phase/weight resolved once for the week (§
   })
 })
 
-// ─── Coach Personalization phase 5 field leakage (TASKS §7.10) ─────────────
-// weekAnalysisInput.ts itself gets no changes in phase 5 — this suite exists
-// to CONFIRM, not just argue, exactly what §7.10 flagged as a caveat: since
-// this module builds every occurrence through buildExercise (the same
-// function the daily path uses), formRating starts appearing in weekly
-// payloads by construction once phase 5 adds it to PositionMatchSetValue.
-// The open question phase 5's build asked: is it ONLY formRating, or does
-// energyRating/pumpRating (added to SessionFacts.session alongside it) leak
-// through too? Answer, confirmed below: only formRating. energyRating/
-// pumpRating live on SessionFacts.session, but buildWeekAnalysisInput only
-// ever reads facts.session.id/.date/.workoutDayName off that object — it
-// never spreads session wholesale into WeekAnalysisOccurrence, and
-// WeekAnalysisInput has no top-level session field at all.
+// ─── Coach Personalization wiring into Weekly Analysis ─────────────────────
+// Superseding suite: this used to confirm energyRating/pumpRating were
+// ABSENT from the weekly payload (§7.10's deliberate scope cut, TASKS.md).
+// That is no longer true by design — the sessions roster now carries real
+// per-session energy/pump ratings, memory/notes reach the payload, and
+// weekly averages are computed. formRating's own "reaches match by
+// construction" behaviour is unchanged from before and re-confirmed below.
 function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
   return {
     id: 'log-1',
@@ -301,8 +298,8 @@ function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
   }
 }
 
-describe('buildWeekAnalysisInput — Coach Personalization phase 5 field leakage (§7.10)', () => {
-  it('formRating reaches the weekly match by construction; energyRating/pumpRating do not', () => {
+describe('buildWeekAnalysisInput — Coach Personalization: formRating reaches match by construction', () => {
+  it('formRating reaches the weekly match via the same buildExercise the daily path uses', () => {
     const reference: PrimarySlot = {
       type: 'last_week',
       session: { sessionId: 'session-ref', date: '2026-08-10', completedAt: null, mesocycleId: 'meso-1', logs: [] },
@@ -311,13 +308,7 @@ describe('buildWeekAnalysisInput — Coach Personalization phase 5 field leakage
       baseArgs({
         completedSessionFacts: [
           makeSessionFacts({
-            session: {
-              id: 's-a',
-              date: '2026-08-17',
-              workoutDayName: 'Push 1',
-              energyRating: 'high',
-              pumpRating: 'good',
-            },
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
             exercises: [
               makeExerciseSource({
                 reference,
@@ -331,17 +322,219 @@ describe('buildWeekAnalysisInput — Coach Personalization phase 5 field leakage
     )
 
     const occ = result.occurrences[0]
-    // formRating: present, exactly as §7.10 flagged — reused verbatim
-    // through buildExercise -> matchSessionsByPosition -> PositionMatchSetValue.
     expect(occ.match).not.toBeNull()
     expect(occ.match!.plain.slots[0].head.a.formRating).toBe('rushed')
     expect(occ.match!.plain.slots[0].head.b.formRating).toBe('extra_controlled')
+  })
+})
 
-    // energyRating/pumpRating: absent from the whole payload, not just from
-    // this occurrence — the strongest check available, since it also proves
-    // no other part of buildWeekAnalysisInput spreads facts.session in.
-    const serialized = JSON.stringify(result)
-    expect(serialized).not.toContain('energyRating')
-    expect(serialized).not.toContain('pumpRating')
+describe('buildWeekAnalysisInput — Coach Personalization: per-session energy/pump ratings', () => {
+  it('sessions[].energyRating/pumpRating come from the session roster the fetch layer resolves, not from SessionFacts.session', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [makeRosterEntry({ id: 's-a', date: '2026-08-17', energyRating: 'high', pumpRating: 'good' })],
+        // SessionFacts.session carries its OWN energyRating/pumpRating (read
+        // by assembleSessionFacts for the daily path's own purposes) — left
+        // null here on purpose, to prove the roster is what actually reaches
+        // the output, not a spread of this object.
+        completedSessionFacts: [
+          makeSessionFacts({ session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null } }),
+        ],
+      }),
+    )
+    expect(result.sessions[0]).toMatchObject({ energyRating: 'high', pumpRating: 'good' })
+  })
+
+  // No separate "a skipped session is never rated" test here: `sessions` is
+  // a literal, untransformed passthrough of `args.sessions` (`sessions:
+  // args.sessions` in buildWeekAnalysisInput's return statement) — the
+  // pure builder has no logic that could enforce or violate that invariant,
+  // so a test supplying a skipped roster entry with energyRating/pumpRating
+  // already null would only be echoing its own fixture back. The real
+  // invariant (a skipped session's v2_sessions row has both columns NULL,
+  // since it never reached the completion screen) is a fact about the data,
+  // enforced by assembleWeekAnalysisInput's fetch layer reading real DB
+  // rows, not by anything testable here with constructed fixtures.
+})
+
+describe('buildWeekAnalysisInput — weekly averages', () => {
+  it('avgFormRating averages only head, non-skipped, real-weight/reps sets — drop stages and skipped sets excluded (mirrors progressService.ts\'s fetchMesoWeeklyProgress)', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+            exercises: [
+              makeExerciseSource({
+                exerciseId: 'ex1',
+                currentLogs: [
+                  makeSetLog({ id: 'c1', formRating: 'controlled' }), // head, valid -> counts (3)
+                  makeSetLog({ id: 'c2', formRating: 'extra_controlled' }), // head, valid -> counts (4)
+                  makeSetLog({ id: 'c3', formRating: 'rushed', parentSetId: 'c1', stageIndex: 1 }), // dropset stage -> excluded
+                  makeSetLog({ id: 'c4', formRating: 'rushed', isSkipped: true, weight: null, reps: null }), // skipped -> excluded
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    )
+    // (3 + 4) / 2 = 3.5
+    expect(result.avgFormRating).toEqual({ mean: 3.5, scaleMax: 4, count: 2 })
+  })
+
+  it('avgFormRating combines sets from every session and every exercise in the week, not just the first of each', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+            exercises: [
+              makeExerciseSource({ exerciseId: 'ex1', currentLogs: [makeSetLog({ id: 'c1', formRating: 'rushed' })] }), // 1
+              makeExerciseSource({ exerciseId: 'ex2', currentLogs: [makeSetLog({ id: 'c2', formRating: 'normal' })] }), // 2
+            ],
+          }),
+          makeSessionFacts({
+            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2', energyRating: null, pumpRating: null },
+            exercises: [makeExerciseSource({ exerciseId: 'ex1', currentLogs: [makeSetLog({ id: 'c3', formRating: 'extra_controlled' })] })], // 4
+          }),
+        ],
+        tagsByExerciseId: new Map([
+          ['ex1', makeTags({ exerciseId: 'ex1' })],
+          ['ex2', makeTags({ exerciseId: 'ex2' })],
+        ]),
+      }),
+    )
+    // (1 + 2 + 4) / 3 = 2.333... — a regression that only flattened the
+    // first session's exercises, or the first exercise per session, would
+    // instead land on 1, 1.5, or 2.5 here.
+    expect(result.avgFormRating).toEqual({ mean: (1 + 2 + 4) / 3, scaleMax: 4, count: 3 })
+  })
+
+  it('avgEnergyRating/avgPumpRating average one rating per completed session', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [
+          makeRosterEntry({ id: 's-a', date: '2026-08-17', energyRating: 'high', pumpRating: 'good' }), // 4, 3
+          makeRosterEntry({ id: 's-b', date: '2026-08-20', energyRating: 'low', pumpRating: 'none' }), // 2, 1
+        ],
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+          }),
+          makeSessionFacts({
+            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2', energyRating: null, pumpRating: null },
+            exercises: [],
+          }),
+        ],
+      }),
+    )
+    // energy: (4+2)/2 = 3; pump: (3+1)/2 = 2
+    expect(result.avgEnergyRating).toEqual({ mean: 3, scaleMax: 5, count: 2 })
+    expect(result.avgPumpRating).toEqual({ mean: 2, scaleMax: 4, count: 2 })
+  })
+
+  it('a skipped session is excluded by its own status, not merely by averageRating\'s null-filter — a rated-but-skipped fixture proves the status filter itself', () => {
+    // Real v2_sessions rows never carry a rating on a skipped session (it
+    // never reached the completion screen), so averageRating's own
+    // null-filter alone would happen to produce the right answer against
+    // any real row. Constructing a skipped session that DOES carry a
+    // rating (impossible in production, but type-valid — WeekAnalysisSessionRoster
+    // doesn't forbid it) is the only way to prove buildWeekAnalysisInput's
+    // own `completedSessions = args.sessions.filter(s => s.status ===
+    // 'completed')` line (not just averageRating's incidental null-filter)
+    // is what does the excluding — removing that filter and relying on
+    // averageRating alone would silently pass every other test in this
+    // block.
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [
+          makeRosterEntry({ id: 's-a', date: '2026-08-17', status: 'completed', energyRating: 'high', pumpRating: 'good' }), // 4, 3
+          makeRosterEntry({ id: 's-b', date: '2026-08-20', status: 'skipped', energyRating: 'high', pumpRating: 'good' }), // would also be 4, 3 if wrongly included
+        ],
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+          }),
+        ],
+      }),
+    )
+    expect(result.avgEnergyRating).toEqual({ mean: 4, scaleMax: 5, count: 1 })
+    expect(result.avgPumpRating).toEqual({ mean: 3, scaleMax: 4, count: 1 })
+  })
+
+  it('a rated "none" counts toward the average; an unrated null does not (TASKS §7.3)', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [
+          makeRosterEntry({ id: 's-a', date: '2026-08-17', energyRating: 'none', pumpRating: 'none' }),
+          makeRosterEntry({ id: 's-b', date: '2026-08-20', energyRating: null, pumpRating: null }),
+        ],
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+          }),
+          makeSessionFacts({
+            session: { id: 's-b', date: '2026-08-20', workoutDayName: 'Push 2', energyRating: null, pumpRating: null },
+            exercises: [],
+          }),
+        ],
+      }),
+    )
+    expect(result.avgEnergyRating).toEqual({ mean: 1, scaleMax: 5, count: 1 })
+    expect(result.avgPumpRating).toEqual({ mean: 1, scaleMax: 4, count: 1 })
+  })
+
+  it('nothing rated this week — all three averages are null, not zero', () => {
+    const result = buildWeekAnalysisInput(baseArgs())
+    expect(result.avgFormRating).toBeNull()
+    expect(result.avgEnergyRating).toBeNull()
+    expect(result.avgPumpRating).toBeNull()
+  })
+
+  it('real sets logged but none form-rated — avgFormRating is still null, not zero', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        completedSessionFacts: [
+          makeSessionFacts({
+            exercises: [makeExerciseSource({ currentLogs: [makeSetLog({ id: 'c1', formRating: null })] })],
+          }),
+        ],
+      }),
+    )
+    expect(result.avgFormRating).toBeNull()
+  })
+})
+
+describe('buildWeekAnalysisInput — memory', () => {
+  it('memory passes through unchanged, oldest to newest', () => {
+    const result = buildWeekAnalysisInput(baseArgs({ memory: ['old standing caution', 'newer standing caution'] }))
+    expect(result.memory).toEqual(['old standing caution', 'newer standing caution'])
+  })
+
+  it('memory defaults to [], not undefined, when the fetch layer sent none', () => {
+    const result = buildWeekAnalysisInput(baseArgs())
+    expect(result.memory).toEqual([])
+  })
+})
+
+describe('buildWeekAnalysisInput — week-spanning notes', () => {
+  it('each note carries its own sessionDate/workoutDayName so a note from any day in the week is correctly dated, not generic', () => {
+    const notes: WeekAnalysisNote[] = [
+      { body: 'chest press machine broken, switched to low incline smith', sessionDate: '2026-08-20', workoutDayName: 'Push 2' },
+      { body: 'felt strong today', sessionDate: '2026-08-17', workoutDayName: 'Push 1' },
+    ]
+    const result = buildWeekAnalysisInput(baseArgs({ notes }))
+    expect(result.notes).toEqual(notes)
+    // The real-world case this exists for: two notes from different days in
+    // the same week stay distinguishable by date, so a note like the real
+    // Aug 27 chest-press substitution ties to its own day's occurrences
+    // rather than reading as undated context for the whole week.
+    expect(result.notes![0].sessionDate).not.toBe(result.notes![1].sessionDate)
+  })
+
+  it('notes defaults to [], not undefined, when the fetch layer sent none', () => {
+    const result = buildWeekAnalysisInput(baseArgs())
+    expect(result.notes).toEqual([])
   })
 })

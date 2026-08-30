@@ -90,7 +90,7 @@ All other accounts see a single locked placeholder screen in place of the whole 
 
 ## 10. Future versions (ideas, not commitments)
 
-- Week / month / mesocycle recaps, extending the same coach-reasoning pattern to wider zoom levels
+- Week / mesocycle recaps, extending the same coach-reasoning pattern to wider zoom levels (month analysis is explicitly, permanently out of scope — day/week/meso is considered sufficient)
 - In-session coach button for quick, scoped mid-workout questions
 - Reply-capable clarifying questions once the static pattern has real usage behind it
 - Workout plan creator / mesocycle planner, always draft-then-approve

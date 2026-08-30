@@ -14091,6 +14091,127 @@ phrasing") and §8, not this pending-feedback list — this feature
 
 ---
 
+## 2026-08-28 session (continued — Coach Personalization wired into Weekly Analysis: memory, notes, ratings, weekly averages; held for real-data verification)
+
+Read CONTEXT.md first, as instructed, then COACH-WEEK-ANALYSIS-SPEC.md/
+TASKS.md and COACH-PERSONALIZATION-SPEC.md/TASKS.md, per the brief's own
+instruction — this closes COACH-PERSONALIZATION-SPEC.md §8/§9's explicit
+deferral ("Wiring form/energy/pump and Memory into Weekly Analysis's
+prompt — Deferred, Daily gets proven first"), now that Daily's own wiring
+has real, verified output behind it.
+
+### Investigation first, reported before building — exactly what already flowed
+
+Checked directly, not assumed, per the brief's own instruction:
+
+- **`formRating`** already reached the weekly payload by construction
+  (every `WeekAnalysisOccurrence` is built through the same `buildExercise`
+  daily uses) — already confirmed by an existing test
+  (`weekAnalysisInput.test.ts`'s §7.10 "field leakage" suite). The real gap
+  was that `coachWeekPrompt.ts` never documented `formRating` on `match`
+  items, so real data sat on the wire with no instruction to use it.
+- **`energyRating`/`pumpRating`** were fetched into `SessionFacts.session`
+  per session but never carried through — `buildWeekAnalysisInput` only
+  ever read `.id`/`.date`/`.workoutDayName` off that object.
+  `analysisInput.ts` already carried an explicit comment documenting this
+  exact, deliberate gap (COACH-WEEK-ANALYSIS-TASKS.md §7.10).
+- **Coach Memory and Coach Notes** — not fetched at all anywhere in
+  `weekAnalysisInput.ts`. Confirmed dropped, not partially wired.
+
+### Built
+
+- `WeekAnalysisSessionRoster.energyRating`/`.pumpRating` — required keys,
+  nullable types, mirroring `AnalysisInput.session`'s exact precedent.
+- `WeekAnalysisNote` (`{ body, sessionDate, workoutDayName }`) — every
+  Coach Note attached to a session within the week, each dated so the
+  model can tie it to the right day's occurrences rather than reading it
+  as generic week-wide context. **Not a fix for this file's own "Chest
+  Press substitution described inconsistently" pending-feedback item** —
+  caught in review and corrected in place (the initial framing of this
+  session's own work overclaimed it as one). That finding was a single,
+  already-correctly-scoped session's note characterized two different ways
+  in two parts of the same generated output — a cross-section narrative-
+  consistency failure, not a misattribution-to-the-wrong-day one. Dating
+  solves the genuinely new multi-session problem (which day a note belongs
+  to across a week); it leaves the narrative-consistency failure mode
+  exactly as open as it already was, at both the daily and weekly level.
+- `WeekAnalysisInput.memory`/`.notes`/`.avgFormRating`/`.avgEnergyRating`/
+  `.avgPumpRating` — all five optional, mirroring
+  `AnalysisInput.sessionNotes?`/`.memory?`'s exact reasoning: a real
+  permanent `v2_coach_week_analyses` row already exists at
+  `WEEK_PROMPT_VERSION 1` (this file's "Weekly Analysis's first real
+  output" entry above), frozen without any of these fields.
+- Weekly averages computed inside the pure builder
+  (`buildWeekAnalysisInput`), reusing `ratingScales.ts`'s
+  `averageRating`/`FORM_SCALE`/`ENERGY_SCALE`/`PUMP_SCALE` directly — the
+  same shared module `progressService.ts`'s Meso Overview charts already
+  use, no second implementation. Form excludes drop stages and
+  skipped/unlogged sets, mirroring `fetchMesoWeeklyProgress`'s own `valid`
+  filter exactly; energy/pump average one rating per completed session.
+- `fetchActiveMemory` extracted out of `assembleAnalysisInput`'s inline
+  memory query (`analysisInput.ts`) so both the daily and weekly paths
+  share one implementation — a pure extraction, daily's own behavior
+  unchanged.
+- `coachWeekPrompt.ts` → `WEEK_PROMPT_VERSION 2`: documents the new
+  payload fields and adds **Form**, **Energy and pump**, **Equipment**,
+  and **Memory and notes** instructions, closely mirroring
+  `coachPrompt.ts` v5's equivalent sections. Both of v5's real-diagnosed
+  fixes (equipment hallucination; false independent confirmation between
+  memory and same-session notes — CONTEXT.md, 2026-08-27) ship here from
+  day one rather than waiting for a real weekly output to make the same
+  mistake first.
+- Two stale in-code comments (`coachWeekService.ts`'s `toSession`,
+  `weekResolution.ts`'s own session mapper) that cited "TASKS.md §7.10 —
+  Weekly Analysis is untouched" as blanket justification for hardcoding
+  `energyRating`/`pumpRating` null were corrected in place — the
+  hardcoding itself remains correct (`resolveWeek`'s completeness logic
+  never reads either field), the comment just no longer claims something
+  this change makes untrue elsewhere in the codebase.
+
+### Verified
+
+Typecheck (both projects) clean. Full Vitest suite: **253/253** (up from
+241), including new constructed-fixture coverage — per-session
+energy/pump reaching the roster; `avgFormRating` correctly excluding drop
+stages and skipped sets, and combining sets across every session and
+exercise in the week (not just the first of each); a rated session
+excluded from `avgEnergyRating`/`avgPumpRating` by its own `status`, not
+merely by an incidental null-filter; rated `'none'` counting toward an
+average while unrated `null` doesn't; all three averages `null` (not
+zero) when nothing was rated; memory passing through and defaulting to
+`[]`; notes carrying distinct per-note dates and defaulting to `[]`.
+`npm run build` clean.
+
+**A four-dimension adversarial review (Workflow) ran against the diff
+before this closed** — payload-correctness and spec-consistency came back
+clean; prompt-fidelity and test-coverage each surfaced real, adversarially
+verified findings, all fixed: (1) medium — this session's own first draft
+had overclaimed the notes-dating feature above as "the fix" for the
+Chest Press pending-feedback item; corrected in place in this entry, this
+file's own inline comment, and COACH-WEEK-ANALYSIS-SPEC.md §12 — dating
+solves a different, real problem (which day a note belongs to across a
+week) and the narrative-consistency failure that item actually names
+stays open, exactly as tracked below; (2) low — `coachWeekPrompt.ts`'s
+`count` field description dropped the "rated" qualifier for energy/pump,
+worded fixed; (3) low — a test-coverage gap where every constructed
+skipped-session fixture also happened to carry a null rating, so the
+`status === 'completed'` filter itself was never distinguished from
+`averageRating`'s own incidental null-filter; closed with a dedicated
+rated-but-skipped fixture. The workflow's first run mostly hit a session
+usage-limit mid-flight (9 of 10 agent calls errored); re-run in full once
+the limit reset, this time 10/10 clean.
+
+### Not done — held deliberately
+
+**Not deployed. No real complete week exists yet to dry-run this
+against** — the one real weekly generation on record predates this
+change, frozen at `WEEK_PROMPT_VERSION 1`. Held exactly the way Daily's
+own Phase 5 was held, until a real complete week exists to verify against
+before anything goes live. Full technical record:
+COACH-WEEK-ANALYSIS-TASKS.md §12.
+
+---
+
 ## 2026-08-28 session (Exercise Library rework — technical planning only, no code)
 
 Read CONTEXT.md first as instructed, then EXERCISE-LIBRARY-SPEC.md (new,
@@ -16487,6 +16608,33 @@ From real usage (one day):
   session, not urgent** — worth a look at a future `PROMPT_VERSION`
   revision, same tracked-but-untouched status as the tone-calibration
   item above.
+- **`coachWeekPrompt.ts` `WEEK_PROMPT_VERSION 2` carries the same
+  structural risk, untouched, and arguably with more surface for it than
+  daily.** The Chest Press item just above is a same-generated-output
+  cross-section inconsistency (one fact characterized two different ways
+  in two parts of one output) — nothing about `weekAnalysisInput.ts`'s
+  new week-scoped `notes` (dated per session, per the Coach
+  Personalization wiring session, CONTEXT.md above) touches this failure
+  mode; dating solves which day a note belongs to, not whether the model
+  stays consistent once it's correctly placed. Weekly's own shape gives
+  this more places to happen than daily's: one `overall` plus a small
+  array of `highlights` (typically 3–6, per bucket or cross-bucket) is
+  strictly more surface for the same note or memory entry to get
+  characterized two different ways across two or more of those spots,
+  versus daily's one `overall` plus one comment per exercise. **No guard
+  exists against this in `WEEK_PROMPT_VERSION 2`, correctly** — daily's
+  own version of the issue (just above) has no proven fix yet to port
+  over, and inventing an unproven, weekly-only guard for a problem the
+  daily prompt hasn't even solved once for real would be exactly the kind
+  of premature, unverified prompt engineering this feature line avoids
+  elsewhere. **Flag explicitly for Weekly's first real output**, not
+  merely something that might come up: when a real week is analyzed for
+  the first time, check specifically whether any note- or memory-backed
+  fact gets characterized inconsistently across two or more highlights,
+  or between a highlight and `overall` — the same check the real
+  2026-08-27 PUSH-2 daily analysis's review already applies, just with
+  more places for it to land here. Same tracked-but-untouched status as
+  the two items above.
 
 ---
 
