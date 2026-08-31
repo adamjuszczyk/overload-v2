@@ -7,3 +7,4 @@
 // resolveBuildHash() in vite.config.ts.
 declare const __BUILD_HASH__: string
 declare const __BUILD_TIME__: string
+// TEMP: ignoreCommand regression test marker, reverted in the immediate follow-up commit.
