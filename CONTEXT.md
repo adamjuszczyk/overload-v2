@@ -17607,6 +17607,153 @@ held status as the prior session.
 
 ---
 
+## 2026-08-31 session (continued — commit, deploy, and live verification of
+everything held: Exercise Library tag-picker filtering + Coach prompt
+v6/v3)
+
+Read CONTEXT.md first, as instructed. Confirmed the held state directly
+rather than assuming it from the prior session's own write-up: `git
+status`/`git log` showed `bea340b` (Exercise Library tag-picker fix) and
+`beeea48` (its docs) already committed but 2 commits ahead of
+`origin/master`, unpushed; the Coach prompt/tone work (`coachPrompt.ts`,
+`coachWeekPrompt.ts`, `positionMatch.ts` + its precomputed deltas,
+`weekAnalysisInput.ts` + `dayOfWeek`, `types/index.ts`, both test files,
+and this file's own "Weekly/Daily coach prompt fix" entry) was still
+uncommitted working-tree changes, exactly as both prior sessions' "held,
+not deployed" status lines said.
+
+**Verify, then commit.** `tsc -p tsconfig.app.json --noEmit` and `tsc -p
+tsconfig.api.json --noEmit`: clean. `npm run test`: **370/370 passing**
+(the file count differs from the "365/365" figure the prompt-fix session
+recorded — that session's own number was mid-session, before
+`positionMatch.test.ts`'s later additions; not a discrepancy to chase).
+`npm run build`: clean (same pre-existing >500kB chunk notice). Committed
+in two units, same per-concern convention as every prior session: `e9fb880`
+(the Coach prompt/tone code — `coachPrompt.ts` PROMPT_VERSION 6,
+`coachWeekPrompt.ts` WEEK_PROMPT_VERSION 3, `positionMatch.ts`,
+`weekAnalysisInput.ts`, `types/index.ts`, both test files), `58a3a35`
+(this file's own record of that work, held out of the code commit per the
+established `feat`/`docs` split).
+
+### Push landed 4 commits at once, and the existing `ignoreCommand` skipped the real deploy — a gap this session found for real, not assumed
+
+Pushed all four unpushed commits together (`bb8345b..58a3a35`) rather than
+sequencing code-then-docs pushes separately the way the 2026-08-15
+`ignoreCommand` session did. That mattered: `vercel.json`'s `ignoreCommand`
+(`git diff --quiet HEAD^ HEAD -- . ':!CONTEXT.md' ...`, added 2026-08-15)
+only ever compares the new HEAD to its **immediate** parent, not to the
+last commit actually deployed. HEAD after this push was `58a3a35`, a
+docs-only commit — so the auto-triggered deployment
+(`dpl_8ErmZnf1B21yWNydphCG4h8bHsYk`) compared `58a3a35` against `e9fb880`
+(pure `CONTEXT.md`), saw no non-ignored diff, and **canceled itself** —
+confirmed directly via `vercel inspect <url> --logs`, not inferred from the
+dashboard status alone: `"The Deployment has been canceled as a result of
+running the command defined in the Ignored Build Step setting."` This
+means the real code in `e9fb880` (and `bea340b`/`beeea48` before it) never
+reached production through the GitHub-triggered path at all, despite
+`git push` itself succeeding and `origin/master` genuinely holding all
+four commits. **This is a real gap in the existing `ignoreCommand`
+design, not a one-off fluke**: any future push whose *last* commit is
+docs-only, preceded by real code commits earlier in the same push, will
+reproduce this exact silent skip. Worth remembering: push code commits
+and their trailing docs commit **separately** (code push first, confirm
+the deploy, docs push after), the way the 2026-08-15 session originally
+did it — don't rely on a single batched push when the final commit is
+docs-only.
+
+**Recovered with a manual `vercel --prod --yes` CLI deploy** (built from
+this exact local, git-clean checkout — `git status` confirmed clean and
+`up to date with origin/master` immediately before running it), since a
+CLI-triggered deploy doesn't go through the Git-integration path the
+`ignoreCommand` webhook comparison applies to. Succeeded:
+`dpl_9tBWwWyNoMGoj5etDhxe7Rgnjace`, target production, **● Ready**,
+aliased to `overload-v2-sage.vercel.app`; Builds list correctly shows all
+three `api/coach/*` functions (`analyze`, `analyze-week`, `curate-memory`).
+One cosmetic `tsc` diagnostic in the build log
+(`curationApply.ts(1,39): TS2834`) is the same already-documented,
+already-triaged non-defect from the 2026-08-30 weekly-audit session (a
+type-only `import type` with no `.js` extension — erased at compile time,
+nothing for Node's ESM resolver to fail on at runtime) — not a new issue,
+confirmed by re-reading that session's own line-by-line audit rather than
+re-deciding it fresh.
+
+### Live verification against the deployed build
+
+**Unauthenticated first.** `/` 200, `/sw.js` 200, `/manifest.webmanifest`
+200, `/library` 200. `POST /api/coach/analyze` → **401**, `POST
+/api/coach/analyze-week` → **401** — both real, not 404, confirming the
+serverless functions deployed and auth is enforced; neither was called
+authenticated and no real analysis was triggered, per instruction.
+
+**`PROMPT_VERSION 6` / `WEEK_PROMPT_VERSION 3` — verified by construction,
+not by grepping the client bundle.** Unlike the Exercise Library UI
+strings prior sessions grepped out of `index-*.js`, `coachPrompt.ts` and
+`coachWeekPrompt.ts` are imported only by `api/coach/analyze.ts` and
+`analyze-week.ts` — never by anything in the client-side React tree — so
+these version numbers were never going to appear in the browser bundle at
+all; grepping for them there would have been a category error, not a real
+check. The deployment was built directly from this session's own clean,
+verified local checkout at `58a3a35` (source already confirmed to contain
+`PROMPT_VERSION = 6`/`WEEK_PROMPT_VERSION = 3` by the diffs reviewed before
+committing), so the shipped function code carries them by construction.
+Confirming this by actually invoking either endpoint would require
+authenticating and triggering a real analysis, which stays Adam's own
+manual action per instruction — not done here.
+
+**Exercise Library tag-picker filtering — a stale service-worker cache
+produced a false negative on the first attempt, caught before being
+reported.** The browser pane's existing tab (already signed in from a
+prior session's `overload-v2-sage.vercel.app` visit — no credential
+touched, same standing rule as always) still had an "update available /
+RELOAD" banner showing, meaning its installed service worker was serving
+the **pre-deploy** bundle. Testing `bea340b`'s fix against that stale tab
+first showed the exact *old* bug the fix was supposed to close — CHEST
+showing all 7 movement patterns and all 22 muscle subgroups unfiltered,
+BACK included. Recognized as a cache artifact rather than a real
+regression **because** the fix had already passed typecheck/tests/build
+and a prior session's own dev-server live-verification (per `bea340b`'s
+commit message) — clicked **RELOAD** to force the service worker to
+activate the new bundle, then re-ran the same check clean:
+- **CHEST** (Barbell Bench Press): MOVEMENT PATTERN correctly limited to
+  HORIZONTAL PUSH / ISOLATION; MUSCLE SUBGROUP correctly limited to
+  CHEST's own three (upper/mid/lower) plus SHOULDERS → FRONT DELT only —
+  matching `exerciseTags.ts`'s `chest: ['upper_chest', 'mid_chest',
+  'lower_chest', 'front_delt']`.
+- **BACK** (Barbell Row): MOVEMENT PATTERN correctly limited to
+  HORIZONTAL PULL / VERTICAL PULL / HIP HINGE / ISOLATION; MUSCLE
+  SUBGROUP correctly limited to BACK's own four (lats/mid back/lower
+  back/traps) — no chest, no front delt, confirming the filtering is
+  genuinely muscle-group-specific and not just "always show everything
+  plus the selected group."
+- **Lost Exercises** modal still opens and renders correctly ("NO LOST
+  EXERCISES" — the real, expected empty state for this account) —
+  unaffected by the tag-picker change, as `bea340b`'s commit message
+  claimed.
+
+**Worth carrying forward as a methodology note, not just this session's
+footnote:** any live-verification against this PWA that reuses an
+already-open browser tab must force the service-worker update (the
+in-app RELOAD banner, or an equivalent hard reload) *before* testing —
+otherwise a real fix can appear to still be broken (this session's case),
+or, worse, a real regression could appear to still be fixed. A fresh
+`navigate()`/`preview_start()` alone does not guarantee this if the tab
+was already open with an installed service worker from before the new
+deploy landed.
+
+### Status
+
+All four commits (`bea340b`, `beeea48`, `e9fb880`, `58a3a35`) on
+`origin/master` and live in production via
+`dpl_9tBWwWyNoMGoj5etDhxe7Rgnjace`. `git status` clean (only
+`supabase/.temp/`, expected local-only state). Exercise Library tag-picker
+filtering and Coach prompt `PROMPT_VERSION 6`/`WEEK_PROMPT_VERSION 3` both
+now shipped, not merely committed. **No real Coach analysis was triggered
+by this session** — the `PROMPT_VERSION 6`/`WEEK_PROMPT_VERSION 3` voice
+and fabrication-guard changes remain unexercised against a real generation
+until Adam runs one himself.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
