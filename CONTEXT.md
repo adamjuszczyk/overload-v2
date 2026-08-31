@@ -17756,12 +17756,17 @@ until Adam runs one himself.
 
 ## 2026-08-31 session (continued — fixing the ignoreCommand gap, live regression test in progress)
 
-Placeholder commit: this is the docs-only half of a deliberate two-commit
-push (`36c338d` trivial code comment + this commit) used to regression-test
-the just-fixed `vercel.json` `ignoreCommand` against the exact bug
-scenario it used to have — full before/after write-up follows once the
-real deployment result is checked, not backfilled here as if already
-known.
+Test 5a (the original bug scenario — trivial code commit `36c338d`
+followed by docs-only `a2cff5a` in one push) confirmed passing:
+`dpl_6p7Mw2pfFdx8ShHUdz827snhj52N` reached `● Ready`, and the build log
+shows the new `ignoreCommand` running verbatim against real
+`$VERCEL_GIT_PREVIOUS_SHA` and correctly proceeding to `Running "vercel
+build"` rather than skipping. Throwaway comment reverted in cleanup
+commit `2a85255` (`dpl` Ready, confirms an ordinary single code commit
+still deploys normally). This standalone commit is test 5b — a single
+docs-only commit, pushed alone, with no other undeployed commit ahead of
+it — checking that the normal skip case wasn't regressed by the fix. Full
+write-up follows once this push's real result is checked.
 
 ---
 
