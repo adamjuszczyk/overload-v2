@@ -17107,6 +17107,506 @@ all reported here at full detail for a future `WEEK_PROMPT_VERSION` bump.
 
 ---
 
+## 2026-08-31 session (continued — Weekly/Daily coach prompt fix: the five
+Weekly Analysis v2 findings resolved, `WEEK_PROMPT_VERSION 3` /
+`PROMPT_VERSION 6`, persona/voice/repetition added to both)
+
+Read CONTEXT.md first, as instructed — this is the "future
+`WEEK_PROMPT_VERSION` bump" the prior session's Part 2 investigation
+deferred to. Working tree clean before starting (only `supabase/.temp/`).
+
+### Part 1 — root-cause classification, re-verified against the real
+`input_snapshot`, not re-derived from the prior session's write-up alone
+
+Pulled row `a244191d-...`'s real `input_snapshot` directly (PostgREST, the
+live app's own authenticated session — same technique as every prior
+session, no service key). Independently re-checked all five findings
+against the raw data rather than trusting the prior session's conclusions:
+
+1. **Day-of-week misattribution — payload bug, confirmed.** The real
+   `sessions[]` array carries only `date`/`workoutDayName` — no weekday
+   field anywhere. Confirmed against the real roster: 2026-08-29 (the real
+   LEGS session) is a **Saturday**; the generated text called it "Friday"
+   (Friday, 2026-08-28, is actually PULL 2 — the same output calls it that
+   correctly one paragraph earlier). Root cause: the model had to derive a
+   weekday from an ISO date string and got it wrong — the exact "feed
+   pre-computed data" gap this app already closes for weekNumber/isDeload/
+   phase.
+2. **Session-type + energy misattribution (Dip machine) — pure generation
+   gap, confirmed.** Pulled the Dip machine occurrence directly:
+   `workoutDayName: "PUSH 1"`, `energyRating: null` — both correct in the
+   payload. The model wrote "low-energy pull session" anyway, then
+   contradicted itself one sentence later ("no energy or pump rating was
+   logged"). Nothing missing from the payload; the model just got it wrong
+   with the right data in front of it.
+3. **Fabricated rep direction (Cable Row) — pure generation gap,
+   confirmed.** Pulled the real `match` data for all three slots:
+   `a.reps`/`b.reps` = 8→11, 8→10, 8→11 (reps rose in every slot);
+   `a.weight`/`b.weight` = 60→55 (weight dropped in every slot);
+   `deltaPercent` slightly negative in all three (Epley's weight term
+   dominates a modest rep gain at a fixed RIR of 0). The raw numbers needed
+   to state this correctly were present and correct; the model inferred
+   "reps dropped" from the negative e1RM sign instead of reading them.
+4. **"Unchanged e1RM" vs a real +2.3% — confirmed wrong, not the
+   defensible reading.** Re-derived independently: Seated Leg Curl slot 1,
+   100kg×8@RIR1 (e1RM 130) → 105kg×8@RIR0 (e1RM 133) — a genuine +2.31%,
+   driven by both the weight increase and a full RIR drop at the same rep
+   count. Cross-checked the same output's own house style: the Lateral
+   Raise highlight calls a slot "unchanged" only where the real delta is
+   exactly 0% (Cable Lateral Raise slot 2 — weight/reps/RIR/e1RM all
+   byte-identical both weeks). That internal precedent settles it — this
+   prompt's own voice uses "unchanged" to mean the number itself didn't
+   move, so calling a real +2.31% "unchanged" is a confirmed error, not the
+   third verifier's hedged alternate reading.
+5. **Memory/notes corroboration guard — real wording loophole,
+   confirmed.** The guard bans the literal words "confirms"/"aligns with";
+   the real text used neither ("memory and notes explain X") while doing
+   the exact thing the guard's own broader sentence forbids. Root cause:
+   the guard led with banned *words* in parentheses rather than the
+   *pattern* they illustrated.
+
+Cross-checked against `coachPrompt.ts` (daily): its single-session payload
+has never carried a weekday field and has no cross-session narrative to
+misattribute a session type *within* — structurally immune to findings 1
+and the session-type half of 2. Findings 3–5 (generation gaps) use the
+identical `match`/`memory`/`sessionNotes` shapes daily's payload already
+has, so they're live risk there too, untested only because no real daily
+output has hit them yet.
+
+### Part 2 — fixes
+
+**Payload (finding 1 only — the one real payload bug).**
+`weekAnalysisInput.ts` gains `dayOfWeek` on both `WeekAnalysisSessionRoster`
+and `WeekAnalysisOccurrence`, computed by one shared `dayOfWeekOf()` helper
+reusing the exact computation `scheduler.ts` already uses for
+`program.schedule` lookups (`format(date, 'EEEE').toLowerCase() as
+DayOfWeek`) — the existing `types/index.ts` `DayOfWeek` type (lowercase
+`'monday'`...`'sunday'`, already used for schedule keys) is reused as-is,
+not duplicated. `assembleWeekAnalysisInput` computes it for the session
+roster (same place `weekNumber` is already computed); `buildWeekAnalysisInput`
+computes it for each occurrence from `facts.session.date` (genuinely new,
+pure logic — Vitest-covered). Two new tests in `weekAnalysisInput.test.ts`
+regression-test the exact real dates involved (2026-08-29 → `'saturday'`,
+matching the real fabrication). Not ported to `analysisInput.ts`/
+`coachPrompt.ts` — daily's payload never had this gap (Part 1).
+
+**Prompt instructions (findings 2–5, all generation gaps).** Both
+`coachWeekPrompt.ts` and `coachPrompt.ts`:
+- Finding 2: `match` items' description now states outright that
+  `deltaPercent` blends weight/reps/RIR and its sign says nothing about any
+  one of them — reps/weight direction must come from reading `a`/`b`
+  directly, never inferred from the sign. (Weekly also got the
+  session-type-provenance instruction on highlight headlines/occurrence
+  descriptions — daily has no equivalent, single session only.)
+- Finding 4: generalized per instruction, not scoped to the one case —
+  a new "Precision and repetition" section in both prompts: never pair a
+  qualitative "unchanged"/"flat"/"held steady" descriptor with an adjacent
+  number that contradicts it.
+- Finding 5: the "Memory and notes"/"Memory and session notes" guard in
+  both prompts rewritten around intent — never jointly cite `memory` and
+  notes for the same fact, "no matter which words you use to join them,"
+  words demoted to non-exhaustive examples, plus an explicit self-check
+  ("if you catch yourself naming both... in the same sentence... stop and
+  cite only one").
+- Energy/pump null-handling (already present in both prompts, but the real
+  failure shows the existing wording wasn't forceful enough): strengthened
+  with a concrete rule against letting any energy/pump word describe a
+  `null`-rated session "even in passing," plus an explicit warning that a
+  highlight/comment can get it right in one sentence and wrong in the next.
+
+### Part 3 — "lifter" → "you"
+
+Both prompts' opening paragraph, `sessions`/`occurrences`/`memory`/`notes`/
+`sessionNotes` payload-shape descriptions, and the secondary-reference
+recap in "What to write" now address the lifter directly as "you"/"your."
+Not a blind find-replace: a few sentences already used "you" to mean *the
+model* in the same breath (e.g. "background that should inform how you
+read the whole week, the same way a real coach who has trained **this
+lifter** for months would..." — "you" = model reasoning, "this lifter" = the
+athlete, two different referents one clause apart). Blindly replacing the
+second "lifter" with "you" there would collide with the first. Those few
+spots use "them"/"their" instead of "you" to avoid the collision; every
+other instance (the large majority, wherever no competing model-directed
+"you" shares the sentence) uses direct "you"/"your" as instructed. A new
+"## Voice" section in both prompts states the convention explicitly and
+unambiguously: address the lifter as "you," never third person.
+
+### Part 4 — repetition
+
+New instruction in both prompts' "Precision and repetition" section: state
+each fact once, wherever it fits best, never restate the same number or
+reasoning point in more than one place — including within one highlight/
+comment (the follow-on sentence should add information, not restate the
+headline in longer form). No length or sentence-count target, per
+instruction — a less repetitive analysis should run shorter on its own.
+
+### Part 5 — tone
+
+New "## Voice" section, both prompts, first persona instruction either has
+ever shipped with: chill, direct, plain language, contractions fine, dry
+humor "exactly where something genuinely earns it... never forced in, and
+never at the expense of the substance underneath." Explicit that the
+casual register doesn't relax the two hard rules (reason about *why*, never
+a bare verdict) — "it's what makes the reasoning read like a person said
+it instead of a spreadsheet." A default change, no branching logic.
+
+### Part 6 — version bumps
+
+`WEEK_PROMPT_VERSION` 2 → **3**; `PROMPT_VERSION` 5 → **6**. Each carries a
+dated changelog comment documenting which of the five findings applied to
+that file, plus lifter→you/repetition/tone, following the same convention
+every prior bump used.
+
+### Part 7 — verify
+
+Typecheck (both tsconfigs): clean. `npm run test`: **365/365 passing** (up
+from 363 — the two new `dayOfWeek` tests). `npm run build`: clean (bundle
+warning is the pre-existing >500kB chunk notice, unrelated to this
+change). Caught by typecheck, not by inspection: `DayOfWeek` already
+existed in `types/index.ts` (lowercase, used by `scheduler.ts`) — the first
+draft defined a second, capitalized `DayOfWeek`, which `tsc` flagged as a
+duplicate identifier immediately. Fixed by reusing the existing type and
+switching `dayOfWeekOf()` to `.toLowerCase()`, matching `scheduler.ts`'s
+own exact computation — one implementation, not two with different casing
+conventions.
+
+### Part 8 — throwaway dry runs, real data, zero persisted rows
+
+Both dry runs called the real, shipped code — never a reimplementation —
+using the app's own already-authenticated browser session, without ever
+extracting or viewing a raw credential: `assembleWeekAnalysisInput`/
+`assembleAnalysisInput` were invoked via a dynamic `import()` of the
+running dev server's own compiled modules, passed the app's own live
+`supabase` client object (already scoped to the real session — the script
+never touches the anon key or access token as values, only as an opaque
+client instance the browser already holds). The resulting real
+`input_snapshot` JSON (not a credential) was saved to a scratch file and
+fed to a throwaway `dryRunPromptFix.ts` (repo root, never committed,
+deleted immediately after) that imported the real
+`COACH_WEEK_SYSTEM_PROMPT`/`COACH_SYSTEM_PROMPT` and called
+`anthropic.messages.create` directly — the same model/schema/params
+`api/coach/analyze-week.ts`/`analyze.ts` use — but never called the insert
+path either endpoint uses, so no permanent row was ever at risk. Verified
+after both runs: `v2_coach_week_analyses` still has exactly its
+pre-existing 2 rows (`0c9951ef-...` v1, `a244191d-...` v2 — nothing new);
+`v2_coach_session_analyses` still has exactly its pre-existing 11.
+
+**1. Weekly re-run, real week 2026-08-24, `WEEK_PROMPT_VERSION 3`.**
+`claude-haiku-4-5-20251001`, 29,829 input tokens, 2,031 output tokens. Full
+generated text:
+
+> **Mid-chest hit hard by equipment substitution:** "Thursday's Chest Press
+> on the machine you usually use was down significantly—the incline smith
+> substitute that hit you unexpectedly heavy (your notes mention that first
+> set defeated you) logged at 32.5 kg and dropped 32% e1RM across three
+> matched sets versus last week. This wasn't a strength issue; your Pec
+> Deck Fly the previous Monday held steady and even ticked up 2.4% on the
+> second set. The smith incline also irritated your shoulder slightly—a
+> real cost to the session beyond the numbers. You compensated by adding a
+> fourth set of the smith, which shows intent, but the weight damage is
+> real."
+>
+> **Back volume held despite mixed signals on compound pulls:** "Your two
+> pull days tracked mostly flat across lats work—Cable Row averaged down
+> 1.8% across three sets on Tuesday (lighter weight, more reps), Neutral
+> Lat Pulldown down 3.8% on the first set but flat on the rest, Barbell Row
+> on Friday down 2.6% across both sets. Isolation work on the same muscle
+> was more mixed: One-arm Cable Lat Row added an extra set and held the
+> matched pair steady; One-arm Cable Pullover dipped 4.7% on the first set
+> but your second set logged 12 reps at 17.5 kg with controlled form
+> despite no prior RIR rating to compare. The week averaged low energy on
+> Tuesday and normal on Friday—neither ideal for heavy compound pulls.
+> You're holding the work, not retreating, but the numbers show the grind
+> of a cut around week 9."
+>
+> **Biceps gains through reps despite weight drops:** "Both curl sessions
+> ticked up in reps while weight either held or dipped slightly. Tuesday's
+> Ezbar Preacher Curl went from 10 reps (first set) to 9 reps (second) to 8
+> reps (third) last week; this week you hit 10, 9, and 8 again, but with a
+> +2.6% and +5.4% e1RM bump on the first two sets—reps stayed the same but
+> you squeezed them harder. Friday's One-arm Cable Curl is mixed: first set
+> down 3.1%, second set down 2.4%, third set up 2.6%. But you grabbed 10
+> reps on the first set (up from 9), which is real volume in a cut. No form
+> ratings logged for these, so you're working on feel, not locked-down
+> control."
+>
+> **Push compounds softened by incline smith swap and deload energy:**
+> "Your Incline Dumbell Press on Monday was surprisingly stable—first set
+> dropped 2.7% but second set ticked up 2.9% and third dipped 2.7%, so the
+> week-to-week average was roughly flat despite no session ratings.
+> Thursday's horizontal pushes took the real hit: the forced smith incline
+> switch tanked the main compound (Chest Press) by 30–37% across three
+> sets; Dips held at 9 reps with controlled form, so at least the lower
+> chest stayed intact. You're pushing with intent—the side-delt and
+> upper-chest isolation work on both days held steady or crept up—but the
+> equipment substitution carved into your main pressing numbers."
+>
+> **Forearm work continues to miss this mesocycle:** "Cable Reverse Biceps
+> Curl was skipped both Tuesday and Friday, with no comparable data in
+> either session. Your memory flags that you're avoiding forearm work
+> during cuts due to wrist pain triggered in the past, and both pull
+> sessions went unchallenged in that bucket. This is a deliberate, standing
+> caution, not a lapse—you're protecting the wrist, which makes sense 103
+> days into a cut when fatigue and volume stress tendons."
+>
+> **Leg day constrained by squat skip and knee caution:** "Squat didn't run
+> Saturday—you've been skipping it during the cut because the
+> stimulus-to-fatigue ratio isn't favoring you, and your notes confirm
+> you're compensating with increased Leg Press volume. Leg Press itself
+> held flat (200 kg for 7 reps on set 1 and 6 reps on set 2, both matched
+> e1RM at 253 kg), though you only completed 2 sets instead of the 4 you've
+> been trying—your knee felt unstable after the first set, and after the
+> second, you stopped rather than push it further. That caution is
+> warranted (memory notes right knee feeling unusual), but it also kept the
+> volume down. Leg Extension split the difference: first set ticked up
+> 2.5%, second set ticked down 2.6%, so the pairing held steady. You're
+> managing around real constraints—the cut's toll, the knee, the squat
+> skip—and keeping leg pressing honest, even if volume is capped."
+>
+> **Overall:** "You completed all five sessions and held the week together
+> on a cut at week 9 of Meso 1, despite an equipment crisis that forced an
+> incline smith substitution that cost you real weight on the Chest Press.
+> Your overall form rating landed at 3.0 out of 4—sitting between normal
+> and controlled, skewed toward controlled on Thursday and Friday where
+> more sets were explicitly rated—which is solid proof that you're still
+> moving with intent even as energy averaged normal (4 of 5 sessions rated,
+> mean 3 out of 5). The week's real story is constraint management: you
+> skipped squats deliberately because the cost-benefit doesn't work during
+> a cut, you capped Leg Press at 2 sets to avoid aggravating your knee, you
+> skipped forearms to protect wrist pain from the past, and you've dropped
+> 0.67 kg bodyweight in the past week (72.9 to 72.23) while still hitting
+> small rep and form wins on biceps and isolation work. Your compounds
+> softened—back pulling and chest pressing both showed modest
+> declines—but your accessories held or gained in the same buckets, which
+> is the classic cut trade-off at this point in a meso. Energy wasn't
+> exceptional; pump was modest (averaging 2.25 out of 4). None of that
+> reads as regression; it reads as honest training through accumulated
+> fatigue and real structural caution. The incline smith shoulder
+> irritation is worth monitoring—your memory already flagged that the
+> angle bothers you, so if it persists, a different incline angle or return
+> to dumbbells when the main machine is fixed could save you headaches."
+
+**Checked against all five findings — none reproduced.** Day-of-week:
+every reference correct (Chest Press Thursday, Incline Dumbell Press
+Monday, Ezbar Preacher Curl Tuesday, One-arm Cable Curl Friday, Squat
+Saturday — all cross-checked against the real roster). Session-type/null
+energy: the null-rated Monday session gets no energy word anywhere ("no
+session ratings"), and `avgEnergyRating`'s "4 of 5 sessions rated" line
+correctly excludes it from the count. Rep direction: "Cable Row averaged
+down 1.8%... (lighter weight, more reps)" — states the real direction of
+both variables explicitly and correctly, the exact case that fabricated
+before. Unchanged-vs-nonzero: no instance of a flat descriptor paired with
+a contradicting number found anywhere in this output. Memory/notes:
+"your notes confirm..." cites notes alone for one specific claim (a real
+LEGS-session note says almost the same thing memory entry #3 does) —
+never joins "memory and notes" for one fact the way the original
+fabrication did.
+
+**2. Daily dry run, today's real session (`73030c41-...`, 2026-08-31,
+PUSH 1), `PROMPT_VERSION 6`.** `claude-haiku-4-5-20251001`, 8,871 input
+tokens, 893 output tokens. This session already has its own real,
+permanent analysis (`dc2be167-...`, generated earlier today at
+`PROMPT_VERSION 5`, before this fix) — using it again here creates no
+duplicate, since this dry run never calls the insert path at all. Full
+generated text:
+
+> **Incline Dumbell Press:** "Solid week-over-week progression. First set
+> jumped e1RM by ~3% with RIR improving from 0 to 1 while staying
+> controlled, second set held steady at the top of the RPE range, and
+> third set stayed controlled on a lighter weight. You've been in this cut
+> for 105 days now, so holding or creeping up on strength-per-rep while
+> staying controlled is the right story — bodyweight is stable around 72
+> kg, and the incline dumbell is tracking favorably."
+>
+> **Cable Lateral Raise:** "Significant rep gains across the board this
+> week. Plain sets jumped from 13 and 12 reps to 14 and 14 respectively
+> (both held maxed-out RIR), and the dropset head hit 14 reps vs 11 last
+> week—all logged controlled or normal form. The smaller drops within the
+> set were noisier (one stage down slightly, one up), but the main drive is
+> clearly upward. Shoulder endurance is responding well on a cut."
+>
+> **Pec Deck Fly:** "First set gained a rep in RIR (e1RM +2.5%) while
+> staying controlled; second set held the same e1RM despite dropping one
+> rep, thanks to that extra RIR in the bank. Both controlled throughout.
+> Clean, stable week on the isolation work."
+>
+> **Dip machine (triceps):** "First set held steady, but the second set
+> lost a rep and picked up a rushed rating—that's the real signal here. You
+> hit max RIR both weeks, so the fatigue story at the end of the set
+> changed; the rushed form suggests you were chasing the rep count despite
+> accumulating fatigue. On a late-stage cut, this kind of form drift on
+> your final working set is worth noting as a fatigue cue, even if the
+> weight and top-end numbers didn't move."
+>
+> **Standing Machine Calf Raise:** "Skipped last week but actually trained
+> this week—comparing to two weeks ago instead (Aug 17), you've added
+> meaningful weight: 100 kg → 115 kg on both plain sets, with e1RMs
+> climbing ~5–12% despite losing a few reps. RIR is intact on both, and
+> form stayed normal. This is a real, solid jump in load over the two-week
+> span, and it lands well on a cut where a stable bodyweight and controlled
+> progression is the goal."
+>
+> **Overall:** "Your push session sits in a good spot. Incline dumbbell,
+> cable raise, and pec deck all showed clean progression or maintenance
+> with controlled form; triceps showed a fatigue edge on the final set but
+> nothing alarming; calf raise got added back with a notable load jump.
+> Energy was high and you got some pump, which tracks with the overall
+> quality of the session. You're 105 days into a cut, bodyweight has
+> settled around 72 kg, and you're still moving weight up or holding it
+> steady while keeping form intact on the big stuff—that's the rhythm to
+> stay in. The triceps second-set form drift is the only minor caution, but
+> isolated to one set on a high-energy day isn't a pattern yet."
+
+Reads as the "chill but knowledgeable coach" tone Adam asked for — direct
+"you" throughout, plain language, dry asides ("that's the rhythm to stay
+in," "isn't a pattern yet") without losing the reasoning underneath (every
+comment still explains *why*, per the unrelaxed hard rule). No fabrication
+class recurs here either: rep/weight direction stated correctly throughout
+("Plain sets jumped from 13 and 12 reps to 14 and 14"), no unchanged/nonzero
+contradiction ("held the same e1RM despite dropping one rep" — internally
+consistent, not a violation).
+
+### Status
+
+Parts 1–8 complete. Root causes classified and re-verified against real
+data; payload fix (finding 1) and prompt fixes (findings 2–5,
+lifter→you, repetition, tone) shipped in `WEEK_PROMPT_VERSION 3` /
+`PROMPT_VERSION 6`; typecheck/tests/build all clean; both throwaway dry
+runs confirm the fixes hold against fresh real generations. **Not
+deployed** — committed locally (or held uncommitted, per Adam's own
+go-ahead), pushing is a separate decision once Adam has read the dry-run
+text above.
+
+---
+
+## 2026-08-31 session (continued, same thread — Leg Press e1RM sanity
+check, finding #3's fix corrected for real, swap-exercise vs. planned/
+forced wording documented)
+
+Read CONTEXT.md first, as instructed. Continues directly from the held,
+uncommitted work above — not isolated, not stashed. Two checks against the
+held work's own dry-run outputs, plus one documentation-only note.
+
+### Part 1 — Leg Press e1RM, weekly dry run: not a bug
+
+The re-run's Legs paragraph claimed identical e1RM (253 kg) for 200kg×7 and
+200kg×6 at different RIRs. Pulled the real raw slot data (LEGS session,
+2026-08-29, vs. reference 2026-08-22) and called the real, shipped
+`calculateE1rm` directly (`npx tsx`, a throwaway script, deleted after) —
+not reimplemented:
+
+- Set 1: `{ weight: 200, reps: 7, rir: 1 }` → `253.33333333333331`
+- Set 2: `{ weight: 200, reps: 6, rir: 2 }` → `253.33333333333331`
+- **Exactly equal, not merely close.**
+
+Root cause: this app's e1RM formula (`e1rm.ts`) is `weight × (1 +
+(reps + rir) / 30)` — RIR-adjusted Epley, where what matters is *effective
+reps to failure* (`reps + rir`), not raw reps alone. Set 1's `7 + 1 = 8`
+and set 2's `6 + 2 = 8` are the same effective-reps-to-failure at the same
+weight, so identical e1RM is the mathematically correct output of this
+app's own formula, not an artifact or a bug. **No fix needed — the
+generated line was accurate.** This is exactly the kind of case the task
+asked to distinguish from a real bug: same-looking inputs (different reps,
+"same" e1RM) that are actually correct once you know the formula
+RIR-adjusts.
+
+### Part 2 — finding #3's fix, corrected for real
+
+**Checked the current code first, as instructed, not assumed from the
+prior summary.** `positionMatch.ts`'s `PositionMatchItemResult` had no
+precomputed direction field — the prior session's fix for finding #3
+(Cable Row: "dropped weight and reps" when reps actually rose) was
+prompt-only, telling the model to read `a.reps`/`b.reps` itself rather
+than infer from `deltaPercent`'s sign. Exactly the "offload deterministic
+work to pure functions" gap the standing principle exists to prevent —
+rep-count/weight direction is arithmetic, not judgment.
+
+**Fixed at the real layer.** `positionMatch.ts`'s `matchItem()` now
+computes `repsDelta`/`weightDelta` (signed, `b - a`, same convention as
+`deltaPercent`) on every matched item — shared by both prompts' payloads
+since `analysisInput.ts`/`weekAnalysisInput.ts` both build every occurrence
+through this one function. Independent of e1RM eligibility on purpose:
+unlike `deltaPercent`, these need only the one raw value on each side, so
+they're non-null even when `deltaPercent` is null for lack of RIR. Five new
+tests in `positionMatch.test.ts`, including the exact real Cable Row shape
+(reps rise while `deltaPercent` reads negative) as a named regression case.
+Both prompts' `match` bullet now names `repsDelta`/`weightDelta` in the
+payload shape and points the model at them directly instead of the
+derive-it-yourself instruction.
+
+**Re-verified against a fresh real dry run — and the field alone wasn't
+enough, a second real bug surfaced.** With `repsDelta`/`weightDelta` in
+place and correct (`+3, +2, +3` for Cable Row's three slots, confirmed by
+querying the real payload directly), the re-run still produced: *"Cable Row
+also shed reps across its sets—two matching sets went from 8 reps to
+11"* — "shed" (implies decrease) stated one clause before correctly citing
+8→11 (an increase), for the same item. `repsDelta` was right there,
+positive, and correct; the model still wrote the wrong direction word.
+Root cause: it read "weight dropped 5kg" for the same exercise and
+extended that direction to reps too ("also shed") without checking
+`repsDelta`'s own sign independently — precomputing the field closed the
+"forced to derive it" gap but not a new one: assuming two independent
+numbers move together because they're mentioned in the same sentence.
+Added a further instruction to both prompts' `match` bullet: `repsDelta`/
+`weightDelta` routinely point in opposite directions and must be checked
+separately, "if you say 'weight and reps both fell,' that claim requires
+both... to actually be negative, not just one of them." Re-ran the same
+throwaway dry run a third time — Cable Row now reads: *"Cable Row dropped
+weight 5 kg across all three sets but gained 2–3 reps per set, keeping
+e1RM nearly flat (−1 to −3%)"* — both directions stated correctly and
+independently, matching the real `repsDelta`/`weightDelta` exactly, no
+internal contradiction.
+
+**Verify, run three times (typecheck/tests/build clean each time):**
+final state — typecheck (both tsconfigs) clean, **370/370 tests passing**
+(up from 365 — the five new `positionMatch.test.ts` cases), build clean.
+Version numbers unchanged (`WEEK_PROMPT_VERSION 3` / `PROMPT_VERSION 6`) —
+this is the same held, unshipped thread as the prior session's work, not a
+new version; both prompts' changelog comments document the correction
+in place rather than adding a new version entry for work that was never
+shipped at the version it's correcting.
+
+Both dry runs used the same technique as the prior session (real code via
+dynamic `import()` inside the already-authenticated browser tab, real
+`ANTHROPIC_API_KEY` from `.env.local`, zero credential values ever printed,
+zero insert calls). Verified after: `v2_coach_week_analyses` still exactly
+2 rows, `v2_coach_session_analyses` still exactly 11 — nothing new
+persisted by any of the three re-runs.
+
+### Part 3 — documentation only: swap-exercise doesn't close the
+planned/forced wording gap
+
+No code change. Confirmed directly against the real swap-exercise build
+(`SwapExerciseSheet.tsx`, `sessionService.ts`, `weekPlanService.ts`, and
+`supabase/migrations/`): the confirm step's real copy is "Swap [X] for
+[Y] — for today's session only. Next week's plan is unaffected" — no
+reason/cause field anywhere in the sheet, the services, or any migration
+(`021_v3_reassign_exercise_fn.sql` is the exercise-*reassignment* feature,
+unrelated). This closes the same-exercise-different-equipment
+*false-match* failure mode (the model no longer has to infer a swap
+happened from a same-exercise-id delta — a real swap now creates a
+distinct card with its own `first_time` reference) but does **not** give
+the model, the payload, or the lifter any structured way to record *why* a
+swap happened. The "Chest Press substitution described inconsistently"
+pending-feedback item (planned vs. forced wording) depends entirely on
+whether the lifter happens to write a note explaining the swap — a future
+real swap with no note, or a note that itself uses ambiguous wording, can
+still reproduce the same inconsistency. **Two distinct open items, not one
+resolved by the other** — updated the pending-feedback bullet to say so
+explicitly.
+
+### Status
+
+Part 1: no bug, confirmed via independent re-derivation, nothing changed.
+Part 2: finding #3's fix corrected at its real root cause — a genuinely
+new bug (the "shed reps" contradiction) was caught by the re-verification
+step Adam's instructions required, not just re-confirmed as already
+fixed — fixed and re-verified three real dry runs deep. Part 3:
+documentation only. **Not deployed, no real analysis triggered** — same
+held status as the prior session.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -17119,20 +17619,15 @@ From real usage (one day):
   behaviour exactly (rest still includes set-performance time by
   default) — this closes the gap for anyone who turns the toggle on, not
   a change to the default.
-- **Coach analysis output reads clinical, not "chill but knowledgeable
-  coach."** `coachPrompt.ts` currently has no persona/tone instruction at
-  all — its two hard rules (reason about *why*, never a bare verdict)
-  constrain content, not voice, and the payload itself (matched sets,
-  e1RM deltas, phase/weight-trend numbers) has no casual register for the
-  model to mirror, so output defaults to a neutral, clinical tone.
-  Adam's feedback after reading the first real analysis (2026-08-18,
-  session `48d841fb-...`): wants a "chill but knowledgeable coach"
-  register instead. **Deliberately not addressed as part of
-  `PROMPT_VERSION 2`** (that bump was scoped narrowly to the diagnosed
-  double-skip phrasing gap) — **revisit as its own future
-  `PROMPT_VERSION` bump once 4–5 more real analyses exist to calibrate
-  tone against.** One sample (today's) isn't enough signal to design a
-  persona instruction against without guessing.
+- ~~**Coach analysis output reads clinical, not "chill but knowledgeable
+  coach."**~~ **Fixed, `PROMPT_VERSION 6` / `WEEK_PROMPT_VERSION 3`
+  (2026-08-31)** — both prompts gained a first "## Voice" persona section:
+  direct "you" address, chill/direct register, room for dry humor where it
+  fits, explicit that this doesn't relax the two hard rules. Calibrated
+  against eleven real daily analyses and two real weekly ones (well past
+  the "4-5 more" bar this bullet set), not guessed from one sample — see
+  this file's "2026-08-31 session (continued...)" entry for the full
+  before/after and two real throwaway dry-run outputs in the new voice.
 - **Chest Press substitution described inconsistently within the same
   real analysis.** The real 2026-08-27 PUSH-2 analysis (row
   `39d3c864-...`, `PROMPT_VERSION 5`, CONTEXT.md's "the real ANALYZE
@@ -17143,36 +17638,41 @@ From real usage (one day):
   real session notes actually say ("chest press machine broken"). An
   internal inconsistency between two parts of the same generated text,
   not a fabricated fact (nothing else about the substitution is
-  invented — see the same session entry's §3). **Not touched this
-  session, not urgent** — worth a look at a future `PROMPT_VERSION`
-  revision, same tracked-but-untouched status as the tone-calibration
-  item above.
+  invented — see the same session entry's §3). **Still not addressed** —
+  the 2026-08-31 prompt fixes above (findings 1-5, voice, repetition, tone)
+  didn't touch this specific case; worth a look at a future
+  `PROMPT_VERSION` revision. **Confirmed, not assumed, that the
+  swap-exercise feature (built 2026-08-27, same day) doesn't close this**
+  — checked directly against `SwapExerciseSheet.tsx`/`sessionService.ts`/
+  `weekPlanService.ts`/every migration: none carry a reason/cause field
+  anywhere, the confirm step's copy is purely mechanical ("Swap X for Y —
+  for today's session only"). Swap-exercise fixes the *different*
+  same-exercise-different-equipment false-match failure (a real swap now
+  gets its own card and `first_time` reference, instead of the model
+  having to infer a swap happened from a same-exercise-id delta); it says
+  nothing about *why* a swap happened, which is exactly what the
+  planned/forced wording bug is about. These are two distinct open items —
+  a future real swap with no explanatory note, or an ambiguously-worded
+  one, can still reproduce the planned/forced inconsistency regardless of
+  how solid swap-exercise itself is.
 - ~~**`coachWeekPrompt.ts` `WEEK_PROMPT_VERSION 2` carries the same
   structural risk.**~~ **Checked for real against Weekly's first real
-  `WEEK_PROMPT_VERSION 2` output, 2026-08-31 — and unlike daily's own first
-  real check, this one found real issues.** See this file's "2026-08-31
-  session... Part 2" above for the full account (row `a244191d-...`, week
-  2026-08-24). The two previously-diagnosed daily failure modes
-  (equipment-detail hallucination; "planned" vs. "forced" wording
-  inconsistency) did **not** recur here — both held clean. But five new,
-  independently adversarially-verified findings did: a session
-  misattributed to the wrong day of the week (compounded by an internal
-  self-contradiction, since the same output correctly names that day
-  elsewhere), a session mislabeled as "pull" and its unrated energy
-  mislabeled as "low" (again self-contradicted two sentences later), a
-  fabricated rep-count direction (claimed reps dropped when the raw data
-  shows they rose in every matched slot), an internal contradiction between
-  "unchanged" and a stated non-zero delta for the same figure (confirmed
-  with one dissenting, grammatically-defensible alternate reading), and —
-  the specific cross-section/memory-notes risk this bullet was tracking —
-  a same-week note and a memory entry describing the identical fact cited
-  jointly as if two sources ("memory and notes explain..."), which doesn't
-  use `WEEK_PROMPT_VERSION 2`'s literally-banned "confirms"/"aligns with"
-  wording but does exactly what the guard's broader instruction forbids —
-  the first real evidence that guard's phrasing has a loophole (blocks the
-  named words, not the underlying joint-citation pattern). **Not fixed —
-  findings only, per instruction — held for a future `WEEK_PROMPT_VERSION`
-  bump alongside the tone-calibration and planned/forced items above.**
+  `WEEK_PROMPT_VERSION 2` output (found five issues, see this file's
+  "2026-08-31 session... Part 2" for the original investigation), then
+  fixed for real at `WEEK_PROMPT_VERSION 3` (2026-08-31, "2026-08-31
+  session (continued...)").** Each finding's root cause was independently
+  re-verified against the real `input_snapshot` before fixing, not assumed
+  from the prior investigation: the day-of-week misattribution was a real
+  payload gap (`sessions`/`occurrences` now carry a pre-computed
+  `dayOfWeek`, `weekAnalysisInput.ts`); the session-type/null-energy
+  mislabeling, fabricated rep direction, and unchanged-vs-nonzero
+  contradiction were pure generation gaps (payload data was already
+  correct) fixed with concrete prompt instructions; the memory/notes
+  guard's word-list loophole was rewritten around intent ("never jointly
+  cite... no matter which words you use to join them") and ported to
+  `coachPrompt.ts`, which carried the identical loophole untested. A real
+  throwaway re-run against the same week (2026-08-24) confirmed none of the
+  five reproduce — full text in the same session entry.
 
 ---
 
