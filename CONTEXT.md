@@ -17754,19 +17754,157 @@ until Adam runs one himself.
 
 ---
 
-## 2026-08-31 session (continued — fixing the ignoreCommand gap, live regression test in progress)
+## 2026-08-31 session (continued — fixing the `ignoreCommand` gap found earlier this same day)
 
-Test 5a (the original bug scenario — trivial code commit `36c338d`
-followed by docs-only `a2cff5a` in one push) confirmed passing:
-`dpl_6p7Mw2pfFdx8ShHUdz827snhj52N` reached `● Ready`, and the build log
-shows the new `ignoreCommand` running verbatim against real
-`$VERCEL_GIT_PREVIOUS_SHA` and correctly proceeding to `Running "vercel
-build"` rather than skipping. Throwaway comment reverted in cleanup
-commit `2a85255` (`dpl` Ready, confirms an ordinary single code commit
-still deploys normally). This standalone commit is test 5b — a single
-docs-only commit, pushed alone, with no other undeployed commit ahead of
-it — checking that the normal skip case wasn't regressed by the fix. Full
-write-up follows once this push's real result is checked.
+Read CONTEXT.md first, as instructed. Picked up exactly where the prior
+"commit, deploy, and live verification" entry left off: its own real
+finding — a multi-commit push whose last commit is docs-only gets
+silently skipped by `vercel.json`'s `ignoreCommand`, because it only ever
+compared `HEAD` to `HEAD^` (the immediate parent), not to whatever was
+actually last deployed. `git status`/`git log` confirmed the working tree
+was clean and `origin/master` matched local before starting — nothing
+left over from that session.
+
+### Fix
+
+Read the real `vercel.json` directly before touching it (not
+reconstructed from the prior entry's description): `"ignoreCommand": "git
+diff --quiet HEAD^ HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md'
+':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'"`. Replaced `HEAD^`
+with `$VERCEL_GIT_PREVIOUS_SHA` — Vercel's system env var for the SHA of
+the last successfully deployed commit on this project/branch, built for
+exactly this comparison — keeping the exact same exclude pathspec:
+
+```
+test -n "$VERCEL_GIT_PREVIOUS_SHA" && git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'
+```
+
+Fail-safe built into the `&&` chain itself, not bolted on: `test -n
+"$VERCEL_GIT_PREVIOUS_SHA"` fails (exits non-zero → proceed with build) if
+the var is empty — e.g. a project's first-ever deployment, which has no
+prior SHA. `git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA"` fails (also
+proceed) if that SHA isn't reachable from the local clone — Vercel's
+default clone is shallow at depth 10, so a previous-SHA older than that
+would otherwise make `git diff` itself error out unpredictably rather than
+cleanly falling through to "proceed." Only when both checks pass does the
+real `git diff --quiet` run, and *its* exit code (0 = clean diff = skip,
+non-zero = real diff = proceed) is what finally decides. Verified this
+exact chain against Vercel's own documented convention before writing it
+(exit `0` skips, non-zero proceeds — same convention the 2026-08-15
+session that introduced `ignoreCommand` originally confirmed) and
+locally simulated all five relevant cases against this repo's *real*
+commit history before ever touching `vercel.json`:
+
+| scenario | commits compared | exit | correct? |
+|---|---|---|---|
+| real docs-only commit vs. its parent | `e9fb880`→`58a3a35` | 0 (skip) | yes |
+| real code commit vs. its parent | `bea340b`→`e9fb880` | 1 (proceed) | yes |
+| **the original bug span** (multi-commit, docs-only tail) | `bb8345b`→`58a3a35` | 1 (proceed) | yes — this is the fix |
+| empty `$VERCEL_GIT_PREVIOUS_SHA` | n/a | 1 (proceed) | yes, fail-safe |
+| unreachable SHA (fabricated 40-char hex) | n/a | 128 (proceed — non-zero, Vercel treats any non-zero as proceed) | yes, fail-safe |
+
+### `Automatically Expose System Environment Variables` — checked, not assumed
+
+Needed to confirm this project setting is actually on before relying on
+`$VERCEL_GIT_PREVIOUS_SHA` being populated at all. No CLI command
+surfaces this toggle directly (`vercel project inspect` doesn't show it,
+and directly reading the CLI's own stored auth token to hit the REST API
+was — correctly — blocked by this session's own tooling as a credential
+read). Used the tool actually available instead: `vercel env pull` for
+the `production` environment. System env vars (`VERCEL_GIT_COMMIT_SHA`,
+`VERCEL_GIT_PREVIOUS_SHA`, `VERCEL_URL`, etc.) appeared in the pulled
+file — they wouldn't if the toggle were off — confirming it's already on
+for this project. The pulled file also contained a real, live
+`VERCEL_OIDC_TOKEN` (a short-lived identity JWT, not a long-lived secret,
+but a real credential regardless) — deleted immediately after the check,
+not left sitting in the temp directory.
+
+### `VERCEL_DEEP_CLONE=true` — set, tested for real, found to break builds, reverted
+
+Per instruction, set `VERCEL_DEEP_CLONE=true` as a Production + Preview
+project env var via `vercel env add` (the CLI path — no dashboard access
+from this session) so `$VERCEL_GIT_PREVIOUS_SHA` would stay resolvable
+past the shallow clone's 10-commit window. **This broke deployment
+entirely, live-tested, not assumed safe:** the very next push
+(`b73fd0a`, the `ignoreCommand` fix itself) failed to deploy —
+`vercel inspect --logs` showed `"Cloning github.com/adamjuszczyk/overload-v2
+(Branch: master, Commit: b73fd0a)"` immediately followed by `"There was a
+permanent problem cloning the repo"` three times in ~12 seconds, then
+`"Cloning failed"`, `status ● Error`. Retried once via `vercel redeploy`
+to rule out a transient network blip — failed identically
+(`Error: Cloning failed`). Removed `VERCEL_DEEP_CLONE` from both
+Production and Preview (`vercel env rm`) as the one variable changed since
+the last known-good state, then re-ran the exact same redeploy with
+nothing else touched — succeeded clean, `● Ready` in 57s, normal ~1s
+shallow clone. **This project does not currently work with
+`VERCEL_DEEP_CLONE=true`** (root cause not chased further — the account is
+on the Hobby plan per the OIDC token's own JWT payload, `"plan":"hobby"`,
+seen incidentally during the system-env check above; a Hobby-plan
+restriction on deep clone is the likely explanation but this wasn't
+independently confirmed against Vercel's own docs). **Left unset, by
+design** — the `git cat-file -e` fail-safe in the `ignoreCommand` itself
+is what actually protects against the shallow-clone-depth-10 case on this
+project now, not deep clone. Reported here as a real, tested outcome, not
+a "should work" guess: the task asked for exactly this kind of
+live-verification and this is what it found.
+
+### Real end-to-end regression tests, live pushes, not read-through
+
+**Test 5a — reproduce the actual original bug scenario.** Two real
+commits, one push: `36c338d` (trivial, clearly-labeled throwaway comment
+in `src/vite-env.d.ts`, chosen for being genuinely inert — a type
+declaration file, not reachable by anything at runtime) then `a2cff5a`
+(docs-only, `CONTEXT.md`). Pushed together (`b73fd0a..a2cff5a`) — this is
+exactly the shape that broke before: a real code change followed
+immediately by a docs-only commit in the same push. **Confirmed passing**:
+`dpl_6p7Mw2pfFdx8ShHUdz827snhj52N` reached `● Ready` in 46s. Its build log
+shows the fixed `ignoreCommand` running verbatim —
+
+```
+Running "test -n "$VERCEL_GIT_PREVIOUS_SHA" && git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'"
+Running "vercel build"
+```
+
+— proceeding straight to the real build rather than canceling, which is
+precisely what the old `HEAD^`-only comparison failed to do for this
+exact shape of push (the 2026-08-31 "commit, deploy" session's own
+`58a3a35` deploy).
+
+**Cleanup.** `2a85255` reverted `vite-env.d.ts`'s throwaway comment back
+to its original content (`git diff` confirmed byte-identical to before),
+pushed alone. Deployed normally — `● Ready` in 59s — confirming an
+ordinary single real-code-commit push still deploys the way it always
+did; the fix didn't change that path.
+
+**Test 5b — confirm the normal case wasn't regressed.** A single
+docs-only commit (`6b68063`, `CONTEXT.md` only), pushed *alone* with
+nothing else ahead of it undeployed — the actual case `ignoreCommand`
+exists to handle. **Confirmed still correctly skipped**: deployment
+`https://overload-v2-oqlgao1tr-...vercel.app` shows `status ● Canceled`,
+and `vercel inspect --logs` shows the exact same cancellation message the
+original bug investigation found (`"The Deployment has been canceled as a
+result of running the command defined in the \"Ignored Build Step\"
+setting."`) — this time for the *right* reason: a genuinely docs-only push
+correctly identified as one, compared against the real last-deployed SHA
+rather than an arbitrary single-commit window.
+
+### Status
+
+`vercel.json` fix live in production since `b73fd0a`
+(`dpl_9tBWwWyNoMGoj5etDhxe7Rgnjace`, superseded by every real deploy
+since). Current production, confirmed directly via `vercel inspect
+overload-v2-sage.vercel.app` rather than assumed: `dpl_2T92pYbsY9qDgpwRbF8ceMJHsc8y`,
+commit `2a85255` (the cleanup revert) — `6b68063` never became a
+deployment at all, correctly, since it was skipped. `VERCEL_DEEP_CLONE`
+unset on both Production and Preview — left
+that way deliberately, not a follow-up TODO. Both regression tests
+(5a: proceed-when-it-should; 5b: skip-when-it-should) verified against
+real Vercel deployments and real build logs, not inferred from dashboard
+status alone. All throwaway test commits (`36c338d`, `a2cff5a`, `2a85255`,
+`6b68063`) are real, permanent git history — none rewritten or
+force-pushed away, matching the project's standing git-safety rules; only
+the actual code content they introduced (`vite-env.d.ts`'s comment) was
+reverted, in a normal follow-up commit, not erased from history.
 
 ---
 
