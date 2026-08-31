@@ -16756,6 +16756,357 @@ standing reason as every prior session.
 
 ---
 
+## 2026-08-31 session (Exercise Library — muscle_group tag-picker filtering; Weekly Analysis v2 — real second generation, fabrication investigation)
+
+Read CONTEXT.md first as instructed. Two related-but-separate pieces of
+work, kept in separate commits per this project's per-scope convention.
+Working tree was clean before starting (only `supabase/.temp/`) — nothing
+to isolate.
+
+### Part 1 — Exercise Library: filter tag pickers by muscle_group
+
+**Bug:** `ExerciseForm.tsx`, `MuscleSubgroupPicker.tsx`, and
+`ExerciseTagList.tsx`'s accordion all offered every one of the 7
+`movement_pattern` values and all 22 `muscle_subgroup` values regardless of
+an exercise's `muscle_group` — a chest exercise could be tagged `squat`, a
+biceps exercise could be tagged `lower_chest`.
+
+**Investigation.** Read `exerciseTags.ts` in full, then queried production
+directly (PostgREST via the live app's own authenticated session, same
+technique as every prior session) for every one of the 70 real exercises'
+`muscle_group`/`muscle_subgroup`/`movement_pattern`, cross-checked against
+migration 014's file. Drafted a per-muscle_group mapping from that real
+distribution plus migration 014's own stated reasoning ("fly/pullover/raise
+→ isolation regardless of prime mover; compound press/pull tagged by
+structure, not by library filing"), then ran it through a three-reviewer
+`Workflow` adversarial pass (a gap-finder looking for legitimate-but-unused
+combinations missing from the draft, an over-inclusion finder looking for
+combinations that don't actually belong, and an arithmetic orphan-tag
+checker re-verifying all 70 real rows independently), synthesized into a
+final verdict.
+
+**One real correction the review made, not just confirmed:** the draft had
+included `hamstrings` as an allowed `glutes` subgroup, by analogy to
+`hamstrings` → `glutes` (Romanian Deadlift carries both). The
+over-inclusion review rejected this, correctly: migration 014's own
+approved Deadlift filing is back-only (`{lower_back,traps}`), deliberately
+omitting `hamstrings`/`glutes` despite obvious anatomical loading — proof
+this app's real convention is "reviewed and approved for that exercise,"
+not "anatomically active in the lift." It's also anatomically backwards for
+the actual exercises: Hip Thrust is performed knee-flexed specifically to
+*slacken* the hamstrings and isolate hip extension through the glutes, the
+opposite mechanism from RDL (knee-extended, hamstrings genuinely
+stretch-loaded as a co-prime-mover). Removed; no real row used the
+combination, so removing it orphaned nothing. The orphan-tag checker's
+independent, arithmetic-only pass across all 70 real rows came back clean
+(zero violations) both before and after this correction.
+
+**Final mapping** (`muscle_group` → allowed `movement_pattern`s / allowed
+`muscle_subgroup`s):
+
+| muscle_group | patterns | subgroups |
+|---|---|---|
+| chest | horizontal_push, isolation | upper_chest, mid_chest, lower_chest, **front_delt** |
+| back | horizontal_pull, vertical_pull, hip_hinge, isolation | lats, mid_back, lower_back, traps |
+| shoulders | vertical_push, isolation | front_delt, side_delt, rear_delt, **traps** |
+| biceps | isolation | biceps, brachialis |
+| triceps | horizontal_push, vertical_push, isolation | triceps_long_head, triceps_lateral_head |
+| forearms | isolation | forearms |
+| quads | squat, isolation | quads, **glutes** |
+| hamstrings | hip_hinge, isolation | hamstrings, **glutes, lower_back** |
+| glutes | hip_hinge, isolation | glutes |
+| calves | isolation | calves |
+| core | isolation | abs, obliques |
+| other | *all 7, unfiltered* | *all 22, unfiltered* |
+
+Bold entries are the deliberate cross-category inclusions (real precedent:
+Incline Barbell/Dumbbell/Smith Press → chest+front_delt; Upright Row →
+shoulders+traps; Good Morning → hamstrings+lower_back; Romanian Deadlift →
+hamstrings+glutes; Back Squat/Bulgarian Split Squat/Squat/Walking Lunge →
+quads+glutes).
+
+**Three flagged, unresolved judgment calls** (same discipline as migration
+014's own 9 flagged rows — reported, not guessed past):
+1. `glutes` allows the `isolation` pattern even though only `hip_hinge`
+   exists in real data today (the two Hip Thrust rows) — included by
+   extending migration 014's own structural rule to a future glute-isolation
+   machine exercise (cable kickback, hip abduction), a pre-emptive
+   allowance a human may want to confirm.
+2. `other` is left fully unfiltered by explicit design (the app's catch-all
+   `MuscleGroup` value with no defined anatomical territory — filtering it
+   would make it unusable for exactly the edge-case exercises it exists to
+   hold, e.g. Adduction Machine, the one real `other` row). A product/UX
+   judgment call, not a data-derived one.
+3. `quads` does **not** allow `adductors`, even though the 22-value
+   vocabulary's own "legs" category groups `adductors` alongside
+   `quads`/`hamstrings`/`glutes`/`calves` — a future adductor-dominant
+   squat/lunge variant (Sumo Squat, Cossack Squat) would need it, but the
+   one real adductor exercise today (Adduction Machine) was filed under
+   `muscle_group='other'` rather than `'quads'`, real (if not certain)
+   evidence the product owner wants adductors kept out of the named leg
+   groups specifically. Left out; `other` remains available for such a case
+   until confirmed either way.
+
+**Built.** `exerciseTags.ts` gains
+`MOVEMENT_PATTERNS_BY_MUSCLE_GROUP`/`MUSCLE_SUBGROUPS_BY_MUSCLE_GROUP` (the
+table above) and two exported pure functions,
+`movementPatternsForMuscleGroup`/`muscleSubgroupsForMuscleGroup` — the one
+shared source all three surfaces read, matching how
+`MOVEMENT_PATTERNS`/`MUSCLE_SUBGROUP_GROUPS` already live there, per
+instruction. `MuscleSubgroupPicker.tsx` gains a required `allowed` prop
+(typed the wide `MuscleSubgroup`, not the narrower `MuscleSubgroupTag` —
+see below) and filters `MUSCLE_SUBGROUP_GROUPS[category]` down to it per
+category, skipping a category's section entirely when nothing in it is
+allowed (e.g. no SHOULDERS section for a biceps exercise). `ExerciseForm.tsx`
+and `ExerciseTagList.tsx` each compute the allowed set from the exercise's
+own `muscleGroup` and pass it down; `TagChipGrid.tsx` needed no change at
+all (it already just renders whatever `values` it's given).
+
+**Step 4 — tag-preservation decision, made explicit, not left implicit.**
+Filtering must never silently strip a real exercise's existing tag — this
+can arise two ways: a tag stored before this fix that happens to fall
+outside its muscle_group's new set (none exist today, per the orphan-tag
+check), or a future `muscleGroup` edit that makes a previously-valid tag
+invalid. **Decision: every picker's offered set is
+`allowed(muscleGroup) ∪ currentlySelected`, never `allowed(muscleGroup)`
+alone.** A currently-selected value outside the "normal" set for the
+exercise's current muscle_group still renders as an active, toggleable
+chip — never hidden, never auto-cleared on a muscle_group change. This is
+the same don't-blank-on-omit spirit `ExerciseTagList.tsx`'s per-axis save
+already follows, applied to *which chips render* rather than *what gets
+sent on save*. Proven, not just described: `ExerciseForm.test.tsx`
+constructs a biceps exercise carrying a stale chest subgroup (`mid_chest`)
+and an out-of-set pattern (`squat`) and asserts both still render as active
+chips; `MuscleSubgroupPicker.test.tsx` and `ExerciseTagList.test.tsx` cover
+the same case at their own layer.
+
+**Tests.** 21 new: `exerciseTags.test.ts` gains a real-data regression
+suite — all 70 exercises' actual `(muscleGroup, pattern, subgroups)`
+hardcoded as a fixture (cross-checked against production during this
+session, not retyped from memory) and asserted as a subset of the new
+mapping, so a future mapping change that orphans a real exercise's tag
+fails a test, not just a manual spot check — plus the three flagged/settled
+judgment calls asserted directly (`glutes` excludes `hamstrings`, `quads`
+excludes `adductors`, `other` stays fully unfiltered).
+`MuscleSubgroupPicker.test.tsx` and `ExerciseTagList.test.tsx` gained
+filtering + tag-preservation coverage; `ExerciseForm.test.tsx` is new (none
+existed before), covering the default-muscle-group filter, live re-filtering
+on muscle-group switch, and the stale-tag preservation case above.
+**363/363 passing** (up from 342). Typecheck (both tsconfigs) and
+`npm run build` clean.
+
+**Live-verified against the dev server, real production data.** Opened
+EDIT TAGS mode: **Barbell Curl (biceps)** — MOVEMENT PATTERN showed exactly
+one chip (ISOLATION); MUSCLE SUBGROUP showed only the ARMS category, only
+BICEPS/BRACHIALIS — no CHEST/BACK/SHOULDERS/LEGS/CORE sections rendered at
+all. **Barbell Bench Press (chest)** — MOVEMENT PATTERN showed exactly
+HORIZONTAL PUSH/ISOLATION; MUSCLE SUBGROUP showed a CHEST section
+(UPPER/MID/LOWER CHEST) *and* a separate SHOULDERS section containing only
+FRONT DELT — confirming the cross-category inclusion renders correctly,
+grouped under the right category, with the rest of shoulders' own vocabulary
+absent. Toggled FRONT DELT on, confirmed it saved and **survived a full
+page reload**, toggled it back off, reloaded again and read every one of
+the 70 rows' tag summaries back — byte-identical to migration 014's data,
+confirming cleanup left no drift. **Library → Lost Exercises** (step 7,
+riding along, no changes made): opened, rendered "NO LOST EXERCISES" —
+correct, matches the account's real state, nothing touched.
+
+**Not deployed — stopped here per instruction.** Committed locally as its
+own discrete commit; pushing (which triggers the Vercel deploy) is a
+separate go-ahead.
+
+### Part 2 — Weekly Analysis v2: the real second generation, fabrication investigation
+
+Adam triggered the real `ANALYZE` button on Weekly Analysis at
+`WEEK_PROMPT_VERSION 2` (the ratings/memory/notes-aware Phase 5 prompt) and
+flagged fabricated information. **Read-only, exactly as instructed — no
+code touched, no regeneration, no prompt fix.**
+
+**1–2. The real row and its full generated text.** `v2_coach_week_analyses`
+row `a244191d-562e-41ef-a303-17e0229d9a67`: `week_start 2026-08-24`,
+**`prompt_version 2`**, `model claude-haiku-4-5-20251001`, `input_tokens
+28575`, `output_tokens 1804`, `created_at
+2026-08-30T13:36:25.714662+00:00` — ≈35 minutes after that day's Phase 5
+deploy went live (`dpl_2dZoSqbSNhjsu468uJAzuNyYvSZS`, `created` ≈13:01
+UTC). Pulled via PostgREST using the live app's own authenticated session
+token, same technique as every prior live-data session — no service key
+used or seen. This is the second real weekly analysis on record; the first
+(`0c9951ef-...`, week 2026-08-17) is frozen at `prompt_version 1`, predating
+Phase 5.
+
+Full generated text, verbatim:
+
+> **Overall:** "Week 9 is a mixed pocket of a cut that is tracking broadly
+> sideways. Energy averaged 'normal' across four completed sessions (one
+> unrated on Monday), and form control averaged a solid 3/4, trending
+> toward 'controlled'—most working sets landed there. The big story is
+> equipment disruption on Thursday: the chest press machine broke, forcing
+> a same-day pivot to a low-incline Smith press that the lifter flagged as
+> uncomfortable at the shoulder. That session's 30–37% drop in chest e1RMs
+> is real but explained by substitution, not collapse. Pull work flatlined
+> across both sessions despite low energy on Tuesday, aligned with the
+> deliberate avoidance of forearm isolation (wrist pain history). Legs day
+> was conservative and necessary: Squat remains strategically skipped to
+> preserve fatigue budget; Leg Press was cut from the planned 4 sets to 2
+> due to right knee instability notes mid-set, a cautious call. Within this
+> constrained framework, Hamstrings and Triceps (lateral head) notched
+> genuine small gains, and Lateral Raises held steady and controlled.
+> Bodyweight dropped a modest 0.7 kg (72.9 to 72.23 kg) across the week,
+> consistent with early-cut expectations. The week reads as a lifter
+> navigating mid-meso fatigue and equipment disruption while holding form
+> and energy, not as regression—progress is slowed but the structure is
+> sound."
+>
+> **Chest Press** ("Equipment substitution masked significant strength
+> dip"): "Chest Press on Thursday hit estimated 1RMs ~32–37% below last
+> week (52.25 → 35.75 kg, 49.33 → 33 kg, 48 → 30 kg). The session note
+> explains a machine swap: the chest press broke mid-week, forcing a pivot
+> to a low-incline Smith press. The first set immediately felt heavier than
+> expected and the lifter couldn't match prior reps. Form ratings that
+> session were 'controlled' and 'extra_controlled,' suggesting caution
+> rather than failure—nonetheless, this is a real regression in output that
+> the substitution likely explains."
+>
+> **Dip machine (triceps)** ("Solid week-over-week gains despite
+> low-energy pull session"): "Dip machine (triceps) improved on Monday: 40
+> kg × 10–12 reps (+5–7.9% e1RM) and 40 kg × 8–11 reps (+7.9% e1RM) over the
+> prior week. This came on a session where no energy or pump rating was
+> logged, suggesting it happened without explicit high-energy conditions."
+>
+> **Pull compounds / forearms** ("Pull session Tuesday: compounds flat,
+> forearms missing again"): "Pull 1 (Tuesday) on rated 'low' energy and
+> 'some' pump still completed horizontal and vertical pull work, but
+> without real progress: Neutral Lat Pulldown held flat (−3.75% on the
+> first set, then 0% on slots 2–3); Cable Row dropped weight and reps
+> across all three sets (−1.1 to −3.5%). Cable Reverse Biceps Curl was
+> skipped entirely (reference session had all sets logged and skipped as
+> well). Memory states forearm work is being avoided during the cut due to
+> past wrist pain—this is a deliberate trade-off, not an oversight. Pull 2
+> (Friday) held similar: Barbell Row ticked down slightly (−2.6%), Lat
+> Pulldown held mostly flat, and Cable Reverse Biceps Curl skipped again (no
+> real data since early July, 42 days ago)."
+>
+> **Squat / Leg Press** ("Squat skipped; leg press scaled down and
+> guarded"): "Squat was logged as skipped on legs day Friday—memory and
+> notes explain this is deliberate mid-cut strategy due to unfavorable
+> stimulus-to-fatigue ratio. Leg Press (compensation exercise) held 200 kg
+> × 7 reps and × 6 reps against prior 200 kg × 6 and × 6, both flat or
+> minimal change in e1RM. Critically, the notes flag right knee feeling
+> unstable after set 1; the lifter stopped at 2 sets instead of pursuing
+> the planned 4, citing caution. Form on slot 1 was logged 'normal,' slot 2
+> 'controlled,' suggesting deliberate restraint rather than recklessness. A
+> 49-day gap since the last real Squat attempt (early July) means there is
+> no mesocycle-local comparison—this is a longer break by design, not a
+> lapse."
+>
+> **Lateral raises** ("Lateral raise work stable and well-controlled"):
+> "Cable and One-arm Dumbell Lateral Raises both held ground through the
+> week: Cable Lateral Raise (Monday) dropped one set from 3 to 2 matched
+> slots but added a dropset, with first set e1RM holding flat (−3.8%) and
+> slot 2 unchanged; One-arm Dumbell Lateral Raise (Thursday) matched all
+> three main sets at 7.5 kg × 11 reps, with all three slots logged
+> 'controlled' form."
+>
+> **Seated Leg Curl** ("Hamstrings clear win: steady weight jumps
+> mid-cut"): "Seated Leg Curl jumped 100 → 105 kg on the first set
+> (unchanged e1RM slot but higher working weight, +2.3%) and 90 → 95 kg on
+> slot 2 (+5.6% e1RM), both logged 'normal' form."
+
+**3. Cross-referenced every claim against the real `input_snapshot`
+(sessions, notes, memory, occurrences) and the payload's own semantics**,
+same method as the 2026-08-27 daily dry run's fabricated `-31.6%/-33.1%/
+-37.5%`/"barbell" finding. Positive result first: **neither of daily's two
+previously-diagnosed failure modes recurred here.** No equipment is
+invented anywhere (every "chest press machine"/"low-incline Smith"
+reference is licensed by the real session notes, verbatim); "forcing"/
+"forced" is used consistently for the substitution everywhere it's
+mentioned (overall *and* the Chest Press highlight) — the "planned
+equipment swap" vs. "forced" inconsistency the 2026-08-27 daily PUSH-2
+analysis had does **not** recur in this weekly output. The Chest Press
+delta itself (52.25→35.75, 49.33→33, 48→30, -31.6%/-33.1%/-37.5%) is the
+same real, already-verified numbers from that same underlying session
+(Aug 27 is one of this week's 5 sessions) — not a new fabrication, the
+known equipment-substitution structural quirk (Smith-press sets logged
+under the Chest Press exercise id) surfacing again, correctly explained via
+`sessionNotes` both times.
+
+**Five findings, each independently adversarially verified** (a `Workflow`
+run: three independent skeptics per finding, default-to-refute, quoting
+the exact text fragment and exact raw-data fragment):
+
+1. **Day-of-week/session misattribution — Squat/Leg Press highlight, 3/3
+   confirmed.** "Squat was logged as skipped on legs day **Friday**." The
+   real LEGS session (Squat + Leg Press + Seated Leg Curl) is dated
+   **2026-08-29, a Saturday**. Friday (2026-08-28) was actually the **PULL
+   2** session (Barbell Row / Lat Pulldown / Cable Reverse Biceps Curl) —
+   which the *same generated text* correctly calls "Pull 2 (Friday)"
+   earlier in the Pull highlight, making this an internal
+   self-contradiction as well as a plain factual error, not merely an
+   ambiguous reading.
+2. **Session-type + energy misattribution — Dip machine highlight, 3/3
+   confirmed.** Headline: "Solid week-over-week gains despite **low-energy
+   pull session**." The real Dip machine (triceps) occurrence is
+   `sessionDate 2026-08-24`, `workoutDayName "PUSH 1"` (a Monday **push**
+   session, `movement_pattern vertical_push`) — not pull at all — and
+   PUSH 1's `energyRating` is **`null`** (never rated), not "low." "Low" is
+   a real, distinct rating value that belongs to a different session
+   entirely (Tuesday PULL 1). The highlight's own body text gets it right
+   ("no energy or pump rating was logged") — directly contradicting its own
+   headline two sentences later.
+3. **Fabricated rep direction — Cable Row, Pull highlight, 3/3 confirmed.**
+   "Cable Row dropped weight **and reps** across all three sets (−1.1 to
+   −3.5%)." The real per-slot data: reps went **up** in every one of the
+   three matched slots this week vs. last (8→11, 8→10, 8→11); only weight
+   dropped (60kg→55kg). The small negative e1RM deltas are real and
+   correctly quoted, but they come from the weight drop outweighing the rep
+   *increase* — claiming reps dropped is the literal opposite of the
+   underlying set data.
+4. **Internal self-contradiction — Seated Leg Curl, 2/3 confirmed (one
+   plausible alternate reading).** "100 → 105 kg on the first set
+   (**unchanged e1RM slot** but higher working weight, **+2.3%**)" states
+   both "unchanged" and a non-zero "+2.3%" for the same slot's e1RM in the
+   same breath; the real delta is +2.31%, a genuine (if modest) increase.
+   Two of three verifiers held this as a clear contradiction (reinforced by
+   the text's own house style elsewhere — Highlight 3's "slot 2 unchanged"
+   correctly corresponds to a real 0% delta, establishing "unchanged" means
+   the number itself, not a vaguer "small"). The third read "unchanged" as
+   modifying the *rep count* (8→8, genuinely flat) rather than the e1RM,
+   with "+2.3%" reported separately — a grammatically defensible parse that
+   also fits the data exactly. Recorded as real but with this reservation,
+   not a majority-plus-one nothing-more.
+5. **Soft recurrence of the memory/notes false-corroboration pattern —
+   Squat highlight, 3/3 confirmed, doesn't use the literal banned words.**
+   "Squat was logged as skipped... **memory and notes explain** this is
+   deliberate mid-cut strategy due to unfavorable stimulus-to-fatigue
+   ratio." Memory entry #3 and this week's own LEGS-session note describe
+   the identical fact in near-identical language ("unfavorable
+   stimulus-to-fatigue ratio... during a cut" both times) — exactly the
+   same-week-note-vs-memory shape `WEEK_PROMPT_VERSION 2`'s own guard names.
+   The guard's literal banned words ("confirms"/"aligns with") don't appear,
+   but its broader instruction — "state the fact once... rather than
+   citing both as if they corroborate each other" — is what a compound
+   "memory and notes explain X" citation does regardless of connector word.
+   **This is the first real evidence the guard's wording has a loophole**:
+   it blocks the specific phrases it names but not the underlying pattern
+   (two sources jointly cited for one fact) stated a different way.
+
+**Not fixed.** Per instruction, `coachWeekPrompt.ts` was not touched this
+session — findings only, reported for a future `WEEK_PROMPT_VERSION` bump
+to address. This closes the "Flag explicitly for Weekly's first real
+output" item in "Pending feedback to address" below — that check has now
+been run for real, and did find issues (findings 1–5 above), unlike
+daily's own equivalent check on its first real generation. Real Weekly
+Analysis generation was **not** triggered again this session.
+
+### Status
+
+Part 1 built, tested, live-verified, held for deploy — a separate
+go-ahead. Part 2 is read-only investigation, complete: five findings, four
+confirmed unanimously and one confirmed with a noted dissent, none fixed,
+all reported here at full detail for a future `WEEK_PROMPT_VERSION` bump.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -16796,33 +17147,32 @@ From real usage (one day):
   session, not urgent** — worth a look at a future `PROMPT_VERSION`
   revision, same tracked-but-untouched status as the tone-calibration
   item above.
-- **`coachWeekPrompt.ts` `WEEK_PROMPT_VERSION 2` carries the same
-  structural risk, untouched, and arguably with more surface for it than
-  daily.** The Chest Press item just above is a same-generated-output
-  cross-section inconsistency (one fact characterized two different ways
-  in two parts of one output) — nothing about `weekAnalysisInput.ts`'s
-  new week-scoped `notes` (dated per session, per the Coach
-  Personalization wiring session, CONTEXT.md above) touches this failure
-  mode; dating solves which day a note belongs to, not whether the model
-  stays consistent once it's correctly placed. Weekly's own shape gives
-  this more places to happen than daily's: one `overall` plus a small
-  array of `highlights` (typically 3–6, per bucket or cross-bucket) is
-  strictly more surface for the same note or memory entry to get
-  characterized two different ways across two or more of those spots,
-  versus daily's one `overall` plus one comment per exercise. **No guard
-  exists against this in `WEEK_PROMPT_VERSION 2`, correctly** — daily's
-  own version of the issue (just above) has no proven fix yet to port
-  over, and inventing an unproven, weekly-only guard for a problem the
-  daily prompt hasn't even solved once for real would be exactly the kind
-  of premature, unverified prompt engineering this feature line avoids
-  elsewhere. **Flag explicitly for Weekly's first real output**, not
-  merely something that might come up: when a real week is analyzed for
-  the first time, check specifically whether any note- or memory-backed
-  fact gets characterized inconsistently across two or more highlights,
-  or between a highlight and `overall` — the same check the real
-  2026-08-27 PUSH-2 daily analysis's review already applies, just with
-  more places for it to land here. Same tracked-but-untouched status as
-  the two items above.
+- ~~**`coachWeekPrompt.ts` `WEEK_PROMPT_VERSION 2` carries the same
+  structural risk.**~~ **Checked for real against Weekly's first real
+  `WEEK_PROMPT_VERSION 2` output, 2026-08-31 — and unlike daily's own first
+  real check, this one found real issues.** See this file's "2026-08-31
+  session... Part 2" above for the full account (row `a244191d-...`, week
+  2026-08-24). The two previously-diagnosed daily failure modes
+  (equipment-detail hallucination; "planned" vs. "forced" wording
+  inconsistency) did **not** recur here — both held clean. But five new,
+  independently adversarially-verified findings did: a session
+  misattributed to the wrong day of the week (compounded by an internal
+  self-contradiction, since the same output correctly names that day
+  elsewhere), a session mislabeled as "pull" and its unrated energy
+  mislabeled as "low" (again self-contradicted two sentences later), a
+  fabricated rep-count direction (claimed reps dropped when the raw data
+  shows they rose in every matched slot), an internal contradiction between
+  "unchanged" and a stated non-zero delta for the same figure (confirmed
+  with one dissenting, grammatically-defensible alternate reading), and —
+  the specific cross-section/memory-notes risk this bullet was tracking —
+  a same-week note and a memory entry describing the identical fact cited
+  jointly as if two sources ("memory and notes explain..."), which doesn't
+  use `WEEK_PROMPT_VERSION 2`'s literally-banned "confirms"/"aligns with"
+  wording but does exactly what the guard's broader instruction forbids —
+  the first real evidence that guard's phrasing has a loophole (blocks the
+  named words, not the underlying joint-citation pattern). **Not fixed —
+  findings only, per instruction — held for a future `WEEK_PROMPT_VERSION`
+  bump alongside the tone-calibration and planned/forced items above.**
 
 ---
 
