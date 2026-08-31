@@ -30,6 +30,7 @@ import type {
   WeekAnalysisBucket,
   EnergyRating,
   PumpRating,
+  DayOfWeek,
 } from '../../types/index.js'
 
 // The week payload (COACH-WEEK-ANALYSIS-TASKS.md §4 step 5, §5.3). Same
@@ -51,12 +52,26 @@ const ISO_DATE = 'yyyy-MM-dd'
 // diverge independently later without one accidentally changing the other.
 const WEIGHT_TREND_WEEKS = 6
 
+// 2026-08-31 fix (CONTEXT.md, Weekly Analysis v2 fabrication finding #1) —
+// one implementation, used for both WeekAnalysisSessionRoster.dayOfWeek
+// (assembleWeekAnalysisInput below) and WeekAnalysisOccurrence.dayOfWeek
+// (buildWeekAnalysisInput's occurrence loop), so the two can never drift
+// apart on the same date. Same exact computation scheduler.ts already uses
+// for program.schedule lookups (`format(date, 'EEEE').toLowerCase() as
+// DayOfWeek`) — reused, not a second copy with its own casing convention.
+function dayOfWeekOf(date: string): DayOfWeek {
+  return format(parseISO(date), 'EEEE').toLowerCase() as DayOfWeek
+}
+
 // ─── Output payload (TASKS §3.2) ────────────────────────────────────────────
 
 export interface WeekAnalysisOccurrence {
   occurrenceId: string // `${sessionId}:${exerciseId}`
   sessionId: string
   sessionDate: string
+  // Pre-computed from sessionDate (2026-08-31 fix, see dayOfWeekOf below) —
+  // never require the model to derive a weekday from a date string itself.
+  dayOfWeek: DayOfWeek
   workoutDayName: string | null
   exerciseId: string
   exerciseName: string
@@ -82,6 +97,9 @@ export interface WeekAnalysisOccurrence {
 export interface WeekAnalysisSessionRoster {
   id: string
   date: string
+  // Pre-computed from date (2026-08-31 fix, see dayOfWeekOf below) — never
+  // require the model to derive a weekday from a date string itself.
+  dayOfWeek: DayOfWeek
   workoutDayName: string | null
   // Skipped sessions ARE included (§7.8) — a week with one skipped session
   // is a materially different week and the model should be able to say so.
@@ -238,6 +256,7 @@ export function buildWeekAnalysisInput(args: BuildWeekAnalysisInputArgs): WeekAn
         occurrenceId,
         sessionId: facts.session.id,
         sessionDate: facts.session.date,
+        dayOfWeek: dayOfWeekOf(facts.session.date),
         workoutDayName: facts.session.workoutDayName,
         exerciseId: built.exerciseId,
         exerciseName: built.exerciseName,
@@ -393,6 +412,7 @@ export async function assembleWeekAnalysisInput(
     return {
       id: s.id,
       date: s.date,
+      dayOfWeek: dayOfWeekOf(s.date),
       workoutDayName: s.workout_day_id ? (workoutDayNameById.get(s.workout_day_id) ?? null) : null,
       status: s.status,
       isDeload: s.week_plan_id ? (isDeloadByPlanId.get(s.week_plan_id) ?? null) : null,

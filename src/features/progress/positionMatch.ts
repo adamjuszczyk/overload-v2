@@ -60,6 +60,22 @@ export interface PositionMatchItemResult {
   e1rmA: number | null
   e1rmB: number | null
   deltaPercent: number | null
+  // 2026-08-31 fix (CONTEXT.md — Weekly Analysis v2 fabrication finding #3):
+  // a real generated analysis stated "dropped weight and reps" for a slot
+  // whose real reps rose in every match — deltaPercent's sign was the only
+  // signal offered for direction, and it blends weight/reps/RIR together,
+  // so a caller inferring reps direction from its sign alone can be
+  // literally backwards. Same "feed pre-computed data, don't make the
+  // model derive it" principle dayOfWeek already applies elsewhere
+  // (weekAnalysisInput.ts) — rep-count/weight direction is arithmetic, not
+  // judgment, so it's computed once here rather than asked of every
+  // caller. b - a, same sign convention as deltaPercent (positive =
+  // increase from A to B). Independent of e1RM eligibility — unlike
+  // deltaPercent, this needs only the one raw value on each side, not RIR
+  // on both, so it can be non-null even when deltaPercent is null (e.g. no
+  // RIR recorded).
+  repsDelta: number | null
+  weightDelta: number | null
 }
 
 export interface PositionMatchSlotResult {
@@ -139,6 +155,14 @@ function eligibleE1rm(log: SetLog): number | null {
 // headline (and rendered literally as "+Infinity%"/"NaN%") without this
 // guard. Excluding only e1rmA === 0 here (not e1rmB === 0, which produces a
 // legitimate -100%) keeps the fix scoped to the actual undefined case.
+// b - a, null when either side's own value is null — independent of the
+// isSkipped/isWarmup/RIR eligibility eligibleE1rm applies, since a raw
+// weight/rep comparison needs neither RIR nor e1RM eligibility to be
+// meaningful.
+function numericDelta(a: number | null, b: number | null): number | null {
+  return a != null && b != null ? b - a : null
+}
+
 function matchItem(logA: SetLog, logB: SetLog): PositionMatchItemResult {
   const e1rmA = eligibleE1rm(logA)
   const e1rmB = eligibleE1rm(logB)
@@ -150,6 +174,8 @@ function matchItem(logA: SetLog, logB: SetLog): PositionMatchItemResult {
     e1rmA,
     e1rmB,
     deltaPercent,
+    repsDelta: numericDelta(logA.reps, logB.reps),
+    weightDelta: numericDelta(logA.weight, logB.weight),
   }
 }
 

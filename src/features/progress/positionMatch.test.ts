@@ -337,6 +337,65 @@ describe('matchSessionsByPosition — e1RM delta (step 4, reusing e1rm.ts)', () 
   })
 })
 
+// 2026-08-31 fix (CONTEXT.md — Weekly Analysis v2 fabrication finding #3):
+// the real Cable Row case this exists for was weight 60→55 (down),
+// reps 8→11/8→10/8→11 (up in every matched slot) — deltaPercent was
+// still slightly negative (weight's drop outweighs the rep gain at
+// RIR 0), and a caller reading only its sign got rep direction
+// backwards. These tests fix that exact shape plus the surrounding edge
+// cases so repsDelta/weightDelta can be trusted independent of deltaPercent.
+describe('matchSessionsByPosition — repsDelta/weightDelta (finding #3 fix)', () => {
+  it('reps can rise while deltaPercent is negative — the real Cable Row shape', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 60, reps: 8, rir: 0 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 55, reps: 11, rir: 0 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.repsDelta).toBe(3) // 11 - 8, a real increase
+    expect(head.weightDelta).toBe(-5) // 55 - 60, a real decrease
+    expect(head.deltaPercent).toBeLessThan(0) // e1RM still reads down — the exact trap that fabricated "dropped weight and reps"
+  })
+
+  it('is the signed b - a difference, same convention as deltaPercent (positive = increase from A to B)', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 100, reps: 8 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 105, reps: 6 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.weightDelta).toBe(5)
+    expect(head.repsDelta).toBe(-2)
+  })
+
+  it('is zero (not null) when both sides logged the identical value', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 80, reps: 10 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 80, reps: 10 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.weightDelta).toBe(0)
+    expect(head.repsDelta).toBe(0)
+  })
+
+  it('is null when either side is missing the raw value — never defaults to 0', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: null, reps: 10 })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 100, reps: 10 })] })
+    const result = matchSessionsByPosition(a, b)
+    expect(result.plain.slots[0].head.weightDelta).toBeNull()
+    expect(result.plain.slots[0].head.repsDelta).toBe(0)
+  })
+
+  // Independent of e1RM eligibility on purpose — a raw weight/rep
+  // comparison needs neither side to have a recorded RIR, unlike
+  // deltaPercent (which is null here, per the existing 'is null when
+  // either side has no RIR recorded' test above).
+  it('is non-null even when deltaPercent is null for lack of RIR', () => {
+    const a = session({ sessionId: 'a', logs: [makeLog({ id: 'a-1', setNumber: 1, weight: 100, reps: 8, rir: null })] })
+    const b = session({ sessionId: 'b', logs: [makeLog({ id: 'b-1', setNumber: 1, weight: 105, reps: 9, rir: 2 })] })
+    const result = matchSessionsByPosition(a, b)
+    const head = result.plain.slots[0].head
+    expect(head.deltaPercent).toBeNull()
+    expect(head.weightDelta).toBe(5)
+    expect(head.repsDelta).toBe(1)
+  })
+})
+
 describe('matchSessionsByPosition — no rollup (step 5)', () => {
   it('returns every matched comparison individually, not an averaged summary', () => {
     const a = session({

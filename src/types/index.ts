@@ -8,6 +8,15 @@ export type MuscleGroup =
   | 'forearms' | 'quads' | 'hamstrings' | 'glutes' | 'calves'
   | 'core' | 'other'
 
+// Also reused as-is (not a second copy) for WeekAnalysisSessionRoster.
+// dayOfWeek / WeekAnalysisOccurrence.dayOfWeek below (2026-08-31 fix,
+// CONTEXT.md — Weekly Analysis v2 fabrication finding #1: a real generated
+// weekly analysis misattributed a Saturday session as "Friday" when the
+// payload gave only an ISO date string and left weekday derivation to the
+// model). Same "feed pre-computed data, don't make the model derive it"
+// principle this app already applies to weekNumber/isDeload/phase, and the
+// exact same `format(date, 'EEEE').toLowerCase() as DayOfWeek` scheduler.ts
+// already uses for program.schedule lookups.
 export type DayOfWeek =
   | 'monday' | 'tuesday' | 'wednesday' | 'thursday'
   | 'friday' | 'saturday' | 'sunday'

@@ -36,6 +36,7 @@ function makeRosterEntry(overrides: Partial<WeekAnalysisSessionRoster> = {}): We
   return {
     id: 'session-1',
     date: '2026-08-17',
+    dayOfWeek: 'monday', // 2026-08-17 is a real Monday
     workoutDayName: 'Push 1',
     status: 'completed',
     isDeload: false,
@@ -157,6 +158,56 @@ describe('buildWeekAnalysisInput — tag bucketing wired end-to-end', () => {
   it('occurrenceId is exactly `${sessionId}:${exerciseId}`', () => {
     const result = buildWeekAnalysisInput(baseArgs())
     expect(result.occurrences[0].occurrenceId).toBe('session-1:ex1')
+  })
+})
+
+// 2026-08-31 fix (CONTEXT.md, Weekly Analysis v2 fabrication finding #1) — a
+// real generated analysis misattributed the real 2026-08-29 LEGS session
+// (a Saturday) as "Friday" because the payload gave only an ISO date string,
+// nothing telling the model which weekday it was. dayOfWeek is now
+// pre-computed instead. These dates are all real calendar days, not
+// arbitrary: 2026-08-17 is the Monday used by every other fixture in this
+// file (confirmed against real production data — week_start 2026-08-24,
+// this app's own Monday-anchored weeks, is exactly one week later), and
+// 2026-08-29 is the exact date the real fabrication happened against.
+describe('buildWeekAnalysisInput — dayOfWeek (2026-08-31 fix)', () => {
+  it("computes each occurrence's dayOfWeek from its own session date, not left for the model to derive", () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [makeRosterEntry({ id: 's-a', date: '2026-08-29', dayOfWeek: 'saturday' })],
+        completedSessionFacts: [
+          makeSessionFacts({ session: { id: 's-a', date: '2026-08-29', workoutDayName: 'Legs', energyRating: null, pumpRating: null } }),
+        ],
+      }),
+    )
+    expect(result.occurrences[0].dayOfWeek).toBe('saturday')
+  })
+
+  it('a week spanning several sessions gives each occurrence its own correct weekday, not the first session\'s', () => {
+    const result = buildWeekAnalysisInput(
+      baseArgs({
+        sessions: [
+          makeRosterEntry({ id: 's-a', date: '2026-08-17', dayOfWeek: 'monday' }),
+          makeRosterEntry({ id: 's-b', date: '2026-08-21', dayOfWeek: 'friday' }),
+        ],
+        completedSessionFacts: [
+          makeSessionFacts({
+            session: { id: 's-a', date: '2026-08-17', workoutDayName: 'Push 1', energyRating: null, pumpRating: null },
+            exercises: [makeExerciseSource({ exerciseId: 'ex-a' })],
+          }),
+          makeSessionFacts({
+            session: { id: 's-b', date: '2026-08-21', workoutDayName: 'Legs', energyRating: null, pumpRating: null },
+            exercises: [makeExerciseSource({ exerciseId: 'ex-b' })],
+          }),
+        ],
+        tagsByExerciseId: new Map([
+          ['ex-a', makeTags({ exerciseId: 'ex-a' })],
+          ['ex-b', makeTags({ exerciseId: 'ex-b' })],
+        ]),
+      }),
+    )
+    expect(result.occurrences.find((o) => o.sessionId === 's-a')?.dayOfWeek).toBe('monday')
+    expect(result.occurrences.find((o) => o.sessionId === 's-b')?.dayOfWeek).toBe('friday')
   })
 })
 
