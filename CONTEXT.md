@@ -17754,6 +17754,17 @@ until Adam runs one himself.
 
 ---
 
+## 2026-08-31 session (continued — fixing the ignoreCommand gap, live regression test in progress)
+
+Placeholder commit: this is the docs-only half of a deliberate two-commit
+push (`36c338d` trivial code comment + this commit) used to regression-test
+the just-fixed `vercel.json` `ignoreCommand` against the exact bug
+scenario it used to have — full before/after write-up follows once the
+real deployment result is checked, not backfilled here as if already
+known.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
