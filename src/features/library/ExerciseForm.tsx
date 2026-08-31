@@ -2,7 +2,11 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { Exercise, MuscleGroup, MuscleSubgroup, MovementPattern } from '../../types'
 import { useCreateExercise, useUpdateExercise } from './useExercises'
-import { MOVEMENT_PATTERNS, MOVEMENT_PATTERN_LABELS } from '../../lib/exerciseTags'
+import {
+  MOVEMENT_PATTERN_LABELS,
+  movementPatternsForMuscleGroup,
+  muscleSubgroupsForMuscleGroup,
+} from '../../lib/exerciseTags'
 import TagChipGrid from './TagChipGrid'
 import MuscleSubgroupPicker from './MuscleSubgroupPicker'
 
@@ -58,6 +62,18 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
   const update = useUpdateExercise()
   const isPending = create.isPending || update.isPending
   const mutationError = create.error || update.error
+
+  // Tag pickers are filtered to what's actually valid for the selected
+  // muscle group (EXERCISE-LIBRARY-TASKS.md muscle_group tag-filtering fix)
+  // — but never at the cost of hiding a value that's already selected, so
+  // switching muscleGroup mid-edit can never silently strip a real tag.
+  const allowedPatterns = movementPatternsForMuscleGroup(muscleGroup)
+  const patternsToShow =
+    movementPattern && !allowedPatterns.includes(movementPattern)
+      ? [...allowedPatterns, movementPattern]
+      : allowedPatterns
+  const allowedSubgroups = muscleSubgroupsForMuscleGroup(muscleGroup)
+  const subgroupsToShow = Array.from(new Set([...allowedSubgroups, ...(muscleSubgroups ?? [])]))
 
   function toggleSubgroup(tag: MuscleSubgroup) {
     setMuscleSubgroups((current) => {
@@ -234,7 +250,7 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
           <div style={{ marginBottom: 32 }}>
             <label style={SECTION_LABEL_STYLE}>MOVEMENT PATTERN</label>
             <TagChipGrid
-              values={MOVEMENT_PATTERNS}
+              values={patternsToShow}
               labels={MOVEMENT_PATTERN_LABELS}
               selected={movementPattern ? [movementPattern] : []}
               onToggle={toggleMovementPattern}
@@ -247,7 +263,11 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
               sensibly-ordered grid rather than one 22-chip wall. */}
           <div style={{ marginBottom: 32 }}>
             <label style={SECTION_LABEL_STYLE}>MUSCLE SUBGROUP</label>
-            <MuscleSubgroupPicker selected={muscleSubgroups ?? []} onToggle={toggleSubgroup} />
+            <MuscleSubgroupPicker
+              selected={muscleSubgroups ?? []}
+              onToggle={toggleSubgroup}
+              allowed={subgroupsToShow}
+            />
           </div>
 
           {mutationError && (

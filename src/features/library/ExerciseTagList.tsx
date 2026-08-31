@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import type { Exercise, MuscleGroup, MuscleSubgroup, MovementPattern } from '../../types'
 import {
-  MOVEMENT_PATTERNS,
   MOVEMENT_PATTERN_LABELS,
+  movementPatternsForMuscleGroup,
   muscleSubgroupLabel,
+  muscleSubgroupsForMuscleGroup,
 } from '../../lib/exerciseTags'
 import { useUpdateExercise } from './useExercises'
 import TagChipGrid from './TagChipGrid'
@@ -114,6 +115,17 @@ function ExerciseTagRow({
     ? MOVEMENT_PATTERN_LABELS[exercise.movementPattern]
     : null
 
+  // Same filter-but-never-hide-what's-selected rule as ExerciseForm.tsx —
+  // see exerciseTags.ts's movementPatternsForMuscleGroup/
+  // muscleSubgroupsForMuscleGroup for the mapping itself and why.
+  const allowedPatterns = movementPatternsForMuscleGroup(exercise.muscleGroup)
+  const patternsToShow =
+    exercise.movementPattern && !allowedPatterns.includes(exercise.movementPattern)
+      ? [...allowedPatterns, exercise.movementPattern]
+      : allowedPatterns
+  const allowedSubgroups = muscleSubgroupsForMuscleGroup(exercise.muscleGroup)
+  const subgroupsToShow = Array.from(new Set([...allowedSubgroups, ...(exercise.muscleSubgroups ?? [])]))
+
   return (
     <div
       style={{
@@ -216,7 +228,7 @@ function ExerciseTagRow({
               MOVEMENT PATTERN
             </span>
             <TagChipGrid
-              values={MOVEMENT_PATTERNS}
+              values={patternsToShow}
               labels={MOVEMENT_PATTERN_LABELS}
               selected={exercise.movementPattern ? [exercise.movementPattern] : []}
               onToggle={toggleMovementPattern}
@@ -240,6 +252,7 @@ function ExerciseTagRow({
             <MuscleSubgroupPicker
               selected={exercise.muscleSubgroups ?? []}
               onToggle={toggleSubgroup}
+              allowed={subgroupsToShow}
             />
           </div>
         </div>

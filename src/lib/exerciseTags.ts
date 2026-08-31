@@ -1,4 +1,4 @@
-import type { MovementPattern, MuscleSubgroup } from '../types/index.js'
+import type { MovementPattern, MuscleGroup, MuscleSubgroup } from '../types/index.js'
 
 // Vocabulary module for exercises.muscle_subgroup / .movement_pattern
 // (EXERCISE-LIBRARY-TASKS.md §2.6/§8 step 4) — same precedent as
@@ -121,4 +121,92 @@ export const MUSCLE_SUBGROUP_LABELS: Record<MuscleSubgroupTag, string> = {
 export function muscleSubgroupLabel(tag: MuscleSubgroup): string {
   const known = MUSCLE_SUBGROUP_LABELS[tag as MuscleSubgroupTag] as string | undefined
   return known ?? tag.replace(/_/g, ' ').toUpperCase()
+}
+
+// Which movement_pattern / muscle_subgroup values are actually valid for a
+// given muscle_group — the tag pickers used to offer all 7 patterns and all
+// 22 subgroups regardless of muscle_group, which let a chest exercise be
+// tagged squat or a biceps exercise be tagged lower_chest. Derived from two
+// sources, not guessed: (1) migration 014's real, Adam-approved tagging of
+// all 70 exercises — cross-checked so every real (muscle_group, pattern,
+// subgroup) combination in production is a subset of the set below, and (2)
+// migration 014's own stated structural rule ("fly/pullover/raise ->
+// isolation regardless of prime mover; compound press/pull tagged by
+// structure, not by library filing"), extended to allow a pattern/subgroup
+// that's anatomically valid for a muscle_group even where no exercise uses
+// it yet today — same "valid but unused" treatment this file already gives
+// 'obliques' under core.
+//
+// Cross-category entries are deliberate, not a mistake: chest exercises can
+// carry front_delt (Incline Barbell/Dumbbell/Smith Press all do, migration
+// 014), shoulders can carry traps (Upright Row), hamstrings can carry
+// lower_back (Good Morning) and glutes (Romanian Deadlift). One entry was
+// considered and rejected during review: glutes carrying hamstrings, by
+// analogy to hamstrings->glutes — rejected because migration 014's own
+// approved Deadlift filing (back-only {lower_back,traps}, deliberately
+// omitting hamstrings/glutes despite obvious anatomical loading) shows this
+// app's convention is "reviewed and approved for that exercise," not
+// "anatomically active in the lift," and because Hip Thrust is performed
+// knee-flexed specifically to slacken the hamstrings — the opposite
+// mechanism from RDL, where knee-extension keeps hamstrings genuinely
+// loaded as a co-prime-mover.
+//
+// 'other' is deliberately left unfiltered (every pattern, every subgroup):
+// it's the app's explicit catch-all MuscleGroup value with no defined
+// anatomical territory (EXERCISE-LIBRARY-TASKS.md/types/index.ts), and
+// filtering it would make it unusable for exactly the edge-case exercises
+// it exists to hold — e.g. Adduction Machine, the one real 'other' row,
+// which needed 'adductors' + 'isolation' available and would not fit any
+// of the other 11 groups' sets.
+//
+// Two flagged, unresolved judgment calls, carried here rather than guessed
+// past: (1) glutes' 'isolation' pattern is allowed but currently unused (only
+// hip_hinge exists via the two Hip Thrust rows) — included for a future
+// glute-isolation machine exercise (cable kickback, hip abduction) by the
+// same structural-rule reasoning above, but it's a pre-emptive allowance,
+// not something a real exercise has needed yet. (2) quads does NOT carry
+// 'adductors', even though the 22-value vocabulary's own 'legs' category
+// groups adductors alongside quads/hamstrings/glutes/calves — a future
+// adductor-dominant squat/lunge variant (Sumo Squat, Cossack Squat) would
+// need it, but the one real adductor exercise today (Adduction Machine) was
+// filed under muscle_group='other' rather than 'quads', which reads as a
+// real signal the product owner wants adductors kept out of the named leg
+// groups specifically. Left out; 'other' remains available for such a case
+// until this is confirmed either way.
+const MOVEMENT_PATTERNS_BY_MUSCLE_GROUP: Record<MuscleGroup, readonly MovementPattern[]> = {
+  chest: ['horizontal_push', 'isolation'],
+  back: ['horizontal_pull', 'vertical_pull', 'hip_hinge', 'isolation'],
+  shoulders: ['vertical_push', 'isolation'],
+  biceps: ['isolation'],
+  triceps: ['horizontal_push', 'vertical_push', 'isolation'],
+  forearms: ['isolation'],
+  quads: ['squat', 'isolation'],
+  hamstrings: ['hip_hinge', 'isolation'],
+  glutes: ['hip_hinge', 'isolation'],
+  calves: ['isolation'],
+  core: ['isolation'],
+  other: MOVEMENT_PATTERNS,
+}
+
+const MUSCLE_SUBGROUPS_BY_MUSCLE_GROUP: Record<MuscleGroup, readonly MuscleSubgroupTag[]> = {
+  chest: ['upper_chest', 'mid_chest', 'lower_chest', 'front_delt'],
+  back: ['lats', 'mid_back', 'lower_back', 'traps'],
+  shoulders: ['front_delt', 'side_delt', 'rear_delt', 'traps'],
+  biceps: ['biceps', 'brachialis'],
+  triceps: ['triceps_long_head', 'triceps_lateral_head'],
+  forearms: ['forearms'],
+  quads: ['quads', 'glutes'],
+  hamstrings: ['hamstrings', 'glutes', 'lower_back'],
+  glutes: ['glutes'],
+  calves: ['calves'],
+  core: ['abs', 'obliques'],
+  other: MUSCLE_SUBGROUPS,
+}
+
+export function movementPatternsForMuscleGroup(muscleGroup: MuscleGroup): readonly MovementPattern[] {
+  return MOVEMENT_PATTERNS_BY_MUSCLE_GROUP[muscleGroup]
+}
+
+export function muscleSubgroupsForMuscleGroup(muscleGroup: MuscleGroup): readonly MuscleSubgroupTag[] {
+  return MUSCLE_SUBGROUPS_BY_MUSCLE_GROUP[muscleGroup]
 }

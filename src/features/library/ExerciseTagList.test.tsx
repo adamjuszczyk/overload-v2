@@ -73,4 +73,40 @@ describe('ExerciseTagList', () => {
     })
     expect(payload.tags).not.toHaveProperty('movementPattern')
   })
+
+  // Filtering (EXERCISE-LIBRARY-TASKS.md muscle_group tag-filtering fix).
+  describe('tag pickers filtered by muscle_group', () => {
+    const BICEPS_EXERCISE: Exercise = {
+      ...EXERCISE,
+      id: 'ex-2',
+      name: 'Barbell Curl',
+      muscleGroup: 'biceps',
+      muscleSubgroups: ['biceps'],
+      movementPattern: 'isolation',
+    }
+
+    it('a biceps exercise only offers biceps-relevant patterns/subgroups, not chest/quad ones', () => {
+      render(<ExerciseTagList exercises={[BICEPS_EXERCISE]} />)
+      fireEvent.click(screen.getByText('Barbell Curl'))
+
+      expect(screen.getByRole('button', { name: MUSCLE_SUBGROUP_LABELS.biceps })).toBeTruthy()
+      expect(screen.getByRole('button', { name: MUSCLE_SUBGROUP_LABELS.brachialis })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: MUSCLE_SUBGROUP_LABELS.mid_chest })).toBeNull()
+      expect(screen.queryByRole('button', { name: MUSCLE_SUBGROUP_LABELS.quads })).toBeNull()
+      // biceps only ever allows 'isolation' — horizontal_push shouldn't render.
+      expect(screen.queryByRole('button', { name: MOVEMENT_PATTERN_LABELS.horizontal_push })).toBeNull()
+    })
+
+    it('a stale tag outside the current muscle_group\'s allowed set still renders and stays toggleable — never silently stripped', () => {
+      // Simulates data from before this fix, or a muscle_group edited after
+      // tagging: a biceps exercise carrying a chest-only subgroup.
+      const STALE: Exercise = { ...BICEPS_EXERCISE, muscleSubgroups: ['biceps', 'mid_chest'] }
+      render(<ExerciseTagList exercises={[STALE]} />)
+      fireEvent.click(screen.getByText('Barbell Curl'))
+
+      const staleChip = screen.getByRole('button', { name: MUSCLE_SUBGROUP_LABELS.mid_chest })
+      expect(staleChip).toBeTruthy()
+      expect(staleChip.style.background).toBe('var(--accent-muted)')
+    })
+  })
 })

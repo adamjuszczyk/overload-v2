@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import type { MovementPattern, MuscleGroup } from '../types/index.js'
 import {
   MOVEMENT_PATTERNS,
   MOVEMENT_PATTERN_LABELS,
@@ -8,6 +9,9 @@ import {
   MUSCLE_SUBGROUPS,
   MUSCLE_SUBGROUP_LABELS,
   muscleSubgroupLabel,
+  movementPatternsForMuscleGroup,
+  muscleSubgroupsForMuscleGroup,
+  type MuscleSubgroupTag,
 } from './exerciseTags'
 
 describe('MOVEMENT_PATTERNS', () => {
@@ -149,5 +153,172 @@ describe('muscleSubgroupLabel', () => {
 
   it('degrades a single-word unrecognised tag with no underscores', () => {
     expect(muscleSubgroupLabel('neck')).toBe('NECK')
+  })
+})
+
+// EXERCISE-LIBRARY-TASKS.md muscle_group tag-filtering fix: the three tag
+// pickers (ExerciseForm.tsx, ExerciseTagList.tsx, both via
+// MuscleSubgroupPicker) used to offer all 7 patterns / all 22 subgroups for
+// every exercise regardless of muscle_group. These two functions are the
+// single shared source both surfaces now filter through.
+describe('movementPatternsForMuscleGroup / muscleSubgroupsForMuscleGroup', () => {
+  const ALL_MUSCLE_GROUPS: readonly MuscleGroup[] = [
+    'chest', 'back', 'shoulders', 'biceps', 'triceps',
+    'forearms', 'quads', 'hamstrings', 'glutes', 'calves',
+    'core', 'other',
+  ]
+
+  it('has a non-empty pattern set and a non-empty subgroup set for every muscle group', () => {
+    for (const muscleGroup of ALL_MUSCLE_GROUPS) {
+      expect(movementPatternsForMuscleGroup(muscleGroup).length).toBeGreaterThan(0)
+      expect(muscleSubgroupsForMuscleGroup(muscleGroup).length).toBeGreaterThan(0)
+    }
+  })
+
+  it("'other' is deliberately unfiltered — every pattern and every subgroup, the catch-all escape hatch", () => {
+    expect(movementPatternsForMuscleGroup('other')).toEqual(MOVEMENT_PATTERNS)
+    expect(muscleSubgroupsForMuscleGroup('other')).toEqual(MUSCLE_SUBGROUPS)
+  })
+
+  it('chest allows front_delt (a shoulders-category tag) — real precedent: Incline Barbell/Dumbbell/Smith Press', () => {
+    expect(muscleSubgroupsForMuscleGroup('chest')).toContain('front_delt')
+    expect(muscleSubgroupsForMuscleGroup('chest')).not.toContain('side_delt')
+    expect(muscleSubgroupsForMuscleGroup('chest')).not.toContain('rear_delt')
+  })
+
+  it('shoulders allows traps (a back-category tag) — real precedent: Upright Row', () => {
+    expect(muscleSubgroupsForMuscleGroup('shoulders')).toContain('traps')
+  })
+
+  it('hamstrings allows lower_back (Good Morning) and glutes (Romanian Deadlift)', () => {
+    expect(muscleSubgroupsForMuscleGroup('hamstrings')).toEqual(
+      expect.arrayContaining(['hamstrings', 'lower_back', 'glutes']),
+    )
+  })
+
+  it('glutes does NOT allow hamstrings, despite the hamstrings->glutes precedent — rejected on review: migration 014 approved Deadlift back-only, and Hip Thrust is knee-flexed specifically to slacken the hamstrings', () => {
+    expect(muscleSubgroupsForMuscleGroup('glutes')).toEqual(['glutes'])
+  })
+
+  it('quads does NOT allow adductors — the one real adductor exercise (Adduction Machine) was filed under muscle_group=other, not quads', () => {
+    expect(muscleSubgroupsForMuscleGroup('quads')).not.toContain('adductors')
+  })
+
+  it('biceps/triceps/forearms stay disjoint from each other despite all three living in the "arms" subgroup category', () => {
+    expect(muscleSubgroupsForMuscleGroup('biceps')).toEqual(['biceps', 'brachialis'])
+    expect(muscleSubgroupsForMuscleGroup('triceps')).toEqual(['triceps_long_head', 'triceps_lateral_head'])
+    expect(muscleSubgroupsForMuscleGroup('forearms')).toEqual(['forearms'])
+  })
+
+  it('triceps is the one muscle_group allowing all three of horizontal_push/vertical_push/isolation — real precedent: Close-Grip Bench Press, Dip machine (triceps), Skull Crusher', () => {
+    expect(movementPatternsForMuscleGroup('triceps')).toEqual(
+      expect.arrayContaining(['horizontal_push', 'vertical_push', 'isolation']),
+    )
+  })
+
+  // The arithmetic proof, not just an assertion: every one of the app's 70
+  // real, Adam-approved exercises (migration 014, cross-checked live
+  // against production during this fix) has its actual muscle_group +
+  // movement_pattern + muscle_subgroup already inside what this mapping
+  // allows. A change to either mapping that orphans a real exercise's tag
+  // fails this test, not just a manual spot check.
+  const REAL_EXERCISES: ReadonlyArray<{
+    name: string
+    muscleGroup: MuscleGroup
+    pattern: MovementPattern
+    subgroups: readonly MuscleSubgroupTag[]
+  }> = [
+    { name: 'Barbell Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'Cable Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'Chin-Up', muscleGroup: 'back', pattern: 'vertical_pull', subgroups: ['lats'] },
+    { name: 'Deadlift', muscleGroup: 'back', pattern: 'hip_hinge', subgroups: ['lower_back', 'traps'] },
+    { name: 'Dumbbell Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'Lat Pulldown', muscleGroup: 'back', pattern: 'vertical_pull', subgroups: ['lats'] },
+    { name: 'Lat Pulldown (machine)', muscleGroup: 'back', pattern: 'vertical_pull', subgroups: ['lats'] },
+    { name: 'Neutral Lat Pulldown (cable)', muscleGroup: 'back', pattern: 'vertical_pull', subgroups: ['lats'] },
+    { name: 'One-arm Cable Lat Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'One-arm Cable Pullover', muscleGroup: 'back', pattern: 'isolation', subgroups: ['lats'] },
+    { name: 'Pendlay Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'Pull-Up', muscleGroup: 'back', pattern: 'vertical_pull', subgroups: ['lats'] },
+    { name: 'Seated Cable Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'T-Bar Row', muscleGroup: 'back', pattern: 'horizontal_pull', subgroups: ['lats', 'mid_back'] },
+    { name: 'Barbell Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps'] },
+    { name: 'Dumbbell Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps'] },
+    { name: 'Ezbar Preacher Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps'] },
+    { name: 'Hammer Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps', 'brachialis'] },
+    { name: 'One-arm Cable Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps'] },
+    { name: 'Preacher Curl', muscleGroup: 'biceps', pattern: 'isolation', subgroups: ['biceps'] },
+    { name: 'Seated Calf Raise', muscleGroup: 'calves', pattern: 'isolation', subgroups: ['calves'] },
+    { name: 'Seated Machine Calf Raise', muscleGroup: 'calves', pattern: 'isolation', subgroups: ['calves'] },
+    { name: 'Standing Calf Raise', muscleGroup: 'calves', pattern: 'isolation', subgroups: ['calves'] },
+    { name: 'Standing Machine Calf Raise', muscleGroup: 'calves', pattern: 'isolation', subgroups: ['calves'] },
+    { name: 'Barbell Bench Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['mid_chest'] },
+    { name: 'Bench Supported Incline Cable Fly', muscleGroup: 'chest', pattern: 'isolation', subgroups: ['upper_chest'] },
+    { name: 'Chest Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['mid_chest'] },
+    { name: 'Dips', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['lower_chest'] },
+    { name: 'Dumbbell Bench Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['mid_chest'] },
+    { name: 'Dumbbell Fly', muscleGroup: 'chest', pattern: 'isolation', subgroups: ['mid_chest'] },
+    { name: 'Incline Barbell Bench Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['upper_chest', 'front_delt'] },
+    { name: 'Incline Dumbbell Bench Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['upper_chest', 'front_delt'] },
+    { name: 'Incline Dumbell Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['upper_chest', 'front_delt'] },
+    { name: 'Incline Smith Press', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['upper_chest', 'front_delt'] },
+    { name: 'Pec Deck Fly', muscleGroup: 'chest', pattern: 'isolation', subgroups: ['mid_chest'] },
+    { name: 'Push-Up', muscleGroup: 'chest', pattern: 'horizontal_push', subgroups: ['mid_chest'] },
+    { name: 'Ab Wheel Rollout', muscleGroup: 'core', pattern: 'isolation', subgroups: ['abs'] },
+    { name: 'Cable Crunch', muscleGroup: 'core', pattern: 'isolation', subgroups: ['abs'] },
+    { name: 'Hanging Leg Raise', muscleGroup: 'core', pattern: 'isolation', subgroups: ['abs'] },
+    { name: 'Plank', muscleGroup: 'core', pattern: 'isolation', subgroups: ['abs'] },
+    { name: 'Cable Reverse Biceps Curl', muscleGroup: 'forearms', pattern: 'isolation', subgroups: ['forearms'] },
+    { name: 'Hip Thrust', muscleGroup: 'glutes', pattern: 'hip_hinge', subgroups: ['glutes'] },
+    { name: 'Hip Thrust (machine)', muscleGroup: 'glutes', pattern: 'hip_hinge', subgroups: ['glutes'] },
+    { name: 'Good Morning', muscleGroup: 'hamstrings', pattern: 'hip_hinge', subgroups: ['hamstrings', 'lower_back'] },
+    { name: 'Leg Curl', muscleGroup: 'hamstrings', pattern: 'isolation', subgroups: ['hamstrings'] },
+    { name: 'Romanian Deadlift', muscleGroup: 'hamstrings', pattern: 'hip_hinge', subgroups: ['hamstrings', 'glutes'] },
+    { name: 'Seated Leg Curl', muscleGroup: 'hamstrings', pattern: 'isolation', subgroups: ['hamstrings'] },
+    { name: 'Adduction Machine', muscleGroup: 'other', pattern: 'isolation', subgroups: ['adductors'] },
+    { name: 'Back Squat', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads', 'glutes'] },
+    { name: 'Bulgarian Split Squat', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads', 'glutes'] },
+    { name: 'Front Squat', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads'] },
+    { name: 'Hack Squat', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads'] },
+    { name: 'Leg Extension', muscleGroup: 'quads', pattern: 'isolation', subgroups: ['quads'] },
+    { name: 'Leg Press', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads'] },
+    { name: 'Squat', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads', 'glutes'] },
+    { name: 'Walking Lunge', muscleGroup: 'quads', pattern: 'squat', subgroups: ['quads', 'glutes'] },
+    { name: 'Cable Lateral Raise', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['side_delt'] },
+    { name: 'Face Pull', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['rear_delt'] },
+    { name: 'Lateral Raise', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['side_delt'] },
+    { name: 'One-arm Dumbell Lateral Raise', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['side_delt'] },
+    { name: 'Overhead Press', muscleGroup: 'shoulders', pattern: 'vertical_push', subgroups: ['front_delt', 'side_delt'] },
+    { name: 'Rear Delt Fly', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['rear_delt'] },
+    { name: 'Seated Dumbbell Shoulder Press', muscleGroup: 'shoulders', pattern: 'vertical_push', subgroups: ['front_delt', 'side_delt'] },
+    { name: 'Upright Row', muscleGroup: 'shoulders', pattern: 'isolation', subgroups: ['side_delt', 'traps'] },
+    { name: 'Close-Grip Bench Press', muscleGroup: 'triceps', pattern: 'horizontal_push', subgroups: ['triceps_lateral_head'] },
+    { name: 'Dip machine (triceps)', muscleGroup: 'triceps', pattern: 'vertical_push', subgroups: ['triceps_lateral_head'] },
+    { name: 'Incline Skullcrusher', muscleGroup: 'triceps', pattern: 'isolation', subgroups: ['triceps_long_head'] },
+    { name: 'Overhead Tricep Extension', muscleGroup: 'triceps', pattern: 'isolation', subgroups: ['triceps_long_head'] },
+    { name: 'Skull Crusher', muscleGroup: 'triceps', pattern: 'isolation', subgroups: ['triceps_long_head'] },
+    { name: 'Tricep Pushdown', muscleGroup: 'triceps', pattern: 'isolation', subgroups: ['triceps_lateral_head'] },
+  ]
+
+  it('has exactly 70 real exercises in this fixture, matching the account\'s real row count', () => {
+    expect(REAL_EXERCISES).toHaveLength(70)
+  })
+
+  it('every real exercise\'s actual movement_pattern is inside its muscle_group\'s allowed pattern set', () => {
+    for (const ex of REAL_EXERCISES) {
+      expect(
+        movementPatternsForMuscleGroup(ex.muscleGroup),
+        `${ex.name} (${ex.muscleGroup}): pattern "${ex.pattern}"`,
+      ).toContain(ex.pattern)
+    }
+  })
+
+  it('every real exercise\'s actual muscle_subgroup tags are all inside its muscle_group\'s allowed subgroup set', () => {
+    for (const ex of REAL_EXERCISES) {
+      const allowed = muscleSubgroupsForMuscleGroup(ex.muscleGroup)
+      for (const tag of ex.subgroups) {
+        expect(allowed, `${ex.name} (${ex.muscleGroup}): subgroup "${tag}"`).toContain(tag)
+      }
+    }
   })
 })
