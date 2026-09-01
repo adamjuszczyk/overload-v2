@@ -1038,6 +1038,92 @@ step 10 (the §5.3 step 3 renumbering proven as `1,2,3` in logged order,
 plus both P3/P4 refusals proven to leave zero audit rows). Every run
 cleaned up and every touched count re-verified back at baseline.
 
+**Migration 023 (`023_v3_coach_qa_exchanges.sql`) applied and
+independently verified 2026-09-01 — one new table, no changes to any
+existing table.** `v2_coach_qa_exchanges` — the AI Q&A Sidebar's permanent
+exchange log (QA-SIDEBAR-SPEC.md §5): `id`, `user_id`, `conversation_id`
+(client-minted, no conversations table by design — TASKS §2.2),
+`turn_index`, `category` (`check` against the four SPEC §3 values),
+`question`/`answer` (non-empty `check`), `context_snapshot jsonb`,
+`session_id` (FK → `v2_sessions`, **`on delete set null`**, following
+`v2_coach_notes`' rule rather than `v2_coach_session_analyses`' cascade —
+TASKS §2.3), the standard `model`/`prompt_version`/`input_tokens`/
+`output_tokens` provenance block, `history_turns_sent` (`check >= 0`, the
+multi-turn cost cap's own audit trail — TASKS §6.2), `created_at`.
+**RLS is `select` + `insert` only — no `update`/`delete` policy exists at
+all**, a deliberate divergence from every other `v2_` table's `for all`
+shape, making SPEC §5's "permanent, not deletable" structural rather than
+merely un-offered (TASKS §2.4, confirmed as Adam's explicit choice over
+strict convention before this migration was written). One unique index
+`(user_id, conversation_id, turn_index)` — user-scoped rather than
+`(conversation_id, turn_index)` alone so a client-minted
+`conversation_id` can never collide across accounts — plus a
+`(user_id, created_at desc)` read-back index and a partial
+`(session_id) where session_id is not null` index for the in-session
+surface. All nine of TASKS.md §2.6's checks run for real against
+production, scoped to Adam's own `user_id`
+(`12e79b69-9891-4f53-a7cf-650edd83659f`) throughout:
+
+- **Transport verified *before* running, not after** — the exact SQL was
+  embedded as a plain-text JS template literal (no base64 anywhere in this
+  transport, sidestepping the migration-021 failure mode entirely) and set
+  into Monaco via `setValue()`; a SHA-256 computed in-browser over
+  `getModels()[0].getValue()` matched the local file's SHA-256
+  (`accdca3ef...`) byte-for-byte before the Run button was ever clicked.
+- `information_schema.columns` — all 15 columns, exact types/nullability/
+  defaults (`prompt_version` default `1`, both token columns nullable,
+  `history_turns_sent` **not** nullable).
+- `pg_indexes` — exactly four: the pkey plus the three named.
+- `pg_class.relrowsecurity`/`pg_policies` — RLS live, **exactly two
+  policies** (`INSERT` with a `with_check`, `SELECT` with a `qual`, both
+  `user_id = auth.uid()`) — the absence of `UPDATE`/`DELETE` policies
+  confirmed by row count, not assumed from the DDL.
+- **Permanence proven through the app's own anon-key client, not read off
+  `pg_policies`**: a real row inserted via the browser's authenticated
+  `supabase` singleton (confirming the `INSERT` policy genuinely works,
+  not just exists) succeeded and was readable; an `update` and a `delete`
+  against that same row through the same client both returned **zero rows
+  affected, no error** (RLS with no matching policy filters the row out of
+  scope rather than raising); a final read confirmed the row survived with
+  its original, unmodified `answer`. Cleaned up via the SQL Editor
+  (bypasses RLS) and the count re-confirmed back to 0.
+- **All five `CHECK`s proven by attempting to violate them**, in one
+  `DO` block scoped to Adam's `user_id`, each compared against a
+  before/after row count for his account specifically: `category =
+  'bogus'`, whitespace-only `question`, whitespace-only `answer`,
+  `turn_index = -1`, `history_turns_sent = -1` — all five returned a real
+  `23514` and wrote zero rows.
+- **The unique index proven** by inserting the same `(conversation_id,
+  turn_index)` twice — first insert succeeded (1 row), the duplicate
+  returned a real `23505` and wrote zero rows.
+- **`on delete set null` proven for real**, the same shape migration 017's
+  was proven: a throwaway session and a throwaway exchange linked to it
+  were created, the session deleted, and the exchange's `session_id` read
+  back as genuinely `NULL` — not inferred, the literal query result — then
+  both throwaway rows cleaned up.
+- **Row counts**, with one honest gap flagged rather than glossed over:
+  `v2_coach_notes` (**10**) matches Phase 0's own count from the prior
+  session exactly, a real before/after confirmation across two sessions.
+  `v2_sessions` (42) and `v2_set_logs` (513) were counted only
+  post-migration — no explicit pre-migration snapshot of those two totals
+  was taken as its own step before applying, an execution-order gap in
+  this session, not a check that was skipped outright. Backed instead by a
+  static reading of the applied DDL itself: all seven of 023's statements
+  (`create table`, `alter table ... enable row level security`, two
+  `create policy`, three `create index`) name `v2_coach_qa_exchanges` as
+  their only target — `v2_sessions`/`auth.users` appear solely as FK
+  references inside column definitions, which cannot write to the
+  referenced table. `v2_coach_qa_exchanges` itself confirmed at exactly
+  `0` rows after every throwaway check above was cleaned up.
+
+See "2026-09-01 session (Phase 1 — migration 023)" below for the full
+account, including the two dialog types the Supabase SQL Editor showed
+this session (the standing destructive-operation confirmation, plus a
+second "creates a table without RLS" dialog for the scratch `temp` tables
+used to run each check — correctly answered "without RLS" each time,
+since a session-scoped `temp` table is dropped at disconnect and never
+reaches PostgREST's schema cache regardless).
+
 ---
 
 ## Key architectural rules
@@ -1418,12 +1504,24 @@ cleaned up and every touched count re-verified back at baseline.
   cost question (§6), how category is determined deterministically from the
   call site (§7), a nine-phase approval-gated implementation order (§9),
   seventeen assumptions the spec doesn't cover (§10), and five open
-  questions (§12). **Written this session, awaiting review — nothing in it
-  is built, no migration file exists on disk.** Two decisions in it diverge
-  deliberately from house convention and are flagged for review rather than
-  taken quietly: `select`+`insert`-only RLS instead of the standing
-  `for all` (§2.4), and `on delete set null` on `session_id` instead of
-  `v2_coach_session_analyses`' cascade (§2.3)
+  questions (§12). **All five of §12's open questions resolved 2026-09-01
+  (memory → v1.1, RLS → structural, app-mechanics → ships in v1, `QaPanel`
+  → shared component, `HISTORY_TURN_CAP` → 4 as starting point) — no
+  revision to this document was needed, every resolution matched its
+  already-written recommendation.** Two decisions in it diverge
+  deliberately from house convention, both confirmed rather than walked
+  back: `select`+`insert`-only RLS instead of the standing `for all`
+  (§2.4), and `on delete set null` on `session_id` instead of
+  `v2_coach_session_analyses`' cascade (§2.3). **Phase 0 (the read-only
+  diagnostic) and Phase 1 (migration 023, applied and verified) are both
+  done as of 2026-09-01** — see those sessions below. Phase 0 found one
+  real correction, not yet folded back into this document: `v2_week_plan_
+  sets` has no rep-range target column at all (only `target_rir`) and no
+  direct `exercise_id` — exercise identity reaches it only via a two-hop
+  join through `program_exercise_id` → `v2_program_exercises.exercise_id`.
+  §4.1's `PlannedSetSummary` type must be built against that real shape
+  when Phase 2/3 gets there, not against a guessed one — flagged explicitly
+  so it doesn't sit unused. **Only Phase 2 onward remains unbuilt**
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -18212,6 +18310,114 @@ contradicting anything written. Awaiting explicit approval before Phase 1
 
 ---
 
+## 2026-09-01 session (Phase 1 — migration 023, applied and verified)
+
+Read CONTEXT.md first, as instructed. All five of §12's open questions
+arrived resolved this session (memory → v1.1, RLS → structural — both
+repeating the prior session's resolutions — plus app-mechanics → ships in
+v1, `QaPanel` → shared component, `HISTORY_TURN_CAP` → 4 as starting
+point). All five match TASKS.md's own stated recommendation exactly, so
+**no revision to TASKS.md was made.**
+
+### Committed the pending Phase 0 update first
+
+The previous session's CONTEXT.md edits (the §12 resolution record and
+the Phase 0 diagnostic write-up) were still uncommitted. Committed alone,
+docs-only, before touching the migration (`ecc03e1`).
+
+### Phase 1, exactly as §9 specifies
+
+**Wrote `supabase/migrations/023_v3_coach_qa_exchanges.sql`** — extracted
+the SQL block verbatim from QA-SIDEBAR-TASKS.md §2.5 (diffed against the
+source document programmatically, not retyped by hand, to rule out a
+transcription error before transport was ever a question) and confirmed
+it against the transport rule first: no character run in the file exceeds
+23 repeated characters (a run of alignment spaces; the box-drawing-divider
+style that caused migration 021's loss doesn't appear anywhere in this
+file), and the base64 failure mode doesn't apply regardless since this
+session's transport method never encodes to base64 at all (below).
+
+**Applied via the Supabase SQL Editor, Monaco JS API only — no simulated
+typing, per the standing rule.** Opened a fresh tab, confirmed exactly one
+Monaco model, and set the exact SQL text into it as a plain-text JS
+template literal (the one backtick in the file's own comments escaped;
+no `${}` present) — not a base64 blob, so the migration-021 failure mode
+has no channel to occur through this time. **Verified the transport before
+ever clicking Run**: a SHA-256 computed in-browser over the editor's real
+`getValue()` matched the local file's own SHA-256
+(`accdca3efc11b0646928a31f414e0ae6e7afb34f24a6f0b52b2d8034c5272be9`)
+exactly. Confirmed visually against a screenshot too (the rendered SQL,
+the `PRODUCTION` badge, the correct project name) before running.
+Clicked Run — "Success. No rows returned."
+
+**One thing worth recording for future sessions**: `get_page_text`
+returned visibly stale editor content immediately after a `setValue()` +
+click-Run pair (showing the *previous* query's text), while
+`window.monaco.editor.getModels()[0].getValue()` and a screenshot both
+showed the real, current state correctly. This is the exact rendering-lag
+failure mode CONTEXT.md's standing SQL Editor section already documents
+from migration 014 — reconfirmed here, not a new failure mode. Worked
+around the same way each time: read Monaco's real model value or take a
+screenshot, never trust `get_page_text` as ground truth for this specific
+page.
+
+### All nine §2.6 checks, run for real, scoped to Adam's `user_id`
+(`12e79b69-9891-4f53-a7cf-650edd83659f`) throughout
+
+Full detail (exact results, the two Supabase confirmation-dialog variants
+encountered) is recorded in the "Database tables" section above under
+migration 023's entry, not repeated here. Summary: transport verified
+pre-run (above); all 15 columns exact; exactly 4 indexes; RLS live with
+exactly 2 policies (`INSERT`, `SELECT` — no `UPDATE`/`DELETE`); permanence
+proven through the app's own anon-key `supabase` client (a real insert and
+select succeeded, a real update and delete both silently affected 0
+rows); all five `CHECK`s proven by real `23514` violations; the unique
+index proven by a real `23505` on a duplicate `(conversation_id,
+turn_index)`; `on delete set null` proven with a real throwaway session
+and exchange; row counts confirmed, with `v2_coach_notes` (10) matching
+Phase 0's own count from the prior session exactly — the one genuine
+before/after cross-session confirmation — while `v2_sessions`/
+`v2_set_logs` were counted only post-migration, an execution-order gap
+this session didn't catch in time to fix, backed instead by a static read
+of the applied DDL (all seven statements in 023 target only
+`v2_coach_qa_exchanges`).
+
+Every throwaway row created during verification (one direct RLS-proof row,
+one duplicate-index-proof row, one session+exchange pair for the
+cascade-rule proof) was cleaned up immediately after its check, and
+`v2_coach_qa_exchanges` was re-confirmed at exactly `0` rows for Adam's
+account before moving to the next check each time.
+
+### Committed the migration on its own
+
+`0b4ba46` — the migration file alone, separate from the docs commit
+above, per instruction.
+
+### The note for later, acted on now rather than left to drift
+
+Adam's instruction was explicit that the Phase 0 `v2_week_plan_sets`
+correction (no rep-range column, exercise identity via a two-hop join
+through `program_exercise_id`) must actually inform `PlannedSetSummary`
+when Phase 2/3 gets there — not sit unused in CONTEXT.md. Folded into
+QA-SIDEBAR-TASKS.md's own Key-files entry above as an explicit flag
+pointing at §4.1, so Phase 2/3 building doesn't start from a
+freshly-guessed shape when a verified one already exists.
+
+### Status
+
+**Phase 1 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+Phase 2 code touched.** Migration 023 is live in production, verified nine
+ways, and committed. The one open item carried forward honestly rather
+than silently resolved: the `v2_sessions`/`v2_set_logs` row-count
+before/after comparison wasn't captured as a formal pre-migration
+snapshot this session — the static-DDL argument stands in for it, and is
+airtight for an additive-only migration, but it is not the same evidence
+the other eight checks produced. Awaiting explicit approval before Phase 2
+(types and pure modules — `qaCategory.ts`, `qaHistory.ts`, the §3 types,
+`appMechanicsReference.ts`).
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -18356,11 +18562,12 @@ feature this repo could build on its own.
 
 ## Current priority tiers (as set by Adam, 2026-08-28)
 
-- **Near-term:** in-session Q&A with a real interactive sidebar — **now
-  has a spec (QA-SIDEBAR-SPEC.md) and a technical plan
-  (QA-SIDEBAR-TASKS.md) as of 2026-09-01; the plan is awaiting review and
-  nothing is built**; wiring form/energy/pump/Memory into Weekly Analysis;
-  exercise library rework.
+- **Near-term:** in-session Q&A with a real interactive sidebar — spec and
+  technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
+  of §12's open questions resolved, **Phase 0 (diagnostic) and Phase 1
+  (migration 023, applied and verified) both done as of 2026-09-01 —
+  Phase 2 onward not started, awaiting approval**; wiring form/energy/
+  pump/Memory into Weekly Analysis; exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets
