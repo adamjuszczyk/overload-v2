@@ -1552,9 +1552,13 @@ reaches PostgREST's schema cache regardless).
   join through `program_exercise_id` → `v2_program_exercises.exercise_id`.
   §4.1's `PlannedSetSummary` type must be built against that real shape
   when Phase 2/3 gets there, not against a guessed one — flagged explicitly
-  so it doesn't sit unused. **Phase 2 (types + pure modules) is also done
-  as of 2026-09-01** — see that session below. **Only Phase 3 onward
-  remains unbuilt**
+  so it doesn't sit unused. **Confirmed actually acted on, not just
+  flagged: `qaContext.ts`'s `fetchPlannedSetSummaries` (Phase 3, below) is
+  built against the real column list, not the original TASKS.md prose.**
+  **Phase 2 (types + pure modules) and Phase 3 (`qaContext.ts`, the four
+  assemblers, run against real production data with zero Anthropic spend)
+  are both done as of 2026-09-01** — see those sessions below. **Only
+  Phase 4 onward remains unbuilt**
 - src/features/coach/qaCategory.ts — **new, Phase 2 (2026-09-01).** Pure:
   `resolveQaRoute(category)` plus the `QA_ROUTES` table it reads from
   (TASKS §1.2/§5.4) — model, `assembler` (a string key naming the
@@ -1587,19 +1591,58 @@ reaches PostgREST's schema cache regardless).
   weeks, Monday-anchored meso week numbering, skip vs. extra set, warmups,
   e1RM, the three rating scales' exact vocabularies, and weight-unit
   resolution) plus `APP_MECHANICS_VERSION`. Zero database reads, by design
-  (TASKS §4.4) — the one category `assembleAppMechanicsContext` (Phase 3)
-  will serve with no query at all. **No test file** — a hand-written prose
-  constant has nothing to assert beyond its own existence, and TASKS §4.4
-  says as much explicitly ("this constant drifts... with no test that can
-  catch it"); a vacuous smoke test wasn't added just to pad coverage
-- src/types/index.ts — **extended, Phase 2.** `QaCategory`/`QaAskRequest`
-  added per TASKS §3.1. `CoachQaExchange` deliberately **not** added yet —
-  its `contextSnapshot: QaContext` field depends on `qaContext.ts`, which
-  doesn't exist until Phase 3, the same dependency order this file's own
+  (TASKS §4.4) — the one category `assembleAppMechanicsContext`
+  (`qaContext.ts`, Phase 3) serves with no query at all. **No test file** —
+  a hand-written prose constant has nothing to assert beyond its own
+  existence, and TASKS §4.4 says as much explicitly ("this constant
+  drifts... with no test that can catch it"); a vacuous smoke test wasn't
+  added just to pad coverage
+- src/features/coach/qaContext.ts — **new, Phase 3 (2026-09-01).** The four
+  context assemblers, injected-client, same two-part shape as
+  `analysisInput.ts`/`weekAnalysisInput.ts`. `assembleInSessionContext`
+  reuses `assembleAnalysisInput` verbatim, plus two genuinely new pieces
+  (TASKS §4.1): a direct `exercises` lookup for `currentExerciseId`/
+  `currentExerciseName` (the entire reason it's needed — that exercise may
+  have no logged sets yet, so it's invisible to `AnalysisInput`), and
+  `fetchPlannedSetSummaries`, a new `v2_week_plan_sets` fetch built against
+  the **real** column shape Phase 0 found (`target_rir`, no rep-range
+  column, exercise identity only via the two-hop
+  `program_exercise_id → v2_program_exercises.exercise_id → exercises.name`
+  join — not the naive direct embed, which 404s), grouped through the
+  existing `groupWeekPlanSets` so the stage-exclusion rule is one
+  implementation. `assembleGeneralContext`/`assemblePlanningContext` share
+  `assembleGeneralCore` (active meso, an 8-week `fetchWeeklyRollups` that
+  mirrors `progressService.ts`'s browser-singleton
+  `fetchMesoWeeklyProgress` exactly — same query shape, same imported pure
+  helpers (`headsOnly`, `averageRating` + the three scales), reused
+  arithmetic not re-derived — phase, 6-week weight trend, active memory).
+  Planning adds a 14-day `recentDays`/`recovery` window (one query serving
+  both), `thisWeek`/`nextWeek` via `assembleWeekResolution` denormalised
+  with real workout-day names and a real `unresolvedDates` list neither
+  `assembleWeekResolution`'s own return shape nor its underlying
+  `statusByDate` exposes, and `recentNotes` (14-day Coach Notes, a
+  reasonable reading of an underspecified field, documented as such in the
+  file itself). `assembleAppMechanicsContext` takes **zero parameters** —
+  not `(client, userId)` accepted-but-unused — so the "never touches user
+  data" property is true of the function's own shape, not just its body.
+  **Verified table-by-table against the Northstar rule** (SPEC §2): every
+  `.from(...)` call in the finished file, grepped programmatically, plus
+  every embedded table reference inside a select string, plus the
+  transitive footprint of `assembleAnalysisInput`/`assembleWeekResolution`
+  (the two existing functions this file calls) — all `v2_`-prefixed or
+  `exercises` (and every `exercises` reference, everywhere, selects `name`
+  only). **All four assemblers run against real production data in the
+  browser, zero Anthropic spend** — see this session's entry below for the
+  actual payloads
+- src/types/index.ts — **extended, Phase 2 and 3.** `QaCategory`/
+  `QaAskRequest` added Phase 2. `CoachQaExchange` added Phase 3, now that
+  `qaContext.ts` exists to type its `contextSnapshot: QaContext` field
+  against — the same dependency order this file's own
   `CoachSessionAnalysis`/`AnalysisInput` pair already established (this
   file already imports `AnalysisInput` from `analysisInput.ts` and
-  `WeekAnalysisInput` from `weekAnalysisInput.ts` — direct precedent, not
-  a new pattern)
+  `WeekAnalysisInput` from `weekAnalysisInput.ts` — direct precedent, not a
+  new pattern), confirmed by reading this file's own import block rather
+  than assumed
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -18604,6 +18647,154 @@ real production data).
 
 ---
 
+## 2026-09-01 session (Phase 3 — qaContext.ts, all four assemblers run
+against real production data, zero Anthropic spend)
+
+Read CONTEXT.md first, as instructed. Committed Phase 2's code (`4478e31`)
+together with its CONTEXT.md write-up first, exactly as asked.
+
+### `qaContext.ts` built, following §4 section by section
+
+Re-read every relevant TASKS.md section (§4.1–§4.4, §3.2) fresh before
+writing, not from memory of the planning session. Same two-part shape as
+`analysisInput.ts`/`weekAnalysisInput.ts` throughout — injected
+`SupabaseClient`, never the browser singleton.
+
+**`assembleInSessionContext`** — `assembleAnalysisInput` reused verbatim,
+plus the two new pieces. Per instruction, `PlannedSetSummary` (and its new
+`fetchPlannedSetSummaries` fetch) was built directly against Phase 0's
+real `v2_week_plan_sets` finding, re-read from this file before writing a
+line of it, not rebuilt from TASKS.md's original prose: no rep-range
+field anywhere in the type (only `targetRir`), and exercise identity
+resolved through the real two-hop
+`program_exercise_id → v2_program_exercises.exercise_id → exercises.name`
+embed — the same shape that 404s (PostgREST `PGRST200`) if attempted as a
+direct embed on `v2_week_plan_sets`, exactly as Phase 0 found. Grouped
+through the existing `groupWeekPlanSets` so stage-exclusion is one
+implementation.
+
+**`assembleGeneralContext`/`assemblePlanningContext`** share
+`assembleGeneralCore` (active meso, `fetchWeeklyRollups`, phase, weight
+trend, memory) rather than duplicating it, matching TASKS §4.3's "planning
+reuses everything §4.2 reuses." `fetchWeeklyRollups` mirrors
+`progressService.ts`'s browser-singleton `fetchMesoWeeklyProgress`
+exactly — same query, same imported pure helpers (`headsOnly`,
+`averageRating` + the three scales) — so this is a second fetch
+implementation, never a second arithmetic one. Planning's three new
+pieces: a 14-day `recentDays`/`recovery` window from one shared query (one
+fetch, two derived outputs, since both need the same per-session set-log
+data); `thisWeek`/`nextWeek` via `assembleWeekResolution`, denormalised
+with real workout-day names (that function's own `expected[]` carries only
+a bare `workoutDayId`) and a real `unresolvedDates` list built from a
+fresh `v2_sessions` status query, since neither `WeekResolution`'s return
+shape nor its internal `statusByDate` map is exposed to a caller;
+`recentNotes`, an underspecified field in TASKS.md beyond its type shape —
+documented in the file itself as a considered reading (14-day Coach Notes,
+matching the section's recurring window) rather than presented as
+something the plan pinned down exactly.
+
+**`assembleAppMechanicsContext`** takes **zero parameters** — not
+`(client, userId)` accepted-but-unused. TASKS §4.4 says this category's
+"never touches user data" property is "worth keeping visible in the code
+rather than incidental"; a zero-arg signature makes that true of the
+function's own shape, not just something you'd have to read the body to
+confirm.
+
+### The Northstar rule — checked table-by-table against the finished file
+
+Per instruction, not asserted. `grep -n ".from('" src/features/coach/
+qaContext.ts` against the actually-written file: `v2_week_plan_sets`,
+`exercises`, `v2_sessions` (×4), `v2_mesocycles`, `v2_week_plans`,
+`v2_coach_phase_entries`, `v2_coach_weight_entries`, `v2_workout_days`,
+`v2_coach_notes`. A second grep for every embedded table reference inside
+a select string added `v2_program_exercises`, and two more `exercises`/
+`v2_set_logs` embeds. Every single one is `v2_`-prefixed or `exercises`.
+Extended to the transitive footprint too, since this file calls
+`assembleAnalysisInput` and `assembleWeekResolution`: both of those files'
+own `.from(...)` calls and embeds were grepped the same way — same result,
+all `v2_`-prefixed or `exercises`. Every `exercises` reference anywhere in
+this transitive graph selects `name` only, never `muscle_subgroup`/
+`movement_pattern` or anything else off it — narrower than the "name and
+tags" allowance, not just within it.
+
+### All four assemblers run against real production data, zero spend
+
+Same browser dry-run technique as Phase 0 — dynamic `import()` of the real
+compiled `qaContext.ts` from the running Vite dev server, the app's own
+authenticated `supabase` singleton reused as an opaque object. No session
+was `in_progress` at the time (checked again, same as Phase 0), so the
+same real completed session (`0584454d-...`, 2026-09-01, "PULL 1") was
+used for `in_session`.
+
+- **`in_session`** — well-formed, no error. `currentExerciseId` set to a
+  real exercise in this session's plan (Neutral Lat Pulldown); its
+  `currentExerciseName` resolved correctly via the direct lookup.
+  `plannedSets` returned all 5 exercises with correct names via the
+  two-hop join, and the set counts per exercise (3, 3, 3, 2, 2 — **13
+  total**) match Phase 0's raw row count for this exact plan exactly. The
+  underlying `AnalysisInput` passed through unchanged (5 exercises, same
+  session echo as Phase 0's own dry run of it).
+- **`general`** — `meso.currentWeekNumber: 10`, matching Phase 0's
+  distinct-week-number count for this meso exactly. The 8-week cap
+  correctly kept weeks 3–10 and dropped 1–2 from this 10-week-deep meso —
+  a real, non-vacuous exercise of the bound, not a no-op. Rating averages
+  correctly appear starting only at week 9 (when Coach Personalization
+  ratings went live on this account) and are correctly `null` before that
+  — never defaulted, never backfilled. 4 real memory entries, 2 real
+  weight-trend weeks, both matching Phase 0's counts.
+- **`planning`** — the `unresolvedDates` logic is the standout real
+  result: this week's already-completed sessions (Monday's PUSH 1,
+  today's PULL 1) are correctly absent from `unresolvedDates`, while the
+  week's three not-yet-happened scheduled days, and all five of next
+  week's, correctly appear. 10 real sessions in the 14-day `recentDays`
+  window (not 14 — only real logged/rest days appear, no synthetic
+  placeholders). 10 real Coach Notes surfaced as `recentNotes`, including
+  the genuine chest-press-substitution and knee-sensation notes this
+  account's history has referenced before — independent corroboration
+  that this is real data, not a coincidence of shape.
+- **`app_mechanics`** — a plain function call, no client needed. Returned
+  the real 2,978-character reference text and `version: 1`.
+
+**Zero spend confirmed two ways, not one**: no import of the Anthropic SDK
+anywhere in `qaContext.ts` (grepped), and `read_network_requests` against
+the dry-run browser tab, filtered to `anthropic`, returned no requests at
+all.
+
+### `CoachQaExchange` completed in `src/types/index.ts`
+
+Phase 2 deliberately deferred this type since its `contextSnapshot:
+QaContext` field couldn't be typed before `qaContext.ts` existed. Added
+now that it does, following the exact precedent already in this file
+(`CoachSessionAnalysis`/`AnalysisInput`) — confirmed by re-reading this
+file's own import block before adding the third one, not assumed still
+accurate.
+
+### Verification
+
+`npx tsc -b` (both tsconfigs, zero output) run twice — once right after
+`qaContext.ts` alone, again after `CoachQaExchange` was added — both
+clean. Full Vitest suite: 32 files, 400/400 (unchanged from Phase 2, since
+this phase added no new pure logic requiring its own tests — every new
+function here is a fetch, exercised for real against production instead).
+`npm run build`: clean, same pre-existing `vendor-charts` chunk-size
+notice as every prior build this project has run.
+
+### Status
+
+**Phase 3 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+Anthropic call made, no Phase 4 code touched.** All four real payloads
+were shown in full this session, and the Northstar audit's exact grep
+results were shown alongside them, not just a "checked, it's fine."
+**Not committed this session** — no commit instruction was given for
+Phase 3's code, so `qaContext.ts` and the `CoachQaExchange` addition sit
+in the working tree with this CONTEXT.md update, same pattern as Phase 2.
+Awaiting explicit approval before Phase 4 (one real Haiku call and one
+real Sonnet 5 call, throwaway, nothing saved — the phase that measures
+Sonnet 5's latency against the 60s cap for the first time in this
+project).
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -18750,11 +18941,12 @@ feature this repo could build on its own.
 
 - **Near-term:** in-session Q&A with a real interactive sidebar — spec and
   technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
-  of §12's open questions resolved, **Phase 0 (diagnostic), Phase 1
-  (migration 023, applied and verified) and Phase 2 (types + pure modules,
-  typecheck/build/Vitest all clean) done as of 2026-09-01 — Phase 3 onward
-  not started, awaiting approval**; wiring form/energy/pump/Memory into
-  Weekly Analysis; exercise library rework.
+  of §12's open questions resolved, **Phases 0–3 done as of 2026-09-01**
+  (diagnostic; migration 023 applied/verified; types + pure modules; all
+  four context assemblers built and run against real production data with
+  zero Anthropic spend) — **Phase 4 onward not started, awaiting
+  approval**; wiring form/energy/pump/Memory into Weekly Analysis; exercise
+  library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets

@@ -1,5 +1,6 @@
 import type { AnalysisInput } from '../features/coach/analysisInput'
 import type { WeekAnalysisInput } from '../features/coach/weekAnalysisInput'
+import type { QaContext } from '../features/coach/qaContext'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -608,16 +609,12 @@ export interface CoachCurationRun {
 }
 
 // ─── Q&A Sidebar (QA-SIDEBAR-SPEC.md / QA-SIDEBAR-TASKS.md) ────────────────
-// Only §3.1's request/category types live here. QaContext and its four
-// per-category payloads (InSessionContext/GeneralContext/PlanningContext/
-// AppMechanicsContext) live in qaContext.ts instead (TASKS §3 — "the
-// payload types... live next to their assembler"), the same reason
-// AnalysisInput/WeekAnalysisInput live in their own feature files and are
-// only imported into this one, above. CoachQaExchange itself — the response
-// row shape, with a `contextSnapshot: QaContext` field — is added once
-// qaContext.ts exists (TASKS §9 Phase 3): it cannot be typed before then,
-// the same dependency order CoachSessionAnalysis/AnalysisInput already
-// established in this file.
+// §3.1's request/category types plus CoachQaExchange live here. QaContext
+// and its four per-category payloads (InSessionContext/GeneralContext/
+// PlanningContext/AppMechanicsContext) live in qaContext.ts instead (TASKS
+// §3 — "the payload types... live next to their assembler"), the same
+// reason AnalysisInput/WeekAnalysisInput live in their own feature files
+// and are only imported into this one, above.
 
 // SPEC §3's four question categories. Decided by which control in the app
 // started the conversation, never inferred by the model (TASKS §7) —
@@ -637,4 +634,25 @@ export interface QaAskRequest {
   // The exercise card the question was asked from, when the UI knows it —
   // deterministic-from-UI, same principle as category (TASKS §4.1).
   currentExerciseId: string | null
+}
+
+// The response body — the saved row, in camelCase, built server-side
+// exactly the way analyze.ts's toCoachSessionAnalysis does it (TASKS §3.1),
+// so the client needs no row mapper on this path.
+export interface CoachQaExchange {
+  id: string
+  userId: string
+  conversationId: string
+  turnIndex: number
+  category: QaCategory
+  question: string
+  answer: string
+  contextSnapshot: QaContext   // exactly what the model was shown (TASKS §2.1)
+  sessionId: string | null
+  model: string                // response.model, not the request constant
+  promptVersion: number
+  inputTokens: number | null
+  outputTokens: number | null
+  historyTurnsSent: number     // TASKS §6.2/§6.3 — the cost cap's own audit trail
+  createdAt: string
 }
