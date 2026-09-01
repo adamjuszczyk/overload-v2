@@ -1555,10 +1555,12 @@ reaches PostgREST's schema cache regardless).
   so it doesn't sit unused. **Confirmed actually acted on, not just
   flagged: `qaContext.ts`'s `fetchPlannedSetSummaries` (Phase 3, below) is
   built against the real column list, not the original TASKS.md prose.**
-  **Phase 2 (types + pure modules) and Phase 3 (`qaContext.ts`, the four
-  assemblers, run against real production data with zero Anthropic spend)
-  are both done as of 2026-09-01** — see those sessions below. **Only
-  Phase 4 onward remains unbuilt**
+  **Phases 2–4 are all done as of 2026-09-01**: types + pure modules;
+  `qaContext.ts`'s four assemblers, run against real production data with
+  zero Anthropic spend; one real Haiku call and two real Sonnet 5 calls
+  measuring latency/cost for real (§6.4 rewritten with the real figures,
+  replacing every estimate) — see those sessions below. **Only Phase 5
+  onward remains unbuilt**
 - src/features/coach/qaCategory.ts — **new, Phase 2 (2026-09-01).** Pure:
   `resolveQaRoute(category)` plus the `QA_ROUTES` table it reads from
   (TASKS §1.2/§5.4) — model, `assembler` (a string key naming the
@@ -18791,7 +18793,139 @@ in the working tree with this CONTEXT.md update, same pattern as Phase 2.
 Awaiting explicit approval before Phase 4 (one real Haiku call and one
 real Sonnet 5 call, throwaway, nothing saved — the phase that measures
 Sonnet 5's latency against the 60s cap for the first time in this
-project).
+project). **Committed the next session** (`5fc141c`) — see below.
+
+---
+
+## 2026-09-01 session (Phase 4 — one real Haiku call, two real Sonnet 5
+calls, latency/cost measured, nothing saved)
+
+Read CONTEXT.md first, as instructed. Committed Phase 3's code
+(`qaContext.ts`, the completed `CoachQaExchange` type) together with its
+CONTEXT.md write-up first (`5fc141c`), exactly as asked.
+
+### A real blocker, mid-session: the dev server's browser session had reset
+
+The Phase 3 dry-run browser tab was gone (a fresh `preview_start` opens a
+new, unauthenticated browser context — nothing persists across a full
+browser-pane restart). `supabase.auth.getUser()` returned
+`AuthSessionMissingError`, `localStorage` was genuinely empty, and a
+screenshot confirmed a real, blank sign-in screen — not a stale-render
+false alarm this time. **Stopped and asked Adam to sign in himself**,
+rather than attempting a workaround: entering a password into any field is
+outside what this agent does, regardless of whose account it is or who
+asks. (A stray `ScheduleWakeup` call made while waiting was a mistake —
+this conversation was never a `/loop` invocation — caught and stopped the
+same turn rather than left ticking.) Adam signed in; verified for real
+(`hasUser: true`, the correct real `user.id`) before proceeding, rather
+than assuming a "logged" reply meant it had worked.
+
+### Fresh real payloads, re-fetched rather than reused from Phase 3's cache
+
+Same dry-run technique. Re-derived both payloads live rather than
+replaying Phase 3's saved JSON verbatim, since "using the Phase 3
+payloads" was read as "assembled the same real way," not "byte-identical
+cached output" — `assembleGeneralContext`/`assemblePlanningContext`
+compute "today" fresh on every call by design (§6.1). In practice nothing
+material had moved since Phase 3 (same session, same meso, same 10
+distinct weeks) — confirmed by re-running the same in-progress/
+most-recent-completed session check Phase 0 and Phase 3 both used, still
+zero in-progress sessions.
+
+### The throwaway script, and a real ambiguity it exposed
+
+Wrote `_phase4_dryrun.ts` at the repo root (never committed, deleted
+immediately after), following the exact daily-E1/weekly-step-6 precedent:
+no system prompt (`coachQaPrompt.ts` doesn't exist until Phase 5), the
+real `{answer: string}` schema from TASKS §5.6, `max_tokens` 2,000 (Haiku)
+/ 8,000 (Sonnet, since thinking tokens count against it). Sonnet 5 called
+with `output_config: {effort: 'medium', format: {...}}` and no `thinking`
+param at all (adaptive by omission) and no `temperature`/`top_p`/`top_k`,
+exactly as instructed. `dotenv` isn't a dependency of this project —
+caught before running, `.env.local` parsed directly instead of adding an
+unlisted package.
+
+**First pass, both calls, ran clean** — but the Sonnet 5 planning
+response's terminal-rendered text looked like it ended mid-sentence
+("Don't force the "}). A hand-retyped `JSON.parse` check of that same text
+(copied through bash quoting) failed with a control-character error —
+which, on reflection, was far more likely to be **my own transcription
+introducing the bug** than genuine truncation: `stop_reason` was
+`end_turn` on every call (never `max_tokens`), and structured JSON output
+is contractually guaranteed valid by the API. Rather than trust a
+hand-copy through a shell, **re-ran the Sonnet 5 call once more with the
+script itself writing the raw response to disk and calling `JSON.parse`
+in the same process that received it** — no manual retyping anywhere in
+the loop. Confirmed: valid JSON both times; the first run's shorter answer
+(355 output tokens) was a real, complete, organically shorter response,
+not a truncated one — the appearance of truncation was a terminal
+rendering/transcription artifact on my end, not a defect in the API
+response. Recorded here so a future session doesn't waste a real call
+re-litigating the same false alarm: **trust `stop_reason` and an
+in-process `JSON.parse`, never a hand-recopy through a shell, for this
+kind of check.**
+
+### Real measurements
+
+| | in-session (Haiku) | planning (Sonnet 5, run A) | planning (Sonnet 5, run B) |
+|---|---|---|---|
+| Wall-clock | 6.3s | 7.7s | 23.7s |
+| Margin under 60s | 53.7s | 52.3s | 36.3s |
+| `input_tokens` | 4,346 | 3,594 | 3,594 |
+| `output_tokens` | 333 | 355 | 1,770 |
+| `stop_reason` | end_turn | end_turn | end_turn |
+
+All three used the real `model` id requested (`claude-haiku-4-5-20251001`,
+`claude-sonnet-5`) — confirmed via `response.model`, not assumed from the
+request. **The ~3× latency spread between the two identical-payload Sonnet
+calls is the model choosing to write a much longer, more thorough answer
+the second time** (a full read of fatigue signals, volume consistency,
+the standing knee/shoulder cautions, weight trend, and a deload
+check-in) — not anything structural, and not close enough to 60s on
+either run to need any of §9 Phase 4's fallback levers (`effort: 'low'`,
+a smaller payload, streaming). None were applied.
+
+Real cost per call: Haiku **$0.0060**, Sonnet run A **$0.0107**, Sonnet
+run B **$0.0249**. A grounded (not guessed) size check for the
+not-yet-built system prompt: `coachPrompt.ts`'s real, shipped
+`PROMPT_VERSION 6` text is 20,982 characters (~5,250 tokens) — Q&A's
+shared preamble should land smaller (it borrows a subset of that file's
+guards, not its exhaustive payload-shape section), revised to an
+estimated ~3,000–3,500 tokens. Revised whole-conversation estimate with
+that addition: **under $2/month** at the same usage this document already
+modeled (20-turn in-session conversations, weekly 10-turn planning
+conversations) — down slightly from the original guess, now anchored to
+three real calls instead of zero.
+
+### Verification that nothing was saved
+
+`v2_coach_qa_exchanges` row count checked before (**0**) and after
+(**0**) the whole phase, scoped to Adam's `user_id` — the script never
+imported Supabase at all, so this is confirmatory, not the only check.
+`_phase4_dryrun.ts` deleted immediately after the final run; `git status`
+confirmed it left no trace.
+
+### `QA-SIDEBAR-TASKS.md` §6.4 replaced with the real figures
+
+Per the gate's explicit instruction. The old all-estimated table is gone;
+§6.4 now reports the three real measurements above, the real per-call
+cost, the `coachPrompt.ts`-grounded system-prompt size check, and a
+revised (still partially estimated, until Phase 5's real prompt exists)
+whole-conversation total. §10 A10 updated from "unmeasured" to the real
+result, with a pointer back to §6.4 rather than duplicating the numbers a
+second place they could drift from.
+
+### Status
+
+**Phase 4 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+Phase 5 code touched.** Latency and cost reported in full above, not
+just "it worked" — including the one real blocker (the lost browser
+session) and the one real false alarm (the transcription-artifact
+truncation scare) this phase actually ran into, both resolved before
+proceeding rather than glossed over. Awaiting explicit approval before
+Phase 5 (`coachQaPrompt.ts` and `api/coach/ask.ts` — the first phase that
+writes a permanent row, on a throwaway/cleanup basis, and the first phase
+this feature is no longer purely additive).
 
 ---
 
@@ -18941,12 +19075,13 @@ feature this repo could build on its own.
 
 - **Near-term:** in-session Q&A with a real interactive sidebar — spec and
   technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
-  of §12's open questions resolved, **Phases 0–3 done as of 2026-09-01**
+  of §12's open questions resolved, **Phases 0–4 done as of 2026-09-01**
   (diagnostic; migration 023 applied/verified; types + pure modules; all
   four context assemblers built and run against real production data with
-  zero Anthropic spend) — **Phase 4 onward not started, awaiting
-  approval**; wiring form/energy/pump/Memory into Weekly Analysis; exercise
-  library rework.
+  zero Anthropic spend; Sonnet 5's latency/cost measured for real —
+  comfortably inside the 60s cap, no fallback levers needed) — **Phase 5
+  onward not started, awaiting approval**; wiring form/energy/pump/Memory
+  into Weekly Analysis; exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets

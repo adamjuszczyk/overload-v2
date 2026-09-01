@@ -794,36 +794,84 @@ select category, history_turns_sent, count(*)
 Spec §7 defers turn-cap tuning to real usage. This is the data that tuning would
 be based on, captured from the first exchange rather than retrofitted.
 
-### 6.4 Worked cost estimate
+### 6.4 Cost — real measurements (Phase 4, 2026-09-01), not estimates
 
 **Prices, current as of this writing:** Haiku 4.5 `$1.00`/MTok input,
 `$5.00`/MTok output. Sonnet 5 `$2.00`/MTok input, `$10.00`/MTok output.
 
-**Every token figure below is an estimate**, marked as such deliberately. Phase 4
-replaces them with two real measurements before any UI is built.
+**Superseded.** The table this section originally carried was every figure
+marked as an estimate, pending Phase 4. Phase 4 is done — these are three real
+calls against Phase 3's real payloads (turn 0 of a fresh conversation: no
+system prompt, since `coachQaPrompt.ts` doesn't exist until Phase 5, and no
+history window, since there was nothing prior to include — same precedent
+daily's E1 and weekly's step 6 both set, CONTEXT.md). `stop_reason: end_turn`
+on all three; the two Sonnet runs' raw text was also explicitly `JSON.parse`d
+in-process (not eyeballed off a terminal render, which produced a false
+truncation scare on the first pass — see CONTEXT.md's Phase 4 entry) and
+confirmed valid both times.
+
+| | in-session (Haiku) | planning (Sonnet 5, run A) | planning (Sonnet 5, run B) |
+|---|---|---|---|
+| Wall-clock | **6.3s** | **7.7s** | **23.7s** |
+| Margin under the 60s cap | 53.7s | 52.3s | 36.3s |
+| `input_tokens` | 4,346 | 3,594 | 3,594 |
+| `output_tokens` | 333 | 355 | 1,770 |
+| Cost (context + question only) | **$0.0060** | **$0.0107** | **$0.0249** |
+
+**The two Sonnet runs are the same payload and the same question, two
+independent calls — the ~3× latency and ~5× output-token spread between them
+is the model choosing to write a much longer answer the second time, not
+anything structural.** Both land nowhere near the 60s cap (52.3s and 36.3s of
+margin respectively), so **none of §9 Phase 4's fallback levers (`effort:
+'low'`, a smaller payload, streaming) are needed** — the real numbers didn't
+call for them. Run B, the longer/slower one, is the more realistic planning
+answer in substance (a full read of fatigue signals, volume, the standing
+cautions, weight trend, and a deload check-in) and is the one this section's
+revised estimate below is built from, not the shorter run, since a real
+system prompt asking for exactly this kind of reasoning is more likely to
+produce something closer to it.
+
+**What these numbers do not yet include, and why that matters for the total
+below:** no system prompt (Phase 5's `coachQaPrompt.ts`) and no multi-turn
+history window (§6.1/§6.2 — this was turn 0). Both add real tokens on top of
+every figure above. For a grounded size on the first of those:
+`coachPrompt.ts`'s own real, shipped system prompt (`PROMPT_VERSION 6`, every
+diagnosed guard included) is **20,982 characters, ≈5,250 tokens** — measured
+directly from the file, not guessed. Q&A's shared preamble (§5.6) borrows a
+subset of that file's guards, not its exhaustive per-field payload-shape
+section (each category's own section covers that instead), so it should land
+smaller — **~3,000–3,500 tokens estimated**, revised up from this document's
+original ~2,500 guess now that a real comparable exists, and still to be
+replaced with an exact number once Phase 5 writes the file for real.
+
+**Revised whole-conversation estimate**, real context/output numbers plus that
+still-estimated system-prompt addition, cost only (not re-measuring latency,
+since the system prompt doesn't change generation time meaningfully):
 
 | | in-session (Haiku) | planning (Sonnet 5) |
 |---|---|---|
-| System: preamble + category section | ~2,500 | ~2,500 |
-| System: context block | ~3,000 | ~2,000 |
-| Messages: 4-turn window | ~1,000 | ~1,000 |
-| Messages: the question | ~40 | ~40 |
-| **Input** | **~6,500** | **~5,500** |
-| Output (planning includes billed thinking tokens) | ~250 | ~3,000 |
-| **Cost per turn** | **~$0.008** | **~$0.041** |
+| Real context + question input | 4,346 | 3,594 |
+| + estimated system prompt | ~3,250 | ~3,250 |
+| **Total input (estimated)** | **~7,600** | **~6,850** |
+| Real output (using run B for planning) | 333 | 1,770 |
+| **Cost per turn (estimated)** | **~$0.009** | **~$0.031** |
 
-- A 20-turn in-session conversation: **~$0.16**.
-- Three sessions a week, five questions each: **~$0.48/month**.
-- A weekly 10-turn planning conversation: **~$0.41**, so **~$1.8/month**.
-- Total, at that usage: **under $2.50/month**, against a measured daily analysis
-  cost profile the same account already runs.
+- A 20-turn in-session conversation: **~$0.18**.
+- Three sessions a week, five questions each: **~$0.54/month**.
+- A weekly 10-turn planning conversation: **~$0.31**, so **~$1.35/month**.
+- Total, at that usage: **under $2/month** — still comfortably inside the
+  "well under any real concern" range this document's original estimate
+  landed in, now anchored to three real calls instead of zero.
 
-**What the cap actually saves.** Without it, turn 20 would carry ~19 turns of
-history — roughly 4,750 tokens instead of 1,000 — pushing an in-session turn from
-~6,500 to ~10,250 input tokens, and the conversation's total cost up by roughly
-2.5×. The saving is real but modest in absolute dollars at this volume; the
-stronger reason for the cap is that cost stays **predictable and bounded** rather
-than a function of how chatty a session gets.
+**What the cap actually saves**, unchanged reasoning, now stated against real
+per-turn sizes: without `HISTORY_TURN_CAP`, turn 20 of an in-session
+conversation would carry ~19 prior turns instead of 4 — using the real
+Haiku output size (333 tokens/turn) as the per-turn history cost, that is
+roughly 6,300 extra input tokens at turn 20 alone, more than doubling that
+turn's input cost over the capped version. The saving is real; the stronger
+reason for the cap is still that cost stays **predictable and bounded**
+rather than a function of how chatty a conversation gets — confirmed, not
+merely argued, now that real output sizes exist to compute it from.
 
 ### 6.5 Prompt caching — deferred, with the mechanics written down
 
@@ -1183,9 +1231,11 @@ after the extraction rather than by reading the diff.
 defers tuning to real usage, and `history_turns_sent` (§6.3) is what makes that
 tuning data-driven later.
 
-**A10. Sonnet 5's latency here is unmeasured.** Its adaptive thinking is on by
-default and this project has never called it. Measured in Phase 4 before any UI
-exists, not assumed from Haiku's numbers.
+**A10. ~~Sonnet 5's latency here is unmeasured.~~ Measured, Phase 4
+(2026-09-01)** — two real calls against the same real payload, 7.7s and
+23.7s, both comfortably inside the 60s cap (52.3s/36.3s margin). None of
+§9 Phase 4's fallback levers were needed. See §6.4 for the full real
+numbers, replacing this document's original estimate table.
 
 **A11. A paid-but-unsaved generation stays an accepted risk** — daily §5.12 /
 weekly §7.17, inherited unchanged. The generated answer is returned in the error
