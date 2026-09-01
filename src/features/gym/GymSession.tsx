@@ -20,7 +20,7 @@ import ExerciseCard from './ExerciseCard'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
 import SessionComplete from './SessionComplete'
-import WorkoutNotesSheet from './WorkoutNotesSheet'
+import WorkoutSidebarSheet from './WorkoutSidebarSheet'
 import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
@@ -114,7 +114,7 @@ function ExerciseSection({
 
 export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber, today }: GymSessionProps) {
   const [showComplete, setShowComplete] = useState(false)
-  const [showNotesSheet, setShowNotesSheet] = useState(false)
+  const [showSidebarSheet, setShowSidebarSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
   // Swap exercise for this session only (SPEC v1.1 "Part C") — exercises
   // just chosen via a swap, before any set has been logged for them yet.
@@ -277,10 +277,12 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             new coachGate.ts call site this initiative adds (SPEC §7,
             TASKS §2.9). Everything else Coach-related on this screen
             (form/energy/pump ratings) is ungated, first-class training
-            data like RIR. */}
+            data like RIR. Label changed from NOTES to COACH (QA-SIDEBAR-
+            TASKS.md §8.1) now that this button opens a two-tab sheet
+            (NOTES | ASK) rather than notes alone. */}
         {isCoachUser(user?.id) && (
           <button
-            onClick={() => setShowNotesSheet(true)}
+            onClick={() => setShowSidebarSheet(true)}
             className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold tracking-widest"
             style={{
               border: '1px solid var(--border)',
@@ -288,7 +290,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               fontFamily: 'var(--font-mono)',
             }}
           >
-            NOTES
+            COACH
           </button>
         )}
       </div>
@@ -404,8 +406,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
         </button>
       )}
 
-      {showNotesSheet && (
-        <WorkoutNotesSheet sessionId={sessionId} onClose={() => setShowNotesSheet(false)} />
+      {showSidebarSheet && (
+        <WorkoutSidebarSheet sessionId={sessionId} onClose={() => setShowSidebarSheet(false)} />
       )}
     </div>
   )

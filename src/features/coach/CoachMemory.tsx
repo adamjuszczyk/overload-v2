@@ -23,9 +23,11 @@ import {
 // box (CoachNotes.tsx, deleted), which used to stage a note for later
 // curation. There's no AI involved in ADD ENTRY, same as a phase or weight
 // log entry: it's a direct, immediate write to v2_coach_memory_entries with
-// source: 'manual'. The in-workout sidebar (WorkoutNotesSheet.tsx) is
-// unchanged and still writes raw, session-scoped notes to v2_coach_notes —
-// those still get folded into memory by curation, just automatically now.
+// source: 'manual'. The in-workout sidebar's NOTES tab (gym/NotesPanel.tsx,
+// split out of the former WorkoutNotesSheet.tsx by the Q&A sidebar's Phase
+// 6) is unchanged and still writes raw, session-scoped notes to
+// v2_coach_notes — those still get folded into memory by curation, just
+// automatically now.
 
 function fmt(iso: string): string {
   return format(parseISO(iso), 'MMM d, yyyy · h:mm a')
