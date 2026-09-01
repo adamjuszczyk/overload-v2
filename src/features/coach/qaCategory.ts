@@ -41,29 +41,36 @@ const SONNET_MODEL = 'claude-sonnet-5'
 const HAIKU_MAX_TOKENS = 2000
 const PLANNING_MAX_TOKENS = 8000
 
-export const QA_ROUTES: Record<QaCategory, QaRoute> = {
-  in_session: {
+// Frozen, both the outer table and each route (found by Phase 5's own
+// adversarial review, QA-SIDEBAR-TASKS.md §9 gate: this table decides
+// which model and cost tier a request bills against, so it belongs to the
+// same "structural guarantee over discipline" class as this codebase's
+// other spend-adjacent design choices — nothing today mutates it, but
+// nothing should be able to, either. `as const` alone doesn't add a
+// runtime guard; `Object.freeze` does.
+export const QA_ROUTES: Record<QaCategory, QaRoute> = Object.freeze({
+  in_session: Object.freeze({
     model: HAIKU_MODEL,
     assembler: 'assembleInSessionContext',
     maxTokens: HAIKU_MAX_TOKENS,
-  },
-  general: {
+  }),
+  general: Object.freeze({
     model: HAIKU_MODEL,
     assembler: 'assembleGeneralContext',
     maxTokens: HAIKU_MAX_TOKENS,
-  },
-  planning: {
+  }),
+  planning: Object.freeze({
     model: SONNET_MODEL,
     assembler: 'assemblePlanningContext',
     maxTokens: PLANNING_MAX_TOKENS,
     effort: 'medium',
-  },
-  app_mechanics: {
+  }),
+  app_mechanics: Object.freeze({
     model: HAIKU_MODEL,
     assembler: 'assembleAppMechanicsContext',
     maxTokens: HAIKU_MAX_TOKENS,
-  },
-}
+  }),
+})
 
 export function resolveQaRoute(category: QaCategory): QaRoute {
   return QA_ROUTES[category]
