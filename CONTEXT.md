@@ -1262,6 +1262,37 @@ reaches PostgREST's schema cache regardless).
   reassembled text **before** running it; (3) `getValue().length`
   right after `setValue` is a free pre-flight check — last session printed
   `11234` against the file's `11236` and the discrepancy went unread.
+- **Capture row-count baselines on every table a migration could plausibly
+  touch, before running it — every time, regardless of how confident the
+  migration looks from reading the DDL alone (found 2026-09-01, migration
+  023's Phase 1 verification).** Migration 023 was a textbook-additive
+  migration — one new table, no `alter`/`update`/`delete` against any
+  existing table anywhere in it — and that confidence is exactly what made
+  skipping the baseline feel safe in the moment: nine of ten verification
+  checks ran cleanly, and the tenth (`v2_sessions`/`v2_set_logs` row counts
+  matched against a pre-migration snapshot) simply had no "before" number
+  to compare against, because none was taken as its own step before the
+  migration ran. The fallback used instead — a static read of the applied
+  DDL confirming every statement's target is the new table alone — is
+  airtight for *this* migration, precisely because it changes nothing
+  outside itself. It is not a substitute for the baseline in general: the
+  DDL-reading argument only holds up when the migration is, in fact, purely
+  additive, and confirming that by reading is exactly the kind of claim
+  this project's own standing discipline (hash the transport, prove the
+  `CHECK`s by violating them, prove `on delete set null` by actually
+  deleting something) says not to trust without a live check. A one-line
+  count query against every table the migration's DDL even mentions —
+  referenced tables included, not just the one being created — costs
+  nothing and closes this gap completely; there is no version of "the
+  migration looks safe" that is cheaper than just running it. **Standing
+  practice: before applying any migration, run and record a row count
+  (scoped to Adam's own `user_id` where the table has one) on every table
+  the migration file references anywhere — as a target, a foreign key, or
+  a join — not only the tables it appears to modify.** This is a companion
+  rule to the transport-hashing one above, not a duplicate of it: hashing
+  proves the *applied text* matches what was reviewed; this proves the
+  *applied effect* matched what was predicted, on data that was never
+  going to be touched, not just on the new table itself.
 - **Data-modifying CTEs cannot see each other's writes — never write a
   fixture (or a migration) that assumes they can (found 2026-08-29).** Every
   sub-statement of one `WITH` clause runs under a **single snapshot**, so an
@@ -1521,7 +1552,54 @@ reaches PostgREST's schema cache regardless).
   join through `program_exercise_id` → `v2_program_exercises.exercise_id`.
   §4.1's `PlannedSetSummary` type must be built against that real shape
   when Phase 2/3 gets there, not against a guessed one — flagged explicitly
-  so it doesn't sit unused. **Only Phase 2 onward remains unbuilt**
+  so it doesn't sit unused. **Phase 2 (types + pure modules) is also done
+  as of 2026-09-01** — see that session below. **Only Phase 3 onward
+  remains unbuilt**
+- src/features/coach/qaCategory.ts — **new, Phase 2 (2026-09-01).** Pure:
+  `resolveQaRoute(category)` plus the `QA_ROUTES` table it reads from
+  (TASKS §1.2/§5.4) — model, `assembler` (a string key naming the
+  qaContext.ts function this category will call once Phase 3 builds it,
+  not an import, since this module has to stay buildable before
+  qaContext.ts exists), `maxTokens` (2,000 Haiku / 8,000 planning), and
+  `effort` (`'medium'`, planning only — Haiku 4.5 rejects `effort` outright
+  with a real 400, so it's `undefined` everywhere else, matching every
+  existing Haiku call site in this repo). Real Vitest coverage
+  (qaCategory.test.ts, 9 tests), same precedent as setGroupLogic.ts/
+  referenceLogic.ts/e1rm.ts/weekBuckets.ts
+- src/features/coach/qaHistory.ts — **new, Phase 2.** Pure: the four jobs
+  TASKS §6.2's one history query does, each its own function —
+  `newestRow`/`nextTurnIndex` (turn_index is contiguous from 0 by
+  construction, migration 023's unique index enforces it, so the newest
+  row's turn_index + 1 doubles as the conversation's turn count so far),
+  `hasReachedTurnLimit` (§5.5 item 4's 409 check), `buildHistoryMessages`
+  (the rolling window, oldest-first, alternating user/assistant — and
+  itself the real enforcement point of the `HISTORY_TURN_CAP` per-turn
+  cost cap, re-capping defensively rather than trusting a caller's own
+  `LIMIT` clause held), `checkInvariance` (SPEC §3/TASKS §7.1's category-
+  and-session-fixed-per-conversation rule, checked against the newest row
+  alone since invariance holds inductively). `HISTORY_TURN_CAP` (4) and
+  `MAX_TURNS_PER_CONVERSATION` (20) both live here as the exported
+  constants everything else will read. Real Vitest coverage
+  (qaHistory.test.ts, 21 tests), same precedent as above
+- src/features/coach/appMechanicsReference.ts — **new, Phase 2.** Static:
+  `APP_MECHANICS_REFERENCE` (hand-written prose covering RIR, the
+  Program→Weekly Plan→Session Log layering, dropset heads/stages, deload
+  weeks, Monday-anchored meso week numbering, skip vs. extra set, warmups,
+  e1RM, the three rating scales' exact vocabularies, and weight-unit
+  resolution) plus `APP_MECHANICS_VERSION`. Zero database reads, by design
+  (TASKS §4.4) — the one category `assembleAppMechanicsContext` (Phase 3)
+  will serve with no query at all. **No test file** — a hand-written prose
+  constant has nothing to assert beyond its own existence, and TASKS §4.4
+  says as much explicitly ("this constant drifts... with no test that can
+  catch it"); a vacuous smoke test wasn't added just to pad coverage
+- src/types/index.ts — **extended, Phase 2.** `QaCategory`/`QaAskRequest`
+  added per TASKS §3.1. `CoachQaExchange` deliberately **not** added yet —
+  its `contextSnapshot: QaContext` field depends on `qaContext.ts`, which
+  doesn't exist until Phase 3, the same dependency order this file's own
+  `CoachSessionAnalysis`/`AnalysisInput` pair already established (this
+  file already imports `AnalysisInput` from `analysisInput.ts` and
+  `WeekAnalysisInput` from `weekAnalysisInput.ts` — direct precedent, not
+  a new pattern)
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -18418,6 +18496,114 @@ the other eight checks produced. Awaiting explicit approval before Phase 2
 
 ---
 
+## 2026-09-01 session (Phase 2 — types + pure modules, Vitest-covered)
+
+Read CONTEXT.md first, as instructed.
+
+### Committed the pending Phase 1 CONTEXT.md update first
+
+`18b0642` — the migration-023 verification write-up alone, docs-only,
+before touching Phase 2.
+
+### A new standing rule, not just a session-log note
+
+Per instruction, added a durable rule to "Key architectural rules" (not
+only recorded in this session's own log entry): **capture row-count
+baselines on every table a migration could plausibly touch, before
+running it, every time — regardless of how confident the migration looks
+from reading the DDL alone.** Placed immediately after the existing
+transport-hashing rule, as a named companion to it rather than a
+duplicate: hashing proves the *applied text* matched what was reviewed;
+this proves the *applied effect* matched what was predicted, on data that
+was never going to be touched. Framed around exactly why Phase 1 skipped
+it — the migration's genuine, DDL-confirmed additive-only shape is what
+made skipping the baseline feel safe in the moment, which is precisely
+the kind of claim this project's own standing discipline (hash the
+transport, prove the `CHECK`s by violating them) already says not to
+trust without a live check.
+
+### Phase 2, exactly as §9 specifies
+
+Re-read the exact TASKS.md sections each deliverable answers to before
+writing anything (§1.2/§5.4 for routing, §6.1/§6.2 for history, §3 for
+types, §4.4 for the reference constant) — not worked from memory of the
+earlier planning session.
+
+**`src/features/coach/qaCategory.ts`** — `QA_ROUTES` (the four-category
+lookup table) and `resolveQaRoute`. One real design decision made during
+implementation, not pre-specified at this exact level in TASKS.md:
+`assembler` is a **string key** (`'assembleInSessionContext'` etc.), not
+an import of the real function — qaContext.ts doesn't exist until Phase
+3, and this module has to stay independently buildable before then.
+api/coach/ask.ts (Phase 5) is what will turn the key into a real call.
+Also caught during writing, not assumed: Haiku 4.5 doesn't merely *not
+need* `effort` — the model skill's own migration reference lists it as
+erroring on Haiku 4.5 outright. `QA_ROUTES` reflects that directly
+(`effort` only ever set on the `planning` entry) rather than leaving it
+as an implicit "nobody happened to set it" gap.
+
+**`src/features/coach/qaHistory.ts`** — the one history query's four
+jobs (TASKS §6.2) as four pure functions: `newestRow`/`nextTurnIndex`,
+`hasReachedTurnLimit`, `buildHistoryMessages`, `checkInvariance`. One
+deliberate strengthening beyond the letter of §6.2: `buildHistoryMessages`
+re-sorts and re-caps to `HISTORY_TURN_CAP` itself rather than trusting
+that the caller's own SQL `LIMIT` already enforced it — making this
+function the actual enforcement point of the flat-per-turn-cost property,
+not a formatter that assumes someone else already guaranteed it. Every
+function is written to work correctly against an unsorted `rows` array
+(via an internal sort, never assuming the caller's ordering), which is
+what let the test suite exercise "what if a caller got the ordering
+wrong" as one of its own cases instead of just the happy path.
+
+**`src/features/coach/appMechanicsReference.ts`** — `APP_MECHANICS_
+REFERENCE` (RIR, the three-layer Program→Weekly Plan→Session Log model,
+dropset heads/stages, deload weeks, the Monday-anchored week-numbering
+rule, skip vs. extra set, warmups, e1RM's actual formula in plain
+language, all three rating scales' exact vocabularies low-to-high, and
+the weight-unit resolution order) plus `APP_MECHANICS_VERSION`. Every
+factual claim in it was checked against the real source before being
+written down, not written from general knowledge of the app: e1RM's
+formula read directly from `e1rm.ts`'s own comment, the rating
+vocabularies read directly from `ratingScales.ts`, the weight-unit order
+read directly from `weightUnit.ts`'s `resolveWeightUnit`. **No test file**
+— TASKS §4.4 already states this constant has no test that can catch its
+drift; a vacuous "the string is non-empty" test wasn't added just to
+manufacture coverage for a file with no logic in it.
+
+**`src/types/index.ts`** — `QaCategory`/`QaAskRequest` added per §3.1.
+**`CoachQaExchange` deliberately deferred to Phase 3** — its
+`contextSnapshot: QaContext` field can't be typed until `qaContext.ts`
+exists, and this file already has direct precedent for exactly this
+dependency order (`CoachSessionAnalysis`/`AnalysisInput` and
+`CoachWeekAnalysisContent`/`WeekAnalysisInput`, both imported from their
+own feature files rather than duplicated here) — confirmed by reading
+this file's own import block, not assumed.
+
+### Verification
+
+Three gates, all clean: `npx vitest run` on the two new suites (30/30),
+then the **full** suite (32 files, 400/400 — nothing else regressed);
+`npx tsc -b` (both `tsconfig.app.json` and `tsconfig.api.json`, zero
+output, zero errors); `npm run build` (Vite production build, succeeded —
+the one warning is the pre-existing `vendor-charts` chunk-size notice,
+unrelated to this change). No browser verification — Phase 2 is pure
+logic with no UI surface to render, nothing this session touched is
+observable in a preview.
+
+### Status
+
+**Phase 2 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+Phase 3 code touched.** All four deliverables built, typecheck/build/
+Vitest all clean, nothing else in the app affected. **Not committed this
+session** — no commit instruction was given for the Phase 2 code itself
+(unlike Phase 1, where committing the migration was explicit), so it's
+left in the working tree along with this CONTEXT.md update, following
+this project's standing "commit only when asked" rule. Awaiting explicit
+approval before Phase 3 (`qaContext.ts` and the zero-spend dry run against
+real production data).
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -18564,10 +18750,11 @@ feature this repo could build on its own.
 
 - **Near-term:** in-session Q&A with a real interactive sidebar — spec and
   technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
-  of §12's open questions resolved, **Phase 0 (diagnostic) and Phase 1
-  (migration 023, applied and verified) both done as of 2026-09-01 —
-  Phase 2 onward not started, awaiting approval**; wiring form/energy/
-  pump/Memory into Weekly Analysis; exercise library rework.
+  of §12's open questions resolved, **Phase 0 (diagnostic), Phase 1
+  (migration 023, applied and verified) and Phase 2 (types + pure modules,
+  typecheck/build/Vitest all clean) done as of 2026-09-01 — Phase 3 onward
+  not started, awaiting approval**; wiring form/energy/pump/Memory into
+  Weekly Analysis; exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets

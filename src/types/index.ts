@@ -606,3 +606,35 @@ export interface CoachCurationRun {
   noteCount: number
   createdAt: string
 }
+
+// ─── Q&A Sidebar (QA-SIDEBAR-SPEC.md / QA-SIDEBAR-TASKS.md) ────────────────
+// Only §3.1's request/category types live here. QaContext and its four
+// per-category payloads (InSessionContext/GeneralContext/PlanningContext/
+// AppMechanicsContext) live in qaContext.ts instead (TASKS §3 — "the
+// payload types... live next to their assembler"), the same reason
+// AnalysisInput/WeekAnalysisInput live in their own feature files and are
+// only imported into this one, above. CoachQaExchange itself — the response
+// row shape, with a `contextSnapshot: QaContext` field — is added once
+// qaContext.ts exists (TASKS §9 Phase 3): it cannot be typed before then,
+// the same dependency order CoachSessionAnalysis/AnalysisInput already
+// established in this file.
+
+// SPEC §3's four question categories. Decided by which control in the app
+// started the conversation, never inferred by the model (TASKS §7) —
+// invariant for every turn of one conversation (TASKS §7.1).
+export type QaCategory = 'in_session' | 'general' | 'planning' | 'app_mechanics'
+
+// What the client POSTs to api/coach/ask.ts. Note what is deliberately NOT
+// here: no history, no context, no model, no turn index — the server
+// derives every one of those (TASKS §5.3, §6.2), so the client can neither
+// inflate its own spend nor forge its own log.
+export interface QaAskRequest {
+  id: string                 // caller-minted uuid, the exchange row's own id (TASKS §5.5)
+  conversationId: string     // caller-minted uuid, stable for the whole conversation
+  category: QaCategory       // from the call site (TASKS §7), never model-inferred
+  question: string
+  sessionId: string | null   // non-null exactly when category === 'in_session'
+  // The exercise card the question was asked from, when the UI knows it —
+  // deterministic-from-UI, same principle as category (TASKS §4.1).
+  currentExerciseId: string | null
+}
