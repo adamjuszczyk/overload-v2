@@ -1395,6 +1395,35 @@ cleaned up and every touched count re-verified back at baseline.
   "2026-08-29 session (Exercise Library rework — §8 step 1)" below.
   **Still nothing built, no migration file exists on disk** — step 1 is a
   diagnostic, not implementation, and steps 2–10 haven't started
+- QA-SIDEBAR-SPEC.md — **new, 2026-09-01 (written by Adam, not this
+  session).** Product source of truth for the AI Q&A Sidebar: a
+  conversational, **advisory-only** surface in the same in-workout sheet
+  Notes already lives in, with three question categories (in-session,
+  general, planning) plus a fourth being tried (app mechanics). Every
+  exchange logged permanently with its context snapshot and grouped by a
+  conversation id; model split by category (Haiku for in-session/general/
+  app-mechanics, Sonnet for planning); category decided by the originating
+  screen, never inferred by the model. Its own §1–§7 numbering, independent
+  of all five prior specs. Four things are ruled out rather than deferred:
+  any write access, any Northstar data (a **standing rule for all of
+  Overload**, not just this feature), a dedicated review UI, and a
+  tone/settings toggle. §6 leaves exactly one thing open for technical
+  planning: the multi-turn history cap strategy
+- QA-SIDEBAR-TASKS.md — **new, 2026-09-01.** Technical plan for the above:
+  migration 023 (`v2_coach_qa_exchanges`, one permanent row per exchange),
+  `api/coach/ask.ts` as a third serverless function reusing
+  `coachApiAuth.ts` unchanged, per-category context assembly (§4 — what is
+  reused verbatim vs. what genuinely has to be new), the frontend
+  component/state split, a concrete answer to the spec's open multi-turn
+  cost question (§6), how category is determined deterministically from the
+  call site (§7), a nine-phase approval-gated implementation order (§9),
+  seventeen assumptions the spec doesn't cover (§10), and five open
+  questions (§12). **Written this session, awaiting review — nothing in it
+  is built, no migration file exists on disk.** Two decisions in it diverge
+  deliberately from house convention and are flagged for review rather than
+  taken quietly: `select`+`insert`-only RLS instead of the standing
+  `for all` (§2.4), and `on delete set null` on `session_id` instead of
+  `v2_coach_session_analyses`' cascade (§2.3)
 - src/lib/supabase.ts — Supabase client (strips non-ASCII from env vars)
 - src/lib/db.ts — Dexie schema
 - src/features/gym/setGroupLogic.ts — **new, Phase 3.1.** Pure grouping
@@ -2797,6 +2826,23 @@ pattern as every prior phase.
 ## Known issues
 See AUDIT.md deferred section for full list.
 Most impactful deferred items:
+- **New, found 2026-09-01 while planning the Q&A sidebar — flagged, not
+  fixed.** Neither `api/coach/analyze.ts` nor `api/coach/analyze-week.ts`
+  checks `response.stop_reason` before parsing and saving. A `max_tokens`
+  truncation (both call with `max_tokens: 4000`) would be JSON-parsed —
+  or fail to parse and surface as the misleading "Model output was not
+  valid JSON" 502 — and, if it did parse, inserted and displayed as a
+  complete analysis with nothing recording that it was cut off. A
+  `stop_reason: 'refusal'` would behave the same way. Both tables are
+  permanent with no update path (SPEC §9 / weekly SPEC §4), so any fix is
+  **prospective only** — it cannot repair a row already stored this way.
+  Not touched during the planning session that found it: out of scope for
+  a planning document, and it changes a live money-spending path that
+  deserves its own verification. No evidence any real row is affected —
+  eleven daily and two weekly analyses exist and none look truncated —
+  but that has not been checked systematically, which would be the first
+  step of closing this. `api/coach/ask.ts` is designed to check it from
+  the start (QA-SIDEBAR-TASKS.md §5.7, §10 A13).
 - A2 / H2: ExerciseCard now matches sets to planned/extra slots by 
   weekPlanSetId identity instead of array position (2026-07-09), 
   which fixes the ADD SET infinite-loop symptom and the specific 
@@ -17908,6 +17954,264 @@ reverted, in a normal follow-up commit, not erased from history.
 
 ---
 
+## 2026-09-01 session (AI Q&A Sidebar — technical planning only, no code)
+
+Read CONTEXT.md first, as instructed, then QA-SIDEBAR-SPEC.md (new this
+day, written by Adam — the product source of truth for this feature).
+**No implementation code was written. Nothing is built. No migration file
+exists on disk.** The single deliverable is QA-SIDEBAR-TASKS.md, awaiting
+Adam's review before Phase 1 starts.
+
+Working tree at session start: clean except for the untracked
+QA-SIDEBAR-SPEC.md and `supabase/.temp/`. Last commit `7b6e12c`.
+
+### What was read directly, not recalled
+
+Every claim in QA-SIDEBAR-TASKS.md §0's reuse table was verified by
+reading the file this session: `coachApiAuth.ts`, `api/coach/analyze.ts`,
+`api/coach/analyze-week.ts`, `analysisInput.ts`, `weekAnalysisInput.ts`,
+`weekResolution.ts`, `coachPrompt.ts`, `curationRunner.ts`,
+`coachService.ts`, `coachNotesService.ts`, `coachMemoryService.ts`,
+`useCoachNotes.ts`, `useCoachMemory.ts`, `useCoachAnalysis.ts`,
+`WorkoutNotesSheet.tsx`, `GymSession.tsx`, `CoachPage.tsx`,
+`progressService.ts`, `ratingScales.ts`, `queryClient.ts`, `db.ts`,
+`restTimerStore.ts`, `vercel.json`, migration 017, and CONTEXT.md's own
+architectural-rules, database-tables and key-files sections. Line numbers
+in that document are from this session's reads.
+
+### Three findings that shaped the plan, each checked rather than assumed
+
+1. **`assembleAnalysisInput` works on an *in-progress* session** — which
+   is what makes the in-session category near-total reuse rather than a
+   rewrite. The subject session is fetched by id with no status filter
+   (`analysisInput.ts:414`); only the *reference-candidate* query filters
+   `status = 'completed'` (`:458`), which is correct behaviour anyway.
+   Flagged in the plan as a code-reading claim that Phase 0 tests against
+   real data before anything is built on it.
+
+2. **The browser-singleton constraint rules out more reuse than it looks
+   like.** Checked by grepping imports: `progressService.ts`,
+   `historyService.ts`, `sessionService.ts`, `coachContextService.ts`,
+   `coachMemoryService.ts`, `coachNotesService.ts`, `coachService.ts` and
+   `coachWeekService.ts` all import `src/lib/supabase.ts` and therefore
+   **cannot be called from a Vercel function at all**, however right their
+   shape looks. `fetchMesoWeeklyProgress` is exactly the per-week rollup
+   the general/planning categories want and is one of the casualties — the
+   plan re-implements it against an injected client while reusing the same
+   pure helpers (`averageRating`, the three scales, `headsOnly`), so the
+   arithmetic stays one implementation. The reusable set is the four
+   injected-client modules: `analysisInput.ts`, `weekAnalysisInput.ts`,
+   `weekResolution.ts`, `curationRunner.ts`.
+
+3. **Two payload gaps the daily analysis never needed.** `AnalysisInput`
+   derives its exercise list from set logs that already exist, so
+   mid-workout an exercise with no logged set yet is invisible to the
+   payload — "technique cues for this?" has nothing to attach to. And the
+   payload carries no `v2_week_plan_sets` data at all (it is retrospective
+   by design), so "should I add a set?" cannot see what was planned. Both
+   are new work in the plan: a `currentExerciseId` passed from the UI (the
+   same "don't make the model derive what the app already knows" principle
+   as `dayOfWeek` and `repsDelta`), and a new injected-client planned-sets
+   fetch.
+
+### What the plan closes that the spec left open
+
+- **§6's multi-turn cost strategy** (the spec's one explicitly-open
+  technical question). Two levers: a rolling 4-turn history window, and
+  context bounded at assembly rather than trimmed after the fact, placed in
+  `system` so it can never fall out of that window. The property that
+  produces — **input size per turn is roughly flat, not growing with
+  conversation length** — is the actual point. Enforced server-side from
+  the permanent log, so the client sends no history at all and the cap is
+  unforgeable; `history_turns_sent` is stored per row so the cap's real
+  behaviour is a query later, not a guess.
+- **§3's category determination.** Category is fixed per *conversation*,
+  not per turn, and comes from which control started it — one in-workout
+  entry point plus three distinct controls on a new Coach → ASK tab.
+  Screen alone can distinguish in-session from not, but cannot separate
+  general/planning/app-mechanics, which is why it is three controls rather
+  than one input with a dropdown. Validated server-side (session ownership,
+  the `sessionId`-presence rule per category, and invariance against the
+  conversation's newest row), never believed from the client.
+
+### Model facts checked against current API documentation, not memory
+
+Haiku 4.5 `$1.00`/`$5.00` per MTok in/out; Sonnet 5 `$2.00`/`$10.00`.
+Three Sonnet-5-specific facts that the plan depends on and that this
+project has never exercised (every existing Anthropic call site is Haiku):
+adaptive thinking is on by default and its tokens bill as **output**;
+sampling parameters (`temperature`/`top_p`/`top_k`) and assistant prefill
+are **rejected with a 400**; `output_config` carries both `effort` and the
+structured-output `format`. Consequences written into the plan: `effort:
+'medium'` and `max_tokens: 8000` on the planning path (a low ceiling would
+truncate the answer rather than the thinking), and a Phase 4 step that
+measures one real Sonnet call against the 60s `maxDuration` cap **before
+any UI exists** — daily measured 14.2s and weekly 21.3s, but both are
+Haiku and neither says anything about this.
+
+Estimated cost at realistic usage: **under $2.50/month** (roughly $0.008
+per in-session turn, $0.041 per planning turn). Every token figure in that
+estimate is labelled as an estimate in the document itself and is replaced
+by real measurements at Phase 4.
+
+### A real pre-existing gap found while writing this, flagged not fixed
+
+**Neither `api/coach/analyze.ts` nor `api/coach/analyze-week.ts` checks
+`response.stop_reason`.** A `max_tokens` truncation would be parsed,
+inserted and displayed as a complete analysis, with no way to tell after
+the fact — and both tables are permanent with no update path, so any fix
+is prospective-only regardless. Not touched this session (out of scope for
+a planning document, and it changes a live money-spending path). Recorded
+in QA-SIDEBAR-TASKS.md §10 A13 and in "Known issues" below. The new
+endpoint's own design does check it, and treats a truncated or refused
+generation as a `502` that is never saved.
+
+### Two deliberate divergences from house convention, flagged for review
+
+Both are called out in the plan rather than taken quietly, because both
+break patterns every other `v2_` table follows:
+
+1. **RLS is `select` + `insert` only, not the standing `for all`**
+   (§2.4) — which makes the spec's "permanent, not deletable" a property
+   of the database rather than of the current call sites. Precedent for
+   diverging exists (`v2_exercise_libraries`, migration 019, ships
+   `select`-only with no write policy). The alternative — strict
+   convention, permanence by convention as `v2_coach_session_analyses`
+   has it — is offered as the open question.
+2. **`session_id` is `on delete set null`, not cascade** (§2.3) —
+   following `v2_coach_notes`' rule rather than
+   `v2_coach_session_analyses`'. An exchange's value is the reasoning, and
+   its context snapshot already froze everything the answer depended on.
+
+### Status
+
+QA-SIDEBAR-TASKS.md written (1,316 lines, 14 sections), **not built,
+awaiting Adam's review.** §12's five open questions need answering before
+Phase 3; the largest is whether the spec §4 memory-proposal path ships in
+v1 (the plan recommends v1.1, answers only in v1, with a non-breaking slot
+left in the output schema) — that one changes phase scope and, if approved
+for v1, adds an `alter ... check` on `v2_coach_memory_entries.source` to
+migration 023. **Committed the next session** (`e8403ae`) — see below.
+
+---
+
+## 2026-09-01 session (continued — §12 resolved, Phase 0 diagnostic)
+
+Read CONTEXT.md first, then QA-SIDEBAR-SPEC.md and QA-SIDEBAR-TASKS.md in
+full, as instructed. Two of §12's five open questions arrived pre-resolved
+this session: memory proposals deferred to v1.1 (A2 — v1 answers only, no
+`v2_coach_memory_entries.source` CHECK change, no confirm affordance) and
+RLS is structural (A4 — select+insert only, no update/delete policy). Both
+match the plan's own recommendations exactly, so **no revision to
+QA-SIDEBAR-TASKS.md was needed.**
+
+### §10/§12 review
+
+Checked both named resolutions against the document's actual text (not
+recalled): A2 and A4 read identically to how the plan already states them
+— §2.4/§2.5's DDL was already written with the structural-RLS shape, and
+§5.6's one-field output schema was already framed as leaving a
+non-breaking slot for a later memory-proposal field rather than assuming
+one. Nothing in either section reads differently now.
+
+**One thing flagged rather than silently assumed:** the instruction named
+only two of §12's five questions as resolved. The other three (§12.3 —
+does `app_mechanics` ship in v1; §12.4 — one shared `QaPanel` vs. two;
+§12.5 — is `HISTORY_TURN_CAP = 4` right) remain formally open, but each
+already has a stated recommendation that the plan's body text is written
+against as its working default (app-mechanics is built into §4.4/§9 Phase
+2 as if approved; §8.2 already specifies one shared `QaPanel`; §6.1
+already sets the constant to 4). So nothing is blocked by their remaining
+open — Phase 1–5 don't depend on any of the three the way Phase 3 depends
+on A2/A4 — but they are not the same thing as "resolved," and are called
+out here so a future session doesn't read this entry as having closed all
+five.
+
+### Read-only diagnostic against production, scoped to Adam's own
+`user_id` (`12e79b69-9891-4f53-a7cf-650edd83659f`) throughout
+
+Used the established browser dry-run technique (dynamic `import()` of the
+real compiled modules from the running Vite dev server, reusing the app's
+own authenticated `supabase` singleton — no credential ever extracted or
+printed). Dev server started fresh this session
+(`.claude/launch.json`'s `Overload v2 dev`), already logged in as Adam.
+**Every query below was a plain `.select`; nothing was written.**
+
+**1. `assembleAnalysisInput` against a real session.** No session was
+`in_progress` at diagnostic time (checked directly — zero rows), so used
+the most recent completed session per the task's own stated fallback:
+`0584454d-...` (2026-09-01, "PULL 1"). Called the real, unmodified
+function via dynamic import — **well-formed, no error**: 5 exercises, each
+with a real `match` (three plain-only, `slotCountB` 2–3), phase resolved
+(`cut`, day 106, no previous phase), a 2-entry weight trend, 4 active
+memory entries, 0 session notes for this specific session, and the
+`Cable Reverse Biceps Curl` occurrence — the same exercise the original
+Daily Analysis diagnosis (2026-08-18) found zero-matching — correctly
+carrying a real `secondaryReference` this time rather than a bare
+`slotCountA: 0`.
+
+**Confirmed by code, not re-exercised live, and stated precisely rather
+than overclaimed:** the specific claim TASKS.md §0/§4.1 leans on — that
+the subject-session fetch in `assembleSessionFacts`
+(`analysisInput.ts:414`) applies no `status` filter, so it would work
+identically against a genuinely `in_progress` session — was verified by
+reading the query code this session, matching last session's read. It was
+**not** empirically exercised against an actual in-progress row, because
+none existed to test against. This is the one piece of §0/§4.1 still
+resting on code reading alone; Phase 6's live verification (starting a
+real in-workout conversation) is what finally exercises it for real.
+
+**2. `v2_week_plan_sets`' real shape for a live session's plan
+(`65e5196e-...`, this same session's week plan).** Selecting `*` gave the
+real column list — **and it differs from what a plausible guess would
+assume**: `id, week_plan_id, user_id, program_exercise_id, set_number,
+target_rir, is_dropset, parent_week_plan_set_id, stage_index, is_warmup`.
+Two things worth recording:
+- **No rep-range target column exists at all** (no `target_reps_min`/
+  `target_reps_max` or similar) — a planned set carries a target RIR and a
+  dropset/warmup shape, never a target rep count. TASKS.md §4.1's
+  `PlannedSetSummary` was never specified down to exact fields, so nothing
+  in the written plan claims a rep target exists — but this is the kind
+  of assumption that would have been silently wrong if guessed at
+  implementation time instead of checked now. §4.1's planned-sets fetch
+  should carry `target_rir` (and the dropset/stage/warmup flags, needed to
+  apply `groupWeekPlanSets` correctly) and nothing about planned reps.
+- **There is no `exercise_id` column on this table at all** — exercise
+  identity only reaches it through `program_exercise_id` →
+  `v2_program_exercises.exercise_id` → `exercises.name`, a two-hop join
+  (confirmed live: a direct `exercises` embed on `v2_week_plan_sets`
+  fails with PostgREST's `PGRST200`, "no relationship found" — exactly
+  the error surfaced when this was tried the naive way first). §4.1's new
+  fetch needs that same two-hop join `weekPlanService.ts` already uses,
+  not a direct one.
+
+13 plan-set rows for this session's 5 exercises — consistent with §4.1's
+"bounded in practice by one session's exercise count" sizing note.
+
+**3. Current counts, for the §4 bound estimates:**
+
+| Signal | Count | Relevant to |
+|---|---|---|
+| Active Coach Memory entries | 4 | Every category's `memory` field |
+| Coach Notes, all-time | 10 | §4.3's `recentNotes` |
+| Sessions in the last 14 days | 11 | §4.3's recent-load window — confirms the window is non-degenerate at real usage volume |
+| Active mesocycle | `MESO 1.0`, started 2026-07-05, 10 distinct week numbers so far, 50 week-plan rows, **0 deload weeks flagged yet** | §4.2's 8-week rollup bound — confirms the meso is already long enough (10 weeks) that an 8-week cap is a real bound, not a vacuous one |
+
+The zero-deload-weeks fact is descriptive only (recorded because it was
+read, not because it's a problem) — nothing in the Q&A plan depends on a
+deload existing in this meso's history.
+
+### Status
+
+**Phase 0 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+migration written, no other code touched.** Nothing in Phase 0 surfaced a
+reason to revise the plan; the one real correction (the planned-set
+column shape, above) narrows an unspecified detail rather than
+contradicting anything written. Awaiting explicit approval before Phase 1
+(migration 023).
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -18052,8 +18356,11 @@ feature this repo could build on its own.
 
 ## Current priority tiers (as set by Adam, 2026-08-28)
 
-- **Near-term:** in-session Q&A with a real interactive sidebar; wiring
-  form/energy/pump/Memory into Weekly Analysis; exercise library rework.
+- **Near-term:** in-session Q&A with a real interactive sidebar — **now
+  has a spec (QA-SIDEBAR-SPEC.md) and a technical plan
+  (QA-SIDEBAR-TASKS.md) as of 2026-09-01; the plan is awaiting review and
+  nothing is built**; wiring form/energy/pump/Memory into Weekly Analysis;
+  exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets
