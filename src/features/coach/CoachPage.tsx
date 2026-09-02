@@ -3,19 +3,21 @@ import { useAuth } from '../auth/useAuth'
 import { isCoachUser } from './coachGate'
 import CoachLocked from './CoachLocked'
 import CoachAnalysisTab from './CoachAnalysisTab'
+import CoachAskTab from './CoachAskTab'
 import PhaseLog from './PhaseLog'
 import WeightLog from './WeightLog'
 import CoachMemory from './CoachMemory'
 
-// Two-tab shell (COACH-ANALYSIS-TASKS.md §4 step B) — same pattern
+// Tab shell (COACH-ANALYSIS-TASKS.md §4 step B) — same pattern
 // HistoryPage.tsx uses: page header + tab bar live in the shell, each tab
-// owns its own content below it. Both tabs are now live (Context: step C,
-// Analysis: step F).
+// owns its own content below it. ANALYSIS | ASK | CONTEXT (ASK added by
+// QA-SIDEBAR-TASKS.md §8.1 Phase 7 — the not-in-session entry point).
 
-type Tab = 'analysis' | 'context'
+type Tab = 'analysis' | 'ask' | 'context'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'analysis', label: 'ANALYSIS' },
+  { id: 'ask', label: 'ASK' },
   { id: 'context', label: 'CONTEXT' },
 ]
 
@@ -67,6 +69,8 @@ export default function CoachPage() {
       {/* Tab content */}
       {activeTab === 'analysis' ? (
         <CoachAnalysisTab />
+      ) : activeTab === 'ask' ? (
+        <CoachAskTab />
       ) : (
         <>
           <PhaseLog />

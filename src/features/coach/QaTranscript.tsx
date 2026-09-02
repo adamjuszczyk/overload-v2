@@ -1,5 +1,6 @@
 import { format, parseISO } from 'date-fns'
 import type { QaTranscriptItem } from './useCoachQa'
+import type { QaCategory } from '../../types'
 
 // Renders the exchange list (QA-SIDEBAR-TASKS.md §8.2) — presentational,
 // takes an array and renders it. Plain text throughout, no markdown
@@ -10,11 +11,28 @@ function fmt(iso: string): string {
   return format(parseISO(iso), 'h:mm a')
 }
 
-export default function QaTranscript({ exchanges }: { exchanges: QaTranscriptItem[] }) {
+// The empty-state hint is the one piece of copy that reads wrong across all
+// four categories unchanged — "what you're doing right now" only makes sense
+// mid-workout (Phase 6). Phase 7 adds the other three call sites (§7.2), so
+// this is keyed by category rather than left generic or hardcoded to one.
+const EMPTY_HINT: Record<QaCategory, string> = {
+  in_session: "Ask about what you're doing right now — technique, whether to add a set, anything about this session.",
+  general: 'Ask about your training — technique, programming, anything not tied to today’s session.',
+  planning: 'Ask about how to think about your plan — recovery, whether to skip a session, the week ahead.',
+  app_mechanics: 'Ask how something in the app works — RIR, supersets, deload weeks, anything about the mechanics.',
+}
+
+export default function QaTranscript({
+  exchanges,
+  category,
+}: {
+  exchanges: QaTranscriptItem[]
+  category: QaCategory
+}) {
   if (exchanges.length === 0) {
     return (
       <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-        Ask about what you're doing right now — technique, whether to add a set, anything about this session.
+        {EMPTY_HINT[category]}
       </p>
     )
   }
