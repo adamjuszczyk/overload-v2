@@ -1555,12 +1555,19 @@ reaches PostgREST's schema cache regardless).
   so it doesn't sit unused. **Confirmed actually acted on, not just
   flagged: `qaContext.ts`'s `fetchPlannedSetSummaries` (Phase 3, below) is
   built against the real column list, not the original TASKS.md prose.**
-  **Phases 2–4 are all done as of 2026-09-01**: types + pure modules;
-  `qaContext.ts`'s four assemblers, run against real production data with
-  zero Anthropic spend; one real Haiku call and two real Sonnet 5 calls
-  measuring latency/cost for real (§6.4 rewritten with the real figures,
-  replacing every estimate) — see those sessions below. **Only Phase 5
-  onward remains unbuilt**
+  **The whole feature is built, deployed and live as of 2026-09-02 —
+  Phases 0 through 8 are done.** Types + pure modules; `qaContext.ts`'s
+  four assemblers, run against real production data with zero Anthropic
+  spend; real latency/cost measured per model (§6.4 rewritten with real
+  figures, replacing every estimate); `coachQaPrompt.ts` +
+  `api/coach/ask.ts`; both frontend entry points (the in-workout sheet's
+  ASK tab and Coach → ASK); and Phase 8's full verification, whole-feature
+  adversarial review, production deploy and live verification against the
+  real deployed endpoint. **One item is deliberately carried past the
+  feature's completion**: Phase 6's in-session conversation checked
+  through the workout sheet's own UI, which needs a real in-progress
+  session and could not be done on a rest day — see the 2026-09-02 entry
+  below for exactly what remains and what was verified in its place
 - src/features/coach/qaCategory.ts — **new, Phase 2 (2026-09-01).** Pure:
   `resolveQaRoute(category)` plus the `QA_ROUTES` table it reads from
   (TASKS §1.2/§5.4) — model, `assembler` (a string key naming the
@@ -1571,7 +1578,14 @@ reaches PostgREST's schema cache regardless).
   with a real 400, so it's `undefined` everywhere else, matching every
   existing Haiku call site in this repo). Real Vitest coverage
   (qaCategory.test.ts, 9 tests), same precedent as setGroupLogic.ts/
-  referenceLogic.ts/e1rm.ts/weekBuckets.ts
+  referenceLogic.ts/e1rm.ts/weekBuckets.ts. **`QA_ROUTES` frozen, Phase 5
+  (2026-09-01)** — both the outer table and each route object — found by
+  Phase 5's own adversarial review: this table decides which model and
+  cost tier a request bills against, the same class of thing this
+  codebase prefers to guarantee structurally rather than by discipline
+  alone. Nothing in the codebase mutated it before this; the review found
+  the gap while writing a throwaway test that needed to mutate it, which
+  only worked because nothing stopped it
 - src/features/coach/qaHistory.ts — **new, Phase 2.** Pure: the four jobs
   TASKS §6.2's one history query does, each its own function —
   `newestRow`/`nextTurnIndex` (turn_index is contiguous from 0 by
@@ -1636,6 +1650,54 @@ reaches PostgREST's schema cache regardless).
   only). **All four assemblers run against real production data in the
   browser, zero Anthropic spend** — see this session's entry below for the
   actual payloads
+- src/features/coach/coachQaPrompt.ts — **new, Phase 5 (2026-09-01).** One
+  file, one `QA_PROMPT_VERSION`, a shared preamble plus four per-category
+  sections (TASKS §5.6) — not four separate prompt files, the same
+  single-sourcing reason `coachApiAuth.ts` was extracted. The shared
+  preamble ports, unchanged in intent, six guards pulled directly from
+  `coachPrompt.ts`'s live `PROMPT_VERSION 6` text this session (not
+  paraphrased from memory): the Voice persona section, the equipment
+  guard, the memory/notes joint-citation guard, the flat-word-vs-nonzero
+  guard, the don't-repeat-yourself guard, and the `repsDelta`/`weightDelta`
+  direct-read guard — plus a new "reading a rating average" section (the
+  ordinal `{mean, scaleMax, count}` shape general/planning both carry,
+  with each scale's low-to-high order spelled out, since nothing else in
+  this payload tells the model what a mean of 2.9/4 actually means) and
+  three guards specific to this surface: advisory-only phrasing, answer-
+  the-question-asked, and say-when-the-context-lacks-the-answer. Each
+  per-category section describes that category's real `qaContext.ts`
+  payload shape field-by-field, including `in_session`'s explicit
+  plan-vs-done distinction (`plannedSets` is what was planned,
+  `analysis.exercises[].match` is what was done) and the in-progress-
+  session reminder that an unlogged exercise was not skipped. **Real
+  evidence the guards work, not just that they're present**: the live
+  verification run's real `in_session` answers correctly read
+  `repsDelta`/`weightDelta` independently for two different exercises in
+  the same conversation ("You got an extra rep... matched the weight" for
+  a weight-down/reps-up case; "jumped weight by 5kg... lost reps... down
+  3, down 1, down 3" for a weight-up/reps-down case) — see this session's
+  entry below
+- api/coach/ask.ts — **new, Phase 5 (2026-09-01).** `POST /api/coach/ask`,
+  reusing `coachApiAuth.ts` unchanged. Six ordered validation steps before
+  any spend (TASKS §5.3); the history/turn-ceiling/invariance read (one
+  query serving all three checks, TASKS §6.2/§5.5/§7.1) before context
+  assembly; context assembly (TASKS §4) before the model call; **`stop_reason`
+  checked before anything is parsed or saved** — this endpoint's own bar,
+  explicitly not inherited from the pre-existing gap flagged in
+  `analyze.ts`/`analyze-week.ts` (CONTEXT.md's Known Issues, TASKS §10
+  A13) — a `max_tokens` or `refusal` stop returns a `502` with nothing
+  written. Idempotency is layered, not a unique-row constraint (TASKS
+  §5.5): a caller-id collision on the `_pkey` returns the existing row; a
+  `turn_index` collision on the `_turn_uk` (two concurrent sends racing
+  for the same turn) returns the generated answer in the error body rather
+  than discarding it, matching daily §5.12's accepted-risk treatment — the
+  API key check runs before context assembly, not after (a deliberate,
+  beneficial reordering versus `analyze.ts`'s own sequence: a missing key
+  fails on a free `process.env` read instead of after a real database
+  round-trip). See this session's entry below for the full verification
+  and adversarial-review account, including two failure-table rows
+  (`max_tokens` truncation and the `turn_uk` race) proven with genuine
+  forced/concurrent real calls, not just read off the code
 - src/types/index.ts — **extended, Phase 2 and 3.** `QaCategory`/
   `QaAskRequest` added Phase 2. `CoachQaExchange` added Phase 3, now that
   `qaContext.ts` exists to type its `contextSnapshot: QaContext` field
@@ -18929,6 +18991,587 @@ this feature is no longer purely additive).
 
 ---
 
+## 2026-09-01 session (Phase 5 — coachQaPrompt.ts + api/coach/ask.ts,
+verified end to end with real calls, adversarially reviewed)
+
+Read CONTEXT.md first, as instructed.
+
+### A process mistake, caught and corrected, not silently absorbed
+
+Instructed to commit Phase 4's pending docs (§6.4's real figures) before
+starting Phase 5. **Went straight into building instead — the commit
+didn't happen until after both new files, the verification, and the
+adversarial review were already done.** Checked before writing this
+entry (`git log` showed no Phase 4 commit between Phase 3's and now) and
+fixed properly rather than folded silently into a bigger commit: diffed
+exactly what had changed in `CONTEXT.md`/`QA-SIDEBAR-TASKS.md` since
+Phase 3 (confirmed it was *only* Phase 4's pending content — nothing from
+this session's own work had touched either file yet, so nothing needed
+disentangling) and committed it on its own (`05ef78a`), before this
+session's own commit. Recorded here so the ordering mistake is visible,
+not just quietly fixed.
+
+### `coachQaPrompt.ts` built (TASKS §5.6)
+
+One file, one `QA_PROMPT_VERSION`, a shared preamble plus four per-category
+sections. The shared preamble's six ported guards were pulled from
+`coachPrompt.ts`'s live `PROMPT_VERSION 6` text this session (re-read in
+full, not recalled) — Voice, equipment, the memory/notes joint-citation
+guard, the flat-word-vs-nonzero guard, don't-repeat-yourself, and the
+`repsDelta`/`weightDelta` direct-read guard. Added a new "reading a rating
+average" section (the ordinal `{mean, scaleMax, count}` shape general/
+planning both carry has no self-explanatory meaning without the three
+scales' low-to-high order spelled out) and three guards specific to this
+surface: advisory-only phrasing, answer-the-question-asked, and
+say-when-the-context-lacks-the-answer. Per-category sections describe
+each real `qaContext.ts` payload shape field-by-field, in the same
+register `coachPrompt.ts` uses for `AnalysisInput`.
+
+### `api/coach/ask.ts` built (TASKS §5.1–§5.7)
+
+Six ordered validation steps before any spend (§5.3); the history/turn-
+ceiling/invariance read — one query serving all three checks, exactly as
+`qaHistory.ts` was designed for — before context assembly; context
+assembly before the model call; **`stop_reason` checked before anything
+is parsed or saved**, per the higher bar this session was explicitly
+held to (§5.7) — a `max_tokens` or `refusal` stop returns a clean `502`
+with nothing written, not inherited from the pre-existing gap already
+flagged and deliberately left alone in `analyze.ts`/`analyze-week.ts`.
+Idempotency is layered per §5.5, not a unique-row constraint: a caller-id
+collision (`_pkey`) returns the existing row; a `turn_index` collision
+(`_turn_uk`, two concurrent sends racing for the same turn) returns the
+generated answer in the error body rather than discarding it. One
+deliberate reordering versus `analyze.ts`'s own sequence, noted rather
+than silently diverged from: the `ANTHROPIC_API_KEY` check runs *before*
+context assembly here, not after — a free `process.env` read fails faster
+than doing a real database round-trip first.
+
+### Row-count baselines captured before the first real call
+
+Per the standing rule from Phase 1's own gap (CONTEXT.md's architectural
+rules — "capture row-count baselines... before running it, every time"),
+generalised here from migrations to this endpoint's own real calls, per
+this session's explicit instruction. Every table the endpoint touches
+directly or transitively (via `qaContext.ts`'s already-Northstar-audited
+assemblers), scoped to Adam's `user_id`, captured **before** any real
+call:
+
+| Table | Baseline |
+|---|---|
+| `v2_coach_qa_exchanges` | 0 |
+| `v2_sessions` | 42 |
+| `v2_set_logs` | 513 |
+| `v2_week_plan_sets` | 630 |
+| `v2_mesocycles` | 1 |
+| `v2_week_plans` | 50 |
+| `v2_coach_phase_entries` | 1 |
+| `v2_coach_weight_entries` | 5 |
+| `v2_workout_days` | 5 |
+| `v2_coach_notes` | 10 |
+| `v2_coach_memory_entries` | 4 |
+| `exercises` (shared, not user-scoped) | 70 |
+
+### A real blocker, again: the browser session had reset
+
+Same failure mode as Phase 4 — a fresh `preview_start` opened a genuinely
+logged-out browser, confirmed via `AuthSessionMissingError` and an empty
+`localStorage`, not assumed. Asked Adam to sign in himself again; verified
+`hasUser: true` with the correct real `user.id` before proceeding, same
+discipline as last time.
+
+### Real verification: local direct invocation, no HTTP, no `vercel dev`,
+no deploy
+
+Same practice CONTEXT.md already established for `curate-memory.ts`'s
+own pre-deploy checks: the real, imported `handler` from `api/coach/
+ask.ts`, called directly with a mock `VercelRequest`/`VercelResponse`,
+using a fresh real access token extracted from the running dev server's
+own session (written straight to a scratch file, never printed again,
+deleted after each script run). Four no-spend rejection checks first,
+confirmed correct before any real generation: bad category (`400`),
+`in_session` with no `sessionId` (`400`), no auth header (`401 Missing
+bearer token`), garbage token (`401 Invalid or expired session`).
+
+**Five real calls, one throwaway script, real spend on all Haiku/Sonnet
+calls involved:**
+
+| Call | Result |
+|---|---|
+| `app_mechanics` turn 0 | `200`, real answer, `historyTurnsSent: 0` |
+| Same `id`, same conversation, resent (idempotency) | `200`, **identical row, identical `createdAt`** — no new generation |
+| `general` turn 0 | `200`, real answer correctly citing week 9 (57 sets) vs. week 10 (23, still in progress) |
+| Category-change mid-conversation on that same conversation | `409`, correct `field: "category", expected: "general", actual: "planning"` — no spend |
+| `in_session` turn 0 (real session, real exercise) | `200`, real answer |
+| `in_session` turn 1, same conversation, different exercise | `200`, `turnIndex: 1`, `historyTurnsSent: 1` |
+| `planning` turn 0 (Sonnet 5) | `200`, real answer |
+
+Database cross-check (real `supabase` client, not just the response
+bodies): **exactly 5 rows**, matching the 5 non-duplicate calls exactly —
+correct `conversation_id` grouping, correct `turn_index` sequencing,
+correct `history_turns_sent`, correct `model` per row. The duplicate-id
+call correctly created no 6th row.
+
+**A real, concrete confirmation the ported `repsDelta`/`weightDelta`
+guard actually works, not just that it's present in the prompt text**:
+the two real `in_session` answers reasoned about two different exercises
+with opposite delta directions and got both right — "You got an extra
+rep... matched the weight" for a rep-up/weight-down case (Neutral Lat
+Pulldown), and "jumped weight by 5kg... lost reps... down 3, down 1, down
+3" for a weight-up/reps-down case (Cable Row) — in the same conversation,
+back to back.
+
+**One real, investigated-not-assumed oddity**: the `planning` answer's
+text ends mid-sentence ("...still sitting unresolved. So "). Confirmed
+this is **not** a truncation bug, by the code's own control flow rather
+than by inspection alone: `outputTokens: 501` is nowhere near
+`max_tokens: 8000`, and a `200` with a fully-parsed `contextSnapshot` is
+only reachable if `JSON.parse` succeeded and `stop_reason` was neither
+`max_tokens` nor `refusal` — both of those paths return `502` before ever
+reaching the insert. The model genuinely chose to end there via a real
+`end_turn`. A real, if minor, prompt-quality data point for a future
+`QA_PROMPT_VERSION` revision once more real generations exist to
+calibrate against — the same "found via real usage, fixed in vN" pattern
+`coachPrompt.ts`/`coachWeekPrompt.ts` have both already followed. Not
+fixed this session — one sample isn't a pattern yet.
+
+### Adversarial review — the gate, checked one row at a time
+
+**Auth**: unchanged, reused `coachApiAuth.ts` — no new call site, no new
+logic. `userId` is used exclusively from the JWT-derived value, never
+from the request body, at every query. Confirmed live: no-auth-header and
+garbage-token cases both rejected correctly (above).
+
+**Decision-to-call**: traced every line between the handler's start and
+the real `anthropic.messages.create()` call — all six validation steps,
+the API-key check, the history/turn-ceiling/invariance read, and context
+assembly all structurally precede it, matching §5.7's "before any spend"
+claims exactly, not just by comment.
+
+**§5.7's full failure table, checked row by row against what the code
+actually does — 10 of 12 rows now empirically exercised, not just read:**
+
+| Row | Empirically confirmed this session? |
+|---|---|
+| Bad request shape/category/session ownership → 400/404 | ✅ live (bad category, missing sessionId) |
+| Turn ceiling → 409 | Code review only (`qaHistory.test.ts`'s own unit tests cover `hasReachedTurnLimit` in isolation; a live 20-turn conversation wasn't run) |
+| Category/session invariance → 409 | ✅ live |
+| Context assembly throws → 500 | Code review only (try/catch is structurally trivial; no fault was induced) |
+| Missing `ANTHROPIC_API_KEY` → 500 | Code review only (a static, one-line check) |
+| Anthropic call throws → 502, logged server-side only | Code review only (no network fault was induced) |
+| `stop_reason === 'max_tokens'` → 502, not saved | **✅ live, forced for real** — see below |
+| `stop_reason === 'refusal'` → 502 with category | Code review only (no real refusal-triggering question was sent) |
+| No text block / unparseable JSON → 502 | Code review only (structured output makes this practically unreachable under normal operation) |
+| `23505` on `id` → 200 with existing row | ✅ live (the duplicate-id call above) |
+| `23505` on `turn_uk` → 500, generated answer returned | **✅ live, forced for real via genuine concurrency** — see below |
+| Any other insert error → 500, generated answer returned | Code review only |
+
+**The two rows held to this session's explicit higher bar, both forced
+for real rather than left as code-reading confidence:**
+
+1. **`max_tokens` truncation.** `QA_ROUTES` (a plain, unfrozen exported
+   object) mutated in-process to set `app_mechanics.maxTokens = 5` — no
+   source file touched — guaranteeing a real truncation. Result: real
+   `stop_reason: 'max_tokens'`, a clean `502` ("cut off before it
+   finished generating — not saved"), and the row count confirmed still
+   `0` afterward. The branch works.
+2. **The `turn_uk` race.** Two genuinely concurrent calls (`Promise.all`)
+   into the real handler, same `conversationId`, different `id`s — both
+   read an empty history and computed `turnIndex: 0` before either
+   committed. Result: one real Postgres `23505` on
+   `v2_coach_qa_exchanges_turn_uk` (not `_pkey` — correctly distinguished
+   by the code's own substring check), a `500` with the generated answer
+   preserved in the body, and the winner's row confirmed alone in the
+   table (count `1`) before cleanup. The branch works, and the two-
+   constraint disambiguation genuinely discriminates the two real cases,
+   not just in theory.
+
+**One real hardening finding, fixed the same session**: mutating
+`QA_ROUTES` for the truncation test only worked because nothing stopped
+it — the table deciding which model and cost tier a request bills against
+was a plain, mutable object. Nothing in the current codebase mutates it,
+so this was not a live bug, but it's exactly the class of thing this
+project prefers to guarantee structurally rather than by discipline
+(the RLS permanence design, the zero-arg `app_mechanics` assembler — same
+principle). **Fixed**: `Object.freeze` on `QA_ROUTES` and each route
+object. Re-verified clean: `tsc -b`, 400/400 Vitest, production build.
+
+### Cleanup and final verification
+
+Every throwaway script (`_phase5_verify.ts`, `_phase5_verify_truncation.ts`,
+`_phase5_verify_race.ts`) deleted immediately after its run; the token
+scratch file deleted after each use, never left sitting between scripts.
+All 12 baselined table counts (above) re-checked identical after every
+round of real calls, including the two targeted adversarial tests — a
+final full re-check confirmed every single one still matches its original
+baseline exactly, `v2_coach_qa_exchanges` included.
+
+### Status
+
+**Phase 5 complete. Stopped at its gate, per TASKS.md §9's own rule — no
+Phase 6 (frontend) code touched.** Both files verified end to end against
+real Haiku and Sonnet 5 calls across all four categories, a real
+multi-turn conversation, and two deliberately forced failure-table rows —
+not just the happy path. One real hardening fix applied and re-verified.
+The process mistake (committing Phase 4 late) is recorded above rather
+than smoothed over. Awaiting explicit approval before Phase 6.
+
+---
+
+## 2026-09-01 session (Phase 6 — frontend, in-session: sheet split, ASK
+tab, live-verified except the one check moved to Phase 8 by Adam's own
+choice)
+
+Read CONTEXT.md first, as instructed. Committed Phase 5's code
+(`coachQaPrompt.ts`, `api/coach/ask.ts`) on its own (`5729925`), before
+touching Phase 6 — including `qaCategory.ts`'s `Object.freeze` diff, which
+wasn't one of the two files named but is genuinely Phase 5 work (the prior
+session's own adversarial-review hardening fix, not anything from this
+session); flagged rather than silently expanded or silently dropped.
+
+### Browser tooling confirmed live before starting, per the standing rule
+
+Not assumed from a prior session's success. Started the dev server preview,
+navigated for real, and read back real rendered content (today's actual
+in-progress session, week 10 PULL 1) before writing any Phase 6 code.
+
+### Phase 6 built, exactly as §8.2/§9 specify
+
+`gym/WorkoutSidebarSheet.tsx` (sheet chrome moved from `WorkoutNotesSheet.tsx`
+unchanged — backdrop, rounded-t-2xl, grab handle, maxHeight 70dvh — with the
+old static "SESSION NOTES" title replaced by a NOTES/ASK tab bar in
+`CoachPage.tsx`'s own tab-bar style) and `gym/NotesPanel.tsx` (Notes' content,
+zero logic change) — `WorkoutNotesSheet.tsx` deleted. `coach/QaPanel.tsx` /
+`QaTranscript.tsx` / `QaComposer.tsx`, `coach/qaService.ts` (conversation read
+plus the `POST /api/coach/ask` call, following `coachService.ts`'s
+`analyzeSession` shape exactly), `coach/useCoachQa.ts` (the conversation-cache
+query plus `useAskQuestion`, an optimistic pending-question entry via
+`onMutate` — §8.3's explicit "if one is wanted" — reconciled by the
+caller-minted id exactly the way `useCreateCoachNote` does), and
+`coach/qaSidebarStore.ts`. `GymSession.tsx`'s one header button relabelled
+NOTES → COACH (`showNotesSheet` renamed `showSidebarSheet` throughout); the
+one stale comment in `CoachMemory.tsx` naming the now-deleted file corrected
+in passing.
+
+**Two implementation-level decisions made here, not pinned down at this exact
+level in TASKS.md, both flagged rather than silently guessed:**
+
+1. **`currentExerciseId` is always `null` from this entry point.** The sheet
+   opens from one global header button, not from a specific `ExerciseCard` —
+   there is no per-exercise "ask about this" affordance in the approved
+   component list, and §4.1 already treats the field as optional ("when the
+   UI knows it"). Building a new per-exercise entry point wasn't part of
+   Phase 6's file list, so it wasn't added.
+2. **`qaSidebarStore` carries one field beyond §8.3's literal shape:
+   `conversationSessionId`.** Found by tracing the actual remount behaviour,
+   not by guessing: `TodayPage.tsx` renders `GymSession` with no `key` prop,
+   and `useScrollToCurrentSet.ts`'s own header already documents the same
+   instance persisting across a session finishing — confirmed by reading both
+   files this session, not assumed. A flat `conversationId` alone would
+   survive a session transition unchanged, carry a finished session's
+   conversation into a brand new one, and fail the server's own
+   `checkInvariance` (`qaHistory.ts`, Phase 2) on the very first question of
+   the new session — a real bug that would only show up days later on a
+   second workout, not in any test run inside one session. `QaPanel` resets
+   the conversation whenever this stops matching the `sessionId` prop it's
+   rendered with; an ordinary close/reopen of the *same* session leaves it
+   untouched. Not caught by typecheck or Vitest — there was nothing to
+   exercise it against inside one session — so it's recorded here as a
+   found-not-shipped defect, the same class as Phase 5's `QA_ROUTES` freeze.
+
+### Verification: typecheck/Vitest/build, then live in the browser
+
+`npx tsc -b` (both tsconfigs): clean. Full Vitest suite: 32 files, 400/400 —
+unchanged from Phase 3, since Phase 6 is UI wiring with no new pure logic to
+cover (matches Phase 2's own precedent for a phase with nothing new to unit
+test). `npm run build`: clean, same pre-existing `vendor-charts` notice every
+prior build has shown.
+
+**Live-verified for real, against the real in-progress session (today's PULL
+1, week 10), with screenshots:**
+
+- The COACH button, the NOTES/ASK tab bar, and the sheet chrome all render
+  correctly (confirmed both via DOM/accessibility-tree reads and via
+  screenshot).
+- **Notes, unaffected by the extraction.** Added a real note through the live
+  UI ("[Phase 6 verification] Testing NotesPanel after the WorkoutNotesSheet
+  split — safe to delete") — saved for real, appeared with a real timestamp,
+  same optimistic/cache behaviour as before the split. **Left in
+  `v2_coach_notes`, not cleaned up** — deleting it needs the Supabase
+  dashboard SQL editor, and this session's browser wasn't signed into it (a
+  fresh, unauthenticated dashboard tab, confirmed rather than assumed). Its
+  own body text says "safe to delete"; Adam can remove it directly, or a
+  future session can once signed in. Low-stakes either way, but worth
+  removing before a future Coach Memory curation run folds test copy into
+  real standing facts.
+- **The offline contrast, §8.4's actual point — confirmed live, not just
+  reasoned about.** Simulated a real disconnect (`navigator.onLine`
+  overridden, a real `offline` event dispatched — the same category of
+  technique CONTEXT.md's click-dispatch-workaround precedent already
+  establishes as legitimate: it fires the app's own real listener, not a
+  faked visual state). With the sheet open: ASK correctly swapped to
+  "REQUIRES A CONNECTION — Ask isn't available offline — reconnect to use
+  it," while switching to NOTES in the same sheet showed the real note list
+  and a fully working, unblocked composer — screenshotted in both states. A
+  real `online` event afterward confirmed the reverse.
+- **Draft persistence across close/reopen — confirmed, not just coded.**
+  Typed a real draft on the ASK tab, closed the sheet via the Close button,
+  reopened it: the sheet came back on the ASK tab (not NOTES) with the exact
+  draft text still in the composer — `qaSidebarStore`'s whole reason for
+  existing, working as intended, screenshotted.
+
+**Two real tooling issues hit and worked around this session, neither an
+application defect, both worth recording for next time:**
+
+1. **Editing a source file while a live test is mid-flow can silently reset
+   the page.** Editing `CoachMemory.tsx` (the stale-comment fix) after the
+   sheet was already open and a question already sent triggered a Vite HMR
+   broadcast that couldn't hot-apply cleanly and forced a full
+   `location.reload()` on the already-open tab — wiping the in-memory
+   Zustand store and the open sheet with no error surfaced. Confirmed via
+   `preview_logs`'s own hmr-update lines and the store resetting to its
+   default `activeTab: 'notes'`, not guessed. Lesson: finish live-testing a
+   flow (or open a fresh tab first) before making further source edits.
+2. **The screenshot tool went stale for this specific fixed-overlay pattern,
+   repeatedly, across two different tabs — confirmed a capture bug, not an
+   app bug, via `javascript_tool` reading the overlay's real
+   `getBoundingClientRect`/computed style directly (correct dimensions,
+   `visibility: visible`, `z-index: 50`) while the screenshot kept returning
+   an old pre-overlay frame.** `get_page_text`/`read_page`/direct DOM reads
+   were reliable throughout and were used as the ground truth for every
+   functional check above. The one workaround that reliably forced a fresh
+   capture: front a different tab, then front the target tab again
+   (`resize_window` forced exactly one fresh frame, then went stale again the
+   same way). Recorded here as a companion to CONTEXT.md's existing SQL
+   Editor `get_page_text`-staleness note — same failure family, different
+   tool, same fix (don't trust one signal; cross-check against the DOM).
+
+### The one gate item genuinely blocked locally, surfaced rather than faked
+or silently skipped
+
+§9 Phase 6's gate asks for a real multi-turn in-session conversation with a
+real generated answer. Sending a real question through the live UI produced
+a real, honest failure: `POST /api/coach/ask` → **404**, because a plain
+`vite` dev server (this project's only local dev config) never runs Vercel's
+`api/**` functions at all — confirmed via `read_network_requests`, not
+guessed. This matches every prior frontend phase's own history exactly (every
+"real button, pressed for real" check in this project — the ANALYZE button
+included — was run against the deployed `overload-v2-sage.vercel.app`, never
+against local `vite`), but Phase 5's own verification never hit this, since
+it called the handler directly with no HTTP involved at all.
+
+Tried `vercel dev` as a local middle ground (runs the real `api/**` functions
+without deploying anything) before treating this as blocking. Genuinely
+broken here for an unrelated, pre-existing reason, not anything Phase 6
+introduced: `vercel.json`'s SPA `rewrites` rule (`"/(.*)" → "/index.html"`,
+needed for client-side routing against the real *built* output) gets applied
+by `vercel dev` to Vite's own dev-only asset requests too
+(`/@vite/client`, `/src/main.tsx`, `/@react-refresh`), which don't exist as
+real paths in a build — so `vercel dev` serves `index.html`'s HTML back for
+each of them and Vite's import-analysis plugin fails parsing HTML as JS.
+Confirmed via `preview_logs`'s own stack trace, not guessed. Fixing this
+would mean changing `vercel.json`'s rewrite rule — a production-affecting
+config file — just to support local testing convenience, which is out of
+this phase's scope. Reverted the throwaway `vercel dev` launch-config entry
+and stopped the broken preview rather than leave it half-working.
+
+**Surfaced to Adam directly rather than deciding unilaterally** (a real
+Vercel deployment, even a non-production preview, is a real spend-and-write
+action beyond what "execute Phase 6" was literally scoped to): asked whether
+to (a) create a preview deployment now and finish the live check against it,
+(b) hold the check for Phase 8's already-planned deploy, or (c) have Adam
+press the real button himself once something is live, the same way the
+ANALYZE button precedent worked. **Adam chose (b).** The real multi-turn
+conversation, and the "conversation survives close/reopen" half of gate item
+2 that depends on a real saved row existing, are carried forward to Phase 8
+as an explicit, named deferral — not silently dropped, and not shipped on a
+faked substitute.
+
+### Status
+
+**Phase 6 complete except the one item explicitly deferred to Phase 8 by
+Adam's own choice this session.** Everything reachable without a real
+`/api/coach/ask` round trip was built exactly to §8.2/§9 and live-verified
+with screenshots: the sheet split, the tab bar, Notes' zero-regression
+(including offline), the ASK/NOTES offline contrast, and draft persistence
+across close/reopen. One real, found-not-shipped defect (the
+`conversationSessionId` cross-session leak) fixed before it could ship, the
+same discipline as Phase 5's `QA_ROUTES` freeze. One harmless test artifact
+left in `v2_coach_notes`, flagged with its own "safe to delete" body text
+rather than cleaned up blind. **Not committed this session** — no commit
+instruction was given for Phase 6's code itself, so it sits in the working
+tree with this CONTEXT.md update, the same "commit only when asked" pattern
+Phases 2–4 followed. Awaiting explicit approval before Phase 7 (`CoachAskTab.tsx`
+plus the `CoachPage.tsx` tab) — Phase 8's deploy will be the first point the
+real multi-turn conversation, and the conversation-persistence half of this
+phase's own gate, actually get their live confirmation. **Committed the next
+session** (`e3dd8b8`) — see below.
+
+---
+
+## 2026-09-01 session (Phase 7 — frontend, Coach → ASK: CoachAskTab.tsx,
+live-verified except the two checks explicitly carried to Phase 8 alongside
+Phase 6's)
+
+Read CONTEXT.md first, as instructed.
+
+### A process mistake, caught mid-session and disentangled properly, not
+folded in silently
+
+Instructed to commit Phase 6's code on its own before touching Phase 7. Went
+straight into Phase 7 work instead — extended `qaSidebarStore.ts` and
+`QaPanel.tsx` (both Phase 6 files) with this session's own changes before
+committing anything. Caught before running `git add`: `git status` would have
+staged one intermingled diff covering both phases in the same two files, with
+no git-level boundary between them. Fixed properly rather than committed as
+one bigger change: reverted `qaSidebarStore.ts`, `QaPanel.tsx`, and
+`QaTranscript.tsx` to their exact Phase 6 content (verbatim, from this
+session's own earlier reads of them — not reconstructed from memory),
+confirmed the reverted state was Phase 6's real shape (`tsc -b` clean, `git
+status` showing exactly Phase 6's file list with nothing Phase-7-shaped in
+it), committed that alone (`e3dd8b8`), then re-applied this session's actual
+edits on top before continuing. Recorded here so the ordering slip is
+visible, the same discipline the Phase 5 session's own "process mistake"
+note followed.
+
+### Phase 7 built, exactly as §8.1/§8.2/§9 specify
+
+`coach/CoachAskTab.tsx` — three category controls (§7.2: "ABOUT TRAINING" /
+"ABOUT PLANNING" / "HOW THIS APP WORKS", each hardcoded to its own category,
+never a dropdown — §7.2's own reasoning is that a dropdown would technically
+satisfy "not inferred by the model" while reintroducing the exact failure it
+protects against), then `QaPanel` for whichever is selected. `CoachPage.tsx`
+grows `ANALYSIS | CONTEXT` to `ANALYSIS | ASK | CONTEXT`.
+
+**Two real gaps found while wiring this — neither pre-specified at this
+level in TASKS.md — fixed before they could ship, not left for a future
+session to trip over:**
+
+1. **A stray draft could leak across a category switch.** `QaPanel`'s own
+   reset effect (extended this session — see below) only fires once
+   `conversationId` is non-null, i.e. after a message has actually been
+   sent. Type a question under "ABOUT TRAINING," switch to "ABOUT PLANNING"
+   *before* sending, and the untouched draft would still be sitting in the
+   new tab's composer — harmless (nothing server-side or money-spending is
+   at stake pre-send), but a confusing leftover, and a direct instance of
+   what §7.1 says a category switch should never do. Fixed at the actual
+   switch site: `CoachAskTab`'s `handleSelect` calls `qaSidebarStore`'s
+   `reset()` directly before changing `category`, rather than relying only
+   on `QaPanel`'s own effect. Confirmed live: typed a real draft, switched
+   categories, read the textarea's real DOM `value` (not just the visible
+   placeholder) — empty, as it should be.
+2. **The three category labels don't fit one line at mobile width.** A plain
+   `flex` row (matching `CoachAnalysisTab.tsx`'s SESSION/WEEK precedent)
+   wraps "ABOUT TRAINING"/"ABOUT PLANNING"/"HOW THIS APP WORKS" unevenly at
+   375px — found by actually checking the live page at mobile width, not
+   assumed from the desktop screenshot looking fine. `CoachAnalysisTab.tsx`
+   never hit this because its two labels are short. Fixed with a 3-column
+   grid instead of a plain flex row, so each label gets an equal-width,
+   centered, predictable two-line wrap rather than a ragged flex-basis one —
+   confirmed with screenshots at both 375px and desktop after the fix.
+
+**`qaSidebarStore.ts`/`QaPanel.tsx` extended, one field beyond what Phase 6
+added:** `conversationCategory`, alongside the existing `conversationSessionId`.
+Reasoned through before writing code, not discovered by testing: every
+non-in-session category shares the identical `sessionId: null`, so
+`conversationSessionId` alone — which correctly distinguishes in-session from
+not — cannot distinguish "general" from "planning" from "app_mechanics" the
+way §7.1 requires. `QaPanel`'s reset effect now checks both fields; a genuine
+session **or** category change resets, an ordinary close/reopen of the same
+one does not. Same class of found-not-shipped defect as Phase 6's
+`conversationSessionId` addition and Phase 5's `QA_ROUTES` freeze — this
+project's now-recurring pattern of catching a structural gap during
+implementation rather than shipping on the letter of the plan alone.
+
+### Verification: typecheck/Vitest/build, then live in the browser
+
+`npx tsc -b`: clean, checked after each of the two fixes above, not just
+once at the end. Full Vitest suite: 32 files, 400/400 — unchanged, no new
+pure logic (same as Phase 6). `npm run build`: clean, same pre-existing
+`vendor-charts` notice.
+
+**Live-verified for real, with screenshots, everything reachable without a
+live `/api/coach/ask` call — per instruction, the local-dev blocker was not
+re-diagnosed and `vercel dev` was not attempted again:**
+
+- `ANALYSIS | ASK | CONTEXT` renders and switches correctly; ANALYSIS and
+  CONTEXT regression-checked after `CoachPage.tsx`'s two-way ternary became
+  three-way — both still render their existing real content unchanged.
+- All three category controls render, each with its own category-specific
+  empty-state hint (`general`: "Ask about your training…"; `planning`: "Ask
+  about how to think about your plan…"; `app_mechanics`: "Ask how something
+  in the app works…") — confirmed by reading the real rendered text per
+  category, not assumed from the source.
+- The category-switch draft-clearing fix (above), confirmed via the
+  textarea's real DOM value.
+- The offline gate on this call site — a second, independent code path
+  through the same shared `QaPanel` — confirmed separately from Phase 6's:
+  simulated a real disconnect, ASK correctly showed "REQUIRES A CONNECTION,"
+  the app's own global offline banner appeared too (independent
+  corroboration this was a real disconnect, not a fabricated state).
+- **Phase 6's in-session sheet regression-checked after this session's
+  shared `qaSidebarStore.ts`/`QaPanel.tsx` changes** — reopened the same real
+  in-progress session, both NOTES and ASK tabs still render and behave
+  correctly, confirming the store extension didn't disturb Phase 6's own
+  behaviour.
+
+**One more real tooling issue hit and worked around, the same failure this
+project's own architectural rules already document (2026-08-25, Coach
+Personalization phase 1):** `left_click` reproducibly timed out against the
+category-control buttons specifically while the tab was in mobile-viewport
+emulation (`resize_window` preset `mobile`, which also emulates touch) —
+confirmed not a page hang (`find`/`get_page_text`/`wait` all worked
+instantly throughout). Worked around exactly per the standing rule:
+`document.querySelectorAll`/`textContent` matching plus a direct
+`.click()` via `javascript_tool`, screenshotting after to confirm the real
+resulting state rather than trusting the click call's own return.
+
+### The two gate items carried to Phase 8, alongside Phase 6's
+
+§9 Phase 7's gate asks for one real conversation per category and the
+category-switch path confirmed to start a new conversation rather than
+continuing the old one — both against real saved rows. Same infrastructure
+gap as Phase 6, not re-diagnosed this session per instruction:
+`/api/coach/ask` is unreachable from local `vite` dev. What was verified
+instead — the UI-level reset mechanism (draft clears, empty transcript
+displays, the correct category-specific hint renders) — is real evidence the
+*client-side* half of §7.1 works, but it is not the same claim as "a real
+conversation existed and was correctly abandoned," which needs an actual
+saved row to abandon.
+
+**Per this session's explicit instruction, both phases' deferred checks now
+belong to Phase 8 together, not just Phase 8's own verification:**
+
+1. Phase 6 — a real multi-turn in-session conversation, and the
+   conversation-persistence half of "the sheet closing and reopening with
+   the conversation intact" (draft persistence was already confirmed live in
+   Phase 6; the conversation half needs a real saved row).
+2. Phase 7 — one real conversation per category (`general`/`planning`/
+   `app_mechanics`), and the category-switch check run against a real saved
+   conversation rather than only the client-side reset mechanism.
+
+Phase 8 starts knowing it is carrying three deferred live checks total (the
+two above plus its own), not rediscovering this by re-reading two prior
+session entries.
+
+### Status
+
+**Phase 7 complete except the two items explicitly deferred to Phase 8.**
+Everything reachable without a real `/api/coach/ask` round trip was built
+exactly to §8.1/§8.2/§9 and live-verified with screenshots: the three-tab
+`CoachPage.tsx` bar, the three category controls and their per-category
+copy, the category-switch draft-clearing fix, the offline gate on this call
+site, and a regression check confirming Phase 6's sheet still works after
+the shared-store changes. Two real gaps found and fixed before shipping
+(the draft leak, the mobile label wrap), not left as known issues. **Not
+committed this session** — no commit instruction was given for Phase 7's
+code itself, so it sits in the working tree with this CONTEXT.md update,
+the same "commit only when asked" pattern the prior phases followed.
+Awaiting explicit approval before Phase 8 (verification, adversarial
+review, deploy, CONTEXT.md) — which now carries three phases' worth of
+deferred live checks, not just its own.
+
+---
+
 ## Pending feedback to address
 From real usage (one day):
 - Warmup sets handling
@@ -19075,13 +19718,25 @@ feature this repo could build on its own.
 
 - **Near-term:** in-session Q&A with a real interactive sidebar — spec and
   technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
-  of §12's open questions resolved, **Phases 0–4 done as of 2026-09-01**
-  (diagnostic; migration 023 applied/verified; types + pure modules; all
-  four context assemblers built and run against real production data with
-  zero Anthropic spend; Sonnet 5's latency/cost measured for real —
-  comfortably inside the 60s cap, no fallback levers needed) — **Phase 5
-  onward not started, awaiting approval**; wiring form/energy/pump/Memory
-  into Weekly Analysis; exercise library rework.
+  of §12's open questions resolved, **Phases 0–7 done except three live
+  checks, as of 2026-09-01** (diagnostic; migration 023 applied/verified;
+  types + pure modules; all four context assemblers built and run against
+  real production data with zero Anthropic spend; Sonnet 5's latency/cost
+  measured for real; the real prompt and endpoint built, verified end-to-end
+  across all four categories with real multi-turn and concurrent-race
+  testing, adversarially reviewed; the in-session sheet split into NOTES/ASK
+  tabs, and the Coach page's ASK tab with its three category controls, both
+  live-verified — Notes' zero-regression, the offline contrast on both call
+  sites, draft persistence, and the category-switch reset all confirmed live
+  with screenshots) — **Phase 8 (verification, adversarial review, deploy)
+  not started, awaiting approval; it carries three deferred live checks, not
+  just its own**: Phase 6's real multi-turn in-session conversation and the
+  conversation-persistence half of its close/reopen check, plus Phase 7's
+  one-real-conversation-per-category and the category-switch check against
+  a real saved conversation — all three blocked the same way, on
+  `/api/coach/ask` being unreachable from local `vite` dev, resolved only by
+  Phase 8's own deploy; wiring form/energy/pump/Memory into Weekly Analysis;
+  exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets
@@ -19090,6 +19745,258 @@ feature this repo could build on its own.
   it, not scheduled before then).
 - **Not planned:** month analysis; live mid-workout energy/pump;
   swap-exercise mid-set.
+
+---
+
+## 2026-09-02 session (Phase 8 — verification, whole-feature adversarial
+review, production deploy, live verification. **The AI Q&A Sidebar is
+complete and live**, with one named item carried past completion)
+
+Read CONTEXT.md first, as instructed, then committed Phase 7's code as the
+literal first action — `695e5b2`, code only (`CoachAskTab.tsx`,
+`CoachPage.tsx`, `QaPanel.tsx`, `QaTranscript.tsx`, `qaSidebarStore.ts`),
+with CONTEXT.md deliberately held back to carry Phases 5–7's pending prose
+plus this entry in one closing commit. No repeat of the Phase 5 ordering
+slip.
+
+### §9's three checks, run on the final code
+
+`npm run typecheck` (both `tsconfig.app.json` and `tsconfig.api.json`)
+clean, `npm run build` clean, `npm test` **400 tests across 32 files, all
+passing**. Re-run after each of this session's two code fixes, not only
+once at the start.
+
+### Adversarial review across the whole integrated feature
+
+Run against the real integrated feature rather than file by file, on the
+explicit instruction that the phase-by-phase reviews should not be assumed
+to have caught everything. The three named areas, each checked as a
+structural property rather than by reading carefully:
+
+**The advisory-only boundary (§1.3) — confirmed, four independent legs.**
+Built the true *runtime* import closure of `api/coach/ask.ts` (value
+imports only, `import type` excluded, since a naive scan wrongly pulls in
+`sessionService.ts` and `src/lib/supabase.ts` through type-only edges) and
+searched every file in it: **exactly one write call exists in the entire
+runtime closure — `api/coach/ask.ts:375`, the insert of its own exchange
+row.** No `.update`, `.delete`, `.upsert` or `.rpc` anywhere. Separately:
+the endpoint declares no `tools` and no `tool_choice`, so no generated
+answer has any mechanism to reach a write path; it chains no curation run
+(no import of `curationRunner`); and migration 023 grants only `select`
+and `insert` policies, so permanence is enforced by RLS rather than merely
+un-offered. The type-only-import finding is worth keeping: it is also why
+the deployed function does not crash at cold start on
+`src/lib/supabase.ts`'s module-load throw.
+
+**The Northstar exclusion (§4.3) — confirmed across the whole shipped
+surface, not just `qaContext.ts`.** Every `.from(...)` in the endpoint's
+runtime closure resolves to one of **13 tables, all `v2_`-prefixed except
+the shared `exercises`** (`v2_coach_qa_exchanges`, `v2_sessions`,
+`v2_set_logs`, `v2_week_plan_sets`, `v2_week_plans`, `v2_workout_days`,
+`v2_mesocycles`, `v2_programs`, `v2_coach_notes`,
+`v2_coach_memory_entries`, `v2_coach_phase_entries`,
+`v2_coach_weight_entries`, plus `exercises`). This matters because
+`qaContext.ts` reuses `analysisInput.ts` and `weekResolution.ts`, so
+checking `qaContext.ts` alone would have proven nothing about the reused
+code — those files are where 8 of the 13 tables are actually read. The
+single `exercises` read selects `name` only. The frontend closure from
+`CoachAskTab.tsx` reads exactly one table (`v2_coach_qa_exchanges`) and
+contains zero writes.
+
+**The auth/spend path, now that frontend and backend are wired together
+for the first time — confirmed, including against the live deployment.**
+Every rejection in `api/coach/ask.ts` fires *before* the Anthropic call:
+auth/gate, all six §5.3 validation steps, the `ANTHROPIC_API_KEY` check,
+the history read, the turn ceiling, and the invariance check. Verified
+against the real deployed endpoint with no credentials: `GET` → `405`,
+`POST` with no header → `401 Missing bearer token`, `POST` with a bogus
+bearer → `401 Invalid or expired session`. The third is the informative
+one — reaching "invalid session" rather than "server misconfigured" proves
+the function's Supabase env vars are genuinely present in production.
+`vercel.json`'s `api/**` block covers `ask.ts` at `maxDuration: 60`, so the
+Sonnet path is not running under a shorter default.
+
+**One honest gap recorded, not fixed:** §5.5 layer 2 (idempotency on a
+caller-supplied `id`) has no client that can exercise it. `onMutate` mints
+a fresh uuid per attempt and mutations do not auto-retry (`retry` defaults
+to 0 for mutations; the `retry: 1` in `queryClient.ts` applies to queries
+only), so a user-initiated retry after a timeout sends a *different* `id`
+and pays for a second generation. The server-side branch is correct; it is
+simply unreachable from this client. Left as-is and written down rather
+than engineered around, the same treatment §5.5's own "honest gap"
+paragraph already gives the two-simultaneous-sends case.
+
+### Two real defects found and fixed
+
+**1. An unsent draft had no owner (`9a7a947`) — found by review.** Third
+instance of the family that produced `conversationSessionId` (Phase 6) and
+`CoachAskTab`'s reset-on-switch (Phase 7). `qaSidebarStore` is a module
+singleton shared by both entry points, and `QaPanel`'s mismatch effect only
+fired once `conversationId` was non-null. A question typed mid-workout but
+never sent left `conversationId` null, so it followed the user to Coach →
+ASK and sat in that composer under a different category.
+`conversationCategory`/`conversationSessionId` became
+`ownerCategory`/`ownerSessionId` — they name the surface *everything* in
+the store belongs to, the draft included — set by whichever of
+`startConversation` or `setDraft` comes first, with `setDraft` writing
+draft and owner in one `set()` so the effect can never see a freshly typed
+character carrying the old owner and wipe it. `QaPanel` now resets whenever
+the store holds anything at all and the owner stops matching.
+
+**2. Turn 0 of every new conversation was generated, saved, paid for and
+never rendered (`4581a20`) — found by production live verification, and by
+nothing else.** This one is the important find. A conversation's `useQuery`
+goes from disabled to enabled in the same click that fires the mutation, so
+it mounts with no cached data and issues an initial fetch. That fetch raced
+`onMutate`'s optimistic write and won, resolving a few hundred ms later
+with the empty array it *correctly* read from the server — the row is not
+inserted until the model answers, 6–24s later. So the pending "Thinking…"
+never appeared, and `onSuccess` then reconciled by id against that empty
+array, matched nothing, and dropped the answer entirely. **Turn 1 onward
+was unaffected**, which is exactly why every check that sent a second
+message looked fine. And because a category switch starts a new
+conversation (§7.1), this hit the *first question of every category, every
+time*.
+
+Fixed two ways: `seedNewQaConversation()` writes `[]` into the cache
+synchronously in the same click, before `startConversation` enables the
+query, so the observer subscribes to an entry that already has a current
+`dataUpdatedAt` and `shouldFetchOnMount` is false against the 5-minute
+`staleTime` — no clobbering fetch is ever issued, and `[]` is simply the
+truth for a client-minted conversation id. And `onSuccess` now appends when
+the optimistic entry is absent instead of silently mapping over nothing, so
+a paid-for answer can never again be discarded quietly.
+
+**Worth keeping as a lesson:** this bug was invisible to every form of
+static review — both halves of the race are individually correct, and the
+only symptom is a missing render. It took a real call against the real
+deployed endpoint with a real multi-second generation to see it. It also
+went undetected through Phases 5, 6 and 7 precisely because the deferred
+checks that would have caught it were the ones repeatedly postponed for the
+local `/api` gap.
+
+### Deploy, confirmed landed rather than assumed
+
+The whole feature was unpushed — **all 11 commits, Phases 0 through 8**, so
+this was the first deploy of any of it. Pushed, then confirmed properly per
+the standing rule that exists because of the earlier `ignoreCommand`
+incident, at four levels rather than trusting a successful push:
+
+- `vercel ls` — a genuine build ran (49s, then 52s for the second deploy),
+  not an `ignoreCommand` skip; a skip shows as a `2s` "Canceled" row,
+  several of which are visible in the same listing for comparison.
+- `vercel inspect https://overload-v2-sage.vercel.app` — the **canonical
+  alias** resolves to the new deployment, `Ready`, `target production`.
+- The deployed function list includes **`λ api/coach/ask (1.25MB)`** — the
+  new endpoint exists in the built output, not merely in the repo.
+- **Content-level proof**, the strongest of the four: fetched the deployed
+  JS bundle and grepped it. Phase 7's `HOW THIS APP WORKS` / `ABOUT
+  PLANNING` / `ABOUT TRAINING` and the per-category empty hints are
+  present, and so are `ownerCategory`/`ownerSessionId` (zustand keys
+  survive minification) with the pre-fix
+  `conversationCategory`/`conversationSessionId` **absent** — proving the
+  shipped bundle is this session's code and not a stale build.
+
+Redeployed and re-confirmed the same way after fix 2.
+
+### Production live verification — real UI, real endpoint, real rows
+
+Adam signed in to production himself (credentials are never handled here;
+no Chrome extension was connected and the in-app browser had no session).
+All calls below are real spend and real permanent rows against
+`https://overload-v2-sage.vercel.app`, driven through the real UI.
+
+**Phase 7's gate — closed.** Six exchanges across **four distinct
+conversations**:
+
+| conv | category | model | turns | `history_turns_sent` | input/output tokens |
+|---|---|---|---|---|---|
+| `d4292c4e` | general | Haiku 4.5 | 0, 1 | 0, 1 | 2851/288, 3156/378 |
+| `cda52ca7` | planning | Sonnet 5 | 0, 1 | 0, 1 | 5828/613, 5883/290 |
+| `8dc561dc` | app_mechanics | Haiku 4.5 | 0 | 0 | 2326/123 |
+| `444cf431` | planning | Sonnet 5 | 0 | 0 | 5777/84 |
+
+- **One real conversation per category** — all three non-session categories
+  covered, each routed to the model `QA_ROUTES` specifies.
+- **Category switch starts a new conversation — confirmed from real rows,
+  not from the UI alone.** Every conversation carries exactly one
+  `category` and one `session_id` (all `null`). The strongest evidence is
+  the two separate `planning` conversations: switching away to
+  `app_mechanics` and back did **not** resume the earlier planning
+  conversation, it started a fresh one, exactly as §7.1 requires.
+- **Multi-turn cost control confirmed with real numbers**:
+  `history_turns_sent` `0 → 1`, with input tokens rising `2851 → 3156`
+  (general) and `5828 → 5883` (planning) — the rolling window resending
+  exactly one prior turn, not the whole conversation.
+- Per-category empty-state hints, the three-control layout, and the
+  transcript clearing on category switch all confirmed live.
+
+**§6.4's last open estimate, now closed with a real number.** That section
+estimated the system prompt at ~3,000–3,500 tokens pending Phase 5's real
+file. Measured directly from the shipped `buildQaSystemPrompt`:
+`app_mechanics` 5,782 chars (~1,446 tokens), `general` 6,327 (~1,582),
+`planning` 6,583 (~1,646), `in_session` 8,091 (~2,023). **The real prompt
+is roughly half the estimate.** Real end-to-end cost this session was about
+**$0.057** across six exchanges.
+
+### One generation-quality anomaly, reported rather than papered over
+
+The first `planning` conversation returned `"Nothing here"` (12 chars) on
+turn 0 and `"..."` (3 chars) on turn 1 — from Sonnet 5, with a rich,
+correct context payload (all 10 fields populated) and 613 output tokens
+mostly spent on thinking. A **fresh** planning conversation asking a direct
+question then answered correctly and specifically ("You've still got PUSH 2
+(Thu 9/3), PULL 2 (Fri 9/4), and LEGS (Sat 9/5) open…", read straight from
+`thisWeek.unresolvedDates`). So the route, the assembler and the Sonnet
+config are all fine — this was a generation anomaly, not a code defect, and
+it is recorded as an observation rather than diagnosed beyond what the
+evidence supports.
+
+**The real design finding underneath it is worth acting on later:** a
+semantically empty answer passes every structural check the endpoint has.
+§5.7 rejects `max_tokens` and `refusal` as "not an answer", and migration
+023 rejects a blank string, but `"Nothing here"` satisfies all of them — so
+it was saved permanently (there is no update or delete path by design), and
+it then **poisoned turn 1 through the history window**, which is exactly
+why the follow-up degenerated too. No minimum-length guard was added: a
+legitimately short answer ("Yes — skip it.") is a real thing on this
+surface, and a heuristic that rejects good short answers would be worse
+than the anomaly. Flagged for Adam's decision rather than guessed at.
+
+### The one item carried past the feature's completion
+
+**Phase 6's in-session conversation through the workout sheet's own UI is
+not yet checked in production.** 2026-09-02 is a rest day: there is no
+in-progress session, and `RestDayScreen` offers no path to the gym UI at
+all, so the sheet is genuinely unreachable — a scheduling constraint, not
+an oversight. Adam was given the real options and chose to defer to the
+next real workout, **PUSH 2 on Thu 2026-09-03**, rather than write a
+session into the training log on a rest day or attach permanent Q&A rows to
+a completed past session.
+
+What to check then, in the workout sheet's ASK tab: a real multi-turn
+`in_session` conversation; the sheet closing and reopening with the
+conversation and draft intact; NOTES still working exactly as before,
+including offline; and ASK showing "REQUIRES A CONNECTION" with the network
+off while NOTES stays usable.
+
+What was already verified in its place, so the residual risk is narrow:
+`QaPanel` is literally the same component the sheet renders, exercised
+three times in production this session with the turn-0 fix in place; the
+`in_session` server path's own validation (session must exist and belong to
+the caller) is `api/coach/ask.ts` step 5, reviewed this session; and
+`assembleInSessionContext` was run against real production data in Phase 3.
+The untested sliver is the sheet chrome and the in-session call site's own
+props, not the Q&A machinery.
+
+### State at the end of this session
+
+**The AI Q&A Sidebar is complete, deployed and working in production.**
+Both entry points are live. `master` is pushed and the production alias
+serves this session's code, verified at content level. Typecheck, build and
+all 400 tests pass. The only open items are the deferred in-session UI
+check above and the empty-answer design question, both named rather than
+left implicit.
 
 ---
 
