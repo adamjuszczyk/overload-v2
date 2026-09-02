@@ -14,6 +14,32 @@ export function qaConversationKey(conversationId: string) {
   return ['v2_coachQaConversation', conversationId]
 }
 
+// Seeds a just-minted conversation's cache entry as an empty list, called
+// synchronously from the click that starts it (QaPanel's handleSend) before
+// the mutation is fired.
+//
+// Without this, turn 0 of every new conversation was generated, saved and
+// paid for but never rendered — found by Phase 8's production live
+// verification, not by any amount of code reading. The conversation's
+// useQuery goes from disabled to enabled in the same click that fires the
+// mutation, so it mounts with no cached data and issues its initial fetch.
+// That fetch races onMutate's optimistic write, resolves a few hundred ms
+// later with the empty array it correctly reads from the server (the row
+// isn't inserted until the model answers, 6-24s later), and overwrites the
+// optimistic entry — which is why the pending "Thinking…" never appeared.
+// onSuccess then reconciled by id against that empty array, matched
+// nothing, and dropped the answer on the floor. Turn 1 onward was fine: by
+// then the query is mounted with fresh data and never refetches.
+//
+// Seeding synchronously means the query observer subscribes to a cache
+// entry that already has data with a current dataUpdatedAt, so
+// shouldFetchOnMount is false against the 5-minute staleTime and no
+// clobbering fetch is ever issued. `[]` is also simply the truth: a
+// client-minted conversation id has no server rows until turn 0 lands.
+export function seedNewQaConversation(conversationId: string) {
+  queryClient.setQueryData<QaTranscriptItem[]>(qaConversationKey(conversationId), [])
+}
+
 export function useCoachQaConversation(conversationId: string | null) {
   const { user } = useAuth()
   return useQuery({
@@ -91,9 +117,17 @@ export function useAskQuestion() {
     onSuccess: (exchange, params) => {
       tempIdRef.current = null
       const key = qaConversationKey(params.conversationId)
-      queryClient.setQueryData<QaTranscriptItem[]>(key, (old) =>
-        old ? old.map((e) => (e.id === exchange.id ? exchange : e)) : [exchange],
-      )
+      // Replace the optimistic entry when it's there, append when it isn't.
+      // The seeding above removes the race that used to drop it, but a
+      // plain map() silently discards a real, already-saved, already-paid-
+      // for answer whenever the entry is missing for any reason — too quiet
+      // a failure for the one value in this flow that cost money.
+      queryClient.setQueryData<QaTranscriptItem[]>(key, (old) => {
+        if (!old) return [exchange]
+        return old.some((e) => e.id === exchange.id)
+          ? old.map((e) => (e.id === exchange.id ? exchange : e))
+          : [...old, exchange]
+      })
     },
   })
 }

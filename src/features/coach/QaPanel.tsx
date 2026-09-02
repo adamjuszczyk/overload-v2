@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { MAX_TURNS_PER_CONVERSATION } from './qaHistory'
 import { useQaSidebarStore } from './qaSidebarStore'
-import { useCoachQaConversation, useAskQuestion } from './useCoachQa'
+import { useCoachQaConversation, useAskQuestion, seedNewQaConversation } from './useCoachQa'
 import QaTranscript from './QaTranscript'
 import QaComposer from './QaComposer'
 import type { QaCategory } from '../../types'
@@ -65,7 +65,13 @@ export default function QaPanel({ category, sessionId, currentExerciseId = null 
 
   function handleSend(question: string) {
     const activeConversationId = conversationId ?? crypto.randomUUID()
-    if (conversationId === null) startConversation(activeConversationId, category, sessionId)
+    if (conversationId === null) {
+      // Seed before starting, both synchronously in this click: the query
+      // this enables must never issue an initial fetch that races the
+      // optimistic write. See seedNewQaConversation's own header.
+      seedNewQaConversation(activeConversationId)
+      startConversation(activeConversationId, category, sessionId)
+    }
     ask.mutate(
       { conversationId: activeConversationId, category, question, sessionId, currentExerciseId },
       { onSuccess: () => setDraft('', category, sessionId) },
