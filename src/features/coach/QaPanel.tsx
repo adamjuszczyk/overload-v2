@@ -19,29 +19,27 @@ interface QaPanelProps {
 // (§7) — the call site does that.
 export default function QaPanel({ category, sessionId, currentExerciseId = null }: QaPanelProps) {
   const isOnline = useOnlineStatus()
-  const {
-    conversationId,
-    conversationSessionId,
-    conversationCategory,
-    draft,
-    setDraft,
-    startConversation,
-    reset,
-  } = useQaSidebarStore()
+  const { conversationId, ownerCategory, ownerSessionId, draft, setDraft, startConversation, reset } =
+    useQaSidebarStore()
 
   // See qaSidebarStore.ts's header for why this check exists: a conversation
   // is bound to one category and sessionId for its whole life (server-
   // enforced — qaHistory.ts's checkInvariance), but neither GymSession.tsx
   // (no remount across a session change) nor CoachAskTab (a category switch
-  // is just a local state change, §7.1) naturally clears the old
-  // conversation on its own — without this, a finished session's
-  // conversation, or the previous category's, would otherwise carry into
-  // the new one.
+  // is just a local state change, §7.1) nor moving between the two entry
+  // points naturally clears the old surface's state on its own.
+  //
+  // Keyed on "holding anything", not on the conversation alone: a draft
+  // typed but never sent leaves conversationId null, so a conversation-only
+  // check let an unsent in-session question follow the user to Coach → ASK
+  // and sit in that composer under a different category (found by Phase 8's
+  // review). The draft has an owner too.
+  const holdsSomething = conversationId !== null || draft !== ''
   useEffect(() => {
-    if (conversationId !== null && (conversationSessionId !== sessionId || conversationCategory !== category)) {
+    if (holdsSomething && (ownerSessionId !== sessionId || ownerCategory !== category)) {
       reset()
     }
-  }, [category, sessionId, conversationId, conversationSessionId, conversationCategory, reset])
+  }, [category, sessionId, holdsSomething, ownerCategory, ownerSessionId, reset])
 
   const { data: exchanges = [] } = useCoachQaConversation(conversationId)
   const ask = useAskQuestion()
@@ -70,7 +68,7 @@ export default function QaPanel({ category, sessionId, currentExerciseId = null 
     if (conversationId === null) startConversation(activeConversationId, category, sessionId)
     ask.mutate(
       { conversationId: activeConversationId, category, question, sessionId, currentExerciseId },
-      { onSuccess: () => setDraft('') },
+      { onSuccess: () => setDraft('', category, sessionId) },
     )
   }
 
@@ -79,7 +77,7 @@ export default function QaPanel({ category, sessionId, currentExerciseId = null 
       <QaTranscript exchanges={exchanges} category={category} />
       <QaComposer
         draft={draft}
-        onDraftChange={setDraft}
+        onDraftChange={(value) => setDraft(value, category, sessionId)}
         onSend={handleSend}
         isPending={ask.isPending}
         atTurnLimit={atTurnLimit}

@@ -18,15 +18,14 @@ import type { QaCategory } from '../../types'
 // technically satisfies "not inferred by the model" while reintroducing the
 // exact failure it protects against).
 //
-// The switch itself calls qaSidebarStore's reset() directly, rather than
-// leaning only on QaPanel's own conversationCategory mismatch effect: that
-// effect only fires once conversationId is non-null (i.e. a message has
-// actually been sent), so switching categories before ever sending one would
-// otherwise leave a typed-but-unsent draft attached to the new category's
-// composer — harmless (nothing money-spending or server-side is at stake
-// before a send), but a confusing leftover. Resetting here clears it
-// immediately, and still leaves QaPanel's own check as the structural
-// backstop for any other path that could change category or sessionId.
+// The switch itself calls qaSidebarStore's reset() directly rather than
+// leaning only on QaPanel's own owner-mismatch effect. The effect does
+// fully cover this case (Phase 8 widened it from the conversation alone to
+// anything the store is holding, the draft included), but it runs after
+// paint — so the old category's draft would flash for one frame under the
+// new category's label. Resetting synchronously on the click removes the
+// flash; QaPanel's check remains the structural backstop for every path
+// that changes category or sessionId without passing through here.
 
 const CATEGORIES: { id: Exclude<QaCategory, 'in_session'>; label: string }[] = [
   { id: 'general', label: 'ABOUT TRAINING' },
