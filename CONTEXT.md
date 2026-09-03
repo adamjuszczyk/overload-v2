@@ -21578,11 +21578,9 @@ semantic is computable by the consumer rather than re-derived.
 2. **COPY WEEK's own dead-tap gap** at `PlanPage.tsx:89` — found by this
    session's review, reported and not fixed, to be taken as its own change.
 
-Two housekeeping items, neither touched: the Q&A `isStaleForSurface` refactor
-(`QaPanel.tsx`, `qaSidebarStore.ts`, `qaSidebarStore.test.ts`) is **still
-uncommitted** in the working tree, now across three sessions — real, tested,
-passing work that is not shipped. And `supabase/.temp/cli-latest` (an 8-byte
-Supabase CLI version cache) is untracked and probably belongs in `.gitignore`.
+Two housekeeping items were flagged here; one is now resolved. And
+`supabase/.temp/cli-latest` (an 8-byte Supabase CLI version cache) is
+untracked and probably belongs in `.gitignore`.
 
 ### State at the end of this session
 
@@ -21591,6 +21589,30 @@ Supabase CLI version cache) is untracked and probably belongs in `.gitignore`.
 is pushed, and the production alias serves this session's code, verified at
 content level. Typecheck, build and all 519 tests pass. The only open items
 are the two named above.
+
+---
+
+## 2026-09-03 session (Q&A `isStaleForSurface` refactor finally committed)
+
+Read CONTEXT.md first, as instructed. Task: commit the `isStaleForSurface`
+refactor (`QaPanel.tsx`, `qaSidebarStore.ts`, `qaSidebarStore.test.ts`) on
+its own — already-reviewed, already-tested Q&A sidebar work sitting
+uncommitted across three prior sessions (see 2026-09-02 session above for
+what it is and why it exists).
+
+Before committing, confirmed nothing since had touched either file
+incidentally: `git diff --stat` on `QaPanel.tsx`/`qaSidebarStore.ts` matched
+the same shape described in the 2026-09-02 entry (10 and 17 lines changed
+respectively), and full verification was re-run rather than assumed —
+`npm run typecheck` (both tsconfigs) clean, `npm test` **35 test files, 519
+tests, all passing**, `npm run build` clean with only the same pre-existing
+`vendor-charts` chunk-size notice. Committed as `551130f`, staging only the
+three files named above — `MESOCYCLE-ANALYSIS-SPEC.md` and
+`supabase/.temp/` were left untouched, unrelated to this change.
+
+Of the two housekeeping items the Priority Context session left open, this
+closes the first. `supabase/.temp/cli-latest` (untracked, probably belongs
+in `.gitignore`) is still open.
 
 ---
 
