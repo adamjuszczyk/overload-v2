@@ -47,7 +47,18 @@ export function usePriorityContext(mesocycleId: string | null) {
 // refetch round trip (see the file header — A5, revisited against real
 // latency at Phase 3's live check). Pure, so it's the same shape whether the
 // tag is a group or a subgroup; the mutation below is the only caller.
-function applyOptimisticPriority(
+//
+// Exported solely so it is directly Vitest-covered, for the same reason
+// selectPreviousMeso below and qaSidebarStore.ts's isStaleForSurface are:
+// this function was added reactively at Phase 3 rather than in the plan, and
+// onError's rollback depends on a property that is invisible at the call
+// site — that this returns a NEW context and never mutates the one it was
+// given, since that same object is the snapshot onMutate hands back as
+// ctx.prev. It also has one genuine trap: six tag_values ('biceps',
+// 'forearms', 'quads', 'hamstrings', 'glutes', 'calves') exist in BOTH
+// vocabularies, so every lookup here must key on tagType as well as
+// tagValue — dropping that would silently move a group's twin subgroup.
+export function applyOptimisticPriority(
   context: PriorityContext,
   tagType: PriorityTagType,
   tagValue: string,

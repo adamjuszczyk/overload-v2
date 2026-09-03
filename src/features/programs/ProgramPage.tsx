@@ -138,7 +138,15 @@ export default function ProgramPage() {
                   role="button"
                   tabIndex={0}
                   onClick={() => navigate(`/meso/${m.id}/priorities`)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/meso/${m.id}/priorities`) }}
+                  // Space as well as Enter: this is the codebase's only
+                  // role="button", so it carries that role's whole keyboard
+                  // contract itself rather than inheriting a real <button>'s.
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      navigate(`/meso/${m.id}/priorities`)
+                    }
+                  }}
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>

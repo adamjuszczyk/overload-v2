@@ -124,6 +124,43 @@ describe('densifyPriorities', () => {
     expect(result.anyExplicit).toBe(true)
   })
 
+  // Six tag_values are members of both vocabularies at once, so the stored
+  // map has to be keyed on tag_type as well as tag_value. Keyed on value
+  // alone, one stored group row would also satisfy its identically-named
+  // subgroup lookup — reading back a priority for a tag that was never set.
+  it('a group row and a subgroup row sharing one tag_value stay separate', () => {
+    const result = densifyPriorities([
+      { tagType: 'muscle_group', tagValue: 'quads', priority: 'top', updatedAt: '2026-01-01T00:00:00Z' },
+    ])
+
+    expect(result.muscleGroups.quads.priority).toBe('top')
+    expect(result.muscleGroups.quads.isExplicit).toBe(true)
+    expect(result.muscleSubgroups.quads.priority).toBe('normal')
+    expect(result.muscleSubgroups.quads.isExplicit).toBe(false)
+  })
+
+  it('the reverse — a subgroup row does not satisfy its identically-named group', () => {
+    const result = densifyPriorities([
+      { tagType: 'muscle_subgroup', tagValue: 'glutes', priority: 'low', updatedAt: '2026-01-01T00:00:00Z' },
+    ])
+
+    expect(result.muscleSubgroups.glutes.priority).toBe('low')
+    expect(result.muscleSubgroups.glutes.isExplicit).toBe(true)
+    expect(result.muscleGroups.glutes.priority).toBe('normal')
+    expect(result.muscleGroups.glutes.isExplicit).toBe(false)
+  })
+
+  it('both rows can coexist for one tag_value, each carrying its own priority', () => {
+    const result = densifyPriorities([
+      { tagType: 'muscle_group', tagValue: 'calves', priority: 'top', updatedAt: '2026-01-01T00:00:00Z' },
+      { tagType: 'muscle_subgroup', tagValue: 'calves', priority: 'low', updatedAt: '2026-01-02T00:00:00Z' },
+    ])
+
+    expect(result.muscleGroups.calves.priority).toBe('top')
+    expect(result.muscleSubgroups.calves.priority).toBe('low')
+    expect(result.entries).toHaveLength(34)
+  })
+
   it('an unknown tag_value is ignored — still exactly 34 entries, no throw', () => {
     const result = densifyPriorities([
       { tagType: 'muscle_subgroup', tagValue: 'not_a_real_subgroup', priority: 'top', updatedAt: '2026-01-01T00:00:00Z' },
