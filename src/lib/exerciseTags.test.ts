@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { MovementPattern, MuscleGroup } from '../types/index.js'
 import {
+  MUSCLE_GROUPS,
+  MUSCLE_GROUP_LABELS,
   MOVEMENT_PATTERNS,
   MOVEMENT_PATTERN_LABELS,
   MUSCLE_SUBGROUP_CATEGORIES,
@@ -13,6 +15,35 @@ import {
   muscleSubgroupsForMuscleGroup,
   type MuscleSubgroupTag,
 } from './exerciseTags'
+
+describe('MUSCLE_GROUPS', () => {
+  // PRIORITY-CONTEXT-TASKS.md §0.1 finding 1: this module previously had no
+  // canonical muscle_group list — types/index.ts:7's MuscleGroup type was
+  // the only definition, copied verbatim into five components. Hardcoded
+  // here (not imported from types/index.ts, which carries no runtime value)
+  // as the same 12 values, same order, as the type declaration itself.
+  it('matches MuscleGroup\'s declared 12 values exactly, same order', () => {
+    expect(MUSCLE_GROUPS).toEqual([
+      'chest', 'back', 'shoulders', 'biceps', 'triceps',
+      'forearms', 'quads', 'hamstrings', 'glutes', 'calves',
+      'core', 'other',
+    ])
+  })
+
+  it('has exactly twelve values, no duplicates', () => {
+    expect(MUSCLE_GROUPS).toHaveLength(12)
+    expect(new Set(MUSCLE_GROUPS).size).toBe(12)
+  })
+
+  it('has a label for every value and no extra label keys', () => {
+    expect(Object.keys(MUSCLE_GROUP_LABELS).sort()).toEqual([...MUSCLE_GROUPS].sort())
+  })
+
+  it('labels are the full-word form, matching the majority of the five pre-existing duplicated copies (not History\'s narrow-chip "HAMS" abbreviation)', () => {
+    expect(MUSCLE_GROUP_LABELS.hamstrings).toBe('HAMSTRINGS')
+    expect(MUSCLE_GROUP_LABELS.other).toBe('OTHER')
+  })
+})
 
 describe('MOVEMENT_PATTERNS', () => {
   // The critical test (EXERCISE-LIBRARY-TASKS.md §8 step 4): these seven

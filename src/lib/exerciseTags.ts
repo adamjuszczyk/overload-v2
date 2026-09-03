@@ -19,6 +19,37 @@ import type { MovementPattern, MuscleGroup, MuscleSubgroup } from '../types/inde
 // among §4.3's proposed 22, and only 'obliques' from that proposal was
 // never assigned to a real exercise on the account.
 
+// The muscle_group vocabulary (PRIORITY-CONTEXT-TASKS.md §0.1 finding 1) —
+// this module owns muscle_subgroup and movement_pattern already but, until
+// now, had no canonical muscle_group list or label map of its own: the
+// 12-value MuscleGroup type (types/index.ts) had five verbatim local copies
+// across components and no single source. Added here as the sixth, and the
+// only one anything new should import going forward — the five existing
+// copies are deliberately left alone (their label maps have already
+// diverged for real layout reasons, e.g. a narrow filter chip rendering
+// 'HAMS' instead of 'HAMSTRINGS'), so this export doesn't silently change
+// any of their UIs.
+export const MUSCLE_GROUPS: readonly MuscleGroup[] = [
+  'chest', 'back', 'shoulders', 'biceps', 'triceps',
+  'forearms', 'quads', 'hamstrings', 'glutes', 'calves',
+  'core', 'other',
+]
+
+export const MUSCLE_GROUP_LABELS: Record<MuscleGroup, string> = {
+  chest: 'CHEST',
+  back: 'BACK',
+  shoulders: 'SHOULDERS',
+  biceps: 'BICEPS',
+  triceps: 'TRICEPS',
+  forearms: 'FOREARMS',
+  quads: 'QUADS',
+  hamstrings: 'HAMSTRINGS',
+  glutes: 'GLUTES',
+  calves: 'CALVES',
+  core: 'CORE',
+  other: 'OTHER',
+}
+
 // Exactly migration 013's `exercises_movement_pattern_chk`, same order.
 export const MOVEMENT_PATTERNS: readonly MovementPattern[] = [
   'horizontal_push', 'vertical_push',
