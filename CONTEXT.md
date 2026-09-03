@@ -1383,6 +1383,24 @@ reaches PostgREST's schema cache regardless).
   see "Known issues" below, where the ADD STAGE / inference-heuristic
   note this section used to point to is now closed out rather than
   still open.
+- **Don't launch a duplicate verification check when an equivalent one
+  already ran inline in the same session (found 2026-09-02, tracing the
+  Phase 8 session's confusing "deploy-skip check I'd already run manually"
+  sentence back to its source).** Near the end of that session the
+  assistant confirmed the docs-only commit was correctly skipped by
+  `ignoreCommand` via a direct, inline `vercel ls` check, and reported that
+  result in its closing summary — but a second, functionally identical
+  check had separately been kicked off earlier as a **background** `Bash`
+  call, and its completion notification only arrived *after* the closing
+  summary was already sent, as a stray `task-notification` with nothing new
+  to report. The reply to it read, on a cold re-read, as if a human had run
+  the check by hand — nobody had; it was the assistant's own redundant
+  background call catching up late. Before firing a check in the
+  background, check whether an equivalent has already run (or is about to
+  run) inline in the same turn; if a background duplicate is already in
+  flight when the inline check completes, either stop it or account for its
+  still-pending result in the very next message, rather than letting it
+  surface later as an orphaned notification with no context attached.
 
 ---
 
@@ -1568,6 +1586,95 @@ reaches PostgREST's schema cache regardless).
   through the workout sheet's own UI, which needs a real in-progress
   session and could not be done on a rest day — see the 2026-09-02 entry
   below for exactly what remains and what was verified in its place
+- PRIORITY-CONTEXT-SPEC.md — **new, 2026-09-02 (written by Adam, not this
+  session), then revised 2026-09-02 by Claude Code at Adam's instruction — one
+  of the very few times a spec Adam authored has been edited from this side, so
+  worth knowing it happened.** Product source of truth for Priority Context: a
+  per-muscle_group (12 values) and per-muscle_subgroup (22 values) priority
+  setting Adam sets by hand — top / high / normal / low — **scoped per
+  mesocycle and living in the planner**, so Coach features can distinguish
+  "lagging and that's a problem" from "lagging because I deliberately
+  deprioritized it." Its own §1–§6 numbering. **§3 is the section to read first
+  and the one most likely to be misused:** muscle_group priority is a *ceiling*
+  on how much attention an area deserves; muscle_subgroup priority is relative
+  emphasis *within* that ceiling, never an absolute cross-group ranking.
+  Explicitly out of scope: any AI write, any inference from actual training
+  volume, and any wiring into an analysis or the planner.
+  **What the revision changed** (a dated note at the top of the spec says the
+  same): §4's row key became per-meso; §4's original flagged no-history
+  assumption was **superseded rather than deleted**, replaced by an "On
+  history" paragraph recording that per-meso scoping resolves the cross-meso
+  case and only within-meso churn stays unrecoverable; §5 moved from Coach →
+  CONTEXT to the planner and gained the blank-plus-explicit-copy decision;
+  §1/§2's location wording was adjusted ("Coach-wide context" kept, with a
+  clause clarifying it describes who *reads* the data, not where it lives); §6
+  now says Mesocycle Analysis reads one specific meso's priorities — the
+  completed block being analysed, never whichever meso is active. **§3 and
+  §2's out-of-scope list are untouched**
+- PRIORITY-CONTEXT-TASKS.md — **new 2026-09-02, rewritten as v2 the same day
+  when Adam changed the direction to per-mesocycle scoping.** Technical plan
+  for the above: migration 024 (`v2_coach_meso_tag_priorities`, one mutable row
+  per **(user, mesocycle_id, tag_type, tag_value)**, sparse storage / dense
+  reads, `on delete cascade` matching `v2_week_plans`), a new pure
+  `src/lib/priorityTags.ts` carrying the scale and `PRIORITY_TREE`, the
+  three-layer implementation of "no row = normal priority" (§2.4),
+  **`fetchPriorityContext(client, userId, mesocycleId)`** as the injected-client
+  interface Mesocycle Analysis will cite — `mesocycleId` required and
+  non-nullable on purpose (§4) — the frontend, now a new
+  `/meso/:mesocycleId/priorities` screen reached create-then-configure off the
+  START MESOCYCLE flow rather than anything in Coach → CONTEXT (§5), five
+  approval-gated phases (§6), and §8's rewritten answer to the spec's flagged
+  no-history question. The document opens with a revision table naming exactly
+  which sections v2 changed and which are untouched.
+  **Phase 1 (migration 024, §2.5) is built, applied to production, and all
+  thirteen §2.7 verification checks run for real as of 2026-09-02 — see "2026-
+  09-02 session (Priority Context — Phase 1)" below. Phase 2 (the pure module,
+  service, hooks, §3/§4/§4.1) is also built, all Vitest-covered, and
+  `fetchPriorityContext` confirmed against production read-only as of
+  2026-09-03 — see "2026-09-03 session (Priority Context — Phase 2)" below.
+  Phase 3 (frontend, live verification) is not started; no UI code exists.**
+  Three sections to read first: **§0.1**'s three findings from reading the tag
+  vocabulary directly (the load-bearing one being that **no muscle_group →
+  muscle_subgroup partition exists anywhere in this codebase**, and that SPEC
+  §3's compositional semantic structurally requires one — A1, approved); and
+  **§0.2**'s planner investigation, now six findings. Finding 3: **workout days
+  belong to the *program*, not the mesocycle**, so the literal seam "near
+  workout days" (`ProgramBuilderPage`) is the wrong lifetime — a program is
+  reused across mesos. Finding 5: **meso creation is already hard online-only**
+  (no Dexie branch, `v2_mesocycles` never enqueued, and **no `mesocycles` table
+  in the Dexie cache at all**), which is what settled A11. Finding 6: the
+  priorities route was never redirect-only as designed, but the PlanPage entry
+  point had been deferred and is now in v1.
+  **Brought to v3 on 2026-09-02 with every open item closed.** Q1 resolved
+  (blank start plus an explicit one-tap COPY FROM «previous meso», PlanPage's
+  COPY WEEK shape — including its destination-is-always-empty gate, which is
+  what removes any overwrite/confirm/delete path); Q1a resolved (`start_date`,
+  not `created_at`); **A10 closed by editing PRIORITY-CONTEXT-SPEC.md
+  directly** — §0.3 now records what changed in the spec rather than proposing
+  it; A11 resolved from finding 5; A9 downgraded to optional and recommended
+  dropped, which leaves **no existing component's layout changed anywhere in
+  this feature**. §7 is retitled "Decisions and assumptions — nothing here is
+  open", and Phase 0 is a confirmation read rather than a decision gate. See
+  the 2026-09-02 two-investigations session entry below.
+  **Migration 024 committed on its own (`c541931`) once Phase 1 was verified —
+  see "2026-09-02 session (Priority Context — Phase 1)" below for the exact
+  checks run against production**
+- MESOCYCLE-ANALYSIS-SPEC.md — **new, 2026-09-02 (written by Adam, not this
+  session).** Product source of truth for Mesocycle Analysis: a rare, deep,
+  manually-triggered analysis of one completed meso, structured in three
+  layers (per-exercise, per-group on both the muscle and movement_pattern
+  axes, then a summary), Sonnet 5 rather than Haiku by deliberate choice,
+  one permanent non-regenerable record. Advisory only — no write access,
+  same boundary as every other Coach surface. **Depends on Priority Context**
+  and says so in §1, including the fallback if it isn't built (treat
+  everything as normal priority, don't block). Its own §1–§6 numbering.
+  **No technical plan exists yet** — MESOCYCLE-ANALYSIS-TASKS.md has not been
+  written. Two things it names for whoever writes it: §3's pointer at
+  `progressService.ts`'s existing per-week rollup as a real reuse candidate
+  (browser-singleton-bound today, the same extraction `assembleAnalysisInput`
+  and `assembleWeekResolution` already went through), and §6's calendar
+  dependency — final dry-run validation needs a genuinely complete real
+  mesocycle, roughly two weeks out as of 2026-09-02
 - src/features/coach/qaCategory.ts — **new, Phase 2 (2026-09-01).** Pure:
   `resolveQaRoute(category)` plus the `QA_ROUTES` table it reads from
   (TASKS §1.2/§5.4) — model, `assembler` (a string key naming the
@@ -3109,6 +3216,36 @@ pattern as every prior phase.
 ## Known issues
 See AUDIT.md deferred section for full list.
 Most impactful deferred items:
+- **New, found 2026-09-02 while investigating Priority Context's offline
+  behaviour (A11) — flagged, not fixed.** `ProgramPage.tsx`'s
+  `handleStartMeso` awaits `createMeso.mutateAsync(...)` with no try/catch
+  and no error UI (`:45`). Since nothing in the meso-creation path has any
+  offline support — no Dexie branch, no sync-queue write, no
+  `mesocycles` table in the Dexie cache at all — a failed insert (offline,
+  or any other rejection) fails **silently**: `setShowStartMeso(false)`
+  never runs, the sheet just sits there with the button re-enabled, and
+  the rejection surfaces only as an unhandled promise rejection in the
+  console. `ProgramPage.tsx`, `useMesos.ts` and `mesoService.ts` contain
+  zero references to `useOnlineStatus`, `isOnline`, `isError`, `.error` or
+  `catch`. Not fixed because it predates and is outside Priority
+  Context's scope — noted only because that investigation is what
+  surfaced it. See PRIORITY-CONTEXT-TASKS.md §0.2 finding 5 and the
+  2026-09-02 "two investigations" session entry below.
+- **New, found 2026-09-02 while reading `copyFromPreviousWeek` as the
+  precedent for Priority Context's copy button — flagged, not fixed.**
+  `weekPlanService.ts`'s `copyFromPreviousWeek` (COPY WEEK) silently
+  no-ops when the *source* week is empty: it queries the previous week's
+  plans and, if none exist, `return`s at `:212` with no error, no
+  toast, and no visible feedback — indistinguishable on screen from a
+  successful copy of nothing. `showCopyButton` (`PlanPage.tsx:89`) only
+  gates on the *destination* being empty, not the source having
+  anything to copy, so this is reachable in the real app: tap COPY WEEK
+  on week 2 when week 1 was never filled in, and nothing visibly
+  happens. Priority Context's own copy button (PRIORITY-CONTEXT-TASKS.md
+  §5.8) deliberately tightens past this — it also gates on the source
+  having rows, so it never offers a tap that would do nothing — but that
+  fixes only the new feature, not this pre-existing one. Not fixed here:
+  out of scope for a planning investigation into a different feature.
 - **New, found 2026-09-01 while planning the Q&A sidebar — flagged, not
   fixed.** Neither `api/coach/analyze.ts` nor `api/coach/analyze-week.ts`
   checks `response.stop_reason` before parsing and saving. A `max_tokens`
@@ -19132,7 +19269,11 @@ reaching the insert. The model genuinely chose to end there via a real
 `QA_PROMPT_VERSION` revision once more real generations exist to
 calibrate against — the same "found via real usage, fixed in vN" pattern
 `coachPrompt.ts`/`coachWeekPrompt.ts` have both already followed. Not
-fixed this session — one sample isn't a pattern yet.
+fixed this session — one sample isn't a pattern yet. (It stopped being a
+single sample the next day: see Phase 8's **"structurally-valid,
+substantively-broken Sonnet 5 output"** finding below, which folds this
+entry and a second, worse instance into one tracked finding rather than
+two unrelated notes.)
 
 ### Adversarial review — the gate, checked one row at a time
 
@@ -19714,29 +19855,49 @@ feature this repo could build on its own.
 
 ---
 
-## Current priority tiers (as set by Adam, 2026-08-28)
+## Current priority tiers (as set by Adam, 2026-08-28; near-term
+list refreshed 2026-09-02)
 
-- **Near-term:** in-session Q&A with a real interactive sidebar — spec and
-  technical plan both done (QA-SIDEBAR-SPEC.md, QA-SIDEBAR-TASKS.md), all
-  of §12's open questions resolved, **Phases 0–7 done except three live
-  checks, as of 2026-09-01** (diagnostic; migration 023 applied/verified;
-  types + pure modules; all four context assemblers built and run against
-  real production data with zero Anthropic spend; Sonnet 5's latency/cost
-  measured for real; the real prompt and endpoint built, verified end-to-end
-  across all four categories with real multi-turn and concurrent-race
-  testing, adversarially reviewed; the in-session sheet split into NOTES/ASK
-  tabs, and the Coach page's ASK tab with its three category controls, both
-  live-verified — Notes' zero-regression, the offline contrast on both call
-  sites, draft persistence, and the category-switch reset all confirmed live
-  with screenshots) — **Phase 8 (verification, adversarial review, deploy)
-  not started, awaiting approval; it carries three deferred live checks, not
-  just its own**: Phase 6's real multi-turn in-session conversation and the
-  conversation-persistence half of its close/reopen check, plus Phase 7's
-  one-real-conversation-per-category and the category-switch check against
-  a real saved conversation — all three blocked the same way, on
-  `/api/coach/ask` being unreachable from local `vite` dev, resolved only by
-  Phase 8's own deploy; wiring form/energy/pump/Memory into Weekly Analysis;
-  exercise library rework.
+- ~~**Near-term:** in-session Q&A with a real interactive sidebar.~~
+  **Shipped.** Spec and technical plan both done (QA-SIDEBAR-SPEC.md,
+  QA-SIDEBAR-TASKS.md), all of §12's open questions resolved, all nine phases
+  complete, deployed and live-verified in production 2026-09-02 — including
+  the three live checks Phases 6 and 7 had to defer onto Phase 8 (they were
+  blocked on `/api/coach/ask` being unreachable from local `vite` dev, which
+  only Phase 8's own deploy could resolve). See "2026-09-02 session (Phase 8
+  …)" below. *This bullet previously read "Phase 8 not started, awaiting
+  approval" — stale as of that session, corrected here 2026-09-02 while adding
+  Priority Context to the list.*
+- **Near-term, current:** **Priority Context** — spec by Adam
+  (PRIORITY-CONTEXT-SPEC.md, edited 2026-09-02 to match the per-mesocycle
+  direction) and technical plan at v3 (PRIORITY-CONTEXT-TASKS.md, five
+  approval-gated phases). Priority is scoped per-mesocycle from creation and
+  lives in the planner, not as a global table in Coach → CONTEXT.
+  **Phase 1 (migration 024) is built, applied to production, and verified —
+  see "2026-09-02 session (Priority Context — Phase 1)" below.** Every open
+  design item closed the same day: Q1 resolved (a new meso starts blank, plus
+  an explicit one-tap COPY FROM «previous meso» in PlanPage's COPY WEEK shape),
+  Q1a resolved (`start_date` ordering), A10 closed by editing the spec directly,
+  A11 resolved from evidence (meso creation is already hard online-only — no
+  Dexie `mesocycles` table at all — so the priorities page being online-only is
+  consistent), A9 downgraded to optional and recommended dropped, A1–A7
+  unchanged and approved. **Phase 2 (pure module, service, hooks) is also
+  built and all Vitest-covered as of 2026-09-03 — `fetchPriorityContext` run
+  against production read-only confirmed the dense-read shape against Adam's
+  real active meso — see "2026-09-03 session (Priority Context — Phase 2)"
+  below. Phase 3 (frontend, live verification) is next, not started, awaiting
+  approval** — no UI code exists yet.
+  Its first consumer, **Mesocycle Analysis**, also has a spec from Adam
+  (MESOCYCLE-ANALYSIS-SPEC.md) but **no technical plan yet** — Priority Context
+  is the dependency and goes first. When that plan is written it must cite
+  **`fetchPriorityContext(client, userId, mesocycleId)`** and pass the
+  *analysed* meso's id, never the active one — a distinction that did not exist
+  to get wrong under the old global design. Mesocycle Analysis additionally has
+  a calendar dependency its own §6 names: final dry-run validation needs a
+  genuinely complete real mesocycle, roughly two weeks out as of 2026-09-02,
+  though building the pieces doesn't wait on that.
+- **Also near-term, unchanged:** wiring form/energy/pump/Memory into Weekly
+  Analysis; exercise library rework.
 - **Later:** AI equipment substitution, bundled with the plan creator and
   volume/intensity planning; tone calibration, bundled with the
   planned/forced wording fix and the settings rework; warmup sets
@@ -19939,7 +20100,8 @@ file. Measured directly from the shipped `buildQaSystemPrompt`:
 is roughly half the estimate.** Real end-to-end cost this session was about
 **$0.057** across six exchanges.
 
-### One generation-quality anomaly, reported rather than papered over
+### Named finding, tracked across sessions: structurally-valid,
+substantively-broken Sonnet 5 output (n=2)
 
 The first `planning` conversation returned `"Nothing here"` (12 chars) on
 turn 0 and `"..."` (3 chars) on turn 1 — from Sonnet 5, with a rich,
@@ -19952,16 +20114,33 @@ config are all fine — this was a generation anomaly, not a code defect, and
 it is recorded as an observation rather than diagnosed beyond what the
 evidence supports.
 
-**The real design finding underneath it is worth acting on later:** a
-semantically empty answer passes every structural check the endpoint has.
-§5.7 rejects `max_tokens` and `refusal` as "not an answer", and migration
-023 rejects a blank string, but `"Nothing here"` satisfies all of them — so
-it was saved permanently (there is no update or delete path by design), and
-it then **poisoned turn 1 through the history window**, which is exactly
-why the follow-up degenerated too. No minimum-length guard was added: a
-legitimately short answer ("Yes — skip it.") is a real thing on this
-surface, and a heuristic that rejects good short answers would be worse
-than the anomaly. Flagged for Adam's decision rather than guessed at.
+**This is the same failure class as Phase 5's mid-sentence `end_turn`
+finding, not a second, unrelated oddity — merged here into one tracked
+finding.** Phase 5 (2026-09-01) saw a real `planning` answer end
+mid-sentence ("...still sitting unresolved. So "), with `outputTokens: 501`
+nowhere near the 8,000 ceiling and a genuine `end_turn` — filed at the time
+as "one sample isn't a pattern yet." This session's `"Nothing here"`/`"..."`
+pair is a second, worse instance of the exact same shape: **Sonnet 5
+occasionally returns output that is structurally valid — well-formed,
+non-blank, a real `end_turn`, under `max_tokens` — while being
+substantively broken as an answer.** §5.7 rejects `max_tokens` and
+`refusal` as "not an answer", and migration 023 rejects a blank string, but
+neither the mid-sentence answer nor `"Nothing here"` trips either guard, so
+both were saved permanently (there is no update or delete path by design).
+This second instance additionally **poisoned turn 1 through the history
+window**, which is exactly why the follow-up degenerated too — a
+consequence Phase 5's single instance didn't have the chance to show.
+
+**No automated fix at n=2, stated plainly.** A legitimately short, correct
+answer ("Yes — skip it.") is a real thing on this surface, so a
+minimum-length or similar structural heuristic would trade this rare,
+invisible failure for a common false positive on genuinely good short
+answers — a worse trade than the anomaly itself. This needs a human
+actually reading real answers over time to see whether a pattern (rate,
+trigger, route, prompt version) emerges, not a code change. Not fixed this
+session; flagged for Adam's decision. Recorded under one name here so a
+third instance reads as confirmation of a known, tracked issue rather than
+a fresh surprise.
 
 ### The one item carried past the feature's completion
 
@@ -19997,6 +20176,1421 @@ serves this session's code, verified at content level. Typecheck, build and
 all 400 tests pass. The only open items are the deferred in-session UI
 check above and the empty-answer design question, both named rather than
 left implicit.
+
+---
+
+## 2026-09-02 session (post-Phase-8 investigation — three questions
+answered, one docs-only edit, no code touched)
+
+Read CONTEXT.md first, as instructed. Explicitly scoped as investigate-
+and-report, not build: no guard, abstraction, or code change attempted
+beyond the one named edit below.
+
+**Q1 — the ownership-bug pattern's precise shared shape, and whether
+anything would catch a fourth instance.** All three (`conversationSessionId`
+in Phase 6, the category-switch draft leak in Phase 7, the unsent-draft-
+follows-you-to-a-different-tab bug in Phase 8) are the same specific shape:
+a long-lived module-singleton store (`qaSidebarStore`, no remount lifecycle
+of its own) holds state on behalf of more than one logical "surface"
+(session × category × entry point), and the key used to decide "this state
+is stale, clear it" covered fewer dimensions than the state space actually
+had. Phase 6's key omitted the session dimension (no `key` prop → no
+remount on session transition). Phase 7's key (`sessionId` alone) couldn't
+separate categories that all share `sessionId: null`. Phase 8's reset
+effect only fired once `conversationId` was non-null, so the one case with
+no conversation yet — a pure draft — had no key at all. Each fix added the
+missing dimension to what became `ownerCategory`/`ownerSessionId`, reactively,
+one bug at a time. **Checked, not assumed: there is no test file for
+`qaSidebarStore.ts` or `QaPanel.tsx` (confirmed via `Glob` against every
+`.test.*` in `src/features/coach/` — ten exist, none for these two files),
+no type constraint that forces a singleton store to carry an owner key, and
+no lint rule or documented general convention requiring one.** The only
+guard that exists is local and structural to this one store: `setDraft`/
+`startConversation` write `draft`/`conversationId` and the owner fields in
+the same `set()` call, so this store's three known dimensions can't drift
+apart from each other. That guard would not catch a fourth instance in a
+*different* singleton store, or a fourth dimension added to this store
+without being folded into the owner tuple. **Answer: three independent
+point patches sharing a root cause, with no shared guard catching the
+shape generally.**
+
+**Q2 — merged into one tracked finding, docs-only.** Phase 5's mid-sentence
+`end_turn` finding and this session's `"Nothing here"`/`"..."` finding are
+now recorded as one named finding — **"structurally-valid,
+substantively-broken Sonnet 5 output (n=2)"** — at Phase 8's entry above,
+with a forward-pointer added at Phase 5's original entry so either read
+order lands on the merge. Stated plainly in the merged entry: no automated
+fix at n=2 — a legitimately short, correct answer is real on this surface,
+so a length heuristic would trade a rare invisible failure for a common
+false positive — this needs a human reading real answers over time, not a
+code change. This was the one edit made this session.
+
+**Q3 — the "deploy-skip check I'd already run manually" sentence, traced to
+its actual source.** Not found in CONTEXT.md at all — it's from the Phase 8
+session's own chat transcript (`local_176d3166…`, "Phase 8 deployment and
+verification"), read directly via `mcp__ccd_session_mgmt`. Sequence,
+confirmed from the transcript rather than inferred: near the end of that
+session, the assistant ran the deploy-skip verification itself, inline
+(direct `Bash` calls — `vercel ls` showing the docs-only commit's `2s`
+"Canceled" row), and reported that result in its "Phase 8 complete" closing
+summary. Separately, a duplicate check had been launched earlier as a
+**background** `Bash` call (task id `brwrbx204`, described "Confirm docs
+commit skipped the build") — the assistant's own initiative, consistent
+with this project's standing post-`ignoreCommand`-incident verification
+habit, not anything Adam typed. That background task's completion arrived
+as a `task-notification` *after* the closing summary had already been sent.
+The quoted sentence is the assistant's reply to that late, redundant
+notification — "already run manually" means "already run directly by me,
+synchronously, moments earlier," not that Adam ran anything by hand; no
+message from Adam sits between the closing summary and this sentence. The
+phrasing is genuinely ambiguous on a cold read (readable as "a human ran
+this"), but the underlying action was self-initiated verification work, not
+a mischaracterization of user input as assistant output, and not fabricated
+— the check it refers to really was run and really did produce the `2s`
+Canceled row reported in the summary.
+
+---
+
+## 2026-09-02 session (test coverage for `qaSidebarStore.ts`, the one
+identified gap — one small extraction, one new architectural rule)
+
+Read CONTEXT.md first, as instructed.
+
+### `isStaleForSurface` pulled out of `QaPanel.tsx`'s effect into
+`qaSidebarStore.ts`, so the guard under test is the real one
+
+The prior session's Q1 finding was that the ownership-bug shape had **no
+shared guard** anywhere in the codebase — the mismatch check that prevents
+one surface's state leaking into another's lived only as an inline
+condition in `QaPanel.tsx`'s `useEffect`, undocumented as a named thing and
+untestable without mounting the component. Exported as
+`isStaleForSurface(state, category, sessionId)` from `qaSidebarStore.ts` —
+same boolean expression, moved rather than rewritten — and `QaPanel.tsx`
+now calls it instead of inlining it. Deliberate, narrow scope decision, not
+asked for outright but judged in scope: **without this, a test file could
+only re-implement the mismatch condition itself, and a real regression in
+`QaPanel`'s actual guard could pass anyway if the reimplementation drifted
+from it.** Pure relocation, no behavior change — confirmed by typecheck,
+the full suite, and build below, and not treated as needing live browser
+verification since the boolean logic is unchanged and this session's own
+verification instruction was explicitly typecheck/suite/build, not a live
+UI check.
+
+### `qaSidebarStore.test.ts` — the actual invariant, not just the three
+known bugs
+
+Per instruction, three named regression cases (one per Phase 6/7/8 bug)
+plus real transition-sequence and combinatorial coverage, not stopping at
+what's already shipped and fixed:
+
+- **Regression coverage**, one `it` per known bug, each reproducing the
+  exact real scenario (a session transition with no remount; a category
+  switch sharing `sessionId: null`; an unsent draft with no conversation
+  started yet) and asserting `isStaleForSurface` catches it.
+- **Exhaustive pairwise coverage across every surface this app can actually
+  produce**: 5 surfaces (`general`, `planning`, `app_mechanics`,
+  `in_session`/session A, `in_session`/session B) x 5 x 2 write modes
+  (a started conversation, and a draft with no conversation) = 50 checks,
+  each asserting `isStaleForSurface` equals "different surface", not just
+  "matches a known-bad combination." This is what's meant to catch a fourth
+  instance in a combination nobody has hit yet — every ordered pair, not
+  just the three pairs that happened to ship a bug first.
+- **A realistic multi-step sequence** (session -> category switch -> entry
+  point switch -> back) exercising several resets in one run, checking no
+  state survives across any of the five surfaces visited.
+- Basic action-correctness tests (`startConversation`/`setDraft` write the
+  owner fields atomically, `reset` clears everything but leaves `activeTab`
+  alone) and one dedicated check that `activeTab` is not a parameter of
+  `isStaleForSurface`, so switching NOTES/ASK can never itself trigger a
+  reset — the property Phase 6's draft-persistence-across-close/reopen live
+  check depended on but never had a unit test proving.
+
+**Property-based testing (fast-check), considered and declined, flagged
+rather than silently decided.** The task named this as a real decision
+point. Not used here: the state space this invariant actually spans is
+small and fully enumerable by hand — 5 real surfaces x 2 write modes, not
+open-ended strings, numbers, or user input — so hand-written pairwise
+enumeration reaches genuinely exhaustive coverage of every combination the
+app can produce, which is what a property-based test would otherwise be
+approximating with random sampling. This codebase has zero precedent for
+`fast-check` (or any property-based framework) across all existing tests,
+and a small, enumerable, finite state space is exactly the case where that
+kind of tool adds dependency weight without adding coverage a plain nested
+loop doesn't already give for free. Would reconsider if this invariant's
+input space ever stops being small and enumerable (e.g. if `sessionId`
+needed to be tested against arbitrary/malformed values rather than real
+session identifiers).
+
+### New standing rule added ("Key architectural rules")
+
+Don't launch a duplicate verification check in the background when an
+equivalent one already ran inline in the same session — the exact source
+of Q3's confusing "deploy-skip check I'd already run manually" sentence
+from the Phase 8 session. Full rule and rationale recorded in "Key
+architectural rules" above; not repeated here.
+
+### Verification
+
+`npm run typecheck` (both tsconfigs): clean. `npm test`: **33 test files,
+467 tests, all passing** (up from 32/400 — one new file,
+`qaSidebarStore.test.ts`, 67 new tests). `npm run build`: clean, same
+pre-existing `vendor-charts` chunk-size notice every prior build has shown.
+No code path outside `qaSidebarStore.ts`/`QaPanel.tsx`/the new test file
+was touched.
+
+---
+
+## 2026-09-02 session (Priority Context — technical planning only, no code)
+
+Read CONTEXT.md first, as instructed, then PRIORITY-CONTEXT-SPEC.md (written
+by Adam, not this session) and MESOCYCLE-ANALYSIS-SPEC.md (same — read for
+context on the first consumer, **not planned this session**). Produced
+**PRIORITY-CONTEXT-TASKS.md**. **Nothing was built. No implementation code,
+no migration file, no SQL applied.** Awaiting Adam's review.
+
+### What the feature is
+
+A per-muscle_group / per-muscle_subgroup priority setting (top / high /
+normal / low) Adam sets by hand in Coach → CONTEXT, so Coach features can
+tell "this is lagging and that's a problem" apart from "this is lagging
+because I deliberately deprioritized it." Coach-wide context, not owned by
+any one analysis. No AI writes to it, no inference from volume, no wiring
+into any analysis here — consumers do that in their own plans, Mesocycle
+Analysis first.
+
+### Three findings from reading the real vocabulary, not the spec's summary of it
+
+The task was explicit that the muscle_group/muscle_subgroup vocabulary be
+confirmed directly from `src/lib/exerciseTags.ts` rather than reconstructed.
+Doing that produced three things the spec could not have known:
+
+1. **`exerciseTags.ts` does not own the muscle_group vocabulary — nothing
+   does.** SPEC §4 says tag_value comes from "the real vocabulary values from
+   exerciseTags.ts." True for the 22 subgroups; **not** true for the 12
+   muscle_groups. That module exports no `MUSCLE_GROUPS` and no
+   `MUSCLE_GROUP_LABELS`. The list exists only as `type MuscleGroup`
+   (`src/types/index.ts:7`) plus **five verbatim local copies** in components
+   (`HistorySessions.tsx:16`, `library/ExerciseForm.tsx:13`,
+   `library/LibraryPage.tsx:11`, `programs/ExercisePicker.tsx:8`,
+   `progress/ExercisePicker.tsx:10`) and two more in tests. All five agree and
+   all include `'other'`, so the spec's "12 values" is right — it just has no
+   single source. The plan adds a canonical additive export and **deliberately
+   does not refactor the five copies**: their label maps have already diverged
+   for real layout reasons (`HistorySessions.tsx:24` renders
+   `hamstrings: 'HAMS'` for a narrow filter chip; `ExerciseForm.tsx:27` renders
+   `'HAMSTRINGS'`), so a blanket consolidation would silently change History's
+   filter UI. Flagged as A7 rather than done quietly.
+
+2. **There is no muscle_group → muscle_subgroup partition anywhere, and SPEC
+   §5's nesting needs one.** `exerciseTags.ts` has two groupings and neither is
+   it: `MUSCLE_SUBGROUP_GROUPS` is a clean partition of all 22 but its outer
+   level is 6 display categories, not the 12 groups;
+   `MUSCLE_SUBGROUPS_BY_MUSCLE_GROUP` is keyed by all 12 but is a **validity**
+   map (which tags an exercise in that group may carry), deliberately built with
+   overlaps. Counted directly: rendering it across the 11 named groups gives
+   **26 rows for 21 distinct subgroups** — `front_delt` under chest and
+   shoulders, `traps` under back and shoulders, `lower_back` under back and
+   hamstrings, `glutes` under quads *and* hamstrings *and* glutes — and
+   **`adductors` appears under none of the 11**, only under `'other'`, which is
+   unfiltered to all 22. So nesting by that map either makes `adductors`
+   unreachable or duplicates the whole vocabulary under `other`.
+   **The reason this matters is SPEC §3's own semantic, not tidiness:**
+   subgroup priority is defined as relative emphasis within its group's
+   ceiling, so a subgroup sitting under two groups has two ceilings and the
+   compositional rule stops being well-defined for it. TASKS §3.2 proposes an
+   explicit new `PRIORITY_TREE` partition (12 keys, 22 values, none twice),
+   derived from `MUSCLE_SUBGROUP_GROUPS` by splitting its `arms` and `legs`
+   categories across their muscle_group equivalents — not invented from
+   anatomy. `adductors` → `other` matches production reality (the one real
+   adductor exercise, Adduction Machine, is filed `muscle_group='other'`, and
+   `exerciseTags.ts`'s own header records that quads deliberately excludes
+   adductors). This is **A1, the assumption everything downstream depends on**.
+
+3. **`RatingChips.tsx` can't be reused for the 4-way selector.** It looks like
+   an exact fit (same 4-value shape as `FORM_SCALE`, same chip row, 44px
+   targets) but its contract clears to `null` when you tap the selected chip —
+   personalization SPEC §7's "absence is data too." Priority has no absence:
+   `'normal'` is a real value, not an unset state. The plan builds a
+   non-nullable sibling rather than adding a mode flag that makes the shared
+   component mean two things.
+
+### How "no row yet = normal priority" is actually implemented
+
+The task asked for a real default, not a UI assumption. Three layers:
+DDL `priority text not null default 'normal'`; a pure, Vitest-covered
+`densifyPriorities()` that turns any sparse row set into the complete 34-entry
+set — **this is where the default actually lives**, one named function both
+the UI and any future server-side consumer reach through the same
+`fetchPriorityContext`, so they cannot default differently; and total
+`Record<MuscleGroup, …>` / `Record<MuscleSubgroupTag, …>` types, so indexing
+can't yield `undefined`. Storage stays sparse. Seeding 34 rows in the
+migration was considered and rejected — it hardcodes a `user_id` into DDL,
+breaks for a second account, and destroys the "never touched" vs
+"deliberately set to normal" distinction that `isExplicit`/`anyExplicit`
+preserve.
+
+### The interface Mesocycle Analysis will cite
+
+`fetchPriorityContext(client: SupabaseClient, userId: string)` in
+`src/features/coach/priorityContext.ts` — injected client, never the browser
+singleton, following `analysisInput.ts`/`weekResolution.ts`/`qaContext.ts`, so
+a future `api/coach/analyze-meso.ts` can call it with no extraction pass (the
+thing daily, weekly and Q&A each had to do retroactively). Returns a
+`PriorityContext` with total `muscleGroups`/`muscleSubgroups` records, a flat
+ordered `entries` array for payload serialisation, `subgroupParent` so §3's
+relative-within-group rule is computable and a stored `input_snapshot` stays
+self-describing, and `anyExplicit` so MESOCYCLE-ANALYSIS-SPEC.md §1's "treat
+everything as normal rather than blocking" can be a real branch instead of
+feeding the model 34 defaults it would read as 34 stated preferences. Browser
+side: `usePriorityContext()` / `useSetTagPriority()`, `useCoachMemory.ts`'s
+shape exactly.
+
+### Migration 024 and the phase plan
+
+`024_v3_coach_priority_context.sql` — one new table
+`v2_coach_tag_priorities`, no changes to any existing table, standard
+`id`/`user_id`/RLS `for all` shape from 017/018, unique
+`(user_id, tag_type, tag_value)` as the upsert target. `tag_type` and
+`priority` get CHECKs; **`tag_value` deliberately does not**, mirroring the
+013-vs-014 asymmetry `exerciseTags.ts` documents (movement_pattern
+DB-enforced, muscle_subgroup app-layer) so the subgroup vocabulary isn't
+half-copied into DDL. Ten verification checks including the pre-apply
+row-count baseline and the transport hash, both standing rules.
+
+**Five phases, not nine, stated as a deliberate choice with the reason:** no
+model call, no endpoint, no prompt, no cost, no existing data to diagnose, one
+surface — so no diagnostic, dry-run or measurement phase, and splitting two
+components apart would be phase-gate theatre. Phase 0 assumption review →
+1 migration → 2 pure module/service/hooks + Vitest + a read-only production
+dry run of `fetchPriorityContext` before any UI exists → 3 frontend + live
+browser verification (hard gate) → 4 adversarial review, deploy, CONTEXT.md.
+
+### §4's "no history" limitation, answered directly
+
+**No, the schema needs nothing different — a single mutable row per tag is
+already the natural shape.** Every history alternative is a different *table*,
+not a different column, and a validity-range log would make the
+current-value read materially harder. So §4's limitation is a product
+limitation, not a schema-shape mistake. The only real schema question is
+whether to add a companion append-only `v2_coach_priority_changes` table now;
+recommended **deferred**, because adding it later touches nothing that already
+exists — but flagged that the cost is one-directional and accrues quietly
+(every change made in the interim is permanently unrecoverable). Two things
+shrink that loss: every meso analysis will snapshot its `PriorityContext` into
+`input_snapshot`, giving coarse per-meso history for free from a convention
+this project already follows, and `updated_at` answers "when did this last
+change" for the most recent change. **What would flip the recommendation:** if
+Adam expects to move priorities *during* a meso rather than at block
+boundaries, the snapshot mitigation stops covering the interesting case — the
+same question A8 raises from the other direction.
+
+### Eight assumptions flagged for review (TASKS §7)
+
+A1 the partition (the load-bearing one), A2 `adductors` → `other`, A3 `other`
+gets a priority row, A4 defaulted and explicitly-normal look identical on
+screen, A5 no optimistic update (convention plus a real argument: this data is
+read by an AI analysis, so a chip that moves before the write lands could show
+a priority that was never stored — re-decided at Phase 3's live check against
+real latency), A6 section order in the CONTEXT tab, A7 the five duplicated
+`MUSCLE_GROUPS` copies left alone, A8 priority is global rather than
+per-mesocycle.
+
+### Not done this session
+
+MESOCYCLE-ANALYSIS-SPEC.md was read for dependency context only —
+**MESOCYCLE-ANALYSIS-TASKS.md was not written and was not asked for.** Its
+§3 note about `progressService.ts`'s per-week rollup being a real reuse
+candidate was not investigated; that belongs to its own planning pass.
+
+---
+
+## 2026-09-02 session (Priority Context — revised to per-mesocycle scoping;
+planner investigation; still no code)
+
+Read CONTEXT.md first, as instructed. **PRIORITY-CONTEXT-TASKS.md rewritten as
+v2. Still nothing built — no implementation code, no migration file, no SQL
+applied, no database touched.** Awaiting Adam's review.
+
+### The direction change
+
+Adam replaced the v1 design entirely: priority is now **scoped per mesocycle
+from creation**, set as part of planning a meso, living in the planner — not a
+global live table in Coach → CONTEXT. **v1's snapshot approach (copying the
+priority set into each analysis's `input_snapshot` as the history mechanism) is
+retired, not refined.** The document carries a revision table at the top saying
+exactly which sections changed and which are untouched, so the diff from v1 is
+readable without comparing the two.
+
+Explicitly instructed not to rederive §3's partition (A1) or A2–A7 — they
+concern the tag vocabulary and UI conventions, which the scoping change doesn't
+touch. They're restated one line each for reference and marked approved.
+
+### The planner investigation (TASKS §0.2) — four findings
+
+Gated the revision on reading the real planner rather than designing blind.
+
+1. **Creating a mesocycle is a single-step form, not a wizard.**
+   `ProgramPage.tsx`'s START MESOCYCLE `BottomSheet` collects an optional name
+   and a program pick, then submits; `useCreateMeso` does
+   `completeAllActiveMesos()` then one insert. **There is no per-meso
+   configuration step of any kind today** — so there's no existing multi-step
+   flow to slot a priority page into. One is being added, not extended.
+
+2. **`v2_mesocycles` is minimal** — `id`, `user_id`, `name`, `program_id`,
+   `status`, `start_date`, `end_date`, `created_at` (`001_v2_schema.sql:49`),
+   standard `for all using (user_id = auth.uid())` RLS
+   (`002_v2_rls_policies.sql:28`). One active meso at a time, enforced in the
+   app layer. Nothing about a meso is configurable after creation except
+   `status`/`end_date`.
+
+3. **Workout days belong to the *program*, not the mesocycle — so the literal
+   seam Adam described ("near workout days") is the wrong lifetime.**
+   `v2_workout_days.program_id` (`001:26`), configured on `ProgramBuilderPage`
+   (`/program/:programId`) under its `WORKOUT DAYS` heading. A program is
+   **reused across mesocycles** — `v2_mesocycles.program_id` points at it, and
+   the START MESOCYCLE sheet's whole job is picking which existing program the
+   new block runs. Meso-scoped rows on a program-scoped screen would mean the
+   same screen showing different data depending on which meso is active, with
+   no meso named on it. **Reported plainly rather than worked around**, and the
+   plan proposes the seam that satisfies the intent without the mismatch.
+
+4. **`PlanPage` (`/plan`) is meso-scoped but week-shaped and active-only.** It
+   reads `activeMeso = mesos.find(m => m.status === 'active')` with **no meso
+   selector**, and its whole frame is a week (week nav, `PAST WEEK — READ
+   ONLY`). So a completed meso's priorities could never be reached there —
+   which breaks the main consumer, since Mesocycle Analysis runs on a
+   *completed* meso. Rejected as the home; fine as an optional link.
+
+*Incidental, not acted on:* `fetchMesos()` (`mesoService.ts:41`) has no
+`.eq('user_id', ...)` and relies on RLS alone, unlike every Coach service's
+defence-in-depth convention. Not a live bug and not this feature's to fix —
+noted because §4's new query sits beside it and does carry the explicit filter.
+
+### The seam chosen: create-then-configure
+
+`ProgramPage.tsx` already contains this exact flow for programs
+(`handleCreateProgram`: create the row → take the returned id → navigate to its
+configuration screen). Mesos get the same treatment: `handleStartMeso` gains one
+navigation to a new `MesoPrioritiesPage.tsx` at `/meso/:mesocycleId/priorities`,
+using the id `createMeso.mutateAsync` already returns. **The START MESOCYCLE
+sheet itself isn't touched** — no new fields, and the meso row is real before any
+priority row references it, so no client-minted uuid is needed. The sheet would
+have been the wrong place anyway: `maxHeight: '85dvh'`, built for two inputs.
+
+Entry points for an existing meso: a third `PRIORITIES` button in
+`ActiveMesoCard`'s footer (flagged A9 — the one existing component this feature
+changes visually, and a footer sized for two labels may need them shortened),
+and making the completed-meso list rows navigable. A PlanPage link is named and
+deferred.
+
+### Q1 — prefill from the previous meso, or blank? Presented, not decided
+
+A genuine UX call that didn't exist under the global design. Three options laid
+out with their real costs:
+
+- **A, blank every meso** — every row was genuinely stated for that block, so
+  `isExplicit`/`anyExplicit` stay strictly truthful; but real repeated friction.
+- **B, automatic prefill** — lowest friction, but **it manufactures
+  stated-preference data**: a prefilled row is `isExplicit: true` but was never
+  stated for that meso, so a priority set once in February reads to the model in
+  June as a fresh declaration. That's the exact distinction the feature exists
+  to preserve (SPEC §1: stated preference and actual behavior are allowed to
+  differ). Would also likely need a third `isExplicit` state.
+- **C, blank plus an explicit one-tap COPY FROM «previous meso»** —
+  recommended, still Adam's call. The copy becomes a deliberate act, so every
+  row it writes really was stated for this meso; `isExplicit` stays truthful
+  with no third state. **Direct precedent in this exact screen family:**
+  PlanPage's `COPY WEEK` / `copyWorkoutFromPreviousWeek` are the same shape.
+
+Plus **Q1a**: if any copy happens, "the most recent prior meso" needs defining —
+it's ambiguous today (`fetchMesos` orders by `created_at desc`,
+`ActiveMesoCard` shows `start_date`, and `useCreateMeso` completes the prior
+meso in the same mutation). Proposed: greatest `start_date` excluding the
+target, tie-broken by `created_at desc`.
+
+### Schema (§2) and the read interface (§4)
+
+Migration 024 → `v2_coach_meso_tag_priorities` (renamed from v1's
+`v2_coach_tag_priorities`, since meso scope is now the defining property of a
+row). Unique key `(user_id, mesocycle_id, tag_type, tag_value)`.
+
+**`mesocycle_id ... on delete cascade`, matching `v2_week_plans` and
+deliberately not `v2_sessions`' `set null`** — both conventions exist against
+`v2_mesocycles` in this schema and they encode a real distinction: planning data
+dies with the block, history outlives it. Priority is planning intent.
+`deleteMeso` only permits deleting a **completed** meso
+(`mesoService.ts:88`), so this can never discard the active block's priorities.
+
+Verification grew from ten checks to thirteen, the three new ones all specific
+to meso scoping: the row-count baseline now covers `v2_mesocycles` too (the FK
+is exactly what the standing rule says to count rather than eyeball);
+**uniqueness proven to be meso-scoped rather than global** — the same
+`(user, tag_type, tag_value)` against two different mesos must both succeed,
+which is the one check that would catch a unique key accidentally written
+without `mesocycle_id`, the most damaging possible typo here; and **the cascade
+proven by actually deleting a throwaway meso**, per the standing
+prove-behaviour-don't-read-the-DDL discipline.
+
+`fetchPriorityContext(client, userId, mesocycleId)` — **`mesocycleId` required
+and non-nullable.** An optional "omit for the active meso" form was considered
+and rejected: it would smuggle the old "current priority" semantics back into a
+per-meso interface, and Mesocycle Analysis by definition runs against a
+completed meso, never the active one. `PriorityContext` gained a `mesocycleId`
+field so a payload is self-identifying and two contexts can't be confused.
+`anyExplicit` now means "anything set for *this* meso" — every meso predating
+the feature reads false forever, which is accurate.
+
+The TanStack query key is **parameterised by meso**
+(`['v2_coachMesoTagPriorities', mesocycleId]`). Not cosmetic: a flat key would
+serve one meso's cached priorities to another meso's screen the moment two are
+viewed in one session — the same surface Q&A §8.3's ownership-bug class lives
+on. `useWeekPlans(mesoId, weekNumber)` already keys this way.
+
+### Two things that got *better* under per-meso scoping
+
+**§8 rewritten.** SPEC §4's flagged no-history limitation is now **largely
+answered by the row key itself**: "what were my priorities during meso X" is
+answerable forever, by one query, for every meso that had rows — not
+reconstructed from an analysis payload and not dependent on an analysis ever
+having run. What remains unrecoverable is only *within*-meso churn. (Noted
+honestly: SPEC §4's own example — "only deprioritized in the back half of the
+meso" — is the within-meso case, so it isn't fully closed; its cross-meso
+sibling, the far more common way priorities move, is.) The companion
+`v2_coach_meso_priority_changes` table stays deferred, now more comfortably.
+
+**§1.2's "no rows = all-normal" needs no special handling, and there's a direct
+precedent for saying so.** `v2_week_plans` rows are created lazily per (meso,
+day, week) and never eagerly at meso creation, so "this meso has no rows yet for
+this thing" is already a normal, correctly rendered state in this planner.
+
+### Spec divergences flagged (§0.3, A10)
+
+v2 knowingly contradicts three statements in Adam's own
+PRIORITY-CONTEXT-SPEC.md: §4's global row key, §5's "lives in the existing Coach
+→ CONTEXT tab", and §4's "stores current priority only, no history" note. §1, §2
+and §3 are unaffected — including §3's compositional semantic, the part the spec
+says matters most. **Recommended updating the spec before Phase 1 so the two
+documents don't disagree in the permanent record; not done unilaterally, it's
+Adam's document.**
+
+### Also changed
+
+**A11 — offline is now a real question, not an inherited answer.** Under v1 it
+was settled by inheritance: the surface lived under `/coach`, and every Coach
+surface is online-only with a "REQUIRES A CONNECTION" card. As a planner screen
+that argument doesn't apply — `PlanPage`/`ProgramPage` show no such card.
+Recommended matching the planner screens it now sits beside: no offline support
+and no card either. No Dexie bump, no sync-queue change.
+
+Phase count unchanged at five; what the phases *contain* changed. Phase 0 now
+gates on Q1 (which determines whether `priorityService.ts` ships a copy function
+at all) plus A9–A11 and the §0.3 spec question. Phase 3's headline new live
+check is **per-meso isolation** — set a priority on the active meso, open a
+completed meso's screen, confirm all-normal and no cache bleed.
+
+### Not done this session
+
+No code, no migration file, no database access of any kind. MESOCYCLE-ANALYSIS-
+TASKS.md still not written — Priority Context is its dependency and goes first.
+
+---
+
+## 2026-09-02 session (Priority Context — two investigations, every open item
+closed, PRIORITY-CONTEXT-SPEC.md edited directly. TASKS.md now v3; still no code)
+
+Read CONTEXT.md first, as instructed. **Still nothing built — no implementation
+code, no migration file, no SQL applied, no database touched.** Two documents
+changed: PRIORITY-CONTEXT-SPEC.md (a real edit to Adam's own spec, per his
+instruction) and PRIORITY-CONTEXT-TASKS.md (v2 → v3). Awaiting approval.
+
+### Investigation 1 — is meso creation already offline-capable? No, hard
+online-only. Four independent confirmations
+
+Investigated to settle A11 from evidence rather than from the surrounding
+convention:
+
+- `mesoService.createMeso` (`:49`) is a plain
+  `supabase.from('v2_mesocycles').insert(...).select().single()` — no Dexie
+  branch, no queue write, no offline path. Same for `completeAllActiveMesos`,
+  which `useCreateMeso` calls first.
+- `useCreateMeso` (`useMesos.ts:24`) has no `onMutate` and no offline branch.
+- **Nothing anywhere enqueues `v2_mesocycles`.** Grepped every `db.sync_queue`
+  write site: there are five, and the only tables that ever reach the queue are
+  `v2_sessions` (`useSession.ts:360`, `:445`, `:570`), `v2_set_logs` (`:692`)
+  and `v2_coach_notes` (`useCoachNotes.ts:48`) — matching this file's standing
+  offline rule exactly, which lists `useLogSet`/`useCreateSession`/
+  `useCompleteSession`/`useSkipSession` and not `useCreateMeso`.
+- **Strongest of the four: `db.ts` has no `mesocycles` table at all.** The
+  Dexie v2 schema stores `exercises`, `workout_days`, `week_plans`, `sessions`,
+  `set_logs`, `sync_queue` — no `mesocycles`, no `programs`. A meso cannot even
+  be *read* offline, let alone created.
+
+`ProgramPage.tsx`, `useMesos.ts` and `mesoService.ts` contain **zero**
+references to `useOnlineStatus`, `isOnline`, `isError`, `.error` or `catch`.
+
+**A11 decided from that finding, as instructed: creation is already
+online-only, so the priorities page being online-only is consistent —
+approved.** No Dexie bump, no sync-queue change, and no "REQUIRES A CONNECTION"
+card either (that's the Coach convention; the planner screens show none).
+
+**One pre-existing gap found and flagged rather than fixed:** because there's
+no error handling anywhere in that flow, START MESOCYCLE offline today fails
+*silently*. `handleStartMeso` (`ProgramPage.tsx:45`) awaits
+`createMeso.mutateAsync(...)` with no try/catch and no error UI, so the insert
+rejects, `setShowStartMeso(false)` never runs, the sheet sits there with the
+button re-enabled, and the rejection surfaces only as an unhandled promise
+rejection in the console. Not this feature's to fix — but it means "consistent
+with `useCreateMeso`" is a low bar, so TASKS §5.7 now explicitly requires this
+feature's own selector and copy button to surface their mutation errors, and
+Phase 3 checks the screen degrades *visibly*.
+
+### Investigation 2 — reachability. Not redirect-only as designed, but the
+entry point that mattered most had been deferred
+
+Reported accurately rather than treated as a gap that wasn't there: **v2's §5.3
+already specified two durable ProgramPage entry points** (a `PRIORITIES` button
+in `ActiveMesoCard`'s footer, and making completed-meso rows navigable), so the
+route was never going to be redirect-only. What v2 got wrong was **deferring the
+PlanPage link out of v1** — PlanPage is where Adam actually is while planning a
+block, its header already names the active meso (`:133–135`), and it's the
+screen the whole per-meso direction change pointed at.
+
+§5.3 rewritten around two entry points that ship in v1:
+
+1. **PlanPage's header line becomes the primary route to the active meso's
+   priorities.** That line is already the meso's name — a 9px mono `<p>` above
+   the `PLAN` h1, currently inert. It becomes a tappable row with a
+   `PRIORITIES ›` affordance and a real touch target (not relying on the 9px
+   text). No new query, no new state — it uses the `activeMeso` PlanPage
+   already resolves at `:41`.
+2. **ProgramPage's completed-meso rows become navigable** — the only way to
+   reach a *finished* block's settings, which is the case Mesocycle Analysis
+   cares about. `MY PROGRAMS` rows on the same page already navigate on tap.
+
+**Consequence: A9 downgraded to optional and recommended dropped.** With
+PlanPage carrying the active meso's link, `ActiveMesoCard`'s cramped three-way
+footer split is redundant. Dropping it means **no existing component's layout
+changes anywhere in this feature** — ProgramPage gains navigation on rows that
+already exist, PlanPage makes a line it already renders tappable. Kept in §7
+rather than deleted, since it was Adam's to approve.
+
+Also added to Phase 3: hard-reload directly on `/meso/:id/priorities` and
+confirm it renders standalone — a route only ever entered by client-side
+navigation can hide a missing data dependency.
+
+*Considered and rejected as a third entry point:* `MesoProgress`'s `<select>`
+meso selector covers every meso including completed ones, but Progress is an
+analytics surface and a settings link there would put a write affordance on a
+read-only screen.
+
+### Q1 / Q1a resolved and applied — and reading COPY WEEK settled the one
+question the copy still had
+
+Adam resolved Q1 as blank-plus-explicit-copy in PlanPage's COPY WEEK shape, and
+Q1a as `start_date` ordering. Applied throughout (new TASKS §5.8, §4.1's hooks,
+§9's file table, and SPEC §5).
+
+Reading the actual precedent answered the design question v2 hadn't: **what
+happens when the destination already has data. It never does.**
+`showCopyButton` (`PlanPage.tsx:89`) gates on `weekPlans.length === 0`, so COPY
+WEEK is only ever offered into an empty destination — no overwrite path, no
+confirm dialog, no delete. Priorities take the same gate: the button appears
+only when `anyExplicit === false` for this meso and a previous meso with at
+least one row exists, and disappears the moment anything is set.
+
+Two further specifics that came out of reading it:
+
+- **The copy writes the source's explicit rows only, never the dense 34.**
+  Copying the densified set would write ~30 explicit `normal` rows nobody
+  stated — manufacturing precisely the data option C was chosen to avoid.
+  `copyFromPreviousWeek` follows the same principle (it copies `prevSets`, what
+  exists, not a materialised full week), so this is confirmed by precedent
+  rather than asserted.
+- **One deliberate tightening over the precedent:** COPY WEEK gates on the
+  destination only, so tapping it when the previous week is empty is a silent
+  no-op (`copyFromPreviousWeek` returns early at `:212`). Gating on the source
+  having rows too costs nothing here, so the priorities button never appears
+  when it would do nothing.
+
+Q1a's rationale recorded: `start_date` is what the planner already treats as a
+meso's position in time (`ActiveMesoCard` displays it, `computeWeekNumber`
+derives from it, `MesoProgress` labels by it); `fetchMesos()`'s `created_at
+desc` is a list-ordering choice, not a claim about which block came first. The
+selection rule is pure, so it gets **real Vitest coverage** in Phase 2 rather
+than only a live check — including the null case, which is what hides the
+button.
+
+### PRIORITY-CONTEXT-SPEC.md edited directly (A10 closed)
+
+A real edit to Adam's own document, not a new file. Changed: **§4** (row key
+now per-meso; explicit note that a meso with no rows reads all-normal and needs
+no special handling, covering the in-progress meso and every meso predating the
+feature); **§4's history note** — the original flagged assumption is
+*superseded rather than deleted*, replaced by an "On history" paragraph
+recording that per-meso scoping resolves the cross-meso case and only
+within-meso churn stays unrecoverable, matching TASKS §8; **§5** (the planner,
+on a per-meso screen — plus the blank-plus-explicit-copy decision and the
+start-date definition); **§1/§2's location wording** ("how much he *currently*
+cares" → "how much a given training block is meant to care"; §2's in-scope
+bullet now says the planner). §1 keeps "Coach-wide context" with one clarifying
+clause: that describes who *reads* it, not where it lives. **§6** now says
+Mesocycle Analysis reads one specific meso's priorities — the completed block
+being analysed, never whichever meso is active — and notes that daily/weekly/
+planner will each have to decide which meso they mean, a question that did not
+exist before §4 became per-meso and is deliberately not answered there.
+
+**§3 is untouched**, including the compositional semantic the spec says matters
+most, and so is everything in §2's out-of-scope list. A dated revision note at
+the top of the spec records exactly this.
+
+### TASKS.md is now v3 — nothing in §7 is open
+
+The revision table at the top was rewritten for v3. §7 renamed from "Open
+question and assumptions" to "Decisions and assumptions — nothing here is
+open": Q1/Q1a resolved, A9 downgraded, A10 closed, A11 resolved from evidence,
+A1–A7 unchanged and approved, A8 retired at v2. **Phase 0 is consequently no
+longer a decision gate** — it's a confirmation read of §5.3 and §5.8, the two
+sections Adam hasn't seen yet, plus taking or dropping A9's optional extra.
+Phase count unchanged at five.
+
+Phase 3's live checks grew to cover the copy button's four states (hidden when
+rows exist, hidden when no previous meso, visible and naming the source,
+and — when tapped — **writing exactly the source's explicit rows, verified as a
+database row count, not on screen**, since the whole point of option C is that
+it must not write the dense 34), Q1a's ordering against Adam's real meso list
+(the only place greatest-`start_date`-vs-newest-`created_at` can actually be
+observed), the reachability checks above, and the offline degradation check.
+
+### Not done this session
+
+No code, no migration file, no database access of any kind.
+MESOCYCLE-ANALYSIS-TASKS.md still not written — Priority Context is its
+dependency and goes first. When it is written it must cite
+`fetchPriorityContext(client, userId, mesocycleId)` and pass the *analysed*
+meso's id, never the active one.
+
+---
+
+## 2026-09-02 session (Priority Context — Phase 1: migration 024, applied
+and verified against production; two pre-existing bugs written into Known
+issues; still no application code)
+
+Read CONTEXT.md first, as instructed. Two things done: closed a gap from the
+prior session (two bugs found during investigation had been described in
+session-log prose but never actually written into the Known issues section),
+then executed Phase 1 exactly as PRIORITY-CONTEXT-TASKS.md §6 specifies.
+**Stopped at Phase 1's gate, as instructed — Phase 2 not started.**
+
+### Known issues gap closed before anything else
+
+Checked directly rather than assumed: grepped CONTEXT.md's actual "Known
+issues" section (the bullet list right after that heading, not the session-log
+prose) for `handleStartMeso`, "silent offline failure," `showCopyButton`, and
+"silent no-op" — none of the four terms appeared there. Both bugs the prior
+session found (`handleStartMeso`'s unhandled offline rejection;
+`copyFromPreviousWeek`'s silent no-op on an empty source) existed only inside
+that session's own narrative entry, never promoted to the list AUDIT.md/future
+sessions are supposed to be able to scan. Added both as new bullets at the top
+of the Known issues list, each naming the exact file/line and the mechanism,
+matching the section's existing tone and level of detail.
+
+### Migration 024 — written, applied to production, verified
+
+`supabase/migrations/024_v3_coach_meso_priority_context.sql` written verbatim
+from PRIORITY-CONTEXT-TASKS.md §2.5 — no changes from the reviewed text.
+Applied via the Supabase SQL Editor, per the standing Monaco-JS-API practice
+(no simulated typing anywhere this session): a base64-encoded blob was decoded
+in-browser and written directly via `model.setValue(sql)`, with
+`model.getValue() === sql` checked as an exact string equality — not just a
+length check — immediately after every single write to the editor, all
+session. Every one of dozens of `setValue` calls this session passed that
+equality check on the first try.
+
+**All thirteen §2.7 checks run for real against production**, scoped to
+Adam's own `user_id` (`12e79b69-...659f`) throughout, via two throwaway
+mesocycles created and fully deleted within this session rather than touching
+Adam's real active meso:
+
+1. **Pre-apply baseline**, taken before running the migration:
+   `auth_users_count=1`, `v2_mesocycles_count=1`,
+   `to_regclass('public.v2_coach_meso_tag_priorities')` = `NULL` (table did not
+   yet exist). Re-checked after applying: both counts unchanged, confirming
+   the migration touched no existing table's data.
+2. **Transport hash.** Web Crypto has no MD5, so this used SHA-256 instead,
+   at the same assurance level the standing rule asks for: the exact buffer
+   that was `Run` (still sitting in the SQL Editor's Monaco model after a
+   successful execution) hashed to `a559d037...822a1`, matching a SHA-256
+   computed locally against `024_v3_coach_meso_priority_context.sql` on disk,
+   both at length 2451. Since `getValue() === sql` was already verified via
+   exact string equality before running — a strictly stronger proof than a
+   hash match — this is confirmatory, not the only evidence.
+3. **`information_schema.columns`** — exactly 8 columns, all matching: `id`
+   (uuid, NOT NULL, default `gen_random_uuid()`), `user_id`/`mesocycle_id`
+   (uuid, NOT NULL, no default), `tag_type`/`tag_value`/`priority` (text, NOT
+   NULL — `priority`'s default confirmed literally as `'normal'::text`),
+   `created_at`/`updated_at` (timestamptz, NOT NULL, default `now()`).
+4. **RLS** — `pg_class.relrowsecurity = true`; exactly one policy, "Users
+   access own rows", `cmd = ALL`, both `qual` and `with_check` reading
+   `(user_id = auth.uid())`.
+5. **`pg_indexes`** — exactly two: the pkey (btree on `id`) and
+   `v2_coach_meso_tag_priorities_tag_uk` (btree on `user_id, mesocycle_id,
+   tag_type, tag_value`), matching the migration exactly.
+6. **Unique constraint violated** — a single two-row `INSERT` with an
+   identical `(user_id, mesocycle_id, 'muscle_group', 'chest')` tuple in both
+   rows failed with `23505` on `v2_coach_meso_tag_priorities_tag_uk`, and
+   Postgres's per-statement atomicity was independently confirmed afterward
+   (`count(*) = 0` for that meso — neither row landed, not just the second).
+7. **Meso-scoped uniqueness — the one check that matters most.** The identical
+   `(user_id, 'muscle_group', 'chest')` tuple inserted against two different
+   throwaway mesocycles **both succeeded**, one row per meso
+   (`top` on meso A, `low` on meso B) — proving the unique key is scoped by
+   `mesocycle_id` and not global, which is exactly the failure mode a typo'd
+   index definition would produce.
+8. **All three CHECKs violated, individually**: `tag_type = 'movement_pattern'`
+   → `23514` on `..._tag_type_check`; `priority = 'highest'` → `23514` on
+   `..._priority_check`; `tag_value = '   '` → `23514` on
+   `..._tag_value_check`. Each constraint name confirmed in the actual error
+   text, not inferred.
+9. **FK violated** — inserting against a nonexistent `mesocycle_id`
+   (`00000000-...-000000000000`) failed with `23503` on
+   `..._mesocycle_id_fkey`.
+10. **Cascade proven by actually deleting something**, not read off the DDL:
+    meso A (3 priority rows: `chest`/top, `upper_chest`/normal, `back`/top)
+    was deleted outright. Confirmed after: meso A's rows → 0, meso A itself →
+    gone, and **meso B's row (the isolation half of this check) was
+    untouched at 1** — proving the cascade is scoped to the deleted meso, not
+    a blanket effect.
+11. **Default proven** — an insert naming no `priority` column stored
+    `'normal'` exactly.
+12. **Upsert proven** — the same `(user, meso, tag_type, tag_value)` tuple
+    inserted twice via `on conflict ... do update` with two different
+    priority values (`low` then `top`) left exactly one row, holding the
+    second value.
+13. **Orphan query** — 0 rows with a `tag_value` outside the 34-value
+    vocabulary (vacuously true once the table is empty, but run and recorded
+    as instructed so it exists as a known diagnostic for later).
+
+**Cleanup, confirmed rather than assumed:** both throwaway mesocycles and
+every row they held were deleted at the end —
+`total_rows_now = 0`, `leftover_test_mesos = 0`. No row belonging to Adam's
+real active mesocycle, or any other real data, was read, written, or deleted
+at any point — `v2_mesocycles_count` stayed at 1 (Adam's real meso) throughout
+every check.
+
+Migration committed on its own, as instructed:
+`c541931 feat: Priority Context Phase 1 — migration 024, applied and
+verified`. No other file staged in that commit — `git status` before staging
+showed the expected pre-existing untracked/modified set (CONTEXT.md, the two
+Q&A sidebar files, the three planning docs, `supabase/.temp/`), none of which
+this commit touched.
+
+### Stopped at the gate, as instructed
+
+Phase 1's gate ("§2.7's results reviewed. No code reads this table until
+then.") is where this session stops. **No application code was written** —
+`priorityTags.ts`, `priorityContext.ts`, `priorityService.ts`,
+`usePriorityContext.ts`, and everything in Phase 2 onward remain unbuilt.
+`npm run typecheck` / `npm test` were not run this session since no
+application code changed — the only diff outside the committed migration is
+this CONTEXT.md update and the Known-issues addition, both documentation.
+
+---
+
+## 2026-09-03 session (Priority Context — Phase 2: pure module, service,
+hooks, all Vitest-covered; fetchPriorityContext dry-run confirmed against
+production; no UI yet)
+
+Read CONTEXT.md first, as instructed. Executed Phase 2 exactly as
+PRIORITY-CONTEXT-TASKS.md §6 specifies. **Stopped at Phase 2's gate, as
+instructed — Phase 3 not started, no UI code exists.** Nothing committed —
+this session's instructions didn't ask for a commit the way Phase 1's did, so
+everything below is staged in the working tree only, same as CONTEXT.md's own
+update.
+
+### Files built
+
+- **`src/lib/priorityTags.ts`** (new) — `PriorityLevel`/`PriorityTagType`,
+  `PRIORITY_SCALE`, `DEFAULT_PRIORITY`, the `PRIORITY_TREE` partition (A1,
+  approved — 12 keys, 22 values, none twice), its exact inverse
+  `SUBGROUP_PARENT`, and `densifyPriorities()` — the one place "no row = normal
+  priority" actually lives (§2.4), meso-agnostic by design so it treats an
+  empty row array as the ordinary case, not an error path.
+- **`src/lib/exerciseTags.ts`** (modified, additive only) — `MUSCLE_GROUPS`
+  (12 values, same order as `types/index.ts`'s `MuscleGroup`) and
+  `MUSCLE_GROUP_LABELS`, closing §0.1 finding 1: this module already owned
+  `muscle_subgroup`/`movement_pattern` vocabulary but had no canonical
+  `muscle_group` list of its own — only `type MuscleGroup` plus five verbatim
+  local copies in components. Labels use the full-word form four of those five
+  copies already use (`HAMSTRINGS`), not `HistorySessions.tsx`'s narrow-chip
+  `HAMS` abbreviation. **The five existing component copies are deliberately
+  untouched**, per the plan's own reasoning — consolidating them risked
+  silently changing History's filter chip labels, which is out of scope here.
+- **`src/features/coach/priorityContext.ts`** (new) —
+  `fetchPriorityContext(client, userId, mesocycleId)`, the injected-client
+  interface Mesocycle Analysis will cite. `mesocycleId` required and
+  non-nullable, matching §4's reasoning exactly (an optional "active meso"
+  form would smuggle the old global semantics back in). One query
+  (`.eq('user_id', ...).eq('mesocycle_id', ...)`, both explicit per the Coach
+  service defence-in-depth convention) plus one call to `densifyPriorities`.
+- **`src/features/coach/priorityService.ts`** (new) — `setTagPriority`
+  (upsert on `(user_id, mesocycle_id, tag_type, tag_value)`, `updated_at` set
+  explicitly on every write, matching `coachMemoryService.ts`'s convention) and
+  `copyPrioritiesFromMeso(userId, fromMesocycleId, toMesocycleId)` per §5.8 —
+  copies the source meso's *explicit rows only*, verbatim, never the densified
+  34 (copying the dense set would manufacture ~30 stated `'normal'` rows never
+  actually set for the target meso, exactly what Q1's blank-plus-explicit-copy
+  resolution exists to prevent).
+- **`src/features/coach/usePriorityContext.ts`** (new) — `usePriorityContext`/
+  `useSetTagPriority` (TanStack, keyed by meso —
+  `['v2_coachMesoTagPriorities', mesocycleId]` — not a flat key, for the exact
+  reason §4.1 gives: a flat key would serve one meso's cached priorities to
+  another meso's screen the moment two are viewed in one session, the same
+  ownership-bug class Q&A §8.3 already found once); `usePreviousMeso`,
+  wrapping a new exported pure function, `selectPreviousMeso(mesos,
+  targetMesocycleId)`; `useCopyPrioritiesFromMeso`. No optimistic updates
+  anywhere in this file (§5.6 — this data is read by an AI analysis, so a chip
+  moving before the write lands could show a priority that was never stored).
+
+### `selectPreviousMeso` — real Vitest coverage, as instructed
+
+Extracted as a plain exported function rather than tested through the hook —
+checked first that no `renderHook`/hook-testing precedent exists anywhere in
+this codebase (`grep -rl renderHook src/` → nothing), confirming this
+project's actual convention is always to pull a hook's real logic out as a
+pure function and test that directly (`qaSidebarStore.ts`'s
+`isStaleForSurface`, `qaCategory.ts`'s `resolveQaRoute` are the precedents).
+
+`usePriorityContext.test.ts`, 5 tests, all four named cases plus one
+defensive extra:
+- greatest `start_date` wins
+- **the target meso is excluded even when it is the newest by `start_date`**
+  — constructed so the target's own date is the largest in the set, proving
+  exclusion happens before the max-selection, not after
+- `created_at desc` breaks a tie when two mesos share a `start_date`
+- returns `null` when no prior meso exists (both an empty array and a
+  single-meso array containing only the target)
+- one additional defensive case: a single-meso array where that meso *is* the
+  target — confirms the function can never return the target itself even in
+  a minimal input
+
+### `priorityTags.test.ts` — all of §3.4's named assertions, 16 tests
+
+Including the one the doc calls out as the single most valuable assertion in
+the suite — `PRIORITY_TREE`'s flattened values set-equal `MUSCLE_SUBGROUPS`
+imported from `exerciseTags.ts`, each exactly once — the test that fails the
+day someone adds a 23rd subgroup to `exerciseTags.ts` and forgets this file.
+Also: the empty-row-set case treated as the ordinary "meso with no rows yet"
+input rather than an edge case (per §1.2's own framing); an explicit `'normal'`
+row producing `isExplicit: true`/`anyExplicit: true` (an explicit normal is
+not a default); unknown `tag_value` and unknown `tag_type` both silently
+ignored rather than thrown on; deterministic `PRIORITY_TREE` entry order,
+each group immediately followed by its own subgroups.
+
+`exerciseTags.test.ts` gained 4 tests for the new `MUSCLE_GROUPS` export,
+matching that file's own existing conventions (drift-guard against the type
+declaration, label completeness, full-word-not-abbreviated check).
+
+### Verification
+
+`npm run typecheck` (both tsconfigs): clean, no errors. `npm test`: **35 test
+files, 492 tests, all passing** (up from 33/467 before this session — 25 new:
+4 in `exerciseTags.test.ts`, 16 in `priorityTags.test.ts`, 5 in
+`usePriorityContext.test.ts`).
+
+### `fetchPriorityContext` run against production, read-only
+
+Per the instruction, before any UI exists. Used the established browser
+dry-run technique (this session's own persistent memory file,
+`browser-dry-run-technique.md`, "even safer" variant): started the real dev
+server (`.claude/launch.json`'s `Overload v2 dev` config, already logged in as
+Adam), then in-browser dynamically imported the *actual compiled module* —
+`await import('/src/features/coach/priorityContext.ts')` — and reused the
+app's own already-authenticated `supabase` singleton, so this called the exact
+same shipped code Vercel would run, against real RLS-scoped data, with zero
+credential handling anywhere and zero writes (the function contains no
+insert/update/upsert path at all).
+
+First confirmed Adam's real active meso via the same authenticated client
+(`v2_mesocycles` filtered to `status = 'active'`): `d94feb00-f195-492b-b99b-
+f09e583bf05f`, "MESO 1.0", `start_date` 2026-07-05 — matching the WEEK 10 /
+PUSH 2 session the Today screen was already showing.
+
+Called `fetchPriorityContext(supabase, userId, 'd94feb00-...')` for real.
+Result, read back directly from the live call, not asserted from code
+reading:
+
+- `entries.length = 34`
+- every entry `isExplicit: false`, `priority: 'normal'`, `updatedAt: null`
+- `anyExplicit = false`
+- `mesocycleId` on the returned object exactly equals the id passed in
+- `muscleGroups`/`muscleSubgroups`/`subgroupParent` key counts: 12 / 22 / 22
+- entry order confirmed directly: first three entries are `chest` (group)
+  then its own `upper_chest`/`mid_chest` subgroups; the final entry is
+  `adductors`, under `other`, the last group — confirming `PRIORITY_TREE`
+  order end to end, not just spot-checked
+
+This is also the live proof of §1.2's claim that a meso with no rows just
+densifies to all-normal with no special handling — Adam's real active meso
+has genuinely never had a priority set (confirmed independently: a direct
+`count`-only query against `v2_coach_meso_tag_priorities`, scoped by RLS to
+his own account, returned `0` total rows — Phase 1's cleanup left the table
+exactly as empty as it should be, and this session's read-only call added
+nothing to it).
+
+No console errors during the call. Dev server stopped afterward.
+
+### Stopped at the gate, as instructed
+
+Phase 2's gate ("tests green, and the dense-read shape confirmed against a
+real meso in production rather than only against fixtures") is where this
+session stops. **No frontend code was written** — `PrioritySelector.tsx`,
+`MesoPrioritiesPage.tsx`, the `/meso/:mesocycleId/priorities` route, and every
+`ProgramPage.tsx`/`PlanPage.tsx` change from Phase 3 remain unbuilt. Nothing
+this session was committed — no instruction to do so was given, unlike Phase
+1's explicit "commit the migration on its own" — so all seven new/modified
+source files plus this CONTEXT.md update sit in the working tree for review.
+
+---
+
+## 2026-09-03 session (Priority Context — Phase 3: frontend built, live
+verification passed against Adam's real account with screenshots; one real
+implementation gap found and fixed live; A5 resolved to optimistic;
+**stopped at Phase 3's gate — Phase 4 not started**)
+
+Read CONTEXT.md first, as instructed. Phase 2's code
+(`priorityTags.ts`/`.test.ts`, `exerciseTags.ts`'s additive exports,
+`priorityContext.ts`, `priorityService.ts`, `usePriorityContext.ts`/
+`.test.ts`) committed on its own first, as instructed —
+`c1d9615 feat: Priority Context Phase 2 — pure module, service, hooks, all
+Vitest-covered`, eight files, nothing else staged. The unrelated Q&A sidebar
+`isStaleForSurface` refactor sitting in the working tree
+(`QaPanel.tsx`/`qaSidebarStore.ts`/`qaSidebarStore.test.ts`) was left
+untouched — confirmed it's a separate, pre-existing change, not part of this
+feature.
+
+Live browser verification tooling confirmed available before starting, per
+the standing rule: the Browser pane was open and functional, and
+`.claude/launch.json`'s `Overload v2 dev` config exists. Not a
+stop-and-report condition this session.
+
+### Built exactly per TASKS §6 Phase 3
+
+- **`src/features/coach/PrioritySelector.tsx`** (new) — the 4-way chip row,
+  modelled on `RatingChips.tsx` per §5.4 but non-nullable (tapping the active
+  chip is a no-op, not a clear).
+- **`src/features/coach/MesoPrioritiesPage.tsx`** (new) — §5.2's screen at
+  `/meso/:mesocycleId/priorities`: header naming the meso/program/start date,
+  all 12 `PRIORITY_TREE` groups collapsed by default with the group's own
+  selector always visible, subgroups revealed on expand, §5.8's COPY FROM
+  button, loading/error/not-found states, DONE via history-pop with a
+  hard-reload fallback to `/program`.
+- **`src/App.tsx`** — the one new route, beside the `/program/*` family.
+- **`src/features/programs/ProgramPage.tsx`** — `handleStartMeso` now
+  navigates to the new meso's priorities screen after `createMeso.mutateAsync`
+  resolves (§5.1); completed-meso rows are now a `role="button"` div that
+  navigates on tap, with the delete button's click stopping propagation
+  (§5.3's second entry point).
+- **`src/features/plan/PlanPage.tsx`** — the header's meso-name line is now a
+  tappable row (`PRIORITIES ›`, real touch target, not just the 9px text)
+  navigating to the active meso's priorities screen (§5.3's primary entry
+  point, promoted from v2's deferral).
+
+`npm run typecheck` (both tsconfigs) and `npm test` (35 files / 492 tests)
+green before and after the A5 fix below.
+
+### A live gap found and fixed, not just noted: the copy button's own
+visibility check was missing half of §5.8's gate
+
+Building `showCopyButton` as `!context.anyExplicit && !!previousMeso`
+compiled and passed typecheck, but §5.8 is explicit that the button must also
+gate on **the source having rows**, not merely existing — "avoids offering a
+button that does nothing," the exact tightening over COPY WEEK's own gap.
+Live-testing this properly (constructing a chain of throwaway mesos so the
+resolved "previous meso" had zero rows) reproduced precisely that dead-tap:
+the button rendered, and tapping it would have silently copied nothing
+(`copyPrioritiesFromMeso` returns early on an empty source). Fixed by adding
+`usePriorityContext(previousMeso?.id ?? null)` in `MesoPrioritiesPage.tsx` and
+gating on `previousContext?.anyExplicit` too. Re-verified live afterward: the
+button correctly stays hidden when the resolved source meso has zero explicit
+rows, and correctly appears once the source actually has any.
+
+### A5 resolved to optimistic, from a real measurement, not a guess
+
+Measured the real tap-to-visible round trip against production before
+changing anything: **~1.16s** (Chrome DevTools-style query-cache trace, not a
+polling artifact — confirmed independently that the *cache* only updated once
+the upsert-then-invalidate-refetch chain completed against the real network).
+Perceptible, not a rounding error. Added the optimistic path to
+`useSetTagPriority` (`usePriorityContext.ts`), taking `useWeekPlan.ts`'s own
+`onMutate`/`onError`/`onSettled` shape verbatim (the same pattern
+`useUpdateSet`/`useSetDeload`/`useRemoveSet` already use) rather than
+inventing a new one: `onMutate` snapshots and optimistically applies the new
+value via a new pure `applyOptimisticPriority()`, `onError` rolls back to the
+snapshot, `onSettled` invalidates as before. Re-measured after the fix via a
+direct query-cache subscription (immune to this specific browser automation
+environment's timer/rAF throttling, which a DOM-polling measurement was not —
+confirmed separately by seeing elapsed times get *worse* after explicitly
+foregrounding the tab, the signature of CDP tab-focus throttling, not a real
+regression): the cache reflects the tap in **under 1ms**. §5.6's original
+worry (a failed write showing a priority that was never stored) is what
+`onError`'s rollback guards against directly, verified live under a simulated
+mutation failure below — not a reason to skip optimism once checked against
+the real thing, per A5's own text.
+
+### Full Phase 3 checklist, live, against Adam's real account
+
+Throwaway completed mesos (`ZZ_TEST_PRIORITY_*`, distinct `start_date`s
+spanning Aug 2026, all later than the real meso so Q1a's ordering was
+exercised against real data) created via direct authenticated-client inserts
+(browser dry-run technique, zero credential handling), referencing Adam's
+real `program_id` — never through `useCreateMeso`, so the real active meso
+was never touched by any throwaway setup. All deleted (cascade) at the end;
+confirmed via a final query that only Adam's real `MESO 1.0` remains.
+
+- **All 12 groups render collapsed, defaulting to NORMAL** — confirmed on a
+  fresh completed throwaway meso, screenshotted.
+- **Expanding OTHER reveals `adductors`** (§0.1 finding 2's regression check)
+  — confirmed both in the DOM and visually; the group's own selector stayed
+  visible while expanded, per §5.2.
+- **Persistence, verified as database rows, not just on screen**: a group
+  write (`other` → `top`) and a subgroup write (`adductors` → `high`) each
+  landed as one row with the correct `mesocycle_id`, and neither disturbed
+  the other. Re-setting the same tag updates the same row id (checked
+  directly) rather than creating a second. Setting back to `normal` kept the
+  same row id with the new value — it does not delete and revert to
+  defaulted.
+- **Per-meso isolation, the headline check** — set `chest = high` on the real
+  active meso via the real UI; then, via genuine client-side (SPA) navigation
+  between two throwaway mesos with deliberately different `chest` values (not
+  a full reload, which would trivially avoid any cache bug), confirmed each
+  screen showed its own correct value with no bleed — the parameterised query
+  key (§4.1) does what it's for.
+- **Reachability**: reached the active meso's priorities from PlanPage's
+  header without going through creation; reached a completed meso's from
+  ProgramPage's list (had to become a `role="button"` div, not a nested
+  button, since the row also carries its own delete button); hard-reloaded
+  directly on `/meso/:id/priorities` and confirmed it renders standalone,
+  correctly, including all prior writes surviving the reload.
+- **The creation flow end-to-end — code-reviewed only, not live-run.**
+  Running it for real would complete Adam's actual active `MESO 1.0` (week
+  10, active since Jul 5) as a side effect of the app's existing
+  one-active-meso-at-a-time rule — a real, hard-to-reverse action on his real
+  training data, not a throwaway. Flagged and asked rather than assumed;
+  Adam chose to skip live-running it. Verified by reading instead:
+  `handleStartMeso` awaits `createMeso.mutateAsync` (resolves to the real
+  created `Mesocycle`, confirmed via `mesoService.createMeso`'s return type),
+  then navigates to `/meso/${created.id}/priorities` — the landed screen
+  resolves that same id against the now-invalidated `useMesos()` cache, and
+  any row written there is scoped to it. Consistent with passing
+  typecheck/tests; not exercised against the real button tap.
+- **The copy button, all four states against real data** — hidden when the
+  target already has explicit rows (confirmed via reload once rows existed);
+  hidden when the resolved source meso has zero rows (the gap found and fixed
+  above); visible and correctly naming the source; and, tapped, writing
+  **exactly the source's explicit rows as a verified database row count** —
+  7 in, 7 out, matching verbatim, never the dense 34.
+- **Q1a's ordering against real, evolving data** — confirmed across several
+  reshufflings of the throwaway mesos' `start_date`s that the resolved
+  "previous meso" was always the greatest `start_date` excluding the target,
+  never the most recently created, including correctly preferring a later
+  throwaway meso over Adam's real (earlier-dated) active meso.
+- **Reload**: every set value survived; untouched tags still read NORMAL.
+- **Offline (A11/§5.7)**: simulated by intercepting `fetch` to the real
+  Supabase host (no service worker, no OS-level network toggle needed for
+  this). A read failure shows "COULDN'T LOAD PRIORITIES" full-screen, not a
+  blank. A write failure while already on a loaded screen shows the
+  mutation's own error text inline above the still-rendered list, the
+  optimistic chip rolls back to its prior value, and no row is written —
+  confirmed all three directly, not assumed from the code.
+- **§2.7's orphan query re-run at the end**: 0 orphans out of 18 rows, at the
+  point before cleanup.
+
+Screenshots taken throughout (group list collapsed/expanded, the copy button,
+PlanPage's new header link, the final clean `/program` state, the real
+meso's final priority set) — not attached to this file, but part of this
+session's live record.
+
+### Stopped at Phase 3's gate, as instructed
+
+Phase 3's gate ("live verification passed, with screenshots") is where this
+session stops — **Phase 4 (adversarial review, deploy) not started**, and
+nothing from this session is committed (Phase 3's own files remain in the
+working tree, same as Phase 2's did, pending review). Adam's real `MESO 1.0`
+now carries one real explicit priority row (`chest = high`) set live during
+this session's verification — his to change; nothing else about his real
+data was touched. The dev server was stopped afterward.
+
+---
+
+## 2026-09-03 session (Priority Context — Phase 4: whole-feature adversarial
+review, production deploy, live verification in production.
+**Priority Context is complete and live**, with two named items carried past
+completion)
+
+Read CONTEXT.md first, as instructed, then committed Phase 3's code as the
+literal first action — `b29326b`, code only, exactly the six files Phase 3
+built (`PrioritySelector.tsx`, `MesoPrioritiesPage.tsx`, `App.tsx`,
+`PlanPage.tsx`, `ProgramPage.tsx`, `usePriorityContext.ts`). CONTEXT.md was
+deliberately held back to carry this closing entry, same as Phase 8 of the
+Q&A sidebar. The unrelated Q&A `isStaleForSurface` refactor sitting in the
+working tree was left untouched again — see the carried items below.
+
+### §6 Phase 4's three checks, run on the final code
+
+`npm run typecheck` (both `tsconfig.app.json` and `tsconfig.api.json`) clean,
+`npm run build` clean, `npm test` **519 tests across 35 files** — up from 492
+at the start of the session, all 27 new tests coming from this session's
+review. Run once at the start against Phase 3's code as committed, and again
+on the final code after the review fixes, not only once.
+
+### Adversarial review across the whole feature
+
+Run against the integrated feature rather than file by file. Three areas were
+singled out for more than a pass-through.
+
+**1. The copy-button gap found live in Phase 3 — the fix is complete, and
+confirmed in the deployed artifact, not only in the source.** §5.8's gate has
+four conditions and all four are present: the target has no explicit rows
+(`!context.anyExplicit`), a previous meso resolves (`!!previousMeso`), that
+source itself has rows (`!!previousContext?.anyExplicit` — the Phase 3 fix),
+and the button names the source. Read back out of the **deployed minified
+bundle** rather than trusted from the repo:
+`T=!!m&&!m.anyExplicit&&!!j&&!!(S!=null&&S.anyExplicit)`. The direction of the
+one remaining race is the safe one: while the source's context is still
+loading, `previousContext` is `undefined` and the button stays hidden — it can
+appear late, never wrongly.
+
+**The same shape — existence checked, content not — hunted across everything
+this feature touches.** Inside the feature it does not recur, and the reason
+is worth recording rather than only the result: every other place that could
+have carried it is held either by an exhaustive `Record<>` the compiler checks
+(`MUSCLE_GROUP_LABELS`, `MUSCLE_SUBGROUP_LABELS`, `PRIORITY_TREE`) or by a
+Vitest assertion that all 22 subgroups are covered exactly once. `meso` is
+resolved with a real `mesos.find(...)` and renders MESOCYCLE NOT FOUND when
+absent rather than rendering a blank shell; `handleDone` checks
+`history.state.idx > 0`, not merely that history exists; and `ProgramPage`
+and `MesoPrioritiesPage` read the same `['v2_mesos']` cache, so a tappable row
+can never lead to a screen that cannot find its own meso.
+
+**It does recur in the precedent §5.8 was written against, and that one is
+still live.** `PlanPage.tsx:89` — COPY WEEK's gate is
+`!isPast && viewWeek > 1 && weekPlans.length === 0 && !plansLoading && !daysLoading`.
+It checks that a previous week *number* exists (`viewWeek > 1`) and never that
+week `viewWeek - 1` has any plans, while `copyFromPreviousWeek` returns early
+on an empty source exactly the way `copyPrioritiesFromMeso` does. So on week 3
+with week 2 empty, COPY WEEK renders and the tap does nothing — precisely the
+dead tap §5.8 says Priority Context deliberately tightens over. **Reported,
+not fixed**: it is a shipped, unrelated feature, and folding a behaviour
+change to the weekly planner into a Priority Context deploy is the kind of
+scope-mixing this project has spent real effort avoiding. Adam's call, as its
+own change.
+
+One narrow residual on the priorities side, recorded rather than engineered
+around: `copyPrioritiesFromMeso` still reports success having written nothing
+when the source is empty. With the gate fixed this is unreachable from the UI;
+it would take the source's rows disappearing between render and tap.
+
+**2. The optimistic update added reactively for A5 — it does follow the
+convention; the real gap was that it had no test.** Compared against
+`useWeekPlan.ts`'s `useSetDeload` / `useUpdateSet` / `useRemoveSet`, the
+codebase's only precedent for this pattern: `onMutate` awaits
+`cancelQueries`, snapshots via `getQueryData`, writes the optimistic value and
+returns `{ prev }`; `onError` restores `ctx.prev`; `onSettled` invalidates.
+`useSetTagPriority` matches all of it. Two deliberate differences, both
+tightenings rather than a one-off variant: it guards `if (prev)` /
+`if (ctx?.prev)` because it passes a computed value where the precedent passes
+a functional updater that handles `undefined` internally; and it invalidates
+one key where `useSetDeload` invalidates two — correct here, because
+`usePriorityContext` is the only reader of
+`['v2_coachMesoTagPriorities', mesoId]`, and the *other* live instance of that
+query is keyed to the previous meso, which must not be invalidated by a write
+to this one.
+
+**The real finding: `applyOptimisticPriority` was the one pure function in
+this feature with no Vitest coverage.** It was added at Phase 3, outside the
+plan, and both `selectPreviousMeso` and `qaSidebarStore.ts`'s
+`isStaleForSurface` carry explicit comments saying pure logic here gets tested
+directly rather than only live-checked. Exported and covered.
+
+The finding inside the finding: **six `tag_value`s are members of both
+vocabularies at once** — `biceps`, `forearms`, `quads`, `hamstrings`,
+`glutes` and `calves` are each a `muscle_group` *and* a `muscle_subgroup`.
+Every lookup in this feature therefore has to key on `tag_type` as well as
+`tag_value`. Both `densifyPriorities` and `applyOptimisticPriority` do.
+Neither had a test for it, and a "simplification" to a value-only lookup would
+move the wrong chip on screen while writing the correct row to the database —
+the hardest kind of mismatch to notice.
+
+**The first version of those tests was decorative, and that is the part worth
+keeping.** They asserted only on the two records, which are rebuilt by a
+ternary that already branches on `tagType` — so they survive a value-only
+predicate. Verified by injecting exactly that break into
+`applyOptimisticPriority`: the records-only tests **passed against
+deliberately broken code**. Rewritten to assert on the flat `entries` array
+too — the one built by a predicate, and the one a payload to Mesocycle
+Analysis would be serialised from — the same injection now fails 18 tests, and
+the matching injection into `densifyPriorities`'s map key fails its 3. Both
+mutations reverted. Coverage that has not been checked against the bug it
+claims to catch is not coverage.
+
+Also asserted, because `onError` silently depends on it:
+`applyOptimisticPriority` returns a new context and never mutates the one it
+is given. `onMutate` hands that same object back as `ctx.prev`, so "does not
+mutate" is a rollback-correctness property here, not a style preference.
+
+**3. The creation flow — still code review, not a live run.** Unchanged from
+Phase 3, and stated plainly here rather than left to be inferred: START
+MESOCYCLE → the new meso's priorities screen has **never been run end to
+end**. Running it completes Adam's real active `MESO 1.0` as a side effect of
+the app's one-active-meso-at-a-time rule, and he chose to skip it. What is
+actually established is narrower: `handleStartMeso` awaits
+`createMeso.mutateAsync`, which resolves to the created `Mesocycle`
+(confirmed against `mesoService.createMeso`'s return type), then navigates to
+`/meso/${created.id}/priorities`; the landed screen resolves that id against
+the invalidated `useMesos()` cache; and this session separately confirmed in
+production that a cold load of `/meso/:id/priorities` renders correctly
+standalone, which is the riskiest part of that path. **The button itself has
+not been pressed.** It is the one checklist item in this feature resting on
+reading rather than running.
+
+### Fixes made this session
+
+`51c9368` — `applyOptimisticPriority` exported and covered; the
+two-vocabulary collision pinned in both `usePriorityContext.test.ts` and
+`priorityTags.test.ts`; and one minor real defect fixed: `ProgramPage`'s
+completed-meso row is the codebase's only `role="button"`, so it carries that
+role's keyboard contract itself — Space as well as Enter, with
+`preventDefault`.
+
+### Deploy, confirmed landed rather than assumed
+
+All four Priority Context commits were unpushed — Phases 1 through 4
+(`c541931`, `c1d9615`, `b29326b`, `51c9368`) — so this was the first deploy of
+any of it, exactly as the Q&A sidebar was. Confirmed at four levels rather
+than trusting a successful push:
+
+- `vercel ls` — a genuine **51s** build, not an `ignoreCommand` skip; skips
+  show as 2s "Canceled" rows, several visible in the same listing for
+  comparison.
+- `vercel inspect https://overload-v2-sage.vercel.app` — the **canonical
+  alias** resolves to `dpl_FXpYRb1vhWpuBejRj7vziFqtfpeA`
+  (`overload-v2-retdzgwcn`), `Ready`, `target production`.
+- **Content level**: every one of the feature's strings is present in the
+  deployed bundle — `COULDN'T LOAD PRIORITIES`, `COPY FROM`,
+  `v2_coachMesoTagPriorities`, `v2_coach_meso_tag_priorities`,
+  `mesocycleId/priorities`, `MESOCYCLE NOT FOUND`, `adductors`, `PRIORITIES`.
+  None of them existed in any previous deployment.
+- **Content level, discriminating this build from a Phase-3-only one**: the
+  Space-key handler `key==="Enter"||ee.key===" "` is present, and that code
+  exists only in `51c9368`. So the shipped bundle is this session's final
+  code, not a stale build. The minified `showCopyButton` and the optimistic
+  write's `m.tagType===r&&m.tagValue===o` guard were read out of the same
+  bundle.
+
+A hash comparison against the local `dist` was tried first and is **not**
+usable as proof here — Vercel inlines its own `VITE_*` values, so the bundle
+hash legitimately differs from a local build of identical source. Worth
+remembering before treating a hash mismatch as evidence of anything.
+
+### Production live verification — real UI, real account, real rows
+
+Adam signed in to production himself (credentials are never handled here; the
+in-app browser had no session). Everything below is against
+`https://overload-v2-sage.vercel.app`, driven through the deployed UI.
+
+- **Deep-link routing, the `/library` 404 class** — `/meso/<uuid>/priorities`
+  returns **200** on a cold request, alongside `/plan`, `/library` and
+  `/program`. `vercel.json`'s catch-all rewrite covers the new route; the
+  2026-08-30 incident does not recur. Checked before signing in, since it
+  needs no session.
+- **The screen against Adam's real `MESO 1.0`** — all 12 groups collapsed,
+  `CHEST = HIGH` (Phase 3's real row) with the other 11 defaulted to NORMAL;
+  header reads `MESO 1.0 · SINCE JUL 5, 2026`. Expanding OTHER reveals
+  ADDUCTORS with the group's own selector still visible above it — §0.1
+  finding 2's regression check, re-confirmed in production.
+- **§5.3's primary entry point** — PlanPage's header renders `MESO 1.0` with
+  `PRIORITIES ›` and navigates correctly.
+- **A real write through the deployed bundle** — `CHEST` set to TOP, surviving
+  a hard reload of the deep link; the screen also renders standalone from a
+  cold load, which is what makes the creation-flow reasoning above hold.
+- **The copy button was correctly absent throughout** — MESO 1.0 has explicit
+  rows *and* there is no previous meso, so two of the four gates fail.
+- **§5.3's second entry point could not be exercised in production today** —
+  Adam has no completed mesos (Phase 3's throwaways were all deleted), so
+  there is no row to tap. It was verified live in Phase 3 against real data.
+
+**The rollback path, now verified in three distinct failure modes.** Phase 3
+tested one (a network failure while offline), and A5's optimism is only as
+safe as its rollback:
+
+| failure mode | how | result |
+|---|---|---|
+| network failure, offline | Phase 3 | chip rolls back, no row written |
+| **server rejection** (409, FK violation) | intercepted the write only, 1.5s delay so the optimistic window was observable | TOP → **LOW at 150/600/1200ms** → **TOP at 1800/2400/3200ms** |
+| **server rejection while unmounted** (403, RLS denial) | tapped, navigated away 200ms later, returned via SPA history | TOP from the **first frame (80ms)** on return |
+
+The middle row is the one that matters most: it rolls back to **TOP, the
+specific prior value — not to NORMAL, the default**. Phase 3's scenario rolled
+back from a defaulted state, where those two are indistinguishable. The
+interceptor's own counter confirmed `writesIntercepted: 1`, so this is not a
+test that passed by never firing, and the PostgREST error text rendered in the
+UI rather than failing silently. The third row confirms `onError` still
+corrects the cache after the component is gone — a consequence of
+`queryClient` being imported as a module singleton rather than via
+`useQueryClient()`.
+
+**Final production data state**, read back directly (read-only PostgREST,
+using the app's own captured session headers; no credential ever surfaced):
+**1 priority row total** — `muscle_group:chest = high` on MESO 1.0 — **0
+orphan rows** (§2.7's check re-run against production), and exactly one
+mesocycle (`MESO 1.0`, active, `2026-07-05`). Three successful writes landed
+on `chest` during this session (to TOP, then back to HIGH) and there is still
+exactly one row, so the upsert is proven through the deployed UI and not only
+in SQL. Adam's real data is left exactly where Phase 3 left it.
+
+### §4's interface, recorded for MESOCYCLE-ANALYSIS-TASKS.md
+
+This is the citable, shipped thing that feature may now depend on:
+
+```
+fetchPriorityContext(client: SupabaseClient, userId: string, mesocycleId: string)
+  => Promise<PriorityContext>
+```
+
+`src/features/coach/priorityContext.ts`. **`mesocycleId` is required and
+non-nullable** — there is deliberately no "omit for the active meso" form,
+because that would smuggle the old global-priority semantics back into a
+per-meso interface, and Mesocycle Analysis by definition runs against a
+completed meso, never the active one. The client is injected, never the
+browser singleton, so the same function is callable unmodified from a Vercel
+function, from the planner through `usePriorityContext()`, and from a
+zero-spend dry run. It always returns all **34 entries** (12 groups + 22
+subgroups) in `PRIORITY_TREE` order however few rows exist, with `isExplicit`
+distinguishing a stated priority from the default and `anyExplicit`
+distinguishing "nothing was ever set" from "everything is normal".
+`subgroupParent` travels with the data so SPEC §3's relative-within-group
+semantic is computable by the consumer rather than re-derived.
+
+### The items carried past the feature's completion
+
+1. **The creation flow has never been run** (above) — code-reviewed only, by
+   Adam's decision, because running it would complete his real active meso.
+2. **COPY WEEK's own dead-tap gap** at `PlanPage.tsx:89` — found by this
+   session's review, reported and not fixed, to be taken as its own change.
+
+Two housekeeping items, neither touched: the Q&A `isStaleForSurface` refactor
+(`QaPanel.tsx`, `qaSidebarStore.ts`, `qaSidebarStore.test.ts`) is **still
+uncommitted** in the working tree, now across three sessions — real, tested,
+passing work that is not shipped. And `supabase/.temp/cli-latest` (an 8-byte
+Supabase CLI version cache) is untracked and probably belongs in `.gitignore`.
+
+### State at the end of this session
+
+**Priority Context is complete, deployed and working in production.** Both
+§5.3 entry points are shipped, the full 34-entry interface is live, `master`
+is pushed, and the production alias serves this session's code, verified at
+content level. Typecheck, build and all 519 tests pass. The only open items
+are the two named above.
 
 ---
 
