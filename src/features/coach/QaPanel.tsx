@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { MAX_TURNS_PER_CONVERSATION } from './qaHistory'
-import { useQaSidebarStore } from './qaSidebarStore'
+import { useQaSidebarStore, isStaleForSurface } from './qaSidebarStore'
 import { useCoachQaConversation, useAskQuestion, seedNewQaConversation } from './useCoachQa'
 import QaTranscript from './QaTranscript'
 import QaComposer from './QaComposer'
@@ -33,13 +33,13 @@ export default function QaPanel({ category, sessionId, currentExerciseId = null 
   // typed but never sent leaves conversationId null, so a conversation-only
   // check let an unsent in-session question follow the user to Coach → ASK
   // and sit in that composer under a different category (found by Phase 8's
-  // review). The draft has an owner too.
-  const holdsSomething = conversationId !== null || draft !== ''
+  // review). The draft has an owner too. See isStaleForSurface's own header
+  // for why this check lives in qaSidebarStore.ts rather than inline here.
   useEffect(() => {
-    if (holdsSomething && (ownerSessionId !== sessionId || ownerCategory !== category)) {
+    if (isStaleForSurface({ conversationId, draft, ownerCategory, ownerSessionId }, category, sessionId)) {
       reset()
     }
-  }, [category, sessionId, holdsSomething, ownerCategory, ownerSessionId, reset])
+  }, [category, sessionId, conversationId, draft, ownerCategory, ownerSessionId, reset])
 
   const { data: exchanges = [] } = useCoachQaConversation(conversationId)
   const ask = useAskQuestion()

@@ -65,3 +65,20 @@ export const useQaSidebarStore = create<QaSidebarState>((set) => ({
   setDraft: (draft, category, sessionId) => set({ draft, ownerCategory: category, ownerSessionId: sessionId }),
   reset: () => set({ conversationId: null, ownerCategory: null, ownerSessionId: null, draft: '' }),
 }))
+
+// The single guard for the invariant this whole file exists to hold: at any
+// point, everything the store holds (the draft included, not just a started
+// conversation — see the header above, Phase 8) belongs to exactly one
+// surface (category + sessionId). Pulled out as its own pure function,
+// rather than left inline in QaPanel's effect, so the actual check the app
+// runs is the one under test in qaSidebarStore.test.ts — a test that
+// duplicated this condition instead of calling it could pass while the real
+// guard drifted out of sync with it.
+export function isStaleForSurface(
+  state: Pick<QaSidebarState, 'conversationId' | 'draft' | 'ownerCategory' | 'ownerSessionId'>,
+  category: QaCategory,
+  sessionId: string | null,
+): boolean {
+  const holdsSomething = state.conversationId !== null || state.draft !== ''
+  return holdsSomething && (state.ownerSessionId !== sessionId || state.ownerCategory !== category)
+}
