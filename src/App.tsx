@@ -16,6 +16,7 @@ import WorkoutDayEditorPage from './features/programs/WorkoutDayEditorPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import CoachPage from './features/coach/CoachPage'
+import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
@@ -101,6 +102,7 @@ function AppRoutes() {
           <Route path="/program"                           element={<ProgramPage />}         />
           <Route path="/program/:programId"             element={<ProgramBuilderPage />}   />
           <Route path="/program/:programId/day/:dayId"  element={<WorkoutDayEditorPage />} />
+          <Route path="/meso/:mesocycleId/priorities"   element={<MesoPrioritiesPage />}   />
           <Route path="/library"  element={<LibraryPage />}  />
           <Route path="/settings" element={<SettingsPage />} />
           {/* Unconditional route — CoachPage itself renders the locked

@@ -130,9 +130,22 @@ export default function PlanPage() {
 
       {/* Header */}
       <div style={{ padding: '20px 20px 12px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {activeMeso.name.toUpperCase()}
-        </p>
+        {/* The meso-name line, made tappable (PRIORITY-CONTEXT-TASKS.md
+            §5.3) — the primary route to the active meso's priorities screen,
+            since this is where Adam actually is while planning a block. A
+            real touch target rather than relying on the 9px text alone. */}
+        <button
+          onClick={() => navigate(`/meso/${activeMeso.id}/priorities`)}
+          style={{ width: '100%', minHeight: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'transparent', border: 'none', padding: 0, marginBottom: 2, cursor: 'pointer' }}
+        >
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeMeso.name.toUpperCase()}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--accent)' }}>
+            PRIORITIES
+            <ChevronRight size={11} />
+          </span>
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 26, color: 'var(--text-primary)', lineHeight: 1, flexShrink: 0 }}>
             PLAN

@@ -4,16 +4,26 @@ import { useAuth } from '../auth/useAuth'
 import { supabase } from '../../lib/supabase'
 import { useMesos } from '../programs/useMesos'
 import { fetchPriorityContext } from './priorityContext'
+import type { PriorityContext } from './priorityContext'
 import { setTagPriority, copyPrioritiesFromMeso } from './priorityService'
-import type { PriorityTagType, PriorityLevel } from '../../lib/priorityTags.js'
+import type { PriorityTagType, PriorityLevel, PriorityEntry } from '../../lib/priorityTags.js'
 import type { Mesocycle } from '../../types'
 
 // TanStack hooks for Priority Context (PRIORITY-CONTEXT-TASKS.md §4.1),
 // following useCoachMemory.ts's/useWeekPlan.ts's shape: a hoisted key
 // function, `enabled` gated on both auth and a real id, mutations invalidate
-// on success, no optimistic updates (TASKS §5.6 — this data is read by an AI
-// analysis, so a chip that moves before the write lands could show a
-// priority that was never stored).
+// on success. §5.6 originally specified no optimistic update, on the
+// reasoning that this data feeds an AI analysis and a chip that moved before
+// the write landed could show a priority that was never stored — but A5's
+// own text asked for that to be checked against real latency rather than
+// assumed, and Phase 3's live check measured a real ~1.2s tap-to-visible
+// round trip against production (one upsert, then a refetch after
+// invalidation) — clearly perceptible, not a rounding error. useSetTagPriority
+// below now takes useWeekPlan.ts's onMutate/onError/onSettled shape (the
+// same pattern useUpdateSet/useSetDeload/useRemoveSet already use in this
+// codebase), with a real rollback on failure — so §5.6's original worry
+// (a failed write reads as a stored priority) is exactly what onError
+// guards against, rather than being a reason to skip optimism altogether.
 
 // Parameterised by meso, not a flat key — a flat key would serve one meso's
 // cached priorities to another meso's screen the moment two are viewed in
@@ -32,6 +42,24 @@ export function usePriorityContext(mesocycleId: string | null) {
   })
 }
 
+// Applies one tap's result to an already-fetched PriorityContext, so the
+// tapped chip reflects immediately rather than waiting on the upsert +
+// refetch round trip (see the file header — A5, revisited against real
+// latency at Phase 3's live check). Pure, so it's the same shape whether the
+// tag is a group or a subgroup; the mutation below is the only caller.
+function applyOptimisticPriority(
+  context: PriorityContext,
+  tagType: PriorityTagType,
+  tagValue: string,
+  priority: PriorityLevel,
+): PriorityContext {
+  const updated: PriorityEntry = { tagType, tagValue, priority, isExplicit: true, updatedAt: new Date().toISOString() }
+  const entries = context.entries.map((e) => (e.tagType === tagType && e.tagValue === tagValue ? updated : e))
+  return tagType === 'muscle_group'
+    ? { ...context, muscleGroups: { ...context.muscleGroups, [tagValue]: updated }, entries, anyExplicit: true }
+    : { ...context, muscleSubgroups: { ...context.muscleSubgroups, [tagValue]: updated }, entries, anyExplicit: true }
+}
+
 export function useSetTagPriority(mesocycleId: string) {
   const { user } = useAuth()
   return useMutation({
@@ -44,7 +72,22 @@ export function useSetTagPriority(mesocycleId: string) {
       tagValue: string
       priority: PriorityLevel
     }) => setTagPriority(user!.id, mesocycleId, tagType, tagValue, priority),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: key(mesocycleId) }),
+    onMutate: async ({ tagType, tagValue, priority }) => {
+      await queryClient.cancelQueries({ queryKey: key(mesocycleId) })
+      const prev = queryClient.getQueryData<PriorityContext>(key(mesocycleId))
+      if (prev) {
+        queryClient.setQueryData(key(mesocycleId), applyOptimisticPriority(prev, tagType, tagValue, priority))
+      }
+      return { prev }
+    },
+    // A failed write must not leave the optimistic value on screen — this is
+    // exactly §5.6's original worry (a chip showing a priority that was
+    // never stored), guarded against directly rather than avoided by never
+    // being optimistic at all.
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(key(mesocycleId), ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key(mesocycleId) }),
   })
 }
 

@@ -47,8 +47,12 @@ export default function ProgramPage() {
     e.preventDefault()
     const name = mesoName.trim() || programs.find((p) => p.id === selectedProgramId)?.name || 'Mesocycle'
     if (!selectedProgramId) return
-    await createMeso.mutateAsync({ name, programId: selectedProgramId })
+    const created = await createMeso.mutateAsync({ name, programId: selectedProgramId })
     setShowStartMeso(false)
+    // Create-then-configure (TASKS §5.1), mirroring handleCreateProgram just
+    // below: the meso row is real before any priority row references it, so
+    // no client-minted uuid is needed.
+    navigate(`/meso/${created.id}/priorities`)
   }
 
   async function handleComplete() {
@@ -131,7 +135,11 @@ export default function ProgramPage() {
               {completedMesos.map((m) => (
                 <div
                   key={m.id}
-                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/meso/${m.id}/priorities`)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/meso/${m.id}/priorities`) }}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -141,8 +149,9 @@ export default function ProgramPage() {
                       {m.program?.name && `${m.program.name} · `}{fmtDate(m.startDate)}{m.endDate ? ` → ${fmtDate(m.endDate)}` : ''}
                     </div>
                   </div>
+                  <ChevronRight size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
                   <button
-                    onClick={() => setConfirmDeleteId(m.id)}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(m.id) }}
                     style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Trash2 size={13} />
