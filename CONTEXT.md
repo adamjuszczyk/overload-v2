@@ -3216,6 +3216,25 @@ pattern as every prior phase.
 ## Known issues
 See AUDIT.md deferred section for full list.
 Most impactful deferred items:
+- **New, found 2026-09-03 — a real, permanent daily analysis reads a real
+  swap as two disconnected facts, and this specific row can never be
+  corrected.** `v2_coach_session_analyses` row `738a60a4-f108-4167-ae43-
+  27268b22c0b4` (session `c111f9ac-c8c8-4d7c-b5e7-68e85dcc604b`, 2026-09-03,
+  `PROMPT_VERSION 6` — generated *before* this session's fix) says of the
+  real Chest Press → Incline Smith Press swap that day: "Chest Press was
+  skipped this session after hitting all four planned sets last week...
+  worth confirming this was intentional and not a logistical miss" and,
+  separately, "First time logging Incline Smith Press, so no prior numbers
+  to measure against" — reading one real substitution as two unrelated
+  exercises, exactly the gap PROMPT_VERSION 7's `swaps` field (see
+  "2026-09-03 session..." below) now closes for every analysis generated
+  from here on — `PROMPT_VERSION 7` confirmed live in production 2026-09-04
+  (`60da8ed`), so "from here on" is now literally true rather than pending.
+  Confirmed live against production, not assumed. **Not
+  fixed retroactively** — `v2_coach_session_analyses.content`/
+  `.input_snapshot` have no update path (SPEC §9), and this project's
+  standing convention treats a permanent row as permanent; this bullet is
+  the record of the one real, confirmed instance the fix does not reach.
 - **New, found 2026-09-02 while investigating Priority Context's offline
   behaviour (A11) — flagged, not fixed.** `ProgramPage.tsx`'s
   `handleStartMeso` awaits `createMeso.mutateAsync(...)` with no try/catch
@@ -19760,7 +19779,17 @@ From real usage (one day):
   planned/forced wording bug is about. These are two distinct open items —
   a future real swap with no explanatory note, or an ambiguously-worded
   one, can still reproduce the planned/forced inconsistency regardless of
-  how solid swap-exercise itself is.
+  how solid swap-exercise itself is. **Still open as its own item** —
+  the 2026-09-03 fix below (PROMPT_VERSION 7, `swaps` field) closes the more
+  fundamental gap this bullet's own investigation surfaced (the model not
+  recognizing a swap happened *at all*, treating it as two disconnected
+  exercises) but deliberately does not touch *why* — `swaps` carries only
+  `originalExerciseId`/`originalExerciseName`/`replacementExerciseId`/
+  `replacementExerciseName`, no reason/cause field, so this planned/forced
+  wording risk is unchanged by that fix and still depends entirely on
+  `sessionNotes` happening to explain the swap. See "2026-09-03 session
+  (swap-exercise position/presentation/prefill fix + Coach swap
+  recognition)" below.
 - ~~**`coachWeekPrompt.ts` `WEEK_PROMPT_VERSION 2` carries the same
   structural risk.**~~ **Checked for real against Weekly's first real
   `WEEK_PROMPT_VERSION 2` output (found five issues, see this file's
@@ -21613,6 +21642,678 @@ three files named above — `MESOCYCLE-ANALYSIS-SPEC.md` and
 Of the two housekeeping items the Priority Context session left open, this
 closes the first. `supabase/.temp/cli-latest` (untracked, probably belongs
 in `.gitignore`) is still open.
+
+---
+
+## 2026-09-03 session (swap-exercise position/presentation/prefill fix + Coach
+swap recognition, `PROMPT_VERSION 7`)
+
+Read CONTEXT.md first, as instructed. Two related fixes, both scoped to
+investigate-first: Part 1, swapping an exercise skipped the original and
+appended the replacement at the end of the workout with 0 sets, instead of
+occupying the original's position with its plan shape prefilled; Part 2,
+Coach's daily analysis doesn't recognize a swap as a swap at all — a real,
+live instance from today confirmed this, not a hypothetical. **Not
+committed, not pushed, not deployed. Migration 025 not applied to
+production.** Per explicit instruction.
+
+### Part 1 investigation, answered directly against the real code
+
+1. **Position is `v2_program_exercises.position`** (0-based), sorted
+   client-side in `GymSession.tsx` (`sortedExercises`). Swap-added exercises
+   were never part of that ordering — `pendingSwapExercises`/`extraExercises`
+   rendered as a second, separate `.map()` after `sortedExercises`, each
+   given a synthetic `position: sortedExercises.length + i`. That's the
+   literal "appends at the end" the task described.
+2. **"Skip" left the original as its own full card.** `handleSkipExercise`
+   (`ExerciseCard.tsx`, unchanged by this fix) marks every remaining planned
+   head/stage `isSkipped: true` — those rows kept rendering in the
+   original's own `ExerciseHeader`/reference-panel/set-list, a second
+   visible card sitting above the appended replacement.
+3. **Plan shape lives in `v2_week_plan_sets`** (`setNumber`, `isDropset`,
+   `targetRir`, `parentWeekPlanSetId`/`stageIndex`), joined via
+   `programExerciseId`. The replacement's card was always given
+   `plannedSets={[]}` — zero prefill, by construction.
+
+### Part 2 investigation, answered directly against the real schema and code
+
+1. **No structural link exists anywhere** — confirmed by reading
+   `SwapExerciseSheet.tsx`, `ExerciseCard.tsx`'s `handleConfirmSwap`,
+   `sessionService.ts`, and every migration through 024. This restates and
+   re-confirms the 2026-08-31 session's own finding (CONTEXT.md, "Part 3");
+   nothing had changed since.
+2. **Not included in the analysis payload** — there was nothing to include.
+3. **Today's real swap session already has a real, permanent daily
+   analysis, and it gets this wrong** — pulled live from production (session
+   `c111f9ac-c8c8-4d7c-b5e7-68e85dcc604b`, row `738a60a4-f108-4167-ae43-
+   27268b22c0b4`, `PROMPT_VERSION 6`): "Chest Press was skipped this session
+   after hitting all four planned sets last week... worth confirming this
+   was intentional" and, separately, "First time logging Incline Smith
+   Press, so no prior numbers to measure against" — two disconnected facts,
+   not one substitution. Real, confirmed, not hypothetical. Recorded under
+   "Known issues" above — permanent means permanent, not fixed
+   retroactively.
+
+### Part 1 fix — one merged card, in place, prefilled
+
+Design decision, made after establishing that the original's plan is always
+100% resolved (real logs or SKIPPED) by the time a swap is confirmed
+(`handleConfirmSwap` awaits `handleSkipExercise()` before registering the
+replacement) — so the "planned" section of a merged card never has an open
+input to worry about:
+
+- **Position**: swaps are now tracked as `Map<programExerciseId,
+  ExerciseSwap>` (from migration 025, below) and rendered *inline* inside
+  `sortedExercises.map()` instead of a trailing list — position is
+  automatically correct, no synthetic position math needed.
+- **Presentation**: one `ExerciseCard` per swapped slot, not two. Its
+  `programExercise` carries the *replacement*'s identity (name, muscle
+  group, weight unit, history link); `plannedSets` stays the *original*'s
+  (now-resolved) plan, so the "planned" section still shows exactly what
+  happened to the original — real logs and SKIPPED marks, unchanged,
+  unhidden — inside the same card instead of a second one.
+  `linkedExerciseIds` (new `ExerciseSection` prop) pulls the original's real
+  `SetLog` rows into this card's `currentLogs` by exercise id, since the
+  card's own identity is now the replacement's. `ExerciseHeader` gains a
+  `swappedFromName` line ("SWAPPED FROM CHEST PRESS"); the swap icon itself
+  is hidden on an already-swapped card (no re-swap chain in this version).
+- **Prefill**: `ExerciseCard.tsx`'s existing "extra set" mechanism (already
+  fully supports N simultaneous unlogged slots — proven today by rapid
+  ADD SET taps, not a new code path) is seeded from the original's resolved
+  plan shape when `swappedFrom` is set: `extraSlotCount` starts at
+  `plannedGroups.length` (the original's head count), and each slot's
+  `expectStage` signals when the original's matching head had a dropset (so
+  the ADD STAGE affordance shows as expected structure, not an undiscovered
+  option). Deliberately does **not** reuse the original's real
+  `week_plan_set_id`s for the new logs — that would (a) create an FK link
+  between the replacement's log and a plan row belonging to a *different*
+  exercise, and (b) break the identity-matching `plannedLogGroups` relies on
+  to flip a row from "input" to "already logged." The replacement's new
+  sets stay `weekPlanSetId: null`, matched positionally — the same
+  spontaneous-dropset-shaped semantics ADD SET already uses, just seeded
+  with a non-zero starting count instead of 0.
+
+**A real correctness bug found and fixed during self-review, before any
+live check:** `totalLoggedHeads` (`logGroups.length`) is used to assign the
+`setNumber` written to a freshly-logged head — but on a merged card,
+`currentLogs` now unions two real exercise identities
+(`linkedExerciseIds`). `SetLog.setNumber` is documented as "1-based, per
+exercise within this session" (`types/index.ts`) — every other consumer
+(`positionMatch.ts`, history) relies on that. Left unfixed, a replacement's
+first logged set would have been written with an inflated `setNumber`
+continuing the original's own count (e.g. `4` instead of `1`), and the
+*displayed* badge for an unlogged slot would visibly jump the instant it
+was logged (badge computed one way pre-log, the real stored value computed
+another). Fixed with a new `ownLoggedHeadCount` (scoped to the card's own
+`programExercise.exerciseId`, a no-op on every non-merged card since
+`currentLogs` there is already single-identity) used consistently for
+`handleLogHead`'s fallback `setNumber`, the extra-section display badge,
+and `handleDeleteHead`'s post-delete renumbering (now scoped to same-
+exerciseId heads only, so deleting a head on one identity can never
+renumber a head belonging to the other). Caught by re-deriving the exact
+data flow by hand, not by a live test — flagged here so it isn't mistaken
+for something a browser check would have been guaranteed to catch either.
+
+### Part 2 fix — migration 025 + `swaps` payload field, `PROMPT_VERSION 7`
+
+`supabase/migrations/025_v3_session_exercise_swaps.sql` — one new table,
+`v2_session_exercise_swaps`: one row per swap event (not per set log, since
+a swap is confirmed before any replacement set is logged), keyed by
+`session_id` + `program_exercise_id`, with `original_exercise_id`/`_name`
+and `replacement_exercise_id`/`_name` both denormalised (same "identity
+travels denormalised" reasoning as `v2_exercise_reassignments`, both FKs
+`ON DELETE SET NULL` so the fact survives a later exercise deletion). A
+partial unique index on `(session_id, program_exercise_id)` guards against
+a double-tap producing two conflicting facts for one slot. **Not applied to
+production this session.**
+
+`sessionService.ts`/`useSession.ts` gain `recordExerciseSwap`/
+`fetchSessionSwaps` and `useRecordExerciseSwap`/`useSessionSwaps` —
+`useSessionSwaps` is read directly by `GymSession.tsx` (no separate local
+"pending" state needed any more: `useRecordExerciseSwap`'s `onMutate`
+writes an optimistic row straight into the same query cache
+`useSessionSwaps` reads, so a swap is reflected instantly either way, and
+now also survives a refresh even before the replacement's first set logs —
+closing a pre-existing gap the old `pendingSwapExercises` local state had).
+A legacy fallback (`legacyExtraExercises` in `GymSession.tsx`) keeps
+rendering the old append-at-the-end way for any swap made *before* this
+migration existed — confirmed necessary, not hypothetical: today's own real
+session and the 2026-08-27 one both predate it and would otherwise lose
+their replacement card entirely on reopen.
+
+`analysisInput.ts` — new `AnalysisInputSwap` type and `swaps` field on
+`AnalysisInput`/`BuildAnalysisInputArgs` (optional, defaults to `[]`, same
+convention as `sessionNotes`/`memory` — every `input_snapshot` frozen
+before this field existed simply lacks it, permanently). `swaps` is fetched
+in `assembleAnalysisInput`'s existing `Promise.all` batch, scoped to
+`session_id` + `user_id`. `coachPrompt.ts` `PROMPT_VERSION` 6 → 7: documents
+the new field and instructs the model to treat a linked pair of `exercises`
+entries as one substitution, never two independent facts — same "feed the
+model the fact directly" principle as `dayOfWeek`/`repsDelta`. Explicitly
+does not ask the model to guess *why* a swap happened (that's the separate,
+still-open planned/forced wording item above).
+
+### Verification
+
+`npx tsc -p tsconfig.app.json --noEmit` / `tsconfig.api.json --noEmit`:
+clean. `npx vitest run`: **527/527** (519 before this session + 4 new
+`swaps` tests in `analysisInput.test.ts` + 4 new tests for the extracted
+`resolveReplacementExercise` in the new `exerciseSwapLogic.ts`/
+`.test.ts` — that resolver, used to render a swap's replacement as a full
+`Exercise` when only its migration-025 id/name are known, is the one pure
+function this feature added, exported and covered for the same reason
+Priority Context's `applyOptimisticPriority` was: it's the part a
+"simplification" could quietly break without a test to catch it). `npx tsc
+-b && npx vite build`: clean, same pre-existing `vendor-charts` chunk-size
+notice as every prior session.
+
+### Real dry run, real session, zero persistence
+
+Migration 025 isn't live in production, so `assembleAnalysisInput` can't be
+called unmodified against it yet (it would query a table that doesn't
+exist). Adam signed in to the local dev server himself (credentials never
+handled here); real production data pulled via the established browser
+dry-run technique (`import()` of the real compiled modules, the app's own
+authenticated `supabase` client, zero token/key values ever printed — same
+pattern documented in prior sessions' "browser dry run" entries, e.g.
+2026-08-31). Found today's real session directly
+(`c111f9ac-c8c8-4d7c-b5e7-68e85dcc604b`, 2026-09-03): 3 Chest Press sets
+`is_skipped=true`, then 3 real Incline Smith Press sets — confirms Adam's
+own description exactly. Called the real `assembleSessionFacts` (unchanged
+by this fix, doesn't touch the new table) plus the real
+`fetchActiveMemory`/`toPhaseEntries`/`toWeightEntries`, then `buildAnalysisInput`
+(the real pure function) with one manually-supplied `swaps` entry —
+`{originalExerciseId, originalExerciseName: 'Chest Press',
+replacementExerciseId, replacementExerciseName: 'Incline Smith Press'}` —
+using the real ids/names already confirmed from that session's own set
+logs, simulating exactly what migration 025 would have recorded at swap
+time had it existed then. Saved the resulting real payload to a scratch
+file; a throwaway `combinedDryRun.temp.ts` at the repo root (same
+established pattern, deleted immediately after — `git status` confirmed no
+trace) called the real `COACH_SYSTEM_PROMPT`/`PROMPT_VERSION` with the same
+model/schema/params `api/coach/analyze.ts` uses (`claude-haiku-4-5-20251001`,
+same JSON schema), reading `ANTHROPIC_API_KEY` from `.env.local` directly
+(never printed), no Supabase insert anywhere in the script. Verified after:
+`v2_coach_session_analyses` row count for this session still exactly 1
+(the real, pre-existing `PROMPT_VERSION 6` row) — nothing new persisted.
+
+**The regenerated Chest Press comment**, PROMPT_VERSION 7:
+
+> "You swapped this out for Incline Smith Press this session. The original
+> Chest Press had four sets logged last week, so you replaced a full
+> working sequence rather than adding to it."
+
+**The regenerated overall**:
+
+> "...You managed a machine swap on your opener (Chest Press to Incline
+> Smith Press) mid-week, and the new equipment worked—you noted cleaner
+> shoulder mechanics, which tracks with your history of being cautious on
+> certain smith machines..."
+
+Both correctly read the swap as one substitution — a direct contrast with
+the real `PROMPT_VERSION 6` row's "Chest Press was skipped... worth
+confirming this was intentional" / "First time logging Incline Smith
+Press" framing quoted under Known Issues above. Confirms the fix works
+against the real, live case that motivated it.
+
+### What's left before this can ship
+
+1. ~~**Migration 025 not applied to production**~~ — **applied and verified
+   2026-09-03 (later session)**, see below.
+2. ~~**Part 1's live UI was not verified in a browser.**~~ — **verified live
+   2026-09-03 (later session), against a real swap on the real 2026-09-03
+   session** — see below. `linkedExerciseIds` turned out to be the exact
+   same link as migration 025 (confirmed by reading the code, not assumed),
+   so this and item 1 could only be closed together, in that order.
+3. ~~Not committed, not pushed (app code — the migration itself is now
+   committed alone, see below).~~ — **committed, pushed and deployed
+   2026-09-04** (`60da8ed`), after a closing gate and an adversarial review
+   that found and fixed one more real bug. See "2026-09-04 session
+   (swap-exercise closing gate)" below.
+
+---
+
+## 2026-09-03 session (later, same day — migration 025 applied and verified
+in production, both parts live-verified end to end against a real swap;
+one real side-effect found and fixed)
+
+Read CONTEXT.md first, as instructed. Continuation of the same-day
+"swap-exercise position/presentation/prefill fix + Coach swap recognition"
+session above, per explicit follow-up instruction: apply migration 025 for
+real, then live-test both parts end to end (not re-derived from reading the
+data flow, not a manually-injected fact) using a real or throwaway session.
+**Migration applied and committed. Application code still not committed,
+not pushed, not deployed — that remains a separate go-ahead.**
+
+### The question, answered plainly before anything else
+
+Asked directly: is `linkedExerciseIds` (Part 1's merged-card mechanism) the
+same structural link migration 025 creates, or a separate one? Verified
+against the real code, not assumed: `swap` — the sole source of
+`linkedExerciseIds`, `swappedFrom`, and the entire merged-card render
+branch in `GymSession.tsx` — comes exclusively from
+`swapByProgramExerciseId`, built exclusively from `sessionSwaps` =
+`useSessionSwaps(sessionId)`, which queries `v2_session_exercise_swaps` —
+migration 025's table. **They are the same link, not two.** Without the
+migration live, that map is always empty and every swap silently falls
+through to the legacy append-at-the-end path — Part 1 was never
+independently testable, and the two items in the prior entry's "what's
+left" list could only close together, migration first.
+
+### Migration 025 — applied to production, verified with the same rigor as
+migration 024 (13-point precedent)
+
+Applied via the Supabase SQL Editor, the standing Monaco-JS-API practice —
+Adam signed in himself (a separate login from the app; credentials never
+handled here). **A real encoding bug caught before running anything**: the
+first base64→Monaco transport used plain `atob()`, which returns a raw
+byte-per-character binary string, not proper UTF-8 text — every multi-byte
+character in the migration's own comments (em dashes, arrows) would have
+been transported as mangled multi-byte sequences. Caught by checking
+`sql.length` against the local file's known length (4612 vs. the correct
+4592) before ever clicking Run; fixed with a proper
+`TextDecoder('utf-8').decode()` step, re-verified by both length and a
+`model.getValue() === sql` exact string check, and confirmed visually (the
+em dash rendered correctly). Worth remembering for any future large
+non-ASCII SQL transport into this editor.
+
+**All checks run for real against production**, scoped to Adam's real
+`user_id` (`12e79b69-...659f`) throughout, via one throwaway session and one
+throwaway exercise, both fully deleted afterward:
+
+1. **Pre-apply baseline**: `auth_users_count=4`, `v2_sessions_count=61`,
+   `v2_program_exercises_count=55`, `to_regclass('public.v2_session_exercise_swaps')`
+   = `NULL`. All three counts confirmed unchanged after applying.
+2. **Transport hash** — SHA-256 of the exact buffer run in the SQL Editor:
+   `4281dc5f...a31fb3b`, matching a local hash of
+   `025_v3_session_exercise_swaps.sql` exactly, both at 4612 bytes / 4592
+   characters. Confirmatory alongside the already-verified exact
+   `getValue() === sql` string equality.
+3. **`information_schema.columns`** — all 9 columns matched expected
+   type/nullability/default-presence exactly (`expected_count=9,
+   actual_count=9, matched_count=9, mismatches=NULL`), checked
+   programmatically rather than by eye.
+4. **RLS** — enabled; exactly one policy, "Users access own rows", `cmd =
+   ALL`, both `qual` and `with_check` reading `(user_id = auth.uid())`
+   (Postgres's own stored form of the migration's `user_id = auth.uid()`).
+5. **`pg_indexes`** — exactly three: the pkey, `..._session_idx` on
+   `(session_id)`, and `..._slot_uk`, confirmed both `UNIQUE` and carrying
+   the `WHERE (program_exercise_id IS NOT NULL)` partial clause.
+6. **NOT NULL violated for real** — inserting with `original_exercise_name
+   = null` failed `23502` on that exact column.
+7. **FK violated for real** — inserting against a nonexistent `session_id`
+   failed `23503` on `v2_session_exercise_swaps_session_id_fkey`.
+8. **Unique constraint violated for real** — a second row for the same
+   `(session_id, program_exercise_id)` failed `23505` on `..._slot_uk`, with
+   the exact key values echoed in the error; re-queried afterward to
+   confirm atomicity (`count = 1`, not 2 — the failed attempt left no
+   partial row).
+9. **The partial index's NULL exemption proven, not just declared** — two
+   separate rows for the same session, both with `program_exercise_id =
+   null`, **both succeeded** — proving NULLs are correctly exempt rather
+   than accidentally included in the uniqueness scope.
+10. **`ON DELETE SET NULL` proven on both nullable exercise FKs at once** —
+    a single throwaway exercise referenced by both `original_exercise_id`
+    and `replacement_exercise_id` on the same test row; deleting that
+    exercise left both columns `NULL` on re-query while
+    `original_exercise_name`/`replacement_exercise_name` stayed exactly as
+    written — the denormalised-name design proven, not just asserted.
+11. **`ON DELETE CASCADE` proven by actually deleting the session** — the
+    throwaway session held 3 swap rows by then; deleting it left
+    `swaps_total_now = 0` — full cascade, not a partial one.
+12. **Full cleanup confirmed**: `v2_sessions_count_now=61`,
+    `v2_program_exercises_count_now=55`, `auth_users_count_now=4` — every
+    baseline count exactly restored, zero leftover test rows anywhere.
+
+No CHECK constraints exist on this table (unlike 024's three), so that
+category doesn't apply here — noted rather than silently skipped.
+`program_exercise_id`'s identical `ON DELETE SET NULL` clause was not
+separately re-proven by a second deletion (the same DDL clause type as the
+one proven twice already on the other two columns) — a deliberate scoping
+choice, stated here rather than left implicit.
+
+Committed alone, matching the established convention: `e312c0d feat:
+swap-exercise structural link — migration 025, applied and verified`. `git
+status` before staging confirmed only the migration file was added; every
+other pending change (CONTEXT.md, the nine application-code files, the two
+new `exerciseSwapLogic` files) was left exactly as it was.
+
+### Both parts, live-tested end to end against a real swap on the real
+2026-09-03 session
+
+Reopened Adam's own real, already-completed 2026-09-03 PUSH 2 session via
+the real "CONTINUE SESSION" flow (same established technique as the
+2026-08-27 swap-exercise verification) — not a constructed throwaway,
+since `GymSession` has no route that reaches an arbitrary session and a
+throwaway one couldn't be reached without displacing Adam's real active
+meso. Picked **One-arm Dumbell Lateral Raise → Cable Lateral Raise**
+(same muscle group, a real existing library exercise) — deliberately the
+exercise carrying a real dropset (4 plain sets + a 2-stage drop on set 4),
+chosen specifically to exercise the prefill's dropset-shape signal, not
+just the plain head count.
+
+**Position, presentation, and prefill — all confirmed live, via the real
+UI, not re-derived:**
+- The replacement rendered in the **exact original position** (3rd card,
+  between Dips and Incline Skullcrusher) — not appended after Incline Smith
+  Press/the rest of the template.
+- **One merged card, not two** — header read "Cable Lateral Raise · 12
+  REPS · SHOULDERS · SWAPPED FROM ONE-ARM DUMBELL LATERAL RAISE."
+- **The original's real logged data stayed visible inside that same
+  card** — all 4 real heads (7.5kg×12, ×12, ×11, ×11) and both real dropset
+  stages (5kg×8, 2.5kg×6), unchanged, unhidden, exactly as
+  `linkedExerciseIds` was designed to do.
+- **Prefilled shape**: 4 blank input rows appeared immediately below the
+  historical data — matching the original's 4-head structure — instead of
+  the old 0-slots-until-ADD-SET-tapped-4-times behaviour. Reference panel
+  correctly read "FIRST TIME" for Cable Lateral Raise specifically (its own
+  independent history), not inherited from the original.
+
+**A real, live confirmation of the `setNumber`-scoping fix from the
+earlier session, found by code review and now proven, not just
+reasoned**: logging into the *visually 4th* blank slot produced a set
+displayed as **`01`**, not `05` — proof `ownLoggedHeadCount` correctly
+scoped the new head's `setNumber` to the replacement's own sequence,
+excluding the original's 4 already-resolved heads, exactly as designed.
+
+**One real, minor limitation observed live, not new — the documented
+`expectStage` positional-matching caveat, empirically confirmed rather than
+just reasoned about:** because the 4th slot was logged *out of order*
+(before slots 1–3), it was assigned `setNumber 1` and therefore re-sorted
+to array index 0 on re-render — so the "ADD STAGE" prominent affordance
+(which was expecting index 3, the original's actual dropset slot) didn't
+follow it. This is the exact "fills top-to-bottom" assumption already
+named in this feature's own design reasoning (ExerciseCard.tsx/GymSession.tsx
+comments) — cosmetic only (no data written incorrectly, no FK/identity
+leak), and the same positional-matching convention every "extra set" slot
+in this codebase has always used. Not fixed — recorded here as the one
+documented gap this live test surfaced for real.
+
+**Part 2, the real pipeline, not a manually-injected fact**: queried the
+real `v2_session_exercise_swaps` row the app itself wrote
+(`a3219a24-...`) — `original_exercise_id`/`name` and
+`replacement_exercise_id`/`name` both correct. Called the real
+`assembleAnalysisInput` (unmodified, through its real code path, real
+Supabase client, real session) — `swaps` came back populated correctly
+from that real row, and `exercises` correctly carried both "One-arm Dumbell
+Lateral Raise" (historical) and "Cable Lateral Raise" (the replacement) as
+separate entries, exactly the shape `swaps` exists to disambiguate.
+
+**Re-ran the dry run against this real, full-pipeline payload** (same
+technique as the prior entry — real `COACH_SYSTEM_PROMPT`/`PROMPT_VERSION`,
+real Anthropic call, zero Supabase writes, throwaway script deleted
+immediately after, `git status` confirmed no trace). The same response
+showed **both** framings side by side, which is stronger evidence than
+either alone:
+- Cable Lateral Raise (has a `swaps` entry): *"One-arm Dumbell Lateral
+  Raise was swapped out for Cable Lateral Raise this session"* / *"First
+  logged occurrence of Cable Lateral Raise as the replacement for One-arm
+  Dumbell Lateral Raise..."* — read as one substitution.
+- Chest Press (the 2026-08-27-era legacy swap, correctly excluded from
+  `swaps` since it predates migration 025): *"Chest Press was skipped this
+  session... was the plan to swap this out for the Smith Press work
+  instead?"* — still the old speculative framing, unchanged, because no
+  `swaps` fact exists for it. This is the correct, expected outcome, not a
+  gap — proof the fix responds to the explicit `swaps` field specifically
+  rather than some incidental prompt-wide behaviour change.
+
+Verified after: `v2_coach_session_analyses` for this session still exactly
+1 row (`738a60a4-...`, `PROMPT_VERSION 6`, the real pre-existing one) —
+nothing new persisted by this dry run either.
+
+### A real side effect found mid-session, and how it was handled
+
+Reopening Adam's real session for this live test left it "in_progress" for
+long enough (the full multi-step verification above) that
+`useAutoFinishSession`'s inactivity auto-finish fired on its own —
+re-completing the session with `energy_rating`/`pump_rating` both wiped to
+`null` (this app's own documented behaviour: `completeSession`'s
+`energyRating`/`pumpRating` params default to `null`, and auto-finish never
+supplies them, "since there's no UI moment to collect a rating" —
+`sessionService.ts`'s own comment). Caught by re-querying the session
+directly rather than assuming the reopen-then-test cycle was inert.
+
+Fixed precisely, not approximately: `energy_rating`/`pump_rating` restored
+to `'normal'`/`'good'` — the exact real values read directly off this same
+session earlier in this same working session, before any test began.
+`completed_at` restored to `2026-09-03T11:37:40.908+00:00` by recomputing
+it the same way `deriveCompletedAt` (`sessionCompletion.ts`) does — the max
+`logged_at` across the session's own (by then fully restored) 21 real set
+logs — which landed on the **exact same value** independently on record
+from this session's very first query of the day, cross-confirming the
+restoration rather than just asserting it. `note` was already `null`
+originally (the screen read "ADD NOTE," not "EDIT NOTE," at the very start
+of this session) — nothing to restore there.
+
+**One field not restored, disclosed rather than hidden or forced**:
+`started_at` is `2026-09-03T17:51:17.072+00:00`, not the original
+`09:30:13.246`Z — `reopenSession`'s own documented behaviour shifts
+`started_at` forward on every reopen to preserve the accumulated-duration
+math, and restoring the original value directly was attempted once and
+**blocked by the auto-mode permission classifier**. Not retried through a
+workaround, per instruction — stopped and left as is. Practical effect:
+this session's displayed/derived *duration* no longer matches what it
+would have read before today's testing; every actual training number
+(sets, reps, weights, RIR, form, the swap fact itself) is confirmed
+unaffected. `v2_coach_session_analyses` (still exactly 1 row) and
+`v2_session_exercise_swaps` (0 rows, cleanly emptied) were otherwise
+confirmed untouched by any of this.
+
+### Cleanup, confirmed rather than assumed
+
+Deleted the one real Cable Lateral Raise test log through the real UI
+(Delete → confirm); deleted the real swap row directly (no in-app "undo
+swap" action exists). Re-queried afterward: `v2_set_logs` for this session
+back to exactly 21 rows (18 logged + 3 skipped, matching the original "18
+sets logged · 3 skipped" read at the very start of this session);
+One-arm Dumbell Lateral Raise's original 6 rows (4 heads + 2 dropset
+stages) byte-for-byte unchanged; `v2_session_exercise_swaps` back to 0 rows
+for this session; no leftover `%THROWAWAY%`-named exercise anywhere.
+
+### Status
+
+**Both parts now genuinely live-verified**, not code-reviewed-only:
+position, presentation, preserved logs, prefilled shape, and the
+`setNumber` fix all confirmed against the real UI and real data; the
+`swaps` field confirmed populated correctly by the real
+`assembleAnalysisInput` code path from a real swap; the regenerated
+analysis text confirmed correct against that real payload. The one
+documented gap (`expectStage`'s out-of-order positional-matching
+limitation) is cosmetic, not data-affecting, and was already an accepted
+tradeoff before this session — now empirically demonstrated rather than
+only reasoned about. Migration 025 is live in production and committed
+alone (`e312c0d`). ~~**Application code (`ExerciseCard.tsx`, `GymSession.tsx`,
+`SetGroup.tsx`, `ExerciseHeader.tsx`, `sessionService.ts`, `useSession.ts`,
+`exerciseSwapLogic.ts`/`.test.ts`, `analysisInput.ts`/`.test.ts`,
+`coachPrompt.ts`) is still not committed, not pushed, not deployed** — per
+explicit instruction, that remains a separate go-ahead.~~ — **all eleven
+files committed as `60da8ed` and deployed to production 2026-09-04**, with
+one further real bug found and fixed by the closing adversarial review
+first. See "2026-09-04 session (swap-exercise closing gate)" below.
+
+---
+
+## 2026-09-04 session (swap-exercise closing gate — adversarial review, one
+more real bug found and fixed, committed and deployed)
+
+Read CONTEXT.md first, as instructed. The closing gate for the two-part
+swap-exercise fix built across the two 2026-09-03 sessions above: full
+typecheck/test/build, an adversarial review of both parts *together* rather
+than each in isolation, commit, a deploy confirmed for real, and live
+verification in production.
+
+### Gate
+
+`npx tsc -p tsconfig.app.json --noEmit` and `tsconfig.api.json --noEmit`:
+both clean. `npx vitest run`: **527/527**, 36 files. `npx tsc -b && npx vite
+build`: clean, same pre-existing `vendor-charts` chunk-size notice as every
+prior session. Re-run in full after the review's fix below, not just before
+it — both runs green.
+
+### Adversarial review — what held up
+
+Read every hunk of the eleven-file diff, then traced the four named surfaces
+against each other rather than separately:
+
+- **The `swaps` field end to end.** Migration 025 row →
+  `assembleAnalysisInput`'s existing `Promise.all` (scoped `session_id` +
+  `user_id`, `swapError` thrown like its siblings) → `buildAnalysisInput`
+  (defaults `[]`) → payload → prompt. The optionality convention matches
+  `sessionNotes`/`memory` exactly, which is the right call for a field that
+  frozen `input_snapshot`s permanently lack.
+- **The prompt's own precondition actually holds.** `PROMPT_VERSION 7`
+  instructs the model to fuse a pair "that both also appear in `exercises`".
+  Checked whether that's true in the *most likely* real case — swapping
+  before logging a single set, so the original has nothing but SKIPPED rows:
+  `assembleSessionFacts` builds `exerciseIds` from every set log in the
+  session including skipped ones (`analysisInput.ts:468`), so a fully-skipped
+  original still appears in `exercises`. The precondition holds; verified,
+  not assumed.
+- **`PROMPT_VERSION 7` has exactly one consumer** — `api/coach/analyze.ts`
+  writing `prompt_version`. No staleness or regeneration logic keys off the
+  number, so bumping it is inert beyond the label it stamps.
+- **The API route's access to the new table.** `coachApiAuth.ts` builds its
+  client from the **anon key plus the caller's JWT**, not a service-role
+  key — so migration 025's `user_id = auth.uid()` policy is the thing that
+  authorises it, and no explicit `GRANT` is needed (023 and 024 have none
+  either; checked rather than assumed).
+- **The `setNumber` fix is internally consistent.** `ownLoggedHeadCount`,
+  `handleLogHead`'s `fallbackBase`, `extraDisplay`'s badge, and
+  `handleDeleteHead`'s renumbering all use the same per-`exerciseId` scope,
+  so an unlogged row's displayed badge and the value actually written on log
+  can't disagree. `useExercises(true)` confirmed to be a real
+  `includeArchived` parameter, not a positional accident.
+
+### The real bug it found — cross-identity writes from a merged card
+
+`swappedFrom`'s own doc comment states the design rule: a replacement's logs
+stay `weekPlanSetId: null` specifically so a log never FKs to a plan row
+belonging to a *different* exercise. The merged card broke that rule in
+three places, because its planned section renders the **original's** rows
+while the card's own identity is the **replacement's** — so anything logged
+from that section writes `exerciseId = replacement` against the original's
+plan rows or heads:
+
+1. **ADD STAGE under one of the original's real logged heads.**
+   `handleLogStage` writes `exerciseId` = the card's exercise and
+   `parentSetId` = *this* head, producing a replacement-identity stage
+   hanging off an original-identity head — an orphan to every consumer that
+   filters by `exerciseId` before grouping (`progressService`, the History
+   views, `assembleSessionFacts`). **Reachable in one tap, no setup**: the
+   affordance renders under every non-skipped logged head, which is exactly
+   the shape the 2026-09-03 live test produced (4 real Lateral Raise heads).
+2. **Deleting one of the original's real logged sets** reopens that planned
+   slot as a live LOG input; logging it writes `exerciseId = replacement`
+   with the **original's** `weekPlanSetId`.
+3. **SKIP REST OF EXERCISE** reappears once (2) has happened
+   (`hasUnfinishedPlannedWork` flips true) and writes the same cross-identity
+   link, for heads and stages both.
+
+Not a regression in the ordinary sense — pre-fix, the original's rows lived
+on the original's *own* card, where re-logging and ADD STAGE were correct.
+The merged card is what put them under a foreign identity. Also confirmed
+the **common** case was already safe: a swap made before logging anything
+leaves only SKIPPED rows, `SetRow` renders those read-only with no delete,
+and `canAddStageTo` is `!isSkipped` — so only a swap made *mid-exercise*
+exposed this.
+
+Fixed at the render layer, so the affordances don't exist, rather than by
+silently no-oping a write: `plannedRows` drops unlogged rows when
+`swappedFrom` is set, `hasUnfinishedPlannedWork` is forced `false` there, and
+`SetGroup` gains a `readOnly` prop suppressing stage entry for that section
+only. All three are no-ops on every non-merged card, and the replacement's
+own extra section — including `expectStage` — is untouched, so nothing
+legitimate is lost: adding a drop stage to a set belonging to the exercise
+you just swapped away from was never a meaningful action. `handleLogHead`'s
+comment, which previously *asserted* the planned path was unreachable on a
+merged card, was rewritten to say it is now structurally enforced.
+
+### Two findings deliberately not fixed
+
+- **Swapping to an exercise already in the same day's template, or two slots
+  swapped to the same replacement, renders that exercise's logs on two
+  cards.** `SwapExerciseSheet` only excludes the exercise being swapped and
+  archived rows (`:56`), and the merged-card path is per-slot, so the old
+  code's dedupe-by-exercise-id (`extraExerciseById`) no longer applies.
+  **No wrong data is written** — `setNumber` is genuinely one sequence per
+  exercise per session, so a shared count across both cards is correct; the
+  duplication is visual only. Left as is.
+- **The `expectStage` out-of-order positional gap** already documented in
+  the 2026-09-03 entry — cosmetic, no data impact, explicitly out of scope
+  for this session.
+
+### Commit and deploy — confirmed by content, not just a green push
+
+Committed as `60da8ed` (eleven files: the nine modified plus
+`exerciseSwapLogic.ts`/`.test.ts`). `CONTEXT.md` deliberately left out of it
+and committed separately, per this repo's convention.
+
+`git push origin master` reported `01e1188..60da8ed` — meaning **three
+earlier commits had never been pushed either**: `551130f` and `675ec61` (the
+`isStaleForSurface` refactor and its CONTEXT.md entry) and, notably,
+`e312c0d` — migration 025's own commit, which the 2026-09-03 session
+recorded as committed but never as pushed. All four are on `origin/master`
+now.
+
+Deploy confirmed via `vercel ls` / `vercel inspect`:
+`dpl_GjyqUvU8VZhFZnjGi8uFozfRsagF`, target `production`, status `● Ready`,
+aliased to `overload-v2-sage.vercel.app`, four coach lambdas rebuilt.
+
+**Then confirmed the deployed bundle by content, since `vercel inspect`'s
+JSON carries no `githubCommitSha` for this project** — checked: `meta` is
+undefined, the CLI returns only id/name/url/target/readyState/createdAt/
+aliases/builds/contextName. Downloaded the production `assets/index-*.js`
+and byte-diffed it against the local `dist` build the gate above had just
+produced. **Identical except two things**: the two env-value literals, where
+Vercel's copies carry a UTF-8 BOM the local `.env.local` values don't (the
+app already strips it — the same `[^\x20-\x7E]` guard `analyze.ts` was fixed
+for on 2026-08-18), and the `__BUILD_HASH__` stamp itself, reading `60da8ed`
+in production against `e312c0d` locally (the local build predated the
+commit). That is stronger evidence than a SHA lookup would have been: it
+shows the deployed bundle is the exact artifact the gate passed —
+**including the review fix above**, not just the pre-review code. Worth
+reusing whenever Vercel's metadata doesn't carry the commit.
+
+### Live verification in production
+
+Production was already signed in as Adam in the browser pane; no credentials
+handled.
+
+- **`BUILD 60da8ed · Sep 4, 2026 11:11`** read directly off the Settings
+  screen in the deployed app.
+- **No console errors** on load.
+- **The new table reached through production RLS from the deployed origin**:
+  a read-only PostgREST query as Adam's own user returned `200`, `0 rows`
+  for `v2_session_exercise_swaps` — the table exists, the policy admits him,
+  and it is cleanly empty, matching the 2026-09-03 session's confirmed
+  cleanup. Done with the established browser technique (credentials read
+  into local variables and used only as request headers, never returned).
+- **`v2_coach_session_analyses` unchanged** — latest is still `738a60a4-...`,
+  `prompt_version 6`, 2026-09-03. Nothing was generated or persisted by any
+  of this.
+
+**What this deliberately does not cover, stated rather than glossed:** the
+merged card was **not** exercised through the deployed UI this session.
+Doing so needs a real swap on a real session, and the 2026-09-03 session
+established that path has a real cost — it permanently shifted that
+session's `started_at` and triggered an auto-finish that wiped
+`energy_rating`/`pump_rating`. Adam was asked directly and chose to stop
+here. The merged card, the prefill, the `setNumber` fix and the `swaps`
+pipeline were all live-verified end to end on 2026-09-03 against real
+production data, on code the byte-diff above proves is byte-identical to
+what is now deployed apart from this session's review fix; that fix is
+covered by typecheck, the full suite, and the reasoning above, but not by a
+production UI render. **The first real swap Adam makes is the first
+production exercise of it.**
+
+### Left alone on purpose
+
+`MESOCYCLE-ANALYSIS-SPEC.md` (untracked, 2026-09-02, an unrelated planning
+doc) and `supabase/.temp/` (the still-open `.gitignore` housekeeping item
+from the Priority Context session) were both left exactly as they were —
+neither is application code and neither belongs in this fix's commit.
+`git status` is therefore **not** empty, and is not claimed to be.
+
 
 ---
 
