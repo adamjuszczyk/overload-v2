@@ -47,6 +47,25 @@ interface SetGroupProps {
   // but does not close it for an insert that was already in flight before
   // isDeleting became true.
   isDeleting: boolean
+  // True for the planned section of a merged (swapped) card, where every row
+  // belongs to the ORIGINAL exercise while the card's own identity is the
+  // replacement's (ExerciseCard.tsx's swappedFrom prop). Suppresses stage
+  // entry specifically: handleLogStage writes exerciseId = the CARD's
+  // exercise and parentSetId = THIS head, so a stage added here would attach
+  // a replacement-identity row under an original-identity head — an orphan
+  // to every consumer that filters by exerciseId before grouping. Display of
+  // the head and any real stages it already has is untouched.
+  readOnly?: boolean
+  // Position/prefill fix (2026-09-03): true when this group's plan slot is
+  // known to have had a dropset (a swap replacement seeded from the
+  // original exercise's plan shape — ExerciseCard.tsx's swappedFrom prop —
+  // or, in principle, any future caller with the same need), so the
+  // dropset affordance below reads as expected structure rather than an
+  // undiscovered option, even before any stage has actually been logged.
+  // Purely a display signal — it never seeds a real stage row, since a
+  // stage row needs a real logged head id to attach to (ExerciseCard.tsx's
+  // handleLogStage).
+  expectStage?: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
   onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
@@ -69,6 +88,8 @@ export default function SetGroup({
   lastLogsLoading,
   group,
   isDeleting,
+  readOnly = false,
+  expectStage = false,
   onLogHead,
   onLogStage,
   onUpdate,
@@ -159,7 +180,7 @@ export default function SetGroup({
             (SKIP only fires on an unlogged row, before any stage could have
             been added), but real historical data must still display, not
             vanish. */}
-        {!isDeleting && canAddStageTo(headLog) && (
+        {!isDeleting && !readOnly && canAddStageTo(headLog) && (
           addingStage ? (
             <SetRow
               setNumber={headLog.setNumber}
@@ -177,13 +198,14 @@ export default function SetGroup({
               onDelete={() => {}}
               restElapsed={restElapsed}
             />
-          ) : stages.length === 0 ? (
-            // No stages yet — most logged sets are never dropsets, so a
-            // bold ADD STAGE affordance under every single one clutters the
-            // common case (post-launch fix, 2026-08-10). This low-emphasis
-            // entry point reveals the exact same stage-entry row ADD STAGE
-            // always has; once a real stage exists below, the normal ADD
-            // STAGE affordance (below) takes over for adding further ones.
+          ) : stages.length === 0 && !expectStage ? (
+            // No stages yet, and nothing says one is expected — most logged
+            // sets are never dropsets, so a bold ADD STAGE affordance under
+            // every single one clutters the common case (post-launch fix,
+            // 2026-08-10). This low-emphasis entry point reveals the exact
+            // same stage-entry row ADD STAGE always has; once a real stage
+            // exists below, or expectStage says one is already anticipated,
+            // the normal ADD STAGE affordance (below) takes over.
             <button
               onClick={() => setAddingStage(true)}
               className="flex items-center text-xs font-medium"

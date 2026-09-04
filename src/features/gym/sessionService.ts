@@ -9,6 +9,7 @@ import type {
   PumpRating,
   MuscleSubgroup,
   MovementPattern,
+  Exercise,
 } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
@@ -598,4 +599,84 @@ export async function fetchReferenceSessions(
   }
 
   return result
+}
+
+// ─── Exercise swaps ───────────────────────────────────────────────────────────
+// Session-scoped structural link between a swapped-out exercise slot and its
+// replacement (migration 025) — see that file's header for why this exists.
+// One row per swap event, keyed by the program_exercise "slot" it replaces
+// so GymSession.tsx can render the replacement in that slot's own position
+// instead of appending it, and assembleAnalysisInput (analysisInput.ts) can
+// state the substitution as an explicit fact instead of leaving the model to
+// infer it from two disconnected exercises in the same session.
+
+export interface ExerciseSwap {
+  id: string
+  sessionId: string
+  programExerciseId: string | null
+  originalExerciseId: string | null
+  originalExerciseName: string
+  replacementExerciseId: string | null
+  replacementExerciseName: string
+  createdAt: string
+}
+
+type DbExerciseSwap = {
+  id: string
+  session_id: string
+  program_exercise_id: string | null
+  original_exercise_id: string | null
+  original_exercise_name: string
+  replacement_exercise_id: string | null
+  replacement_exercise_name: string
+  created_at: string
+}
+
+function toExerciseSwap(row: DbExerciseSwap): ExerciseSwap {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    programExerciseId: row.program_exercise_id,
+    originalExerciseId: row.original_exercise_id,
+    originalExerciseName: row.original_exercise_name,
+    replacementExerciseId: row.replacement_exercise_id,
+    replacementExerciseName: row.replacement_exercise_name,
+    createdAt: row.created_at,
+  }
+}
+
+// Names are captured from the real Exercise objects at swap time (not looked
+// up again later) — the same "identity travels denormalised" reasoning the
+// migration's own header cites, and it means this insert needs no join.
+export async function recordExerciseSwap(params: {
+  userId: string
+  sessionId: string
+  programExerciseId: string
+  originalExercise: Exercise
+  replacementExercise: Exercise
+}): Promise<ExerciseSwap> {
+  const { data, error } = await supabase
+    .from('v2_session_exercise_swaps')
+    .insert({
+      user_id: params.userId,
+      session_id: params.sessionId,
+      program_exercise_id: params.programExerciseId,
+      original_exercise_id: params.originalExercise.id,
+      original_exercise_name: params.originalExercise.name,
+      replacement_exercise_id: params.replacementExercise.id,
+      replacement_exercise_name: params.replacementExercise.name,
+    })
+    .select('*')
+    .single()
+  if (error) throw error
+  return toExerciseSwap(data as DbExerciseSwap)
+}
+
+export async function fetchSessionSwaps(sessionId: string): Promise<ExerciseSwap[]> {
+  const { data, error } = await supabase
+    .from('v2_session_exercise_swaps')
+    .select('*')
+    .eq('session_id', sessionId)
+  if (error) throw error
+  return (data as DbExerciseSwap[]).map(toExerciseSwap)
 }

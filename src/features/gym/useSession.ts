@@ -5,7 +5,7 @@ import { db } from '../../lib/db'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
-import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating } from '../../types'
+import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import {
   fetchSessionsInRange,
   fetchSession,
@@ -20,7 +20,10 @@ import {
   deleteSetLog,
   fetchLastSessionLogs,
   fetchReferenceSessions,
+  recordExerciseSwap,
+  fetchSessionSwaps,
   type ReferenceSession,
+  type ExerciseSwap,
 } from './sessionService'
 import { groupSetLogs } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
@@ -41,6 +44,21 @@ export function useActiveSession(sessionId: string | null) {
   return useQuery({
     queryKey: ['v2_session', sessionId],
     queryFn: () => fetchSession(sessionId!),
+    enabled: !!user && !!sessionId,
+    staleTime: 0,
+  })
+}
+
+// Swap-exercise's structural link (migration 025) — read on every session
+// load/reopen so a swap survives a refresh even before its replacement's
+// first set has actually logged (GymSession.tsx also keeps a local
+// optimistic copy for the instant between confirming a swap and this query
+// refetching — see its own useRecordExerciseSwap call site).
+export function useSessionSwaps(sessionId: string | null) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_sessionSwaps', sessionId],
+    queryFn: () => fetchSessionSwaps(sessionId!),
     enabled: !!user && !!sessionId,
     staleTime: 0,
   })
@@ -613,6 +631,41 @@ export function useSkipMissedSession() {
       existingSessionId: string | null
     }) => skipMissedSession(user!.id, mesoId, weekPlanId, workoutDayId, date, existingSessionId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_sessions'] }),
+  })
+}
+
+// Records the structural link between a swapped-out slot and its
+// replacement (migration 025). Online-only, same "no offline sync_queue"
+// tier as useUpdateSessionNote/useUpdateSetLog — a plain optimistic update
+// with rollback on error, not full offline support; swapping mid-session is
+// a rare, interactive action, not one this app makes available offline
+// elsewhere either (SwapExerciseSheet.tsx's own exercise picker has no
+// offline branch).
+export function useRecordExerciseSwap(sessionId: string) {
+  const { user } = useAuth()
+  const qk = ['v2_sessionSwaps', sessionId] as const
+
+  return useMutation({
+    mutationFn: (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) =>
+      recordExerciseSwap({ userId: user!.id, sessionId, ...params }),
+    onMutate: async (params) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<ExerciseSwap[]>(qk)
+      const optimistic: ExerciseSwap = {
+        id: crypto.randomUUID(),
+        sessionId,
+        programExerciseId: params.programExerciseId,
+        originalExerciseId: params.originalExercise.id,
+        originalExerciseName: params.originalExercise.name,
+        replacementExerciseId: params.replacementExercise.id,
+        replacementExerciseName: params.replacementExercise.name,
+        createdAt: new Date().toISOString(),
+      }
+      queryClient.setQueryData(qk, (old: ExerciseSwap[] | undefined) => [...(old ?? []), optimistic])
+      return { prev }
+    },
+    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
   })
 }
 

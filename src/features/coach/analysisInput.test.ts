@@ -482,3 +482,68 @@ describe('buildAnalysisInput — sessionNotes and memory (Coach Personalization 
     expect(result.memory).toEqual([])
   })
 })
+
+describe('buildAnalysisInput — swaps (2026-09-03, PROMPT_VERSION 7)', () => {
+  it('defaults to an empty array when not passed — the common case, no swap this session', () => {
+    const result = buildAnalysisInput(baseArgs())
+    expect(result.swaps).toEqual([])
+  })
+
+  it('passes through a real swap verbatim, both ids present', () => {
+    const result = buildAnalysisInput(
+      baseArgs({
+        swaps: [
+          {
+            originalExerciseId: 'ex-chest-press',
+            originalExerciseName: 'Chest Press',
+            replacementExerciseId: 'ex-smith-press',
+            replacementExerciseName: 'Smith Press',
+          },
+        ],
+      }),
+    )
+    expect(result.swaps).toEqual([
+      {
+        originalExerciseId: 'ex-chest-press',
+        originalExerciseName: 'Chest Press',
+        replacementExerciseId: 'ex-smith-press',
+        replacementExerciseName: 'Smith Press',
+      },
+    ])
+  })
+
+  it('carries a null exercise id through unchanged — migration 025 sets it null on delete, name stays', () => {
+    const result = buildAnalysisInput(
+      baseArgs({
+        swaps: [
+          {
+            originalExerciseId: null,
+            originalExerciseName: 'Chest Press',
+            replacementExerciseId: 'ex-smith-press',
+            replacementExerciseName: 'Smith Press',
+          },
+        ],
+      }),
+    )
+    expect(result.swaps![0].originalExerciseId).toBeNull()
+    expect(result.swaps![0].originalExerciseName).toBe('Chest Press')
+  })
+
+  it('swaps and sessionNotes/memory are independent — populating one leaves the others at their own default', () => {
+    const result = buildAnalysisInput(
+      baseArgs({
+        swaps: [
+          {
+            originalExerciseId: 'ex1',
+            originalExerciseName: 'Chest Press',
+            replacementExerciseId: 'ex2',
+            replacementExerciseName: 'Smith Press',
+          },
+        ],
+      }),
+    )
+    expect(result.swaps).toHaveLength(1)
+    expect(result.sessionNotes).toEqual([])
+    expect(result.memory).toEqual([])
+  })
+})

@@ -55,10 +55,22 @@ interface ExerciseCardProps {
   onDeleteSet: (id: string) => Promise<void>
   // Swap exercise for this session only (SPEC v1.1 "Part C") — called once
   // the swap is confirmed and the original exercise's remaining sets have
-  // already been skipped (see handleConfirmSwap below). GymSession.tsx owns
-  // what happens next: rendering the chosen exercise as an extra, unplanned
-  // exercise card, same "extra set" concept as ADD SET one level up.
-  onSwap: (exercise: Exercise) => void
+  // already been skipped (see handleConfirmSwap below). Passes the
+  // original programExercise along too (2026-09-03 position/presentation
+  // fix) — GymSession.tsx needs its id to record the structural link
+  // (migration 025) and to know which slot to render the replacement in,
+  // in place of the original rather than appended after it.
+  onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
+  // Position/presentation/prefill fix (2026-09-03) — present only when this
+  // card is rendering in place of a swapped-out slot (GymSession.tsx keys
+  // this off v2_session_exercise_swaps). Drives three things: the header's
+  // "SWAPPED FROM" line, seeding the extra-set slots below to the original
+  // plan's shape (same set count / dropset structure — weights/reps stay
+  // empty, see extraSlotCount below), and nothing else — the planned
+  // section above still renders plannedSets exactly as it always has
+  // (which, for a swapped slot, is the original's now-fully-resolved plan:
+  // real logs and SKIPPED marks, both real tracking data, not hidden).
+  swappedFrom?: { exerciseName: string }
 }
 
 export default function ExerciseCard({
@@ -78,6 +90,7 @@ export default function ExerciseCard({
   onUpdateSet,
   onDeleteSet,
   onSwap,
+  swappedFrom,
 }: ExerciseCardProps) {
   const { startedAt, start: startTimer } = useRestTimerStore()
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
@@ -106,6 +119,18 @@ export default function ExerciseCard({
   const lastLogGroups = groupSetLogs(lastLogs)
   const totalLoggedHeads = logGroups.length
 
+  // setNumber is "1-based, per exercise within this session" (types/index.ts
+  // SetLog's own doc comment) — every other consumer (positionMatch.ts,
+  // history) relies on that. A merged (swapped) card's currentLogs union two
+  // real exercise identities (linkedExerciseIds, GymSession.tsx) so the
+  // original's already-resolved head count must not leak into the
+  // replacement's own sequence. Only differs from totalLoggedHeads on a
+  // merged card — currentLogs is already single-identity everywhere else, so
+  // this is the same value as totalLoggedHeads there.
+  const ownLoggedHeadCount = swappedFrom
+    ? groupSetLogs(currentLogs.filter((l) => l.exerciseId === programExercise.exerciseId)).length
+    : totalLoggedHeads
+
   // A logged set either targets a planned slot (weekPlanSetId set) or is an
   // extra, on-demand set (weekPlanSetId null) — identity, not array
   // position, decides which section it belongs to and whether that slot
@@ -116,15 +141,6 @@ export default function ExerciseCard({
     .filter((g) => g.head.weekPlanSetId == null)
     .sort((a, b) => a.head.setNumber - b.head.setNumber)
 
-  // Number of extra-set input slots to show. Starts at (and never drops
-  // below) the number of extra sets already logged, so already-logged extra
-  // sets keep rendering after a remount/refresh. Otherwise it only grows
-  // when the user taps ADD SET — logging a set never adds another slot.
-  const [extraSlotCount, setExtraSlotCount] = useState(extraLogGroups.length)
-  useEffect(() => {
-    setExtraSlotCount((n) => Math.max(n, extraLogGroups.length))
-  }, [extraLogGroups.length])
-
   // Planned heads only — a planned dropset's stage rows are never their own
   // top-level slot (§2.7 item 7); they're pulled in per-head via
   // plannedGroups below, for stage prefill/target-RIR when ADD STAGE is used.
@@ -134,6 +150,29 @@ export default function ExerciseCard({
   // plannedSets input — read here instead of duplicating groupWeekPlanSets
   // a second time just to ask "would this panel render NO PLAN".
   const showPlanTargets = plannedGroups.length > 0
+
+  // Number of extra-set input slots to show. Starts at (and never drops
+  // below) the number of extra sets already logged, so already-logged extra
+  // sets keep rendering after a remount/refresh. Otherwise it only grows
+  // when the user taps ADD SET — logging a set never adds another slot.
+  //
+  // Prefill fix (2026-09-03): when swappedFrom is set, plannedSets IS the
+  // original exercise's plan (already fully resolved — see the prop's own
+  // doc comment), so plannedGroups.length is that plan's head count. Seeded
+  // here rather than as a separately-computed prop, so the replacement's
+  // shape can never drift from what the planned section above is showing
+  // as the original's resolved history — same source, read twice.
+  const [extraSlotCount, setExtraSlotCount] = useState(
+    Math.max(extraLogGroups.length, swappedFrom ? plannedGroups.length : 0),
+  )
+  // swappedFrom is a fresh object literal from GymSession.tsx every render
+  // (its identity isn't meaningful, only whether it's present) — depend on
+  // !!swappedFrom rather than the object itself, so this doesn't re-run on
+  // every render for no reason; the effect body still reads the current
+  // swappedFrom from the closure either way.
+  useEffect(() => {
+    setExtraSlotCount((n) => Math.max(n, extraLogGroups.length, swappedFrom ? plannedGroups.length : 0))
+  }, [extraLogGroups.length, !!swappedFrom, plannedGroups.length])
 
   // The plan side's head/stage structure isn't authoritative for what a log
   // actually turned out to be — the log's OWN parentSetId is (a log-side
@@ -163,6 +202,18 @@ export default function ExerciseCard({
       plannedStages: plannedGroups.find((g) => g.head.id === ps.id)?.stages ?? [],
       group: plannedLogGroups.find((g) => g.head.weekPlanSetId === ps.id) ?? null,
     }))
+    // On a merged (swapped) card the planned section is the ORIGINAL
+    // exercise's already-resolved history, shown in place of a second card —
+    // never a live input for THIS card's identity, which is the
+    // replacement's. An unlogged planned row here would render a LOG input
+    // whose write would carry exerciseId=replacement with the ORIGINAL's
+    // weekPlanSetId: exactly the cross-identity plan link swappedFrom's own
+    // doc comment says the prefill design exists to avoid. Normally
+    // unreachable (handleConfirmSwap resolves every planned row before the
+    // swap is recorded), but deleting one of the original's real logged sets
+    // from this card reopens its slot — so drop such rows instead of
+    // re-offering them. A no-op on every non-merged card.
+    .filter((row) => !swappedFrom || row.group != null)
 
   const extraRows = Array.from({ length: extraSlotCount }, (_, i) => ({
     group: extraLogGroups[i] ?? null,
@@ -183,11 +234,23 @@ export default function ExerciseCard({
   ): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
     startTimer()
+    // plannedSet non-null means a planned-slot head. On a merged card that's
+    // now structurally unreachable — plannedRows drops unlogged rows there
+    // and hasUnfinishedPlannedWork is forced false, so neither a LOG input
+    // nor SKIP REST OF EXERCISE can reach here against the original's plan.
+    // handleSkipExercise is the one remaining caller, and it only ever runs
+    // on the pre-swap card (single-identity currentLogs) and supplies
+    // setNumberOverride itself — so totalLoggedHeads below is never read
+    // from a mixed-identity count. A null plannedSet means an extra
+    // (ADD SET) slot, which on a merged card belongs to the replacement's
+    // own identity — see ownLoggedHeadCount's comment above for why that
+    // must not include the original's already-resolved heads.
+    const fallbackBase = plannedSet ? totalLoggedHeads : ownLoggedHeadCount
     return onLog({
       ...params,
       exerciseId: programExercise.exerciseId,
       weekPlanSetId: plannedSet?.id ?? null,
-      setNumber: setNumberOverride ?? totalLoggedHeads + 1,
+      setNumber: setNumberOverride ?? fallbackBase + 1,
       // A non-null setSeconds means SetRow's Start Set flow already froze
       // the honest rest value at the moment Start Set was tapped — trust it
       // rather than overwrite with a fresh read, which by then would only
@@ -263,8 +326,21 @@ export default function ExerciseCard({
       })
     }
 
+    // Scoped to the deleted head's own exerciseId, not just logGroups at
+    // large — on a merged (swapped) card, logGroups spans two real exercise
+    // identities (linkedExerciseIds, GymSession.tsx), and setNumber is
+    // per-exercise (see ownLoggedHeadCount's comment above). Without this,
+    // deleting a head on one identity could renumber a higher-setNumber head
+    // that happens to belong to the *other* identity, corrupting its
+    // sequence. A no-op filter change for every non-merged card, where every
+    // head already shares one exerciseId.
     logGroups
-      .filter((g) => g.head.id !== group.head.id && g.head.setNumber > group.head.setNumber)
+      .filter(
+        (g) =>
+          g.head.id !== group.head.id &&
+          g.head.exerciseId === group.head.exerciseId &&
+          g.head.setNumber > group.head.setNumber,
+      )
       .sort((a, b) => a.head.setNumber - b.head.setNumber)
       .forEach((g, i) => {
         onUpdateSet(g.head.id, { setNumber: group.head.setNumber + i })
@@ -339,7 +415,12 @@ export default function ExerciseCard({
   // Whether there's anything left for "skip whole exercise" to actually do —
   // hides/disables the affordance once every planned head and stage is
   // already logged, avoiding a confusing no-op action.
-  const hasUnfinishedPlannedWork = plannedRows.some(
+  // Never on a merged (swapped) card: everything this would write belongs to
+  // the original exercise's plan, but would be written under the
+  // replacement's exerciseId — see plannedRows' own filter above. The
+  // original's remaining work was already skipped at swap time, by this very
+  // function, back when the card still carried the original's identity.
+  const hasUnfinishedPlannedWork = !swappedFrom && plannedRows.some(
     (row) => !row.group || row.group.stages.length < row.plannedStages.length,
   )
 
@@ -362,7 +443,7 @@ export default function ExerciseCard({
     setIsSkippingExercise(true)
     try {
       await handleSkipExercise()
-      onSwap(newExercise)
+      onSwap(newExercise, programExercise)
     } catch (err) {
       console.error('Failed to swap exercise', err)
     } finally {
@@ -371,8 +452,14 @@ export default function ExerciseCard({
   }
 
   // Display numbers run sequentially top-to-bottom (planned section first,
-  // then extra) purely for the row badge — the setNumber actually sent on
-  // a head log is computed fresh from totalLoggedHeads at click time.
+  // then extra) purely for the row badge — the setNumber actually sent on a
+  // head log is computed fresh from handleLogHead's own fallbackBase at
+  // click time, from the same two counts used here, so an unlogged row's
+  // badge never jumps to a different number than what it actually gets
+  // written as the instant it's logged. extraDisplay uses ownLoggedHeadCount
+  // (not totalLoggedHeads) for the same reason handleLogHead's fallbackBase
+  // does — on a merged card, unloggedSeen alone would otherwise continue the
+  // original's already-resolved count into the replacement's own sequence.
   let unloggedSeen = 0
   const plannedDisplay = plannedRows.map((row) => {
     if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
@@ -382,7 +469,7 @@ export default function ExerciseCard({
   })
   const extraDisplay = extraRows.map((row) => {
     if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
-    const displayNumber = totalLoggedHeads + unloggedSeen + 1
+    const displayNumber = ownLoggedHeadCount + unloggedSeen + 1
     unloggedSeen += 1
     return { ...row, displayNumber }
   })
@@ -392,7 +479,11 @@ export default function ExerciseCard({
       className="rounded-xl overflow-hidden"
       style={{ border: '1px solid var(--border)' }}
     >
-      <ExerciseHeader programExercise={programExercise} onSwapClick={() => setShowSwapSheet(true)} />
+      <ExerciseHeader
+        programExercise={programExercise}
+        onSwapClick={swappedFrom ? undefined : () => setShowSwapSheet(true)}
+        swappedFromName={swappedFrom?.exerciseName}
+      />
 
       {/* Two reference panels, side by side — but PlanTargetsPanel collapses
           entirely when this exercise has no plan (post-launch fix,
@@ -442,6 +533,7 @@ export default function ExerciseCard({
             lastLogsLoading={lastLogsLoading}
             group={group}
             isDeleting={group != null && deletingHeadIds.has(group.head.id)}
+            readOnly={!!swappedFrom}
             onLogHead={(params) => handleLogHead(plannedSet, params)}
             onLogStage={(headLog, params) =>
               handleLogStage(headLog, group ? nextStageIndex(group, (l) => l.stageIndex) : 1, params)
@@ -465,6 +557,7 @@ export default function ExerciseCard({
             lastLogsLoading={lastLogsLoading}
             group={group}
             isDeleting={group != null && deletingHeadIds.has(group.head.id)}
+            expectStage={swappedFrom ? (plannedGroups[i]?.stages.length ?? 0) > (group?.stages.length ?? 0) : false}
             onLogHead={(params) => handleLogHead(null, params)}
             onLogStage={(headLog, params) =>
               handleLogStage(headLog, group ? nextStageIndex(group, (l) => l.stageIndex) : 1, params)

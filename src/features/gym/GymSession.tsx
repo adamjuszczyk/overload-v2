@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
-import type { ReferenceSession } from './sessionService'
+import type { ReferenceSession, ExerciseSwap } from './sessionService'
 import {
   useActiveSession,
   useLogSet,
@@ -9,8 +9,12 @@ import {
   useUpdateSetLog,
   useDeleteSetLog,
   useExerciseReferenceSessions,
+  useSessionSwaps,
+  useRecordExerciseSwap,
 } from './useSession'
 import { useProgramExercises } from '../programs/usePrograms'
+import { useExercises } from '../library/useExercises'
+import { resolveReplacementExercise } from './exerciseSwapLogic'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { db } from '../../lib/db'
@@ -40,6 +44,8 @@ function ExerciseSection({
   programExercise,
   plannedSets,
   allCurrentLogs,
+  linkedExerciseIds = [],
+  swappedFrom,
   sessionId,
   referenceSessions,
   referenceLoading,
@@ -56,6 +62,15 @@ function ExerciseSection({
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
   allCurrentLogs: SetLog[]
+  // Position/presentation fix (2026-09-03) — for a card rendering in place
+  // of a swapped-out slot, the original exercise's own logs (real sets
+  // logged before the swap, plus the SKIPPED marks handleSkipExercise
+  // wrote) still carry the ORIGINAL exercise's id, not this card's. Without
+  // this, those rows would vanish from the planned section above (which
+  // reads plannedSets — the original's plan) even though plannedSets itself
+  // still expects them, and the card would wrongly look re-loggable.
+  linkedExerciseIds?: string[]
+  swappedFrom?: { exerciseName: string }
   sessionId: string
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
@@ -82,13 +97,15 @@ function ExerciseSection({
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
-  onSwap: (exercise: Exercise) => void
+  onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
 }) {
   const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(
     programExercise.exerciseId,
     sessionId,
   )
-  const currentLogs = allCurrentLogs.filter((l) => l.exerciseId === programExercise.exerciseId)
+  const currentLogs = allCurrentLogs.filter(
+    (l) => l.exerciseId === programExercise.exerciseId || linkedExerciseIds.includes(l.exerciseId),
+  )
 
   return (
     <ExerciseCard
@@ -108,6 +125,7 @@ function ExerciseSection({
       onUpdateSet={onUpdateSet}
       onDeleteSet={onDeleteSet}
       onSwap={onSwap}
+      swappedFrom={swappedFrom}
     />
   )
 }
@@ -116,22 +134,29 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const [showComplete, setShowComplete] = useState(false)
   const [showSidebarSheet, setShowSidebarSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — exercises
-  // just chosen via a swap, before any set has been logged for them yet.
-  // Seeded here so the new exercise's card appears the instant a swap is
-  // confirmed; once at least one set is actually logged for it, the derived
-  // list below (from allCurrentLogs) picks it up too, so it survives a
-  // refresh the same way an "extra set" (ADD SET) already does — no new
-  // table, no new persisted flag, same "derive extra-ness from what's
-  // actually logged" precedent SetGroup's weekPlanSetId-null sets already
-  // established one level down.
-  const [pendingSwapExercises, setPendingSwapExercises] = useState<Exercise[]>([])
 
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
 
   const { data: session } = useActiveSession(sessionId)
   const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — the
+  // structural link (migration 025, 2026-09-03) between a swapped-out slot
+  // and its replacement. Read here (not derived from local state) so a
+  // swap survives a refresh even before the replacement's first set has
+  // actually logged — useRecordExerciseSwap's onMutate below writes an
+  // optimistic row straight into this same query's cache, so the instant
+  // a swap is confirmed it's already reflected here too, no separate
+  // "pending" bucket needed.
+  const { data: sessionSwaps = [] } = useSessionSwaps(sessionId)
+  const recordSwap = useRecordExerciseSwap(sessionId)
+  // Full exercise objects, including archived ones — a swap's replacement
+  // can only be rendered as a real ExerciseCard (muscle group, weight unit,
+  // history link all come from here) via lookup, since migration 025 only
+  // denormalises id/name onto the swap row itself, not the whole Exercise.
+  // includeArchived so a since-archived replacement still resolves, since
+  // this is display of what happened, not a fresh pick.
+  const { data: allExercises = [] } = useExercises(true)
   const logSet = useLogSet(sessionId)
   const updateSetLog = useUpdateSetLog(sessionId)
   const deleteSetLog = useDeleteSetLog(sessionId)
@@ -159,25 +184,41 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
 
-  // Extra, unplanned exercises added via swap (SPEC v1.1 "Part C") — the
-  // exercise-level equivalent of an "extra set": never written to
-  // v2_program_exercises, so next week's plan is untouched by construction
-  // (weekPlanService.ts's copy-forward only ever reads v2_week_plans/
-  // v2_week_plan_sets, never v2_set_logs). Union of "chosen this session,
-  // not logged yet" (pendingSwapExercises) and "already has at least one
-  // real log this session" (derived from allCurrentLogs, keyed by
-  // exerciseId so a page refresh recovers it without pendingSwapExercises)
-  // — deduplicated by exercise id, since the same exercise naturally moves
-  // from the first bucket into the second the moment its first set lands.
+  // Swap exercise for this session only (SPEC v1.1 "Part C") — position/
+  // presentation fix, 2026-09-03. Keyed by program_exercise_id (the "slot"
+  // GymSession itself renders one card per) so the replacement can render
+  // in the original's own position below instead of appended after every
+  // other exercise, as one merged card instead of two separate visible
+  // entries (ExerciseCard.tsx's swappedFrom prop) — see migration 025's own
+  // header for the full reasoning.
+  const swapByProgramExerciseId = new Map<string, ExerciseSwap>()
+  for (const swap of sessionSwaps) {
+    if (swap.programExerciseId) swapByProgramExerciseId.set(swap.programExerciseId, swap)
+  }
+
+  // Legacy fallback: a swap confirmed before migration 025 existed (e.g. the
+  // real 2026-08-27 and 2026-09-03 sessions) has real logs for its
+  // replacement exercise but no v2_session_exercise_swaps row to key the
+  // merged-card rendering off. Rendered the old way — its own card, appended
+  // after the template — purely so reopening one of those specific sessions
+  // still shows the replacement at all; every swap from here forward goes
+  // through the recorded, position-correct path above instead.
   const templateExerciseIds = new Set(sortedExercises.map((pe) => pe.exerciseId))
-  const extraExerciseById = new Map<string, Exercise>()
-  for (const ex of pendingSwapExercises) extraExerciseById.set(ex.id, ex)
+  const recordedReplacementIds = new Set(
+    sessionSwaps.map((s) => s.replacementExerciseId).filter((id): id is string => id != null),
+  )
+  const legacyExtraExerciseById = new Map<string, Exercise>()
   for (const log of allCurrentLogs) {
-    if (log.exercise && !templateExerciseIds.has(log.exerciseId) && !extraExerciseById.has(log.exerciseId)) {
-      extraExerciseById.set(log.exerciseId, log.exercise)
+    if (
+      log.exercise &&
+      !templateExerciseIds.has(log.exerciseId) &&
+      !recordedReplacementIds.has(log.exerciseId) &&
+      !legacyExtraExerciseById.has(log.exerciseId)
+    ) {
+      legacyExtraExerciseById.set(log.exerciseId, log.exercise)
     }
   }
-  const extraExercises = [...extraExerciseById.values()]
+  const legacyExtraExercises = [...legacyExtraExerciseById.values()]
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } =
     useScrollToCurrentSet()
@@ -186,10 +227,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // §2.3) — not one query per exercise card. Must run unconditionally (this
   // is a hook), so it's placed before the showComplete early return below,
   // fed by activeExercises so it also works from the offline-cached
-  // exercise list. Extra (swapped-in) exercise ids are included too, so a
-  // real prior occurrence of one still resolves a real reference instead of
-  // silently falling back to first_time just because the id was never
-  // asked about.
+  // exercise list. Swap replacements (recorded and legacy) are included
+  // too, so a real prior occurrence of one still resolves a real reference
+  // instead of silently falling back to first_time just because the id was
+  // never asked about.
   const {
     data: referenceSessionsByExercise,
     isLoading: referenceLoading,
@@ -198,7 +239,11 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     retry: retryReference,
   } = useExerciseReferenceSessions(
     workoutDay.id,
-    [...activeExercises.map((pe) => pe.exerciseId), ...extraExercises.map((ex) => ex.id)],
+    [
+      ...activeExercises.map((pe) => pe.exerciseId),
+      ...[...swapByProgramExerciseId.values()].map((s) => resolveReplacementExercise(s, allExercises).id),
+      ...legacyExtraExercises.map((ex) => ex.id),
+    ],
     sessionId,
   )
 
@@ -235,11 +280,19 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // Swap exercise for this session only (SPEC v1.1 "Part C") — the original
   // exercise's card has already skipped its own remaining sets by the time
   // this fires (ExerciseCard.tsx's handleConfirmSwap does that first); this
-  // just registers the chosen replacement so it renders as an extra card
-  // below. Guards against double-registering the same exercise id (e.g. two
-  // different template exercises swapped to the same replacement).
-  function handleSwap(exercise: Exercise) {
-    setPendingSwapExercises((prev) => (prev.some((e) => e.id === exercise.id) ? prev : [...prev, exercise]))
+  // records the structural link (migration 025), which both drives the
+  // merged-card rendering below and reaches Coach's daily analysis
+  // (analysisInput.ts) as an explicit fact instead of two disconnected
+  // exercises. programExercise.exercise is always populated for a real card
+  // (the join that produces it never omits it in practice) — guarded
+  // defensively anyway since the type itself allows undefined.
+  function handleSwap(exercise: Exercise, programExercise: ProgramExercise) {
+    if (!programExercise.exercise) return
+    recordSwap.mutate({
+      programExerciseId: programExercise.id,
+      originalExercise: programExercise.exercise,
+      replacementExercise: exercise,
+    })
   }
 
   return (
@@ -305,6 +358,42 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             .filter((s) => s.programExerciseId === pe.id)
             .sort((a, b) => a.setNumber - b.setNumber)
 
+          // Position/presentation fix (2026-09-03): a swapped slot renders
+          // ONE merged card, in this exact position, for the replacement —
+          // not the original's own card plus a second one appended at the
+          // end. plannedSets stays the original's (already fully resolved
+          // by the time a swap is recorded — handleConfirmSwap skips it
+          // first) so the planned section still shows that real history;
+          // linkedExerciseIds pulls those rows into this card instead of
+          // the (no-longer-rendered) original one.
+          const swap = swapByProgramExerciseId.get(pe.id)
+          if (swap) {
+            const replacement = resolveReplacementExercise(swap, allExercises)
+            const mergedProgramExercise: ProgramExercise = { ...pe, exerciseId: replacement.id, exercise: replacement }
+            return (
+              <ExerciseSection
+                key={`${pe.id}-swapped-${swap.id}`}
+                programExercise={mergedProgramExercise}
+                plannedSets={plannedSets}
+                allCurrentLogs={allCurrentLogs}
+                linkedExerciseIds={swap.originalExerciseId ? [swap.originalExerciseId] : []}
+                swappedFrom={{ exerciseName: swap.originalExerciseName }}
+                sessionId={sessionId}
+                referenceSessions={referenceSessionsByExercise.get(replacement.id) ?? []}
+                referenceLoading={referenceLoading}
+                referenceMesocycleId={session?.mesocycleId ?? null}
+                referenceIsError={referenceIsError}
+                referenceIsFromCache={referenceIsFromCache}
+                onRetryReference={retryReference}
+                today={today}
+                onLog={handleLog}
+                onUpdateSet={handleUpdateSet}
+                onDeleteSet={handleDeleteSet}
+                onSwap={handleSwap}
+              />
+            )
+          }
+
           return (
             <ExerciseSection
               key={pe.id}
@@ -327,12 +416,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           )
         })}
 
-        {/* Extra, unplanned exercises added via swap this session (SPEC
-            v1.1 "Part C") — same synthetic-ProgramExercise-plus-empty-plan
-            composition as any exercise with no plan attached; nothing in
-            ExerciseCard/SetGroup needs to know this one didn't come from
-            the day's template. */}
-        {extraExercises.map((ex, i) => {
+        {/* Legacy fallback only — a swap confirmed before migration 025
+            existed, with no recorded structural link to key the merged
+            rendering above off. See legacyExtraExercises' own comment. */}
+        {legacyExtraExercises.map((ex, i) => {
           const syntheticProgramExercise: ProgramExercise = {
             id: `extra-${ex.id}`,
             workoutDayId: workoutDay.id,

@@ -5,6 +5,7 @@ import type { ProgramExercise } from '../../types'
 export default function ExerciseHeader({
   programExercise,
   onSwapClick,
+  swappedFromName,
 }: {
   programExercise: ProgramExercise
   // Exercise-level, not per-set (SPEC v1.1 "Part C") — this header is the
@@ -15,6 +16,12 @@ export default function ExerciseHeader({
   // by PreviewExerciseCard.tsx's read-only mirror of this header (no LOG/
   // ADD SET there either — swapping only makes sense in a live session).
   onSwapClick?: () => void
+  // Position/presentation fix (2026-09-03): the original exercise's name,
+  // present only when this card is rendering in place of a swapped-out slot
+  // (GymSession.tsx). This is the one visible trace of the swap on an
+  // otherwise-normal card — the goal is "this exercise, instead of that
+  // one, right here," not a second card for the original.
+  swappedFromName?: string
 }) {
   const ex = programExercise.exercise
   const navigate = useNavigate()
@@ -43,6 +50,17 @@ export default function ExerciseHeader({
         >
           {ex?.muscleGroup?.toUpperCase()}
         </span>
+        {swappedFromName && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <Repeat2 size={10} style={{ color: 'var(--text-muted)' }} />
+            <span
+              className="text-xs"
+              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+            >
+              SWAPPED FROM {swappedFromName.toUpperCase()}
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex-shrink-0 flex items-center">
         {onSwapClick && (

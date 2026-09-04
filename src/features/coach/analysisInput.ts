@@ -126,6 +126,31 @@ export interface AnalysisInput {
   // assembly ever omitting them.
   sessionNotes?: string[]
   memory?: string[]
+  // Swap-exercise's structural link (migration 025, PROMPT_VERSION 7,
+  // 2026-09-03) — same optionality reasoning as sessionNotes/memory above:
+  // every input_snapshot frozen before this field existed is permanent
+  // (SPEC §9) and simply lacks it; a freshly assembled payload always
+  // populates it as an array, empty or not. Feeds coachPrompt.ts the fact
+  // directly ("X was swapped for Y this session") instead of leaving the
+  // model to notice, on its own, that two entries in `exercises` are really
+  // one substitution — the same "don't make the model derive what's already
+  // knowable" principle dayOfWeek/repsDelta already apply elsewhere. See
+  // this file's assembleAnalysisInput for where it's fetched.
+  swaps?: AnalysisInputSwap[]
+}
+
+// originalExerciseId/replacementExerciseId can be null — the swap row's own
+// FKs are ON DELETE SET NULL (migration 025), so an exercise hard-deleted
+// after the swap leaves the fact intact but loses that one side's id. The
+// *Name fields are what the migration denormalises specifically so the fact
+// stays statable either way; the model matches swaps to `exercises` entries
+// by name when an id has gone missing, same as it would from exerciseName
+// alone anywhere else in this payload.
+export interface AnalysisInputSwap {
+  originalExerciseId: string | null
+  originalExerciseName: string
+  replacementExerciseId: string | null
+  replacementExerciseName: string
 }
 
 // How many trailing weeks of weight-trend context to include. Not specified
@@ -182,6 +207,8 @@ export interface BuildAnalysisInputArgs {
   // change. Oldest → newest, bodies only (§4.5's "no ids" reasoning).
   sessionNotes?: string[]
   memory?: string[]
+  // Optional, same default-to-[] reasoning as sessionNotes/memory above.
+  swaps?: AnalysisInputSwap[]
 }
 
 function toReference(ref: PrimarySlot): AnalysisInputReference {
@@ -277,6 +304,7 @@ export function buildAnalysisInput(args: BuildAnalysisInputArgs): AnalysisInput 
     weightTrend: recentWeightTrend(args.weightEntries, args.session.date, WEIGHT_TREND_WEEKS),
     sessionNotes: args.sessionNotes ?? [],
     memory: args.memory ?? [],
+    swaps: args.swaps ?? [],
   }
 }
 
@@ -649,6 +677,7 @@ export async function assembleAnalysisInput(
     { data: weightRows, error: weightError },
     memory,
     { data: noteRows, error: noteError },
+    { data: swapRows, error: swapError },
   ] = await Promise.all([
     client.from('v2_coach_phase_entries').select('id, user_id, phase, start_date, created_at').eq('user_id', userId),
     client
@@ -662,14 +691,37 @@ export async function assembleAnalysisInput(
       .eq('user_id', userId)
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true }),
+    // Swap-exercise's structural link (migration 025) — scoped to this
+    // session only, same as the notes query above. RLS already scopes to
+    // user_id; the explicit filter matches this file's own defence-in-depth
+    // convention for every other user-scoped query here.
+    client
+      .from('v2_session_exercise_swaps')
+      .select('original_exercise_id, original_exercise_name, replacement_exercise_id, replacement_exercise_name')
+      .eq('user_id', userId)
+      .eq('session_id', sessionId),
   ])
   if (phaseError) throw phaseError
   if (weightError) throw weightError
   if (noteError) throw noteError
+  if (swapError) throw swapError
 
   const phaseEntries = toPhaseEntries(phaseRows as RawPhaseRow[])
   const weightEntries = toWeightEntries(weightRows as RawWeightRow[])
   const sessionNotes = (noteRows as RawNoteBodyRow[]).map((r) => r.body)
+  const swaps: AnalysisInputSwap[] = (
+    swapRows as {
+      original_exercise_id: string | null
+      original_exercise_name: string
+      replacement_exercise_id: string | null
+      replacement_exercise_name: string
+    }[]
+  ).map((r) => ({
+    originalExerciseId: r.original_exercise_id,
+    originalExerciseName: r.original_exercise_name,
+    replacementExerciseId: r.replacement_exercise_id,
+    replacementExerciseName: r.replacement_exercise_name,
+  }))
 
   return buildAnalysisInput({
     session: facts.session,
@@ -680,5 +732,6 @@ export async function assembleAnalysisInput(
     weightEntries,
     sessionNotes,
     memory,
+    swaps,
   })
 }
