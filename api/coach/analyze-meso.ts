@@ -39,19 +39,35 @@ import type { CoachMesoAnalysisContent, CoachMesoAnalysis } from '../../src/type
 // one would be an invalid id (qaCategory.ts's own SONNET_MODEL comment).
 const MESO_MODEL = 'claude-sonnet-5'
 
-// A8 (TASKS §5.3/§8): 16,000 is an estimate, not a measurement — Sonnet 5's
-// thinking counts toward max_tokens, and ~26 exercises plus two grouping
-// layers plus a summary is well beyond Q&A planning's single-answer 8,000.
-// The real figure is measured at Phase 5, before any row can be stored; a
-// ceiling too low here truncates the answer while the thinking completes,
-// exactly the stop_reason: 'max_tokens' failure below exists to catch.
-const MESO_MAX_TOKENS = 16000
+// A8 — RESOLVED, measured at Phase 5 against the real MESO 1.0 payload
+// (CONTEXT.md), not estimated. The original 16,000 estimate was flatly
+// insufficient: effort='high' hit stop_reason: 'max_tokens' at 16,000 with
+// ALL 16,000 tokens spent on thinking and zero answer text produced — the
+// exact failure this file's stop_reason check exists to catch. Re-run with
+// headroom, effort='high' actually used 25,651 output tokens (17,926
+// thinking + ~7,725 answer); effort='medium' used 16,505 (9,150 thinking +
+// ~7,355 answer) — meaning 16,000 was now marginal even for 'medium' once
+// v2's longer prompt is accounted for. 32,000 gives ~25% headroom above the
+// real 'high' usage observed, for a future block larger than this one's 26
+// exercises/10 weeks.
+const MESO_MAX_TOKENS = 32000
 
-// A7 (TASKS §5.3/§8): 'high' is proposed, not measured — Q&A's planning
-// route uses 'medium', but this is the deepest reasoning task in the
-// project and fires a handful of times a year, so the cost delta is
-// negligible on the same logic SPEC §5 uses to choose Sonnet over Haiku.
-// Phase 5 measures both on the same real payload before this is trusted.
+// A7 — RESOLVED, measured at Phase 5 on the identical real payload at both
+// levels (CONTEXT.md). 'high' produced measurably more accurate output:
+// it correctly handled a real citation risk (the Chest Press/mid_chest
+// week-8 rebound — 'medium' cited week 7's value as if it were week 8's),
+// used exact exerciseName even for a same-payload naming collision risk
+// ('medium' shortened "One-arm Cable Curl" to the ambiguous "cable curl"),
+// correctly labelled all 16 dual-grouping buckets against the payload's
+// real isFallback flags ('medium' mislabelled one), and correctly kept a
+// higher-priority subgroup (mid_back = "top") distinct from its sibling
+// (lats = "high") all the way through `summary`/`suggestions` ('medium'
+// flattened them into one shared label). 'high' cost ~47% more wall-clock
+// (262.7s vs 178.5s) and roughly double the thinking tokens for a
+// similar-length final answer — on SPEC §5's own "cost is negligible here"
+// reasoning for a feature that fires a handful of times a year, that
+// latency premium buys real, measured accuracy on the feature where a
+// wrong output costs months, not a day or a week. Kept at 'high'.
 const MESO_EFFORT = 'high' as const
 
 const MESO_ANALYSIS_SCHEMA = {

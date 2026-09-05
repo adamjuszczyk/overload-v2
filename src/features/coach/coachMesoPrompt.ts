@@ -79,8 +79,71 @@ import type { DayOfWeek } from '../../types/index.js'
 // of thing TASKS §7 Phase 5 exists to catch cheaply before anything is
 // trusted live. movement_pattern stays deliberately selective/optional,
 // per §4.2's own "narrower catch layer" framing.
+//
+// v2 (2026-09-05): four fixes diagnosed against v1's first real generation
+// (Phase 5's real dry run, effort='medium', against the live MESO 1.0
+// payload — CONTEXT.md). The per-exercise coverage, discontinuityFlag
+// handling (the week-9 Chest Press artifact correctly read as a logging
+// quirk, never a training outcome), padding discipline, null-rating
+// discipline, and priority-branch handling (anyExplicit now true on real
+// data) all came back clean on adversarial review — these four are the
+// real gaps that survived it, each confirmed against the actual payload
+// and the actual generated text, not guessed at:
+//
+// 1. A real citation error, not a fabrication: the Chest Press/mid_chest
+// comments described the pre-flag trend as "trended down... through week
+// 8" while citing week 7's real value (47.6) — week 8's own real point
+// (49.86) was actually a rebound back near the block's high, omitted
+// rather than contradicted. Both numbers were real payload values, just
+// the wrong one was attached to the named boundary week, understating how
+// sharp the week-9 move actually was. Rule 1 (below) now explicitly
+// requires that a named boundary week's own real point back that week,
+// not a neighbouring week's.
+//
+// 2. The unlinkedSwapCandidates rule was followed for the *pairing*
+// (Chest Press abandoned / Incline Smith Press unplanned, week 10,
+// correctly framed as candidate co-occurrence) but not for the *reason*:
+// both the Incline Smith Press comment and the summary stated "the switch
+// was forced by a broken chest press machine" as settled fact, but that
+// explanation only appears in week 9's note (2026-08-27) — week 10's own
+// note (2026-09-03) says only "this time, I did smith press on a
+// different smith machine," never repeating the "broken" claim. A real
+// instance of importing one week's note as if it directly explained a
+// different week's event. Rule 4 (below) now covers the reason
+// explicitly, requiring hedged language when the explanation comes from a
+// note dated to a different week.
+//
+// 3. A naming-ambiguity risk, not a wrong number: both the summary and the
+// biceps group comment cited "cable curl 21.9→18.2kg" — real numbers, but
+// for "One-arm Cable Curl," while the payload also carries a similarly
+// named but numerically distinct "Cable Reverse Biceps Curl" (15.3→16.1kg
+// in the same output). The exact-exerciseName echo rule only covered
+// \`perExercise\`; extended to \`groups\`/\`summary\` too, since this payload
+// routinely carries multiple similarly-named exercises a shortened label
+// can't disambiguate.
+//
+// 4. A precision loss between layers, not a rule violation: mid_back's own
+// group comment correctly named it "your single explicit top-priority
+// subgroup" (distinguishing muscleSubgroups.mid_back = "top" from its
+// sibling muscleSubgroups.lats = "high," both under back = "high"), but
+// the top-level suggestion collapsed both into one "back (lats & mid_back,
+// high priority)" label, losing that real distinction one layer up. Added
+// an explicit instruction against flattening siblings with different
+// explicit levels into one shared label.
+//
+// Everything else in v1's real output held up under adversarial review
+// against the real payload: no fabricated numbers otherwise, the priority
+// section correctly present (anyExplicit is true on real data as of this
+// session) and reasoning correctly with the real ceiling/relative-emphasis
+// semantic across all twelve muscle groups' worth of explicit/default
+// priorities, all 26 exercises covered with genuinely variable comment
+// length (62-368 characters, no padding), zero energy/pump/form-rating
+// vocabulary anywhere near the seven unrated weeks, and zero
+// movement_pattern entries this run (a legitimate, expected outcome, not
+// a gap — nothing in this real block's data showed a genuine cross-group
+// signal invisible to the muscle-group axis).
 
-export const MESO_PROMPT_VERSION = 1
+export const MESO_PROMPT_VERSION = 2
 
 // ─── Prompt-payload shaping (pure) ──────────────────────────────────────────
 
@@ -203,14 +266,14 @@ Address the lifter directly, in the second person — "you," "your" — the way 
 
 \`weeks\` — one entry per week number from \`weekRangeStart\` to \`weekRangeEnd\` inclusive, **including weeks where nothing was trained** (\`sessionsInWeek: 0\` — a real, zeroed week, not a gap in the data): \`{ weekNumber, sessionsInWeek, totalSets, avgRir, avgReps, avgDurationSeconds, avgFormRating, avgEnergyRating, avgPumpRating, isDeload }\`. This is the meso-wide view (every exercise combined) — use it for block-wide fatigue/volume framing in \`summary\`, not for any one exercise's own story (that's \`exercises\` below). \`avgFormRating\`/\`avgEnergyRating\`/\`avgPumpRating\` are each either \`null\` (nothing rated that week) or \`{ mean, scaleMax, count }\` — \`mean\` is a 1-based position on a \`scaleMax\`-point scale, read as a position on that named scale, not a raw quantity: form is rushed(1)→normal(2)→controlled(3)→extra_controlled(4); energy is none(1)→low(2)→normal(3)→high(4)→supreme(5); pump is none(1)→some(2)→good(3)→extreme(4). **A \`null\` rating average means that week has no rating data at all — do not characterise that week's fatigue, energy, or pump in any way, not even softly, and do not let a rating word describe it regardless of what else you're saying about that week.** \`isDeload\` true means that week was a planned lighter week — treat its lower numbers as the plan working, not a regression; if no week in this block is ever flagged \`isDeload: true\`, this block had no deload, and you should not narrate deload timing or imply one happened.
 
-\`exercises\` — one entry per exercise trained or planned anywhere in the block: \`{ exerciseId, exerciseName, muscleGroup, muscleSubgroups, movementPattern, points }\`. Echo \`exerciseId\`/\`exerciseName\` back exactly in your per-exercise comment — do not rename, translate, or paraphrase. **There is no equipment field anywhere in this payload** — not here, not anywhere else — so never state or imply a specific equipment type unless \`exerciseName\` itself says so, or \`notes\`/\`memory\` explicitly say so in their own words. \`points\` is that exercise's real week-by-week trajectory, one entry per week it was scheduled or performed (a week with nothing planned and nothing logged for this exercise simply has no point — that is not the same as a point with zeroed values): \`{ weekNumber, e1rmAvg, volume, setsCompleted, setsPlanned, sessionsInWeek, isDeload, avgRir, avgReps, avgFormRating, discontinuityFlag }\`.
+\`exercises\` — one entry per exercise trained or planned anywhere in the block: \`{ exerciseId, exerciseName, muscleGroup, muscleSubgroups, movementPattern, points }\`. Echo \`exerciseId\`/\`exerciseName\` back exactly in your per-exercise comment — do not rename, translate, or paraphrase. **This applies everywhere you cite a specific exercise's own numbers, not just in \`perExercise\`** — a \`groups\` comment or \`summary\` naming one exercise's trajectory must use that exercise's exact \`exerciseName\` too, never a shortened or merged label. This block can contain several similarly-named exercises (e.g. more than one distinct cable-curl variant) — a shortened name lets a reader mistake one real exercise's numbers for a different one. **There is no equipment field anywhere in this payload** — not here, not anywhere else — so never state or imply a specific equipment type unless \`exerciseName\` itself says so, or \`notes\`/\`memory\` explicitly say so in their own words. \`points\` is that exercise's real week-by-week trajectory, one entry per week it was scheduled or performed (a week with nothing planned and nothing logged for this exercise simply has no point — that is not the same as a point with zeroed values): \`{ weekNumber, e1rmAvg, volume, setsCompleted, setsPlanned, sessionsInWeek, isDeload, avgRir, avgReps, avgFormRating, discontinuityFlag }\`.
 
 **Four rules for reading \`points\`, load-bearing for this whole layer:**
 
-1. **Never synthesise a number that isn't in the payload.** Every claim about an exercise's trend cites real weekly points from its own \`points\` array — a specific \`e1rmAvg\`, \`volume\`, or \`setsCompleted\`/\`setsPlanned\` pair, never an estimated or rounded-for-effect stand-in.
+1. **Never synthesise a number that isn't in the payload, and never let a real number stand in for the wrong week.** Every claim about an exercise's trend cites real weekly points from its own \`points\` array — a specific \`e1rmAvg\`, \`volume\`, or \`setsCompleted\`/\`setsPlanned\` pair, never an estimated or rounded-for-effect stand-in. When you name a week as the start or end of a trend ("trended down from week 2 to week 8"), the figure you attach to it must be that exact week's own point — check every week you name, including the last one, rather than citing an earlier week's number and calling it the end of the range. A trajectory can genuinely rebound right before a flagged week; describing it as a clean, one-direction slide when the real last point actually moved the other way is exactly the citation error this rule exists to prevent.
 2. **\`e1rmAvg: null\` means "not computable that week" — never a decline.** This happens whenever every eligible set that week lacked a recorded RIR (real and common in this app) or nothing eligible was logged at all. A \`null\` point is a gap in the signal, not a data point showing zero or a drop — never describe it as one, and never fill the gap by carrying the prior week's number forward as if it were this week's.
 3. **A \`discontinuityFlag: true\` week is a question, not a finding.** It means this week's \`e1rmAvg\` moved sharply against this exercise's own trailing trend in a way nothing else in the payload already explains (not a deload week, not a week where fewer sets were completed than planned). Before writing anything about that week, check \`notes\` for one dated in that same week, and check whether this exercise appears in \`swaps\`/\`unlinkedSwapCandidates\` around that time — a substitution or an equipment note is the kind of thing that explains a flagged jump. **If something explains it, say what actually happened, not the raw number as if it were a training outcome. If nothing explains it, say the number looks anomalous or worth double-checking — do not report it as a real strength change, in either direction.** This is the single most important rule in this prompt: a large, unexplained, flagged move is more likely a data artifact (a same-named exercise standing in for physically different equipment, most commonly) than a real one-week swing.
-4. **A swap is one slot across time, not two exercises.** \`swaps\` (below) links two exercises the lifter treated as the same slot — when an exercise here has a \`swaps\` entry naming it as either side, write one combined read of the slot across the switch, not two disconnected exercise stories. \`unlinkedSwapCandidates\` (below) only suggests a same-session substitution — treat it as a possibility to weigh against \`notes\`, never as an established pairing you state as fact.
+4. **A swap is one slot across time, not two exercises — and a \`unlinkedSwapCandidates\` entry is a possibility, not a fact, including *why* it happened.** \`swaps\` (below) links two exercises the lifter treated as the same slot — when an exercise here has a \`swaps\` entry naming it as either side, write one combined read of the slot across the switch, not two disconnected exercise stories. \`unlinkedSwapCandidates\` (below) only suggests a same-session substitution — treat it as a possibility to weigh against \`notes\`, never as an established pairing you state as fact. **This covers the reason, not just the pairing**: if you explain *why* a candidate substitution happened using a note from a *different* week (e.g. an equipment problem mentioned the week before), say so as an inference from that earlier note, hedged accordingly ("likely the same equipment issue as the week before, based on that note") — never state it as settled fact the way you would if that week's own note said it directly. A note explaining a nearby week's event is context to weigh, not proof of what happened in this one.
 
 **Every exercise in \`exercises\` gets at least one sentence in \`perExercise\` — and for anything genuinely unremarkable across the whole block, that's exactly one honest sentence** ("stalled around 45kg the whole block," "you skipped this most weeks"). Padding an unremarkable exercise out to match the length of a genuinely eventful one is a failure to follow this prompt, not thoroughness — length is earned by having something real to say about that specific exercise's trajectory.
 
@@ -225,7 +288,7 @@ Address the lifter directly, in the second person — "you," "your" — the way 
 
 \`priority\` — present only when at least one priority was ever explicitly set for this block; **entirely absent from this payload otherwise, and that absence is itself the signal** — if you don't see a \`priority\` key at all, treat every muscle group and subgroup as equally normal priority and do not write anything about priority in your summary, since none was ever stated. When present: \`{ muscleGroups, muscleSubgroups, subgroupParent, entries, anyExplicit: true }\` — \`muscleGroups\`/\`muscleSubgroups\` are keyed by tag, each value \`{ tagType, tagValue, priority, isExplicit, updatedAt }\` with \`priority\` one of \`"low"|"normal"|"high"|"top"\`; \`isExplicit: false\` means that specific tag was never itself set and is only showing the default \`"normal"\` — a real finding about it not progressing still needs \`isExplicit: true\` to mean something, so don't treat a defaulted "normal" tag the way you'd treat one someone actually set to normal on purpose. \`subgroupParent\` maps a subgroup tag to its parent muscle group.
 
-**How to read the two priority levels together — this is easy to get backwards, so read it carefully.** \`muscleGroups[g].priority\` is a **ceiling** on how much attention that whole area deserves. \`muscleSubgroups[s].priority\` is **relative emphasis within whatever attention its parent group already gets** — never an absolute cross-group ranking. Use \`subgroupParent[s]\` to find a subgroup's parent group. Worked example: chest = low, upper_chest = top means *of the little attention chest gets at all, nearly all of it should go to upper chest* — **not** that upper chest competes with the lifter's genuinely top-priority muscle groups elsewhere in the block.
+**How to read the two priority levels together — this is easy to get backwards, so read it carefully.** \`muscleGroups[g].priority\` is a **ceiling** on how much attention that whole area deserves. \`muscleSubgroups[s].priority\` is **relative emphasis within whatever attention its parent group already gets** — never an absolute cross-group ranking. Use \`subgroupParent[s]\` to find a subgroup's parent group. Worked example: chest = low, upper_chest = top means *of the little attention chest gets at all, nearly all of it should go to upper chest* — **not** that upper chest competes with the lifter's genuinely top-priority muscle groups elsewhere in the block. **When sibling subgroups under the same parent carry different explicit priority levels** (e.g. one is \`"top"\` while another under the same group is only \`"high"\`), don't flatten them into one shared label in \`summary\`/\`suggestions\` — name the more specifically-prioritized one on its own rather than describing both as if they carried the same weight.
 
 \`phase\` — \`{ current, previous }\`, each \`null\` or \`{ phase: "cut"|"bulk"|"maintain", startDate, durationDays }\`, resolved as of the block's own last relevant date. A block that ran through a cut reads differently from one that ran through a bulk — \`durationDays\` on \`current\` tells you how far into that phase the block's own end fell, which may be short of the phase's eventual full length.
 
