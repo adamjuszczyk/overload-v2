@@ -1,6 +1,9 @@
 {
   "ignoreCommand": "test -n \"$VERCEL_GIT_PREVIOUS_SHA\" && git cat-file -e \"$VERCEL_GIT_PREVIOUS_SHA\" 2>/dev/null && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ':!CONTEXT.md' ':!SPEC.md' ':!TASKS.md' ':!TASKS-v2.md' ':!Overload-v2-SPEC.md' ':!AUDIT.md'",
   "functions": {
+    "api/coach/analyze-meso.ts": {
+      "maxDuration": 290
+    },
     "api/**": {
       "maxDuration": 60
     }
