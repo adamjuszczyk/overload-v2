@@ -1,6 +1,7 @@
 import type { AnalysisInput } from '../features/coach/analysisInput'
 import type { WeekAnalysisInput } from '../features/coach/weekAnalysisInput'
 import type { QaContext } from '../features/coach/qaContext'
+import type { MesoAnalysisPromptPayload } from '../features/coach/coachMesoPrompt'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -472,6 +473,67 @@ export interface CoachWeekAnalysis {
   inputSnapshot: WeekAnalysisInput   // exactly what the model was shown
   model: string                      // response.model, not the request constant
   promptVersion: number              // WEEK_PROMPT_VERSION, independent of daily's
+  inputTokens: number | null
+  outputTokens: number | null
+  createdAt: string
+}
+
+// ─── Coach Mesocycle Analysis (MESOCYCLE-ANALYSIS-TASKS.md §6) ─────────────
+// Output shape matches SPEC §4's three layers exactly: per-exercise (every
+// exercise, no padding), a dual muscle/movement grouping (mechanically
+// bucketed — see coachMesoPrompt.ts's buildMesoPromptPayload/weekBuckets.ts,
+// the model never decides membership, only writes `comment`), and one
+// block-wide summary plus advisory-only suggestions (§2's out-of-scope
+// boundary — nothing here ever drafts or implies a plan change).
+
+export interface MesoExerciseComment {
+  exerciseId: string
+  exerciseName: string
+  comment: string
+}
+
+// Three values, unlike WeekBucketKind's two (above) — a meso-scope group
+// comment must say whether it's really talking about a whole muscle group
+// (the bucket fell back because nothing in it had a real subgroup tag) or a
+// genuine fine-grained subgroup, which WeekAnalysisBucket.isFallback alone
+// already distinguishes on the input side (coachMesoPrompt.ts maps it to
+// this field, the model never infers it itself).
+export type MesoGroupAxis = 'muscle_group' | 'muscle_subgroup' | 'movement_pattern'
+
+export interface MesoGroupComment {
+  axis: MesoGroupAxis
+  label: string
+  exerciseIds: string[]
+  comment: string
+}
+
+export interface MesoSuggestion {
+  area: string
+  suggestion: string
+}
+
+export interface CoachMesoAnalysisContent {
+  perExercise: MesoExerciseComment[]
+  groups: MesoGroupComment[]
+  summary: string
+  suggestions: MesoSuggestion[]
+}
+
+// Row shape for v2_coach_meso_analyses (migration 026). `mesocycleId` and
+// `mesoEndDate` are nullable per A6 — the row survives its mesocycle's
+// deletion (`on delete set null`), and `mesoName`/`mesoStartDate` are the
+// denormalised identity that keeps an orphaned row self-describing (§4.2).
+export interface CoachMesoAnalysis {
+  id: string
+  userId: string
+  mesocycleId: string | null
+  mesoName: string
+  mesoStartDate: string
+  mesoEndDate: string | null
+  content: CoachMesoAnalysisContent
+  inputSnapshot: MesoAnalysisPromptPayload   // exactly what the model was shown
+  model: string                              // response.model, not the request constant
+  promptVersion: number                      // MESO_PROMPT_VERSION, independent of daily's/weekly's
   inputTokens: number | null
   outputTokens: number | null
   createdAt: string
