@@ -71,6 +71,15 @@ export default function PlanPage() {
     activeMeso?.id ?? '',
     viewWeek,
   )
+  // Source-has-rows check for showCopyButton below — same shape as
+  // PRIORITY-CONTEXT-TASKS §5.8's COPY FROM gate (`previousContext?.anyExplicit`):
+  // a previous week *number* existing isn't enough, since copyFromPreviousWeek
+  // silently no-ops when that week has nothing to copy. Disabled (mesoId '')
+  // when there's no previous week to check, so it never queries week 0.
+  const { data: prevWeekPlans = [], isLoading: prevWeekPlansLoading } = useWeekPlans(
+    viewWeek > 1 ? (activeMeso?.id ?? '') : '',
+    viewWeek - 1,
+  )
 
   const copyPrev = useCopyFromPreviousWeek(activeMeso?.id ?? '', viewWeek)
 
@@ -87,7 +96,13 @@ export default function PlanPage() {
   const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
 
   const showCopyButton =
-    !isPast && viewWeek > 1 && weekPlans.length === 0 && !plansLoading && !daysLoading
+    !isPast &&
+    viewWeek > 1 &&
+    weekPlans.length === 0 &&
+    !plansLoading &&
+    !daysLoading &&
+    !prevWeekPlansLoading &&
+    prevWeekPlans.length > 0
 
   // ── No active meso ────────────────────────────────────────────────────────
 
