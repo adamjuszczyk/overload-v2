@@ -1,25 +1,32 @@
 import { useState } from 'react'
 import CoachSessionAnalysisTab from './CoachSessionAnalysisTab'
 import CoachWeekAnalysisTab from './CoachWeekAnalysisTab'
+import CoachMesoAnalysisTab from './CoachMesoAnalysisTab'
 
-// Session/Week sub-tab container (COACH-WEEK-ANALYSIS-TASKS.md §4 step 8a /
-// COACH-WEEK-ANALYSIS-SPEC.md §3). This container owns the sub-tab bar and
-// always renders it; each sub-tab owns its own detail-view state (matching
-// how CoachPage.tsx's outer Analysis/Context tab bar stays visible while
-// this component swaps between its lists and a detail view) — so a detail
-// view open in one sub-tab never hides which sub-tab you're in. Default
-// 'session' — Session is the existing, proven feature; Week is new.
+// Session/Week/Meso sub-tab container (COACH-WEEK-ANALYSIS-TASKS.md §4 step
+// 8a / COACH-WEEK-ANALYSIS-SPEC.md §3; MESOCYCLE-ANALYSIS-TASKS.md §7 Phase
+// 6 adds the third). This container owns the sub-tab bar and always renders
+// it; each sub-tab owns its own detail-view state (matching how
+// CoachPage.tsx's outer Analysis/Context tab bar stays visible while this
+// component swaps between its lists and a detail view) — so a detail view
+// open in one sub-tab never hides which sub-tab you're in. Default
+// 'session' — Session is the existing, proven feature; Week and Meso are
+// both later additions.
 //
 // The honest statement of this change, per TASKS §8a: the Session lists and
 // detail view are identical to before (CoachSessionAnalysisTab.tsx is a
 // verbatim body move, confirmed via diff — see CONTEXT.md); one additional
-// tab bar row appears above them.
+// tab bar row appears above them. Meso is beside the other two analyses,
+// not a fourth top-level Coach tab — CoachPage.tsx's outer bar stays
+// analysis | ask | context (MESOCYCLE-ANALYSIS-TASKS.md §7 Phase 6's
+// explicit instruction).
 
-type SubTab = 'session' | 'week'
+type SubTab = 'session' | 'week' | 'meso'
 
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'session', label: 'SESSION' },
   { id: 'week', label: 'WEEK' },
+  { id: 'meso', label: 'MESO' },
 ]
 
 export default function CoachAnalysisTab() {
@@ -49,7 +56,13 @@ export default function CoachAnalysisTab() {
         ))}
       </div>
 
-      {activeSubTab === 'session' ? <CoachSessionAnalysisTab /> : <CoachWeekAnalysisTab />}
+      {activeSubTab === 'session' ? (
+        <CoachSessionAnalysisTab />
+      ) : activeSubTab === 'week' ? (
+        <CoachWeekAnalysisTab />
+      ) : (
+        <CoachMesoAnalysisTab />
+      )}
     </div>
   )
 }
