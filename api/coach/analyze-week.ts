@@ -188,6 +188,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // ── stop_reason checked before anything is parsed or saved — this
+  // endpoint's own known gap (CONTEXT.md, TASKS §10 A13), brought up to
+  // ask.ts's/analyze-meso.ts's bar. A truncated or refused generation is
+  // not an analysis, and this table has no update path to repair one later.
+  if (response.stop_reason === 'max_tokens') {
+    console.error('Coach week analysis generation truncated by max_tokens — not saved', {
+      weekStart,
+      userId,
+      model: response.model,
+    })
+    res.status(502).json({ error: 'The analysis was cut off before it finished generating — not saved' })
+    return
+  }
+  if (response.stop_reason === 'refusal') {
+    console.error('Coach week analysis generation refused', {
+      weekStart,
+      userId,
+      stopDetails: response.stop_details,
+    })
+    res.status(502).json({
+      error: 'The model declined to analyze this week',
+      category: response.stop_details?.category ?? null,
+    })
+    return
+  }
+
   const textBlock = response.content.find((block) => block.type === 'text')
   if (!textBlock || textBlock.type !== 'text') {
     res.status(502).json({ error: 'Model returned no text content' })
