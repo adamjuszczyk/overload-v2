@@ -534,6 +534,17 @@ export default function ExerciseCard({
             group={group}
             isDeleting={group != null && deletingHeadIds.has(group.head.id)}
             readOnly={!!swappedFrom}
+            // Root cause of "planned dropsets not rendering automatically"
+            // (2026-09-13): this is the plan-driven counterpart to the extra
+            // rows' expectStage below, using plannedStages (this row's own
+            // planned stage siblings) instead of plannedGroups[i] — the
+            // resolution itself (groupWeekPlanSets → plannedGroups →
+            // plannedStages) was never missing or duplicated, this prop was
+            // simply never wired at this call site, so a planned dropset's
+            // stage affordance always read as an undiscovered "mark as
+            // dropset" option instead of an expected ADD STAGE, even though
+            // the plan says otherwise.
+            expectStage={plannedStages.length > (group?.stages.length ?? 0)}
             onLogHead={(params) => handleLogHead(plannedSet, params)}
             onLogStage={(headLog, params) =>
               handleLogStage(headLog, group ? nextStageIndex(group, (l) => l.stageIndex) : 1, params)

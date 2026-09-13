@@ -22314,6 +22314,144 @@ from the Priority Context session) were both left exactly as they were —
 neither is application code and neither belongs in this fix's commit.
 `git status` is therefore **not** empty, and is not claimed to be.
 
+---
+
+## 2026-09-13 session (second, same day — two small, independent Gym UI
+fixes: add exercise mid-workout, and planned dropsets not auto-rendering)
+
+Unrelated to the still-uncommitted Mesocycle Analysis timeout
+investigation from earlier the same day (see the working tree, not
+necessarily this committed file — that session's own notes explain why)
+— this session's task was two small, independent workout-screen
+features/fixes.
+
+### Part 1 — Add exercise mid-workout
+
+Lets the user add a genuinely new, unplanned exercise to an in-progress
+session (no swap, no original exercise involved), reusing swap-exercise's
+existing picker rather than a new one.
+
+**Investigation before building, per instruction:** read Mesocycle
+Analysis's real Case B swap-candidate detection
+(`mesoAnalysisInput.ts`'s `buildMesoAnalysisInput`, §3.3, lines ~399–433)
+directly rather than assuming. It flags a session only when
+`abandonedExerciseIds.length > 0 AND unplannedExerciseIds.length > 0` for
+that session — "abandoned" means a planned exercise with zero valid
+(`!isSkipped && weight/reps not null`) logged sets anywhere in the
+session. A pure add (original planned exercise still logged normally,
+new exercise logged alongside it) leaves `abandonedExerciseIds` empty for
+that session, so the `if` can never fire — confirmed structurally, not
+just by inspection: `plannedExerciseIdsBySession` (mesoAnalysisInput.ts
+line ~645) is built purely from real `v2_week_plan_sets`/
+`v2_program_exercises` rows, with zero dependency on anything the client
+renders, so the new exercise's card (see below) can't leak into that set
+either way.
+
+**Root cause / precedent found while investigating:** `SwapExerciseSheet.tsx`
+was already purely a picker (`onConfirm(exercise)`, no side effects of its
+own — the "skip remaining sets" side effect lives in `ExerciseCard.tsx`'s
+caller, not the sheet), so it was reusable as-is. Separately,
+`GymSession.tsx` already had a `legacyExtraExercises` mechanism (a card
+with no `v2_program_exercises`/`v2_week_plan_sets` row, discovered from
+`allCurrentLogs` for any exercise not in the day's template) for
+pre-migration-025 swaps — structurally the exact same "extra unplanned
+exercise, no plan slot" rendering the new feature needed, just log-driven
+instead of pick-driven.
+
+**What shipped:**
+- `SwapExerciseSheet.tsx`: added `mode?: 'swap' | 'add'` (default `'swap'`,
+  every existing call site unchanged). `'add'` mode drops the single fixed
+  `muscleGroup`/`currentExerciseId` constraint (nothing is being replaced)
+  in favor of its own ALL/muscle-group filter chip row (canonical
+  `MUSCLE_GROUPS`/`MUSCLE_GROUP_LABELS` from `lib/exerciseTags.ts`, not
+  one of the five duplicated local copies), a new `excludeExerciseIds`
+  prop (ids already active as a card this session, so picking one can
+  never produce two cards for the same exercise identity), and
+  add-flavored copy at both steps (no "remaining sets will be skipped"
+  line — nothing is skipped). Creating a brand-new exercise while in
+  'add' mode requires picking a concrete muscle group first (matches
+  `useCreateExercise`'s real requirement); the ALL chip shows a hint
+  instead of the create button.
+- `GymSession.tsx`: new `addedExercises` local state + "+ ADD EXERCISE"
+  button (below the exercise cards, above FINISH SESSION) opens the sheet
+  in `'add'` mode. `legacyExtraExercises` renamed `extraExercises` and
+  now folds in `addedExercises` too (deduped by exercise id) — both
+  sources render identically (`plannedSets: []`, a synthetic
+  `ProgramExercise`), so one map instead of two. `handleAddExercise` just
+  appends to state and closes the sheet — no swap row, no template write.
+  Once the added exercise's first set is actually logged, the existing
+  log-driven half of `extraExercises` picks up the same exercise id, so
+  the card survives a refresh from that point on; before any log, it's
+  local-state-only (matches the equivalent gap `legacyExtraExercises`
+  already had for a genuinely fresh, unlogged slot).
+
+### Part 2 — Planned dropsets not rendering automatically
+
+**Investigated before patching, per instruction — the resolution logic was
+never missing or duplicated.** `ExerciseCard.tsx` computes
+`plannedGroups = groupWeekPlanSets(plannedSets)` exactly once (line 148)
+and both the normal planned-rows render loop and the swap-replacement
+prefill logic read from that same call — no second, divergent
+implementation anywhere. The actual gap: `SetGroup.tsx`'s `expectStage`
+prop (added 2026-09-03 specifically so a plan-known dropset shows the bold
+ADD STAGE affordance immediately, instead of the low-emphasis "mark as
+dropset" discovery link, even before any stage is logged) was only ever
+computed and passed at the swap "extra slot" `<SetGroup>` call site
+(`expectStage={swappedFrom ? (plannedGroups[i]?.stages.length ?? 0) >
+(group?.stages.length ?? 0) : false}`). The primary, non-swapped
+`plannedDisplay.map(...)` `<SetGroup>` call — the one every ordinary
+planned dropset actually renders through — never passed `expectStage` at
+all, even though the exact data needed (`plannedStages`, `group`) was
+already a local in that same callback. Default `expectStage = false`
+(`SetGroup.tsx`) meant every planned dropset silently fell into the
+"undiscovered option" branch, regardless of the plan.
+
+**Fix:** one line at that call site —
+`expectStage={plannedStages.length > (group?.stages.length ?? 0)}`
+(`ExerciseCard.tsx`, planned-rows `<SetGroup>`), the direct per-row analog
+of the swap path's own `plannedGroups[i]` version. No change to
+`setGroupLogic.ts`, `groupWeekPlanSets`, or any grouping logic — the
+wiring gap was the whole bug.
+
+### Verification
+
+`npm run typecheck` clean, full suite green (**548 tests, 37 files, 0
+failures**), `npm run build` clean (pre-existing >500kB chunk-size warning
+only, unrelated). Live-verified against a real throwaway mesocycle on the
+real account (explicit go-ahead given first) rather than guessed: created
+`TEST-VERIFY-DELETE` (program: the real `MESO 1.0` template), added a
+plan-only dropset to Incline Dumbell Press's set 2 in Week 1, then — since
+today is a Sunday and this program has no Sunday session — started a real
+`in_progress` `v2_sessions` row directly via `sessionService.createSession`
+(called from the running dev tab's own already-authenticated Supabase
+client, per this project's established credential-free dry-run technique;
+no key/token ever left the browser) for Monday's PUSH 1 day, which the
+scheduler picks up as the active session regardless of the real weekday
+(`scheduler.ts`'s `sessions.find(s => s.status === 'in_progress')` check
+has no date/weekday condition). Confirmed live: set 1 (no planned
+dropset) shows "mark as dropset"; set 2 (planned dropset) shows bold
+"+ ADD STAGE" immediately on logging the head, and tapping it opens the
+stage row with the plan's target correctly prefilled. Separately
+confirmed "+ ADD EXERCISE" excludes all 5 exercises already active in the
+session, the muscle-group filter chips work, picking "Barbell Row" shows
+the add-flavored confirm copy, and the resulting card (no plan panel,
+FIRST TIME reference) accepts a logged set and survives a full page
+reload. **Cleanup:** the throwaway mesocycle was completed then deleted
+from Program, and — because deleting a mesocycle leaves its linked
+session behind as an orphaned `in_progress` row that would otherwise keep
+being picked up as "the" active session on every future real Today visit
+— the session itself was separately found in History and deleted via its
+own DELETE SESSION action. Re-checked Today afterward: back to "Start a
+mesocycle to begin training", matching the pre-session state exactly.
+
+Committed on request: `ExerciseCard.tsx`, `GymSession.tsx`,
+`SwapExerciseSheet.tsx`, and this CONTEXT.md section only. A separate,
+still-uncommitted 2026-09-13 session earlier the same day investigated
+`MESO_MAX_TOKENS`/the `analyze-meso.ts` timeout (see the working tree or
+`git log`, not this committed file, for that account) and stays
+uncommitted per its own "stopped here, not committed" call —
+`api/coach/analyze-meso.ts`'s streaming fix is untouched and deliberately
+left out of this commit for the same reason. Not deployed — not asked to.
 
 ---
 

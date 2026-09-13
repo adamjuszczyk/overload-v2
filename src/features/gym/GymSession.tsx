@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
 import {
@@ -21,6 +21,7 @@ import { db } from '../../lib/db'
 import { primeOfflineCache } from '../offline/offlineCache'
 import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
+import SwapExerciseSheet from './SwapExerciseSheet'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
 import SessionComplete from './SessionComplete'
@@ -134,6 +135,18 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const [showComplete, setShowComplete] = useState(false)
   const [showSidebarSheet, setShowSidebarSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
+  // Add exercise mid-workout (2026-09-13) — a genuinely new, unplanned
+  // exercise the user chose via "+ ADD EXERCISE" below, no original exercise
+  // involved and nothing skipped/abandoned (so Mesocycle Analysis's Case B
+  // swap-candidate detection, which requires an abandoned planned exercise,
+  // structurally can't fire off this — see mesoAnalysisInput.ts §3.3).
+  // Session-local only, same as the legacy-swap source folded into
+  // extraExercises below: once its first set is logged, the log-driven
+  // detection there picks up the same exercise id and keeps rendering its
+  // card even across a refresh — this state only has to carry an
+  // added-but-not-yet-logged card.
+  const [addedExercises, setAddedExercises] = useState<Exercise[]>([])
+  const [showAddExerciseSheet, setShowAddExerciseSheet] = useState(false)
 
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
@@ -196,29 +209,40 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     if (swap.programExerciseId) swapByProgramExerciseId.set(swap.programExerciseId, swap)
   }
 
-  // Legacy fallback: a swap confirmed before migration 025 existed (e.g. the
-  // real 2026-08-27 and 2026-09-03 sessions) has real logs for its
-  // replacement exercise but no v2_session_exercise_swaps row to key the
-  // merged-card rendering off. Rendered the old way — its own card, appended
-  // after the template — purely so reopening one of those specific sessions
-  // still shows the replacement at all; every swap from here forward goes
-  // through the recorded, position-correct path above instead.
+  // Extra, unplanned exercise cards — no plan slot, rendered with
+  // plannedSets: []. Two sources feed this same list, deduped by exercise
+  // id since both render identically:
+  //
+  // 1. Legacy fallback: a swap confirmed before migration 025 existed (e.g.
+  //    the real 2026-08-27 and 2026-09-03 sessions) has real logs for its
+  //    replacement exercise but no v2_session_exercise_swaps row to key the
+  //    merged-card rendering off. Rendered the old way — its own card,
+  //    appended after the template — purely so reopening one of those
+  //    specific sessions still shows the replacement at all; every swap from
+  //    here forward goes through the recorded, position-correct path above
+  //    instead. Discovered from real logs (log.exercise), so it only ever
+  //    appears once at least one set has actually been logged.
+  // 2. This session's own "+ ADD EXERCISE" additions (addedExercises state
+  //    above) — appears immediately on pick, before any set is logged.
   const templateExerciseIds = new Set(sortedExercises.map((pe) => pe.exerciseId))
   const recordedReplacementIds = new Set(
     sessionSwaps.map((s) => s.replacementExerciseId).filter((id): id is string => id != null),
   )
-  const legacyExtraExerciseById = new Map<string, Exercise>()
+  const extraExerciseById = new Map<string, Exercise>()
   for (const log of allCurrentLogs) {
     if (
       log.exercise &&
       !templateExerciseIds.has(log.exerciseId) &&
       !recordedReplacementIds.has(log.exerciseId) &&
-      !legacyExtraExerciseById.has(log.exerciseId)
+      !extraExerciseById.has(log.exerciseId)
     ) {
-      legacyExtraExerciseById.set(log.exerciseId, log.exercise)
+      extraExerciseById.set(log.exerciseId, log.exercise)
     }
   }
-  const legacyExtraExercises = [...legacyExtraExerciseById.values()]
+  for (const ex of addedExercises) {
+    if (!extraExerciseById.has(ex.id)) extraExerciseById.set(ex.id, ex)
+  }
+  const extraExercises = [...extraExerciseById.values()]
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } =
     useScrollToCurrentSet()
@@ -242,10 +266,19 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     [
       ...activeExercises.map((pe) => pe.exerciseId),
       ...[...swapByProgramExerciseId.values()].map((s) => resolveReplacementExercise(s, allExercises).id),
-      ...legacyExtraExercises.map((ex) => ex.id),
+      ...extraExercises.map((ex) => ex.id),
     ],
     sessionId,
   )
+
+  // Exercises already active as a card in this session — excluded from the
+  // "+ ADD EXERCISE" picker's candidates so picking one can never produce a
+  // second card for the same exercise identity.
+  const activeExerciseIds = [
+    ...activeExercises.map((pe) => pe.exerciseId),
+    ...[...swapByProgramExerciseId.values()].map((s) => resolveReplacementExercise(s, allExercises).id),
+    ...extraExercises.map((ex) => ex.id),
+  ]
 
   if (showComplete) {
     return <SessionComplete sessionId={sessionId} onBack={() => setShowComplete(false)} />
@@ -293,6 +326,17 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
       originalExercise: programExercise.exercise,
       replacementExercise: exercise,
     })
+  }
+
+  // Add exercise mid-workout — no original exercise, no swap row, no write
+  // to v2_program_exercises/v2_week_plan_sets: purely local state that adds
+  // one more card to extraExercises above, same rendering as any other
+  // unplanned exercise. Deduped defensively even though the picker already
+  // excludes activeExerciseIds — this only guards against the same id being
+  // added twice in the (currently unreachable) case of a stale picker state.
+  function handleAddExercise(exercise: Exercise) {
+    setAddedExercises((prev) => (prev.some((ex) => ex.id === exercise.id) ? prev : [...prev, exercise]))
+    setShowAddExerciseSheet(false)
   }
 
   return (
@@ -416,10 +460,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           )
         })}
 
-        {/* Legacy fallback only — a swap confirmed before migration 025
-            existed, with no recorded structural link to key the merged
-            rendering above off. See legacyExtraExercises' own comment. */}
-        {legacyExtraExercises.map((ex, i) => {
+        {/* Extra, unplanned exercise cards — legacy pre-migration-025 swaps
+            and this session's own "+ ADD EXERCISE" additions alike. See
+            extraExercises' own comment above for both sources. */}
+        {extraExercises.map((ex, i) => {
           const syntheticProgramExercise: ProgramExercise = {
             id: `extra-${ex.id}`,
             workoutDayId: workoutDay.id,
@@ -451,6 +495,26 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             />
           )
         })}
+      </div>
+
+      {/* Add exercise mid-workout — a genuinely new, unplanned exercise,
+          no swap and no original exercise involved. Reuses SwapExerciseSheet
+          in 'add' mode (see that file's own comment on mode) rather than a
+          second picker. */}
+      <div className="px-4 mt-4">
+        <button
+          onClick={() => setShowAddExerciseSheet(true)}
+          className="w-full flex items-center justify-center gap-2 rounded-xl text-xs font-bold tracking-widest"
+          style={{
+            minHeight: 48,
+            border: '1px dashed var(--border)',
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          <Plus size={13} />
+          ADD EXERCISE
+        </button>
       </div>
 
       {/* Finish session */}
@@ -495,6 +559,15 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
       {showSidebarSheet && (
         <WorkoutSidebarSheet sessionId={sessionId} onClose={() => setShowSidebarSheet(false)} />
+      )}
+
+      {showAddExerciseSheet && (
+        <SwapExerciseSheet
+          mode="add"
+          excludeExerciseIds={activeExerciseIds}
+          onConfirm={handleAddExercise}
+          onClose={() => setShowAddExerciseSheet(false)}
+        />
       )}
     </div>
   )
