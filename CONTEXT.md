@@ -14,7 +14,7 @@ As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13).
 - **Coach, all built and live unless noted:** Daily Session Analysis v1 (2026-08-18); Weekly Analysis (2026-08-23); Personalization phases 1–5 (ratings, notes, memory, prompt wiring); Exercise Library rework (shipped 2026-08-30); AI Q&A Sidebar (live 2026-09-02); Priority Context (Phases 1–4 done 2026-09-03); swap-exercise + Coach swap recognition (`PROMPT_VERSION 7`, deployed 2026-09-04).
 - **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
 - **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
-- **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions). No code or migrations changed.
+- **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions; new entries use the format at its top). No code or migrations changed.
 - **Next migration number: 027.**
 - **Open items (real, not started or unresolved):**
   - Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
@@ -116,6 +116,10 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
 9. **Two documents disagree** (cross-references, migration numbers, spec vs shipped label): read the section fresh, report the conflict, don't pick a side silently. Same for a decision the spec leaves open — flag it, don't assume it.
 10. **Data the check needs doesn't exist** (no second account, no real notes, no complete meso, no in-progress session): say so plainly. Never fabricate rows or substitute silently to force a run.
 11. **Northstar data is ever in reach.** Standing rule for all of Overload: never read or write it.
+12. Any migration scripts/check-migration flags. Every
+   destructive one is flagged.
+13. Any change beyond the chunk's stated scope in TASKS.md.
+14. Anything SPEC.md is ambiguous or silent about.
 
 ## Reviewer's own rules
 - Verify against the real thing. A passing check proves only

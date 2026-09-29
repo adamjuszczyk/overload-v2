@@ -1,8 +1,25 @@
 # Overload — Decisions
 
+## Format for all new entries
+
+```
+## [n] [One-line summary]
+Severity: blocking | deferred
+Chunk: [n]
+What happened: [the situation, with full reasoning]
+A competent default would: [what anything competent would have
+  just done here] — doesn't apply because: [why this is a real
+  decision and not a default]
+Cost of deferral: [what gets redone if the answer goes against
+  the provisional path] — blocking entries: n/a
+Answer: [mine]
+```
+
+The entries D1–D28 further down predate this format and stay as they are; they use "Decided / Answer / Constrains".
+
 Decisions Adam made in earlier builds that still constrain the code, each as an answered entry: what was decided, and the answer. Only ones that still apply are here; decisions that were superseded (the global priority table, the daily analysis ship-date placeholder, the phase-4 "wait for 10–20 notes" gate, migration renumbering) were left out. Source for each is the build log now in HISTORY.md (the session named in brackets), the spec Adam wrote, or a code/migration comment where no log exists.
 
-Format: **Decided** — the question. **Answer** — what was chosen. **Constrains** — where it shows up.
+Format of D1–D28: **Decided** — the question. **Answer** — what was chosen. **Constrains** — where it shows up.
 
 ## Training data model
 
