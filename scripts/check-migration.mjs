@@ -4,20 +4,41 @@
 // me. The rules live in migration-rules.mjs; this file only gathers the files
 // and reports.
 //
-// Usage:  git fetch origin main && node scripts/check-migration.mjs [baseRef]
+// Usage:  git fetch origin && node scripts/check-migration.mjs [baseRef]
+//         baseRef defaults to the repo's default branch (main or master).
 // Exit:   0 = nothing to flag (merge as usual)
 //         1 = flagged (don't merge — blocking DECISIONS.md entry, merge is mine)
 //         2 = couldn't check (treat exactly like 1)
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { classify } from './migration-rules.mjs';
 
 const MIGRATIONS_DIR = 'supabase/migrations';
 
+// The repo's default branch as origin knows it — main in some repos, master in others.
+function defaultBase() {
+  try {
+    const ref = execFileSync('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (ref) return ref;
+  } catch {}
+  for (const b of ['origin/main', 'origin/master']) {
+    try {
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', b], { stdio: 'ignore' });
+      return b;
+    } catch {}
+  }
+  return 'origin/main';
+}
 
 function main() {
-  const base = process.argv[2] || 'origin/main';
+  // A missing folder would look like "no migrations" and pass silently. Refuse instead.
+  if (!existsSync(MIGRATIONS_DIR)) {
+    console.error(`check-migration: no ${MIGRATIONS_DIR} folder here. Can't check — treat as flagged.`);
+    process.exit(2);
+  }
+  const base = process.argv[2] || defaultBase();
   let listing;
   try {
     listing = execFileSync('git', ['diff', '--name-status', `${base}...HEAD`, '--', MIGRATIONS_DIR], { encoding: 'utf8' });
