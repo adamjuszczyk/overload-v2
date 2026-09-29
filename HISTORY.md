@@ -22477,3 +22477,13 @@ Other lines replaced in place (previous wording, verbatim):
 - manual trigger per completed meso, one permanent row per meso
 - - The Q&A in-session conversation has been checked through its API and Coach → ASK, but the workout-sheet UI path needed a real in-progress session (carried past 2026-09-02).
 - Post-launch fix rounds 2026-08-11 and later: done.
+
+---
+
+## 2026-09-29 (fourth session) — Text removed from CONTEXT.md and DECISIONS.md because it stopped being true
+
+Previous wording, verbatim:
+
+- - `vercel.json` `ignoreCommand` skips the build when nothing outside CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since `$VERCEL_GIT_PREVIOUS_SHA`; the exclusion list is CONTEXT.md, HISTORY.md, DECISIONS.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md.
+- 8. **A successful push.** `ignoreCommand` once compared `HEAD` to `HEAD^` and silently skipped a deploy whose last commit was docs-only.
+- `vercel.json` `ignoreCommand` skips the production build when only CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since the last deployed SHA.

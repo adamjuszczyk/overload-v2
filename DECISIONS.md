@@ -125,4 +125,4 @@ Format of D1–D28: **Decided** — the question. **Answer** — what was chosen
 **Answer:** A migration whose statements are not all on the safe list in `scripts/migration-rules.mjs` (changes that cannot alter or remove existing data) is not merged by the build; `node scripts/check-migration.mjs` exits 1 (or 2 if it could not check), and the merge is Adam's, with a blocking entry here.
 
 **D28 · Docs-only pushes don't deploy.** *(2026-08-15)*
-**Answer:** `vercel.json` `ignoreCommand` skips the production build when only CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since the last deployed SHA.
+**Answer:** `vercel.json` `ignoreCommand` skips the production build when a push changes only `.md` files. Currently `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'` (set 2026-09-29; the longer per-file, last-deployed-SHA version exceeded Vercel's 256-character limit).
