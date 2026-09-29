@@ -10,15 +10,15 @@ project with Northstar v2.
 
 ## Where the build is
 As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13).
-- **v3 plan (TASKS.md §4, 36 items, Phases 3.0–3.8): complete and deployed** (2026-08-10). Post-launch fix rounds 2026-08-11 and later: done.
+- **v3 plan (TASKS.md §4, 36 items, Phases 3.0–3.8): complete and deployed** (2026-08-10).
 - **Coach, all built and live unless noted:** Daily Session Analysis v1 (2026-08-18); Weekly Analysis (2026-08-23); Personalization phases 1–5 (ratings, notes, memory, prompt wiring); Exercise Library rework (shipped 2026-08-30); AI Q&A Sidebar (live 2026-09-02); Priority Context (Phases 1–4 done 2026-09-03); swap-exercise + Coach swap recognition (`PROMPT_VERSION 7`, deployed 2026-09-04).
-- **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
+- **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
 - **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
 - **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions). No code or migrations changed.
 - **Next migration number: 027.**
 - **Open items (real, not started or unresolved):**
   - Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
-  - The Q&A in-session conversation has been checked through its API and Coach → ASK, but the workout-sheet UI path needed a real in-progress session (carried past 2026-09-02).
+  - Unconfirmed whether closed: the old log carried one Q&A check past 2026-09-02 — the in-session conversation through the workout sheet's own UI, which needs a real in-progress session.
   - `ProgramPage.tsx` `handleStartMeso` has no try/catch or error UI; offline/failed meso creation fails silently (meso creation is online-only by design).
   - `historyService.ts` `fetchHistoryDetail`/`deleteSession` rely on RLS alone (no `.eq('user_id')`); harmless while `sessionId` only comes from the user's own list — revisit if a session-id URL route is added.
   - Daily analysis row `738a60a4-f108-4167-ae43-27268b22c0b4` (session `c111f9ac-…`, 2026-09-03, `PROMPT_VERSION 6`) reads a real swap as two unrelated facts and can never be corrected (permanent row).
@@ -70,7 +70,7 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 - Shared server auth `coachApiAuth.ts` (JWT via `supabase.auth.getUser`, then user gate). Endpoints in `api/coach/`: `analyze`, `analyze-week`, `analyze-meso`, `ask`, `curate-memory`; `vercel.json` gives `api/**` 60 s and `analyze-meso` 290 s.
 - Daily: `analyze.ts`, `coachPrompt.ts` `PROMPT_VERSION 7`, Haiku 4.5 pinned `claude-haiku-4-5-20251001`; one permanent row per session; payload from `analysisInput.ts` (position-matched streams, reference kind, phase, weight trend, memory, notes, ratings, `swaps`); analyses only for sessions completed after `COACH_ANALYSIS_START_DATE` (`2026-08-16T22:00:00.000Z`); idempotent; `stop_reason` checked.
 - Weekly: `analyze-week.ts`, `WEEK_PROMPT_VERSION 3`, Haiku 4.5; a week is analyzable by plan resolution (`weekResolution.ts`, completeness re-derived server-side); `weekBuckets.ts` regroups per-exercise facts by tag with `muscleGroup` fallback, never a blended per-group metric; one row per Monday `week_start`.
-- Mesocycle: `analyze-meso.ts`, `claude-sonnet-5` (no date suffix), `MESO_PROMPT_VERSION 2`, `effort` high, `MESO_MAX_TOKENS 32000`; manual trigger per completed meso, one permanent row per meso (`mesocycle_id` nullable, name/dates denormalised); reads Priority Context for the analysed meso, never the active one; `mesoAnalysisInput.ts` + `mesoWeekRollup.ts`.
+- Mesocycle: `analyze-meso.ts`, `claude-sonnet-5` (no date suffix), `MESO_PROMPT_VERSION 2`, `effort` high, `MESO_MAX_TOKENS 32000`; manual trigger per completed meso (no row has been generated yet — Vercel timeouts), one permanent row per meso (`mesocycle_id` nullable, name/dates denormalised); reads Priority Context for the analysed meso, never the active one; `mesoAnalysisInput.ts` + `mesoWeekRollup.ts`.
 - Ask: `ask.ts`, `coachQaPrompt.ts` `QA_PROMPT_VERSION 1`; four categories decided by originating screen (in_session, general, planning, app_mechanics) — Haiku for all but planning (Sonnet 5); `HISTORY_TURN_CAP 4`, `MAX_TURNS_PER_CONVERSATION 20`; every exchange permanent with a context snapshot; advisory only. Entry points: workout sheet ASK tab and Coach → ASK; shared `QaPanel` with `qaSidebarStore`.
 - Context tab: phase log (implicit end dates, unique per start date), weight log (daily and weekly-average kinds; weekly entries normalise to Monday), weekly averages, Coach Notes, Coach Memory (`curate-memory.ts`, Haiku, `CURATION_PROMPT_VERSION 1`, `curationApply.ts` validates decisions; UPDATE MEMORY is manual).
 - Personalization: form (per set), energy and pump (per session) are ungated training data like RIR and show in Progress/History; notes/memory feed the daily and weekly prompts.
@@ -95,7 +95,7 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 - **Supabase deploys migrations from main: yes.**
 - Local default branch is `master` (`origin/master`); `check-migration.mjs` defaults to comparing against `origin/main`.
 - Repo/package/Vercel project are all named `overload-v2` (v3 work never renamed it). Production alias `overload-v2-sage.vercel.app`; push to `origin/master` deploys.
-- `vercel.json` `ignoreCommand` skips the build when nothing outside CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since `$VERCEL_GIT_PREVIOUS_SHA`. HISTORY.md and DECISIONS.md are not on that list, so a push touching only them triggers a production build.
+- `vercel.json` `ignoreCommand` skips the build when nothing outside CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since `$VERCEL_GIT_PREVIOUS_SHA`; the exclusion list is CONTEXT.md, HISTORY.md, DECISIONS.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md.
 - Supabase project is shared with Northstar v2 (formerly Atlas); Adam's user id is `12e79b69-9891-4f53-a7cf-650edd83659f`. No service-role key, DB connection string or CLI link exists in the dev environment.
 - Commands: `npm run typecheck` (app + api tsconfigs), `npm test`, `npm run build`, `node scripts/check-context-size.mjs`. Dev server: `.claude/launch.json` "Overload v2 dev" (port 5173); plain `vite` does not run `api/**`.
 - Set Vercel env vars with `vercel env add` (more reliable than dashboard automation) and redeploy for them to take effect.
@@ -118,8 +118,25 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
 11. **Northstar data is ever in reach.** Standing rule for all of Overload: never read or write it.
 
 ## Reviewer's own rules
-[NOT PASTED — the instruction asked for the "Reviewer's own rules" block from BUILD.md step 3 word for word, but BUILD.md does not exist in this repo and the block was not included in the request text (it arrived as the literal placeholder "[paste the Reviewer's own rules block from BUILD.md step 3]"). Paste it here verbatim; do not paraphrase.]
-- Only fact on record about the reviewer: it runs every script in `scripts/` at every chunk boundary (`scripts/check-context-size.mjs` header).
+- Verify against the real thing. A passing check proves only
+  what it actually touched. If unreachable and passing produce
+  the same signal, the check is wrong.
+- Never fix before understanding the cause.
+- Don't read code to check what a script can check. If no
+  script covers it yet, write one — or verify manually and say
+  that's what happened.
+- Commit verification scripts to scripts/ and run all of them
+  at every chunk boundary, not just this chunk's.
+- Escalate with full reasoning, not a verdict and options.
+- Never write an unconfirmed belief into this file as fact.
+- The shared scripts (check-migration, migration-rules,
+  check-context-size) are never changed during a build. If a
+  chunk changes one, revert that change before merging and say
+  so in the chunk report.
+- At every chunk boundary: update this file, move anything no
+  longer true into HISTORY.md, then compact. Rules discovered
+  during this build are never pruned — they don't stop being
+  true.
 
 ## Checks that lied
 Each of these gave a false result. Treat the check as insufficient on its own.
@@ -174,7 +191,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 **Database / migrations**
 - Before applying any migration, run and record a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after.
 - Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`.
-- Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
+- Whenever a migration is applied by hand (still possible even though Supabase deploys from main), read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
 - Prove constraints by attempting to violate them (`23514`, `23503`, `23505`, zero rows written); prove `on delete set null`/cascade by really deleting a throwaway parent; prove read-only/append-only RLS through the anon-key client.
 - Write fixtures as sequential statements (a `DO` block with local variables), never sibling data-modifying CTEs (single snapshot — a sibling's write is invisible to an `UPDATE`). Same rule is load-bearing in `021` step 2a, where a subquery must see pre-merge state.
 - Throwaway data: label it (`TEST-…`, `ZZ_TEST_…`, "throwaway"), scope to Adam, delete in FK-safe order, and prove cleanup with `count(*)` against the baseline — not by the UI looking empty. Deleting a meso leaves its sessions behind (an orphaned `in_progress` one keeps being picked up as "the" session) — delete those too.
@@ -188,5 +205,5 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - Adversarial review: independent reviewers per dimension, each finding independently re-verified against current source; report raw vs confirmed counts, fix confirmed bugs, keep refuted findings noted. Say which findings got adversarial verification and which were checked by hand.
 - Read the actual current file/section before editing or citing it; check code instead of assuming ("confirmed, not assumed"). Report expected results as expectations until checked; report outcomes faithfully.
 - Don't launch a background duplicate of a check that already ran inline; if one is in flight, stop it or account for it in the next message.
-- Commit and push only when asked (Adam's standing default is also to commit CONTEXT.md on its own at the end of a session). Isolate a standalone deploy from unrelated uncommitted work with `git stash push --keep-index` plus an isolated typecheck; split unrelated work into separate commits; byte-diff restored files rather than trusting a typecheck.
+- Commit and push only when asked. At the end of every session, commit CONTEXT.md to the working branch — never to master. Isolate a standalone deploy from unrelated uncommitted work with `git stash push --keep-index` plus an isolated typecheck; split unrelated work into separate commits; byte-diff restored files rather than trusting a typecheck.
 - A new rule discovered mid-build is written into this file's rules in the same session, not left only in a log.

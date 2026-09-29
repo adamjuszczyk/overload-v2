@@ -22455,3 +22455,25 @@ left out of this commit for the same reason. Not deployed — not asked to.
    that foundation rather than replacing it
 6. Read specific files relevant to the task
 7. Update this file at the end of the session
+
+---
+
+## 2026-09-29 (second session) — Text removed from CONTEXT.md because it stopped being true
+
+The "Reviewer's own rules" placeholder (BUILD.md block not supplied at the time), replaced by the real block:
+
+    ## Reviewer's own rules
+    [NOT PASTED — the instruction asked for the "Reviewer's own rules" block from BUILD.md step 3 word for word, but BUILD.md does not exist in this repo and the block was not included in the request text (it arrived as the literal placeholder "[paste the Reviewer's own rules block from BUILD.md step 3]"). Paste it here verbatim; do not paraphrase.]
+    - Only fact on record about the reviewer: it runs every script in `scripts/` at every chunk boundary (`scripts/check-context-size.mjs` header).
+    
+    
+
+Other lines replaced in place (previous wording, verbatim):
+
+- changed since `$VERCEL_GIT_PREVIOUS_SHA`. HISTORY.md and DECISIONS.md are not on that list, so a push touching only them triggers a production build.
+- - Commit and push only when asked (Adam's standing default is also to commit CONTEXT.md on its own at the end of a session).
+- - Read and write the Supabase SQL Editor only through
+- (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12). No build-log entry
+- manual trigger per completed meso, one permanent row per meso
+- - The Q&A in-session conversation has been checked through its API and Coach → ASK, but the workout-sheet UI path needed a real in-progress session (carried past 2026-09-02).
+- Post-launch fix rounds 2026-08-11 and later: done.
