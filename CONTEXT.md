@@ -15,7 +15,7 @@ As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13).
 - **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
 - **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
 - **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions; new entries use the format at its top). No code or migrations changed.
-- **Deploy failures reported by Adam on master (2026-09-29), not yet resolved:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in the PR from this session, not yet merged. (2) The Supabase deploy failed with `relation "v2_programs" already exists`. `001_v2_schema.sql` (version `001`) creates it with a plain `create table v2_programs (` — no `if not exists` — after one earlier statement, `alter table exercises add column if not exists muscle_group text;`. Migrations 001–026 were historically applied by hand in the SQL Editor; whether Supabase's migration history records them is not established. No migration was changed.
+- **Deploy failures reported by Adam on master (2026-09-29), both addressed:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR [#3](https://github.com/adamjuszczyk/overload-v2/pull/3) (open, not merged). (2) The Supabase deploy failed with `relation "v2_programs" already exists`, because Supabase's migration history never recorded 001–026 (applied by hand) and v1's migrations aren't in the repo; resolved by turning Supabase's automatic deploys and preview branches off (Adam, 2026-09-29) — migrations are now applied by hand (see Repo facts and Reviewer's own rules). No migration was changed.
 - **Next migration number: 027.**
 - **Open items (real, not started or unresolved):**
   - Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
@@ -93,7 +93,11 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
   - date-fns v4
   - React Router v6
   - Lucide React
-- **Supabase deploys migrations from main: yes.**
+- Supabase deploys migrations from main: no — applied by hand
+  in the SQL Editor. Automatic deploys and preview branches are
+  off: Supabase's history never recorded 001–026, and v1's
+  migrations aren't in this repo. Rebuilding the history from
+  the live schema is planned, to switch back to automatic.
 - Local default branch is `master` (`origin/master`); `check-migration.mjs` defaults to comparing against `origin/main`.
 - Repo/package/Vercel project are all named `overload-v2` (v3 work never renamed it). Production alias `overload-v2-sage.vercel.app`; push to `origin/master` deploys.
 - `vercel.json` `ignoreCommand` is exactly `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'`: it skips the build when the pushed commit changes only `.md` files (any directory) and builds otherwise. Vercel rejects an `ignoreCommand` over 256 characters (the previous 274-character version failed validation on the merge to master). Its known gap: it compares only `HEAD^` to `HEAD`, so a multi-commit push whose last commit is docs-only is skipped even if earlier commits changed code.
@@ -121,6 +125,7 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
    destructive one is flagged.
 13. Any change beyond the chunk's stated scope in TASKS.md.
 14. Anything SPEC.md is ambiguous or silent about.
+15. A failed production database deploy after any merge.
 
 ## Reviewer's own rules
 - Verify against the real thing. A passing check proves only
@@ -134,6 +139,10 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
   at every chunk boundary, not just this chunk's.
 - Escalate with full reasoning, not a verdict and options.
 - Never write an unconfirmed belief into this file as fact.
+- Never merge a chunk with a migration. Write a blocking
+  DECISIONS.md entry with the migration file and the
+  check-migration result, and wait until I say it's applied.
+  The migration goes live before the code that needs it.
 - The shared scripts (check-migration, migration-rules,
   check-context-size) are never changed during a build. If a
   chunk changes one, revert that change before merging and say
@@ -196,7 +205,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 **Database / migrations**
 - Before applying any migration, run and record a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after.
 - Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`.
-- Whenever a migration is applied by hand (still possible even though Supabase deploys from main), read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
+- Migrations are applied by hand (Supabase automatic deploys are off). Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
 - Prove constraints by attempting to violate them (`23514`, `23503`, `23505`, zero rows written); prove `on delete set null`/cascade by really deleting a throwaway parent; prove read-only/append-only RLS through the anon-key client.
 - Write fixtures as sequential statements (a `DO` block with local variables), never sibling data-modifying CTEs (single snapshot — a sibling's write is invisible to an `UPDATE`). Same rule is load-bearing in `021` step 2a, where a subquery must see pre-merge state.
 - Throwaway data: label it (`TEST-…`, `ZZ_TEST_…`, "throwaway"), scope to Adam, delete in FK-safe order, and prove cleanup with `count(*)` against the baseline — not by the UI looking empty. Deleting a meso leaves its sessions behind (an orphaned `in_progress` one keeps being picked up as "the" session) — delete those too.
