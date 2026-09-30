@@ -80,6 +80,7 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 **Tooling and tests**
 - Vitest (node env; component tests opt into jsdom per file); 548 tests / 37 files at 2026-09-13 (Mesocycle Analysis added more; count not re-run 2026-09-29). Pure logic lives in testable modules (`setGroupLogic`, `referenceLogic`, `e1rm`, `positionMatch`, `weightUnit`, `qa*`, `*Input`).
 - `scripts/`: `check-context-size.mjs` (CONTEXT.md ≤ 75 KB), `check-migration.mjs` + `migration-rules.mjs` (safe-list classifier, tested by `migration-rules.test.mjs`), `gen-icons.mjs`.
+- No RLS verification script exists in the repo (checked 2026-09-30: nothing in `scripts/`, `src/`, `api/` or `supabase/` tests RLS; `migration-rules.mjs` says it checks data safety only, not policy correctness). RLS has been proven by hand (see the database rules). No script in `scripts/` reads an environment variable: `check-migration.mjs` takes an optional base ref as `argv[2]` and shells out to `git`; the others read none. The only env vars the repo reads are the app/`api/**` ones in Repo facts (`.env.example` lists the three `VITE_*` names).
 
 ## Repo facts
 - Stack (unchanged text from the prior CONTEXT.md):
