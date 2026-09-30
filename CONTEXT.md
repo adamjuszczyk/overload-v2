@@ -15,6 +15,7 @@ As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13).
 - **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
 - **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
 - **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions; new entries use the format at its top). No code or migrations changed.
+- **Deploy failures reported by Adam on master (2026-09-29), both addressed:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR [#3](https://github.com/adamjuszczyk/overload-v2/pull/3) (open, not merged). (2) The Supabase deploy failed with `relation "v2_programs" already exists`, because Supabase's migration history never recorded 001–026 (applied by hand) and v1's migrations aren't in the repo; resolved by turning Supabase's automatic deploys and preview branches off (Adam, 2026-09-29) — migrations are now applied by hand (see Repo facts and Reviewer's own rules). No migration was changed.
 - **Next migration number: 027.**
 - **Open items (real, not started or unresolved):**
   - Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
@@ -92,10 +93,14 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
   - date-fns v4
   - React Router v6
   - Lucide React
-- **Supabase deploys migrations from main: yes.**
+- Supabase deploys migrations from main: no — applied by hand
+  in the SQL Editor. Automatic deploys and preview branches are
+  off: Supabase's history never recorded 001–026, and v1's
+  migrations aren't in this repo. Rebuilding the history from
+  the live schema is planned, to switch back to automatic.
 - Local default branch is `master` (`origin/master`); `check-migration.mjs` defaults to comparing against `origin/main`.
 - Repo/package/Vercel project are all named `overload-v2` (v3 work never renamed it). Production alias `overload-v2-sage.vercel.app`; push to `origin/master` deploys.
-- `vercel.json` `ignoreCommand` skips the build when nothing outside CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since `$VERCEL_GIT_PREVIOUS_SHA`; the exclusion list is CONTEXT.md, HISTORY.md, DECISIONS.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md.
+- `vercel.json` `ignoreCommand` is exactly `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'`: it skips the build when the pushed commit changes only `.md` files (any directory) and builds otherwise. Vercel rejects an `ignoreCommand` over 256 characters (the previous 274-character version failed validation on the merge to master). Its known gap: it compares only `HEAD^` to `HEAD`, so a multi-commit push whose last commit is docs-only is skipped even if earlier commits changed code.
 - Supabase project is shared with Northstar v2 (formerly Atlas); Adam's user id is `12e79b69-9891-4f53-a7cf-650edd83659f`. No service-role key, DB connection string or CLI link exists in the dev environment.
 - Commands: `npm run typecheck` (app + api tsconfigs), `npm test`, `npm run build`, `node scripts/check-context-size.mjs`. Dev server: `.claude/launch.json` "Overload v2 dev" (port 5173); plain `vite` does not run `api/**`.
 - Set Vercel env vars with `vercel env add` (more reliable than dashboard automation) and redeploy for them to take effect.
@@ -120,6 +125,7 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
    destructive one is flagged.
 13. Any change beyond the chunk's stated scope in TASKS.md.
 14. Anything SPEC.md is ambiguous or silent about.
+15. A failed production database deploy after any merge.
 
 ## Reviewer's own rules
 - Verify against the real thing. A passing check proves only
@@ -133,6 +139,10 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
   at every chunk boundary, not just this chunk's.
 - Escalate with full reasoning, not a verdict and options.
 - Never write an unconfirmed belief into this file as fact.
+- Never merge a chunk with a migration. Write a blocking
+  DECISIONS.md entry with the migration file and the
+  check-migration result, and wait until I say it's applied.
+  The migration goes live before the code that needs it.
 - The shared scripts (check-migration, migration-rules,
   check-context-size) are never changed during a build. If a
   chunk changes one, revert that change before merging and say
@@ -151,7 +161,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 5. **Browser `left_click` reporting success or timing out** without firing a click event (found 2026-08-25; also in mobile-viewport emulation). Verify resulting state; a programmatic `element.click()` via `javascript_tool` is a disclosed exception, not a substitute. Coordinate clicks landed on wrong elements. Computer-screenshot compositing can return stale frames.
 6. **Testing a fix in a tab with a stale service worker** reproduced the old bug (false negative). After a deploy, update the registration and reload before testing; a "RELOAD" banner means the tab is on the old bundle.
 7. **Grepping the client bundle for server-only code** (`PROMPT_VERSION`, prompts) is a category error — those modules are never in it. Verify server changes by construction, the deployed function list, or a real call.
-8. **A successful push.** `ignoreCommand` once compared `HEAD` to `HEAD^` and silently skipped a deploy whose last commit was docs-only. Confirm a deploy landed at four levels: `vercel ls` (a real build, not a 2 s "Canceled" row), `vercel inspect` on the canonical alias (`Ready`, production), the function list, and a grep of the deployed bundle for new strings (and absence of old ones).
+8. **A successful push.** `ignoreCommand` compared `HEAD` to `HEAD^` and silently skipped a deploy whose last commit was docs-only (2026-08-31); it was replaced by a `$VERCEL_GIT_PREVIOUS_SHA` version, then on 2026-09-29 (Adam's instruction, because that version exceeded Vercel's 256-character limit) by the `HEAD^` form again, so the gap is live. Confirm a deploy landed at four levels: `vercel ls` (a real build, not a 2 s "Canceled" row), `vercel inspect` on the canonical alias (`Ready`, production), the function list, and a grep of the deployed bundle for new strings (and absence of old ones).
 9. **typecheck + build + Vitest all green while every API call crashed:** Vite/Vitest bundler resolution tolerates extensionless relative imports; Vercel's Node ESM does not (`ERR_MODULE_NOT_FOUND`). Also a raw env var carrying an invisible character produced a 401 for a valid token. Only a real deploy + call finds these.
 10. **A valid-looking multi-turn check that missed a first-turn bug:** Q&A turn 0 of every new conversation was generated, saved, paid for and never rendered (fetch raced the optimistic write). Every check that sent a second message passed. Static review can't see it; only a real call against the deployed endpoint did.
 11. **Tests that pass under a broken implementation.** Phase 4's first Priority Context tests were decorative (asserted only on records rebuilt by a ternary). Prove a test by injecting the break it claims to catch.
@@ -195,7 +205,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 **Database / migrations**
 - Before applying any migration, run and record a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after.
 - Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`.
-- Whenever a migration is applied by hand (still possible even though Supabase deploys from main), read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
+- Migrations are applied by hand (Supabase automatic deploys are off). Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op.
 - Prove constraints by attempting to violate them (`23514`, `23503`, `23505`, zero rows written); prove `on delete set null`/cascade by really deleting a throwaway parent; prove read-only/append-only RLS through the anon-key client.
 - Write fixtures as sequential statements (a `DO` block with local variables), never sibling data-modifying CTEs (single snapshot — a sibling's write is invisible to an `UPDATE`). Same rule is load-bearing in `021` step 2a, where a subquery must see pre-merge state.
 - Throwaway data: label it (`TEST-…`, `ZZ_TEST_…`, "throwaway"), scope to Adam, delete in FK-safe order, and prove cleanup with `count(*)` against the baseline — not by the UI looking empty. Deleting a meso leaves its sessions behind (an orphaned `in_progress` one keeps being picked up as "the" session) — delete those too.

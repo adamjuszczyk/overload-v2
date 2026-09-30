@@ -22477,3 +22477,23 @@ Other lines replaced in place (previous wording, verbatim):
 - manual trigger per completed meso, one permanent row per meso
 - - The Q&A in-session conversation has been checked through its API and Coach → ASK, but the workout-sheet UI path needed a real in-progress session (carried past 2026-09-02).
 - Post-launch fix rounds 2026-08-11 and later: done.
+
+---
+
+## 2026-09-29 (fourth session) — Text removed from CONTEXT.md and DECISIONS.md because it stopped being true
+
+Previous wording, verbatim:
+
+- - `vercel.json` `ignoreCommand` skips the build when nothing outside CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since `$VERCEL_GIT_PREVIOUS_SHA`; the exclusion list is CONTEXT.md, HISTORY.md, DECISIONS.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md.
+- 8. **A successful push.** `ignoreCommand` once compared `HEAD` to `HEAD^` and silently skipped a deploy whose last commit was docs-only.
+- `vercel.json` `ignoreCommand` skips the production build when only CONTEXT.md, SPEC.md, TASKS.md, TASKS-v2.md, Overload-v2-SPEC.md, AUDIT.md changed since the last deployed SHA.
+
+---
+
+## 2026-09-29 (fifth session) — Text removed from CONTEXT.md because it stopped being true
+
+Migrations are now applied by hand; Supabase automatic deploys and preview branches are off. Previous wording, verbatim:
+
+- **Supabase deploys migrations from main: yes.**
+- **Deploy failures reported by Adam on master (2026-09-29), not yet resolved:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in the PR from this session, not yet merged. (2) The Supabase deploy failed with `relation "v2_programs" already exists`. `001_v2_schema.sql` (version `001`) creates it with a plain `create table v2_programs (` — no `if not exists` — after one earlier statement, `alter table exercises add column if not exists muscle_group text;`. Migrations 001–026 were historically applied by hand in the SQL Editor; whether Supabase's migration history records them is not established. No migration was changed.
+- Whenever a migration is applied by hand (still possible even though Supabase deploys from main), read and write
