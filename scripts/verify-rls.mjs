@@ -54,8 +54,10 @@ const TABLES = [
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on
 // purpose, there is no user_id, and they are readable by everyone. Zero rows is
-// not the expectation for them, so rows do not count as a leak. They are still
-// probed both ways, and any error other than permission-denied still fails.
+// not the expectation for them, so rows do not count as a leak (DECISIONS.md 29:
+// intentionally readable by everyone, anon included, because they hold shared
+// content). They are still probed both ways, and any error other than
+// permission-denied still fails.
 const PUBLIC_BY_DESIGN = new Set(['v2_exercise_libraries', 'v2_exercise_library_items']);
 
 const REQUIRED = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'RLS_TEST_EMAIL', 'RLS_TEST_PASSWORD'];
