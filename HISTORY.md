@@ -22546,3 +22546,15 @@ CONTEXT.md was restructured for phase 1 of the Planner Extension (What this is /
 - "- PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03: commit `f5a5cc2` is only on `origin/claude/modest-shannon-7ysqic`). This session's own live run on 2026-10-03 gave the same totals." — re-checked this session: `f5a5cc2` is also on `origin/claude/tender-knuth-es6gqj`; still not on master. Reworded in Repo facts.
 - "- Docs: SPEC.md = Overload Planner Extension spec (phases 1–2); TASKS.md = its phase-1 plan (draft, 2026-10-03). Overload-v3-SPEC.md / TASKS-v3.md = the v3 spec / plan (shipped). Overload-v2-SPEC.md / TASKS-v2.md = v2 originals, still accurate for the shipped foundation. Code comments written before 2026-10-03 that cite "SPEC.md §n" / "TASKS.md §n" with no prefix mean the v3 files. AUDIT.md = Fable 5 audit (fixed and deferred). Each initiative has its own SPEC/TASKS pair with its own section numbering (COACH-ANALYSIS-*, COACH-WEEK-ANALYSIS-*, COACH-PERSONALIZATION-*, EXERCISE-LIBRARY-* (+PROVENANCE), QA-SIDEBAR-*, PRIORITY-CONTEXT-*); COACH-EXERCISE-TAGS.md is the approved tag list." — TASKS.md is no longer a draft with an open gap; SPEC.md answers G1–G15. Reworded in Repo facts.
 - "- Migrations 004–026 are numbered in `supabase/migrations`; TASKS.md numbering was corrected once (008 reference index displaced the history-views slot) — trust the folder." — "TASKS.md" there meant the v3 plan, which is now TASKS-v3.md. Reworded in place under "Rules discovered during this build".
+
+
+---
+
+## 2026-10-03 (fourth session) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- `scripts/`: `check-context-size.mjs` (CONTEXT.md ≤ 75 KB), `check-migration.mjs` + `migration-rules.mjs` (safe-list classifier, tested by `migration-rules.test.mjs`), `gen-icons.mjs`." — the scripts list gained `verify-rls-tables.test.mjs` and the test command.
+- "so rows there don't count as a leak (errors still fail). Live run 2026-10-03:" — DECISIONS.md 29 now records why the two tables are public.
+- "a table not listed there is not RLS-checked. Only" — the rule now says the drift test fails until the table is listed.
+- "- PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03, re-checked this session: commit `f5a5cc2` is on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not on `origin/master`). This session's own live run on 2026-10-03 gave the same totals." — the commit was cherry-picked onto master as PR #9 (open); re-checked this session that `f5a5cc2` is only on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not master.
