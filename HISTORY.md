@@ -22505,3 +22505,16 @@ Migrations are now applied by hand; Supabase automatic deploys and preview branc
 - "As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13)" — HEAD is now `4f8a268` (PRs #3 and #4 merged); the last app commit is unchanged.
 - "(1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR #3 (open, not merged)" — PR #3 was merged on 2026-09-30.
 
+
+---
+
+## 2026-10-03 — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "As of 2026-10-01 (repo HEAD `4f8a268` plus this session's branch, last app commit `2b28fab`, 2026-09-13)." — master is now `a61d731` (PR #5 merged 2026-10-03).
+- "- **v3 plan (TASKS.md §4, 36 items, Phases 3.0–3.8): complete and deployed** (2026-08-10)." — the v3 plan is now TASKS-v3.md; TASKS.md is the Overload Planner Extension phase-1 plan.
+- "- Vitest (node env; component tests opt into jsdom per file); 548 tests / 37 files at 2026-09-13 (Mesocycle Analysis added more; count not re-run 2026-09-29)." — re-run 2026-10-03: still 548 tests in 37 files, so Mesocycle Analysis did not add more after 2026-09-13.
+- "- Docs: SPEC.md / TASKS.md = v3 product spec / plan. Overload-v2-SPEC.md / TASKS-v2.md = v2 originals, still accurate for the shipped foundation." — SPEC.md / TASKS.md are now the Planner Extension spec and its phase-1 plan; the v3 pair was renamed Overload-v3-SPEC.md / TASKS-v3.md, contents unchanged.
+- "- **2026-10-01:** added `scripts/verify-rls.mjs`, a read-only RLS check (see Tooling and tests). It has **not been run against the real database** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `RLS_TEST_EMAIL` and `RLS_TEST_PASSWORD` weren't set in the dev environment. Only its pass/leak/fail/exit-code logic was exercised, against a local mock server. No app code or migration changed." — it was run against the live project on 2026-10-03 (all 50 probes passed).
+- "Never run against real data yet: first real run is Adam's, with the test account's credentials." — same run.
