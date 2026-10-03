@@ -22497,3 +22497,11 @@ Migrations are now applied by hand; Supabase automatic deploys and preview branc
 - **Supabase deploys migrations from main: yes.**
 - **Deploy failures reported by Adam on master (2026-09-29), not yet resolved:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in the PR from this session, not yet merged. (2) The Supabase deploy failed with `relation "v2_programs" already exists`. `001_v2_schema.sql` (version `001`) creates it with a plain `create table v2_programs (` — no `if not exists` — after one earlier statement, `alter table exercises add column if not exists muscle_group text;`. Migrations 001–026 were historically applied by hand in the SQL Editor; whether Supabase's migration history records them is not established. No migration was changed.
 - Whenever a migration is applied by hand (still possible even though Supabase deploys from main), read and write
+
+---
+
+## 2026-10-01 — Moved out of CONTEXT.md (no longer true)
+
+- "As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13)" — HEAD is now `4f8a268` (PRs #3 and #4 merged); the last app commit is unchanged.
+- "(1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR #3 (open, not merged)" — PR #3 was merged on 2026-09-30.
+
