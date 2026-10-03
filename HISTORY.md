@@ -22569,3 +22569,11 @@ Previous wording, verbatim:
 - "- PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9) (open; the merge is Adam's) cherry-picks `f5a5cc2` — `verify-rls-tables.test.mjs` and DECISIONS.md 29 — onto master. It was first PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6), merged into PR #5's branch after PR #5 had merged, so it never reached master. Until #9 merges, master has neither the test nor entry 29; this file describes both as on the branch. The commit's own CONTEXT.md/HISTORY.md edits were not applied (they were written against the old layout); their content is carried by this file." — PR #9 is merged (`e747183` on `origin/master`, checked by fetch this session); master now has `verify-rls-tables.test.mjs` and DECISIONS.md 29.
 - "Its author reported proving it by deleting a table from `TABLES` and by adding a fake one (each made it fail); that was not re-proven here, where it was run only against the unmodified tree (5 of 5 pass)." — the deletion direction is now proven in this repo; reworded in place.
 - "- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said \"not deployed — not asked to\"." — Adam reported on 2026-10-03 that adding an exercise mid-workout works in the live app.
+
+---
+
+## 2026-10-03 (planner build, reviewer, chunk 1 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 1." / "- Waiting on me: none." — chunk 1 is built and blocked on DECISIONS.md 30–32 (migration 027 to apply by hand, live browser verification unavailable, verify-rls go-ahead).

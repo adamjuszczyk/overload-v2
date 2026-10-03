@@ -7,9 +7,11 @@ Overload is a strength training PWA for a serious intermediate-to-advanced lifte
 This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.md. Phase 2 and SPEC's "Later" list are not being done.
 
 ## Where the build is
-- Current chunk: 1.
+- Current chunk: 1 — built and verified on scratch; **not merged, not applied**.
 - Finished: none.
-- Waiting on me: none.
+- Waiting on me: DECISIONS.md 30 (apply 027 by hand with before/after counts; let the reviewer push `build/chunk-1`; decide the stage-row `stage_kind` check), 31 (live browser verification unavailable here), 32 (go-ahead to run `verify-rls.mjs`).
+- Chunk 1 state: `supabase/migrations/027_planner_p1_schema.sql` is commit `273b07d` on the **local-only** branch `build/chunk-1` (md5 `6828eea01febab618e389bab89a51d5a`, 18232 bytes): six new tables + the data-model columns on nine tables + `notify`. `check-migration` exits 1 with the 8 statements TASKS.md predicted. Reviewer-verified on a fresh scratch copy (catalog diff = data model exactly; counts and row fingerprints unchanged on all nine tables; old-client settings upsert preserves non-default new columns; RLS A/B/anon; named CHECK rejections). Still to run once 027 is live: Adam-scoped counts after; API column probes; anon read of the six new tables; the live-app gate (31).
+- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`).
 
 ## What exists
 Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`.
@@ -234,3 +236,6 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - Don't launch a background duplicate of a check that already ran inline; if one is in flight, stop it or account for it in the next message.
 - Commit and push only when asked. At the end of every session, commit CONTEXT.md to the working branch — never to master. Isolate a standalone deploy from unrelated uncommitted work with `git stash push --keep-index` plus an isolated typecheck; split unrelated work into separate commits; byte-diff restored files rather than trusting a typecheck.
 - A new rule discovered mid-build is written into this file's rules in the same session, not left only in a log.
+- Builders run as the general-purpose subagent on the `sonnet` model alias: a custom agent definition (`~/.claude/agents/builder.md`, Sonnet 5, effort max) written mid-session does not load until a new session, and the Agent tool cannot set effort. Builders commit to a local `build/chunk-N` branch; this session may push only `claude/epic-lovelace-0pvxbr`, so a builder branch exists only in the container unless Adam permits pushing it.
+- The cloud environment's network policy denies `overload-v2-sage.vercel.app` (403 to CONNECT; Chromium `ERR_TUNNEL_CONNECTION_FAILED`, probed 2026-10-03); the Supabase host is reachable. Live-app checks can't run from this container (DECISIONS.md 31).
+- A fresh container has no `node_modules`: run `npm ci` before typecheck/test/build.
