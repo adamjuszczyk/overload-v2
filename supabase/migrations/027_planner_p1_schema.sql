@@ -278,7 +278,9 @@ alter table v2_week_plan_sets
     references v2_program_sets(id) on delete set null,
   -- Heads only.
   add column if not exists stage_kind text
-    check (stage_kind in ('dropset', 'rest_pause', 'myo_reps', 'cluster')),
+    check (stage_kind in ('dropset', 'rest_pause', 'myo_reps', 'cluster'))
+    constraint v2_week_plan_sets_stage_row_check
+      check (parent_week_plan_set_id is null or stage_kind is null),
   -- kg; week plan only, never in the program.
   add column if not exists target_weight numeric(6,2)
     check (target_weight >= 0),
@@ -306,7 +308,9 @@ alter table v2_sessions
 -- On a staged head, "as planned".
 alter table v2_set_logs
   add column if not exists stage_kind text
-    check (stage_kind in ('dropset', 'rest_pause', 'myo_reps', 'cluster'));
+    check (stage_kind in ('dropset', 'rest_pause', 'myo_reps', 'cluster'))
+    constraint v2_set_logs_stage_row_check
+      check (parent_set_id is null or stage_kind is null);
 
 -- ─── v2_user_settings ────────────────────────────────────────────────────────
 -- The old client's full-row upsert never names these, so on conflict it leaves
