@@ -1,219 +1,611 @@
-# Overload v3 — Product Specification
-**Version:** 3.0
-**Last updated:** August 2026
-**Author:** Adam
-**Status:** Phase 1 complete — ready for technical planning
+# SPEC.md — Overload Planner Extension
+
+## What this is
+
+Overload is a strength-training PWA: programs, weekly planning, live session
+logging, history. Until now it was built around one person's way of training and
+planning.
+
+**Purpose of this build:** make the app versatile and clear enough to be useful
+for other lifters — people who plan with stable volume, who train in a rotation
+instead of on weekdays, who plan weights ahead or never plan at all — with Poland
+as the first market.
+
+**Built in two phases from this one spec.** This was a deliberate size decision:
+the list doesn't fit one build, and the spec came from one planning session.
+Every item below is tagged **[P1]** or **[P2]**. Each phase gets its own
+`TASKS.md`, build and review. Phase 2's `TASKS.md` is written after phase 1 has
+been used in real training; anything that use reveals gets written back here
+first.
+
+- **Phase 1 — what a workout is:** planning, scheduling, set structures, and how
+  they render on the workout screen.
+- **Phase 2 — how logging feels, plus the platform:** tracked fields, logging
+  mechanics, login, library, navigation, settings, Polish.
+
+**This version is not doing:** anything for coaches or trainers, AI changes (Coach
+stays exactly as it is), notifications, templates, cardio, progress screen
+rebuild. Full list at the bottom.
 
 ---
 
-## 1. Vision
+## Facts TASKS.md must verify against the real app (not decisions)
 
-Overload v2 built the planning loop: program → weekly plan → session log → progress review. v3 doesn't change that loop — it fixes the places where real usage exposed gaps between how the app works and how Adam actually trains, and gives Progress and History a clear, distinct job each. This matters now specifically because AI features are coming next: the app needs to be genuinely good on its own terms first, with clean data and clear surfaces, before an AI layer gets built on top of it.
-
----
-
-## 2. Who It's For
-
-Unchanged from v2. Single user, personal training tool. A coach/sharing feature was raised as an observation from someone Adam gave the app to, but it's explicitly not a need — noted in Out of Scope, not designed.
-
----
-
-## 3. Platform & Foundation
-
-No change. Same PWA, same shared Supabase project, same three-layer architecture (Program → Weekly Plan → Session Log). Everything below is a refinement within that foundation, not a rebuild of it.
-
----
-
-## 4. Today View
-
-### 4.1 Exercise reference panel (redesigned)
-
-The panel resolves two independent slots, not one:
-
-**Primary slot — always resolves to something:**
-- If this exact session type was completed in the immediately preceding meso week (Monday-anchored, same boundary as meso week numbering) → show **LAST WEEK** with that session's numbers, regardless of the exact day-gap within that window.
-- Otherwise, fall back to the most recent time this session type was ever completed → show **LAST TIME** with the numbers and elapsed time (e.g. "3 weeks ago", "5 months ago").
-- If it's never been completed → **FIRST TIME** (unchanged from v2).
-
-**Secondary slot — additive, optional:**
-- If this session type was already completed one or more times earlier in the *current* week → show **THIS WEEK**, one entry per occurrence, each with its own elapsed time. In practice this will almost always be zero or one entry, but the panel supports more.
-
-```
-Today: Push Day A
-└── Bench Press
-      ├── LAST WEEK  (same session, meso week 6)
-      │     3×5 @ 80kg, RIR 2
-      ├── THIS WEEK  (same session, 2 days ago)      ← only if it happened already
-      │     3×5 @ 82.5kg, RIR 2
-      └── (LAST WEEK falls back to LAST TIME + elapsed if no match exists)
-```
-
-### 4.2 Set timing — "Measure set time" (new setting)
-
-New Settings toggle. Two modes:
-- **Off (current behavior):** one-tap logging, rest timer counts continuously between logs (includes set-performance time, not just rest).
-- **On:** an explicit Start Set button. Tap to begin a set, tap Log when done. This isolates true rest time from set-performance time, and unlocks a new **average set duration** stat. Global setting, not per-session. Charts using set-duration data simply skip sessions that don't have it — no backfill needed for historical sessions logged before the toggle was turned on.
-
-### 4.3 Other Today changes
-- Rest timer displayed directly under the set row just completed, not only as a floating/global element.
-- Workout duration shown at the top, counting from session start.
-- **Skip whole exercise** — marks every remaining unlogged set in that exercise as skipped in one action (same mechanism as the existing skip-set: nullable weight/reps, `is_skipped = true`).
-- Easy jump from a session's exercise card into that exercise's History view (see Section 6).
-- **Edit note after completion** — the completed-state Today screen gets its own "edit note" action that patches the session's note field directly, without reopening the session or changing its status. This does not depend on the reopen-session flow at all.
+- How deload weeks are stored today (they move to per-session marking).
+- The four current priority levels' stored values (mapping is decided below).
+- That only one run can be active at a time (assumed unchanged).
+- Today's "skip / do it the next day" behaviour for missed weekday sessions.
+- [P2] Today's pre-fill source for weight and reps.
+- [P2] That a session's start time is stored (clock times depend on it).
+- [P2] What "archive" does to an exercise today, and that every archived
+  exercise survives the move to the catalog.
+- [P2] Whether seeded per-user exercises carry a reference to their seed entry,
+  and which ones have user edits (renames, tags, flags).
+- [P2] How Supabase links a Google identity to an existing email account — run it
+  against a scratch project, don't assume.
+- [P2] Why the email confirmation page shows an error after a successful
+  confirmation.
 
 ---
 
-## 5. Plan View
+## Objects stored
 
-- Workouts sit on top with a switcher between them, instead of scrolling through all workouts on one page.
-- "Copy last week" splits into two distinct actions: **copy whole week** and **copy just this workout** from last week.
-- New **compact display mode** — collapses repeated rows into a single line (e.g. "3× Bench Press") instead of three stacked set rows.
+Domain level. `TASKS.md` maps these onto the existing schema.
 
----
+**Program** [P1] — the reusable plan. Never changed by running it.
+- name
+- schedule type: `weekday` | `sequence`
+- planning type: `stable` | `week-dependent`
+- priorities: a list of (muscle group or subgroup, `focus` | `dont_care`).
+  Anything unlisted is normal.
+- workouts (below)
+- for `sequence`: the ordered sequence — workout positions and rest-day
+  positions, e.g. A, rest, rest, B, rest, rest, C, rest, rest
 
-## 6. Progress View
+**Program workout** [P1]
+- name
+- for `weekday`: its day of the week
+- warmup routine: ordered checklist items (free text)
+- exercises, ordered (below)
 
-**Redefined role:** Progress is the surface where comparisons have already been done for you. This is the deliberate counterpart to History (Section 7), which is where you do the comparing yourself.
+**Program exercise** [P1]
+- exercise reference
+- position; superset group (exercises sharing a group form one superset block)
+- rest (optional), rest after this exercise (optional), tempo (optional, text in
+  the form 3-1-1-0, `X` allowed)
+- superset rest overrides, on the block: rest between exercises within a round,
+  rest after a round
+- unit preference (existing)
+- sets (below)
 
-**Per-exercise headline (new):**
-- Metric: average e1RM (estimated 1-rep max) across that exercise's main working sets in a session — excludes warmup sets and dropset stages, so every real working set counts rather than just the top set or a single best-set estimate.
-- Comparison window: first vs. most recent working numbers within the **current meso** — mesocycles already exist as a concept, so no new time-window logic is needed.
-- Displayed as **percentage only** — no absolute weight figure attached. The underlying number is a formula estimate, not a literal weight lifted, so pairing it with a fabricated "+2.5kg"-style figure would imply false precision.
+**Program set** [P1] — for `stable` this is the volume; for `week-dependent`
+it's week 1.
+- kind: `working` | `warmup` | `staged`
+- for `staged`: stage kind (`dropset` | `rest-pause` | `myo-reps` | `cluster`),
+  its stages, and rest between stages (default: dropset none — stages run back
+  to back; rest-pause, myo-reps, cluster 15 s)
+- rep target, optional: a number | a range (min–max) | `AMRAP`
+- rest override for the rest after this set, optional
 
-```
-Incline bench press: +7% this meso
-```
+**Run** [P1] — one run of a program (today's "mesocycle").
+- program reference; start; end when the user ends it
+- its own copy of the program's plan (what the program tab shows and edits)
+- for `sequence`: position in the sequence, counted from the last workout done
 
-Existing v2 meso-level dashboard (weekly volume trend, avg RIR trend, avg reps, avg rest time, deload weeks marked) continues unchanged — this per-exercise headline is additive, not a replacement.
+**Week** (or **cycle**, for sequence runs) [P1] — exists once planned.
+- run reference; index
+- per session: exercises as planned for this week (including one-week swaps and
+  reorders and whether each is "only this week"), sets with weight target, rep
+  target override, RIR target, tags per set
+- per session: deload flag
 
-Deload decisions are explicitly **not** what this view is for — those come from feel and from noticing strength has stalled or dropped, not from a computed number.
+**Session** [existing, extended]
+- [P1] deload flag; moved-to date (weekday)
+- [P2] session-only exercise order
+- [P2] clock start and end (end derived from the last logged set, as duration
+  already is)
 
----
+**Set log** [existing, extended]
+- [P1] set kind and stage kind as planned
+- [P2] side split: when split, L and R values for every tracked field
+- [P2] for bodyweight exercises: weight is signed added load (0 = bodyweight)
 
-## 7. History View
+**Settings** [existing, extended]
+- [P1] warmup display: `rows` | `tick`; default deload rules (below)
+- [P2] per tracked field (RIR/RPE, form, set time, energy/pump):
+  `off` | `optional` | `mandatory`; effort scale `RIR` | `RPE`; pre-fill:
+  `empty` | `planned` | `planned, else last time`; set lock on/off; app
+  language; exercise-name language
 
-**Redefined role:** raw, exact numbers you compare yourself — the OneNote-style "I can see exactly what I did and compare it at a glance" experience that the per-session detail view alone doesn't give you.
+**Deload rules** [P1] — global default in settings, override per program. Each
+rule independent and optional:
+- sets: −percentage or −number; rounding up or down; minimum 1
+- weight: percentage of base; rounding up or down; precision step (e.g. 2.5 kg,
+  5 kg, or lbs equivalents)
+- reps: ±number
+- RIR: +number
 
-Two new cross-meso views, each combining a chart (for shape) with a data table underneath (for exact numbers):
+**Catalog exercise** [P2] — shared across all users.
+- Polish name, English name, muscle groups/subgroups, flags: unilateral,
+  bodyweight
 
-- **Exercise, all time** — a chart of the trend plus a table of exact date / weight / reps / RIR per set, filterable by meso, deload weeks marked.
-- **Session type, all time** — e.g. every "Push Day A" ever, chart plus a table of date / total volume / avg RIR / duration per occurrence.
-
-The table is the part that actually solves the original complaint — a chart alone still requires hovering over points to read exact values; the table gives the same at-a-glance comparison the OneNote sheet gave.
-
----
-
-## 8. Program View
-
-### 8.1 Weight units (kg/lbs)
-- Preferred unit chosen per program-exercise at program-creation time, defaulting from the global Settings unit.
-- A small, rarely-used override button during logging lets you log a specific set in the other unit.
-- Canonical storage remains kg everywhere (unchanged from v2). All Progress/History numbers convert to the Settings unit for display.
-
-### 8.2 Deferred — static / repeat-plan mode
-Raised as a possible feature for people who don't vary their plan week to week. Deferred to backlog: the existing "copy whole week" action (Section 5) already covers most of this in one tap, and a dedicated mode would add data-model complexity that isn't validated as needed for Adam's own training style. Revisit only if this becomes a real need later.
-
-### 8.3 Deferred — warmup sets
-Real warmup sets performed before each exercise's working sets — not a checklist, not a separate warmup "exercise." Deferred: the shape of this (auto-calculated percentage ramp vs. manual entry, exact default percentages, whether it's a global or per-exercise setting) needs more thought after v3 ships and gets used for a while.
-
-One thing locked in regardless of how the rest resolves: **whenever warmup sets are built, they carry their own flag distinct from working sets in the data model**, so they never enter e1RM, volume, or the Today reference panel — those only ever compare working sets.
-
----
-
-## 9. Library
-
-Default seeded exercise library, so a fresh setup isn't empty. Muscle-group tagging carries over from v2. The exact list of default exercises is TBD at build time.
-
----
-
-## 10. Dropset Restructure
-
-The problem isn't the database — `parent_set_id` can already chain any number of rows. The problem is that a dropset is currently authored as several sibling sets that each happen to carry a flag, instead of being one thing with an ordered list of stages.
-
-**Old model:**
-```
-Set 1 → 100kg × 8, RIR 1
-Set 2 (flagged dropset) → 80kg × 6
-Set 3 (flagged dropset) → 65kg × 5
-```
-
-**New model:**
-```
-Set 1
-  main stage   → 100kg × 8, RIR 1
-  drop stage 1 → 80kg × 6
-  drop stage 2 → 65kg × 5
-  (any number of drop stages — added on the fly, both when
-   planning and spontaneously mid-session)
-```
-
-Applies to both the weekly plan and the session log — a dropset is authored and logged as one unit, with an "add a stage" affordance, no upper limit on stage count.
-
----
-
-## 11. Settings
-
-New in v3:
-- **Measure set time** (on/off) — see Section 4.2
-- More accent colour options (extends the existing accent picker)
-
-Unchanged from v2: theme, existing accent colour system, rest timer disable/buzz, weight unit (kg/lbs display default).
+**User exercise** [P2]
+- either a catalog reference or custom
+- for catalog: personal per-field edits (name, muscle tags, flags)
+- for custom: name, optional second-language name, muscle tags, flags
+- in library (ticked) yes/no
+- exercise notes: free text (machine setup, standing cues)
 
 ---
 
-## 12. Navigation Structure
+## Rules
 
-Unchanged from v2:
-```
-Overload v3
-├── Today
-├── Plan
-├── Progress
-├── History
-├── Program
-└── Library
-```
+### Programs and runs [P1]
+
+- A program stays exactly as it was saved. Running it never changes it, and
+  starting it again later always starts from how it was saved.
+- Activating a program creates a run with its own copy of the plan. The program
+  tab inside the plan screen shows and edits that copy — never the saved
+  program.
+- What the program tab can edit mid-run:
+  - **Design fields** — rest, rest after, tempo, warmup routine, priorities,
+    superset rest, stage rest. They exist only in the run's copy. Editable for
+    both planning types; apply to this run from the next session on.
+  - **Volume** — the exercise list and the sets.
+    - `stable`: editable; weeks not yet planned pick it up, and "Apply this
+      change to planned weeks ahead" covers planned ones.
+    - `week-dependent`: read-only, shown as week 1's reference. Permanent volume
+      changes are made in a week and carry forward through copying.
+- Priorities live on the program and can be changed per run in the plan screen
+  (as today).
+- **Existing programs and runs:** every program a run already points at becomes
+  that run's copy (no existing ids change), and a saved program is cloned from it
+  to be the reusable template.
+
+### Stepped program planner [P1]
+
+1. **Priorities** — skippable. Muscle groups, each unfoldable to subgroups. Each
+   group and subgroup is marked independently: focus, don't care, or left
+   normal.
+   - If a group and one of its subgroups are marked differently, the subgroup's
+     mark applies to that subgroup.
+   - A subgroup with no mark of its own takes its group's mark. (Chest marked
+     focus covers upper chest unless upper chest is marked otherwise.)
+   - The summary is phrased from the group: "chest without upper chest".
+2. **Exercises and order** — exercises per workout, their order, superset
+   grouping, the warmup routine checklist, and the schedule: schedule type, then
+   a weekday per workout (`weekday`) or the sequence order with rest days
+   (`sequence`).
+3. **Volume** — choose `stable` or `week-dependent`, then plan the sets.
+   - `stable`: the sets planned here are the volume for every week, and the
+     program saves with them.
+   - `week-dependent`: only week 1 is planned here, and the program saves with
+     week 1.
+   - The only required value is the number of sets per exercise. Rep targets,
+     set kinds, rest and tempo are optional.
+   - Entering sets stays quick for the plain case: fill all sets of an exercise
+     at once, then adjust individual sets.
+
+### Priorities migration [P1]
+
+- Existing four levels: top → focus; low → don't care; the two middle levels
+  (normal, high) → normal.
+- Mapped marks go onto the active run's copy and onto the saved program cloned
+  from it. Completed runs' marks stay where they are, as history.
+- Run marks are stored only in the new form. Coach keeps reading the old table
+  unchanged, so it sees no priorities for runs started after this build —
+  accepted (Coach is out of scope and will be rebuilt).
+
+### Weeks and copying [P1]
+
+- A week (cycle) gets planned the first time it's opened in the planner, or when
+  it starts, whichever is first. At that moment it's filled from its source, and
+  from then on it's its own week.
+- **Source of a new week's volume:** `stable` → the run's copy, always.
+  `week-dependent` → the last planned week ("copy last week" is the default;
+  a setting lets weeks start empty instead — default for new and existing users: copy).
+- **Source of weight and RIR targets:** the last planned week, for both types.
+- **Tags are never copied.**
+- **Deload sessions are never a copy source.** A week that's partly deload still
+  copies its normal sessions; its deload sessions copy from the last normal
+  occurrence.
+- **"Only this week"** — a tick on swap and reorder actions in the week plan, off
+  by default, `week-dependent` only. When ticked, that change is not copied
+  forward. (For `stable`, every week edit is a one-off already, because new
+  weeks come from the run's copy.)
+- **"Apply this change to planned weeks ahead"** — offered when a week is edited
+  and later weeks are already planned. Applies only the change just made; leaves
+  everything else in those weeks alone. Both planning types.
+- **Stable, permanent mid-run change:** edit the program tab. Weeks not yet
+  planned pick it up; "Apply this change to planned weeks ahead" covers planned
+  ones.
+- The number of weeks stays open-ended, as today.
+- "Copy last week" stays as a manual action.
+- **Adding or removing an exercise in a week** is allowed for both planning
+  types. Week-dependent: it carries forward through copying (unless "only this
+  week" is ticked). Stable: it's a one-off for that week.
+
+### Targets [P1]
+
+- **Weight targets:** per set, in the week plan only. Never in the program.
+- **Rep targets:** per set, in the program. A number, a range, or AMRAP.
+  Optional. The week plan can override a set's rep target for that week.
+- **RIR targets:** per set, in the week plan only. Optional. Stored as one value;
+  shown as RPE when the RPE setting is on [P2] (RPE ≈ 10 − RIR, half-points
+  allowed).
+- **AMRAP:** counts as a normal working set everywhere. Its RIR defaults to 0
+  (RPE 10), editable.
+- A set without a target shows no target.
+
+### Tags [P1]
+
+- Per set, several allowed, in the week plan. Preset list ("push here", "maintain strength",
+  "focus on execution", "push back") plus custom text.
+- "Apply to all sets" fills one tag across an exercise's sets.
+- Shown on the set's row during the workout. Never tracked. Never copied.
+
+### Tempo [P1]
+
+- Per exercise, in the program. Shown next to the exercise during the workout.
+  Not tracked.
+
+### Rest [P1]
+
+- Timer value, most specific first:
+  1. the set's own rest override
+  2. on an exercise's last set: the exercise's "rest after"
+  3. the exercise's rest
+  4. the global rest setting
+- Supersets: no timer between exercises within a round by default; the block's
+  rest after each round. Both overridable per superset.
+  - With no superset override, the rest after a round is the normal chain of
+    the exercise that ends the round.
+  - An exercise's "rest after" never fires inside a round; it applies only
+    after the block's final round.
+  - A set's own explicit rest override wins over "no timer within a round".
+- Staged sets: the staged set's own rest between stages (dropset: no timer;
+  rest-pause, myo-reps, cluster: 15 s by default).
+- Warmup sets follow the same chain.
+
+### Supersets [P1]
+
+- Any number of exercises.
+- Shown as a block of rounds: round 1 = A1, B1, C1; round 2 = A2, B2, C2; …
+- Unequal set counts are allowed. A round can have an empty slot; leftover sets
+  stay inside the block (4 sets of A, 3 of B → 4 rounds, round 4 has only A).
+- The current set zigzags through rounds: A1 → B1 → A2 → B2 …
+- Every reorder (program, week plan, session) moves a superset as one block.
+- Superset grouping is a design field: in a running program it's changed in
+  the program tab, for both planning types, applying from the next session.
+- "Last time" stays per exercise.
+
+### Warmup sets [P1]
+
+- A set kind, planned in step 3. Exercises that don't need warmups simply have
+  none.
+- Never counted in volume, set counts, or "last time" matching.
+- Logged values: weight and reps, both optional; plus a rest timer. Nothing else.
+- Display setting: `rows` (default; numbers optional) or `tick` (tick-off only).
+- [P2] Mandatory fields never apply to warmup sets.
+- Coach stays untouched, so its own summaries will count logged warmups as
+  working sets — accepted (Coach is out of scope and will be rebuilt).
+
+### Warmup routine [P1]
+
+- Per workout, in the program: a checklist shown at the top of the session.
+- Items are ticked off; nothing else is logged.
+
+### Staged sets [P1]
+
+- The dropset machinery generalised. Stage kinds: dropset, rest-pause, myo-reps,
+  cluster.
+- Dropset: as today. Other kinds: each stage's weight carries over from the
+  previous stage by default instead of being dropped.
+- Stages are never counted as separate sets, except in volume (existing rule).
+- Deleting a staged set's head deletes its stages (existing rule).
+
+### Planned staged sets render (fix) [P1]
+
+- A staged set planned in the week plan or program shows every stage on the
+  workout screen from the start, each as a row with weight and reps, each locked
+  until the stage before it is logged.
+- Verification must load a planned dropset into a real session and confirm the
+  stage rows render. Checking stored data alone doesn't catch this regression.
+
+### Deload [P1]
+
+- A deload is a property of a session. "Mark this week as deload" marks every
+  session in that week; a 3-day deload is three sessions marked individually.
+- With no rules switched on, marking only changes how the session is treated
+  (skipped as a copy source and as "last time"). Its contents are planned by
+  hand.
+- With rules on, a deload session is pre-calculated from the **last normal week**:
+  its planned sets, and the weights actually logged in it (planned weight where
+  nothing was logged).
+- Rules are independent and each optional. Global default when rules are turned
+  on: sets −50%, everything else unchanged. A program can override.
+- Rounding is part of the rules (global default, per-program override): sets
+  round down or up, never below 1; weight rounds down or up to a chosen
+  precision step. Defaults: sets round down; weight rounds down to 2.5 kg.
+- Deloads are marked manually only. Scheduled deloads are `later`.
+- Unmarking a session whose sets the rules calculated restores what was planned
+  before it was marked.
+- Reps rule: on a range it shifts both ends; on AMRAP it does nothing.
+- Sets rule: removes the last working sets. A staged set counts as one set.
+  Warmup sets are never touched.
+- If the workout didn't happen in the last normal week (moved away, skipped),
+  the base is its last normal occurrence.
+- Any deload session can still be edited by hand afterwards.
+
+### Scheduling [P1]
+
+**Weekday**
+- Workouts are tied to days of the week (as today).
+- **Move this session to another day, this week only.** A missed workout done at
+  the end of the week = one move; swapping two days = two moves. Today's "do it
+  the next day" is the simplest case of the same action.
+- Moving a session onto a day that already has one leaves both on that day,
+  shown as a list. Sessions per day are therefore not limited to one.
+- Planning two workouts on the same weekday in the program is `later`.
+- **Missed-session prompt:** stays, but only for missed days of the current
+  week. Its "Do it now" becomes a move to today (History shows the day it was
+  actually done). "Mark skipped" stays.
+
+**Sequence**
+- An ordered list of workouts and rest days, not tied to dates.
+- The cycle replaces the week everywhere the week is used (week plan, copying,
+  week-dependent volume, deload shortcut, labels).
+- Rest days count from the last workout done. Do A Monday with two rests planned
+  → B is due Thursday.
+- The sequence only moves forward when a workout is done. Not training on a due
+  day misses nothing; that workout stays next and everything after it shifts.
+- On a rest day, **"Train anyway"** starts the next workout; the remaining rest
+  days before it disappear.
+- **Skip** drops a workout entirely; the sequence moves to the next one, which
+  is due the same day. (Resting needs no action — you just don't train — so Skip
+  is for "I won't do this one, give me the next".)
+- A workout may appear more than once in a sequence (e.g. A, B, A, rest).
+
+### "Last time" reference [P1]
+
+- Deload sessions never count.
+- Crosses run boundaries.
+- **Weekday:** LAST WEEK only when the match is from the immediately preceding,
+  non-deload week. Otherwise LAST TIME + elapsed time. FIRST TIME only when the
+  exercise has truly never been done.
+- **Sequence:** always LAST TIME + elapsed time. EARLIER THIS WEEK is hidden.
+- Matches by exercise; reordering never affects it.
+- If last week's match was a deload session, the reference is LAST TIME from
+  the last normal occurrence.
+- The reach-back (shown when the matched session's sets were all skipped)
+  crosses run boundaries too.
+
+### Volume [P1/P2]
+
+- Warmup sets: never counted.
+- Staged-set stages: count in volume only.
+- [P2] Unilateral: weight × the sum of both sides' reps; still one set.
+- [P2] Bodyweight: added load only (pure bodyweight contributes 0). Permanent
+  rule — body weight varies too much day to day to be meaningful.
+
+### Tracked fields [P2]
+
+- Weight and reps are the set itself; always tracked.
+- RIR/RPE, form rating, set time, energy/pump: each `off` / `optional` /
+  `mandatory`, in settings, applying to every exercise.
+- Form is off by default for new users.
+- Mandatory set field: Log is disabled until it's filled. Never applies to
+  warmup sets.
+- Mandatory session field (energy/pump) missing at finish: the finished session
+  shows a "fill in" marker that leads to the finished-session edit.
+- Any field switched on appears on the current row itself — never under "more".
+  "More" keeps only rare actions (split sides).
+- RIR vs RPE is a display setting over one stored value; switching converts the
+  whole history's display.
+
+### Logging mechanics [P2]
+
+- **Row states:** logged → compact read-only line (weight × reps, plus RIR/form
+  if tracked), Edit opens it; current → every field switched on, plus Log;
+  upcoming → targets only.
+- **Current set** = the first unlogged set in the session's displayed order.
+- **Lock:** Log works only on the current set. Tapping another row makes it
+  current (deliberate two-step). Setting to turn the lock off; on by default.
+- Row actions (make a dropset/stage) appear only on the current set or the one
+  just logged. "Add set" stays once, at the end of the exercise.
+- **"Set added · Undo"** after adding a set.
+- **Delete set:** behind a row menu, with a confirmation step. Logged and
+  unlogged sets, this session only, never touches the plan.
+- Unlogged sets at finish behave as they do today.
+- **Pre-fill:** values shown as grey suggestions, visibly different from typed
+  values. Log accepts them as they are. Source: planned, otherwise last time.
+  Setting: empty / planned / planned, else last time (default).
+- **Reorder this session:** move exercises up or down; supersets move as one
+  block; partly-done exercises can move. Session only. Current set and "scroll
+  to current" follow the new order. History shows the order as performed.
+- **Unilateral split:** a set is one row by default; "split sides" turns every
+  tracked field on that set into L and R values. Mandatory applies to both sides.
+- **Bodyweight:** weight entered as signed added load; shown as "BW", "BW +10",
+  "BW −20". "Last time" compares added load.
+
+### Finished session [P2]
+
+- Edit button for energy, pump and notes that does not reopen the session;
+  workout time stays intact.
+- Shows clock times (e.g. 19:00–21:32). Session history shows them too.
+
+### Exercise notes [P2]
+
+- Per exercise, per user, persistent across programs: machine setup and standing
+  cues.
+- Editable from the workout screen and the exercise's library page. The program
+  planner shows them read-only.
+
+### Login [P2]
+
+- New accounts: Google sign-in only. Email signup removed.
+- Existing email accounts: email + password sign-in stays.
+- Signing in with Google on the same address as an existing account links them
+  automatically (existing accounts were all verified).
+- Password reset works end to end (fix, with the confirmation-page error).
+- Repo fact for `CONTEXT.md`: new test accounts are created in the Supabase
+  dashboard, since email signup no longer exists.
+
+### Library [P2]
+
+- One shared catalog. A user's library = catalog exercises they've ticked + their
+  custom ones.
+- Users can edit catalog exercises for themselves (name, muscle tags, flags).
+  Edited fields stay as edited; unedited fields update when the catalog improves.
+- **Picker** (program planner, mid-workout add and swap): searches the user's
+  library first, then the catalog. Adding a catalog exercise ticks it into the
+  library automatically. Not found → "Create '…'" as a custom exercise on the
+  spot.
+- **Remove from library:** hides it from pickers and the library list; history
+  stays; can be added back. Unticking a catalog exercise is this action; today's
+  archive becomes this action.
+- **Delete:** only for exercises with no logged data.
+- **Merge into another exercise:** moves all history onto the target; the merged
+  exercise disappears. Replaces "lost exercises".
+- The downloadable-libraries feature is retired.
+- Migration: each user's seeded copies are connected to their catalog entries;
+  any existing user edits carry over as personal edits. Changes stored data →
+  blocking decision at build time.
+
+### Language [P2]
+
+- Polish and English UI, every screen except Coach. Follows the device; override
+  in settings. Polish date formats.
+- Translated: UI text, muscle groups, preset tags, set-kind names. Never
+  translated: anything a user typed.
+- Exercise names: every catalog exercise has both names. Exercise-name language
+  is its own setting (defaults to the app language). Search always matches both.
+  Custom exercises: one name, optional second.
+- The Polish exercise-name list is a deliverable Adam reviews before it's loaded.
+- Build order: the translation setup comes first in phase 2, so every new string
+  in phase 2 is translatable from day one. The full translation pass comes last.
+
+### Navigation and settings
+
+- [P1] The program screen folds into the plan screen as its program tab.
+- [P2] Bottom bar: Today, Plan, History, Library, Settings. Progress and Coach
+  become tabs inside History; Coach is otherwise untouched.
+- [P2] Settings grouped: Workout (logging and tracking), Planning (deload
+  defaults, week start), Language, Appearance.
+
+### Removals [P1]
+
+- The note section shown when editing a logged set is removed.
+- Suggested reps per program exercise are replaced by per-set rep targets.
+  Removing the old field changes stored data → blocking decision at build time.
 
 ---
 
-## 13. Out of Scope for v3
+## Screens
 
-| Feature | Status |
-|---|---|
-| Static / "repeat-plan" weekly mode | Deferred — copy-last-week covers most of the need |
-| Warmup set calculator / dedicated logging | Deferred — needs more design thought after real usage |
-| Coach / sharing feature | Not planned — not a personal-tool need |
-| Planned supersets | Still deferred (carried from v2) |
-| Body weight / measurements, cardio tracking | Separate extensions (carried from v2) |
-| AI coaching | Atlas-level feature (carried from v2) |
-| Apple Watch / wearables, social / sharing | Out of scope (carried from v2) |
+### Plan screen [P1]
+
+- **Program tab:** the run's copy of the plan — priorities, workouts, exercises,
+  order, sets, targets, rest, tempo, warmup routine. Edits change this run only,
+  as limited in Rules → Programs and runs (volume read-only for week-dependent).
+- **Weeks (cycles):** week switcher, open-ended. Each session shows its exercises
+  and sets with weight, rep and RIR targets and tags.
+  - Actions: edit any value; swap or reorder exercises (with "only this week"
+    for week-dependent); mark session or week as deload; copy last week; "Apply
+    this change to planned weeks ahead" after an edit when later weeks are
+    planned.
+  - Deload sessions are visibly marked.
+- **Empty states:** no active run → "Start a program", leading to the planner.
+  A week-dependent run whose weeks start empty → "Copy last week" on the empty
+  week.
+
+### Programs page [P1]
+
+- Reached from the plan screen's header (the program screen no longer has a
+  tab of its own).
+- **Saved programs:** each with "Open in planner" and "Start".
+- **Active run:** "End run".
+- **Completed runs:** each with delete and its priorities pages.
+
+### Program planner [P1]
+
+- Three steps as in Rules. Back and forward between steps; priorities skippable.
+- Saving stores the program as it is; activating creates a run.
+- **Empty state:** a new workout with no exercises → "Add an exercise".
+
+### Today / workout screen [P1 rendering; P2 logging mechanics]
+
+- [P1] Warmup routine checklist at the top. Supersets as blocks of rounds. Warmup
+  sets per the display setting. Staged sets with locked stage rows. Tags on set
+  rows. Tempo next to the exercise. Rest timer per the rest chain. "Last time"
+  per the rules.
+- [P1] Sequence run, rest day: shows the next workout and "Train anyway".
+- [P1] Weekday run: "Move this session" action.
+- [P2] Row states, lock, pre-fill, tracked fields on the row, undo, delete set,
+  reorder this session, split sides, bodyweight entry, exercise notes.
+- [P1] Several sessions on one day are listed; each opens on its own.
+- **Empty state:** no session today → the next scheduled session and when it's
+  due; on a sequence rest day, "Train anyway".
+
+### Finished session [P2]
+
+- Summary, clock times, edit for energy/pump/notes, "fill in" marker when a
+  mandatory rating is missing.
+
+### History [P2 for the tab change]
+
+- Gains Progress and Coach as tabs. Session list shows clock times.
+
+### Library [P2]
+
+- The user's library (ticked + custom), searchable in both languages; catalog
+  browsing with tick/untick. Exercise page: names, muscle tags, flags (editable
+  as personal edits), notes, remove/delete/merge.
+- **Empty states:** new user with nothing ticked → "Browse the catalog". Library
+  or picker search with no match → "Create '…'".
+
+### Sign-in [P2]
+
+- "Continue with Google"; "Sign in with email" for existing accounts; password
+  reset. No signup form.
+
+### Settings [P1 additions; P2 regroup]
+
+- [P1] Warmup display; default deload rules; week start (copy / empty).
+- [P2] Grouped as above, with tracked-field switches, effort scale, pre-fill,
+  set lock, both language settings.
 
 ---
 
-## 14. Key Differences from v2
+## Later (next-version notes)
 
-| v2 | v3 |
-|---|---|
-| Reference panel: single LAST WEEK/LAST TIME slot, ~10-day rolling threshold | Two slots: meso-week-anchored primary slot + additive "this week" list |
-| Rest timer counts set-performance time as rest | Optional Start Set flow isolates true rest + adds avg set duration stat |
-| Note only editable by reopening a session | Dedicated edit-note action on the completed-state Today screen |
-| Progress = per-exercise charts + meso stats dashboard | Progress adds a per-exercise "already compared" % headline (e1RM-based) |
-| History = individual session detail only | History adds cross-meso chart + table views (exercise-level, session-type-level) |
-| kg/lbs is a single global display setting | Preferred unit set per program-exercise, with a logging-time override |
-| Dropset = N sibling sets each individually flagged | Dropset = one set with an ordered list of N stages |
-| No default exercise library | Seeded default library on fresh setup |
+- Anything coach- or trainer-related; sharing a plan (first thing the trainer
+  version builds on)
+- Plan templates, workout templates, skeleton templates
+- Cardio sessions and timed holds
+- Weight targets as a percentage of 1RM/e1RM
+- Which gym a session was in
+- Pain/discomfort flags
+- Partials, negatives, forced reps
+- Form rating improvement — form = bar path + depth + tempo
+- Weight log for all users
+- Progress screen rebuild
+- Double progression: applies to rep ranges; trigger options (all sets / first
+  set / N sets at the top of the range); whether RIR must match; weight step per
+  exercise with a global default; suggest, don't write; optional reverse when
+  missing the bottom of the range
+- Open-ended sets: total-reps target (a coached lifter had 40 total reps, 2 min
+  rest between sets) and sets until a set falls short (Adam's own plan) — one
+  structure with two stop conditions
+- Calendar view and plan history (planned side of past runs)
+- Run length (fixed-length runs) and scheduled deloads ("every Nth week")
+- Planning two or more workouts on the same weekday
+- Custom home screen (reminders, e.g. to plan next week)
+- New-user guide
 
----
+## Not this build (context only)
 
-## 15. Success Criteria for v3
-
-Overload v3 is successful when:
-- You can glance at the Today screen and know exactly how this session compares to last week and to any earlier session this week, without doing date math in your head
-- A dropset with any number of stages takes one action to plan and one action to log — never several sibling sets to keep straight
-- History lets you compare exact numbers yourself the way your old OneNote sheet did — no external notes app needed for that anymore
-- Progress tells you, per exercise, whether it's actually working — a number you read, not a chart you have to interpret
-- The reopened-session bug and the rest-timer-includes-set-time issue, both surfaced through real usage, are gone
-
----
-
-*This document is the source of truth for v3. Claude Code should read this before any technical planning begins.*
+- Platform for personal trainers and their trainees; later for companies
+  managing trainers
+- Expanding and improving AI features
+- Notifications
