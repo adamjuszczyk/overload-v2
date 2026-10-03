@@ -9,11 +9,7 @@
 
 ## Spec gaps
 
-The first round (G1–G14) is answered in SPEC.md and applied to the chunks; their numbers are kept where chunks cite them in history only. One new gap came from the answers:
-
-**G15 · The one existing "Do it now" session in History.**
-SPEC now says "Do it now" becomes a move to today and "History shows the day it was actually done". L4 found one session created the old way: dated 2026-08-29, started 2026-08-30. New moves record `moved_to_date`, so History can show the day done; this old row has none. Backfill its `moved_to_date` to 2026-08-30 (a one-row data change), or leave it showing 2026-08-29 as history?
-Blocks: only the optional backfill line in chunk 24; the rest of chunk 24 proceeds.
+The first round (G1–G14) is answered in SPEC.md and applied to the chunks; their numbers are kept where chunks cite them in history only. No spec gap is open.
 
 ---
 
@@ -260,6 +256,7 @@ Existing layout is kept (`src/features/<area>/`, pure logic in testable modules,
 | `src/features/plan/SetTargetsEditor.tsx`, `TagPicker.tsx` | 19 | per-set targets and tags in the week plan |
 | `src/features/plan/applyAhead.ts` (+ test) | 20 | applies one recorded change to later planned weeks |
 | `src/lib/deloadRules.ts` (+ test), `src/features/settings/DeloadRulesEditor.tsx` | 22 | rules calculator and its editor |
+| `supabase/migrations/0NN_backfill_moved_to_date.sql` | 24 | one-row backfill of the legacy "Do it now" session |
 | `src/features/gym/referenceByExercise.ts` (+ test) | 23 | new resolver beside the untouched `referenceLogic.ts` |
 | `src/features/gym/MoveSessionSheet.tsx` | 24 | move a session within the week |
 | `src/features/programs/runProgramExercises.ts` (+ test) | 9 | the one helper every read of a run's program exercises goes through |
@@ -485,8 +482,9 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 
 ### Chunk 24 — Weekday runs: move a session, several sessions a day
 **Goal:** In a weekday run any session can be moved to another day of the same week, a day can hold several sessions (listed, each opening on its own), and Today's empty state shows the next scheduled session and when it's due.
-**Scope:** "Move this session" on Today and in Plan writes `moved_to_date` (creating a `planned` session row when the session hasn't started); `scheduler.ts` returns the sessions due today (scheduled and not moved away, plus moved here); `TodayPage` lists them; one session in progress at a time, as today; the empty state. Missed-session prompt per SPEC (G6): it stays, but only for missed days of the **current** week (the 7-day look-back across weeks goes); its "Do it now" becomes a move to today (the session keeps `date` = the day it was for, gets `moved_to_date` = today); "Mark skipped" stays. History shows the day a session was actually done — `moved_to_date` when set, else `date` — in the session list, session detail and session-type history (`historyService` / `HistorySessions` / `SessionDetail`); the week a session belongs to still comes from `date`, which keeps week plans and Coach's week resolution unchanged. Optional, per G15: backfill `moved_to_date` on the one legacy "Do it now" session.
-**Depends on:** 8. **Blocked by:** G15, for the optional backfill only.
+**Scope:** "Move this session" on Today and in Plan writes `moved_to_date` (creating a `planned` session row when the session hasn't started); `scheduler.ts` returns the sessions due today (scheduled and not moved away, plus moved here); `TodayPage` lists them; one session in progress at a time, as today; the empty state. Missed-session prompt per SPEC (G6): it stays, but only for missed days of the **current** week (the 7-day look-back across weeks goes); its "Do it now" becomes a move to today (the session keeps `date` = the day it was for, gets `moved_to_date` = today); "Mark skipped" stays. History shows the day a session was actually done — `moved_to_date` when set, else `date` — in the session list, session detail and session-type history (`historyService` / `HistorySessions` / `SessionDetail`); the week a session belongs to still comes from `date`, which keeps week plans and Coach's week resolution unchanged. Per SPEC: the one existing session created by the old "Do it now" (dated 2026-08-29, done 2026-08-30; L4) gets `moved_to_date` = 2026-08-30, so History shows the day it was actually done — a one-row data change, made by migration (see Migration below).
+**Depends on:** 8.
+**Migration:** one-row backfill, an `update` on `v2_sessions` that sets `moved_to_date` = 2026-08-30 on the one session L4 found (selected by `user_id` = Adam, `date` = 2026-08-29, `moved_to_date` is null, completed, and `started_at` on 2026-08-30 — never by a guessed id; run the same select first and record that it returns exactly one row). **Not destructive** — it fills a column that is null on every existing row and changes nothing else; idempotent. Rollback: set that row's `moved_to_date` back to null. `check-migration`: exit 1 (an update on an existing table is not on its safe list) — recorded in a blocking DECISIONS.md entry; the migration is applied by you, and goes live before the code that reads `moved_to_date` for History. Adam-scoped count of `v2_sessions` before and after (unchanged) and of rows with `moved_to_date` not null (0 → 1); hash/length check of the applied text. Needs the `moved_to_date` column from chunk 1 (027).
 **Live (L4):** one existing session was done on a later day than its date (dated 2026-08-29, started 2026-08-30, completed) — the old DO IT NOW shape.
 **Fact — today's skip / do it the next day:** verified by running the production `schedule()` (scenarios S0–S10) and reading the prompt and services:
 - The scheduler walks from 7 days back — never before the meso start — to yesterday; a weekday the program schedules is **missed** unless *some* session dated that day is `completed`, `in_progress` or `skipped`, whichever workout it is (S0, S6, S7). Last week's days are included (S6). A `planned`-status row doesn't count (S9).
@@ -495,8 +493,8 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 - **MARK SKIPPED** inserts a `skipped` row for the missed date, or marks an existing row skipped (`skipMissedSession`; S5); online only (`useSkipMissedSession` has no offline branch).
 - **Dismiss** (X or backdrop) skips to today's workout for that screen mount only (`useState`), writes nothing, and the prompt returns on the next mount until the day leaves the 7-day window (S2).
 - One workout on two weekdays: both dates are expected and share one plan row (S8). `completed_today` looks only at sessions dated today (S10).
-**Verification:** scheduler unit tests (move Mon → Fri; swapping two days = two moves; moving onto a day that has one → both listed; a missed day of the current week is prompted, a missed day of last week is not; "Do it now" yields `date` = missed day, `moved_to_date` = today); live: move a planned session, Today shows it on the target day and not on the original; a `planned` row with `moved_to_date` exists (Adam-scoped); after training it, History lists it on the day done. **Would not catch:** sequence runs (chunk 25).
-**Done when:** moves and multi-session days work live.
+**Verification:** scheduler unit tests (move Mon → Fri; swapping two days = two moves; moving onto a day that has one → both listed; a missed day of the current week is prompted, a missed day of last week is not; "Do it now" yields `date` = missed day, `moved_to_date` = today); live: move a planned session, Today shows it on the target day and not on the original; a `planned` row with `moved_to_date` exists (Adam-scoped); after training it, History lists it on the day done; the backfilled legacy session (Adam-scoped) shows 2026-08-30 in History's list, detail and session-type history and still carries `date` 2026-08-29. **Would not catch:** sequence runs (chunk 25).
+**Done when:** moves and multi-session days work live, and the legacy session shows the day it was actually done.
 
 ### Chunk 25 — Sequence runs
 **Goal:** A program can run as an ordered sequence of workouts and rest days not tied to dates, the cycle replacing the week everywhere the week is used.
@@ -540,7 +538,7 @@ Phase 1 changes no Coach code (SPEC: Coach stays exactly as it is, and is out of
 | L1 deload rows | No week plan has ever been marked deload | fact 1; chunks 8, 21 |
 | L2 priorities | MESO 1.0 (completed) and MESO 2.0 (active) have rows. Active: groups top 1, high 2, normal 3, low 4; subgroups top 2, high 3, low 5. Constraint exactly the four values | fact 2; chunk 10 |
 | L3 runs | 1 active, 2 completed; indexes: primary key and non-unique `(user_id, status)` only | fact 3; chunk 6 |
-| L4 late sessions | One: dated 2026-08-29, started 2026-08-30, completed | fact 4; chunk 24, G15 |
+| L4 late sessions | One: dated 2026-08-29, started 2026-08-30, completed | fact 4; chunk 24 (backfill) |
 | L5 programs | Three programs, each used by exactly one meso (one active) — no completed meso shares the active meso's program | chunks 6, 10 |
 | L6 workout on two weekdays | None | chunks 8, 11, 21 (G14 void) |
 | L7 set-log check | Named `v2_set_logs_check`, as in 001; 0 warmup logs, 0 warmup planned sets | chunk 15 |

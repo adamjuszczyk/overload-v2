@@ -350,6 +350,9 @@ rule independent and optional:
 - **Missed-session prompt:** stays, but only for missed days of the current
   week. Its "Do it now" becomes a move to today (History shows the day it was
   actually done). "Mark skipped" stays.
+- The one existing session created by the old "Do it now" (dated 2026-08-29,
+  done 2026-08-30) gets its moved-to date filled in, so History shows the day
+  it was actually done.
 
 **Sequence**
 - An ordered list of workouts and rest days, not tied to dates.

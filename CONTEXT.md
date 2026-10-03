@@ -2,37 +2,14 @@
 *Current state only. Finished work and build logs live in HISTORY.md; settled decisions live in DECISIONS.md.*
 
 ## What this is
-A strength training PWA for a serious intermediate-to-advanced lifter. 
-Three-layer architecture: Program (what exercises) → Weekly Plan 
-(sets + RIR targets per session per exercise) → Session Log 
-(what actually happened). Single user, Supabase backend, shared 
-project with Northstar v2.
+Overload is a strength training PWA for a serious intermediate-to-advanced lifter: programs, weekly planning, live session logging and history. It is three layers — Program (what exercises) → Weekly Plan (sets + RIR targets per session per exercise) → Session Log (what actually happened) — on a Supabase backend shared with Northstar v2, single user.
+
+This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.md. Phase 2 and SPEC's "Later" list are not being done.
 
 ## Where the build is
-As of 2026-10-03 (master `a61d731`; this session's docs on branch `claude/gallant-wozniak-m387rg`; last app commit `2b28fab`, 2026-09-13).
-- **v3 plan (TASKS-v3.md §4, 36 items, Phases 3.0–3.8): complete and deployed** (2026-08-10).
-- **Coach, all built and live unless noted:** Daily Session Analysis v1 (2026-08-18); Weekly Analysis (2026-08-23); Personalization phases 1–5 (ratings, notes, memory, prompt wiring); Exercise Library rework (shipped 2026-08-30); AI Q&A Sidebar (live 2026-09-02); Priority Context (Phases 1–4 done 2026-09-03); swap-exercise + Coach swap recognition (`PROMPT_VERSION 7`, deployed 2026-09-04).
-- **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
-- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
-- **2026-09-29:** repo moved to a new file layout — CONTEXT.md (current state, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`), HISTORY.md (the prior CONTEXT.md, verbatim), DECISIONS.md (settled decisions; new entries use the format at its top). No code or migrations changed.
-- **2026-10-01:** added `scripts/verify-rls.mjs`, a read-only RLS check (see Tooling and tests). Ran against the live project on 2026-10-03, in this session's boundary script sweep (the four variables are set in this environment): 25 tables, 50 probes, 50 pass, 0 leak, 0 fail, exit 0. No app code or migration changed.
-- **Deploy failures reported by Adam on master (2026-09-29), both addressed:** (1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR [#3](https://github.com/adamjuszczyk/overload-v2/pull/3) (merged 2026-09-30). (2) The Supabase deploy failed with `relation "v2_programs" already exists`, because Supabase's migration history never recorded 001–026 (applied by hand) and v1's migrations aren't in the repo; resolved by turning Supabase's automatic deploys and preview branches off (Adam, 2026-09-29) — migrations are now applied by hand (see Repo facts and Reviewer's own rules). No migration was changed.
-- **2026-10-03 — Overload Planner Extension planned (no code or migrations changed):** SPEC.md is its spec (two phases; every item tagged [P1] or [P2]), updated the same day with answers to the first round of spec gaps; TASKS.md is its phase-1 plan, a draft — 26 chunks in build order, the four [P1] facts verified next to their chunks, scratch-copy results R1–R16, and Adam's live-data results L1–L8 (no deload ever marked; priorities only on MESO 1.0 and 2.0; 1 active run; one legacy DO IT NOW session; three programs, one meso each; no workout on two weekdays; `v2_set_logs_check` named as in 001, no warmups; 26 of 82 program exercises have suggested reps). One open gap, G15, blocks only an optional one-row backfill in chunk 24. The v3 spec and plan are Overload-v3-SPEC.md / TASKS-v3.md. Phase-1 chunk 1 is planned as migration 027.
-- **Next migration number: 027.**
-- **Open items (real, not started or unresolved):**
-  - Planner Extension phase 1: spec gap G15 (TASKS.md top) waits on Adam; nothing else blocks chunk 1.
-  - PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03: commit `f5a5cc2` is only on `origin/claude/modest-shannon-7ysqic`). This session's own live run on 2026-10-03 gave the same totals.
-  - Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
-  - Unconfirmed whether closed: the old log carried one Q&A check past 2026-09-02 — the in-session conversation through the workout sheet's own UI, which needs a real in-progress session.
-  - `ProgramPage.tsx` `handleStartMeso` has no try/catch or error UI; offline/failed meso creation fails silently (meso creation is online-only by design).
-  - `historyService.ts` `fetchHistoryDetail`/`deleteSession` rely on RLS alone (no `.eq('user_id')`); harmless while `sessionId` only comes from the user's own list — revisit if a session-id URL route is added.
-  - Daily analysis row `738a60a4-f108-4167-ae43-27268b22c0b4` (session `c111f9ac-…`, 2026-09-03, `PROMPT_VERSION 6`) reads a real swap as two unrelated facts and can never be corrected (permanent row).
-  - Planned-vs-forced swap wording: `swaps` carries no reason field, so the model can still word a forced swap as planned unless `sessionNotes` says why.
-  - Residual set-delete concurrency edges: post-cascade renumbering reads a render-time snapshot; `useLogSet`'s single `offlineTempIdRef` is shared across exercises.
-  - `rest_seconds` changes meaning when `measure_set_time` is on (true rest vs time since last log); AVG REST TIME charts show a step change, no marker yet.
-  - E4 (REDO lossy without warning); Q1 (hardcoded colours remain in History, Settings, Program builder, a few modal backdrops); A2 (no unique identity for a WeekPlanSet edited mid-session — improved, not closed); "set notes unwritable" half of M5 (`GymSession.tsx` hardcodes `note: null`).
-  - Backlog: warmup-sets handling (planned as Planner Extension phase-1 chunk 15); Settings rework with a Coach tab; tone calibration; AI equipment substitution; selective memory retrieval. Not planned: month analysis, live mid-workout energy/pump, swap-exercise mid-set.
-  - Standing risk: Overload, Northstar (and formerly Atlas) share one Supabase project and the `exercises` table; `exercises.source_library_id` is the first FK from it into a `v2_` table. Northstar's source isn't visible from here.
+- Current chunk: 1.
+- Finished: none.
+- Waiting on me: none.
 
 ## What exists
 Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`.
@@ -98,6 +75,7 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
   - date-fns v4
   - React Router v6
   - Lucide React
+  - Stack additions this build: none.
 - Supabase deploys migrations from main: no — applied by hand
   in the SQL Editor. Automatic deploys and preview branches are
   off: Supabase's history never recorded 001–026, and v1's
@@ -110,8 +88,26 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 - Commands: `npm run typecheck` (app + api tsconfigs), `npm test`, `npm run build`, `node scripts/check-context-size.mjs`, `node scripts/verify-rls.mjs` (needs the four variables above). Dev server: `.claude/launch.json` "Overload v2 dev" (port 5173); plain `vite` does not run `api/**`.
 - Set Vercel env vars with `vercel env add` (more reliable than dashboard automation) and redeploy for them to take effect.
 - Env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (both must be stripped of non-ASCII/invisible characters), `VITE_COACH_USER_ID`, server `COACH_USER_ID`, `ANTHROPIC_API_KEY`. `.env.local` is gitignored. `verify-rls.mjs` also reads `RLS_TEST_EMAIL` and `RLS_TEST_PASSWORD` (a test account that owns no data; never Adam's).
-- Docs: SPEC.md = Overload Planner Extension spec (phases 1–2); TASKS.md = its phase-1 plan (draft, 2026-10-03). Overload-v3-SPEC.md / TASKS-v3.md = the v3 spec / plan (shipped). Overload-v2-SPEC.md / TASKS-v2.md = v2 originals, still accurate for the shipped foundation. Code comments written before 2026-10-03 that cite "SPEC.md §n" / "TASKS.md §n" with no prefix mean the v3 files. AUDIT.md = Fable 5 audit (fixed and deferred). Each initiative has its own SPEC/TASKS pair with its own section numbering (COACH-ANALYSIS-*, COACH-WEEK-ANALYSIS-*, COACH-PERSONALIZATION-*, EXERCISE-LIBRARY-* (+PROVENANCE), QA-SIDEBAR-*, PRIORITY-CONTEXT-*); COACH-EXERCISE-TAGS.md is the approved tag list.
+- Docs: SPEC.md = Overload Planner Extension spec (phases 1–2; it answers every gap G1–G15 raised against it). TASKS.md = its phase-1 plan (draft, 26 chunks in build order; no spec gap is open; the legacy "Do it now" backfill is part of chunk 24). Overload-v3-SPEC.md / TASKS-v3.md = the v3 spec / plan (shipped). Overload-v2-SPEC.md / TASKS-v2.md = v2 originals, still accurate for the shipped foundation. Code comments written before 2026-10-03 that cite "SPEC.md §n" / "TASKS.md §n" with no prefix mean the v3 files. AUDIT.md = Fable 5 audit (fixed and deferred). Each initiative has its own SPEC/TASKS pair with its own section numbering (COACH-ANALYSIS-*, COACH-WEEK-ANALYSIS-*, COACH-PERSONALIZATION-*, EXERCISE-LIBRARY-* (+PROVENANCE), QA-SIDEBAR-*, PRIORITY-CONTEXT-*); COACH-EXERCISE-TAGS.md is the approved tag list.
+- File layout: CONTEXT.md is current state only, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`; HISTORY.md is the prior CONTEXT.md verbatim plus everything moved out of this file later; DECISIONS.md holds settled decisions, and new entries use the format at its top.
+- **Next migration number: 027.**
 - Session start: read CONTEXT.md, then DECISIONS.md, then the SPEC/TASKS sections the task names; read HISTORY.md only to trace why something is the way it is.
+
+### Open items and known issues (real, not started or unresolved; none is part of this build)
+- **Mesocycle Analysis: Phases 1–6 are in the code** (migration 026, `analyze-meso.ts`, `mesoAnalysisInput.ts`, `coachMesoPrompt.ts` v2, Meso sub-tab; commits 2026-09-04 → 2026-09-12), but **no meso analysis has been generated yet: Vercel timeouts stop the generation** (Adam, 2026-09-29; the exact failure was not re-observed this session). No build-log entry for it exists in CONTEXT.md/HISTORY.md, and MESOCYCLE-ANALYSIS-SPEC.md / -TASKS.md are not in the repo — its lines under "What exists" come from code and commit messages only.
+- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said "not deployed — not asked to".
+- PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03, re-checked this session: commit `f5a5cc2` is on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not on `origin/master`). This session's own live run on 2026-10-03 gave the same totals.
+- Reassignment (`reassign_exercise_history`) has never been run against Adam's real exercise history — first real merge needs its own go-ahead.
+- Unconfirmed whether closed: the old log carried one Q&A check past 2026-09-02 — the in-session conversation through the workout sheet's own UI, which needs a real in-progress session.
+- `ProgramPage.tsx` `handleStartMeso` has no try/catch or error UI; offline/failed meso creation fails silently (meso creation is online-only by design).
+- `historyService.ts` `fetchHistoryDetail`/`deleteSession` rely on RLS alone (no `.eq('user_id')`); harmless while `sessionId` only comes from the user's own list — revisit if a session-id URL route is added.
+- Daily analysis row `738a60a4-f108-4167-ae43-27268b22c0b4` (session `c111f9ac-…`, 2026-09-03, `PROMPT_VERSION 6`) reads a real swap as two unrelated facts and can never be corrected (permanent row).
+- Planned-vs-forced swap wording: `swaps` carries no reason field, so the model can still word a forced swap as planned unless `sessionNotes` says why.
+- Residual set-delete concurrency edges: post-cascade renumbering reads a render-time snapshot; `useLogSet`'s single `offlineTempIdRef` is shared across exercises.
+- `rest_seconds` changes meaning when `measure_set_time` is on (true rest vs time since last log); AVG REST TIME charts show a step change, no marker yet.
+- E4 (REDO lossy without warning); Q1 (hardcoded colours remain in History, Settings, Program builder, a few modal backdrops); A2 (no unique identity for a WeekPlanSet edited mid-session — improved, not closed); "set notes unwritable" half of M5 (`GymSession.tsx` hardcodes `note: null`).
+- Backlog: warmup-sets handling (planned as Planner Extension phase-1 chunk 15); Settings rework with a Coach tab; tone calibration; AI equipment substitution; selective memory retrieval. Not planned: month analysis, live mid-workout energy/pump, swap-exercise mid-set.
+- Standing risk: Overload, Northstar (and formerly Atlas) share one Supabase project and the `exercises` table; `exercises.source_library_id` is the first FK from it into a `v2_` table. Northstar's source isn't visible from here.
 
 ## Escalation criteria
 Stop and report to Adam (do not route around, do not ask "should I continue without it") when:
@@ -131,6 +127,10 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
 13. Any change beyond the chunk's stated scope in TASKS.md.
 14. Anything SPEC.md is ambiguous or silent about.
 15. A failed production database deploy after any merge.
+16. Any change to Coach code (`src/features/coach/*`, `api/coach/*`), or to the existing exports of `referenceLogic.ts` or `setGroupLogic.ts`.
+17. Any live check that writes (a throwaway program, run, session or set).
+18. Any run of `scripts/verify-rls.mjs`.
+19. Any UI that can't be built from the app's existing components and design tokens. Builders never invent a new visual language.
 
 ## Reviewer's own rules
 - Verify against the real thing. A passing check proves only
@@ -223,7 +223,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - Apply additive migrations before deploying code that writes the new columns (e.g. `measure_set_time` before `settingsService` sends it).
 - Scratch copy for checking a migration: a local PostgreSQL cluster under `/var/lib/postgresql/` (a cluster inside the session scratchpad dies when the harness resets the scratchpad's permissions to root-only); the Supabase/v1 stand-ins (auth schema + `auth.uid()`, `anon`/`authenticated` roles with Supabase's default grants, v1's `exercises`) are written out in TASKS.md; 001–026 replay cleanly on PostgreSQL 16.
 - Live schema probe that reads no data: `GET /rest/v1/<table>?select=<columns>&user_id=eq.<Adam>&limit=0` with the anon key answers `200 []` when every column exists and `400 / 42703` when one doesn't — always include a made-up-column control.
-- Migrations 004–026 are numbered in `supabase/migrations`; TASKS.md numbering was corrected once (008 reference index displaced the history-views slot) — trust the folder.
+- Migrations 004–026 are numbered in `supabase/migrations`; TASKS-v3.md numbering was corrected once (008 reference index displaced the history-views slot) — trust the folder.
 
 **Verification and process**
 - Live browser verification against real data is a hard gate whenever a task calls for it (see Escalation 1). Live tests write only with an explicit go-ahead.
