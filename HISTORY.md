@@ -22505,3 +22505,7 @@ Migrations are now applied by hand; Supabase automatic deploys and preview branc
 - "As of 2026-09-29 (repo HEAD `748c01b`, last app commit `2b28fab`, 2026-09-13)" — HEAD is now `4f8a268` (PRs #3 and #4 merged); the last app commit is unchanged.
 - "(1) Vercel rejected `ignoreCommand` (over 256 characters) — replaced in PR #3 (open, not merged)" — PR #3 was merged on 2026-09-30.
 
+## 2026-10-01 (second session) — Moved out of CONTEXT.md (no longer true)
+
+- "It has **not been run against the real database** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `RLS_TEST_EMAIL` and `RLS_TEST_PASSWORD` weren't set in the dev environment. Only its pass/leak/fail/exit-code logic was exercised, against a local mock server." — the four variables were set in the next session's container and the script was run for real: 25 tables, 50 probes, 50 pass, 0 leak, 0 fail.
+- "Never run against real data yet: first real run is Adam's, with the test account's credentials." — superseded by the run above.
