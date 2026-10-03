@@ -22518,3 +22518,12 @@ Previous wording, verbatim:
 - "- Docs: SPEC.md / TASKS.md = v3 product spec / plan. Overload-v2-SPEC.md / TASKS-v2.md = v2 originals, still accurate for the shipped foundation." — SPEC.md / TASKS.md are now the Planner Extension spec and its phase-1 plan; the v3 pair was renamed Overload-v3-SPEC.md / TASKS-v3.md, contents unchanged.
 - "- **2026-10-01:** added `scripts/verify-rls.mjs`, a read-only RLS check (see Tooling and tests). It has **not been run against the real database** — `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `RLS_TEST_EMAIL` and `RLS_TEST_PASSWORD` weren't set in the dev environment. Only its pass/leak/fail/exit-code logic was exercised, against a local mock server. No app code or migration changed." — it was run against the live project on 2026-10-03 (all 50 probes passed).
 - "Never run against real data yet: first real run is Adam's, with the test account's credentials." — same run.
+
+---
+
+## 2026-10-03 (second session) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- **2026-10-03 — Overload Planner Extension planned (no code or migrations changed):** SPEC.md is now its spec (two phases; every item tagged [P1] or [P2]); TASKS.md is its phase-1 plan, a draft — 26 chunks in build order, 14 spec gaps (G1–G14) that block named chunks, scratch-copy results R1–R15, the four [P1] facts verified next to the chunks that use them, and Adam-scoped live checks L1–L8. The v3 spec and plan were renamed Overload-v3-SPEC.md / TASKS-v3.md, contents unchanged. Phase-1 chunk 1 is planned as migration 027." — SPEC.md answered G1–G14 and Adam ran L1–L8; TASKS.md was revised.
+- "  - Planner Extension phase 1 waits on Adam: answers to spec gaps G1–G14 (TASKS.md top), and the live-data checks L1–L8 in his SQL Editor session — the data side of the facts (deload rows, priority levels, active runs, DO IT NOW sessions, a workout on two weekdays) is verified on code and a scratch copy only." — answered; only G15 remains.

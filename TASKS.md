@@ -1,7 +1,7 @@
 # TASKS.md — Overload Planner Extension, phase 1
 
 **Spec:** SPEC.md (Overload Planner Extension). This file plans the **[P1]** items only. Every [P2] item is out of scope; where a P1 chunk touches something phase 2 extends, the chunk stops at the P1 edge and says so.
-**Status:** draft, written 2026-10-03 in a planning-only session — no application code was written. A chunk does not start while a spec gap that blocks it is open.
+**Status:** draft, written 2026-10-03 in planning-only sessions — no application code was written. Revised the same day after SPEC.md answered the first round of gaps (G1–G14, now applied below) and Adam ran live checks L1–L8.
 **Predecessors:** TASKS-v3.md (the v3 plan, shipped) and TASKS-v2.md. Code comments written before 2026-10-03 that cite "TASKS.md §n" or "SPEC.md §n" with no prefix mean TASKS-v3.md / Overload-v3-SPEC.md.
 **Baseline when this was written:** migrations 001–026 live (next number 027); `npm run typecheck` clean; 548 tests in 37 files pass; `check-context-size` and `migration-rules.test.mjs` pass.
 
@@ -9,85 +9,24 @@
 
 ## Spec gaps
 
-Each gap is something SPEC.md is silent or ambiguous about that a chunk needs. The options are listed neutrally — none is chosen here. The chunks named under **Blocks** stop until the gap is answered.
+The first round (G1–G14) is answered in SPEC.md and applied to the chunks; their numbers are kept where chunks cite them in history only. One new gap came from the answers:
 
-**G1 · Logged warmup sets vs. an unchanged Coach.**
-SPEC says warmup sets are "never counted in volume, set counts, or 'last time' matching", and that Coach "stays exactly as it is". Found in the code: Coach's shared week rollup counts every non-skipped head that has weight and reps as a working set — `mesoWeekRollup.ts:96-103` (its query doesn't select `is_warmup` at all) — and so does `mesoAnalysisInput.ts:338-365` (`setsCompleted`, `avgReps`, `avgRir`). Both Mesocycle Analysis and the Q&A planning context use that rollup. No warmup has ever been logged (`useLogSet` hard-codes `isWarmup: false`), so this has never mattered; once chunk 15 logs warmups with numbers, it will. (Daily and weekly analysis already drop warmups via `positionMatch.ts:143`.)
-Options: (a) leave Coach untouched and accept that its rollups count numbered warmups as working sets; (b) allow an input-side filter in those two Coach files only, no prompt or prompt-version change; (c) other.
-Blocks: chunk 15.
-
-**G2 · Priorities: where run marks live, given Coach reads the old table.**
-SPEC: priorities become focus / don't care on groups and subgroups, on the program and per run, with the mapping top → focus, low → don't care, the middle two → normal. Found: Coach's Mesocycle Analysis reads per-meso rows from `v2_coach_meso_tag_priorities` (`priorityContext.ts`), and its prompt (`coachMesoPrompt.ts:289-313`, `MESO_PROMPT_VERSION 2`) documents exactly `"low"|"normal"|"high"|"top"` with *ceiling* semantics (group = ceiling, subgroup = relative emphasis inside it). SPEC's new rule is an *override* (a subgroup's own mark applies to that subgroup).
-Needs answering:
-(i) Run marks: (a) new storage only (`v2_program_priorities` on the run's copy); the old table is left as history, so Coach sees no priorities for any run started after the change; (b) new storage for saved programs, but run marks also written to the old table as `top` (focus) / `low` (don't care), so Coach keeps reading them, under its own ceiling reading; (c) other.
-(ii) A subgroup with no mark of its own under a marked group: does it take the group's mark (so "chest" focus covers upper chest unless upper chest is marked), or is it normal ("anything unlisted is normal")? The summary wording "chest without upper chest" depends on it.
-(iii) Existing rows: map only the active run's rows, or also give the saved program (template) the mapped marks? Completed mesos' rows stay where they are either way (scratch run below: completed MESO 1.0 shares the active run's copy under G3 option A').
-Blocks: chunk 10, and chunk 11 through its dependency on 10.
-
-**G3 · How existing programs and mesocycles move to "a run owns a copy of its program".**
-SPEC: "Activating a program creates a run with its own copy of the plan"; the program tab edits that copy, never the saved program. Silent on runs activated before this build. Today the active meso, every completed meso of the same program, and the program you edit in the builder are one set of rows: deleting a program exercise deletes its planned sets in every week of every meso that used it (`v2_week_plan_sets.program_exercise_id … on delete cascade`).
-Options (each was run on the scratch copy — see "Scratch-copy runs"):
-(A') every program any mesocycle points at becomes that run's copy (no existing id changes anywhere) and a fresh saved program is cloned from it to be the template; non-destructive — adds rows and sets flags;
-(A'') the existing programs stay templates; the active meso gets a new copy and its week plans, planned sets, sessions and swaps are re-pointed at the copy (rewrites foreign keys in existing rows);
-(A''') no transition — mesocycles started before the build keep editing the shared program until they end; only new runs get copies.
-Blocks: chunk 6.
-
-**G4 · "Week start" setting for existing users.**
-SPEC: week-dependent weeks copy the last planned week by default; "a setting lets weeks start empty instead — default for new users: copy". Silent on existing users. Today's behaviour is effectively *empty*: a new week has no plan until you press COPY WEEK. Options: existing users start on copy / on empty.
-Blocks: chunk 8.
-
-**G5 · Session-only exercise order is [P1] in "Objects stored", but its only feature is [P2].**
-"Session [existing, extended] — [P1] … session-only exercise order", while "Reorder this session" is listed under [P2] Logging mechanics and the [P2] Today items. No P1 feature writes it. Include the column in phase 1 (unused until phase 2), or leave it to phase 2?
-Blocks: only that column — it is held out of chunk 1.
-
-**G6 · Missed weekday sessions once "Move this session" exists.**
-SPEC: moving a session to another day is "this week only", and "today's 'do it the next day' is the simplest case of the same action". Today's actual behaviour (fact 4, chunk 24): a 7-day look-back prompt that crosses week boundaries, whose DO IT NOW stores the session under the *missed* date and whose MARK SKIPPED writes a skipped row. Does that prompt (a) go, replaced by Move; (b) stay as is; (c) stay but only for days of the current week? And does DO IT NOW for a missed day of *last* week remain possible?
-Blocks: chunk 24.
-
-**G7 · "Last time": LAST WEEK next to deload weeks, and the reach-back.**
-SPEC: "LAST WEEK only when the match is from the immediately preceding, non-deload week. Otherwise LAST TIME + elapsed time." (i) If last week was a deload week (or the match's week was partly deload), is the reference LAST TIME from the last normal week, or does LAST WEEK skip back over the deload week? (ii) "Crosses run boundaries": does that also apply to the existing reach-back (the slot shown when the matched session's sets were all skipped), which today is deliberately limited to the current meso?
-Blocks: chunk 23.
-
-**G8 · Sequence details.**
-(i) Can one workout appear more than once in a sequence (e.g. A, B, A, C)? The answer decides whether a sequence slot can be identified by its workout. (ii) After **Skip**, when is the next workout due: on the day of the skip, or after the rest days that follow the skipped workout, counted from the skip? "Rest days count from the last workout done" — a skipped workout isn't done.
-Blocks: chunk 25.
-
-**G9 · Deload rules details.**
-(i) Unmarking a session whose sets the rules calculated: keep the calculated sets, or restore what was planned before? (ii) The reps rule (±n) on a range target and on AMRAP. (iii) Which sets the sets rule removes (the last working sets? does a staged set count as one? warmups untouched?). (iv) "Pre-calculated from the last normal week" when that workout didn't happen in the last normal week (moved away, skipped): use its last normal occurrence instead?
-Blocks: chunk 22.
-
-**G10 · Rest chain edges inside supersets.**
-(i) The block's rest after a round when no superset override is set: the normal chain of the exercise that ends the round, or the global rest? (ii) An exercise's "rest after" when its last set ends inside a round (unequal set counts). (iii) A set's own rest override inside a round, where "no timer within a round" is the superset default — which wins?
-Blocks: chunk 16.
-
-**G11 · Tags: one per set, or several?**
-"Per set … preset list plus custom text"; the Week object says "tags per set"; "'Apply to all sets' fills one tag across an exercise's sets". Storage (`text[]`) supports both; the tag editor needs the answer.
-Blocks: chunk 19.
-
-**G12 · Navigation after the program screen folds into Plan.**
-SPEC: "[P1] The program screen folds into the plan screen as its program tab"; "no active run → 'Start a program', leading to the planner". Silent on where these live once PROGRAM leaves the bottom bar: the list of saved programs; opening the planner on a saved program while a run is active; ending a run; starting a different program; the completed runs list (today on PROGRAM, with delete and the priorities pages Mesocycle Analysis reads).
-Blocks: chunk 26.
-
-**G13 · Changing a running program's exercise list or superset grouping.**
-The week-plan actions listed are "edit any value; swap or reorder exercises". For week-dependent runs SPEC also says "permanent volume changes are made in a week and carry forward through copying" — volume being "the exercise list and the sets" — which implies adding/removing an exercise in a week. Is that in phase 1, and for stable runs too (as a one-off)? Same silence for superset grouping: SPEC puts it in planner step 2 but in neither mid-run list (design fields / volume) — can a running program's grouping change, and where (program tab, week plan, neither)?
-Blocks: chunk 9; the mid-run regrouping part of chunk 13.
-
-**G14 · (Conditional on live data) A saved program with one workout on two weekdays.**
-Today's schedule grid lets one workout sit on several weekdays (`WeeklyScheduleGrid.tsx` writes any day → any workout), and both days then share one planned row per week (scheduler scenario S8, under chunk 24). SPEC's model gives each workout "its day of the week" (one). The live check L6 below says whether any of your programs has this. If one does: what happens to it — split into two workouts, keep one day, or leave it as it is until it's next edited?
-Blocks: chunk 8 and chunk 11, only if L6 finds such a program.
+**G15 · The one existing "Do it now" session in History.**
+SPEC now says "Do it now" becomes a move to today and "History shows the day it was actually done". L4 found one session created the old way: dated 2026-08-29, started 2026-08-30. New moves record `moved_to_date`, so History can show the day done; this old row has none. Backfill its `moved_to_date` to 2026-08-30 (a one-row data change), or leave it showing 2026-08-29 as history?
+Blocks: only the optional backfill line in chunk 24; the rest of chunk 24 proceeds.
 
 ---
 
 ## Facts verified against the real app — index
 
-The full finding sits next to the chunk that depends on it. "Live data" = needs your SQL Editor session (Escalation 3); the Adam-scoped queries are under "Live-data checks".
+The full finding sits next to the chunk that depends on it. L1–L8 are your SQL Editor results (filtered to your user_id), recorded under "Live-data results" and next to their chunks.
 
 | SPEC fact | Finding (short) | How it was verified | Chunk |
 |---|---|---|---|
-| How deload weeks are stored today | One boolean per **planned session**, not per week: `v2_week_plans.is_deload`, one row per (meso, workout, week). Toggled per workout in Plan; no whole-week action. Copy-forward copies the flag into the next week. | Code + migration 001 + scratch catalog check; live column probe | 21 (and 8) |
-| The four priority levels' stored values | `'low' \| 'normal' \| 'high' \| 'top'` text with a CHECK (024); no row = normal; `'focus'` is rejected | Code + migration 024 + scratch insert (23514); live column probe | 10 |
-| Only one run active at a time | True only by app code: start = "complete all active, then insert", two requests, no constraint. Two concurrent starts leave two active runs. | Code + every migration + scratch catalog check + scratch race test | 6 |
-| Today's skip / do it the next day | 7-day look-back prompt (never before meso start, crosses week boundaries); DO IT NOW stores the session under the **missed** date; MARK SKIPPED writes a skipped row; dismiss is per screen mount | Production `scheduler.ts` run under Vitest (scenarios S0–S10) + code | 24 |
+| How deload weeks are stored today | One boolean per **planned session**, not per week: `v2_week_plans.is_deload`, one row per (meso, workout, week). Toggled per workout in Plan; no whole-week action. Copy-forward copies the flag into the next week. | Code + migration 001 + scratch catalog check; live column probe; **L1: no week plan has ever been marked deload** | 21 (and 8) |
+| The four priority levels' stored values | `'low' \| 'normal' \| 'high' \| 'top'` text with a CHECK (024); no row = normal; `'focus'` is rejected | Code + migration 024 + scratch insert (23514); **L2: constraint is exactly the four values; MESO 1.0 (completed) and MESO 2.0 (active) have rows** | 10 |
+| Only one run active at a time | True only by app code: start = "complete all active, then insert", two requests, no constraint. Two concurrent starts leave two active runs. | Code + every migration + scratch catalog check + scratch race test; **L3: 1 active, 2 completed; only the primary key and the non-unique `(user_id, status)` index** | 6 |
+| Today's skip / do it the next day | 7-day look-back prompt (never before meso start, crosses week boundaries); DO IT NOW stores the session under the **missed** date; MARK SKIPPED writes a skipped row; dismiss is per screen mount | Production `scheduler.ts` run under Vitest (scenarios S0–S10) + code; **L4: one such session in your data (2026-08-29, started 2026-08-30)** | 24 |
 
 Live schema check (2026-10-03): on the nine core tables, the columns phase 1 builds on (among them `is_deload`, `week_number`, `notes`, `priority`, `tag_type`, `status`, `program_id`, `schedule`, `target_reps`, `weight_unit`, `is_warmup`, `parent_week_plan_set_id`, `stage_index`, `note`, `form_rating`, `energy_rating`, `measure_set_time`, `auto_finish_minutes`) each answered `200 []` through the public API, every request filtered `user_id=eq.<Adam>` with `limit=0` (anonymous role, so RLS returns no rows either way); a made-up column answered `400 / 42703`, so the probe tells present from absent. That proves those columns exist live as 001–026 define them — nothing about the data, and not every column.
 
@@ -122,15 +61,16 @@ Test as a user with `set local role authenticated; set local request.jwt.claim.s
 | R3 | RLS on the six new tables | User B saw 0 of A's rows, updated 0, and an insert as A was refused by RLS; A saw its own | 1 |
 | R4 | `classify()` from `scripts/migration-rules.mjs` on the draft | Not safe: 7 flagged statements — 3 "new column carries a constraint" (CHECKs on new columns of `v2_programs`, `v2_set_logs`, `v2_user_settings`), 4 "foreign key action" (`on delete set null` on 4 new FK columns). Every new table passed. None can alter existing data (defaults satisfy the CHECKs; the new FK columns are NULL on every existing row) | 1 |
 | R5 | Week exercise-list backfill (chunk 7) | 25 rows = predicted 25; 0 planned sets left without their exercise row; the empty week-4 plan lists the same exercises today's screen shows; re-run inserts 0 | 7 |
-| R6 | Legacy transition, option A' (G3) | 3 programs became run copies (one per program any meso used); md5 of every session / week plan / planned set / log id and every `meso.program_id` unchanged; cloned templates map their schedules to their own workouts (incl. one workout on Mon+Thu); cloned exercises equal the originals | 6 |
+| R6 | Legacy transition (option A', now SPEC's rule) | 3 programs became run copies (one per program any meso used); md5 of every session / week plan / planned set / log id and every `meso.program_id` unchanged; cloned templates map their schedules to their own workouts (incl. one workout on Mon+Thu); cloned exercises equal the originals | 6 |
 | R7 | Atomic "start a run" function: end active runs + deep copy (workouts with lineage, superset blocks, exercises, sets with stage parents, sequence with rest days, warmup items, priorities) | Copy complete (2 workouts, 5 sequence slots, 2 warmup items, 1 block, 2 exercises, 6 sets incl. 2 stages, 2 marks); 0 references from the copy back into the template; previous run completed; exactly one active | 6 |
 | R8 | Two concurrent starts — control without a lock, then with a per-user advisory lock | Without the lock: **2 active runs** (the race is real, and today's app-layer start has the same shape); with the lock: 1 | 6 |
 | R9 | Atomicity: a constraint violation injected at the last copy step | Nothing persisted — no program, workout, set or run; the previous run stayed active | 6 |
 | R10 | Idempotent week planning, two concurrent callers for the same week | Caller 1 planned 2 sessions, caller 2 planned 0 (it waited on the unique key, then skipped copying); rows exactly match the run copy (2 exercises, 6 sets incl. 2 stage rows; stage parents inside the same week plan) | 8 |
 | R11 | Relaxing `v2_set_logs_check` for warmups | Before: a numberless warmup is rejected. After: existing rows valid, numberless warmup accepted, a working set missing reps still rejected. Classifier flags it (drop + add constraint) | 15 |
 | R12 | `create or replace view v2_history_session_summary` with `and not sl.is_warmup` on `set_count` | Count fell 5 → 4 for the session holding a warmup; `security_invoker=true` and the `authenticated` grant survived | 15 |
-| R13 | Priorities mapping on top of R6 | Active MESO 2.0: 2 focus, 2 don't care, 2 rows dropped as normal; old table untouched; completed MESO 1.0 shares the active run's copy, so only the active run's marks can be mapped onto it | 10 |
+| R13 | Priorities mapping on top of R6 | Active MESO 2.0: 2 focus, 2 don't care, 2 rows dropped as normal; old table untouched; on the fixtures a completed meso shared the active run's program; **live (L5) no completed meso does**, so this case doesn't arise | 10 |
 | R14 | Suggested reps: backup table → optional conversion → drop → rollback | 12 values backed up; 34 unlogged planned working sets of the active run got them as rep targets; column dropped; rollback restored all 12 with an identical md5 fingerprint (a real rollback also needs the converted set ids in the backup) | 12 |
+| R16 | Week-plan key for a workout appearing twice in a cycle: add `sequence_position`, replace the unique key with `(mesocycle_id, workout_day_id, week_number, sequence_position) nulls not distinct` | Row count unchanged (13); an old-client duplicate (no position) is still rejected; the same workout at positions 0 and 2 of one cycle is accepted; `on conflict` on the new key is idempotent | 25 |
 | R15 | Facts 1–3 at the database level | Two active mesos for one user are accepted (only a non-unique `(user_id, status)` index exists); the priority CHECK is exactly the four values; `is_deload` exists only on `v2_week_plans` (the two history views derive theirs from it) | 6, 10, 21 |
 
 Scratch SQL lives only in the session scratchpad; none of it is a committed migration.
@@ -153,9 +93,9 @@ SPEC's objects mapped onto the existing schema. "New" = added by chunk 1 unless 
 | Program exercise | `v2_program_exercises` |
 | Superset block (+ its rest overrides) | `v2_program_superset_blocks` |
 | Program set | `v2_program_sets` |
-| Priorities | `v2_program_priorities` (run marks also subject to G2) |
+| Priorities | `v2_program_priorities` — saved programs and runs, new form only; the old `v2_coach_meso_tag_priorities` stays as completed runs' history, read by Coach |
 | Run | `v2_mesocycles` (`program_id` → the run's copy; new `source_program_id` → the saved program) |
-| Week / cycle | the `v2_week_plans` rows sharing `(mesocycle_id, week_number)`; for sequence runs `week_number` is the cycle index |
+| Week / cycle | the `v2_week_plans` rows sharing `(mesocycle_id, week_number)`; for sequence runs `week_number` is the cycle index and `sequence_position` the slot |
 | Planned session in a week (incl. its deload flag) | one `v2_week_plans` row; its `is_deload` *is* the session's deload flag |
 | Exercises as planned for that week | `v2_week_plan_exercises` |
 | Planned set | `v2_week_plan_sets` |
@@ -183,7 +123,7 @@ Set kind is not a new column anywhere: **warmup** = `is_warmup = true` (exists s
 | source_workout_day_id | uuid null → `v2_workout_days` on delete set null | new. On a run's copy: the saved program's workout it came from. Lets "session type, all time" follow a workout across runs (chunk 5). |
 
 ### Sequence — `v2_program_sequence_items` (new)
-`id, user_id, program_id → v2_programs (cascade), position int ≥ 0, workout_day_id → v2_workout_days (cascade) null`. Null `workout_day_id` = a rest day. Unique `(program_id, position)`. Whether one workout may appear twice is G8(i).
+`id, user_id, program_id → v2_programs (cascade), position int ≥ 0, workout_day_id → v2_workout_days (cascade) null`. Null `workout_day_id` = a rest day. Unique `(program_id, position)`. One workout may appear more than once (SPEC), so a slot is identified by its position, never by its workout.
 
 ### Warmup routine — `v2_workout_warmup_items` (new)
 `id, user_id, workout_day_id → v2_workout_days (cascade), position int ≥ 0, body text (non-blank)`. Unique `(workout_day_id, position)`. Ticks are not stored (SPEC: "nothing else is logged").
@@ -196,7 +136,7 @@ Set kind is not a new column anywhere: **warmup** = `is_warmup = true` (exists s
 |---|---|---|
 | id, workout_day_id, user_id, exercise_id, position, weight_unit | existing | `weight_unit` = SPEC's "unit preference (existing)" |
 | target_reps | integer, existing | SPEC's "suggested reps" — UI removed in chunk 11, **column dropped in chunk 12** |
-| superset_block_id | uuid null → blocks, on delete set null | new |
+| superset_block_id | uuid null → blocks, on delete set null | new — design field (SPEC): regrouped in the program tab for both planning types, from the next session on. A week-only slot created by a swap takes the replaced slot's block. |
 | rest_seconds, rest_after_seconds | integer ≥ 0, null | new — design fields |
 | tempo | text, null, ≤ 20 chars | new — design field; format (4 fields, digits or X) validated in TS (chunk 2) |
 | week_only | boolean not null default false | new — run copies only: a slot created by a week edit (a swapped-in or added exercise), hidden from the program tab. Keeps every planned set pointing at a program exercise whose `exercise_id` is the exercise actually planned that week — which is how Coach reads planned exercises. |
@@ -219,19 +159,19 @@ For a stable program these are the volume for every week; for week-dependent, we
 Checks (verified on scratch, R1): max needs min and ≥ min; AMRAP carries no numbers; stages carry no kind, stage rest or warmup flag; a warmup is never staged.
 
 ### Priorities — `v2_program_priorities` (new)
-`id, user_id, program_id → v2_programs (cascade), tag_type ('muscle_group' | 'muscle_subgroup'), tag_value (non-blank; vocabulary owned by priorityTags.ts / exerciseTags.ts as in 024), mark ('focus' | 'dont_care'), created_at, updated_at`; unique `(user_id, program_id, tag_type, tag_value)`. No row = normal. Holds saved programs' marks and runs' marks (on the run's copy). The old `v2_coach_meso_tag_priorities` stays; what happens to it is G2.
+`id, user_id, program_id → v2_programs (cascade), tag_type ('muscle_group' | 'muscle_subgroup'), tag_value (non-blank; vocabulary owned by priorityTags.ts / exerciseTags.ts as in 024), mark ('focus' | 'dont_care'), created_at, updated_at`; unique `(user_id, program_id, tag_type, tag_value)`. No row = normal. Holds saved programs' marks and runs' marks (on the run's copy). A subgroup with no mark of its own takes its group's mark (SPEC). The old `v2_coach_meso_tag_priorities` stays untouched as completed runs' history; Coach keeps reading it, so it sees no priorities for runs started after this build (accepted in SPEC).
 
 ### Run — `v2_mesocycles` (existing)
 | Column | Type | Notes |
 |---|---|---|
 | id, user_id, name, status (`active \| completed`), start_date, end_date, created_at | existing | "end when the user ends it" = status + end_date, as today |
-| program_id | existing | the run's copy (`kind = 'run'`) for every run started from chunk 6 on; for existing runs too unless G3 chooses A''' |
+| program_id | existing | the run's copy (`kind = 'run'`): for every run started from chunk 6 on, and for existing runs through the transition (SPEC: existing programs become their run's copy) |
 | source_program_id | uuid null → `v2_programs` on delete set null | new — the saved program the run started from |
 
-Sequence position is derived, not stored: the run's last completed-or-skipped session gives the slot, its week plan gives the cycle (chunk 25) — nothing to drift. One active run per user stays an app rule, made race-safe by the start function's per-user lock (chunk 6, R8).
+Sequence position is derived, not stored on the run: the run's last completed-or-skipped session's week plan gives both the slot (`sequence_position`) and the cycle (`week_number`) — nothing to drift (chunk 25). One active run per user stays an app rule, made race-safe by the start function's per-user lock (chunk 6, R8).
 
-### Week / cycle and planned session — `v2_week_plans` (existing, unchanged)
-`id, user_id, mesocycle_id, workout_day_id, week_number, is_deload, notes, created_at`, unique `(mesocycle_id, workout_day_id, week_number)`. A week is the set of rows sharing `(mesocycle_id, week_number)`; it "exists once planned" = its rows exist. `is_deload` is the planned session's deload flag (fact 1). Planned once, atomically, by `v2_plan_week` (chunk 8).
+### Week / cycle and planned session — `v2_week_plans` (existing)
+`id, user_id, mesocycle_id, workout_day_id, week_number, is_deload, notes, created_at`, unique `(mesocycle_id, workout_day_id, week_number)` — plus, new in chunk 1: `sequence_position int null` (sequence runs: which slot of the cycle this planned session is; null for weekday runs) and `deload_restore jsonb null` (the planned sets as they were before deload rules recalculated them, so unmarking restores them — chunk 22). Chunk 25 replaces the unique key with `(mesocycle_id, workout_day_id, week_number, sequence_position) nulls not distinct` so a workout can appear twice in a cycle (scratch R16). A week is the set of rows sharing `(mesocycle_id, week_number)`; it "exists once planned" = its rows exist. `is_deload` is the planned session's deload flag (fact 1). Planned once, atomically, by `v2_plan_week` (chunk 8).
 
 ### Exercises as planned for a week — `v2_week_plan_exercises` (new)
 | Column | Type | Notes |
@@ -253,15 +193,15 @@ Unique `(week_plan_id, program_exercise_id)` — so planned sets keep linking by
 | stage_kind | text null (same four kinds) | new — heads only |
 | target_weight | numeric(6,2) ≥ 0 null | new — kg; week plan only, never in the program |
 | rep_min, rep_max, is_amrap | as program sets | new — copied from the source when the week is planned; editing them is the week's override |
-| tags | text[] null | new — never copied; one or several per set is G11 |
+| tags | text[] null | new — never copied; several per set allowed (SPEC) |
 
 ### Session — `v2_sessions` (existing)
 | Column | Type | Notes |
 |---|---|---|
 | all existing columns | | `date` keeps meaning "the date this session is *for*" (as DO IT NOW already uses it) |
-| moved_to_date | date null | new — weekday runs: the day it was moved to, same week. A session moved before it starts is created as a `planned` row (the status exists but is unused today). |
+| moved_to_date | date null | new — weekday runs: the day it was moved to, same week (incl. the missed-session prompt's "Do it now", now a move to today). History shows `moved_to_date` when set — the day it was actually done. A session moved before it starts is created as a `planned` row (the status exists but is unused today). |
 | deload flag | — | read through `week_plan_id` → `v2_week_plans.is_deload`; every session from chunk 8 on has a planned row |
-| session-only exercise order | — | held: G5 |
+| session-only exercise order | — | not in phase 1 (SPEC: [P2]) |
 
 ### Set log — `v2_set_logs` (existing)
 | Column | Type | Notes |
@@ -276,7 +216,7 @@ Unique `(week_plan_id, program_exercise_id)` — so planned sets keep linking by
 | all existing columns | | |
 | warmup_display | text not null default `'rows'` · `rows \| tick` | new |
 | deload_rules | jsonb null | new — null = no rules switched on |
-| week_start | text · `copy \| empty` | **chunk 8**, default per G4 |
+| week_start | text not null default `'copy'` · `copy \| empty` | new (chunk 1); copy for new and existing users (SPEC) |
 
 Deload rules shape (settings and program override; validated by `deloadRules.ts`, chunk 22; an absent key = that rule is off):
 ```
@@ -301,14 +241,14 @@ Existing layout is kept (`src/features/<area>/`, pure logic in testable modules,
 |---|---|---|
 | `supabase/migrations/027_planner_p1_schema.sql` | 1 | additive schema |
 | `src/lib/plannerVocabulary.ts` (+ test) | 2 | reference data |
-| `supabase/migrations/0NN_start_run.sql` | 6 | `v2_start_run` + the G3 transition |
+| `supabase/migrations/0NN_start_run.sql` | 6 | `v2_start_run` + the transition of existing programs |
 | `src/features/programs/runService.ts` | 6 | `startRun` RPC wrapper |
 | `src/features/plan/ProgramTab.tsx` | 6 | the run's copy inside Plan |
 | `supabase/migrations/0NN_week_plan_exercises_backfill.sql` | 7 | backfill |
 | `supabase/migrations/0NN_plan_week.sql` | 8 | `v2_plan_week` + `week_start` |
 | `src/features/plan/weekSources.ts` (+ test) | 8 | pure source selection |
 | `src/features/plan/weekEdits.ts` (+ test) | 9 | swap / reorder / carry semantics |
-| `supabase/migrations/0NN_priority_marks.sql` | 10 | mapping (shape per G2) |
+| `supabase/migrations/0NN_priority_marks.sql` | 10 | four-level → focus/don't-care mapping onto the active run's copy and its saved clone |
 | `src/lib/priorityMarks.ts` (+ test), `src/features/plan/PrioritiesEditor.tsx` | 10 | effective marks, summary wording, editor |
 | `src/features/planner/{PlannerPage, StepPriorities, StepExercises, StepVolume}.tsx`, `plannerService.ts`, `usePlanner.ts` | 11 | the stepped planner |
 | `supabase/migrations/0NN_drop_target_reps.sql` | 12 | backup + optional conversion + drop |
@@ -322,13 +262,16 @@ Existing layout is kept (`src/features/<area>/`, pure logic in testable modules,
 | `src/lib/deloadRules.ts` (+ test), `src/features/settings/DeloadRulesEditor.tsx` | 22 | rules calculator and its editor |
 | `src/features/gym/referenceByExercise.ts` (+ test) | 23 | new resolver beside the untouched `referenceLogic.ts` |
 | `src/features/gym/MoveSessionSheet.tsx` | 24 | move a session within the week |
+| `src/features/programs/runProgramExercises.ts` (+ test) | 9 | the one helper every read of a run's program exercises goes through |
+| `scripts/check-program-exercise-reads.mjs` (+ test) | 9 | fails on any read of `v2_program_exercises` outside the helper |
+| `src/features/programs/ProgramsPage.tsx` | 26 | saved programs, active run, completed runs |
 | `src/features/gym/sequenceSchedule.ts` (+ test), `src/features/planner/SequenceEditor.tsx` | 25 | due dates; sequence editing |
 
 **Changed most** — `src/types/index.ts`; `src/features/plan/{PlanPage, weekPlanService, useWeekPlan}`; `src/features/gym/{GymSession, ExerciseCard, SetGroup, SetRow, ExerciseHeader, PlanTargetsPanel, SessionPreview, TodayPage, scheduler, useScheduler, restTimerStore, RestTimer, RestTimerInline, ExerciseReference, sessionService, useSession}`; `src/features/programs/{ProgramPage, programService, usePrograms, mesoService, useMesos}`; `src/features/settings/*`; `src/features/offline/offlineCache.ts`; `src/lib/db.ts` (plain new fields on cached rows — no Dexie version bump, same precedent as `stageIndex`); `src/features/history/{historyService, useHistory}`; `src/App.tsx`, `src/components/Nav.tsx`; `scripts/verify-rls.mjs` (`TABLES`, chunks 7, 10, 11, 13, 18, 25).
 
-**Removed** — `src/features/programs/{ProgramBuilderPage, WorkoutDayEditorPage, WeeklyScheduleGrid}.tsx` (chunk 11); `src/features/coach/MesoPrioritiesPage.tsx` and `PrioritySelector.tsx` only if G2's answer replaces them (chunk 10).
+**Removed** — `src/features/programs/{ProgramBuilderPage, WorkoutDayEditorPage, WeeklyScheduleGrid}.tsx` (chunk 11); `src/features/programs/ProgramPage.tsx` (replaced by the Programs page, chunk 26). `src/features/coach/MesoPrioritiesPage.tsx` stays, now only for completed runs' four-level history (SPEC: completed runs keep "its priorities pages").
 
-**Never touched by phase 1** — `api/coach/*`, every `src/features/coach/*` module except what G1/G2 answers allow, and the existing exports of `referenceLogic.ts` and `setGroupLogic.ts` (Coach imports both). The shared scripts (`check-migration`, `migration-rules`, `check-context-size`) are never changed during a build.
+**Never touched by phase 1** — `api/coach/*`, every `src/features/coach/*` module (SPEC accepts the consequences — see "Consequences for Coach"; the one exception is routing to `MesoPrioritiesPage`, which only moves), and the existing exports of `referenceLogic.ts` and `setGroupLogic.ts` (Coach imports both). The shared scripts (`check-migration`, `migration-rules`, `check-context-size`) are never changed during a build.
 
 ---
 
@@ -357,10 +300,10 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 
 ### Chunk 1 — Schema: the phase-1 data model (additive)
 **Goal:** Add every phase-1 table and column the later chunks need, without changing what the app does.
-**Scope:** `supabase/migrations/027_planner_p1_schema.sql` only, per "Data models": six new tables with RLS, policies and indexes; new columns on `v2_programs`, `v2_workout_days`, `v2_mesocycles`, `v2_program_exercises`, `v2_week_plan_sets`, `v2_sessions`, `v2_set_logs`, `v2_user_settings`; a `notify pgrst, 'reload schema'` at the end. No `src/` change. Held out: the session exercise-order column (G5) and `week_start` (G4, chunk 8).
+**Scope:** `supabase/migrations/027_planner_p1_schema.sql` only, per "Data models": six new tables with RLS, policies and indexes; new columns on `v2_programs`, `v2_workout_days`, `v2_mesocycles`, `v2_program_exercises`, `v2_week_plans` (`sequence_position`, `deload_restore` — plain nullable, no constraint), `v2_week_plan_sets`, `v2_sessions`, `v2_set_logs`, `v2_user_settings` (now including `week_start`, default `'copy'` — SPEC answered G4); a `notify pgrst, 'reload schema'` at the end. No `src/` change. Not in phase 1: the session exercise-order column (SPEC: [P2]).
 **Depends on:** —
-**Migration:** additive, **not destructive**. Existing data: no row changes; existing rows get column defaults (`saved` / `weekday` / `week_dependent`, `rows`, `false`) or NULL. Rollback: drop the six new tables, then the new columns. `check-migration` will exit 1 with the 7 statements of R4 plus the `notify` line ("not on the safe list"); each is justified in the DECISIONS entry (CHECKs on new columns whose defaults satisfy them; `on delete set null` on new FK columns that are NULL on every existing row; `notify` only reloads PostgREST's schema cache).
-**Verification:** (1) scratch: R1–R4 re-run on the final file; (2) live, after you apply it: Adam-scoped counts before/after on every existing table the file mentions — the eight it alters plus `v2_week_plans`, which a new table references (all must be equal); an API probe per new column (`200 []`, Adam-filtered, `limit=0`) with a made-up-column control (`400`); the six new tables answer zero rows to the anon key (no app code uses them yet, so they join `TABLES` in `scripts/verify-rls.mjs` with the chunk whose code first reads or writes them — see the boundary rules); applied-text hash/length check; the deployed app (unchanged code) loads Today, Plan, Program and History, and the next set you log in a real session saves normally. **Would not catch:** whether the shapes suit the features — each feature chunk re-proves the part it uses; a stale PostgREST schema cache (that's why the probe runs after the reload).
+**Migration:** additive, **not destructive**. Existing data: no row changes; existing rows get column defaults (`saved` / `weekday` / `week_dependent`, `rows`, `copy`, `false`) or NULL. Rollback: drop the six new tables, then the new columns. `check-migration` will exit 1 with the 7 statements of R4 plus the `notify` line (`week_start` joins the already-flagged `v2_user_settings` statement; the two `v2_week_plans` columns carry no constraint and pass); each is justified in the DECISIONS entry (CHECKs on new columns whose defaults satisfy them; `on delete set null` on new FK columns that are NULL on every existing row; `notify` only reloads PostgREST's schema cache). Re-run R1–R4 on the final file, since `week_start` and the two week-plan columns were added after R1.
+**Verification:** (1) scratch: R1–R4 re-run on the final file; (2) live, after you apply it: Adam-scoped counts before/after on every existing table the file mentions — the nine it alters (all must be equal); an API probe per new column (`200 []`, Adam-filtered, `limit=0`) with a made-up-column control (`400`); the six new tables answer zero rows to the anon key (no app code uses them yet, so they join `TABLES` in `scripts/verify-rls.mjs` with the chunk whose code first reads or writes them — see the boundary rules); applied-text hash/length check; the deployed app (unchanged code) loads Today, Plan, Program and History, and the next set you log in a real session saves normally. **Would not catch:** whether the shapes suit the features — each feature chunk re-proves the part it uses; a stale PostgREST schema cache (that's why the probe runs after the reload).
 **Done when:** 027 is live, counts are unchanged, every probe answers as expected, and the DECISIONS entry records your go-ahead.
 
 ### Chunk 2 — Reference data: planner vocabulary
@@ -394,11 +337,12 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 
 ### Chunk 6 — A run owns a copy of its program
 **Goal:** Starting a program creates a run with its own copy of the plan, and editing the run never changes the saved program.
-**Scope:** migration: `v2_start_run(program, name, start)` — `security invoker`; per-user advisory lock; ends the active run; deep-copies the saved program (workouts with lineage, superset blocks, exercises, sets incl. stage parents, sequence, warmup items, marks); creates the mesocycle with `program_id` = copy, `source_program_id` = saved — plus the G3 transition. ProgramPage's START MESOCYCLE calls it (`runService.ts`); program lists show `kind = 'saved'` only; Plan gets a **Program** tab listing the run's workouts and opening the existing workout editor on the run's copy. At this stage the run copy's exercise list still drives every week live, exactly as the shared program does today, so the tab can edit it for both planning types; chunk 9 introduces the per-type rules.
-**Depends on:** 1, 5. **Blocked by:** G3.
-**Fact — only one run at a time (SPEC: "assumed unchanged"):** true, but only by application code. `001` says "enforced at the application layer"; no migration adds a constraint (scratch catalog: only the primary key and a non-unique `(user_id, status)` index). `useCreateMeso` (`useMesos.ts:24-35`) runs `completeAllActiveMesos` then `createMeso` — two requests, no transaction; there is no re-activate path; every reader takes `mesos.find(status === 'active')` over a list ordered newest first. Scratch: the schema accepts two active mesos for one user (R15), and two concurrent starts of the same shape leave two active runs (R8). The start function keeps the rule and closes the race (R8 with the lock: one). Live: L3 confirms you have at most one active today.
-**Migration:** `v2_start_run`: new function — not destructive. G3 transition: A' is **not destructive** (adds a saved clone per program a meso uses, sets `kind = 'run'` on the originals and lineage on their workouts, fills `source_program_id`; no id changes — R6); A'' rewrites foreign keys in existing rows (sessions, week plans, planned sets, swaps); A''' changes nothing. Rollback for A': delete the clones (they're the `kind = 'saved'` rows created by the migration, recorded in a manifest table it writes), reset `kind`, `source_workout_day_id`, `source_program_id`. `check-migration`: exit 1 (function, updates).
-**Verification:** scratch R6–R9 re-run on the final file; live after apply: Adam-scoped before/after counts and the R6 id-hash check on sessions, week plans, planned sets, logs and `meso.program_id`; Today/Plan/History show the same active run unchanged; the Mesocycle Analysis input for a completed meso is identical before/after (dry-run technique, compared with sorted keys — Checks that lied #2); the first real start after deploy is checked for a complete copy and lineage. **Would not catch:** Coach's daily and weekly reference for the first session of each workout in a *new* run (see "Consequences for Coach").
+**Scope:** migration: `v2_start_run(program, name, start)` — `security invoker`; per-user advisory lock; ends the active run; deep-copies the saved program (workouts with lineage, superset blocks, exercises, sets incl. stage parents, sequence, warmup items, marks); creates the mesocycle with `program_id` = copy, `source_program_id` = saved — plus the transition SPEC now specifies (G3 → A'): every program a run already points at becomes that run's copy (no existing id changes) and a saved program is cloned from it. ProgramPage's START MESOCYCLE calls the function (`runService.ts`); program lists show `kind = 'saved'` only; Plan gets a **Program** tab listing the run's workouts and opening the existing workout editor on the run's copy. At this stage the run copy's exercise list still drives every week live, exactly as the shared program does today, so the tab can edit it; chunk 9 introduces the per-type rules.
+**Depends on:** 1, 5.
+**Fact — only one run at a time (SPEC: "assumed unchanged"):** true, but only by application code. `001` says "enforced at the application layer"; no migration adds a constraint. `useCreateMeso` (`useMesos.ts:24-35`) runs `completeAllActiveMesos` then `createMeso` — two requests, no transaction; there is no re-activate path; every reader takes `mesos.find(status === 'active')` over a list ordered newest first. Scratch: the schema accepts two active mesos for one user (R15), and two concurrent starts of the same shape leave two active runs (R8). **Live (L3): 1 active, 2 completed; indexes are the primary key and the non-unique `(user_id, status)` only** — the rule holds in your data today. The start function keeps the rule and closes the race (R8 with the lock: one).
+**Live data for the transition (L5):** three programs, each used by exactly one meso (one of them active). So the transition makes 3 run copies and 3 saved clones, and no completed meso shares the active run's copy.
+**Migration:** `v2_start_run`: new function — not destructive. Transition: **not destructive** — adds one saved clone per program a meso uses (3 live), sets `kind = 'run'` on the originals and lineage on their workouts, fills `source_program_id`; no id changes (R6). The clones copy `target_reps` while it exists (chunk 12 decides its fate). Rollback: delete the clones (recorded in a manifest table the migration writes), reset `kind`, `source_workout_day_id`, `source_program_id`. `check-migration`: exit 1 (function, updates).
+**Verification:** scratch R6–R9 re-run on the final file; live after apply: Adam-scoped before/after counts — `v2_programs` +3 (`kind`: 3 run, 3 saved), `v2_workout_days` + the clones' workouts, `v2_program_exercises` +82 (L8's total is the count to clone); the R6 id-hash check on sessions, week plans, planned sets, logs and `meso.program_id`; Today/Plan/History show the same active run unchanged; the Mesocycle Analysis input for a completed meso is identical before/after (dry-run technique, compared with sorted keys — Checks that lied #2); the first real start after deploy is checked for a complete copy and lineage. **Would not catch:** Coach's daily and weekly reference for the first session of each workout in a *new* run (see "Consequences for Coach").
 **Done when:** the function and transition are live, a run started through the app has its own copy, and editing that copy leaves the saved program byte-identical.
 
 ### Chunk 7 — Each planned session owns its exercise list (refactor, no visible change)
@@ -411,33 +355,40 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 
 ### Chunk 8 — Weeks plan themselves, from the right source
 **Goal:** A week (cycle) is planned the first time it's opened in Plan or when it starts, whichever comes first, from its source — and from then on it's its own week.
-**Scope:** migration: `v2_plan_week(meso, week)` — atomic and idempotent (insert … on conflict do nothing; only the caller that created a row copies into it — R10). Sources per SPEC: stable → the run copy, always; week-dependent → week 1 from the run copy, later weeks from that workout's last planned **non-deload** occurrence (using the carry fields) or empty, per `week_start`; weight and RIR targets from the last planned week for both types; tags never; `is_deload` never copied. Add `week_start` to settings (default per G4) with its Settings row; Plan's week view and Today call the function; COPY WEEK and COPY THIS WORKOUT stay as manual actions under the same source rules; the empty-state "Copy last week" on an empty week-dependent week. A pure `weekSources.ts` decides sources and is unit-tested.
-**Depends on:** 7. **Blocked by:** G4; G14 if L6 finds a workout on two weekdays.
-**Found in the code (fact 1, copy side):** today `copyOnePlanForward` writes `is_deload: prevPlan.is_deload` into the new week (`weekPlanService.ts:270` and `:286`), so copying a deload week makes the next week deload too. This chunk stops that.
-**Migration:** new function + `week_start` column; **not destructive**; existing rows get the G4 default. Rollback: drop both.
-**Verification:** scratch R10 on the final function; unit tests for source choice incl. a partly-deload week and a missing source; live: opening next week in Plan creates its rows once (Adam-scoped count; reopening adds none), contents equal the source minus tags and the deload flag; starting the first session of a new week plans it. **Would not catch:** a week started offline — that session starts without a plan, as today (stated in the chunk's notes); sequence cycles (chunk 25 reuses the function with the cycle index).
+**Scope:** migration: `v2_plan_week(meso, week)` — atomic and idempotent (insert … on conflict do nothing; only the caller that created a row copies into it — R10). Sources per SPEC: stable → the run copy, always; week-dependent → week 1 from the run copy, later weeks from that workout's last planned **non-deload** occurrence (using the carry fields) or empty, per `week_start` (copy by default for new and existing users — SPEC); weight and RIR targets from the last planned week for both types; tags never; `is_deload` never copied. The `week_start` Settings row (column from chunk 1); Plan's week view and Today call the function; COPY WEEK and COPY THIS WORKOUT stay as manual actions under the same source rules; the empty-state "Copy last week" on an empty week-dependent week. A pure `weekSources.ts` decides sources and is unit-tested.
+**Depends on:** 7.
+**Visible change for you:** with `week_start = copy`, your next week arrives planned from the last one when you first open it or train in it, instead of waiting for COPY WEEK.
+**Found in the code (fact 1, copy side):** today `copyOnePlanForward` writes `is_deload: prevPlan.is_deload` into the new week (`weekPlanService.ts:270` and `:286`), so copying a deload week makes the next week deload too. This chunk stops that. Live (L1): no week plan has ever been marked deload, so no existing week inherited the flag.
+**Migration:** new function only; **not destructive**. Rollback: drop it.
+**Verification:** scratch R10 on the final function; unit tests for source choice incl. a partly-deload week and a missing source; live: opening next week in Plan creates its rows once (Adam-scoped count; reopening adds none), contents equal the source minus tags and the deload flag; starting the first session of a new week plans it. **Would not catch:** a week started offline — that session starts without a plan, as today; sequence cycles (chunk 25 extends the function to slots).
 **Done when:** live; a new week appears planned on first open; the manual copy actions follow the same rules.
 
 ### Chunk 9 — Edit a week's exercises
-**Goal:** In a week plan you can swap and reorder exercises (and add or remove one, per G13), with "only this week" for week-dependent runs, and the program tab of a week-dependent run becomes read-only, since weeks are now where its volume changes.
-**Scope:** week actions in Plan; `weekEdits.ts` (pure carry semantics): a swap points the slot at a week-only program exercise for the replacement (its planned sets move with it); "only this week" keeps the old slot/order in the carry fields so copying forward reverts; for stable runs every week edit is a one-off. Program tab on a week-dependent run: read-only, shown as week 1's reference (every run is week-dependent until chunk 11 can create stable programs; editing a stable run's copy arrives with chunk 11). Removing an exercise from a run copy becomes a soft removal (`removed_at`). Chunk 7's "apply run-copy edits to every week" bridge is removed here.
-**Depends on:** 8. **Blocked by:** G13.
-**Verification:** unit tests of carry semantics (only-this-week swap/reorder then copy forward → original; permanent swap → carried); live on the active run: swap in a week with only-this-week, plan the next week → original exercise; Adam-scoped query: that week's planned sets resolve through their program exercise to the *replacement* exercise (how Coach reads planned exercises); the program tab is read-only on a week-dependent run. **Would not catch:** stable runs (chunk 11); applying a change to already-planned weeks (chunk 20); superset blocks (chunk 13 extends the reorder).
-**Done when:** swaps/reorders with carry rules work live, and the week-dependent program tab is read-only.
+**Goal:** In a week plan you can swap, reorder, add and remove exercises, with "only this week" for week-dependent runs, the week-dependent program tab becomes read-only, and every read of a run's program exercises goes through one checked helper.
+**Scope:**
+- Week actions in Plan; `weekEdits.ts` (pure carry semantics): a swap points the slot at a week-only program exercise for the replacement (its planned sets move with it; it takes the replaced slot's superset block); an add creates a week-only slot; a remove drops the week exercise row and its planned sets; "only this week" keeps the old slot/order in the carry fields so copying forward reverts. Per SPEC (G13): add/remove is allowed for both planning types — week-dependent carries it forward through copying unless "only this week" is ticked; stable makes it a one-off for that week.
+- Program tab on a week-dependent run: volume read-only, shown as week 1's reference (every run is week-dependent until chunk 11 can create stable programs; editing a stable run's volume arrives with chunk 11). Removing an exercise from a run copy becomes a soft removal (`removed_at`). Chunk 7's "apply run-copy edits to every week" bridge is removed here.
+- **One read path:** `src/features/programs/runProgramExercises.ts` is the only code that reads `v2_program_exercises` for a run. It applies the rules in one place: the program tab's list excludes `week_only` and `removed_at` rows; a week's list comes through `v2_week_plan_exercises` (which may point at week-only slots); every caller goes through it — `GymSession`, `SessionPreview`, `PlanPage`, the program tab, `offlineCache`, `useAutoFinishSession`, the planner (saved programs pass through the same helper; their rows never carry the run-only flags). Unit tests per rule.
+- **A check, not a review item:** `scripts/check-program-exercise-reads.mjs` (+ `node --test` test) scans `src/` and `api/` for `.from('v2_program_exercises')` and for embedded `v2_program_exercises(` selects, and exits 1 on any outside the helper. Allowed exceptions live in the script, each with its reason: Coach's files (unchanged by SPEC; they read a planned set's slot identity through its foreign key, which is correct with week-only slots), and the start function / migrations (SQL, not scanned). Adding an exception is a visible diff to the script.
+**Depends on:** 8.
+**Verification:** unit tests of carry semantics (only-this-week swap/reorder/add/remove then copy forward → original; permanent change → carried; stable add → absent from the next week) and of the helper's filters; `node scripts/check-program-exercise-reads.mjs` exits 0, and is proven by breaking it: a scratch commit adding a direct `.from('v2_program_exercises')` in a component makes it exit 1 naming the file (reverted); live on the active run: swap in a week with only-this-week, plan the next week → original exercise; add an exercise in a week → it carries into the next planned week; Adam-scoped query: that week's planned sets resolve through their program exercise to the *replacement* exercise; the program tab lists no week-only or removed rows and is read-only for volume on a week-dependent run. The script also fails on any `.from(<variable>)` call not on its list, so a dynamic table name can't slip past. **Would not catch:** a raw SQL read inside a new Postgres function (functions are reviewed with their migration); stable runs (chunk 11); applying a change to already-planned weeks (chunk 20).
+**Done when:** swaps/reorders/adds/removes with carry rules work live, the week-dependent program tab is read-only, and the read-path script passes and runs at every later chunk boundary.
 
 ### Chunk 10 — Priorities: focus / don't care
 **Goal:** Priorities are focus / don't-care marks on muscle groups and subgroups, on the saved program and per run in the plan screen, with existing four-level marks mapped.
-**Scope:** `priorityMarks.ts` (effective mark per G2(ii); the summary phrased from the group, e.g. "chest without upper chest"); `PrioritiesEditor.tsx` (groups unfolding to subgroups, each focus / don't care / left normal) for the run's copy in Plan; the start function already copies marks; migration: the four-level mapping (top → focus, low → don't care, high and normal → no row) into the run copy's marks, plus whatever G2(i) and (iii) decide.
-**Depends on:** 6. **Blocked by:** G2.
-**Fact — the four levels as stored:** `v2_coach_meso_tag_priorities.priority` is text with `CHECK (priority in ('low','normal','high','top'))`, default `'normal'` (024); the UI scale is low → normal → high → top (`priorityTags.ts:24`); a missing row means normal (`densifyPriorities`), while a stored `'normal'` row is explicit and Coach tells the two apart (`isExplicit`). Rows are per mesocycle, per `muscle_group` (12) or `muscle_subgroup` (22). Scratch: `'focus'` is rejected (23514) and the CHECK reads exactly the four values (R15). "The two middle levels" are therefore `normal` and `high`. Live: L2 gives your distribution.
-**Migration:** writes the mapped marks; whether the old table changes is G2. Destructive only if G2 chooses to rewrite or delete old rows — then back them up into a table first. Rollback: delete the mapped marks (and restore old rows from the backup if any changed). `check-migration`: exit 1.
-**Verification:** scratch R13 on the final file; unit tests of effective marks and summary wording; live: Adam-scoped before/after counts per level vs. mapped marks (MESO 2.0-style check: every top → one focus, every low → one don't care, middle levels → none); Coach's meso payload compared per G2's answer. **Would not catch:** Coach's reading of the new marks, which depends on G2.
-**Done when:** the run's marks are edited in Plan in the new vocabulary and existing marks arrived mapped.
+**Scope:** `priorityMarks.ts`: effective mark — a subgroup with no mark of its own takes its group's mark; a subgroup marked differently keeps its own (SPEC); the summary phrased from the group ("chest without upper chest"). `PrioritiesEditor.tsx` (groups unfolding to subgroups, each focus / don't care / left normal) for the run's copy in Plan; the Plan header's PRIORITIES link opens it for the active run. The start function already copies marks. Migration: map the **active** run's four-level rows (top → focus; low → don't care; normal and high → no row) onto the active run's copy **and** onto the saved program cloned from it in chunk 6 (SPEC). Run marks are stored only in the new form. Completed runs' rows stay in `v2_coach_meso_tag_priorities` untouched, still edited/viewed through `MesoPrioritiesPage` (reached from ProgramPage now, from the Programs page after chunk 26).
+**Depends on:** 6.
+**Fact — the four levels as stored:** `v2_coach_meso_tag_priorities.priority` is text with `CHECK (priority in ('low','normal','high','top'))`, default `'normal'` (024); the UI scale is low → normal → high → top (`priorityTags.ts:24`); a missing row means normal (`densifyPriorities`), while a stored `'normal'` row is explicit and Coach tells the two apart (`isExplicit`). "The two middle levels" are `normal` and `high`. **Live (L2): the constraint is exactly the four values; MESO 1.0 (completed) and MESO 2.0 (active) have rows. Active: groups top 1, high 2, normal 3, low 4; subgroups top 2, high 3, low 5.**
+**Expected result of the mapping, from L2:** on the active run's copy and on its saved clone, each: 3 focus (1 group + 2 subgroups), 9 don't care (4 groups + 5 subgroups); 8 rows map to normal and produce nothing (high 2 + normal 3 groups, high 3 subgroups). MESO 1.0's rows and every old row unchanged.
+**Migration:** inserts into `v2_program_priorities` only; **not destructive**; the old table is not touched. Rollback: delete the inserted marks (two program ids). `check-migration`: exit 1 (insert into an existing table).
+**Consequence (accepted in SPEC):** Coach keeps reading the old table, so it sees no priorities for runs started after this build.
+**Verification:** scratch R13 re-run with L2's distribution as fixture; unit tests of effective marks (inheritance, override) and summary wording; live: Adam-scoped counts — exactly 12 new marks on each of the two programs (3 focus, 9 don't care), 0 changes in `v2_coach_meso_tag_priorities`; the editor shows those marks; Coach's meso payload for MESO 1.0 identical before/after. **Would not catch:** how marks are used later (only displayed in phase 1).
+**Done when:** the active run's marks are edited in Plan in the new vocabulary and the existing marks arrived mapped on both programs.
 
 ### Chunk 11 — The stepped program planner
 **Goal:** Saved programs are created and edited in three steps — priorities (skippable), exercises & order with the weekday schedule, volume — and a run can be started from the planner.
-**Scope:** `src/features/planner/*`: step 1 uses the chunk 10 editor on the saved program; step 2 adds workouts, exercises (existing picker), order (up/down) and one weekday per workout (no two workouts on one weekday — SPEC "later"); step 3 picks stable / week-dependent and plans sets: the number of sets per exercise is the only required value, filled for all sets at once then adjustable per set, with per-set rep targets (number / range / AMRAP); back and forward between steps; empty state "Add an exercise"; save stores the program as is; Start creates a run via chunk 6. On a stable run, the program tab edits the run's copy (exercises and sets) with the same step 2/step 3 components; changes reach weeks not yet planned (applying them to planned weeks is chunk 20). Routes: `/program/:id` opens the planner. Removed: ProgramBuilderPage, WorkoutDayEditorPage, WeeklyScheduleGrid, and the suggested-reps UI (PlanPage's "· N REPS", `ExerciseHeader`'s reps line); planned rep targets show instead in Plan and on workout rows. Plan's no-run empty state becomes "Start a program" → planner. Schedule type stays weekday until chunk 25 adds sequence (planner and scheduler together); design fields, kinds, supersets and the warmup routine arrive with their own chunks.
-**Depends on:** 2, 6, 7, 8, 9, 10. **Blocked by:** G2 (via 10); G14 if L6 finds a workout on two weekdays.
+**Scope:** `src/features/planner/*`: step 1 uses the chunk 10 editor on the saved program; step 2 adds workouts, exercises (existing picker), order (up/down) and one weekday per workout (no two workouts on one weekday — SPEC "later"); step 3 picks stable / week-dependent and plans sets: the number of sets per exercise is the only required value, filled for all sets at once then adjustable per set, with per-set rep targets (number / range / AMRAP); back and forward between steps; empty state "Add an exercise"; save stores the program as is; Start creates a run via chunk 6. All program-exercise reads go through chunk 9's helper. On a stable run, the program tab edits the run's copy (exercises and sets) with the same step 2/step 3 components; changes reach weeks not yet planned (applying them to planned weeks is chunk 20). Routes: `/program/:id` opens the planner. Removed: ProgramBuilderPage, WorkoutDayEditorPage, WeeklyScheduleGrid, and the suggested-reps UI (PlanPage's "· N REPS", `ExerciseHeader`'s reps line); planned rep targets show instead in Plan and on workout rows. Plan's no-run empty state becomes "Start a program" → planner. Schedule type stays weekday until chunk 25 adds sequence (planner and scheduler together); design fields, kinds, supersets and the warmup routine arrive with their own chunks.
+**Depends on:** 2, 6, 7, 8, 9, 10. (No longer blocked: G2 answered; G14 void — L6 found no program with a workout on two weekdays, so every existing schedule fits "one weekday per workout".)
 **Verification:** in the running app: create a program (3 workouts, Mon/Wed/Fri, stable, 3 sets each with an 8–12 range), save; Adam-scoped queries show the program, workouts, schedule, exercises and sets exactly as entered; reopen and save unchanged → no row changes (`updated_at` aside); start it → run copy equals the template (chunk 6 check) and week 1 is planned with those sets (chunk 8); the workout screen shows "8–12"; a week-dependent program saves its sets as week 1; on the stable run just started, an exercise added in the program tab appears in the next unplanned week only and the planned current week is unchanged (Adam-scoped); the saved program stays byte-identical; old builder routes no longer exist; 375 px. **Would not catch:** fields added by later chunks.
 **Done when:** the old builder is gone and every saved-program edit happens in the planner.
 
@@ -445,17 +396,17 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 **Goal:** The `target_reps` column is gone, with its values kept or converted as you decide.
 **Scope:** migration: backup table (exercise id, value, and the ids of any planned sets converted), the optional conversion, `alter table v2_program_exercises drop column target_reps`; the last code references (types, mappers, the start function and clone code) removed — the UI went in chunk 11.
 **Depends on:** 11.
-**Decision at build time (SPEC: "blocking decision"):** what happens to existing values — (a) discard after backup; (b) convert into rep targets on the active run's unlogged planned working sets that have none (R14: 34 such sets on the fixtures); (c) other.
+**Decision at build time (SPEC: "blocking decision"):** what happens to existing values — (a) discard after backup; (b) convert into rep targets on the active run's unlogged planned working sets that have none (R14: 34 such sets on the fixtures); (c) other. **Live (L8): 26 of your 82 program exercises have a value.** After chunk 6's transition the saved clones carry copies too, so the backup holds the originals' 26 plus the clones' copies.
 **Migration:** **destructive** — drops a column with data. Changes: every suggested-reps value leaves the live table (kept in the backup); with (b), planned sets of the active run gain rep targets. Rollback: re-add the column and restore from the backup; with (b), clear the converted sets listed in the backup. Precondition: no device may still run a bundle older than chunk 11 — the old client inserts `target_reps` (`programService.addProgramExercise`) and would fail after the drop; accept the update banner on every device first. `check-migration`: exit 1 (drop).
-**Verification:** scratch R14 re-run (rollback fingerprint must match); live: `grep -rn target_reps src api` = 0 before apply; Adam-scoped count of non-null values before = backup row count; API probe `select=target_reps` → `400 / 42703` after; one planner save and one workout screen render after the drop. **Would not catch:** an old bundle still open somewhere — hence the precondition.
+**Verification:** scratch R14 re-run (rollback fingerprint must match); live: `grep -rn target_reps src api` = 0 before apply; Adam-scoped count of non-null values before (expected 52: L8's 26 on the run copies plus 26 on their clones) = backup row count; API probe `select=target_reps` → `400 / 42703` after; one planner save and one workout screen render after the drop. **Would not catch:** an old bundle still open somewhere — hence the precondition.
 **Done when:** the column is gone, the backup holds every value, and the app runs with no reference to it.
 
 ### Chunk 13 — Supersets
-**Goal:** Exercises can be grouped into supersets that render as a block of rounds, with the current set zigzagging through the round, and every reorder moves a superset as one block.
-**Scope:** planner step 2 groups exercises (`superset_block_id`, any number of exercises); regrouping in a running program waits for G13; `supersetRounds.ts` builds rounds (round 1 = A1, B1, C1; unequal counts allowed — 4 of A and 3 of B gives 4 rounds, round 4 holds only A; leftover sets stay in the block) and the zigzag order; `SupersetBlock.tsx` on the workout screen renders rounds in that order, so the existing "current set" button (first `[data-unlogged-set]` in DOM order) follows A1 → B1 → A2; reorders in the program tab and week plan move the block as a unit (session reorder is phase 2); "last time" stays per exercise. Superset rest overrides are authored and timed in chunk 16.
-**Depends on:** 9, 11. **Blocked by:** G13, for mid-run regrouping only.
-**Verification:** unit tests (rounds, empty slots, zigzag); a real session with a 2-exercise superset of 4 and 3 sets: block shows 4 rounds, round 4 has one row, the current-set button visits A1, B1, A2, …; reorder in the week plan moves both exercises together (Adam-scoped positions); the run copy carries the block (chunk 6 copy). **Would not catch:** rest timing inside a round (chunk 16).
-**Done when:** supersets can be planned and render as rounds live.
+**Goal:** Exercises can be grouped into supersets that render as a block of rounds, with the current set zigzagging through the round, every reorder moving a superset as one block, and grouping editable mid-run as a design field.
+**Scope:** planner step 2 groups exercises (`superset_block_id`, any number of exercises); in a running program, grouping is a design field (SPEC, G13): the program tab regroups for both planning types, taking effect from the next session (the workout screen reads blocks from the run copy when the session loads); a week-only slot created by a swap keeps the replaced slot's block; an exercise added in a week is not in a superset. `supersetRounds.ts` builds rounds (round 1 = A1, B1, C1; unequal counts allowed — 4 of A and 3 of B gives 4 rounds, round 4 holds only A; leftover sets stay in the block) and the zigzag order; `SupersetBlock.tsx` on the workout screen renders rounds in that order, so the existing "current set" button (first `[data-unlogged-set]` in DOM order) follows A1 → B1 → A2; reorders in the program tab and week plan move the block as a unit (session reorder is phase 2); "last time" stays per exercise. Superset rest overrides are authored and timed in chunk 16. `v2_program_superset_blocks` joins `TABLES` in `verify-rls.mjs`.
+**Depends on:** 9, 11.
+**Verification:** unit tests (rounds, empty slots, zigzag); a real session with a 2-exercise superset of 4 and 3 sets: block shows 4 rounds, round 4 has one row, the current-set button visits A1, B1, A2, …; reorder in the week plan moves both exercises together (Adam-scoped positions); regroup in the program tab of a week-dependent run → the next session loads the new block, an in-progress session is unchanged until reloaded, the saved program unchanged; a swap inside a block keeps the replacement in the block; the run copy carries the block (chunk 6 copy). **Would not catch:** rest timing inside a round (chunk 16).
+**Done when:** supersets can be planned, regrouped mid-run, and render as rounds live.
 
 ### Chunk 14 — Staged sets: all four stage kinds
 **Goal:** A set can be planned as a dropset, rest-pause, myo-reps or cluster in the planner or the week plan, and logs as one set with its stages, the non-dropset kinds carrying the previous stage's weight by default.
@@ -467,16 +418,18 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 ### Chunk 15 — Warmup sets
 **Goal:** Warmup sets are planned in step 3, logged with optional weight and reps (rows) or ticked (tick), and never counted in volume, set counts or "last time" matching.
 **Scope:** migration: relax `v2_set_logs_check` (R11) and redefine `v2_history_session_summary` and `v2_session_type_history` so `set_count` excludes warmups (R12); planner step 3 and the week plan offer warmup sets; the workout screen shows them per the `warmup_display` setting (`rows` default with optional numbers, or `tick`), with a rest timer and nothing else; the Settings row; logging writes `is_warmup = true`; app-side counts exclude warmups — set numbering (`ExerciseCard`), Today's completed count, History detail, Progress — and reference matching ignores them; `scripts/check-warmup-consumers.mjs` lists every set-count consumer with its filter.
-**Depends on:** 11. **Blocked by:** G1.
-**Migration:** constraint relaxation + two view redefinitions; **not destructive** (no data changes; volume in the views already excludes warmups). Rollback: restore the 001 check (only possible while no numberless warmup exists — the rollback script checks first) and the 009/011 view bodies. Confirm the live constraint name before applying (L7). `check-migration`: exit 1.
-**Verification:** scratch R11–R12 on the final file; unit tests per counting helper; real session in both display modes: a ticked warmup stores `weight`/`reps` NULL with `is_warmup` true (Adam-scoped); the session's set count in History excludes it; the consumer script shows a warmup filter on every app-side count. **Would not catch:** Coach's rollups — that is G1.
+**Depends on:** 11.
+**Coach (accepted in SPEC, G1):** Coach stays untouched, so Mesocycle Analysis and the Q&A planning context (`mesoWeekRollup.ts`, `mesoAnalysisInput.ts`) will count numbered warmups as working sets.
+**Live (L7):** the set-log check is named `v2_set_logs_check`, as in 001; 0 warmup logs and 0 warmup planned sets exist — so relaxing the check changes no current row, and the rollback is possible until the first numberless warmup is logged.
+**Migration:** constraint relaxation + two view redefinitions; **not destructive** (no data changes; volume in the views already excludes warmups). Rollback: restore the 001 check (only possible while no numberless warmup exists — the rollback script checks first) and the 009/011 view bodies. Constraint name confirmed live (L7). `check-migration`: exit 1.
+**Verification:** scratch R11–R12 on the final file; unit tests per counting helper; real session in both display modes: a ticked warmup stores `weight`/`reps` NULL with `is_warmup` true (Adam-scoped); the session's set count in History excludes it; the consumer script shows a warmup filter on every app-side count. **Would not catch:** Coach's rollups — accepted (above).
 **Done when:** warmups can be planned, shown both ways and logged, and no app-side count includes them.
 
 ### Chunk 16 — The rest chain
 **Goal:** The rest timer uses the most specific value — the set's own override, then on an exercise's last set its "rest after", then the exercise's rest, then the global setting — with SPEC's superset and staged-set rules.
-**Scope:** rest design fields in the planner (saved programs) and the program tab (run copy only, applying from the next session on): exercise rest, rest after, set rest override, superset rest within a round / after a round, stage rest; `restChain.ts` resolves the value (superset default: no timer between exercises within a round, the block's rest after each round; staged: dropset no timer, others 15 s unless overridden; warmups follow the same chain); `restTimerStore` carries a per-rest target or "no timer"; `RestTimer` / `RestTimerInline` show it. The workout screen reads design fields from the run copy when the session loads.
-**Depends on:** 13, 14. **Blocked by:** G10.
-**Verification:** resolver unit tests, one per chain level and per superset/stage case; a real session: after set 2 the target is that set's override; after the last set it's "rest after"; inside a superset round no timer starts; after the round, the block's rest; a dropset stage starts no timer, a rest-pause stage 15 s; changing a rest in the program tab shows on the next session load. **Would not catch:** interaction with the Start Set flow beyond its existing tests (`measure_set_time` unchanged).
+**Scope:** rest design fields in the planner (saved programs) and the program tab (run copy only, applying from the next session on): exercise rest, rest after, set rest override, superset rest within a round / after a round, stage rest; `restChain.ts` resolves the value per SPEC: superset default — no timer between exercises within a round, but a set's own explicit rest override wins over that; after a round, the block's override, or with none the normal chain of the exercise that ends the round; an exercise's "rest after" never fires inside a round, only after the block's final round; staged: dropset no timer, others 15 s unless overridden; warmups follow the same chain; `restTimerStore` carries a per-rest target or "no timer"; `RestTimer` / `RestTimerInline` show it. The workout screen reads design fields from the run copy when the session loads.
+**Depends on:** 13, 14.
+**Verification:** resolver unit tests, one per chain level and per superset/stage case; a real session: after set 2 the target is that set's override; after the last set it's "rest after"; inside a superset round no timer starts, unless that set has its own override (then the override); after a round with no block override, the chain of the exercise that ended the round; an exercise whose last set falls mid-block gets its "rest after" only after the final round; a dropset stage starts no timer, a rest-pause stage 15 s; changing a rest in the program tab shows on the next session load. **Would not catch:** interaction with the Start Set flow beyond its existing tests (`measure_set_time` unchanged).
 **Done when:** the timer target follows the chain live.
 
 ### Chunk 17 — Tempo
@@ -495,9 +448,9 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 
 ### Chunk 19 — Week targets and tags
 **Goal:** The week plan carries per-set weight targets, rep-target overrides, RIR targets and tags, all shown on the workout screen's set rows.
-**Scope:** Plan's set rows edit weight target (in the exercise's unit, stored kg), rep target (the week's override), RIR (exists), tags (preset list + custom text; "Apply to all sets"); `PlanTargetsPanel` and `SetRow` show them; a set without a target shows none; AMRAP counts as a working set and its RIR defaults to 0, editable. Copying (chunk 8) already carries weight and RIR and never tags.
-**Depends on:** 8, 11. **Blocked by:** G11.
-**Verification:** unit tests on formatting; live: set targets and a tag in week N → shown on the workout rows; plan week N+1 → weights and RIR carried, tags empty (Adam-scoped). **Would not catch:** RPE display (phase 2).
+**Scope:** Plan's set rows edit weight target (in the exercise's unit, stored kg), rep target (the week's override), RIR (exists), tags — several per set (SPEC), from the preset list plus custom text; "Apply to all sets" adds one tag to every set of the exercise; `PlanTargetsPanel` and `SetRow` show them; a set without a target shows none; AMRAP counts as a working set and its RIR defaults to 0, editable. Copying (chunk 8) already carries weight and RIR and never tags.
+**Depends on:** 8, 11.
+**Verification:** unit tests on formatting; live: set targets and two tags on one set in week N → both shown on the workout row; plan week N+1 → weights and RIR carried, tags empty (Adam-scoped). **Would not catch:** RPE display (phase 2).
 **Done when:** targets and tags can be planned and are visible during the workout.
 
 ### Chunk 20 — "Apply this change to planned weeks ahead"
@@ -511,29 +464,30 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 **Goal:** Deload is marked per session or for a whole week, deload sessions are visibly marked, and they are never a copy source or a "last time" reference.
 **Scope:** Plan: mark a session; "Mark this week as deload" marks every planned session of the week; visible marking; labels per session on Today, preview and workout screen ("DELOAD" for that session, not "DELOAD WEEK"); copy sources already skip deload sessions (chunk 8); last-time exclusion lands in chunk 23. With no rules on, marking changes only how the session is treated; its contents are planned by hand.
 **Depends on:** 8.
-**Fact — how deload is stored today:** one boolean per **planned session**, not per week: `v2_week_plans.is_deload`, a row per (meso, workout, week) — unique `(mesocycle_id, workout_day_id, week_number)` (001; scratch catalog R15). It is the only stored deload column; the history views derive theirs through `v2_sessions.week_plan_id` (009/011), as do Progress (`progressService.ts:107`) and Coach daily (`analysisInput.ts:385-389`). Plan toggles it per workout panel, and only once that workout has a plan row (`PlanPage.tsx:346-354`); there is no whole-week action, yet Today labels it "DELOAD WEEK" (`TodayPage.tsx:136-143`). Coach's Mesocycle Analysis collapses it to "a week is deload if any planned row in it is" (`mesoAnalysisInput.ts:652`, `mesoWeekRollup.ts:74`). Copy-forward copies the flag (chunk 8). Sessions started without a plan have no deload information (views treat them as normal). **Consequence: moving deload to per-session marking needs no data migration** — the change is the week shortcut, the labels, the copy rules and the rules engine. Exception: a workout on two weekdays shares one row (G14/L6). Live: L1 shows how your deload rows are spread.
+**Fact — how deload is stored today:** one boolean per **planned session**, not per week: `v2_week_plans.is_deload`, a row per (meso, workout, week) — unique `(mesocycle_id, workout_day_id, week_number)` (001; scratch catalog R15). It is the only stored deload column; the history views derive theirs through `v2_sessions.week_plan_id` (009/011), as do Progress (`progressService.ts:107`) and Coach daily (`analysisInput.ts:385-389`). Plan toggles it per workout panel, and only once that workout has a plan row (`PlanPage.tsx:346-354`); there is no whole-week action, yet Today labels it "DELOAD WEEK" (`TodayPage.tsx:136-143`). Coach's Mesocycle Analysis collapses it to "a week is deload if any planned row in it is" (`mesoAnalysisInput.ts:652`, `mesoWeekRollup.ts:74`). Copy-forward copies the flag (chunk 8). Sessions started without a plan have no deload information (views treat them as normal). **Consequence: moving deload to per-session marking needs no data migration** — the change is the week shortcut, the labels, the copy rules and the rules engine. **Live: L1 — no week plan has ever been marked deload; L6 — no program puts one workout on two weekdays**, so the one-flag-per-planned-session reading holds for all your data and nothing existing changes meaning.
 **Verification:** live: "Mark this week as deload" sets `is_deload` on every planned row of that week (Adam-scoped), unmarking one session clears only that row; Today and the workout screen show "DELOAD" on marked sessions only; plan the next week → it copies from the last normal occurrence, not the deload one. **Would not catch:** rules (chunk 22).
 **Done when:** per-session marking and the week shortcut work live, with correct labels.
 
 ### Chunk 22 — Deload rules
 **Goal:** With rules switched on, a session marked deload is pre-calculated from the last normal week — its planned sets, and the weights actually logged in it (planned weight where nothing was logged) — using the global rules or the program's override.
-**Scope:** `deloadRules.ts` (pure: sets −% or −n with rounding up/down, never below 1; weight as % of base rounded up/down to a precision step in kg or lbs; reps ±n; RIR +n; each independent and optional; defaults per SPEC); Settings: default deload rules editor; planner step 3 / program: the override; on marking (chunk 21) with rules on, the session's planned sets are replaced by the calculated ones and stay hand-editable.
-**Depends on:** 11, 21. **Blocked by:** G9.
-**Migration:** none (columns from chunk 1).
-**Verification:** calculator unit tests (4 sets −50% → 2 either way; 3 sets −50% → 1 down / 2 up; 1 set −50% → 1; 82.5 kg × 90% = 74.25 → 72.5 down / 75 up at 2.5 kg; a lbs step); live: rules on, mark a session → its planned sets equal the calculator's output from the last normal week's logs (Adam-scoped); a program override wins over the global default. **Would not catch:** scheduled deloads (SPEC: later).
+**Scope:** `deloadRules.ts` (pure: sets −% or −n with rounding up/down, never below 1; weight as % of base rounded up/down to a precision step in kg or lbs; reps ±n; RIR +n; each independent and optional; defaults per SPEC); Settings: default deload rules editor; planner step 3 / program: the override; on marking (chunk 21) with rules on, the session's current planned sets are saved to `v2_week_plans.deload_restore` and replaced by the calculated ones, which stay hand-editable. Per SPEC (G9): unmarking restores the saved sets (and clears the snapshot); the reps rule shifts both ends of a range and does nothing to AMRAP; the sets rule removes the last working sets, a staged set counts as one, warmups are never touched; when the workout didn't happen in the last normal week, the base is its last normal occurrence.
+**Depends on:** 11, 21.
+**Migration:** none (`deload_restore` and the rules columns come from chunk 1).
+**Verification:** calculator unit tests (4 sets −50% → 2 either way; 3 sets −50% → 1 down / 2 up; 1 set −50% → 1; 82.5 kg × 90% = 74.25 → 72.5 down / 75 up at 2.5 kg; a lbs step); live: rules on, mark a session → its planned sets equal the calculator's output from the last normal week's logs (Adam-scoped); a program override wins over the global default; edit one calculated set by hand, unmark → the pre-mark sets are back exactly (Adam-scoped diff) and `deload_restore` is null; calculator cases for a range (8–12, −2 → 6–10), AMRAP (unchanged), a staged set counted as one, warmups untouched; a workout skipped in the last normal week takes its base from the occurrence before. **Would not catch:** scheduled deloads (SPEC: later).
 **Done when:** marking with rules on produces the calculated plan live.
 
 ### Chunk 23 — "Last time" matches by exercise
-**Goal:** The reference panel matches by exercise across runs, never uses deload sessions, labels LAST WEEK only per G7, and for sequence runs always shows LAST TIME with elapsed time and hides EARLIER THIS WEEK; FIRST TIME only when the exercise has truly never been done.
-**Scope:** `referenceByExercise.ts` beside `referenceLogic.ts`, whose existing exports stay byte-identical because Coach's `analysisInput.ts` imports them; a candidate query by exercise id over all completed sessions with the deload flag through `week_plan_id` (today's query is per workout day — `sessionService.ts:523-547`); elapsed time from `moved_to_date` when set; warmups never matched; `ExerciseReference` and its offline fallback; reordering never affects matching.
-**Depends on:** 21. **Blocked by:** G7.
-**Verification:** unit tests per rule (previous week normal → LAST WEEK; previous week deload → per G7; done only in another workout → LAST TIME; done only in an earlier run → LAST TIME; sequence → LAST TIME and no EARLIER THIS WEEK); `git diff` shows no change to `referenceLogic.ts` and Coach's tests pass unmodified; live: an exercise last done in a different workout shows LAST TIME with the right elapsed days. **Would not catch:** Coach's own reference (unchanged by design).
+**Goal:** The reference panel matches by exercise across runs, never uses deload sessions, labels LAST WEEK only when last week's match is a normal session (a deload match gives LAST TIME from the last normal occurrence — SPEC), and for sequence runs always shows LAST TIME with elapsed time and hides EARLIER THIS WEEK; FIRST TIME only when the exercise has truly never been done.
+**Scope:** `referenceByExercise.ts` beside `referenceLogic.ts`, whose existing exports stay byte-identical because Coach's `analysisInput.ts` imports them; a candidate query by exercise id over all completed sessions with the deload flag through `week_plan_id` (today's query is per workout day — `sessionService.ts:523-547`); elapsed time from `moved_to_date` when set; warmups never matched; the reach-back (all sets skipped) also crosses runs (SPEC) — new function beside `resolveSecondaryReference`, which stays for Coach; `ExerciseReference` and its offline fallback; reordering never affects matching.
+**Depends on:** 21.
+**Verification:** unit tests per rule (previous week normal → LAST WEEK; previous week's match deload → LAST TIME from the last normal occurrence; reach-back finds a real set in an earlier run; done only in another workout → LAST TIME; done only in an earlier run → LAST TIME; sequence → LAST TIME and no EARLIER THIS WEEK); `git diff` shows no change to `referenceLogic.ts` and Coach's tests pass unmodified; live: an exercise last done in a different workout shows LAST TIME with the right elapsed days. **Would not catch:** Coach's own reference (unchanged by design).
 **Done when:** the live panel follows the new rules.
 
 ### Chunk 24 — Weekday runs: move a session, several sessions a day
 **Goal:** In a weekday run any session can be moved to another day of the same week, a day can hold several sessions (listed, each opening on its own), and Today's empty state shows the next scheduled session and when it's due.
-**Scope:** "Move this session" on Today and in Plan writes `moved_to_date` (creating a `planned` session row when the session hasn't started); `scheduler.ts` returns the sessions due today (scheduled and not moved away, plus moved here); `TodayPage` lists them; one session in progress at a time, as today; the missed-session prompt per G6; the empty state. History keeps showing a session under its planned `date` (as DO IT NOW does today; clock times are phase 2).
-**Depends on:** 8. **Blocked by:** G6.
+**Scope:** "Move this session" on Today and in Plan writes `moved_to_date` (creating a `planned` session row when the session hasn't started); `scheduler.ts` returns the sessions due today (scheduled and not moved away, plus moved here); `TodayPage` lists them; one session in progress at a time, as today; the empty state. Missed-session prompt per SPEC (G6): it stays, but only for missed days of the **current** week (the 7-day look-back across weeks goes); its "Do it now" becomes a move to today (the session keeps `date` = the day it was for, gets `moved_to_date` = today); "Mark skipped" stays. History shows the day a session was actually done — `moved_to_date` when set, else `date` — in the session list, session detail and session-type history (`historyService` / `HistorySessions` / `SessionDetail`); the week a session belongs to still comes from `date`, which keeps week plans and Coach's week resolution unchanged. Optional, per G15: backfill `moved_to_date` on the one legacy "Do it now" session.
+**Depends on:** 8. **Blocked by:** G15, for the optional backfill only.
+**Live (L4):** one existing session was done on a later day than its date (dated 2026-08-29, started 2026-08-30, completed) — the old DO IT NOW shape.
 **Fact — today's skip / do it the next day:** verified by running the production `schedule()` (scenarios S0–S10) and reading the prompt and services:
 - The scheduler walks from 7 days back — never before the meso start — to yesterday; a weekday the program schedules is **missed** unless *some* session dated that day is `completed`, `in_progress` or `skipped`, whichever workout it is (S0, S6, S7). Last week's days are included (S6). A `planned`-status row doesn't count (S9).
 - Each missed date resolves its own week's plan (S1). Missed sessions take over Today before today's workout: "Catch up on missed sessions…" plus a sheet listing them newest first (`TodayPage.tsx:62-78`, `MissedSessionPrompt.tsx`).
@@ -541,101 +495,68 @@ Every chunk with a migration follows the Reviewer's rules: `node scripts/check-m
 - **MARK SKIPPED** inserts a `skipped` row for the missed date, or marks an existing row skipped (`skipMissedSession`; S5); online only (`useSkipMissedSession` has no offline branch).
 - **Dismiss** (X or backdrop) skips to today's workout for that screen mount only (`useState`), writes nothing, and the prompt returns on the next mount until the day leaves the 7-day window (S2).
 - One workout on two weekdays: both dates are expected and share one plan row (S8). `completed_today` looks only at sessions dated today (S10).
-**Verification:** scheduler unit tests (move Mon → Fri; swapping two days = two moves; moving onto a day that has one → both listed; the G6 behaviour); live: move a planned session, Today shows it on the target day and not on the original; a `planned` row with `moved_to_date` exists (Adam-scoped). **Would not catch:** sequence runs (chunk 25).
+**Verification:** scheduler unit tests (move Mon → Fri; swapping two days = two moves; moving onto a day that has one → both listed; a missed day of the current week is prompted, a missed day of last week is not; "Do it now" yields `date` = missed day, `moved_to_date` = today); live: move a planned session, Today shows it on the target day and not on the original; a `planned` row with `moved_to_date` exists (Adam-scoped); after training it, History lists it on the day done. **Would not catch:** sequence runs (chunk 25).
 **Done when:** moves and multi-session days work live.
 
 ### Chunk 25 — Sequence runs
 **Goal:** A program can run as an ordered sequence of workouts and rest days not tied to dates, the cycle replacing the week everywhere the week is used.
-**Scope:** planner step 2 gains the schedule type and a sequence editor (workout and rest-day slots, up/down); `sequenceSchedule.ts`: the next workout = the slot after the last workout done, due after the rest days between them counted from that day (A on Monday with two rests → B due Thursday); not training on a due day misses nothing; "Train anyway" on a rest day starts the next workout and the remaining rest days disappear; "Skip" drops a workout and the sequence moves on (due date per G8); cycles are week plans with `week_number` = cycle index (planning via chunk 8); labels "Cycle n"; "Mark this cycle as deload"; Today: next workout and when it's due, or on a rest day the next workout with "Train anyway"; reference per chunk 23's sequence rule.
-**Depends on:** 8, 11, 23. **Blocked by:** G8.
-**Verification:** unit tests for due dates (rests counted from the last workout; missed due day shifts; Train anyway; Skip per G8; cycle rollover); live on a sequence test run (a throwaway run writes — needs your go-ahead): Today shows the right next workout on a rest day, Train anyway starts it, the next due date counts from that session. **Would not catch:** Coach's weekly analysis on a sequence run (see "Consequences for Coach").
-**Done when:** a sequence program can be planned, started and trained live.
+**Scope:**
+- Planner step 2 gains the schedule type and a sequence editor (workout and rest-day slots, up/down; a workout may appear more than once — SPEC, G8).
+- Migration: replace `v2_week_plans`' unique key with `(mesocycle_id, workout_day_id, week_number, sequence_position) nulls not distinct` (R16) and switch `v2_plan_week`'s conflict target to it; a cycle plans one row per **slot** (`sequence_position`), so the same workout twice in a cycle gets two planned sessions. Weekday rows keep `sequence_position` null and behave exactly as before.
+- `sequenceSchedule.ts`: the next slot = the one after the last workout done or skipped (read from that session's week plan: `sequence_position` and `week_number`); due after the rest days between them, counted from the last workout done (A on Monday with two rests → B due Thursday); not training on a due day misses nothing; "Train anyway" on a rest day starts the next workout and the remaining rest days disappear; **Skip** drops a workout and the next one is due the same day (SPEC).
+- Cycles are week plans with `week_number` = cycle index; labels "Cycle n"; "Mark this cycle as deload"; copying per slot (a slot's source is the same slot's last normal occurrence); Today: next workout and when it's due, or on a rest day the next workout with "Train anyway"; reference per chunk 23's sequence rule. `v2_program_sequence_items` joins `TABLES` in `verify-rls.mjs`.
+**Depends on:** 8, 11, 23.
+**Migration:** constraint change on an existing table; **not destructive** — every existing row has `sequence_position` null and stays unique under the new key (R16). Confirm the live name of the old unique constraint before applying (scratch: `v2_week_plans_mesocycle_id_workout_day_id_week_number_key`; it is auto-generated, like L7's check). Rollback: drop the new index and restore the old unique constraint (possible while no cycle has a repeated workout). `check-migration`: exit 1.
+**Verification:** scratch R16 on the final file; unit tests for due dates (rests counted from the last workout; missed due day shifts; Train anyway; Skip → next due the same day; a repeated workout A, B, A, rest resolves to the right slot after each A; cycle rollover); live on a sequence test run (a throwaway run writes — needs your go-ahead): Today shows the right next workout on a rest day, Train anyway starts it, the next due date counts from that session; Adam-scoped: weekday week plans unchanged in count. **Would not catch:** Coach's weekly analysis on a sequence run (see "Consequences for Coach").
+**Done when:** a sequence program, including a repeated workout, can be planned, started and trained live.
 
 ### Chunk 26 — Navigation: the program screen folds into Plan
-**Goal:** PROGRAM leaves the bottom bar and everything it offered is reachable from Plan.
-**Scope:** `Nav.tsx` (TODAY, PLAN, PROGRESS, HISTORY, LIBRARY, SETTINGS, + COACH for the Coach user — the phase-2 bar is not part of this), `App.tsx` (redirect `/program` → `/plan`), Plan's sections per G12.
-**Depends on:** 6, 11. **Blocked by:** G12.
-**Verification:** a checklist of every former PROGRAM capability, each reached from Plan in the running app; old deep links redirect; 375 px. **Would not catch:** phase 2's navigation.
+**Goal:** PROGRAM leaves the bottom bar; Plan holds the program tab, and a Programs page reached from Plan's header holds everything else PROGRAM offered.
+**Scope:** per SPEC (G12): `Nav.tsx` (TODAY, PLAN, PROGRESS, HISTORY, LIBRARY, SETTINGS, + COACH for the Coach user — the phase-2 bar is not part of this); `ProgramsPage.tsx`, reached from Plan's header — **saved programs**, each with "Open in planner" and "Start"; **active run** with "End run"; **completed runs**, each with delete and its priorities pages (`MesoPrioritiesPage`, four-level history); `App.tsx` routes (`/program` → the Programs page, `/program/:id` → planner, both from Plan); `ProgramPage.tsx` removed.
+**Depends on:** 6, 10, 11.
+**Verification:** a checklist of every former PROGRAM capability (create/edit program, start run, end run, delete completed run, completed run's priorities), each reached from Plan's header in the running app; starting while a run is active still ends the old one (chunk 6 function); old deep links resolve; 375 px. **Would not catch:** phase 2's navigation.
 **Done when:** PROGRAM is gone from the bar and nothing it did is lost.
 
 ---
 
-## Consequences for Coach (no decision needed unless you object)
+## Consequences for Coach
 
-Phase 1 changes no Coach code (SPEC: Coach stays exactly as it is). Unchanged Coach reads the plan through `program.schedule`, `v2_week_plans` / `v2_week_plan_sets` → `v2_program_exercises`, `workout_day_id` equality and `v2_coach_meso_tag_priorities`. What it will then see:
-- **New runs get new workout ids** (chunk 6). Daily and weekly analysis find their reference by `workout_day_id` (`analysisInput.ts`), so the first session of each workout in a run started after chunk 6 reads as `first_time`; today a new meso of the same program shares ids and finds the previous meso. Runs moved over by G3 A' keep their ids.
+Phase 1 changes no Coach code (SPEC: Coach stays exactly as it is, and is out of scope to be rebuilt). Unchanged Coach reads the plan through `program.schedule`, `v2_week_plans` / `v2_week_plan_sets` → `v2_program_exercises`, `workout_day_id` equality and `v2_coach_meso_tag_priorities`. What it will then see:
+- **New runs get new workout ids** (chunk 6). Daily and weekly analysis find their reference by `workout_day_id` (`analysisInput.ts`), so the first session of each workout in a run started after chunk 6 reads as `first_time`; today a new meso of the same program shares ids and finds the previous meso. Runs moved over by the transition keep their ids.
 - **Sequence runs** (chunk 25): weekly analysis derives expected sessions from `program.schedule` (`weekResolution.ts`), which is empty for sequence programs, so no week of a sequence run becomes analyzable.
 - **Moved sessions** (chunk 24) keep their planned `date`, so Coach reports them on the planned weekday.
 - **Rest-pause, myo-reps and cluster stages** (chunk 14) look like dropset stages to Coach.
 - **Week-level swaps** (chunk 9) stay readable: the planned sets point at the replacement through a week-only slot, so Coach sees the exercise that was actually planned.
-- Logged warmups (G1) and priorities (G2) are open gaps, not accepted consequences.
+- **Logged warmups** (chunk 15) are counted as working sets in Coach's meso and Q&A rollups — accepted in SPEC.
+- **Priorities** (chunk 10): Coach keeps reading the old table, so runs started after this build show no priorities to Coach — accepted in SPEC.
+- **Sequence runs with a repeated workout** (chunk 25): planned rows differ only by `sequence_position`, which Coach doesn't read; it sees the same workout twice in a cycle.
 
 ---
 
-## Live-data checks for Adam
+## Live-data results (run by Adam in the SQL Editor, filtered to his user_id, 2026-10-03)
 
-Run in the SQL Editor (it bypasses RLS, so every query that reads rows filters to your id explicitly; the catalog queries read no user rows). Nothing here writes. All eight were run on the scratch copy first: with your id they return only catalog rows (no such user there), and with the fixture account they return the expected shapes — L6 finds the fixture's workout on two weekdays.
+| Check | Result | Used by |
+|---|---|---|
+| L1 deload rows | No week plan has ever been marked deload | fact 1; chunks 8, 21 |
+| L2 priorities | MESO 1.0 (completed) and MESO 2.0 (active) have rows. Active: groups top 1, high 2, normal 3, low 4; subgroups top 2, high 3, low 5. Constraint exactly the four values | fact 2; chunk 10 |
+| L3 runs | 1 active, 2 completed; indexes: primary key and non-unique `(user_id, status)` only | fact 3; chunk 6 |
+| L4 late sessions | One: dated 2026-08-29, started 2026-08-30, completed | fact 4; chunk 24, G15 |
+| L5 programs | Three programs, each used by exactly one meso (one active) — no completed meso shares the active meso's program | chunks 6, 10 |
+| L6 workout on two weekdays | None | chunks 8, 11, 21 (G14 void) |
+| L7 set-log check | Named `v2_set_logs_check`, as in 001; 0 warmup logs, 0 warmup planned sets | chunk 15 |
+| L8 suggested reps | 26 of 82 program exercises have `target_reps` | chunks 6, 12 |
 
-```sql
--- L1 · fact 1: how deload is spread across planned sessions, per week
-select m.name as meso, wp.week_number, count(*) as planned_sessions,
-       count(*) filter (where wp.is_deload) as deload_sessions
-from v2_week_plans wp join v2_mesocycles m on m.id = wp.mesocycle_id
-where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-group by m.name, wp.week_number
-having count(*) filter (where wp.is_deload) > 0
-order by m.name, wp.week_number;
-
--- L2 · fact 2: four-level rows per meso, and the constraint as applied
-select m.name, m.status, p.tag_type, p.priority, count(*)
-from v2_coach_meso_tag_priorities p join v2_mesocycles m on m.id = p.mesocycle_id
-where p.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-group by 1, 2, 3, 4 order by 1, 3, 4;
-select pg_get_constraintdef(oid) from pg_constraint
-where conrelid = 'v2_coach_meso_tag_priorities'::regclass and contype = 'c';
-
--- L3 · fact 3: runs by status, and the indexes on v2_mesocycles
-select status, count(*) from v2_mesocycles
-where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by status;
-select indexdef from pg_indexes where tablename = 'v2_mesocycles';
-
--- L4 · fact 4: sessions done on a later day than the day they were for (DO IT NOW)
-select date, (started_at at time zone 'Europe/Warsaw')::date as started_on, status
-from v2_sessions
-where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-  and started_at is not null and (started_at at time zone 'Europe/Warsaw')::date <> date
-order by date desc limit 30;
-
--- L5 · G3 sizing: programs and the mesos that use them
-select p.name, count(m.id) as mesos, count(m.id) filter (where m.status = 'active') as active
-from v2_programs p left join v2_mesocycles m on m.program_id = p.id
-where p.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by p.name order by p.name;
-
--- L6 · G14: a workout on two or more weekdays
-select p.name, j.value as workout_day_id, count(*) as weekdays
-from v2_programs p, jsonb_each_text(p.schedule) as j(key, value)
-where p.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and j.value is not null
-group by p.name, j.value having count(*) > 1;
-
--- L7 · chunk 15: the set-log check's live name, and that no warmup rows exist yet
-select conname, pg_get_constraintdef(oid) from pg_constraint
-where conrelid = 'v2_set_logs'::regclass and contype = 'c';
-select (select count(*) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and is_warmup) as warmup_logs,
-       (select count(*) from v2_week_plan_sets where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and is_warmup) as warmup_planned;
-
--- L8 · chunk 12: suggested-reps values that exist
-select count(*) filter (where target_reps is not null) as with_reps, count(*) as total
-from v2_program_exercises where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f';
-```
+The queries were the ones validated on the scratch copy in the first version of this file (see HISTORY via git: commit `de5116f`).
 
 ---
 
 ## At every chunk boundary
 
 - Run every script in `scripts/` plus `npm run typecheck`, `npm test`, `npm run build`; a chunk adds its verification scripts there. That includes `node scripts/verify-rls.mjs` (needs `RLS_TEST_EMAIL` / `RLS_TEST_PASSWORD` for a test account that owns no data — never yours; they are set in this environment). Its selects are unfiltered by design — RLS probes as anon and as the test account — so it is a live read outside the Adam-scoped rule: ask before each run. Its 2026-10-03 run: 25 tables, 50 probes, all pass.
+- `node scripts/check-program-exercise-reads.mjs` (from chunk 9 on): every read of `v2_program_exercises` goes through `runProgramExercises.ts`.
 - CONTEXT rule: a table the app starts reading or writing joins `TABLES` in `scripts/verify-rls.mjs` in the same change. First users of the new tables: `v2_week_plan_exercises` → chunk 7, `v2_program_priorities` → 10, `v2_program_sets` → 11, `v2_program_superset_blocks` → 13, `v2_workout_warmup_items` → 18, `v2_program_sequence_items` → 25. (Postgres functions are not probed — the script never calls an RPC.) Not earlier: PR #6's `verify-rls-tables.test.mjs`, if it reaches master, fails when `TABLES` names a table no code uses.
 - A chunk with a migration stops at a blocking DECISIONS.md entry until you say it's applied; the code that needs it merges after.
 - Live verification is a hard gate where the chunk names one; probe the browser tooling first (Escalation 1). Every live query is Adam-scoped.
 - A live check that writes (a throwaway program, run, session or set) needs your go-ahead first; its rows are labelled `TEST-…`, deleted in FK-safe order, and the cleanup is proven with counts against the baseline. Otherwise the check waits for your own next real session.
-- Check UI at 375 px. Coach code is not touched unless G1/G2 say so; `referenceLogic.ts` and `setGroupLogic.ts` keep their existing exports byte-identical.
+- Check UI at 375 px. Coach code is not touched (SPEC accepts the consequences); `referenceLogic.ts` and `setGroupLogic.ts` keep their existing exports byte-identical.
 - Update CONTEXT.md, move what's no longer true to HISTORY.md.
