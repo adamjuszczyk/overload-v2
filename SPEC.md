@@ -100,7 +100,8 @@ it's week 1.
 - per session: deload flag
 
 **Session** [existing, extended]
-- [P1] deload flag; moved-to date (weekday); session-only exercise order
+- [P1] deload flag; moved-to date (weekday)
+- [P2] session-only exercise order
 - [P2] clock start and end (end derived from the last logged set, as duration
   already is)
 
@@ -157,6 +158,9 @@ rule independent and optional:
       changes are made in a week and carry forward through copying.
 - Priorities live on the program and can be changed per run in the plan screen
   (as today).
+- **Existing programs and runs:** every program a run already points at becomes
+  that run's copy (no existing ids change), and a saved program is cloned from it
+  to be the reusable template.
 
 ### Stepped program planner [P1]
 
@@ -165,6 +169,8 @@ rule independent and optional:
    normal.
    - If a group and one of its subgroups are marked differently, the subgroup's
      mark applies to that subgroup.
+   - A subgroup with no mark of its own takes its group's mark. (Chest marked
+     focus covers upper chest unless upper chest is marked otherwise.)
    - The summary is phrased from the group: "chest without upper chest".
 2. **Exercises and order** — exercises per workout, their order, superset
    grouping, the warmup routine checklist, and the schedule: schedule type, then
@@ -182,8 +188,13 @@ rule independent and optional:
 
 ### Priorities migration [P1]
 
-- Existing four levels: top → focus; low → don't care; the two middle levels →
-  normal.
+- Existing four levels: top → focus; low → don't care; the two middle levels
+  (normal, high) → normal.
+- Mapped marks go onto the active run's copy and onto the saved program cloned
+  from it. Completed runs' marks stay where they are, as history.
+- Run marks are stored only in the new form. Coach keeps reading the old table
+  unchanged, so it sees no priorities for runs started after this build —
+  accepted (Coach is out of scope and will be rebuilt).
 
 ### Weeks and copying [P1]
 
@@ -192,7 +203,7 @@ rule independent and optional:
   from then on it's its own week.
 - **Source of a new week's volume:** `stable` → the run's copy, always.
   `week-dependent` → the last planned week ("copy last week" is the default;
-  a setting lets weeks start empty instead — default for new users: copy).
+  a setting lets weeks start empty instead — default for new and existing users: copy).
 - **Source of weight and RIR targets:** the last planned week, for both types.
 - **Tags are never copied.**
 - **Deload sessions are never a copy source.** A week that's partly deload still
@@ -210,6 +221,9 @@ rule independent and optional:
   ones.
 - The number of weeks stays open-ended, as today.
 - "Copy last week" stays as a manual action.
+- **Adding or removing an exercise in a week** is allowed for both planning
+  types. Week-dependent: it carries forward through copying (unless "only this
+  week" is ticked). Stable: it's a one-off for that week.
 
 ### Targets [P1]
 
@@ -225,7 +239,7 @@ rule independent and optional:
 
 ### Tags [P1]
 
-- Per set, in the week plan. Preset list ("push here", "maintain strength",
+- Per set, several allowed, in the week plan. Preset list ("push here", "maintain strength",
   "focus on execution", "push back") plus custom text.
 - "Apply to all sets" fills one tag across an exercise's sets.
 - Shown on the set's row during the workout. Never tracked. Never copied.
@@ -244,6 +258,11 @@ rule independent and optional:
   4. the global rest setting
 - Supersets: no timer between exercises within a round by default; the block's
   rest after each round. Both overridable per superset.
+  - With no superset override, the rest after a round is the normal chain of
+    the exercise that ends the round.
+  - An exercise's "rest after" never fires inside a round; it applies only
+    after the block's final round.
+  - A set's own explicit rest override wins over "no timer within a round".
 - Staged sets: the staged set's own rest between stages (dropset: no timer;
   rest-pause, myo-reps, cluster: 15 s by default).
 - Warmup sets follow the same chain.
@@ -256,6 +275,8 @@ rule independent and optional:
   stay inside the block (4 sets of A, 3 of B → 4 rounds, round 4 has only A).
 - The current set zigzags through rounds: A1 → B1 → A2 → B2 …
 - Every reorder (program, week plan, session) moves a superset as one block.
+- Superset grouping is a design field: in a running program it's changed in
+  the program tab, for both planning types, applying from the next session.
 - "Last time" stays per exercise.
 
 ### Warmup sets [P1]
@@ -266,6 +287,8 @@ rule independent and optional:
 - Logged values: weight and reps, both optional; plus a rest timer. Nothing else.
 - Display setting: `rows` (default; numbers optional) or `tick` (tick-off only).
 - [P2] Mandatory fields never apply to warmup sets.
+- Coach stays untouched, so its own summaries will count logged warmups as
+  working sets — accepted (Coach is out of scope and will be rebuilt).
 
 ### Warmup routine [P1]
 
@@ -305,6 +328,13 @@ rule independent and optional:
   round down or up, never below 1; weight rounds down or up to a chosen
   precision step. Defaults: sets round down; weight rounds down to 2.5 kg.
 - Deloads are marked manually only. Scheduled deloads are `later`.
+- Unmarking a session whose sets the rules calculated restores what was planned
+  before it was marked.
+- Reps rule: on a range it shifts both ends; on AMRAP it does nothing.
+- Sets rule: removes the last working sets. A staged set counts as one set.
+  Warmup sets are never touched.
+- If the workout didn't happen in the last normal week (moved away, skipped),
+  the base is its last normal occurrence.
 - Any deload session can still be edited by hand afterwards.
 
 ### Scheduling [P1]
@@ -317,6 +347,9 @@ rule independent and optional:
 - Moving a session onto a day that already has one leaves both on that day,
   shown as a list. Sessions per day are therefore not limited to one.
 - Planning two workouts on the same weekday in the program is `later`.
+- **Missed-session prompt:** stays, but only for missed days of the current
+  week. Its "Do it now" becomes a move to today (History shows the day it was
+  actually done). "Mark skipped" stays.
 
 **Sequence**
 - An ordered list of workouts and rest days, not tied to dates.
@@ -328,7 +361,10 @@ rule independent and optional:
   day misses nothing; that workout stays next and everything after it shifts.
 - On a rest day, **"Train anyway"** starts the next workout; the remaining rest
   days before it disappear.
-- **Skip** drops a workout entirely; the sequence moves to the next one.
+- **Skip** drops a workout entirely; the sequence moves to the next one, which
+  is due the same day. (Resting needs no action — you just don't train — so Skip
+  is for "I won't do this one, give me the next".)
+- A workout may appear more than once in a sequence (e.g. A, B, A, rest).
 
 ### "Last time" reference [P1]
 
@@ -339,6 +375,10 @@ rule independent and optional:
   exercise has truly never been done.
 - **Sequence:** always LAST TIME + elapsed time. EARLIER THIS WEEK is hidden.
 - Matches by exercise; reordering never affects it.
+- If last week's match was a deload session, the reference is LAST TIME from
+  the last normal occurrence.
+- The reach-back (shown when the matched session's sets were all skipped)
+  crosses run boundaries too.
 
 ### Volume [P1/P2]
 
@@ -478,6 +518,14 @@ rule independent and optional:
 - **Empty states:** no active run → "Start a program", leading to the planner.
   A week-dependent run whose weeks start empty → "Copy last week" on the empty
   week.
+
+### Programs page [P1]
+
+- Reached from the plan screen's header (the program screen no longer has a
+  tab of its own).
+- **Saved programs:** each with "Open in planner" and "Start".
+- **Active run:** "End run".
+- **Completed runs:** each with delete and its priorities pages.
 
 ### Program planner [P1]
 
