@@ -15,6 +15,8 @@ Cost of deferral: [what gets redone if the answer goes against
 Answer: [mine]
 ```
 
+Deferred is only allowed when the work can continue without committing to the answer. If continuing means guessing at something expensive to undo, it's blocking.
+
 The entries D1–D28 further down predate this format and stay as they are; they use "Decided / Answer / Constrains".
 
 Decisions Adam made in earlier builds that still constrain the code, each as an answered entry: what was decided, and the answer. Only ones that still apply are here; decisions that were superseded (the global priority table, the daily analysis ship-date placeholder, the phase-4 "wait for 10–20 notes" gate, migration renumbering) were left out. Source for each is the build log now in HISTORY.md (the session named in brackets), the spec Adam wrote, or a code/migration comment where no log exists.
