@@ -22558,3 +22558,14 @@ Previous wording, verbatim:
 - "so rows there don't count as a leak (errors still fail). Live run 2026-10-03:" — DECISIONS.md 29 now records why the two tables are public.
 - "a table not listed there is not RLS-checked. Only" — the rule now says the drift test fails until the table is listed.
 - "- PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03, re-checked this session: commit `f5a5cc2` is on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not on `origin/master`). This session's own live run on 2026-10-03 gave the same totals." — the commit was cherry-picked onto master as PR #9 (open); re-checked this session that `f5a5cc2` is only on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not master.
+
+
+---
+
+## 2026-10-03 (planner build, reviewer, before chunk 1) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9) (open; the merge is Adam's) cherry-picks `f5a5cc2` — `verify-rls-tables.test.mjs` and DECISIONS.md 29 — onto master. It was first PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6), merged into PR #5's branch after PR #5 had merged, so it never reached master. Until #9 merges, master has neither the test nor entry 29; this file describes both as on the branch. The commit's own CONTEXT.md/HISTORY.md edits were not applied (they were written against the old layout); their content is carried by this file." — PR #9 is merged (`e747183` on `origin/master`, checked by fetch this session); master now has `verify-rls-tables.test.mjs` and DECISIONS.md 29.
+- "Its author reported proving it by deleting a table from `TABLES` and by adding a fake one (each made it fail); that was not re-proven here, where it was run only against the unmodified tree (5 of 5 pass)." — the deletion direction is now proven in this repo; reworded in place.
+- "- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said \"not deployed — not asked to\"." — Adam reported on 2026-10-03 that adding an exercise mid-workout works in the live app.
