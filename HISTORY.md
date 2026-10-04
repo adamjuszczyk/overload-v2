@@ -22558,3 +22558,77 @@ Previous wording, verbatim:
 - "so rows there don't count as a leak (errors still fail). Live run 2026-10-03:" — DECISIONS.md 29 now records why the two tables are public.
 - "a table not listed there is not RLS-checked. Only" — the rule now says the drift test fails until the table is listed.
 - "- PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6) (`verify-rls-tables.test.mjs`, a reported first real run of `verify-rls.mjs` — 25 tables, 50 probes, all pass — and DECISIONS 29) was merged into PR #5's branch 11 s after PR #5 itself merged into master, so none of it is on master (checked 2026-10-03, re-checked this session: commit `f5a5cc2` is on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not on `origin/master`). This session's own live run on 2026-10-03 gave the same totals." — the commit was cherry-picked onto master as PR #9 (open); re-checked this session that `f5a5cc2` is only on `origin/claude/modest-shannon-7ysqic` and `origin/claude/tender-knuth-es6gqj`, not master.
+
+
+---
+
+## 2026-10-03 (planner build, reviewer, before chunk 1) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9) (open; the merge is Adam's) cherry-picks `f5a5cc2` — `verify-rls-tables.test.mjs` and DECISIONS.md 29 — onto master. It was first PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6), merged into PR #5's branch after PR #5 had merged, so it never reached master. Until #9 merges, master has neither the test nor entry 29; this file describes both as on the branch. The commit's own CONTEXT.md/HISTORY.md edits were not applied (they were written against the old layout); their content is carried by this file." — PR #9 is merged (`e747183` on `origin/master`, checked by fetch this session); master now has `verify-rls-tables.test.mjs` and DECISIONS.md 29.
+- "Its author reported proving it by deleting a table from `TABLES` and by adding a fake one (each made it fail); that was not re-proven here, where it was run only against the unmodified tree (5 of 5 pass)." — the deletion direction is now proven in this repo; reworded in place.
+- "- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said \"not deployed — not asked to\"." — Adam reported on 2026-10-03 that adding an exercise mid-workout works in the live app.
+
+---
+
+## 2026-10-03 (planner build, reviewer, chunk 1 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 1." / "- Waiting on me: none." — chunk 1 is built and blocked on DECISIONS.md 30–32 (migration 027 to apply by hand, live browser verification unavailable, verify-rls go-ahead).
+
+---
+
+## 2026-10-03 (planner build, reviewer, Adam's answers to DECISIONS 30–32) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 1 — built and verified on scratch; **not merged, not applied**.\n- Finished: none.\n- Waiting on me: DECISIONS.md 30 (apply 027 by hand with before/after counts; let the reviewer push `build/chunk-1`; decide the stage-row `stage_kind` check), 31 (live browser verification unavailable here), 32 (go-ahead to run `verify-rls.mjs`).\n- Chunk 1 state: `supabase/migrations/027_planner_p1_schema.sql` is commit `273b07d` on the **local-only** branch `build/chunk-1` (md5 `6828eea01febab618e389bab89a51d5a`, 18232 bytes): six new tables + the data-model columns on nine tables + `notify`. `check-migration` exits 1 with the 8 statements TASKS.md predicted. Reviewer-verified on a fresh scratch copy (catalog diff = data model exactly; counts and row fingerprints unchanged on all nine tables; old-client settings upsert preserves non-default new columns; RLS A/B/anon; named CHECK rejections). Still to run once 027 is live: Adam-scoped counts after; API column probes; anon read of the six new tables; the live-app gate (31).\n- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`)."
+- "- Builders run as the general-purpose subagent on the `sonnet` model alias: a custom agent definition (`~/.claude/agents/builder.md`, Sonnet 5, effort max) written mid-session does not load until a new session, and the Agent tool cannot set effort. Builders commit to a local `build/chunk-N` branch; this session may push only `claude/epic-lovelace-0pvxbr`, so a builder branch exists only in the container unless Adam permits pushing it."
+- "Live-app checks can't run from this container (DECISIONS.md 31)." (end of the network-policy rule; now continues "; Adam does the live checks.")
+— 30–32 answered: 027 amended (`3dbeebb`) and re-verified, `build/chunk-1` pushed, verify-rls run, live checks are Adam's; the builder-branch rule is replaced by the standing answers under Repo facts.
+
+---
+
+## 2026-10-04 (planner build, reviewer) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Run the tests with `node --test "scripts/*.test.mjs"` (31 tests: 26 migration-rule + 5 verify-rls-tables; not part of `npm test`, which is Vitest over `src/`)."
+- "- Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) and do steps 1–6 there, then report. 31 and 32 are answered."
+— the scripts list gained `transport-collapse.mjs` and its test (60 script tests now); entry 30's apply now goes through the placeholder-collapse transport. The migration-transport rule was extended in place, not changed.
+
+---
+
+## 2026-10-04 (planner build, reviewer, entry 30 change of plan) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Current chunk: 1 — built, amended and verified on scratch; **not applied, not merged**."
+- "Finished: none."
+- "Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) through the placeholder-collapse transport (`transport/027_planner_p1_schema.transport.sql`, 15780 characters; step 2 there), do steps 1–6, then report. 31 and 32 are answered."
+— Adam won't apply 027 by hand; it goes live by merging the chunk 1 PR after his switch to automatic migrations. Chunks 2–4 continue meanwhile.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 2 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 2 (then 3, 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: none."
+- "- Vitest (node env; component tests opt into jsdom per file); 548 tests in 37 files pass (re-run 2026-10-03)."
+— chunk 2 merged (PR #10); Vitest count re-run.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 3 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 3 (then 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: 2 (PR #10 merged into master as `1a83833`, 2026-10-04)."
+- "- Deferred, not blocking: DECISIONS.md 33"
+- "- Vitest (node env; component tests opt into jsdom per file); 611 tests in 38 files pass (re-run 2026-10-04 on chunk 2)."
+- "- Dropsets: one head + stages (`parent_set_id`/`parent_week_plan_set_id` + `stage_index`); `setGroupLogic.ts` groups; `SetGroup` shows bold ADD STAGE when the plan expects a stage, a low-emphasis "mark as dropset" link otherwise, and neither on a skipped head; cascade delete removes stages first, head last."
+- "- Builders run on the `sonnet` model alias (accepted for this build)."
+— chunk 3 merged (PR #11); planned stages now render locked from the start.
