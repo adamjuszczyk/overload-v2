@@ -93,7 +93,8 @@ function main() {
   }
 
   if (problems.length === 0) {
-    console.log(`check-migration-order: OK — ${files.length} migration file(s), versions unique; ${added.length} new on this branch, all after ${highest ?? '(none on base)'}.`);
+    const baselineNote = added.includes(BASELINE) ? ` (${BASELINE} exempt: the v1 baseline)` : '';
+    console.log(`check-migration-order: OK — ${files.length} migration file(s), versions unique; ${added.length} new on this branch, all after ${highest ?? '(none on base)'}${baselineNote}.`);
     return 0;
   }
   console.log('check-migration-order: FLAGGED\n');
