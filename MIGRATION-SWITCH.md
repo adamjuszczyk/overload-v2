@@ -88,7 +88,7 @@ Not committed: your live dump, live snapshot and row counts. The dump holds Nort
 
 ## 4. The steps
 
-All commands are for **cmd on Windows** (not PowerShell). Run them from your clone of the repo. `YOUR_PROJECT_REF` is the subdomain of `VITE_SUPABASE_URL`, also shown at **Dashboard → Project Settings → General → Project ID**; it isn't a secret. The CLI is pinned to the version rehearsed here: every command is `npx --yes supabase@2.119.0 …`.
+All commands are for **cmd on Windows** (not PowerShell). Run them from your clone of the repo. `The project ref is `imhsawrghteqsmpklofv` (confirmed by Adam to match `VITE_SUPABASE_URL`; it isn't a secret). The CLI is pinned to the version rehearsed here: every command is `npx --yes supabase@2.119.0 …`.
 
 ### Step 0 — checks, all read-only (you)
 
@@ -116,7 +116,7 @@ git fetch origin
 git checkout claude/elegant-noether-npjz4b
 git pull
 npx --yes supabase@2.119.0 login
-npx --yes supabase@2.119.0 link --project-ref YOUR_PROJECT_REF
+npx --yes supabase@2.119.0 link --project-ref imhsawrghteqsmpklofv
 type supabase\.temp\postgres-version
 ```
 - `login` opens a browser for you to sign in. Expect `You are now logged in. Happy coding!` (or `You are now logged in.`).
@@ -199,7 +199,7 @@ Labels as the docs give them on 2026-10-03. If your screen differs, stop and tel
 3. Back on Integrations, choose the repository **adamjuszczyk/overload-v2**.
 4. **Working directory:** `.`
 5. **Production branch:** `master`
-6. **Deploy to production:** on.
+6. **Deploy to production:** on (it's off today — step 0.2b).
 7. **Automatic branching:** off (C4). On Free it may not be offered at all.
 8. Leave any other option at its default and tell me what it was.
 9. Click **Enable integration**.
@@ -285,6 +285,7 @@ Reverse: the same page → the ruleset → **Delete ruleset**, or set Enforcemen
 ## 9. Step log
 - 2026-10-04 — plan written, answers received, file updated for C1–C8.
 - 2026-10-04 — **step 0** (Adam): 0.1 Free. **0.2: the GitHub integration is already connected to `adamjuszczyk/overload-v2`** (expected: nothing). From GitHub: PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9)'s head carries a `Supabase Preview` check run from project `imhsawrghteqsmpklofv`, conclusion `skipped`, so the integration reacts to PRs. Migrations 020–026 reached master as direct pushes, not PRs; their Supabase results aren't visible through the tools here. Open until Adam reads the settings: whether "Deploy to production" is on, and for which production branch. If it's on for `master`, every push to master has started a production deploy against an empty history. The first statement that fails (001's `create table v2_programs`, since the tables exist) stops it, and each file runs in one transaction, so nothing should have applied — `migration list` in step 2 shows whether any history row was ever written. Step 7 becomes "change the existing integration's settings" rather than "connect".
+- 2026-10-04 — **step 0 done** (Adam). 0.2b: working directory `.`, **Deploy to production off**, automatic branching off. Dashboard → Branches lists two failed production runs, 2026-09-29 22:16:40 and 22:27:51, both `git_ref=master` on project `imhsawrghteqsmpklofv`. Each ran "Applying migration... file=001_v2_schema.sql" and got the NOTICE `column "muscle_group" of relation "exercises" already exists, skipping`. That's 001's first statement, `add column if not exists`, a no-op either way. Then each stopped with `ERROR: relation "v2_programs" already exists (SQLSTATE 42P07)`. So the only statement that ran before the failure changed nothing, and no later file ran; `migration list` in step 2 confirms no history row was written. What the logs establish: (1) the real production runner reads `001_…` names as migrations, in order (section 1.1, now seen live); (2) it ran with no `supabase/config.toml` on master; (3) **the production deploy result is visible at Dashboard → Branches → the run's logs** on Free — where the reviewer's post-merge check points to, alongside any GitHub check found in step 8; (4) the production branch is `master`. 0.3 Node v24.14.1, 0.4 Docker 29.8.1, 0.5 CLI 2.119.0. Project ref `imhsawrghteqsmpklofv` confirmed.
 - 2026-10-04 — **step 1 done** (commit on `claude/elegant-noether-npjz4b`). Proven in this session, on `supabase/postgres:17.6.1.141` in Docker, with a temporary stand-in for v1's `exercises` (the real `000` comes from your dump):
   - `replay-migrations.sh`: 27 of 27 files applied in ~12 s. A broken `028_…` file → exit 1, naming the file and the Postgres error. The container is removed either way.
   - `schema-snapshot.sql`: the same database read through psql and through `supabase db query --db-url -o json` → `compare-schema.mjs` IDENTICAL (24 tables, 268 columns, 104 constraints, 66 indexes, 25 policies, 869 grants, …).
