@@ -115,7 +115,7 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
   - A green replay (or preview) proves the migration runs, not that real data survives it. The live before/after counts (Adam-scoped) still apply.
   - Migrations are forward-only: never edit one that has been applied; fix forward with a new file.
   - Never apply a migration by hand: the next deploy would run it again. If an emergency hand-apply ever happens, follow it at once with `npx --yes supabase@2.119.0 migration repair --linked --status applied <version>` from a checkout holding that exact file (Adam). Never run `migration repair` without a version list (it wipes the history).
-  - Ruleset on master requiring `migration-replay`: Adam's decision (C8 in `MIGRATION-SWITCH.md`); steps in its section 7. Not created as of 2026-10-04.
+  - Ruleset on master requiring `migration-replay`: **yes** (Adam, 2026-10-04, C8). Branch ruleset `master needs migration-replay` on the default branch, "Require status checks to pass" with `migration-replay` (GitHub Actions); steps and reversal in `MIGRATION-SWITCH.md` section 7. No PR merges into master with that check red or missing.
 - Session start: read CONTEXT.md, then DECISIONS.md, then the SPEC/TASKS sections the task names; read HISTORY.md only to trace why something is the way it is.
 
 ### Open items and known issues (real, not started or unresolved; none is part of this build)

@@ -260,8 +260,8 @@ History is written (step 6) only after master holds the baseline file (step 5). 
 
 ---
 
-## 7. Ruleset requiring the replay check (C8, after V3)
-Filled in with the real check name after step 9. Expected shape:
+## 7. Ruleset requiring the replay check (C8: **yes**, Adam 2026-10-04)
+The check's name, confirmed on PRs #13–#16: `migration-replay` (source: GitHub Actions).
 1. GitHub → **adamjuszczyk/overload-v2** → **Settings** → **Rules** → **Rulesets** → **New ruleset** → **New branch ruleset**.
 2. **Ruleset name:** `master needs migration-replay`. **Enforcement status:** Active.
 3. **Target branches → Add target → Include default branch** (master).
@@ -314,3 +314,4 @@ Reverse: the same page → the ruleset → **Delete ruleset**, or set Enforcemen
 - 2026-10-04 — **step 8 done**: PR [#14](https://github.com/adamjuszczyk/overload-v2/pull/14) (this log, steps 4–6; `migration-replay` green) merged → master `1b0e24f`, the first push with the integration on. Production run log (Dashboard → Branches): `Cloning git repo... git_ref=master` → `Connecting to database...` → **`All migrations are up to date.`** → no buckets, seed disabled, no functions. On GitHub, master's merge commit carries the `Supabase Preview` check **`Successful in 4s`** (on PR commits that check reads `skipped`). Not yet seen: how a failed deploy shows on GitHub — the 2026-09-29 failures were on commits whose checks the tools here can't read.
 - 2026-10-04 — **step 9 done, V3 passes** on test PR [#15](https://github.com/adamjuszczyk/overload-v2/pull/15) ("DO NOT MERGE"): `7bf701c` (comment in `supabase/config.toml`) → `migration-replay` **green** (30 s). `c562600` (`028_replay_check_must_fail.sql`: `alter table v2_does_not_exist …`) → **red**: `FAIL 028_replay_check_must_fail.sql` / `relation "v2_does_not_exist" does not exist` / "27 of 28 applied before it", exit 1. `de4eadc` (revert) → **green** (34 s). Closed without merging by Adam. The test comment was reverted on the branch (`2ca4509`).
 - 2026-10-04 — **step 10 done, V4 passes**: `counts-after.json` = `counts-before.json` — the same 27 tables, every row count identical (each filtered to Adam's user_id). Both files stay in the session's scratch space.
+- 2026-10-04 — **C8: yes** (Adam). The ruleset is created by Adam from section 7; CONTEXT.md records it.
