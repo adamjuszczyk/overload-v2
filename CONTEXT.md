@@ -14,6 +14,8 @@ This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.
 - Adam's answers 33, 34, 38 (2026-10-04) are all in master: 33 + 34 via PR #21 (`0628f28`), 38 via PR #20.
 - Scratch copies: the chunk 1 cluster (`/var/lib/postgresql/chunk1-pg16`, port 54329) is not running in this container any more; a faithful replay is now `bash scripts/replay-migrations.sh --keep` (Docker; start `dockerd` first).
 
+- **Tonight's mode (Adam, 2026-10-04, until he says otherwise): merge nothing to master.** Each chunk is built on its own branch stacked on the previous chunk's (`build/chunk-7` on `build/chunk-6`, …); every check the reviewer can run is run on each stacked branch, including `bash scripts/replay-migrations.sh` and `bash scripts/check-embeds-local.sh` (the `migration-replay` workflow only runs on PRs into master); a PR is opened for each, based on the previous chunk's branch, and left unmerged. Stop at the first chunk that needs a decision from Adam. A migration that only needs Adam's merge (check-migration flagged) is not by itself such a stop — its blocking entry is written and stacking continues.
+
 ## What exists
 Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`.
 
