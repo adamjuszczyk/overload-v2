@@ -22598,3 +22598,14 @@ Previous wording, verbatim:
 - "Run the tests with `node --test "scripts/*.test.mjs"` (31 tests: 26 migration-rule + 5 verify-rls-tables; not part of `npm test`, which is Vitest over `src/`)."
 - "- Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) and do steps 1–6 there, then report. 31 and 32 are answered."
 — the scripts list gained `transport-collapse.mjs` and its test (60 script tests now); entry 30's apply now goes through the placeholder-collapse transport. The migration-transport rule was extended in place, not changed.
+
+---
+
+## 2026-10-04 (planner build, reviewer, entry 30 change of plan) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Current chunk: 1 — built, amended and verified on scratch; **not applied, not merged**."
+- "Finished: none."
+- "Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) through the placeholder-collapse transport (`transport/027_planner_p1_schema.transport.sql`, 15780 characters; step 2 there), do steps 1–6, then report. 31 and 32 are answered."
+— Adam won't apply 027 by hand; it goes live by merging the chunk 1 PR after his switch to automatic migrations. Chunks 2–4 continue meanwhile.
