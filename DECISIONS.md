@@ -317,3 +317,17 @@ Cost of deferral: none for the fix (it's live). The open question is only where 
 Provisional path taken: from now on I run `bash scripts/check-embeds-local.sh` on every migration PR before it merges (yours or mine), and `node scripts/check-embeds.mjs` live after its deploy. A migration that adds an FK between two tables that already have one must also hint every existing embed between them.
 **Question for you:** should `check-embeds-local.sh` also run in the `migration-replay` GitHub workflow, so the ruleset enforces it? That changes `.github/workflows/migration-replay.yml`, which your switch session owns, so it's your call.
 Answer:
+
+## 39 Chunk 5 live check: "Session type, all time" unchanged on today's data (Adam's steps)
+Severity: deferred
+Chunk: 5
+What happened: Chunk 5 (PR #19) makes a workout's all-time history query its lineage group: the root workout plus every run copy whose `source_workout_day_id` leads to it. No app code writes that column yet, so on your data every group is the workout alone, and the page must show exactly what it showed before. TASKS.md's done-when is "deployed and identical on today's data". Every check I can run passed (tests proven by breaks; a scratch replay with a copy chain returned one combined history and excluded an unrelated workout). The live page needs you.
+**Your steps** (after PR #19's production deploy; take the update banner):
+1. In the SQL Editor, confirm no lineage exists yet:
+   `select count(*) from v2_workout_days where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and source_workout_day_id is not null;` → **0**.
+2. In the app, open a workout's "session type, all time" history (History → a session → its workout's all-time view, `/session-type/<id>`) for two or three of your workouts. Each lists the same sessions it did before, the same count and the same latest dates, and LOAD MORE still pages.
+3. Tell me the results. A failure is blocking.
+A competent default would: count the scratch result as proof — doesn't apply because: TASKS.md asks for identical results on your real data, and only your session can read them.
+Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 starts copying workouts.
+Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
+Answer:
