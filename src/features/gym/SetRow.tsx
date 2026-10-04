@@ -46,7 +46,7 @@ interface SetRowProps {
     enteredUnit: WeightUnit | null
     formRating: FormRating | null
   }) => void
-  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
+  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
   onDelete: () => void
   restElapsed: number | null   // seconds since last set logged (for rest_seconds)
 }
@@ -81,7 +81,6 @@ export default function SetRow({
   const [editWeight, setEditWeight] = useState('')
   const [editReps, setEditReps] = useState('')
   const [editRir, setEditRir] = useState('')
-  const [editNote, setEditNote] = useState('')
   const [editFormRating, setEditFormRating] = useState<FormRating | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -212,7 +211,6 @@ export default function SetRow({
           weight: w,
           reps: r,
           rir: rv,
-          note: editNote.trim() === '' ? null : editNote.trim(),
           formRating: editFormRating,
         })
         setIsEditing(false)
@@ -309,22 +307,6 @@ export default function SetRow({
                 }}
               />
             </div>
-
-            <input
-              type="text"
-              placeholder="Note"
-              value={editNote}
-              onChange={(e) => setEditNote(e.target.value)}
-              className="px-3 rounded-lg text-xs flex-1"
-              style={{
-                height: 44,
-                minWidth: 100,
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            />
 
             <button
               onClick={() => {
@@ -467,7 +449,6 @@ export default function SetRow({
                 setEditWeight(currentLog.weight != null ? String(toDisplayWeight(currentLog.weight, editUnit)) : '')
                 setEditReps(currentLog.reps != null ? String(currentLog.reps) : '')
                 setEditRir(currentLog.rir != null ? String(currentLog.rir) : '')
-                setEditNote(currentLog.note ?? '')
                 setEditFormRating(currentLog.formRating)
                 setLogError('')
                 setIsEditing(true)

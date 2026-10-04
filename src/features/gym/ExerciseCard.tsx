@@ -51,7 +51,7 @@ interface ExerciseCardProps {
     stageIndex: number
     formRating: FormRating | null
   }) => Promise<SetLog>
-  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; note?: string | null; setNumber?: number; formRating?: FormRating | null }) => void
+  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
   // Swap exercise for this session only (SPEC v1.1 "Part C") — called once
   // the swap is confirmed and the original exercise's remaining sets have

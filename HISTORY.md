@@ -22619,3 +22619,16 @@ Previous wording, verbatim:
 - "- Current chunk: 2 (then 3, 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: none."
 - "- Vitest (node env; component tests opt into jsdom per file); 548 tests in 37 files pass (re-run 2026-10-03)."
 — chunk 2 merged (PR #10); Vitest count re-run.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 3 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 3 (then 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: 2 (PR #10 merged into master as `1a83833`, 2026-10-04)."
+- "- Deferred, not blocking: DECISIONS.md 33"
+- "- Vitest (node env; component tests opt into jsdom per file); 611 tests in 38 files pass (re-run 2026-10-04 on chunk 2)."
+- "- Dropsets: one head + stages (`parent_set_id`/`parent_week_plan_set_id` + `stage_index`); `setGroupLogic.ts` groups; `SetGroup` shows bold ADD STAGE when the plan expects a stage, a low-emphasis "mark as dropset" link otherwise, and neither on a skipped head; cascade delete removes stages first, head last."
+- "- Builders run on the `sonnet` model alias (accepted for this build)."
+— chunk 3 merged (PR #11); planned stages now render locked from the start.
