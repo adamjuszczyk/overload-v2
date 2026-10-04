@@ -193,6 +193,15 @@ Cost of deferral: n/a
 Answer: (Adam, 2026-10-03) Schema choice: yes — add the check that a stage row can't carry a stage kind, on both planned sets and set logs, matching `v2_program_sets`; amend 027, re-run every scratch check on the final file, give the new character count and md5; "I apply only that version." Push: yes, push `build/chunk-1`. Standing for this build: the reviewer may push any `build/chunk-N` branch and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. Done: amended in `3dbeebb`, re-verified as above, pushed. Still waiting on: the apply and steps 1–6.
 (Adam, 2026-10-04) **Change of plan: 027 is not applied by hand.** Adam is switching this repo to automatic Supabase migrations in a separate session, and 027 will go live by merging the chunk 1 PR. The entry stays blocking until he says the switch is done. Until then: chunk 1 is not merged, and neither 027 nor the transport files change. The hand-apply procedure above (steps 1–4, transport included) is superseded and kept only as a record. The live-app steps (5–6) still apply after 027 is live; the before/after checks get rewritten against the new migration rules once CONTEXT.md is updated by that session. Meanwhile chunks 2, 3 and 4 continue (no migration, none needs 027), and the build stops at the chunk 4 boundary because chunk 5 needs 027's columns.
 (Adam, 2026-10-04, after the switch) **027 goes live by merging the chunk 1 PR under the new flow.** `check-migration` flags 027's 8 statements, so the merge is Adam's once the PR's `migration-replay` check is green. After his merge, the reviewer checks the production database deploy on master (a failed deploy is blocking), runs the read-only probes, and writes Adam's live steps (open Today, Plan, Program and History; log one set in his next session) as a deferred entry. The pause at chunk 4 is lifted.
+**State (2026-10-04, reviewer):** `build/chunk-1` now has master merged in (`a05b134`). Its diff against master is exactly `027_planner_p1_schema.sql`, md5 `3a0ead06…`, unchanged. PR [#17](https://github.com/adamjuszczyk/overload-v2/pull/17) is open.
+- `migration-replay` is **green** on GitHub (run 37226926354).
+- My local `scripts/replay-migrations.sh` on `supabase/postgres:17.6.1.155` agrees: 28 of 28 applied, `public` has 35 tables.
+- `check-migration` still flags the 8 statements above, so the merge is yours. `check-migration-order` OK; `node --test "scripts/*.test.mjs"` 86/86.
+**Your steps:**
+1. **Before merging**, record the before counts: `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before.json`.
+2. Merge PR #17.
+3. Tell me it's merged. I check `Supabase Preview` on master's merge commit; anything but success, or no check within a few minutes, is a failed deploy and blocking. Then I run the read-only API probes and write your live steps as a deferred entry.
+4. After the deploy succeeds, run the same command again into `counts-after.json` and send me both files, or the two outputs. Every count must be equal.
 
 ## 31 Live browser verification is unavailable in this environment
 Severity: blocking
