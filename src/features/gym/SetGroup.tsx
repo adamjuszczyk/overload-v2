@@ -68,7 +68,7 @@ interface SetGroupProps {
   expectStage?: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
-  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
+  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
   onDeleteHead: (group: Group<SetLog>) => void
   onDeleteStage: (stageId: string) => void
   restElapsed: number | null
