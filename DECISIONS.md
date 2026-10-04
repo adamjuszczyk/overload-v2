@@ -159,12 +159,12 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 
 ### 33 The weight deload rule's starting percentage is not specified
 - What: Starting percentage of the weight deload rule (SPEC silent).
-- Answer: 75%. To be set in `plannerVocabulary.ts` `DEFAULT_DELOAD_WEIGHT_RULE` (reviewer to-do).
+- Answer: 75%. Done: PR #21 (`0628f28`).
 - Date: 2026-10-04
 
 ### 34 Input casing for tempo "X" and rep target "AMRAP"
 - What: Lowercase tempo `x` / rep target `amrap` input.
-- Answer: Accept lowercase and normalise to `X` / `AMRAP` (reviewer to-do in `plannerVocabulary.ts`).
+- Answer: Accept lowercase and normalise to `X` / `AMRAP`. Done: PR #21 (`0628f28`).
 - Date: 2026-10-04
 
 ### 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
