@@ -22646,3 +22646,41 @@ Previous wording, verbatim:
 - "- A new rule discovered mid-build is written into this file's rules in the same session, not left only in a log."
 — chunk 4 merged (PR #12); build stopped at the chunk 4 boundary; set-note editing removed.
 - "After Adam's report: API column probes (Adam-filtered, `limit=0`, made-up-column control) and anon reads of the six new tables (Adam-filtered), then the chunk 1 PR to master." — 027 is no longer applied by hand (entry 30's change of plan); reworded in place.
+
+---
+
+## 2026-10-04 (migration switch session) — Moved out of CONTEXT.md (no longer true)
+
+The repo switched from hand-applied migrations to automatic Supabase deploys from master (`MIGRATION-SWITCH.md`). Previous wording, verbatim:
+
+- "- Waiting on me: DECISIONS.md 30 — 027 now goes live by merging the chunk 1 PR once Adam has switched the repo to automatic Supabase migrations (separate session); until he says the switch is done, chunk 1 is not merged and 027 / the transport files don't change. When he says it's done, re-read CONTEXT.md (that session updates Repo facts and the migration rules) before continuing."
+- "- `scripts/`: `check-context-size.mjs` (CONTEXT.md ≤ 75 KB), `check-migration.mjs` + `migration-rules.mjs` (safe-list classifier, tested by `migration-rules.test.mjs`), `gen-icons.mjs`, `verify-rls.mjs` + `verify-rls-tables.test.mjs` (below). `transport-collapse.mjs` + `transport-collapse.test.mjs` (below), `check-frozen-code.mjs` + test (below). Run the tests with `node --test "scripts/*.test.mjs"` (65 tests: 26 migration-rule + 5 verify-rls-tables + 29 transport-collapse + 5 check-frozen-code; not part of `npm test`, which is Vitest over `src/`)."
+- "- `scripts/transport-collapse.mjs` — placeholder-collapse transport for hand-applied migrations: `node scripts/transport-collapse.mjs <file.sql> [out]` replaces every run of 4+ identical characters with `@@R<hex codepoint>x<count>@@`, checks the round trip and that no run of 4+ survives, and prints the transport and expanded lengths + SHA-256 (with and without the final newline) and the browser-console snippet that expands the editor text and prints the same two hashes (the snippet and the script share one expansion source string). `crypto.subtle` needs a secure context (the dashboard is HTTPS; a test page must be `localhost`, not `about:blank`). Its test round-trips every migration in `supabase/migrations`; proven 2026-10-04 by a short-by-one expander (22 fail) and disabled collapse (21 fail). Transport files live in `transport/` on the working branch."
+- "- Supabase deploys migrations from main: no — applied by hand
+  in the SQL Editor. Automatic deploys and preview branches are
+  off: Supabase's history never recorded 001–026, and v1's
+  migrations aren't in this repo. Rebuilding the history from
+  the live schema is planned, to switch back to automatic."
+- "- Supabase project is shared with Northstar v2 (formerly Atlas); Adam's user id is `12e79b69-9891-4f53-a7cf-650edd83659f`. No service-role key, DB connection string or CLI link exists in the dev environment."
+- "- **Next migration number: 027.**"
+- "  - The reviewer may push any `build/chunk-N` branch, and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. A chunk with a migration still never merges before Adam has applied it."
+- "7. **A hash/length mismatch after applying a migration or function** = failed apply, not a curiosity."
+- "- Never merge a chunk with a migration. Write a blocking
+  DECISIONS.md entry with the migration file and the
+  check-migration result, and wait until I say it's applied.
+  The migration goes live before the code that needs it."
+- "- Before applying any migration, run and record a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after."
+- "- Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`. For this build: every hand-applied migration's blocking entry gives the transport file from `scripts/transport-collapse.mjs` and the snippet's expected `transport`/`expanded` lines, never a raw-file paste (entry 30's first version told Adam to paste raw 027, banners and all — caught by Adam 2026-10-04 before he applied it)."
+- "- Migrations are applied by hand (Supabase automatic deploys are off). Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op."
+— migrations now deploy from master through Supabase's GitHub integration; `000_v1_baseline.sql` + 001–026 replay to the live schema; production's history lists `000`–`026`; the hand-apply, transport and SQL Editor apply rules no longer apply.
+
+---
+
+## 2026-10-04 (planner build, reviewer, merge of the migration switch) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- **Stopped at the chunk 4 boundary** (Adam, 2026-10-04: chunk 5 needs 027's columns). Next: chunk 5, once Adam says the switch to automatic Supabase migrations is done; re-read CONTEXT.md first."
+- "- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`)."
+- "A chunk with a migration: the steps go in its blocking entry, and Adam does them right after applying."
+— the switch is done; the chunk 4 pause is lifted; the chunk 1 cluster is gone; migration chunks' live steps are deferred entries once the migration is live.
