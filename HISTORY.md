@@ -22569,3 +22569,93 @@ Previous wording, verbatim:
 - "- PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9) (open; the merge is Adam's) cherry-picks `f5a5cc2` — `verify-rls-tables.test.mjs` and DECISIONS.md 29 — onto master. It was first PR [#6](https://github.com/adamjuszczyk/overload-v2/pull/6), merged into PR #5's branch after PR #5 had merged, so it never reached master. Until #9 merges, master has neither the test nor entry 29; this file describes both as on the branch. The commit's own CONTEXT.md/HISTORY.md edits were not applied (they were written against the old layout); their content is carried by this file." — PR #9 is merged (`e747183` on `origin/master`, checked by fetch this session); master now has `verify-rls-tables.test.mjs` and DECISIONS.md 29.
 - "Its author reported proving it by deleting a table from `TABLES` and by adding a fake one (each made it fail); that was not re-proven here, where it was run only against the unmodified tree (5 of 5 pass)." — the deletion direction is now proven in this repo; reworded in place.
 - "- **Newest change:** add-exercise-mid-workout + planned-dropset ADD STAGE fix (`2b28fab`, 2026-09-13). Its log said \"not deployed — not asked to\"." — Adam reported on 2026-10-03 that adding an exercise mid-workout works in the live app.
+
+---
+
+## 2026-10-03 (planner build, reviewer, chunk 1 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 1." / "- Waiting on me: none." — chunk 1 is built and blocked on DECISIONS.md 30–32 (migration 027 to apply by hand, live browser verification unavailable, verify-rls go-ahead).
+
+---
+
+## 2026-10-03 (planner build, reviewer, Adam's answers to DECISIONS 30–32) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 1 — built and verified on scratch; **not merged, not applied**.\n- Finished: none.\n- Waiting on me: DECISIONS.md 30 (apply 027 by hand with before/after counts; let the reviewer push `build/chunk-1`; decide the stage-row `stage_kind` check), 31 (live browser verification unavailable here), 32 (go-ahead to run `verify-rls.mjs`).\n- Chunk 1 state: `supabase/migrations/027_planner_p1_schema.sql` is commit `273b07d` on the **local-only** branch `build/chunk-1` (md5 `6828eea01febab618e389bab89a51d5a`, 18232 bytes): six new tables + the data-model columns on nine tables + `notify`. `check-migration` exits 1 with the 8 statements TASKS.md predicted. Reviewer-verified on a fresh scratch copy (catalog diff = data model exactly; counts and row fingerprints unchanged on all nine tables; old-client settings upsert preserves non-default new columns; RLS A/B/anon; named CHECK rejections). Still to run once 027 is live: Adam-scoped counts after; API column probes; anon read of the six new tables; the live-app gate (31).\n- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`)."
+- "- Builders run as the general-purpose subagent on the `sonnet` model alias: a custom agent definition (`~/.claude/agents/builder.md`, Sonnet 5, effort max) written mid-session does not load until a new session, and the Agent tool cannot set effort. Builders commit to a local `build/chunk-N` branch; this session may push only `claude/epic-lovelace-0pvxbr`, so a builder branch exists only in the container unless Adam permits pushing it."
+- "Live-app checks can't run from this container (DECISIONS.md 31)." (end of the network-policy rule; now continues "; Adam does the live checks.")
+— 30–32 answered: 027 amended (`3dbeebb`) and re-verified, `build/chunk-1` pushed, verify-rls run, live checks are Adam's; the builder-branch rule is replaced by the standing answers under Repo facts.
+
+---
+
+## 2026-10-04 (planner build, reviewer) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Run the tests with `node --test "scripts/*.test.mjs"` (31 tests: 26 migration-rule + 5 verify-rls-tables; not part of `npm test`, which is Vitest over `src/`)."
+- "- Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) and do steps 1–6 there, then report. 31 and 32 are answered."
+— the scripts list gained `transport-collapse.mjs` and its test (60 script tests now); entry 30's apply now goes through the placeholder-collapse transport. The migration-transport rule was extended in place, not changed.
+
+---
+
+## 2026-10-04 (planner build, reviewer, entry 30 change of plan) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Current chunk: 1 — built, amended and verified on scratch; **not applied, not merged**."
+- "Finished: none."
+- "Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) through the placeholder-collapse transport (`transport/027_planner_p1_schema.transport.sql`, 15780 characters; step 2 there), do steps 1–6, then report. 31 and 32 are answered."
+— Adam won't apply 027 by hand; it goes live by merging the chunk 1 PR after his switch to automatic migrations. Chunks 2–4 continue meanwhile.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 2 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 2 (then 3, 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: none."
+- "- Vitest (node env; component tests opt into jsdom per file); 548 tests in 37 files pass (re-run 2026-10-03)."
+— chunk 2 merged (PR #10); Vitest count re-run.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 3 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 3 (then 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: 2 (PR #10 merged into master as `1a83833`, 2026-10-04)."
+- "- Deferred, not blocking: DECISIONS.md 33"
+- "- Vitest (node env; component tests opt into jsdom per file); 611 tests in 38 files pass (re-run 2026-10-04 on chunk 2)."
+- "- Dropsets: one head + stages (`parent_set_id`/`parent_week_plan_set_id` + `stage_index`); `setGroupLogic.ts` groups; `SetGroup` shows bold ADD STAGE when the plan expects a stage, a low-emphasis "mark as dropset" link otherwise, and neither on a skipped head; cascade delete removes stages first, head last."
+- "- Builders run on the `sonnet` model alias (accepted for this build)."
+— chunk 3 merged (PR #11); planned stages now render locked from the start.
+
+---
+
+## 2026-10-04 (migration switch session) — Moved out of CONTEXT.md (no longer true)
+
+The repo switched from hand-applied migrations to automatic Supabase deploys from master (`MIGRATION-SWITCH.md`). Previous wording, verbatim:
+
+- "- Waiting on me: DECISIONS.md 30 — 027 now goes live by merging the chunk 1 PR once Adam has switched the repo to automatic Supabase migrations (separate session); until he says the switch is done, chunk 1 is not merged and 027 / the transport files don't change. When he says it's done, re-read CONTEXT.md (that session updates Repo facts and the migration rules) before continuing."
+- "- `scripts/`: `check-context-size.mjs` (CONTEXT.md ≤ 75 KB), `check-migration.mjs` + `migration-rules.mjs` (safe-list classifier, tested by `migration-rules.test.mjs`), `gen-icons.mjs`, `verify-rls.mjs` + `verify-rls-tables.test.mjs` (below). `transport-collapse.mjs` + `transport-collapse.test.mjs` (below), `check-frozen-code.mjs` + test (below). Run the tests with `node --test "scripts/*.test.mjs"` (65 tests: 26 migration-rule + 5 verify-rls-tables + 29 transport-collapse + 5 check-frozen-code; not part of `npm test`, which is Vitest over `src/`)."
+- "- `scripts/transport-collapse.mjs` — placeholder-collapse transport for hand-applied migrations: `node scripts/transport-collapse.mjs <file.sql> [out]` replaces every run of 4+ identical characters with `@@R<hex codepoint>x<count>@@`, checks the round trip and that no run of 4+ survives, and prints the transport and expanded lengths + SHA-256 (with and without the final newline) and the browser-console snippet that expands the editor text and prints the same two hashes (the snippet and the script share one expansion source string). `crypto.subtle` needs a secure context (the dashboard is HTTPS; a test page must be `localhost`, not `about:blank`). Its test round-trips every migration in `supabase/migrations`; proven 2026-10-04 by a short-by-one expander (22 fail) and disabled collapse (21 fail). Transport files live in `transport/` on the working branch."
+- "- Supabase deploys migrations from main: no — applied by hand
+  in the SQL Editor. Automatic deploys and preview branches are
+  off: Supabase's history never recorded 001–026, and v1's
+  migrations aren't in this repo. Rebuilding the history from
+  the live schema is planned, to switch back to automatic."
+- "- Supabase project is shared with Northstar v2 (formerly Atlas); Adam's user id is `12e79b69-9891-4f53-a7cf-650edd83659f`. No service-role key, DB connection string or CLI link exists in the dev environment."
+- "- **Next migration number: 027.**"
+- "  - The reviewer may push any `build/chunk-N` branch, and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. A chunk with a migration still never merges before Adam has applied it."
+- "7. **A hash/length mismatch after applying a migration or function** = failed apply, not a curiosity."
+- "- Never merge a chunk with a migration. Write a blocking
+  DECISIONS.md entry with the migration file and the
+  check-migration result, and wait until I say it's applied.
+  The migration goes live before the code that needs it."
+- "- Before applying any migration, run and record a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after."
+- "- Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`. For this build: every hand-applied migration's blocking entry gives the transport file from `scripts/transport-collapse.mjs` and the snippet's expected `transport`/`expanded` lines, never a raw-file paste (entry 30's first version told Adam to paste raw 027, banners and all — caught by Adam 2026-10-04 before he applied it)."
+- "- Migrations are applied by hand (Supabase automatic deploys are off). Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op."
+— migrations now deploy from master through Supabase's GitHub integration; `000_v1_baseline.sql` + 001–026 replay to the live schema; production's history lists `000`–`026`; the hand-apply, transport and SQL Editor apply rules no longer apply.

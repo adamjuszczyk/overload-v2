@@ -430,7 +430,6 @@ export async function updateSetLog(
     weight?: number | null
     reps?: number | null
     rir?: number | null
-    note?: string | null
     setNumber?: number
     formRating?: FormRating | null
   },
@@ -439,7 +438,6 @@ export async function updateSetLog(
   if ('weight' in changes) patch.weight = changes.weight
   if ('reps' in changes) patch.reps = changes.reps
   if ('rir' in changes) patch.rir = changes.rir
-  if ('note' in changes) patch.note = changes.note
   if ('setNumber' in changes) patch.set_number = changes.setNumber
   // RIR is editable on an already-logged row (SetRow.tsx's isEditing block)
   // — form must be too, or two controls that sit side by side behave

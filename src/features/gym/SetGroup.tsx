@@ -68,7 +68,7 @@ interface SetGroupProps {
   expectStage?: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
-  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; note: string | null; formRating: FormRating | null }) => void
+  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
   onDeleteHead: (group: Group<SetLog>) => void
   onDeleteStage: (stageId: string) => void
   restElapsed: number | null
@@ -113,19 +113,62 @@ export default function SetGroup({
   }, [isDeleting])
 
   if (!group) {
+    // Planned staged sets render (fix) [P1]: a planned dropset's stage rows
+    // show from the start, every one of them, not just after the head is
+    // logged behind ADD STAGE — SPEC's own words, "each locked until the
+    // stage before it is logged." The head itself is the "stage before"
+    // stage 1, so with the head still unlogged every planned stage is
+    // locked, no exceptions. Suppressed under readOnly for the same reason
+    // the stage-affordance block below is (see that prop's own doc comment
+    // on SetGroupProps) — a merged (swapped) card's planned section shows
+    // only the original exercise's already-resolved history, never a
+    // speculative render of what COULD come next.
     return (
-      <SetRow
-        setNumber={displayNumber}
-        programExercise={programExercise}
-        plannedSet={plannedSet}
-        lastLog={lastLog}
-        lastLogsLoading={lastLogsLoading}
-        currentLog={null}
-        onLog={onLogHead}
-        onUpdate={() => {}}
-        onDelete={() => {}}
-        restElapsed={restElapsed}
-      />
+      <div className="space-y-1.5">
+        <SetRow
+          // Explicit (chunk 3, found while reviewing this exact diff):
+          // without it, this SetRow and the logged-head SetRow below share
+          // the same position under the same div root — React would reuse
+          // this one component instance across the unlogged<->logged
+          // boundary (same type, same slot, no key) and carry its typed-but-
+          // never-submitted weight/reps into the logged render. Differing
+          // from the logged branch's own key (headLog.id) the instant a
+          // real log exists forces a fresh instance there, and forces
+          // another fresh one here again if that head is later deleted.
+          key={plannedSet?.id ?? 'extra'}
+          setNumber={displayNumber}
+          programExercise={programExercise}
+          plannedSet={plannedSet}
+          lastLog={lastLog}
+          lastLogsLoading={lastLogsLoading}
+          currentLog={null}
+          onLog={onLogHead}
+          onUpdate={() => {}}
+          onDelete={() => {}}
+          restElapsed={restElapsed}
+        />
+        {plannedStages.length > 0 && !readOnly && (
+          <div className="pl-4 space-y-1.5" style={{ borderLeft: '1px dashed var(--border)' }}>
+            {plannedStages.map((stage) => (
+              <SetRow
+                key={stage.id}
+                setNumber={displayNumber}
+                programExercise={programExercise}
+                plannedSet={stage}
+                lastLog={null}
+                lastLogsLoading={false}
+                currentLog={null}
+                isStage
+                isLocked
+                onLog={() => {}}
+                onUpdate={() => {}}
+                onDelete={() => {}}
+                restElapsed={null}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -134,6 +177,9 @@ export default function SetGroup({
   return (
     <div className="space-y-1.5">
       <SetRow
+        // See the unlogged branch's own key comment above — the matching
+        // half of that same fix.
+        key={headLog.id}
         setNumber={displayNumber}
         programExercise={programExercise}
         plannedSet={plannedSet}
@@ -181,71 +227,121 @@ export default function SetGroup({
             been added), but real historical data must still display, not
             vanish. */}
         {!isDeleting && !readOnly && canAddStageTo(headLog) && (
-          addingStage ? (
-            <SetRow
-              setNumber={headLog.setNumber}
-              programExercise={programExercise}
-              plannedSet={plannedStages[stages.length] ?? null}
-              lastLog={null}
-              lastLogsLoading={false}
-              currentLog={null}
-              isStage
-              onLog={(params) => {
-                onLogStage(headLog, params)
-                setAddingStage(false)
-              }}
-              onUpdate={() => {}}
-              onDelete={() => {}}
-              restElapsed={restElapsed}
-            />
-          ) : stages.length === 0 && !expectStage ? (
-            // No stages yet, and nothing says one is expected — most logged
-            // sets are never dropsets, so a bold ADD STAGE affordance under
-            // every single one clutters the common case (post-launch fix,
-            // 2026-08-10). This low-emphasis entry point reveals the exact
-            // same stage-entry row ADD STAGE always has; once a real stage
-            // exists below, or expectStage says one is already anticipated,
-            // the normal ADD STAGE affordance (below) takes over.
-            <button
-              onClick={() => setAddingStage(true)}
-              className="flex items-center text-xs font-medium"
-              style={{
-                // Same 36px touch target as the ADD STAGE button below (its
-                // sibling in this exact slot) — "low-emphasis" is a visual
-                // choice (smaller text, no icon), not a smaller tap target
-                // than the very control it temporarily replaces.
-                minHeight: 36,
-                // --text-muted, not --text-dim (found by adversarial
-                // review): --text-dim is this codebase's disabled/
-                // placeholder-text token (global.css's input::placeholder,
-                // every disabled-state colour in PlanPage.tsx/
-                // WorkoutDayEditorPage.tsx) — at ~1.7:1 contrast on the
-                // default dark theme's near-black surface it read as inert
-                // placeholder text, undermining the discoverability this
-                // button exists for. --text-muted is what every other
-                // low-emphasis-but-active label in this file (ADD STAGE
-                // below, CANCEL, SKIP REST OF EXERCISE) already uses.
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-              }}
-            >
-              mark as dropset
-            </button>
-          ) : (
-            <button
-              onClick={() => setAddingStage(true)}
-              className="flex items-center gap-1.5 text-xs font-bold tracking-widest"
-              style={{
-                minHeight: 36,
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              <Plus size={11} />
-              ADD STAGE
-            </button>
-          )
+          <>
+            {/* Planned staged sets render (fix) [P1]: a planned dropset's
+                next stage is loggable the instant the row before it is
+                logged — no ADD STAGE tap needed first. plannedStages[
+                stages.length] is this group's own next planned stage, the
+                same lookup the input row below already did for the manual
+                (ADD STAGE) case; "is there one" now also decides whether
+                this row shows automatically. Unplanned (no plannedStages at
+                all, or every planned stage already logged) falls straight
+                through to addingStage, i.e. exactly today's tap-first
+                behaviour, unchanged. */}
+            {addingStage || plannedStages.length > stages.length ? (
+              <SetRow
+                // Explicit, and keyed on WHICH stage this slot currently
+                // represents (not just "is this slot occupied") — found
+                // for the same reason as the head's own key above: once a
+                // planned dropset has more than one remaining stage, this
+                // ternary branch stays the SetRow type on every render as
+                // stage 1 unlocks, logs, and stage 2 takes its place in
+                // the exact same slot. Without a key that changes between
+                // those two, React reuses the instance and stage 2 would
+                // inherit stage 1's already-typed (and already-logged)
+                // weight/reps. `unplanned-${stages.length}` covers the
+                // ADD-STAGE/"mark as dropset" case, where there is no
+                // plannedStages entry to key on but a fresh row is still
+                // wanted each time one is manually added.
+                key={plannedStages[stages.length]?.id ?? `unplanned-${stages.length}`}
+                setNumber={headLog.setNumber}
+                programExercise={programExercise}
+                plannedSet={plannedStages[stages.length] ?? null}
+                lastLog={null}
+                lastLogsLoading={false}
+                currentLog={null}
+                isStage
+                onLog={(params) => {
+                  onLogStage(headLog, params)
+                  setAddingStage(false)
+                }}
+                onUpdate={() => {}}
+                onDelete={() => {}}
+                restElapsed={restElapsed}
+              />
+            ) : stages.length === 0 && !expectStage ? (
+              // No stages yet, and nothing says one is expected — most logged
+              // sets are never dropsets, so a bold ADD STAGE affordance under
+              // every single one clutters the common case (post-launch fix,
+              // 2026-08-10). This low-emphasis entry point reveals the exact
+              // same stage-entry row ADD STAGE always has; once a real stage
+              // exists below, or expectStage says one is already anticipated,
+              // the normal ADD STAGE affordance (below) takes over.
+              <button
+                onClick={() => setAddingStage(true)}
+                className="flex items-center text-xs font-medium"
+                style={{
+                  // Same 36px touch target as the ADD STAGE button below (its
+                  // sibling in this exact slot) — "low-emphasis" is a visual
+                  // choice (smaller text, no icon), not a smaller tap target
+                  // than the very control it temporarily replaces.
+                  minHeight: 36,
+                  // --text-muted, not --text-dim (found by adversarial
+                  // review): --text-dim is this codebase's disabled/
+                  // placeholder-text token (global.css's input::placeholder,
+                  // every disabled-state colour in PlanPage.tsx/
+                  // WorkoutDayEditorPage.tsx) — at ~1.7:1 contrast on the
+                  // default dark theme's near-black surface it read as inert
+                  // placeholder text, undermining the discoverability this
+                  // button exists for. --text-muted is what every other
+                  // low-emphasis-but-active label in this file (ADD STAGE
+                  // below, CANCEL, SKIP REST OF EXERCISE) already uses.
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                }}
+              >
+                mark as dropset
+              </button>
+            ) : (
+              <button
+                onClick={() => setAddingStage(true)}
+                className="flex items-center gap-1.5 text-xs font-bold tracking-widest"
+                style={{
+                  minHeight: 36,
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <Plus size={11} />
+                ADD STAGE
+              </button>
+            )}
+
+            {/* Every planned stage beyond the one unlocked just above —
+                visible with its planned value from the start (the same fix),
+                locked until its own turn. plannedStages.length > stages.length
+                is false (slice past the array's end, i.e. []) for every
+                unplanned case, so this renders nothing there, same as
+                today. */}
+            {plannedStages.slice(stages.length + 1).map((stage) => (
+              <SetRow
+                key={stage.id}
+                setNumber={headLog.setNumber}
+                programExercise={programExercise}
+                plannedSet={stage}
+                lastLog={null}
+                lastLogsLoading={false}
+                currentLog={null}
+                isStage
+                isLocked
+                onLog={() => {}}
+                onUpdate={() => {}}
+                onDelete={() => {}}
+                restElapsed={null}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>

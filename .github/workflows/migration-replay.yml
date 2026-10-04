@@ -1,0 +1,39 @@
+# The `migration-replay` check: replays every migration in supabase/migrations,
+# in order, on an empty Supabase Postgres at production's version, and fails on
+# any error. Runs on every PR into master, not only PRs touching supabase/, so
+# that a ruleset can require it without blocking PRs it would otherwise skip
+# (MIGRATION-SWITCH.md, section 2). It touches no Supabase project and uses no
+# secrets.
+name: migration-replay
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migration-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-replay:
+    name: migration-replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Migration numbers (scripts/check-migration-order.mjs)
+        run: node scripts/check-migration-order.mjs "origin/${{ github.base_ref || 'master' }}"
+
+      - name: Replay every migration (scripts/replay-migrations.sh)
+        run: bash scripts/replay-migrations.sh

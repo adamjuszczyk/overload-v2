@@ -858,7 +858,6 @@ type SetLogChanges = {
   weight?: number | null
   reps?: number | null
   rir?: number | null
-  note?: string | null
   setNumber?: number
   formRating?: FormRating | null
 }

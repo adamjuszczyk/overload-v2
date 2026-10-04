@@ -1,0 +1,12 @@
+# Objects in the live schema that the replay of supabase/migrations does not
+# create, on purpose. Used by: node scripts/compare-schema.mjs --exclude scripts/schema-compare-exclude.txt …
+# Every line must match something, or compare-schema fails.
+
+# Northstar v2 (abandoned; data stays for now) — not Overload's (MIGRATION-SWITCH.md, C2)
+ns_*
+# Atlas (Northstar's predecessor) — same
+atlas_*
+
+# Supabase's migration-history schema: created on production by the failed
+# 2026-09-29 deploy runs (and later by `migration repair`), not by a migration.
+schemas:supabase_migrations
