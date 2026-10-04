@@ -22711,3 +22711,11 @@ Previous wording, verbatim:
 - "How a *failed* deploy looks on GitHub has not been seen:"
 - "85 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order; 85 of 85 pass 2026-10-04;"
 — chunk 1 merged (PR #17) and 027 is live; next migration 028.
+
+---
+
+## 2026-10-04 (planner build, reviewer, mesocycle-embed incident) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "89 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order + 3 probe-live-columns; 89 of 89 pass 2026-10-04 (86 with 027 present, before the probe test was added);" — check-embeds added (3 tests); transport-collapse now round-trips 28 migrations.
