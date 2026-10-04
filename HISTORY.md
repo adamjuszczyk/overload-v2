@@ -22588,3 +22588,13 @@ Previous wording, verbatim:
 - "- Builders run as the general-purpose subagent on the `sonnet` model alias: a custom agent definition (`~/.claude/agents/builder.md`, Sonnet 5, effort max) written mid-session does not load until a new session, and the Agent tool cannot set effort. Builders commit to a local `build/chunk-N` branch; this session may push only `claude/epic-lovelace-0pvxbr`, so a builder branch exists only in the container unless Adam permits pushing it."
 - "Live-app checks can't run from this container (DECISIONS.md 31)." (end of the network-policy rule; now continues "; Adam does the live checks.")
 — 30–32 answered: 027 amended (`3dbeebb`) and re-verified, `build/chunk-1` pushed, verify-rls run, live checks are Adam's; the builder-branch rule is replaced by the standing answers under Repo facts.
+
+---
+
+## 2026-10-04 (planner build, reviewer) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Run the tests with `node --test "scripts/*.test.mjs"` (31 tests: 26 migration-rule + 5 verify-rls-tables; not part of `npm test`, which is Vitest over `src/`)."
+- "- Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) and do steps 1–6 there, then report. 31 and 32 are answered."
+— the scripts list gained `transport-collapse.mjs` and its test (60 script tests now); entry 30's apply now goes through the placeholder-collapse transport. The migration-transport rule was extended in place, not changed.

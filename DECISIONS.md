@@ -161,9 +161,24 @@ Also on `build/chunk-1`: `npm run typecheck`, `npm test` (548/548), `npm run bui
 **Your steps, in order** (per your answer to 31):
 1. Before applying, in the SQL Editor, record the result of:
    `select 'programs', count(*) from v2_programs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'workout_days', count(*) from v2_workout_days where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'mesocycles', count(*) from v2_mesocycles where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'program_exercises', count(*) from v2_program_exercises where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'week_plans', count(*) from v2_week_plans where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'week_plan_sets', count(*) from v2_week_plan_sets where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'sessions', count(*) from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'set_logs', count(*) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'user_settings', count(*) from v2_user_settings where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f';`
-2. Paste the file (raw view of the link above) into a fresh editor tab. In the browser console, `window.monaco.editor.getModels()[0].getValue().length` must print **16494**, and
-   `crypto.subtle.digest('SHA-256', new TextEncoder().encode(window.monaco.editor.getModels()[0].getValue())).then(b => console.log([...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('')))`
-   must print one of the two SHA-256 values above. Any other value = a damaged paste; don't run it.
+2. **Transport (placeholder-collapse — CONTEXT.md's migration-transport rule; the first version of this entry broke it by telling you to paste the raw file).** Don't paste the migration itself. Paste the transport file instead, in which every run of 4+ identical characters (the `═══`/`───` banners and long space runs) is replaced by a marker `@@R<hex codepoint>x<count>@@`; no run longer than 3 survives in it: https://github.com/adamjuszczyk/overload-v2/blob/claude/epic-lovelace-0pvxbr/transport/027_planner_p1_schema.transport.sql (raw view, select all, copy). Paste it into a fresh SQL Editor tab. Do **not** run it.
+   Then, in the browser console on that tab, paste and run exactly this (from `scripts/transport-collapse.mjs`):
+   ```
+   (async () => {
+     const m = window.monaco.editor.getModels()[0];
+     const h = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(x => x.toString(16).padStart(2, '0')).join('');
+     const t = m.getValue();
+     console.log('transport', t.length, await h(t));
+     m.setValue((t => t.replace(/@@R([0-9a-f]+)x([0-9]+)@@/g, (_, c, n) => String.fromCodePoint(parseInt(c, 16)).repeat(Number(n))))(t));
+     const y = m.getValue();
+     console.log('expanded', y.length, await h(y));
+   })()
+   ```
+   It prints two lines. Both must match one of these pairs (the pair depends only on whether your copy kept the file's final newline):
+   - `transport 15780 98b0c38f345d53c78e1e4f8a4a4e91035f8d9775078744f7eb3a353057538678` and `expanded 16494 bcee20f8ca476b079261175345d0528a3e8564a7cefd5c0151351bf28d5226c2`
+   - `transport 15779 77d48c600f3bfa998b49e33909f187d4ed77a3cf02423e9ef35212f04f4685fc` and `expanded 16493 85e7be6195bc337e42dcdd196cfd5dedbffa37ea5d1a22089c8392e06af192d0`
+   A wrong `transport` line means the paste was damaged. A right `transport` line with a wrong `expanded` line means the expansion failed. Either way, don't run it: close the tab and start again. The editor now holds the expanded migration, banners included, and it should contain no `@@R` text.
+   How this was checked: `node scripts/transport-collapse.mjs` expands the transport back to 027 exactly (md5 `3a0ead06…`). The same snippet run in headless Chromium, on a secure-context page with a stand-in editor model, printed exactly the first pair, and its result equalled 027 byte for byte. `scripts/transport-collapse.test.mjs` round-trips all 26 existing migrations, and was proven by injecting a short-by-one expander (22 tests fail) and disabling the collapse (21 fail). Not checked: the real Monaco editor, which this container can't reach (HISTORY records its `setValue`/`getValue` round trip as exact).
 3. Run it. If a "Potential issue detected" dialog opens, use the dialog's own "Run query" (the toolbar Run only opens it). No statement drops or updates anything.
 4. Don't trust the Success banner; check the result by query. Re-run step 1: every count must equal the before value. Then run:
    `select count(*) from information_schema.columns where table_schema = 'public' and table_name in ('v2_program_priorities','v2_program_sequence_items','v2_program_sets','v2_program_superset_blocks','v2_week_plan_exercises','v2_workout_warmup_items');` → **46**
