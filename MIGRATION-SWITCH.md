@@ -110,11 +110,13 @@ Reverse: revert the commits.
 
 ### Step 2 — log in, link, capture the live state (you, read-only)
 
+All of steps 2–10 run in a **separate worktree**: a second folder, from the same clone, so your own working copy and any uncommitted changes in it are never touched. (First attempt, 2026-10-04: `git checkout` refused because the clone has uncommitted changes to `CONTEXT.md`. Those changes are yours to keep or drop; nothing here needs them gone.)
 ```
 cd /d C:\path\to\overload-v2
 git fetch origin
-git checkout claude/elegant-noether-npjz4b
-git pull
+git worktree add --detach ..\overload-v2-switch origin/claude/elegant-noether-npjz4b
+cd /d ..\overload-v2-switch
+git log --oneline -1
 npx --yes supabase@2.119.0 login
 npx --yes supabase@2.119.0 link --project-ref imhsawrghteqsmpklofv
 type supabase\.temp\postgres-version
@@ -140,7 +142,7 @@ Expect `Connecting to remote database...` on screen and nothing else. The file s
 
 Send me the version line, the `migration list` output, `live-schema.sql` and `live-snapshot.json` (attach the files to your message).
 
-Reverse: all read-only. `npx --yes supabase@2.119.0 unlink` and `npx --yes supabase@2.119.0 logout` undo link and login. Delete the two files.
+Reverse: all read-only. In the worktree, `npx --yes supabase@2.119.0 unlink` and `npx --yes supabase@2.119.0 logout` undo link and login. At the very end (after step 10), `cd /d C:\path\to\overload-v2` then `git worktree remove --force ..\overload-v2-switch` deletes the worktree folder (`--force` because of the ignored `supabase\.temp` files and the captured JSON/SQL files in it). Your own clone is untouched throughout.
 
 ### Step 3 — baseline, replay, compare (me, with your confirmation)
 1. I sort every object in the dump into three groups: created or changed by 001–026 (traced file by file); created by v1; Northstar's or otherwise unexplained. **You confirm the v1 / Northstar split**, and with it `scripts/schema-compare-exclude.txt`.
@@ -166,11 +168,14 @@ Reverse: revert the merge commit on master.
 
 ### Step 6 — write production's migration history (you; the first write to production — only the history table)
 From master, **after** the switch PR is merged, so the folder holds exactly `000`–`026`:
+In the worktree (`cd /d C:\path\to\overload-v2-switch`):
 ```
-git checkout master
-git pull
+git fetch origin
+git checkout --detach origin/master
+git log --oneline -1
 dir /b supabase\migrations
 ```
+`git log` should show the switch PR's merge commit. The link from step 2 stays (it lives in the ignored `supabase\.temp`).
 Expect 27 lines: `000_v1_baseline.sql`, then `001_v2_schema.sql` … `026_v3_coach_meso_analyses.sql`. No `027`.
 
 ```
