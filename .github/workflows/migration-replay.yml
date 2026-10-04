@@ -37,3 +37,10 @@ jobs:
 
       - name: Replay every migration (scripts/replay-migrations.sh)
         run: bash scripts/replay-migrations.sh
+
+      # Every app embed must still resolve through PostgREST on the replayed
+      # schema: a second FK between two tables makes an un-hinted embed
+      # ambiguous (PGRST201), which the SQL replay can't see (DECISIONS 38,
+      # migration 027 vs fetchMesos). Adam, 2026-10-04: run it here.
+      - name: App embeds resolve through PostgREST (scripts/check-embeds-local.sh)
+        run: bash scripts/check-embeds-local.sh
