@@ -22,6 +22,16 @@ interface SetRowProps {
   // caller already knows which head this stage belongs to (v3 §2.1), so
   // isDropset is fixed by the caller rather than user-toggled here.
   isStage?: boolean
+  // True for a planned stage whose own prior row (the head, or the stage
+  // before it) hasn't been logged yet (chunk 3, "Planned staged sets render
+  // (fix)" [P1] — SPEC: "each locked until the stage before it is logged").
+  // Shows plannedSet's one real per-set planned figure (targetRir — this
+  // data model never stores a planned weight or reps, only what's actually
+  // entered at log time) but takes no input and calls nothing. SetGroup.tsx
+  // alone decides which single stage is next and passes this for every
+  // later one — this prop only ever says "don't accept input here", it
+  // never decides who's next.
+  isLocked?: boolean
   onLog: (params: {
     weekPlanSetId: string | null
     setNumber: number
@@ -48,6 +58,7 @@ export default function SetRow({
   lastLogsLoading,
   currentLog,
   isStage = false,
+  isLocked = false,
   onLog,
   onUpdate,
   onDelete,
@@ -135,6 +146,43 @@ export default function SetRow({
     if (lastLog.weight != null) setWeight(String(toDisplayWeight(lastLog.weight, activeUnit)))
     if (lastLog.reps != null) setReps(String(lastLog.reps))
   }, [lastLogsLoading, lastLog, activeUnit])
+
+  // ── Locked — a planned stage not yet reachable ──────────────────────────
+  // Same inert-row shape SKIPPED (just below) already uses — flex/gap/px/
+  // rounded, --surface fill, 44px row — but --text-dim, not --text-muted:
+  // this file's own established distinction (see "mark as dropset"'s colour
+  // comment in SetGroup.tsx) is --text-dim for disabled/inert, --text-muted
+  // for low-emphasis-but-still-tappable. A locked row is the former —
+  // nothing here is a tap target.
+  if (isLocked) {
+    return (
+      <div
+        className="flex items-center gap-3 px-3 rounded-lg"
+        style={{ backgroundColor: 'var(--surface)', minHeight: 44 }}
+      >
+        <span
+          className="text-xs font-bold w-5 text-center"
+          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+        >
+          ↳
+        </span>
+        <span
+          className="flex-1 text-xs font-bold tracking-widest"
+          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+        >
+          LOCKED
+        </span>
+        {plannedSet?.targetRir != null && (
+          <span
+            className="text-xs"
+            style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+          >
+            TARGET RIR {plannedSet.targetRir}
+          </span>
+        )}
+      </div>
+    )
+  }
 
   // ── Already logged — read-only row ──────────────────────────────────────
   if (currentLog) {
