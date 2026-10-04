@@ -301,3 +301,19 @@ A competent default would: treat the one successful run as the deploy result —
 Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
 Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
 Answer:
+
+## 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
+Severity: deferred
+Chunk: 1
+What happened: After 027 deployed (2026-10-04 ~19:12 UTC), Adam reported no active and no completed mesocycles in the app. **Cause:** 027 added `v2_mesocycles.source_program_id → v2_programs`, a second FK next to `program_id`. PostgREST then refuses the un-hinted embed `v2_programs(id, name)` with `PGRST201` ("more than one relationship was found"). It's used by `fetchMesos` (the list, so it showed empty) and by `createMeso`'s `insert().select()`. START MESOCYCLE would have completed the active meso and inserted the new one before throwing. **Data was untouched:** 027 only adds, and Adam confirmed by query (MESO rows intact) and that he pressed nothing on the Program page. **Fix:** PR #18 (`c63808e`, merged by Adam 19:35, Vercel production deploy success 19:36:43) names the relationship, `v2_programs!v2_mesocycles_program_id_fkey(id, name)`, in both selects. The cause was confirmed live before fixing: the old select gave `PGRST201`, the hinted one gave `200`.
+**Why every check missed it:** `migration-replay`, my scratch-copy checks and `probe-live-columns.mjs` all test SQL and columns. Embed resolution happens in PostgREST, which none of them ran.
+**New check, proven:**
+- `scripts/check-embeds.mjs` finds every embedding select in `src/` and `api/` (25 today) and resolves each through PostgREST with `limit=0`, either live (anon, Adam-filtered) or local.
+- `scripts/check-embeds-local.sh` replays every migration (`replay-migrations.sh --keep`), starts `postgrest/postgrest:v12.2.3` against the result, and runs it.
+- On the pre-fix code with 027 it fails exactly the two mesocycle selects (`PGRST201`, exit 1). On the fixed code it passes 25/25 locally and live.
+- Its finder had its own swallowing bug: a select-less query swallowed the next one, `sessionService.ts:466`. It was fixed and a test was added, which is proven against both broken patterns.
+A competent default would: rely on the replay check for migrations — doesn't apply because: it can't see API-level breakage, and this shipped to production.
+Cost of deferral: none for the fix (it's live). The open question is only where the new check runs.
+Provisional path taken: from now on I run `bash scripts/check-embeds-local.sh` on every migration PR before it merges (yours or mine), and `node scripts/check-embeds.mjs` live after its deploy. A migration that adds an FK between two tables that already have one must also hint every existing embed between them.
+**Question for you:** should `check-embeds-local.sh` also run in the `migration-replay` GitHub workflow, so the ruleset enforces it? That changes `.github/workflows/migration-replay.yml`, which your switch session owns, so it's your call.
+Answer:
