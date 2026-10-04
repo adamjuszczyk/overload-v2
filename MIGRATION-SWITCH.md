@@ -88,7 +88,7 @@ Not committed: your live dump, live snapshot and row counts. The dump holds Nort
 
 ## 4. The steps
 
-All commands are for **cmd on Windows** (not PowerShell). Run them from your clone of the repo. `The project ref is `imhsawrghteqsmpklofv` (confirmed by Adam to match `VITE_SUPABASE_URL`; it isn't a secret). The CLI is pinned to the version rehearsed here: every command is `npx --yes supabase@2.119.0 …`.
+All commands are for **cmd on Windows** (not PowerShell). Run them from your clone of the repo. The project ref is `imhsawrghteqsmpklofv` (confirmed by Adam to match `VITE_SUPABASE_URL`; it isn't a secret). The CLI is pinned to the version rehearsed here: every command is `npx --yes supabase@2.119.0 …`.
 
 ### Step 0 — checks, all read-only (you)
 
