@@ -22874,3 +22874,11 @@ Previous wording, verbatim:
 - "- Deferred, not blocking: DECISIONS.md 33 (weight deload rule's starting percent — none set; needed by chunk 22), 34 (lowercase `x`/`amrap` input — rejected for now; needed by chunks 11/17)."
 - "- File layout: CONTEXT.md is current state only, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`; HISTORY.md is the prior CONTEXT.md verbatim plus everything moved out of this file later; DECISIONS.md holds settled decisions, and new entries use the format at its top."
 — 33, 34, 38 answered; DECISIONS.md restructured.
+
+---
+
+## 2026-10-04 (embed check in CI) — Moved out of CONTEXT.md (no longer true)
+
+- "- Before merging any migration PR: `bash scripts/check-embeds-local.sh` (every app embed must still resolve through PostgREST on the replayed schema)."
+- "; 38 — add `check-embeds-local.sh` to the `migration-replay` workflow."
+— check-embeds-local.sh now runs inside migration-replay (PR #20).

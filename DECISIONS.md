@@ -169,7 +169,7 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 
 ### 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
 - What: Incident: 027's second `v2_mesocycles → v2_programs` FK made the mesocycle embed ambiguous (fixed by PR #18); run `check-embeds-local.sh` in the `migration-replay` workflow?
-- Answer: Yes, add it to the workflow (reviewer to-do).
+- Answer: Yes, add it to the workflow. Done: PR #20 (`b427dc0`); first GitHub run resolved 25/25.
 - Date: 2026-10-04
 
 ## Settled decisions
