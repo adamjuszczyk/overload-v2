@@ -202,6 +202,7 @@ Answer: (Adam, 2026-10-03) Schema choice: yes — add the check that a stage row
 2. Merge PR #17.
 3. Tell me it's merged. I check `Supabase Preview` on master's merge commit; anything but success, or no check within a few minutes, is a failed deploy and blocking. Then I run the read-only API probes and write your live steps as a deferred entry.
 4. After the deploy succeeds, run the same command again into `counts-after.json` and send me both files, or the two outputs. Every count must be equal.
+**Closed (2026-10-04):** Adam merged PR #17 (`7f4405d`). He did not run counts; under his new standing rule (CONTEXT.md, Migration flow) an add-only migration like 027 needs none. 027 is live: see entry 37 for the deploy evidence and his live steps.
 
 ## 31 Live browser verification is unavailable in this environment
 Severity: blocking
@@ -277,4 +278,26 @@ What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I 
 A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
 Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
 Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
+Answer:
+
+## 37 Chunk 1 live check after 027 deployed (Adam's steps), and two stuck deploy checks
+Severity: deferred
+Chunk: 1
+What happened: Adam merged PR #17 (`7f4405d`, 2026-10-04 19:11 UTC). Under his standing counts rule, 027 is add-only, so no live counts are needed; its proof is the green `migration-replay` plus my scratch-copy check (row counts and per-row fingerprints unchanged on all nine altered tables). On master's merge commit GitHub shows **three** `Supabase Preview` runs:
+- `111509721064`: success (19:12:16→19:12:22);
+- `111509705063` and `111509600539`: still `in_progress` more than 8 minutes later.
+That hasn't been seen before; the first automatic run had a single check. I tested the real outcome instead. `node scripts/probe-live-columns.mjs scripts/probe-specs/027.json` (anon key, every request filtered to Adam's user_id, `limit=0`, so no data can return) answered 36 of 36 probes as expected:
+- every one of 027's 72 columns on the 15 tables answers `200 []`;
+- each table's made-up control column answers `400 / 42703`;
+- the six new tables show anon 0 rows.
+The probe itself was proven: a spec with one non-existent column fails (`400 42703`, exit 1). So 027 is live; the deploy is not treated as failed.
+**Your steps:**
+1. Supabase Dashboard → Branches: open the production deploy log for `7f4405d` and check that it applied `027_planner_p1_schema` without error. Tell me if the two stuck runs show anything, e.g. a duplicate trigger.
+2. Optionally, in the SQL Editor: `select version from supabase_migrations.schema_migrations order by version desc limit 3;` The top row should be `027`.
+3. Open https://overload-v2-sage.vercel.app (take the update banner if shown). Today, Plan, Program and History each load your data as before, with no error toast. 027 changed no app code; this checks the old client against the new schema.
+4. In your next real session, log one set. It saves normally: still there after a reload, and no pending-sync marker.
+5. Tell me the results. A failed step is blocking.
+A competent default would: treat the one successful run as the deploy result — doesn't apply because: CONTEXT.md says anything other than success counts as failed until you've read the Dashboard log, and two runs aren't success. The live probe is why I'm not treating it as failed; the log is yours to read.
+Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
+Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
 Answer:

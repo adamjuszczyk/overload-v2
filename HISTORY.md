@@ -22694,3 +22694,20 @@ Previous wording, verbatim:
 - "- A green replay (or preview) proves the migration runs, not that real data survives it. The live before/after counts (Adam-scoped) still apply."
 - "- Before merging any migration (merging deploys it), Adam runs and records a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after."
 — Adam narrowed live before/after counts to migrations that change or remove existing data (chunks 6, 12, 24 in this build); add-only migrations are proven by replay plus the reviewer's scratch count/fingerprint check.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 1 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current: chunk 1's PR (027 under the new migration flow), then chunk 5 once 027 is live. The chunk 4 pause is lifted (Adam, 2026-10-04: the switch to automatic migrations is done and on master)."
+- "- Finished: 2 (PR #10, `1a83833`),"
+- "- Waiting on Adam's live checks (deferred; a failure is blocking): DECISIONS.md 35 (chunk 3: planned dropset in a real session at 375 px, screenshots, stage-log query), 36 (chunk 4: edit form has no note field; stored notes unchanged)."
+- "- Waiting on me: DECISIONS.md 30 — answered (Adam, 2026-10-04): **027 goes live by merging the chunk 1 PR under the new flow** (Repo facts → Migration flow). `check-migration` flags 027's 8 statements, so the merge is Adam's once `migration-replay` is green; then the reviewer checks the production database deploy on master (a failure is blocking), runs the read-only probes, and writes Adam's live steps (Today, Plan, Program, History; one set in his next session) as a deferred entry."
+- "- Chunk 1 state: `supabase/migrations/027_planner_p1_schema.sql` on `build/chunk-1` (pushed): six new tables, the data-model columns on nine tables, stage-row `stage_kind` checks on `v2_week_plan_sets` and `v2_set_logs` (Adam's answer to 30), `notify`. `check-migration` exits 1 with the 8 statements TASKS.md predicted. Reviewer-verified on a fresh scratch copy with `review-027.sh` (session scratchpad): catalog diff = data model (+72 columns, +61 constraints, +21 indexes, +6 policies, nothing removed); counts and row fingerprints unchanged on all nine tables; old-client settings upsert preserves non-default new columns; RLS A/B/anon; named CHECK rejections incl. both stage-row checks. `verify-rls.mjs` run 2026-10-03 with Adam's go-ahead: 25 tables, 50 probes, all pass."
+- "026 `v2_coach_meso_analyses`."
+- "- **Next migration number: 027** (on `build/chunk-1`); then 028, 029 …"
+- "How a *failed* deploy looks on GitHub has not been seen:"
+- "85 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order; 85 of 85 pass 2026-10-04;"
+— chunk 1 merged (PR #17) and 027 is live; next migration 028.
