@@ -25,12 +25,13 @@ interface SetRowProps {
   // True for a planned stage whose own prior row (the head, or the stage
   // before it) hasn't been logged yet (chunk 3, "Planned staged sets render
   // (fix)" [P1] — SPEC: "each locked until the stage before it is logged").
-  // Shows plannedSet's one real per-set planned figure (targetRir — this
-  // data model never stores a planned weight or reps, only what's actually
-  // entered at log time) but takes no input and calls nothing. SetGroup.tsx
-  // alone decides which single stage is next and passes this for every
-  // later one — this prop only ever says "don't accept input here", it
-  // never decides who's next.
+  // Renders the exact same input row a loggable stage gets — same weight
+  // field, reps field, unit toggle, ↳ marker, TARGET RIR hint, prefill —
+  // just disabled: every input and button below carries the native
+  // `disabled` attribute, and handleLog/handleStartSet short-circuit too,
+  // so nothing in the row can fire. SetGroup.tsx alone decides which single
+  // stage is next and simply stops passing this once it is — the row
+  // becomes interactive, no change of shape.
   isLocked?: boolean
   onLog: (params: {
     weekPlanSetId: string | null
@@ -127,6 +128,10 @@ export default function SetRow({
   }, [isTiming, setTimerStartedAt])
 
   function handleStartSet() {
+    // Belt-and-suspenders alongside the button's own native `disabled`
+    // (chunk 3): guarantees a locked row's LOG/START SET control "fires
+    // nothing" regardless of how it was triggered, not just how it looks.
+    if (isLocked) return
     const rest = useRestTimerStore.getState()
     setFrozenRestSeconds(rest.startedAt ? Math.floor((Date.now() - rest.startedAt) / 1000) : null)
     rest.stop()
@@ -146,43 +151,6 @@ export default function SetRow({
     if (lastLog.weight != null) setWeight(String(toDisplayWeight(lastLog.weight, activeUnit)))
     if (lastLog.reps != null) setReps(String(lastLog.reps))
   }, [lastLogsLoading, lastLog, activeUnit])
-
-  // ── Locked — a planned stage not yet reachable ──────────────────────────
-  // Same inert-row shape SKIPPED (just below) already uses — flex/gap/px/
-  // rounded, --surface fill, 44px row — but --text-dim, not --text-muted:
-  // this file's own established distinction (see "mark as dropset"'s colour
-  // comment in SetGroup.tsx) is --text-dim for disabled/inert, --text-muted
-  // for low-emphasis-but-still-tappable. A locked row is the former —
-  // nothing here is a tap target.
-  if (isLocked) {
-    return (
-      <div
-        className="flex items-center gap-3 px-3 rounded-lg"
-        style={{ backgroundColor: 'var(--surface)', minHeight: 44 }}
-      >
-        <span
-          className="text-xs font-bold w-5 text-center"
-          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-        >
-          ↳
-        </span>
-        <span
-          className="flex-1 text-xs font-bold tracking-widest"
-          style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-        >
-          LOCKED
-        </span>
-        {plannedSet?.targetRir != null && (
-          <span
-            className="text-xs"
-            style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-          >
-            TARGET RIR {plannedSet.targetRir}
-          </span>
-        )}
-      </div>
-    )
-  }
 
   // ── Already logged — read-only row ──────────────────────────────────────
   if (currentLog) {
@@ -542,6 +510,8 @@ export default function SetRow({
   }
 
   function handleLog() {
+    // Same belt-and-suspenders as handleStartSet above.
+    if (isLocked) return
     const wEntered = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
     const r = reps.trim() === '' ? null : parseInt(reps, 10)
     if (wEntered === null || r === null || Number.isNaN(wEntered) || Number.isNaN(r)) {
@@ -594,8 +564,15 @@ export default function SetRow({
     // (post-launch fix, 2026-08-10) — a stage-input row is deliberately
     // unmarked since it only ever renders right where the user just tapped
     // ADD STAGE / "mark as dropset", never scrolled out of view the way a
-    // planned/extra set further down the session can be.
-    <div className="space-y-1" data-unlogged-set={isStage ? undefined : 'true'}>
+    // planned/extra set further down the session can be. Locked (chunk 3):
+    // same row, same opacity-0.5 dim this file already uses on these same
+    // two inputs for lastLogsLoading — applied once here, at the row root,
+    // rather than repeated on every element below.
+    <div
+      className="space-y-1"
+      data-unlogged-set={isStage ? undefined : 'true'}
+      style={{ opacity: isLocked ? 0.5 : 1 }}
+    >
       <div className="flex items-center gap-2">
         {/* Set number — stage-input rows share the head's number (v3 §2.1) */}
         <span
@@ -611,7 +588,7 @@ export default function SetRow({
             type="text"
             inputMode="decimal"
             placeholder={lastLogsLoading ? '···' : '0'}
-            disabled={lastLogsLoading}
+            disabled={lastLogsLoading || isLocked}
             value={weight}
             onChange={(e) => {
               userEditedRef.current = true
@@ -635,6 +612,7 @@ export default function SetRow({
               the common case looks identical to a plain unit label. */}
           <button
             type="button"
+            disabled={isLocked}
             onClick={() => setUnitOverride(unitOverride === null ? otherUnit : null)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
             style={{
@@ -656,7 +634,7 @@ export default function SetRow({
             type="number"
             inputMode="numeric"
             placeholder={lastLogsLoading ? '···' : '0'}
-            disabled={lastLogsLoading}
+            disabled={lastLogsLoading || isLocked}
             value={reps}
             onChange={(e) => {
               userEditedRef.current = true
@@ -675,8 +653,24 @@ export default function SetRow({
           />
         </div>
 
-        {/* LOG / START SET button — 44px touch target */}
-        {measureSetTime && !isTiming ? (
+        {/* LOG / START SET button — 44px touch target. Locked: the same
+            slot, same size, shows LOCKED and is disabled — the row becomes
+            interactive (LOG, or START SET) once it isn't, no change of
+            shape. */}
+        {isLocked ? (
+          <button
+            disabled
+            className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+            style={{
+              height: 44,
+              backgroundColor: 'var(--accent)',
+              color: 'var(--base)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            LOCKED
+          </button>
+        ) : measureSetTime && !isTiming ? (
           <button
             onClick={handleStartSet}
             className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
@@ -753,9 +747,13 @@ export default function SetRow({
         </div>
       )}
 
-      {/* Expandable: achieved RIR + dropset + skip */}
+      {/* Expandable: achieved RIR + dropset + skip. Disabled when locked —
+          not hidden (removing it would change the row's shape) — so it can
+          never be opened into a half-interactive state while everything
+          else here is inert. */}
       <div className="pl-7">
         <button
+          disabled={isLocked}
           onClick={() => setShowExtra((v) => !v)}
           className="flex items-center text-xs"
           style={{

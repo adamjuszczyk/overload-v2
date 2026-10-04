@@ -5,11 +5,20 @@
 // the workout screen before anything is logged, each stage locked (visible
 // with its planned value, not loggable) until the row before it is logged.
 //
-// Two levels, deliberately:
-//  - SetGroup (below) pins down the actual rendering fix — row count, lock
-//    state across the log-the-head / log-stage-1 / log-stage-2 progression,
-//    and that the unplanned/skipped-head paths this fix must not touch are
-//    pixel-for-pixel what they were before.
+// SPEC's own words: each stage renders "as a row with weight and reps"
+// from the start. A locked stage is therefore the SAME input row a
+// loggable stage gets — same weight/reps fields, same ↳ marker, same
+// TARGET RIR hint, same prefill — just disabled (native `disabled`, so it
+// can't be focused, typed into, or submitted), not a different, inert
+// shape. Three levels, deliberately:
+//  - SetRow (first) pins down the disabled-row mechanism itself in
+//    isolation: the inputs and the log control are present, disabled, and
+//    fire nothing; the identical row minus isLocked is enabled.
+//  - SetGroup (below that) pins down the actual rendering fix built on top
+//    of it — row count and lock state across the log-the-head /
+//    log-stage-1 / log-stage-2 progression — and that the unplanned/
+//    skipped-head paths this fix must not touch are pixel-for-pixel what
+//    they were before.
 //  - ExerciseCard (bottom) mounts the real, unmodified write path
 //    (handleLogStage) end to end, so a break in parentSetId/stageIndex
 //    pass-through — not just in SetGroup's own call shape — fails a test
@@ -18,6 +27,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { ComponentProps } from 'react'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import SetRow from './SetRow'
 import SetGroup from './SetGroup'
 import ExerciseCard from './ExerciseCard'
 import { groupSetLogs } from './setGroupLogic'
@@ -37,6 +47,13 @@ afterEach(() => {
 
 const noop = () => {}
 const asyncNoop = async () => {}
+
+// Both HTMLInputElement and HTMLButtonElement carry `.disabled` — the
+// element type returned by a role/text query is widened to plain
+// HTMLElement, so this is just a narrow, shared accessor for it.
+function isDisabled(el: HTMLElement): boolean {
+  return (el as HTMLInputElement | HTMLButtonElement).disabled
+}
 
 function makeProgramExercise(overrides: Partial<ProgramExercise> = {}): ProgramExercise {
   return {
@@ -122,6 +139,20 @@ function baseSetGroupProps() {
   }
 }
 
+function baseSetRowProps() {
+  return {
+    setNumber: 1,
+    programExercise: makeProgramExercise(),
+    lastLog: null,
+    lastLogsLoading: false,
+    currentLog: null,
+    onLog: noop,
+    onUpdate: noop,
+    onDelete: noop,
+    restElapsed: null,
+  }
+}
+
 // Shared fixture: a head plus two planned dropset stages, same shape a real
 // week-plan dropset (parent_week_plan_set_id / stage_index) produces.
 const planHead = makePlanSet({ id: 'plan-head', setNumber: 1, stageIndex: 0, targetRir: 3 })
@@ -145,8 +176,66 @@ const planStage2 = makePlanSet({
 })
 const plannedStages = [planStage1, planStage2]
 
+describe('SetRow — isLocked disables the real input row, not a different shape', () => {
+  it('renders the weight field, the reps field and the ↳/TARGET RIR hint, all disabled', () => {
+    render(<SetRow {...baseSetRowProps()} isStage isLocked plannedSet={planStage1} />)
+
+    const inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(2)
+    expect(isDisabled(inputs[0])).toBe(true) // weight
+    expect(isDisabled(inputs[1])).toBe(true) // reps
+
+    // Same row shape as a loggable stage: the ↳ marker and the TARGET RIR
+    // hint render unconditionally on both, never specific to isLocked.
+    expect(screen.getByText('↳')).toBeTruthy()
+    expect(screen.getByText('TARGET RIR 1')).toBeTruthy()
+
+    // The LOG slot — same position, same size — shows LOCKED and is
+    // disabled, rather than being replaced or hidden.
+    const lockedControl = screen.getByRole('button', { name: 'LOCKED' })
+    expect(isDisabled(lockedControl)).toBe(true)
+    expect(screen.queryByRole('button', { name: 'LOG' })).toBeNull()
+  })
+
+  it('clicking the disabled log control fires nothing', () => {
+    const onLog = vi.fn()
+    render(<SetRow {...baseSetRowProps()} isStage isLocked plannedSet={planStage1} onLog={onLog} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'LOCKED' }))
+    expect(onLog).not.toHaveBeenCalled()
+  })
+
+  it('the unit-toggle and ▼ MORE controls are disabled too — nothing on a locked row is a tap target', () => {
+    render(<SetRow {...baseSetRowProps()} isStage isLocked plannedSet={planStage1} />)
+
+    expect(isDisabled(screen.getByRole('button', { name: /Log this set in/ }))).toBe(true)
+    expect(isDisabled(screen.getByRole('button', { name: '▼ MORE' }))).toBe(true)
+  })
+
+  it('the identical row with isLocked false: the same inputs and the same slot, now enabled — no change of shape', () => {
+    const onLog = vi.fn()
+    render(<SetRow {...baseSetRowProps()} isStage isLocked={false} plannedSet={planStage1} onLog={onLog} />)
+
+    const inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(2)
+    expect(isDisabled(inputs[0])).toBe(false)
+    expect(isDisabled(inputs[1])).toBe(false)
+
+    expect(screen.getByText('↳')).toBeTruthy()
+    expect(screen.getByText('TARGET RIR 1')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
+
+    const logButton = screen.getByRole('button', { name: 'LOG' })
+    expect(isDisabled(logButton)).toBe(false)
+    fireEvent.change(inputs[0], { target: { value: '50' } })
+    fireEvent.change(inputs[1], { target: { value: '5' } })
+    fireEvent.click(logButton)
+    expect(onLog).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('SetGroup — planned staged sets render before anything is logged (chunk 3 fix)', () => {
-  it('nothing logged: head is an input row, both planned stages render locked — 3 rows total', () => {
+  it('nothing logged: head is an enabled input row, both planned stages render as disabled rows — 3 rows total', () => {
     render(
       <SetGroup
         {...baseSetGroupProps()}
@@ -156,24 +245,37 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
       />,
     )
 
-    // Head row: the unlogged input row, marked '01' (not a stage marker).
+    // Head row: the unlogged input row, marked '01' (not a stage marker),
+    // enabled.
     expect(screen.getByText('01')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'LOG' })).toBeTruthy()
+    expect(isDisabled(screen.getByRole('button', { name: 'LOG' }))).toBe(false)
 
-    // Both stage rows present (↳ marker ×2) and both locked.
+    // Both stage rows present (↳ marker ×2), each a disabled weight/reps
+    // row with a disabled LOCKED control in the log slot.
     expect(screen.getAllByText('↳')).toHaveLength(2)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(2)
+    const lockedControls = screen.getAllByRole('button', { name: 'LOCKED' })
+    expect(lockedControls).toHaveLength(2)
+    for (const c of lockedControls) expect(isDisabled(c)).toBe(true)
+
+    const inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(6) // head (2) + stage 1 (2) + stage 2 (2)
+    expect(isDisabled(inputs[0])).toBe(false) // head weight
+    expect(isDisabled(inputs[1])).toBe(false) // head reps
+    expect(isDisabled(inputs[2])).toBe(true) // stage 1 weight — locked
+    expect(isDisabled(inputs[3])).toBe(true) // stage 1 reps — locked
+    expect(isDisabled(inputs[4])).toBe(true) // stage 2 weight — locked
+    expect(isDisabled(inputs[5])).toBe(true) // stage 2 reps — locked
+
     expect(screen.getByText('TARGET RIR 1')).toBeTruthy()
     expect(screen.getByText('TARGET RIR 0')).toBeTruthy()
 
-    // Nothing loggable for either stage, and no ADD STAGE affordance yet —
-    // the head itself isn't logged, so there is nothing to add a stage to.
-    expect(screen.queryAllByRole('button', { name: 'LOG' })).toHaveLength(1)
+    // No ADD STAGE affordance yet — the head itself isn't logged, so
+    // there's nothing to add a stage to.
     expect(screen.queryByText('ADD STAGE')).toBeNull()
     expect(screen.queryByText('mark as dropset')).toBeNull()
   })
 
-  it('head logged: stage 1 unlocked (loggable), stage 2 still locked', () => {
+  it('head logged: stage 1 unlocked (enabled, loggable), stage 2 still locked (disabled)', () => {
     const headLog = makeLog({ id: 'head-log', weekPlanSetId: 'plan-head', setNumber: 1 })
     const group = groupSetLogs([headLog])[0]
 
@@ -188,18 +290,25 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
 
     // Head now renders as a logged display row (no LOG button of its own).
     expect(screen.getAllByText('01')).toHaveLength(1)
-    // Exactly one stage row is loggable (stage 1) and exactly one is locked
-    // (stage 2) — both carry the ↳ marker.
     expect(screen.getAllByText('↳')).toHaveLength(2)
-    expect(screen.getAllByRole('button', { name: 'LOG' })).toHaveLength(1)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(1)
-    // The unlocked row is stage 1 (TARGET RIR 1 hint); stage 2 (TARGET RIR 0)
-    // is the one still showing locked.
+
+    const inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(4) // stage 1 (2, unlocked) + stage 2 (2, locked)
+    expect(isDisabled(inputs[0])).toBe(false) // stage 1 weight — unlocked
+    expect(isDisabled(inputs[1])).toBe(false) // stage 1 reps — unlocked
+    expect(isDisabled(inputs[2])).toBe(true) // stage 2 weight — still locked
+    expect(isDisabled(inputs[3])).toBe(true) // stage 2 reps — still locked
+
+    expect(isDisabled(screen.getByRole('button', { name: 'LOG' }))).toBe(false)
+    expect(isDisabled(screen.getByRole('button', { name: 'LOCKED' }))).toBe(true)
+
+    // The unlocked row is stage 1 (TARGET RIR 1 hint); stage 2 (TARGET RIR
+    // 0) is the one still showing locked.
     expect(screen.getByText('TARGET RIR 1')).toBeTruthy()
     expect(screen.getByText('TARGET RIR 0')).toBeTruthy()
   })
 
-  it('stage 1 logged too: stage 2 unlocked, nothing locked remains', () => {
+  it('stage 1 logged too: stage 2 unlocked (enabled), nothing locked remains', () => {
     const headLog = makeLog({ id: 'head-log', weekPlanSetId: 'plan-head', setNumber: 1 })
     const stage1Log = makeLog({
       id: 'stage1-log',
@@ -220,15 +329,20 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
       />,
     )
 
-    expect(screen.queryByText('LOCKED')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
     // Head and stage 1 are now both logged display rows — each marked with
     // its own padded setNumber (SetRow's already-logged row distinguishes a
     // stage from its head by colour only, not by swapping in '↳'; that
     // marker is only for the unlogged/locked renderings). Stage 2 is the
-    // sole loggable (↳) row left.
+    // sole loggable (↳) row left, fully enabled.
     expect(screen.getAllByText('01')).toHaveLength(2)
     expect(screen.getAllByText('↳')).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'LOG' })).toHaveLength(1)
+
+    const inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(2)
+    expect(isDisabled(inputs[0])).toBe(false)
+    expect(isDisabled(inputs[1])).toBe(false)
+    expect(isDisabled(screen.getByRole('button', { name: 'LOG' }))).toBe(false)
   })
 
   it('logging the unlocked stage calls onLogStage with the head log, the right plan slot and isDropset true', () => {
@@ -247,6 +361,7 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     )
 
     const inputs = screen.getAllByPlaceholderText('0')
+    expect(isDisabled(inputs[0])).toBe(false) // stage 1 — sanity: this is the unlocked one
     fireEvent.change(inputs[0], { target: { value: '50' } }) // weight
     fireEvent.change(inputs[1], { target: { value: '5' } }) // reps
     fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
@@ -260,6 +375,27 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     expect(params.isDropset).toBe(true)
     expect(params.weight).toBe(50)
     expect(params.reps).toBe(5)
+  })
+
+  it('clicking a locked stage row\'s log control through SetGroup fires nothing', () => {
+    const headLog = makeLog({ id: 'head-log', weekPlanSetId: 'plan-head', setNumber: 1 })
+    const group = groupSetLogs([headLog])[0]
+    const onLogStage = vi.fn()
+
+    render(
+      <SetGroup
+        {...baseSetGroupProps()}
+        plannedSet={planHead}
+        plannedStages={plannedStages}
+        group={group}
+        onLogStage={onLogStage}
+      />,
+    )
+
+    // Stage 2's LOCKED control — attempting to tap it must call onLogStage
+    // zero times, same as every other locked row.
+    fireEvent.click(screen.getByRole('button', { name: 'LOCKED' }))
+    expect(onLogStage).not.toHaveBeenCalled()
   })
 
   // ── Regression: unplanned dropsets and skipped heads behave exactly as
@@ -276,7 +412,7 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     )
     expect(screen.getByRole('button', { name: 'LOG' })).toBeTruthy()
     expect(screen.queryByText('↳')).toBeNull()
-    expect(screen.queryByText('LOCKED')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
   })
 
   it('head logged, no planned stages: shows the low-emphasis "mark as dropset" link, not an auto-unlocked row', () => {
@@ -293,7 +429,7 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     )
 
     expect(screen.getByText('mark as dropset')).toBeTruthy()
-    expect(screen.queryByText('LOCKED')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'LOG' })).toBeNull()
   })
 
@@ -318,7 +454,7 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     )
 
     expect(screen.getByText('ADD STAGE')).toBeTruthy()
-    expect(screen.queryByText('LOCKED')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
   })
 
   it('skipped head with planned-but-unlogged stages: no stage affordance at all — identical to today', () => {
@@ -335,7 +471,7 @@ describe('SetGroup — planned staged sets render before anything is logged (chu
     )
 
     expect(screen.getByText('SKIPPED')).toBeTruthy()
-    expect(screen.queryByText('LOCKED')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'LOCKED' })).toBeNull()
     expect(screen.queryByText('mark as dropset')).toBeNull()
     expect(screen.queryByRole('button', { name: 'ADD STAGE' })).toBeNull()
   })
@@ -380,8 +516,17 @@ describe('ExerciseCard — logging an auto-unlocked planned stage reuses ADD STA
 
     const { rerender } = render(renderCard([]))
 
-    // 1. Log the head.
+    // 1. Nothing logged: head enabled, both stages present and disabled.
     let inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(6)
+    expect(isDisabled(inputs[0])).toBe(false) // head
+    expect(isDisabled(inputs[1])).toBe(false)
+    expect(isDisabled(inputs[2])).toBe(true) // stage 1 — locked
+    expect(isDisabled(inputs[3])).toBe(true)
+    expect(isDisabled(inputs[4])).toBe(true) // stage 2 — locked
+    expect(isDisabled(inputs[5])).toBe(true)
+
+    // Log the head.
     fireEvent.change(inputs[0], { target: { value: '100' } })
     fireEvent.change(inputs[1], { target: { value: '10' } })
     fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
@@ -401,8 +546,15 @@ describe('ExerciseCard — logging an auto-unlocked planned stage reuses ADD STA
     })
     rerender(renderCard([headLog]))
 
-    // 2. Stage 1 is now auto-unlocked (no ADD STAGE tap) — log it.
+    // 2. Stage 1 is now auto-unlocked (enabled, no ADD STAGE tap needed);
+    // stage 2 is still locked (disabled).
     inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(4)
+    expect(isDisabled(inputs[0])).toBe(false) // stage 1 — unlocked
+    expect(isDisabled(inputs[1])).toBe(false)
+    expect(isDisabled(inputs[2])).toBe(true) // stage 2 — still locked
+    expect(isDisabled(inputs[3])).toBe(true)
+
     fireEvent.change(inputs[0], { target: { value: '80' } })
     fireEvent.change(inputs[1], { target: { value: '8' } })
     fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
@@ -425,8 +577,13 @@ describe('ExerciseCard — logging an auto-unlocked planned stage reuses ADD STA
     })
     rerender(renderCard([headLog, stage1Log]))
 
-    // 3. Stage 2 is now auto-unlocked — log it.
+    // 3. Stage 2 is now auto-unlocked (enabled) — the same row that was
+    // disabled a moment ago, nothing left locked.
     inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(2)
+    expect(isDisabled(inputs[0])).toBe(false)
+    expect(isDisabled(inputs[1])).toBe(false)
+
     fireEvent.change(inputs[0], { target: { value: '60' } })
     fireEvent.change(inputs[1], { target: { value: '6' } })
     fireEvent.click(screen.getByRole('button', { name: 'LOG' }))

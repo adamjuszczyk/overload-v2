@@ -126,6 +126,16 @@ export default function SetGroup({
     return (
       <div className="space-y-1.5">
         <SetRow
+          // Explicit (chunk 3, found while reviewing this exact diff):
+          // without it, this SetRow and the logged-head SetRow below share
+          // the same position under the same div root — React would reuse
+          // this one component instance across the unlogged<->logged
+          // boundary (same type, same slot, no key) and carry its typed-but-
+          // never-submitted weight/reps into the logged render. Differing
+          // from the logged branch's own key (headLog.id) the instant a
+          // real log exists forces a fresh instance there, and forces
+          // another fresh one here again if that head is later deleted.
+          key={plannedSet?.id ?? 'extra'}
           setNumber={displayNumber}
           programExercise={programExercise}
           plannedSet={plannedSet}
@@ -148,6 +158,7 @@ export default function SetGroup({
                 lastLog={null}
                 lastLogsLoading={false}
                 currentLog={null}
+                isStage
                 isLocked
                 onLog={() => {}}
                 onUpdate={() => {}}
@@ -166,6 +177,9 @@ export default function SetGroup({
   return (
     <div className="space-y-1.5">
       <SetRow
+        // See the unlogged branch's own key comment above — the matching
+        // half of that same fix.
+        key={headLog.id}
         setNumber={displayNumber}
         programExercise={programExercise}
         plannedSet={plannedSet}
@@ -226,6 +240,20 @@ export default function SetGroup({
                 behaviour, unchanged. */}
             {addingStage || plannedStages.length > stages.length ? (
               <SetRow
+                // Explicit, and keyed on WHICH stage this slot currently
+                // represents (not just "is this slot occupied") — found
+                // for the same reason as the head's own key above: once a
+                // planned dropset has more than one remaining stage, this
+                // ternary branch stays the SetRow type on every render as
+                // stage 1 unlocks, logs, and stage 2 takes its place in
+                // the exact same slot. Without a key that changes between
+                // those two, React reuses the instance and stage 2 would
+                // inherit stage 1's already-typed (and already-logged)
+                // weight/reps. `unplanned-${stages.length}` covers the
+                // ADD-STAGE/"mark as dropset" case, where there is no
+                // plannedStages entry to key on but a fresh row is still
+                // wanted each time one is manually added.
+                key={plannedStages[stages.length]?.id ?? `unplanned-${stages.length}`}
                 setNumber={headLog.setNumber}
                 programExercise={programExercise}
                 plannedSet={plannedStages[stages.length] ?? null}
@@ -305,6 +333,7 @@ export default function SetGroup({
                 lastLog={null}
                 lastLogsLoading={false}
                 currentLog={null}
+                isStage
                 isLocked
                 onLog={() => {}}
                 onUpdate={() => {}}
