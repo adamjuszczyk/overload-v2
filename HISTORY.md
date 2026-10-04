@@ -22609,3 +22609,13 @@ Previous wording, verbatim:
 - "Finished: none."
 - "Waiting on me: DECISIONS.md 30 — apply 027 (final version only: `3dbeebb`, 16494 characters / 18450 bytes, md5 `3a0ead06021e6131fa0177dab6bda220`) through the placeholder-collapse transport (`transport/027_planner_p1_schema.transport.sql`, 15780 characters; step 2 there), do steps 1–6, then report. 31 and 32 are answered."
 — Adam won't apply 027 by hand; it goes live by merging the chunk 1 PR after his switch to automatic migrations. Chunks 2–4 continue meanwhile.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 2 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 2 (then 3, 4; stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: none."
+- "- Vitest (node env; component tests opt into jsdom per file); 548 tests in 37 files pass (re-run 2026-10-03)."
+— chunk 2 merged (PR #10); Vitest count re-run.

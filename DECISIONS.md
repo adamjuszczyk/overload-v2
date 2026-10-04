@@ -208,3 +208,21 @@ What happened: The boundary rule is to run every script in `scripts/`, but Escal
 A competent default would: run it, since it is read-only — doesn't apply because: the rule asks for a go-ahead before each run.
 Cost of deferral: n/a
 Answer: (Adam, 2026-10-03) Yes, run it now; ask again next time — the per-run rule stays. Run 2026-10-03: 25 tables, 50 probes — 50 pass, 0 leak, 0 fail.
+
+## 33 The weight deload rule's starting percentage is not specified
+Severity: deferred
+Chunk: 2
+What happened: Chunk 2 (`src/lib/plannerVocabulary.ts`) holds the deload-rules starting values. TASKS.md gives the sets rule's starting value (`{ "mode": "percent", "value": 50, "rounding": "down" }`, from SPEC's "sets −50%, everything else unchanged") and says a weight rule, "when switched on, starts at rounding down to 2.5 kg". SPEC says the weight rule is a "percentage of base" with rounding and a precision step, but gives no starting percentage. The only number in either document is the `"percent": 90` in TASKS.md's JSON *shape* example, which illustrates the fields and isn't stated as a default. The builder didn't guess: `DEFAULT_DELOAD_WEIGHT_RULE` is `{ rounding: 'down', step: 2.5, stepUnit: 'kg' }` with no `percent`, and a test pins that omission so it can't be filled in silently. I checked the exported values directly.
+A competent default would: take the 90 from the shape example — doesn't apply because: it's an example of the shape, not a stated default, and the starting weight cut of a deload is a training decision that SPEC leaves silent (Escalation 14).
+Cost of deferral: one constant and its test in `plannerVocabulary.ts`, changed before chunk 22 (deload rules editor and calculator) uses it. Nothing before chunk 22 reads it.
+Provisional path taken: no starting percentage; chunk 22 can't pre-fill the weight rule's percent until you answer.
+Answer:
+
+## 34 Input casing for tempo "X" and rep target "AMRAP"
+Severity: deferred
+Chunk: 2
+What happened: SPEC writes tempo as "3-1-1-0, `X` allowed" and the rep target as "`AMRAP`". It is silent on whether lowercase input (`3-1-x-0`, `amrap`) is accepted. The builder took the strict reading: `normaliseTempo('3-1-x-0')` and `parseRepTarget('amrap')` both return null (invalid). Outer whitespace is trimmed, and internal whitespace is rejected. Also strict and consistent with SPEC's "range = min < max": a range written `8-8` is rejected, so the same number twice must be entered as `8`. I checked all of this directly. On a phone keyboard, typing lowercase is the easy path.
+A competent default would: accept lowercase and normalise to `X` / `AMRAP` — doesn't apply because: SPEC is silent, and accepting versus rejecting is visible behaviour in the planner (Escalation 14). Either way it's a two-line change.
+Cost of deferral: two small parse changes and their tests in `plannerVocabulary.ts`, before the first planner UI that takes typed input (chunk 11 for rep targets, chunk 17 for tempo).
+Provisional path taken: exact case only; lowercase is rejected as invalid input.
+Answer:
