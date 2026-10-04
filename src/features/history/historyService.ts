@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { MuscleGroup, SessionStatus, FormRating, EnergyRating, PumpRating } from '../../types'
 import { groupByParent, type SetGroup } from '../gym/setGroupLogic'
+import { resolveLineageGroup, type WorkoutLineageRow } from './workoutLineage'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -326,6 +327,23 @@ export async function fetchWorkoutDayName(
 // One row per session OCCURRENCE, already aggregated in SQL (total_volume,
 // avg_rir, set_count, duration_seconds) — no client-side grouping, so no
 // pagination/grouping interaction to guard against here.
+//
+// Chunk 5 (TASKS.md): queried by the workout's lineage group, not just the
+// one id, so a run's copy of a workout shares "all time" history with the
+// saved program's workout it was copied from (and with any other run's copy
+// of the same workout) — resolveLineageGroup (workoutLineage.ts) is the pure
+// rule; fetchWorkoutLineageGroup below is the one place that resolves it
+// against real rows. Today (027 live, no copy-writing code yet) every
+// source_workout_day_id is NULL, so the group is always exactly
+// [workoutDayId] and this reads identically to before.
+//
+// The group is resolved fresh inside this function on every call — every
+// page, including "load more" — rather than threaded through
+// useSessionTypeHistory's query key or cached across pages. That keeps the
+// query key, and every existing invalidation of it (useDeleteSession's
+// onSuccess), untouched. The cost is one extra read of the user's own
+// v2_workout_days rows per call; see this chunk's report for the measured
+// shape of that cost.
 
 export interface SessionTypeHistoryRow {
   sessionId: string
@@ -358,12 +376,29 @@ export interface SessionTypeHistoryPage {
   nextOffset: number | null
 }
 
+// The user's own workout-day rows (id + source_workout_day_id only), scoped
+// to userId the same way fetchWorkoutDayName scopes its single-row read
+// above — defence-in-depth alongside RLS, not the only thing standing
+// between this query and another user's rows (same reasoning as that
+// function's own comment, and AUDIT S1). Feeds the pure resolver; this is
+// the only place in the app that calls it against real data.
+async function fetchWorkoutLineageGroup(userId: string, workoutDayId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('v2_workout_days')
+    .select('id, source_workout_day_id')
+    .eq('user_id', userId)
+  if (error) throw error
+  return resolveLineageGroup(workoutDayId, (data ?? []) as WorkoutLineageRow[])
+}
+
 export async function fetchSessionTypeHistory(
   userId: string,
   workoutDayId: string,
   offset = 0,
   pageSize = SESSION_TYPE_HISTORY_PAGE_SIZE,
 ): Promise<SessionTypeHistoryPage> {
+  const group = await fetchWorkoutLineageGroup(userId, workoutDayId)
+
   const { data, error } = await supabase
     .from('v2_session_type_history')
     .select(`
@@ -371,7 +406,7 @@ export async function fetchSessionTypeHistory(
       duration_seconds, total_volume, avg_rir, set_count
     `)
     .eq('user_id', userId)
-    .eq('workout_day_id', workoutDayId)
+    .in('workout_day_id', group)
     // Deterministic tiebreaker — same-date sessions otherwise have no
     // guaranteed stable order across pages, which can duplicate or drop
     // rows across separate .range() calls.
