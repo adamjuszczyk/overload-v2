@@ -1,0 +1,115 @@
+{
+ "migration": "027_planner_p1_schema.sql",
+ "new": [
+  "v2_program_priorities",
+  "v2_program_sequence_items",
+  "v2_program_sets",
+  "v2_program_superset_blocks",
+  "v2_week_plan_exercises",
+  "v2_workout_warmup_items"
+ ],
+ "columns": {
+  "v2_mesocycles": [
+   "source_program_id"
+  ],
+  "v2_program_exercises": [
+   "removed_at",
+   "rest_after_seconds",
+   "rest_seconds",
+   "superset_block_id",
+   "tempo",
+   "week_only"
+  ],
+  "v2_program_priorities": [
+   "created_at",
+   "id",
+   "mark",
+   "program_id",
+   "tag_type",
+   "tag_value",
+   "updated_at",
+   "user_id"
+  ],
+  "v2_program_sequence_items": [
+   "id",
+   "position",
+   "program_id",
+   "user_id",
+   "workout_day_id"
+  ],
+  "v2_program_sets": [
+   "created_at",
+   "id",
+   "is_amrap",
+   "is_warmup",
+   "parent_program_set_id",
+   "position",
+   "program_exercise_id",
+   "rep_max",
+   "rep_min",
+   "rest_seconds",
+   "stage_index",
+   "stage_kind",
+   "stage_rest_seconds",
+   "user_id"
+  ],
+  "v2_program_superset_blocks": [
+   "created_at",
+   "id",
+   "rest_after_round_seconds",
+   "rest_within_round_seconds",
+   "user_id",
+   "workout_day_id"
+  ],
+  "v2_programs": [
+   "deload_rules",
+   "kind",
+   "planning_type",
+   "schedule_type"
+  ],
+  "v2_sessions": [
+   "moved_to_date"
+  ],
+  "v2_set_logs": [
+   "stage_kind"
+  ],
+  "v2_user_settings": [
+   "deload_rules",
+   "warmup_display",
+   "week_start"
+  ],
+  "v2_week_plan_exercises": [
+   "carry_position",
+   "carry_program_exercise_id",
+   "created_at",
+   "id",
+   "position",
+   "program_exercise_id",
+   "user_id",
+   "week_plan_id"
+  ],
+  "v2_week_plan_sets": [
+   "is_amrap",
+   "program_set_id",
+   "rep_max",
+   "rep_min",
+   "stage_kind",
+   "tags",
+   "target_weight"
+  ],
+  "v2_week_plans": [
+   "deload_restore",
+   "sequence_position"
+  ],
+  "v2_workout_days": [
+   "source_workout_day_id"
+  ],
+  "v2_workout_warmup_items": [
+   "body",
+   "id",
+   "position",
+   "user_id",
+   "workout_day_id"
+  ]
+ }
+}

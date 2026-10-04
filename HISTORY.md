@@ -22684,3 +22684,13 @@ Previous wording, verbatim:
 - "- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`)."
 - "A chunk with a migration: the steps go in its blocking entry, and Adam does them right after applying."
 — the switch is done; the chunk 4 pause is lifted; the chunk 1 cluster is gone; migration chunks' live steps are deferred entries once the migration is live.
+
+---
+
+## 2026-10-04 (planner build, reviewer, Adam's counts rule) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- A green replay (or preview) proves the migration runs, not that real data survives it. The live before/after counts (Adam-scoped) still apply."
+- "- Before merging any migration (merging deploys it), Adam runs and records a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after."
+— Adam narrowed live before/after counts to migrations that change or remove existing data (chunks 6, 12, 24 in this build); add-only migrations are proven by replay plus the reviewer's scratch count/fingerprint check.
