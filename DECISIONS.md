@@ -192,6 +192,17 @@ A competent default would: merge the chunk once its checks pass — doesn't appl
 Cost of deferral: n/a
 Answer: (Adam, 2026-10-03) Schema choice: yes — add the check that a stage row can't carry a stage kind, on both planned sets and set logs, matching `v2_program_sets`; amend 027, re-run every scratch check on the final file, give the new character count and md5; "I apply only that version." Push: yes, push `build/chunk-1`. Standing for this build: the reviewer may push any `build/chunk-N` branch and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. Done: amended in `3dbeebb`, re-verified as above, pushed. Still waiting on: the apply and steps 1–6.
 (Adam, 2026-10-04) **Change of plan: 027 is not applied by hand.** Adam is switching this repo to automatic Supabase migrations in a separate session, and 027 will go live by merging the chunk 1 PR. The entry stays blocking until he says the switch is done. Until then: chunk 1 is not merged, and neither 027 nor the transport files change. The hand-apply procedure above (steps 1–4, transport included) is superseded and kept only as a record. The live-app steps (5–6) still apply after 027 is live; the before/after checks get rewritten against the new migration rules once CONTEXT.md is updated by that session. Meanwhile chunks 2, 3 and 4 continue (no migration, none needs 027), and the build stops at the chunk 4 boundary because chunk 5 needs 027's columns.
+(Adam, 2026-10-04, after the switch) **027 goes live by merging the chunk 1 PR under the new flow.** `check-migration` flags 027's 8 statements, so the merge is Adam's once the PR's `migration-replay` check is green. After his merge, the reviewer checks the production database deploy on master (a failed deploy is blocking), runs the read-only probes, and writes Adam's live steps (open Today, Plan, Program and History; log one set in his next session) as a deferred entry. The pause at chunk 4 is lifted.
+**State (2026-10-04, reviewer):** `build/chunk-1` now has master merged in (`a05b134`). Its diff against master is exactly `027_planner_p1_schema.sql`, md5 `3a0ead06…`, unchanged. PR [#17](https://github.com/adamjuszczyk/overload-v2/pull/17) is open.
+- `migration-replay` is **green** on GitHub (run 37226926354).
+- My local `scripts/replay-migrations.sh` on `supabase/postgres:17.6.1.155` agrees: 28 of 28 applied, `public` has 35 tables.
+- `check-migration` still flags the 8 statements above, so the merge is yours. `check-migration-order` OK; `node --test "scripts/*.test.mjs"` 86/86.
+**Your steps:**
+1. **Before merging**, record the before counts: `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before.json`.
+2. Merge PR #17.
+3. Tell me it's merged. I check `Supabase Preview` on master's merge commit; anything but success, or no check within a few minutes, is a failed deploy and blocking. Then I run the read-only API probes and write your live steps as a deferred entry.
+4. After the deploy succeeds, run the same command again into `counts-after.json` and send me both files, or the two outputs. Every count must be equal.
+**Closed (2026-10-04):** Adam merged PR #17 (`7f4405d`). He did not run counts; under his new standing rule (CONTEXT.md, Migration flow) an add-only migration like 027 needs none. 027 is live: see entry 37 for the deploy evidence and his live steps.
 
 ## 31 Live browser verification is unavailable in this environment
 Severity: blocking
@@ -248,4 +259,61 @@ What happened: Chunk 3 is merged into master (PR #11, `1e77e94`). Every check I 
 A competent default would: count the jsdom tests as the verification — doesn't apply because: SPEC names a real session as the only check that catches this regression.
 Cost of deferral: if it fails, chunk 3 is fixed and re-merged. Chunk 4 doesn't depend on it (it touches the logged-set edit form, not stage rendering).
 Provisional path taken: merged; continuing with chunk 4.
+Answer:
+
+## 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes (Adam's steps)
+Severity: deferred
+Chunk: 4
+What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I can run passed: jsdom and service tests, proven by injected breaks; typecheck, build, every script. I also called `updateSetLog` directly with a stray `note`, and the Supabase payload was `{weight, reps, rir}`. TASKS.md's verification and done-when need the deployed app and an Adam-scoped query, which I can't reach (entry 31).
+**Your steps:**
+1. Before your next session, record your stored set notes in the SQL Editor:
+   `select id, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and note is not null order by id;`
+   It may return nothing. Set-note editing was the only way to write one, so that's possible.
+2. Open https://overload-v2-sage.vercel.app. If the update/RELOAD banner shows, take it. The chunk 4 merge is `89719b1`; if the Vercel dashboard is handy, confirm its production deploy is Ready.
+3. In your next real session, log a set, then tap it to edit. The edit form should show weight, reps and the RIR chips with its save/cancel controls, and **no Note field**, laid out cleanly at phone width. Change the reps by one and save, then change it back and save.
+4. Re-run the step 1 query. The result must be identical: same ids, same notes. Then check the edited set:
+   `select id, reps, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by logged_at desc limit 3;`
+   That set should show its original reps, and `note` should be `null`.
+5. Tell me the result. A failure is blocking.
+A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
+Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
+Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
+Answer:
+
+## 37 Chunk 1 live check after 027 deployed (Adam's steps), and two stuck deploy checks
+Severity: deferred
+Chunk: 1
+What happened: Adam merged PR #17 (`7f4405d`, 2026-10-04 19:11 UTC). Under his standing counts rule, 027 is add-only, so no live counts are needed; its proof is the green `migration-replay` plus my scratch-copy check (row counts and per-row fingerprints unchanged on all nine altered tables). On master's merge commit GitHub shows **three** `Supabase Preview` runs:
+- `111509721064`: success (19:12:16→19:12:22);
+- `111509705063` and `111509600539`: still `in_progress` more than 8 minutes later.
+That hasn't been seen before; the first automatic run had a single check. I tested the real outcome instead. `node scripts/probe-live-columns.mjs scripts/probe-specs/027.json` (anon key, every request filtered to Adam's user_id, `limit=0`, so no data can return) answered 36 of 36 probes as expected:
+- every one of 027's 72 columns on the 15 tables answers `200 []`;
+- each table's made-up control column answers `400 / 42703`;
+- the six new tables show anon 0 rows.
+The probe itself was proven: a spec with one non-existent column fails (`400 42703`, exit 1). So 027 is live; the deploy is not treated as failed.
+**Your steps:**
+1. Supabase Dashboard → Branches: open the production deploy log for `7f4405d` and check that it applied `027_planner_p1_schema` without error. Tell me if the two stuck runs show anything, e.g. a duplicate trigger.
+2. Optionally, in the SQL Editor: `select version from supabase_migrations.schema_migrations order by version desc limit 3;` The top row should be `027`.
+3. Open https://overload-v2-sage.vercel.app (take the update banner if shown). Today, Plan, Program and History each load your data as before, with no error toast. 027 changed no app code; this checks the old client against the new schema.
+4. In your next real session, log one set. It saves normally: still there after a reload, and no pending-sync marker.
+5. Tell me the results. A failed step is blocking.
+A competent default would: treat the one successful run as the deploy result — doesn't apply because: CONTEXT.md says anything other than success counts as failed until you've read the Dashboard log, and two runs aren't success. The live probe is why I'm not treating it as failed; the log is yours to read.
+Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
+Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
+Answer:
+
+## 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
+Severity: deferred
+Chunk: 1
+What happened: After 027 deployed (2026-10-04 ~19:12 UTC), Adam reported no active and no completed mesocycles in the app. **Cause:** 027 added `v2_mesocycles.source_program_id → v2_programs`, a second FK next to `program_id`. PostgREST then refuses the un-hinted embed `v2_programs(id, name)` with `PGRST201` ("more than one relationship was found"). It's used by `fetchMesos` (the list, so it showed empty) and by `createMeso`'s `insert().select()`. START MESOCYCLE would have completed the active meso and inserted the new one before throwing. **Data was untouched:** 027 only adds, and Adam confirmed by query (MESO rows intact) and that he pressed nothing on the Program page. **Fix:** PR #18 (`c63808e`, merged by Adam 19:35, Vercel production deploy success 19:36:43) names the relationship, `v2_programs!v2_mesocycles_program_id_fkey(id, name)`, in both selects. The cause was confirmed live before fixing: the old select gave `PGRST201`, the hinted one gave `200`.
+**Why every check missed it:** `migration-replay`, my scratch-copy checks and `probe-live-columns.mjs` all test SQL and columns. Embed resolution happens in PostgREST, which none of them ran.
+**New check, proven:**
+- `scripts/check-embeds.mjs` finds every embedding select in `src/` and `api/` (25 today) and resolves each through PostgREST with `limit=0`, either live (anon, Adam-filtered) or local.
+- `scripts/check-embeds-local.sh` replays every migration (`replay-migrations.sh --keep`), starts `postgrest/postgrest:v12.2.3` against the result, and runs it.
+- On the pre-fix code with 027 it fails exactly the two mesocycle selects (`PGRST201`, exit 1). On the fixed code it passes 25/25 locally and live.
+- Its finder had its own swallowing bug: a select-less query swallowed the next one, `sessionService.ts:466`. It was fixed and a test was added, which is proven against both broken patterns.
+A competent default would: rely on the replay check for migrations — doesn't apply because: it can't see API-level breakage, and this shipped to production.
+Cost of deferral: none for the fix (it's live). The open question is only where the new check runs.
+Provisional path taken: from now on I run `bash scripts/check-embeds-local.sh` on every migration PR before it merges (yours or mine), and `node scripts/check-embeds.mjs` live after its deploy. A migration that adds an FK between two tables that already have one must also hint every existing embed between them.
+**Question for you:** should `check-embeds-local.sh` also run in the `migration-replay` GitHub workflow, so the ruleset enforces it? That changes `.github/workflows/migration-replay.yml`, which your switch session owns, so it's your call.
 Answer:

@@ -22635,6 +22635,20 @@ Previous wording, verbatim:
 
 ---
 
+## 2026-10-04 (planner build, reviewer, chunk 4 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 4 (stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: 2 (PR #10, `1a83833`), 3 (PR #11, `1e77e94`; failed review once — locked stages were a SKIPPED-style label row without weight/reps, against SPEC's "each as a row with weight and reps"; fixed on the one retry). Both merged 2026-10-04.\n- Waiting on Adam's live check (deferred, a failure is blocking): DECISIONS.md 35 (chunk 3 in a real session at 375 px + screenshot + stage-log query)."
+- "- `ExerciseCard`/`SetRow`: identity-matches logs to planned/extra slots by `weekPlanSetId`; optimistic logging, skip set, skip whole exercise, edit logged set, per-set form-rating chips;"
+- "- Vitest (node env; component tests opt into jsdom per file); 625 tests in 39 files pass (re-run 2026-10-04 on chunk 3)."
+- ""set notes unwritable" half of M5 (`GymSession.tsx` hardcodes `note: null`)."
+- "- A new rule discovered mid-build is written into this file's rules in the same session, not left only in a log."
+— chunk 4 merged (PR #12); build stopped at the chunk 4 boundary; set-note editing removed.
+- "After Adam's report: API column probes (Adam-filtered, `limit=0`, made-up-column control) and anon reads of the six new tables (Adam-filtered), then the chunk 1 PR to master." — 027 is no longer applied by hand (entry 30's change of plan); reworded in place.
+
+---
+
 ## 2026-10-04 (migration switch session) — Moved out of CONTEXT.md (no longer true)
 
 The repo switched from hand-applied migrations to automatic Supabase deploys from master (`MIGRATION-SWITCH.md`). Previous wording, verbatim:
@@ -22659,3 +22673,49 @@ The repo switched from hand-applied migrations to automatic Supabase deploys fro
 - "- Verify the applied text against the local file: `md5(prosrc)`/`length(prosrc)` for functions, equivalent for DDL; a per-line length diff localises a loss. Any migration/function body with a long repetitive run (box-drawing `───`, repeated punctuation) must be transported as plain text or with runs replaced by a marker and expanded in the browser, never a plain base64 paste; hash the reassembled text before running it. Compare `getValue().length` right after `setValue`. For this build: every hand-applied migration's blocking entry gives the transport file from `scripts/transport-collapse.mjs` and the snippet's expected `transport`/`expanded` lines, never a raw-file paste (entry 30's first version told Adam to paste raw 027, banners and all — caught by Adam 2026-10-04 before he applied it)."
 - "- Migrations are applied by hand (Supabase automatic deploys are off). Read and write the Supabase SQL Editor only through `window.monaco.editor.getModels()[0].getValue()/.setValue()` — no simulated typing, no keyboard select-all/clear (exactly one model per tab; `.focus()` the hidden textarea if focus is needed; open a fresh tab for a suspect editor). A destructive statement opens a "Potential issue detected" dialog: the toolbar Run only opens it; click the dialog's own "Run query" or the previous result stays on screen and looks like a silent no-op."
 — migrations now deploy from master through Supabase's GitHub integration; `000_v1_baseline.sql` + 001–026 replay to the live schema; production's history lists `000`–`026`; the hand-apply, transport and SQL Editor apply rules no longer apply.
+
+---
+
+## 2026-10-04 (planner build, reviewer, merge of the migration switch) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- **Stopped at the chunk 4 boundary** (Adam, 2026-10-04: chunk 5 needs 027's columns). Next: chunk 5, once Adam says the switch to automatic Supabase migrations is done; re-read CONTEXT.md first."
+- "- Scratch cluster (this container only): PostgreSQL 16.14 on port 54329, `/var/lib/postgresql/chunk1-pg16`; `overload_scratch` = 001–026 + fixtures; `rev_pre`/`rev_post` = reviewer's before/after copies; builder scripts in the session scratchpad `chunk1/` (`run_all.sh`)."
+- "A chunk with a migration: the steps go in its blocking entry, and Adam does them right after applying."
+— the switch is done; the chunk 4 pause is lifted; the chunk 1 cluster is gone; migration chunks' live steps are deferred entries once the migration is live.
+
+---
+
+## 2026-10-04 (planner build, reviewer, Adam's counts rule) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- A green replay (or preview) proves the migration runs, not that real data survives it. The live before/after counts (Adam-scoped) still apply."
+- "- Before merging any migration (merging deploys it), Adam runs and records a row count on **every table the file mentions** (target, FK, join), scoped to Adam's `user_id` where one exists — even when the DDL looks purely additive. Re-count after."
+— Adam narrowed live before/after counts to migrations that change or remove existing data (chunks 6, 12, 24 in this build); add-only migrations are proven by replay plus the reviewer's scratch count/fingerprint check.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 1 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current: chunk 1's PR (027 under the new migration flow), then chunk 5 once 027 is live. The chunk 4 pause is lifted (Adam, 2026-10-04: the switch to automatic migrations is done and on master)."
+- "- Finished: 2 (PR #10, `1a83833`),"
+- "- Waiting on Adam's live checks (deferred; a failure is blocking): DECISIONS.md 35 (chunk 3: planned dropset in a real session at 375 px, screenshots, stage-log query), 36 (chunk 4: edit form has no note field; stored notes unchanged)."
+- "- Waiting on me: DECISIONS.md 30 — answered (Adam, 2026-10-04): **027 goes live by merging the chunk 1 PR under the new flow** (Repo facts → Migration flow). `check-migration` flags 027's 8 statements, so the merge is Adam's once `migration-replay` is green; then the reviewer checks the production database deploy on master (a failure is blocking), runs the read-only probes, and writes Adam's live steps (Today, Plan, Program, History; one set in his next session) as a deferred entry."
+- "- Chunk 1 state: `supabase/migrations/027_planner_p1_schema.sql` on `build/chunk-1` (pushed): six new tables, the data-model columns on nine tables, stage-row `stage_kind` checks on `v2_week_plan_sets` and `v2_set_logs` (Adam's answer to 30), `notify`. `check-migration` exits 1 with the 8 statements TASKS.md predicted. Reviewer-verified on a fresh scratch copy with `review-027.sh` (session scratchpad): catalog diff = data model (+72 columns, +61 constraints, +21 indexes, +6 policies, nothing removed); counts and row fingerprints unchanged on all nine tables; old-client settings upsert preserves non-default new columns; RLS A/B/anon; named CHECK rejections incl. both stage-row checks. `verify-rls.mjs` run 2026-10-03 with Adam's go-ahead: 25 tables, 50 probes, all pass."
+- "026 `v2_coach_meso_analyses`."
+- "- **Next migration number: 027** (on `build/chunk-1`); then 028, 029 …"
+- "How a *failed* deploy looks on GitHub has not been seen:"
+- "85 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order; 85 of 85 pass 2026-10-04;"
+— chunk 1 merged (PR #17) and 027 is live; next migration 028.
+
+---
+
+## 2026-10-04 (planner build, reviewer, mesocycle-embed incident) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "89 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order + 3 probe-live-columns; 89 of 89 pass 2026-10-04 (86 with 027 present, before the probe test was added);" — check-embeds added (3 tests); transport-collapse now round-trips 28 migrations.
