@@ -22719,3 +22719,16 @@ Previous wording, verbatim:
 Previous wording, verbatim:
 
 - "89 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order + 3 probe-live-columns; 89 of 89 pass 2026-10-04 (86 with 027 present, before the probe test was added);" — check-embeds added (3 tests); transport-collapse now round-trips 28 migrations.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 5 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 5. Chunks 1–4 are done (the chunk 4 pause was lifted once 027 went live)."
+- "4 (PR #12, `89719b1`). All merged into master 2026-10-04;"
+- "36 (chunk 4: edit form has no note field; stored notes unchanged),"
+- "- History: session list from `v2_history_session_summary` with real pagination;"
+- "631 tests in 41 files pass (re-run 2026-10-04 on chunk 4)."
+— chunk 5 merged (PR #19); history follows lineage.
