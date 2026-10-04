@@ -95,7 +95,8 @@ All commands are for **cmd on Windows** (not PowerShell). Run them from your clo
 | | Do | Expect | If not |
 |---|---|---|---|
 | 0.1 | Dashboard → your organization → **Billing**: which plan? | Free (C1) | — |
-| 0.2 | Dashboard → project → **Project Settings → Integrations → GitHub Integration**: is a repository already connected? | Nothing connected | **Stop and tell me which repo.** A project connects to one repo. |
+| 0.2 | Dashboard → project → **Project Settings → Integrations → GitHub Integration**: is a repository already connected? | Nothing connected | **Stop and tell me which repo.** A project connects to one repo. *(Result: `adamjuszczyk/overload-v2` already connected — see the step log; 0.2b added.)* |
+| 0.2b | Same page, look only: write down every setting exactly as shown — working directory, production branch name, **Deploy to production** on/off, **Automatic branching** on/off, **Supabase changes only** on/off, anything else. Then Dashboard → **Branches** (if the page exists on Free): any runs or failures listed? | Settings as found | Feeds step 7. If Deploy to production is **on for `master`**, turn it **off** now (one toggle, reversible) until step 7, so no push to master runs a deploy against the empty history. |
 | 0.3 | `node --version` | `v20` or later | Install Node 20+ |
 | 0.4 | Start Docker Desktop, then `docker info` | a line `Server Version: …` | `db dump` won't run without it |
 | 0.5 | `npx --yes supabase@2.119.0 --version` | `2.119.0` | Tell me what it printed |
@@ -283,6 +284,7 @@ Reverse: the same page → the ruleset → **Delete ruleset**, or set Enforcemen
 
 ## 9. Step log
 - 2026-10-04 — plan written, answers received, file updated for C1–C8.
+- 2026-10-04 — **step 0** (Adam): 0.1 Free. **0.2: the GitHub integration is already connected to `adamjuszczyk/overload-v2`** (expected: nothing). From GitHub: PR [#9](https://github.com/adamjuszczyk/overload-v2/pull/9)'s head carries a `Supabase Preview` check run from project `imhsawrghteqsmpklofv`, conclusion `skipped`, so the integration reacts to PRs. Migrations 020–026 reached master as direct pushes, not PRs; their Supabase results aren't visible through the tools here. Open until Adam reads the settings: whether "Deploy to production" is on, and for which production branch. If it's on for `master`, every push to master has started a production deploy against an empty history. The first statement that fails (001's `create table v2_programs`, since the tables exist) stops it, and each file runs in one transaction, so nothing should have applied — `migration list` in step 2 shows whether any history row was ever written. Step 7 becomes "change the existing integration's settings" rather than "connect".
 - 2026-10-04 — **step 1 done** (commit on `claude/elegant-noether-npjz4b`). Proven in this session, on `supabase/postgres:17.6.1.141` in Docker, with a temporary stand-in for v1's `exercises` (the real `000` comes from your dump):
   - `replay-migrations.sh`: 27 of 27 files applied in ~12 s. A broken `028_…` file → exit 1, naming the file and the Postgres error. The container is removed either way.
   - `schema-snapshot.sql`: the same database read through psql and through `supabase db query --db-url -o json` → `compare-schema.mjs` IDENTICAL (24 tables, 268 columns, 104 constraints, 66 indexes, 25 policies, 869 grants, …).
