@@ -1,6 +1,6 @@
 # Switching to automatic Supabase migrations
 
-Status: **approved 2026-10-04 with Adam's answers (section 2); in progress.** Step log in section 9. Nothing in this file has been merged to master. Nothing has been run against production by this session.
+Status: **approved 2026-10-04 with Adam's answers (section 2); in progress.** Step log in section 9. Switch PR merged (#13); production's history written (step 6).
 
 Goal: once this is done, merging a PR that adds a migration applies it to production. Every PR into master gets a check that replays all of the repo's migrations, from scratch, on Supabase's own Postgres at production's version, and fails on any error.
 
@@ -307,3 +307,6 @@ Reverse: the same page → the ruleset → **Delete ruleset**, or set Enforcemen
   - **Both checks proven by a break:** a scratch baseline without `exercises_user_muscle_idx` → the dump diff shows exactly that `CREATE INDEX`, and `compare-schema.mjs` reports exactly `indexes: only in live: exercises.exercises_user_muscle_idx`, exit 1.
   - `scripts/live-counts.sql` written from the replay's table list: 27 tables with `user_id` (6 v1 + 21 `v2_`), each filtered to Adam's user_id. `v2_exercise_libraries` / `v2_exercise_library_items` have no `user_id` and aren't counted; Northstar/Atlas aren't counted. Run on a replay through `db query --db-url`: 27 rows.
   - `node --test "scripts/*.test.mjs"`: 50 of 50.
+- 2026-10-04 — **step 4 done** (Adam): `counts-before.json`, 27 rows (one per counted table), kept in the session's scratch space, not committed.
+- 2026-10-04 — **switch PR** [#13](https://github.com/adamjuszczyk/overload-v2/pull/13) opened, after merging master (chunks 2–4, no `supabase/` change) into the branch. On the merged tree: `node --test "scripts/*.test.mjs"` 85 of 85 (the reviewer's transport round-trip now covers `000` too), `check-frozen-code` ok, `check-migration-order` OK, `check-migration origin/master` **SAFE**. **First `migration-replay` run on GitHub: green in 32 s.** The log shows `supabase/postgres:17.6.1.155` pulled (~24 s) and `ok` for each of `000`…`026`, then "27 of 27 migrations applied; public now has 29 tables". The integration's own `Supabase Preview` check reports `skipped` (Free plan). **Step 5:** Adam merged #13 → master `2905761`, `supabase/migrations` = `000`…`026` (27 files, no 027).
+- 2026-10-04 — **step 6 done, V2 passes** (Adam, from the worktree on `origin/master`): `migration repair --linked --status applied 000 … 026`, then `migration list --linked` → 27 rows `000`–`026`, Local = Remote on every row, nothing else.
