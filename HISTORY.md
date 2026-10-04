@@ -22632,3 +22632,17 @@ Previous wording, verbatim:
 - "- Dropsets: one head + stages (`parent_set_id`/`parent_week_plan_set_id` + `stage_index`); `setGroupLogic.ts` groups; `SetGroup` shows bold ADD STAGE when the plan expects a stage, a low-emphasis "mark as dropset" link otherwise, and neither on a skipped head; cascade delete removes stages first, head last."
 - "- Builders run on the `sonnet` model alias (accepted for this build)."
 — chunk 3 merged (PR #11); planned stages now render locked from the start.
+
+---
+
+## 2026-10-04 (planner build, reviewer, chunk 4 boundary) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "- Current chunk: 4 (stop at the chunk 4 boundary — chunk 5 needs 027's columns).\n- Finished: 2 (PR #10, `1a83833`), 3 (PR #11, `1e77e94`; failed review once — locked stages were a SKIPPED-style label row without weight/reps, against SPEC's "each as a row with weight and reps"; fixed on the one retry). Both merged 2026-10-04.\n- Waiting on Adam's live check (deferred, a failure is blocking): DECISIONS.md 35 (chunk 3 in a real session at 375 px + screenshot + stage-log query)."
+- "- `ExerciseCard`/`SetRow`: identity-matches logs to planned/extra slots by `weekPlanSetId`; optimistic logging, skip set, skip whole exercise, edit logged set, per-set form-rating chips;"
+- "- Vitest (node env; component tests opt into jsdom per file); 625 tests in 39 files pass (re-run 2026-10-04 on chunk 3)."
+- ""set notes unwritable" half of M5 (`GymSession.tsx` hardcodes `note: null`)."
+- "- A new rule discovered mid-build is written into this file's rules in the same session, not left only in a log."
+— chunk 4 merged (PR #12); build stopped at the chunk 4 boundary; set-note editing removed.
+- "After Adam's report: API column probes (Adam-filtered, `limit=0`, made-up-column control) and anon reads of the six new tables (Adam-filtered), then the chunk 1 PR to master." — 027 is no longer applied by hand (entry 30's change of plan); reworded in place.

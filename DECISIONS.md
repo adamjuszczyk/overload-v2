@@ -249,3 +249,22 @@ A competent default would: count the jsdom tests as the verification — doesn't
 Cost of deferral: if it fails, chunk 3 is fixed and re-merged. Chunk 4 doesn't depend on it (it touches the logged-set edit form, not stage rendering).
 Provisional path taken: merged; continuing with chunk 4.
 Answer:
+
+## 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes (Adam's steps)
+Severity: deferred
+Chunk: 4
+What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I can run passed: jsdom and service tests, proven by injected breaks; typecheck, build, every script. I also called `updateSetLog` directly with a stray `note`, and the Supabase payload was `{weight, reps, rir}`. TASKS.md's verification and done-when need the deployed app and an Adam-scoped query, which I can't reach (entry 31).
+**Your steps:**
+1. Before your next session, record your stored set notes in the SQL Editor:
+   `select id, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and note is not null order by id;`
+   It may return nothing. Set-note editing was the only way to write one, so that's possible.
+2. Open https://overload-v2-sage.vercel.app. If the update/RELOAD banner shows, take it. The chunk 4 merge is `89719b1`; if the Vercel dashboard is handy, confirm its production deploy is Ready.
+3. In your next real session, log a set, then tap it to edit. The edit form should show weight, reps and the RIR chips with its save/cancel controls, and **no Note field**, laid out cleanly at phone width. Change the reps by one and save, then change it back and save.
+4. Re-run the step 1 query. The result must be identical: same ids, same notes. Then check the edited set:
+   `select id, reps, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by logged_at desc limit 3;`
+   That set should show its original reps, and `note` should be `null`.
+5. Tell me the result. A failure is blocking.
+A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
+Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
+Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
+Answer:
