@@ -43,7 +43,7 @@ function toMesocycle(row: DbMeso): Mesocycle {
 export async function fetchMesos(): Promise<Mesocycle[]> {
   const { data, error } = await supabase
     .from('v2_mesocycles')
-    .select('*, v2_programs(id, name)')
+    .select('*, v2_programs!v2_mesocycles_program_id_fkey(id, name)')
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as DbMeso[]).map(toMesocycle)
@@ -64,7 +64,7 @@ export async function createMeso(
       start_date: startDate,
       status: 'active',
     })
-    .select('*, v2_programs(id, name)')
+    .select('*, v2_programs!v2_mesocycles_program_id_fkey(id, name)')
     .single()
   if (error) throw error
   return toMesocycle(data as DbMeso)
