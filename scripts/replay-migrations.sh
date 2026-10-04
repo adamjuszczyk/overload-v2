@@ -25,7 +25,7 @@ set -uo pipefail
 
 # Production's image version: from `supabase link`'s supabase/.temp/postgres-version
 # (Adam's machine). Update it when Supabase upgrades the project.
-IMAGE="${SUPABASE_PG_IMAGE:-supabase/postgres:17.6.1.141}"
+IMAGE="${SUPABASE_PG_IMAGE:-supabase/postgres:17.6.1.155}"
 MIGRATIONS_DIR="supabase/migrations"
 SNAPSHOT_SQL="scripts/schema-snapshot.sql"
 

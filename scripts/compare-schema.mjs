@@ -12,7 +12,8 @@
 //                   (e.g. `columns:exercises.legacy_col`, `schemas:cron`);
 //                   `*` is a wildcard. Every line must match something, so a
 //                   stale or mistyped exclusion fails instead of hiding nothing.
-// Input:  the raw query result in any of the shapes the tools produce — the
+// Input:  UTF-8 or UTF-16 (Windows PowerShell's `>`), with or without a BOM;
+//         the raw query result in any of the shapes the tools produce — the
 //         snapshot object, `[{"snapshot": …}]` (supabase db query -o json),
 //         `{rows: [...]}`, or the snapshot as a JSON string.
 // Exit:   0 = identical (extension version changes are printed, not counted)
@@ -142,6 +143,17 @@ export function compare(a, b, exclusions = []) {
   return { differences, notes, unused };
 }
 
+// Windows PowerShell's `>` writes UTF-16 with a byte-order mark; cmd and psql
+// write UTF-8. Accept either, and drop the BOM.
+export function readText(file) {
+  const buf = readFileSync(file);
+  let text;
+  if (buf[0] === 0xff && buf[1] === 0xfe) text = buf.subarray(2).toString('utf16le');
+  else if (buf[0] === 0xfe && buf[1] === 0xff) text = Buffer.from(buf.subarray(2)).swap16().toString('utf16le');
+  else text = buf.toString('utf8');
+  return text.replace(/^\uFEFF/, '');
+}
+
 function show(v) { return v === undefined ? '(absent)' : JSON.stringify(v); }
 
 function main(argv) {
@@ -155,8 +167,8 @@ function main(argv) {
   }
   let a, b, exclusions = [];
   try {
-    a = loadSnapshot(readFileSync(args[0], 'utf8').replace(/^﻿/, ''));
-    b = loadSnapshot(readFileSync(args[1], 'utf8').replace(/^﻿/, ''));
+    a = loadSnapshot(readText(args[0]));
+    b = loadSnapshot(readText(args[1]));
     if (excludeFile) exclusions = parseExclusions(readFileSync(excludeFile, 'utf8'));
   } catch (e) {
     console.error(`compare-schema: couldn't read the input — ${e.message}. Treat as a difference.`);

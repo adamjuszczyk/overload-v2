@@ -45,7 +45,7 @@ const dir = mkdtempSync(join(tmpdir(), 'compare-schema-'));
 let n = 0;
 function run(a, b, exclude) {
   const fa = join(dir, `a${++n}.json`), fb = join(dir, `b${n}.json`);
-  writeFileSync(fa, typeof a === 'string' ? a : JSON.stringify(a));
+  writeFileSync(fa, Buffer.isBuffer(a) ? a : typeof a === 'string' ? a : JSON.stringify(a));
   writeFileSync(fb, typeof b === 'string' ? b : JSON.stringify(b));
   const args = [SCRIPT];
   if (exclude !== undefined) {
@@ -146,7 +146,9 @@ test('accepts every input shape the tools produce', () => {
   assert.equal(run([{ snapshot: s }], s).code, 0, 'supabase db query -o json');
   assert.equal(run({ rows: [{ snapshot: s }] }, s).code, 0, 'rows envelope');
   assert.equal(run([{ snapshot: JSON.stringify(s) }], s).code, 0, 'snapshot as a string');
-  assert.equal(run('﻿' + JSON.stringify(s), s).code, 0, 'BOM');
+  assert.equal(run('\uFEFF' + JSON.stringify(s), s).code, 0, 'BOM');
+  const ps = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(JSON.stringify([{ snapshot: s }], null, 2).replace(/\n/g, '\r\n'), 'utf16le')]);
+  assert.equal(run(ps, s).code, 0, 'UTF-16LE with BOM and CRLF (Windows PowerShell >)');
 });
 
 test('unreadable or incomplete input exits 2, never 0', () => {

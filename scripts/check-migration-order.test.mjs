@@ -78,6 +78,18 @@ test('names that are not NNN_name.sql fail', () => {
   }
 });
 
+test('the v1 baseline may arrive below the highest version; nothing else may', () => {
+  const before = ['001_a.sql', '002_b.sql', '026_z.sql'];
+  assert.equal(run(repo(before, ['000_v1_baseline.sql'])).code, 0);
+  const r = run(repo(before, ['000_other.sql']));
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /000_other\.sql: version 000 is not after 026/);
+  // and the baseline doesn't excuse a second file sharing its number
+  const d = run(repo(before, ['000_v1_baseline.sql', '000_x.sql']));
+  assert.equal(d.code, 1, d.out);
+  assert.match(d.out, /version 000 is used by 2 files/);
+});
+
 test('an unknown base ref exits 2, never 0', () => {
   const r = run(repo(BASE, ['027_x.sql']), 'origin/nope');
   assert.equal(r.code, 2, r.out);

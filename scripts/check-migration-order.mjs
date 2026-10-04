@@ -21,6 +21,10 @@ import { readdirSync, existsSync } from 'node:fs';
 
 const MIGRATIONS_DIR = 'supabase/migrations';
 const NAME = /^(\d{3})_[^/]+\.sql$/;
+// The one file allowed to arrive below the highest version: the v1 baseline,
+// added once when the repo switched to automatic deploys and marked applied on
+// production by `migration repair` (MIGRATION-SWITCH.md). Exact name only.
+const BASELINE = '000_v1_baseline.sql';
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -81,7 +85,7 @@ function main() {
 
   const baseVersions = baseFiles.map(f => NAME.exec(f)?.[1]).filter(Boolean).sort();
   const highest = baseVersions.at(-1);
-  for (const f of added.filter(f => NAME.test(f)).sort()) {
+  for (const f of added.filter(f => NAME.test(f) && f !== BASELINE).sort()) {
     const v = NAME.exec(f)[1];
     if (highest !== undefined && v <= highest) {
       problems.push(`${f}: version ${v} is not after ${highest}, the highest on ${base}; the next free number is ${String(Number(highest) + 1).padStart(3, '0')}`);
