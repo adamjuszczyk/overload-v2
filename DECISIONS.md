@@ -4,8 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:58 UTC, chunk 8 boundary — chunks 1–8 merged and live. Nothing is held; no PR is open.*
 
 **Decisions**
-- 48 — Should adding or removing an exercise in a week also offer "only this week"? (SPEC line 212 vs 224.) Recommendation: (a) swap and reorder only, as SPEC defines the tick. Blocked: nothing (chunk 9 built with (a)).
-- Chunk 12's blocking decision, asked early so it doesn't stop the build: existing suggested-reps values — (a) back up and discard, (b) convert into rep targets on the active run's unlogged planned sets that have none, (c) other. Recommendation: (a), because rep targets are planned per week from chunk 11 on. (b) would invent targets you never set, though it keeps the information visible.
+- Nothing open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
 - 46 — Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -40,22 +39,6 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
-
-### 48 Should adding or removing an exercise in a week also offer "only this week"?
-Severity: deferred
-Chunk: 9
-**Ask:** SPEC defines "only this week" as a tick on **swap and reorder** (Weeks and copying, line 212). Its add/remove rule (line 224) also says week-dependent adds and removes carry forward "unless 'only this week' is ticked". Should add and remove get the tick too?
-**Options:**
-- (a) **Swap and reorder only (as built):** adds and removes in a week-dependent run always carry forward; to undo one, remove or re-add it in the next week. Stable runs: every week edit is a one-off anyway.
-- (b) **Also add and remove:** "added only this week" is not copied forward, and "removed only this week" comes back next week. This needs a new column on `v2_week_plan_exercises` (additive migration). It also needs a rule for which sets the returning exercise gets: the last week it had sets, or the run copy's sets.
-**Recommendation:** (a). It matches SPEC's own definition of the tick and needs no new schema. "Removed only this week" in (b) also needs a rule for where the returning exercise's sets come from, which SPEC doesn't give.
-**Blocked until answered:** nothing. Chunk 9 is built with (a); (b) would be an addition later.
-**Answer:**
-**Evidence:**
-What happened: while briefing chunk 9 I compared SPEC with TASKS' data model. `carry_program_exercise_id` and `carry_position` cover an only-this-week swap and reorder. No column can mark a row as "don't copy forward" (an added-only-this-week exercise) or keep a removed slot for next week. SPEC line 212 and line 224 disagree on whether add/remove get the tick.
-A competent default would: follow SPEC's own definition (line 212) — doesn't apply because: line 224 suggests you may want the tick on add/remove too, which changes the schema.
-Cost of deferral: if (b), one additive migration plus the tick on two more actions, plus the copy rule in `v2_plan_week` and the client copy. Nothing built under (a) is thrown away.
-Provisional path taken: (a).
 
 ### 47 Chunk 8 live check: weeks plan themselves (Adam's steps)
 Severity: deferred
@@ -190,6 +173,21 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 - Answer: (a), merged by Adam 2026-10-05: 031 `c128d00` (anon RPC refused by the function), #28 `071151b` (Vercel success 18:57 UTC). App steps → entry 47.
 - Date: 2026-10-05
 
+### 48 Should adding or removing an exercise in a week also offer "only this week"?
+- What: SPEC line 212 (tick on swap and reorder) vs line 224 (add/remove "unless only this week").
+- Answer: (a) swap and reorder only; week-dependent adds and removes always carry forward. SPEC line 224 fixed to match.
+- Date: 2026-10-05
+
+### 49 Chunk 12: what happens to existing suggested-reps values
+- What: SPEC's blocking decision for chunk 12 (drop `target_reps`), asked early.
+- Answer: (b) convert into rep targets on the active run's unlogged planned working sets that have none, with the backup table as planned. Recorded in TASKS.md chunk 12. The merge and live counts stay Adam's.
+- Date: 2026-10-05
+
+### 50 Chunk 25: throwaway sequence test run
+- What: Go-ahead for chunk 25's live check, which writes a throwaway run.
+- Answer: Yes. Label it `TEST-…`, and prove the cleanup by counts against the baseline.
+- Date: 2026-10-05
+
 ## Settled decisions
 
 The entries D1–D28 further down predate this format and stay as they are; they use "Decided / Answer / Constrains".
@@ -303,3 +301,15 @@ Format of D1–D28: **Decided** — the question. **Answer** — what was chosen
 
 **D28 · Docs-only pushes don't deploy.** *(2026-08-15)*
 **Answer:** `vercel.json` `ignoreCommand` skips the production build when a push changes only `.md` files. Currently `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'` (set 2026-09-29; the longer per-file, last-deployed-SHA version exceeded Vercel's 256-character limit).
+
+**D29 · Flagged migrations the reviewer may merge (phase 1).** *(Adam, 2026-10-05)*
+**Answer:** For the rest of phase 1 the reviewer may merge a migration `check-migration` flags if it changes no existing row and all three checks pass: `migration-replay`, `check-embeds-local.sh`, and the reviewer's scratch-copy check (existing rows' counts and fingerprints unchanged).
+- Allowed: it only adds tables, columns, indexes or rows, replaces a function or view, or relaxes a constraint. That covers 032, chunk 10's and chunk 15's.
+- Still Adam's: 12, 24 and 25.
+- Order unchanged: migration first, then the code after a green deploy.
+
+**D30 · Workout screen unchanged for plain sessions.** *(Adam, 2026-10-05)*
+**Answer:** Every chunk that touches the workout screen or the rest timer (13–16 and any other) proves before merging that a session with none of the new features behaves exactly as before: plain sets, an existing dropset, no supersets, warmups, tags, tempo or rest overrides. It must render, log and time rests the same.
+- Proof 1: a jsdom snapshot of the full session screen, taken on master before the chunk and compared with the chunk's branch.
+- Proof 2: a test that logs a set and checks the row written.
+- Any difference that isn't a new feature blocks the merge.

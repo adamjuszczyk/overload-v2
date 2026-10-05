@@ -222,8 +222,8 @@ rule independent and optional:
 - The number of weeks stays open-ended, as today.
 - "Copy last week" stays as a manual action.
 - **Adding or removing an exercise in a week** is allowed for both planning
-  types. Week-dependent: it carries forward through copying (unless "only this
-  week" is ticked). Stable: it's a one-off for that week.
+  types. Week-dependent: it always carries forward through copying ("only this
+  week" applies to swap and reorder only). Stable: it's a one-off for that week.
 
 ### Targets [P1]
 

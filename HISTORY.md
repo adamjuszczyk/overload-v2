@@ -23170,3 +23170,24 @@ Cost of deferral: n/a (blocking).
 - "- **Next migration number: 032** (028–031 on the stacked chunk 6–8 branches, all unmerged); then 033 …"
 - "- Live checks (2026-10-05, Adam's gym session): 35 (chunk 3 dropset stages) passed, no screenshots/SQL by his choice; 37 (chunk 1) passed on the app steps, deploy-log step dropped; 36 (chunk 4 note field) **waived, not passed**. Still open: 39 (chunk 5: no lineage rows yet; all-time history pages unchanged)."
 — updated at the chunk 8 boundary.
+
+
+---
+
+## 2026-10-05 (answer 48) — closed DECISIONS entry's full text, verbatim
+
+## 48 Should adding or removing an exercise in a week also offer "only this week"?
+Severity: deferred
+Chunk: 9
+**Ask:** SPEC defines "only this week" as a tick on **swap and reorder** (Weeks and copying, line 212). Its add/remove rule (line 224) also says week-dependent adds and removes carry forward "unless 'only this week' is ticked". Should add and remove get the tick too?
+**Options:**
+- (a) **Swap and reorder only (as built):** adds and removes in a week-dependent run always carry forward; to undo one, remove or re-add it in the next week. Stable runs: every week edit is a one-off anyway.
+- (b) **Also add and remove:** "added only this week" is not copied forward, and "removed only this week" comes back next week. This needs a new column on `v2_week_plan_exercises` (additive migration). It also needs a rule for which sets the returning exercise gets: the last week it had sets, or the run copy's sets.
+**Recommendation:** (a). It matches SPEC's own definition of the tick and needs no new schema. "Removed only this week" in (b) also needs a rule for where the returning exercise's sets come from, which SPEC doesn't give.
+**Blocked until answered:** nothing. Chunk 9 is built with (a); (b) would be an addition later.
+**Answer:**
+**Evidence:**
+What happened: while briefing chunk 9 I compared SPEC with TASKS' data model. `carry_program_exercise_id` and `carry_position` cover an only-this-week swap and reorder. No column can mark a row as "don't copy forward" (an added-only-this-week exercise) or keep a removed slot for next week. SPEC line 212 and line 224 disagree on whether add/remove get the tick.
+A competent default would: follow SPEC's own definition (line 212) — doesn't apply because: line 224 suggests you may want the tick on add/remove too, which changes the schema.
+Cost of deferral: if (b), one additive migration plus the tick on two more actions, plus the copy rule in `v2_plan_week` and the client copy. Nothing built under (a) is thrown away.
+Provisional path taken: (a).
