@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05 18:25 UTC — the hold is lifted for 40 and 41: Adam merges in order, the reviewer confirms each deploy green before the next merge. Chunk 8 being changed for 42 (b).*
+*Rewritten at every chunk boundary. Last: 2026-10-05 18:46 UTC — 40 and 41 merged and live (hold lifted for them only). Chunk 8 verified and waiting on 45.*
 
 **Decisions**
-- 41 — 029 (#24, `61b2670`) and the chunk 7 code (#25, `55bed82`, Vercel success 18:42 UTC) are live. Next: merge 030 (#26; ready, CI green), then your parity query (expect 0 rows) and app check (entry 41 steps 3–4).
-- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: after 41, each when I say the previous deploy is green. Blocked: chunk 8 going live.
+- 41 — All merged and live: 029 (#24 `61b2670`), chunk 7 code (#25 `55bed82`), 030 (#26 `34c5887`, deploy success 18:45 UTC). Left: your parity query (expect 0 rows) and app check (entry 41 steps 3–4).
+- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: go ahead now if you want; I prepare each (retarget, master merge, full checks, own CI) and say when it's ready. Your go-ahead covered 40 and 41 only. Blocked: chunk 8 going live.
 
 **To-dos**
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
