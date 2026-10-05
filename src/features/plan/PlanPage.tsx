@@ -127,11 +127,17 @@ export default function PlanPage() {
   const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
 
   // Chunk 8 — this one workout's own planned history (any week number),
-  // the shape resolveManualCopySource needs.
+  // the shape resolveManualCopySource needs. isEmpty (DECISIONS 42 (b)) is
+  // zero v2_week_plan_sets rows — wp.sets is exactly that: useAllWeekPlans
+  // (fetchAllWeekPlansForMeso) embeds v2_week_plan_sets(*) in full for
+  // every week plan in the meso, the same query this page already reads
+  // allWeekPlans from for the history above, so every prior week's own set
+  // rows are already here — no extra fetch needed, and never derived from
+  // the exercise list (a week can carry exercises with no sets under them).
   function historyFor(workoutDayId: string): PlannedWeekRecord[] {
     return allWeekPlans
       .filter((wp) => wp.workoutDayId === workoutDayId)
-      .map((wp) => ({ weekNumber: wp.weekNumber, isDeload: wp.isDeload }))
+      .map((wp) => ({ weekNumber: wp.weekNumber, isDeload: wp.isDeload, isEmpty: wp.sets.length === 0 }))
   }
 
   // Whether COPY WEEK/COPY THIS WORKOUT would actually copy something for

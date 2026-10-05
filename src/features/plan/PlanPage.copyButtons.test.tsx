@@ -112,6 +112,20 @@ describe('PlanPage — empty-state "Copy last week" (chunk 8)', () => {
     expect(container.textContent).toContain('COPY THIS WORKOUT')
   })
 
+  it('DECISIONS 42 (b): shows neither button when the only prior week was empty (not deload) — empty is skipped the same as deload', () => {
+    // historyFor (PlanPage.tsx) computes isEmpty from wp.sets.length === 0,
+    // the same v2_week_plan_sets-backed data useAllWeekPlans already
+    // fetches in full — week 1 here carries no sets, so this is the real
+    // wiring, not just resolveManualCopySource's own pure-function proof.
+    mockState.program = makeProgram('week_dependent')
+    mockState.currentPlans = [makePlan(2, { withContent: false })]
+    mockState.allPlans = [makePlan(1, { withContent: false }), makePlan(2, { withContent: false })]
+
+    const { container } = renderPlanPage()
+    expect(container.textContent).not.toContain('COPY WEEK')
+    expect(container.textContent).not.toContain('COPY THIS WORKOUT')
+  })
+
   it('shows neither button when nothing has ever been planned for this workout ("missing source")', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.currentPlans = [makePlan(2, { withContent: false })]

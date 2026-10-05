@@ -406,14 +406,23 @@ async function fetchEmptyWorkoutPlanIds(
 // Every planned occurrence of one workout in this meso (any week number),
 // for resolveManualCopySource's backward search — the client-side
 // equivalent of what v2_plan_week reads straight from v2_week_plans itself.
+// isEmpty (DECISIONS 42 (b)) is computed the same way the migration's SQL
+// does — zero v2_week_plan_sets rows, never the exercise list (a week can
+// carry exercise rows with no sets under them) — via the embed below,
+// unambiguous (one FK, v2_week_plan_sets.week_plan_id → v2_week_plans.id).
 async function fetchPlannedWeekHistory(mesoId: string, workoutDayId: string): Promise<PlannedWeekRecord[]> {
   const { data, error } = await supabase
     .from('v2_week_plans')
-    .select('week_number, is_deload')
+    .select('week_number, is_deload, v2_week_plan_sets(id)')
     .eq('mesocycle_id', mesoId)
     .eq('workout_day_id', workoutDayId)
   if (error) throw error
-  return (data ?? []).map((r) => ({ weekNumber: r.week_number as number, isDeload: r.is_deload as boolean }))
+  const rows = (data ?? []) as { week_number: number; is_deload: boolean; v2_week_plan_sets: { id: string }[] }[]
+  return rows.map((r) => ({
+    weekNumber: r.week_number,
+    isDeload: r.is_deload,
+    isEmpty: (r.v2_week_plan_sets ?? []).length === 0,
+  }))
 }
 
 // Shared by both manual copy actions below: resolves this one workout's

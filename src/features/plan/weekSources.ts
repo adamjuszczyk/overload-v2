@@ -31,9 +31,17 @@ export type WeekStartSetting = 'copy' | 'empty'
 // the same week can have a different answer (SPEC: "A week that's partly
 // deload still copies its normal sessions; its deload sessions copy from
 // the last normal occurrence").
+//
+// isEmpty (Adam's answer to DECISIONS 42, 2026-10-05, option (b)): true
+// when that occurrence has zero v2_week_plan_sets rows — the SAME
+// definition the migration's SQL uses (`exists (select 1 from
+// v2_week_plan_sets where week_plan_id = ...)`), so a caller must compute
+// it that way too (not from the exercise list — a week can carry exercise
+// rows with no sets under them; only sets decide "empty" here).
 export interface PlannedWeekRecord {
   weekNumber: number
   isDeload: boolean
+  isEmpty: boolean
 }
 
 export type VolumeSource =
@@ -43,7 +51,7 @@ export type VolumeSource =
 
 export type WeightRirSource =
   | { kind: 'week'; weekNumber: number }
-  | { kind: 'none' } // no earlier planned week exists (or none that isn't deload) — no target
+  | { kind: 'none' } // no earlier planned week exists (or none that is usable — not deload, not empty) — no target
 
 export interface WeekSourceDecision {
   volume: VolumeSource
@@ -52,21 +60,24 @@ export interface WeekSourceDecision {
 
 // The one search every decision below is built from: among `priorWeeks`
 // (already-planned occurrences of ONE workout, any order, any subset of
-// week numbers), the most recent one strictly before `beforeWeek` that
-// isn't itself a deload session (SPEC: "Deload sessions are never a copy
-// source"). Only deload is excluded here — an occurrence that was itself
-// planned *empty* (no deload flag, just nothing in it) still counts as the
-// most recent one, so it becomes the next week's literal source too; SPEC
-// names exactly one exclusion for this search (deload), not "empty", and
-// this chunk's report calls this consequence out explicitly as a judgement
-// call rather than inventing a second exclusion SPEC never states.
-export function findLastNonDeloadWeek(
+// week numbers), the most recent one strictly before `beforeWeek` that is
+// neither a deload session nor empty (SPEC: "Deload sessions are never a
+// copy source"; DECISIONS 42 (b), 2026-10-05: "skip an empty last
+// occurrence, the same as deload" — before that answer this function
+// skipped only `isDeload`, so an empty-but-non-deload occurrence was
+// wrongly treated as usable and its emptiness propagated forward week
+// after week; that was flagged as a judgement call and Adam decided
+// against it). "Usable" = !isDeload && !isEmpty, both checked the same
+// way for every occurrence regardless of why the caller is searching
+// (volume or weight/RIR — DECISIONS 42: "Apply the same skip to the
+// weight/RIR source search, so it stays aligned with the volume source").
+export function findLastUsableWeek(
   priorWeeks: PlannedWeekRecord[],
   beforeWeek: number,
 ): number | null {
   let best: number | null = null
   for (const w of priorWeeks) {
-    if (w.weekNumber < beforeWeek && !w.isDeload) {
+    if (w.weekNumber < beforeWeek && !w.isDeload && !w.isEmpty) {
       if (best === null || w.weekNumber > best) best = w.weekNumber
     }
   }
@@ -82,9 +93,9 @@ export function resolveWeekSources(input: {
   priorWeeks: PlannedWeekRecord[]
 }): WeekSourceDecision {
   const { planningType, weekNumber, weekStart, priorWeeks } = input
-  const lastNonDeload = findLastNonDeloadWeek(priorWeeks, weekNumber)
+  const lastUsable = findLastUsableWeek(priorWeeks, weekNumber)
   const weightRir: WeightRirSource =
-    lastNonDeload === null ? { kind: 'none' } : { kind: 'week', weekNumber: lastNonDeload }
+    lastUsable === null ? { kind: 'none' } : { kind: 'week', weekNumber: lastUsable }
 
   let volume: VolumeSource
   if (weekNumber === 1 || planningType === 'stable') {
@@ -95,14 +106,15 @@ export function resolveWeekSources(input: {
     // SPEC: "a setting lets weeks start empty instead" — governs the
     // AUTOMATIC fill only; the manual copy actions below don't consult it.
     volume = { kind: 'empty' }
-  } else if (lastNonDeload !== null) {
-    volume = { kind: 'week', weekNumber: lastNonDeload }
+  } else if (lastUsable !== null) {
+    volume = { kind: 'week', weekNumber: lastUsable }
   } else {
-    // week_start = 'copy' but there is nothing non-deload to copy yet
-    // (e.g. this workout's only prior occurrence(s) were all deload, or it
-    // has never been planned at all) — SPEC names exactly two sources for
-    // a week-dependent week beyond week 1 ("the last planned [non-deload]
-    // week", or empty); with neither available, empty is what's left.
+    // week_start = 'copy' but there is nothing usable to copy yet (e.g.
+    // this workout's only prior occurrence(s) were all deload, all empty,
+    // or it has never been planned at all) — SPEC names exactly two
+    // sources for a week-dependent week beyond week 1 ("the last planned
+    // [usable] week", or empty); with neither available, empty is what's
+    // left.
     volume = { kind: 'empty' }
   }
 
@@ -110,17 +122,18 @@ export function resolveWeekSources(input: {
 }
 
 // "Copy last week" / "Copy this workout" (manual actions, SPEC: "'Copy
-// last week' stays as a manual action") — the SAME backward, deload
-// skipping search as the automatic function's volume source, independent
-// of week_start (that setting only governs what happens automatically) and
-// of planning type (no real stable program exists before chunk 11, so the
-// manual actions make no distinction here — see this chunk's report for
-// why that reading was chosen over an alternative). 'none' is the "missing
-// source" case the brief calls for: the caller no-ops (nothing to copy).
+// last week' stays as a manual action") — the SAME backward search as the
+// automatic function's volume source (deload OR empty skipped, DECISIONS
+// 42), independent of week_start (that setting only governs what happens
+// automatically) and of planning type (no real stable program exists
+// before chunk 11, so the manual actions make no distinction here — see
+// this chunk's report for why that reading was chosen over an
+// alternative). 'none' is the "missing source" case the brief calls for:
+// the caller no-ops (nothing to copy).
 export function resolveManualCopySource(
   priorWeeks: PlannedWeekRecord[],
   beforeWeek: number,
 ): { kind: 'week'; weekNumber: number } | { kind: 'none' } {
-  const found = findLastNonDeloadWeek(priorWeeks, beforeWeek)
+  const found = findLastUsableWeek(priorWeeks, beforeWeek)
   return found === null ? { kind: 'none' } : { kind: 'week', weekNumber: found }
 }
