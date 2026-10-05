@@ -1,18 +1,17 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 8 boundary — build stopped at decision 42 (stacked mode: nothing merged).*
+*Rewritten at every chunk boundary. Last: 2026-10-05, after Adam's answers (42 = b, G14, live checks) — stacked mode: nothing merged; chunk 8 being changed for 42 (b).*
 
 **Decisions**
-- 40 — Merge migration 028 (PR #22: runs own a copy of their program; your 3 programs become their runs' copies and get saved clones). Recommendation: merge when tonight's hold ends, with your before/after counts, then the code PR #23 straight after its deploy; don't start a mesocycle in between. Blocked: chunk 6 going live (chunks 7+ keep stacking).
-- 41 — Merge migration 029 (PR #24: each week plan gets its own exercise list, backfilled), then the chunk 7 code (#25), then follow-up migration 030 that re-runs the backfill (catches week plans the old app creates in between). Recommendation: in that order, after 40. Blocked: chunk 7 going live (chunks 8+ keep stacking).
-- 42 — When a new week copies forward, should an empty (but non-deload) last occurrence count as the source? Recommendation: no, skip empty like deload (option b). Blocked: chunk 8 (PRs #27 migration 031, #28 code, unmerged) and the build — stopped here.
+- 40 — Merge migration 028 (PR #22), then the chunk 6 code (#23) after its deploy. No backup or counts (your call); 028's manifest is the rollback. G14 checked: no change to chunk 6. Recommendation: merge when tonight's hold ends; don't start a mesocycle between the two merges. Blocked: chunk 6 going live.
+- 41 — Merge migration 029 (#24), then the chunk 7 code (#25), then follow-up 030 (#26). Recommendation: in that order, after 40. Blocked: chunk 7 going live.
+- 44 — What the planner's "switch to a sequence" choice does before sequence runs exist (chunk 25). Recommendation: (a) chunk 11 offers per-weekday or keep-as-is; chunk 25 adds sequence. Blocked: chunk 11 only.
 
 **To-dos**
-- 35 — Chunk 3 live check: a planned dropset in a real session at phone width, screenshots, one SQL query. When: next session. Blocked: nothing (a failure blocks the next merge).
-- 36 — Chunk 4 live check: edit a logged set (no note field), stored notes unchanged (two SQL queries). When: next session. Blocked: nothing (a failure blocks the next merge).
-- 37 — Chunk 1 live check: read 027's deploy log in the Dashboard (two stuck `Supabase Preview` runs), open Today/Plan/Program/History, log one set. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
+
+*Chunk 8's merge entry (migration 031 + code, after 42 (b)) follows once I've re-verified the builder's change.*
 
 ## Format for all new entries
 
@@ -43,21 +42,20 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 42 Does an empty week count as "the last planned week" when a new week copies forward?
+### 44 What does the planner's "switch to a sequence" choice do before sequence runs exist?
 Severity: blocking
-Chunk: 8
-**Ask:** When a week-dependent week is planned automatically (first open in Plan, or first session), it copies each workout from "the last planned week" (SPEC), skipping deload sessions. Should a workout's last occurrence that is planned but **empty** (no exercises/sets) also be skipped?
+Chunk: 11
+**Ask:** Your G14 answer has the planner, when it opens a program with one workout on several weekdays, offer "give each weekday its own workout" or "switch the program to a sequence". The planner is chunk 11; sequence runs arrive in chunk 25. What should the sequence choice do in chunks 11–24?
 **Options:**
-- (a) **Literal (as built):** an empty, non-deload occurrence is a valid source, so the next week comes out empty too, and stays empty week after week until you fill one by hand or use COPY.
-- (b) **Skip empty like deload:** search back past empty and deload occurrences to the last one with content; empty only if there is none (or when `week_start = empty`).
-**Recommendation:** (b). An empty session has nothing to carry forward. With (a), one cleared week (travel, illness) or an old empty plan row silently empties every following week, which defeats "copy last week is the default". (b) costs a small change to `weekSources.ts` and `v2_plan_week` before anything merges.
-**Blocked until answered:** chunk 8's PRs (built, unmerged) and the build: chunks 9+ build on chunk 8's source rules, so the build stops here, per tonight's instruction.
-**After you answer:** if (b), the builder changes `weekSources.ts` and `v2_plan_week` on the chunk 8 branches and I re-verify. Then, after 40 and 41, merge #27 (migration 031, flagged, so yours; it adds a function only, no counts) and #28 (code) once its deploy succeeds. Live steps for chunk 8 come as a deferred entry once it's live: first open plans the week once, reopen adds none, a first session plans its week, NEW WEEK STARTS = EMPTY gives empty weeks with COPY offered, and a deload session isn't copied.
+- (a) Chunk 11 offers per-weekday workouts and "keep as is"; chunk 25 adds the sequence choice to the same prompt.
+- (b) Chunk 11 shows both; the sequence choice is disabled with "arrives with sequence runs" until chunk 25.
+- (c) Move sequence runs (chunk 25) ahead of chunk 11, a large reorder of TASKS.md.
+**Recommendation:** (a). It keeps your "nothing is converted automatically" (keep-as-is is today's behaviour), adds no dead control, and chunk 25 completes the prompt as you described it.
+**Blocked until answered:** chunk 11 only. Chunks 9 and 10 don't depend on it, so the build can continue to the chunk 10 boundary first.
 **Answer:**
 **Evidence:**
-What happened: chunk 8's builder implemented SPEC's "Source of a new week's volume: week-dependent → the last planned week… Deload sessions are never a copy source" literally. Only deload is skipped. In its scratch run, a week left empty (week 4) made week 5 of both workouts empty. SPEC is silent on empty weeks (Escalation 14). It matters for your data because chunk 8 plans weeks automatically, and old empty plan rows may exist. TASKS.md's scratch fixture had one, and you can count yours with:
-`select count(*) from v2_week_plans wp where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and not exists (select 1 from v2_week_plan_sets s where s.week_plan_id = wp.id);`
-A competent default would: follow the spec's literal wording — doesn't apply because: the literal reading has a visible, compounding effect on what your future weeks contain, and SPEC doesn't say which you want.
+What happened: G14 reappeared on 2026-10-05 (your second account has a program with one workout on every weekday, sharing one plan row; L6 had only checked your main account). Your answer is recorded in TASKS.md chunks 11 and 21. Chunk order puts the planner (11) 14 chunks before sequence runs (25), so one half of the prompt has nothing to switch to yet.
+A competent default would: show only what can work today (a) — doesn't apply because: your answer names both choices, and dropping one for 14 chunks changes what the prompt offers.
 Cost of deferral: n/a (blocking).
 
 ### 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
@@ -105,34 +103,15 @@ Cost of deferral: n/a (blocking).
 ### 40 Merge migration 028 (runs own a copy of their program; transition of your existing programs)
 Severity: blocking
 Chunk: 6
-**Ask:** Merge PR #22 (migration 028), with your before/after counts around it. Then, once its deploy succeeds, merge the code PR #23 straight after. `check-migration` flags 028, and it changes existing data, so the merge is yours.
+**Ask:** Merge PR #22 (migration 028). Then, once its deploy succeeds, merge the code PR #23 straight after. `check-migration` flags 028 and it changes existing data, so the merge is yours. **No backup and no before/after counts** (your call, 2026-10-05): if the transition needs undoing, 028's own manifest (`v2_run_transition_manifest`: every clone it made, per user) is the rollback, and I verify what I can after the deploy.
 **Options:** (a) merge #22 now, following the steps below, then #23 once the deploy succeeds; (b) hold both; (c) ask for changes first.
-**Recommendation:** (a), whenever tonight's "merge nothing" hold ends. Merge #23 promptly after #22's deploy. In between, the current app lists both the run copies and their saved clones on the Program page, and its old START MESOCYCLE path would start a run without copying. **Don't start a mesocycle in that window.**
+**Recommendation:** (a), whenever tonight's "merge nothing" hold ends. G14 (one workout on several weekdays, your second account) was checked against 028 and chunks 7–8 on 2026-10-05 and changes nothing (Evidence), so 028 is unchanged. Merge #23 promptly after #22's deploy. In between, the current app lists both the run copies and their saved clones on the Program page, and its old START MESOCYCLE path would start a run without copying. **Don't start a mesocycle in that window.**
 **Blocked until answered:** chunk 6 going live. Chunks 7+ keep being built and stacked on `build/chunk-6` meanwhile; none of them merges before 028 and #23 do.
 **Steps:**
-1. **Before merging #22**, record:
-   - `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before-028.json`
-   - the id-hash query below → save the output as "ids before".
-   ```sql
-   select 'v2_sessions.id' t, md5(coalesce(string_agg(id::text, ',' order by id), '')) h from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   union all select 'v2_week_plans.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_week_plans where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   union all select 'v2_week_plan_sets.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_week_plan_sets where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   union all select 'v2_set_logs.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   union all select 'v2_mesocycles.id+program_id', md5(coalesce(string_agg(id::text || ':' || program_id::text, ',' order by id), '')) from v2_mesocycles where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   order by 1;
-   ```
-2. Merge #22 and tell me. I check every `Supabase Preview` run on the merge commit (anything but success is blocking), confirm the live schema with `probe-live-columns.mjs` plus a manifest-table probe, and run `check-embeds.mjs` live.
-3. **After the deploy succeeds**:
-   - `live-counts.sql` again into `counts-after-028.json`. Expected:
-     - `v2_programs` **+3**;
-     - `v2_workout_days` + the three programs' workout count;
-     - `v2_program_exercises` **+82** (L8's total);
-     - `v2_program_sets`, `v2_program_superset_blocks`, `v2_program_sequence_items`, `v2_workout_warmup_items` and `v2_program_priorities` grow by the clones' copies (0 today for most of them);
-     - **every other table unchanged.**
-   - The id-hash query again: every line identical to "ids before".
-   - `select kind, count(*) from v2_programs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by kind order by 1;` → `run 3`, `saved 3`.
-   Send me both outputs.
-4. Merge #23 (or tell me to). After its deploy: the Program page lists only your 3 saved programs; Plan has a PROGRAM tab listing the active run's workouts, each opening the workout editor; Today, Plan and History show your active run unchanged. A first real START, whenever you next start a program, gets a complete-copy spot check from me (SQL I'll give you then).
+1. Merge #22 and tell me. I check every `Supabase Preview` run on the merge commit (anything but success is blocking), probe the live schema (`probe-live-columns.mjs`: the manifest table exists and anon sees 0 rows; `v2_start_run` exists — an anon call is refused before it writes anything), and run `check-embeds.mjs` live. Under anon + RLS I can't see your rows, so the row-level result (your 3 programs became runs with saved clones) is checked in the app at step 3.
+2. Merge #23 (or tell me to).
+3. After #23's deploy, in the app (take the update banner): the Program page lists only your 3 saved programs; Plan has a PROGRAM tab listing the active run's workouts, each opening the workout editor; Today, Plan and History show your active run unchanged. Your second account: its program still shows one workout on every weekday, and planning one day still shows on all of them (today's behaviour, G14). A failure here is blocking.
+4. Whenever you next START a program, I give you one SQL query for a complete-copy spot check.
 **Answer:**
 **Evidence:**
 What happened: chunk 6 is built and verified: PR #22 is migration 028 only (md5 `695fa92f3ce15363b0ffe4c0b87cb837`), and PR #23 is the code, stacked on it.
@@ -151,85 +130,9 @@ None changes an id or removes a row. My own scratch check (real `supabase/postgr
 - **Coach's real input assembly** (Mesocycle Analysis for both completed mesos; week resolution and weekly input for three weeks) through PostgREST is **byte-identical before vs after**. That is TASKS.md's "Meso Analysis input identical" check, done on scratch.
 - `replay-migrations.sh` 29/29; `check-embeds-local.sh` 24/24.
 The builder also proved R7 (complete copy, 0 back-references), R8 (race: 2 active without the lock, proven overlapping; 1 with it), R9 (injected error appears, nothing persists) and RLS (B can't start on A's program; manifest rows are per user).
-A competent default would: merge an all-green migration — doesn't apply because: check-migration flags it and it rewrites existing rows, so the merge and the before/after counts are yours (CONTEXT migration flow; Escalations 8, 12).
+G14 check (2026-10-05, scratch, `supabase/postgres:17.6.1.155`): a fixture program with one workout on Mon–Fri and one shared plan row, run through 028, `v2_start_run`, 029, 030 and 031. The original becomes `kind = run` with 1 workout over 5 weekdays; its saved clone has 1 workout over 5 weekdays; the shared plan row is 1 row before and after the transition; 029 gives it its exercise rows; `v2_plan_week` plans 1 row for week 2; a new run started from the clone has 1 workout over 5 weekdays and plans 1 row per week. Same behaviour as today throughout, so nothing in chunks 6–8 changes.
+A competent default would: merge an all-green migration — doesn't apply because: check-migration flags it and it rewrites existing rows, so the merge is yours (CONTEXT migration flow; Escalations 8, 12). Counts and backup waived by you (2026-10-05).
 Cost of deferral: n/a (blocking).
-
-
-### 35 Chunk 3 live check: planned dropset stages in a real session (Adam's steps)
-Severity: deferred
-Chunk: 3
-**Ask:** Chunk 3 live check — planned dropset stages in a real session. Do the steps below and tell me the results. A failed step is blocking.
-**When:** your next session (Adam, 2026-10-04).
-**Blocked until done:** nothing now; a failure blocks the next merge.
-**Steps:** (phone, or a 375 px-wide window):
-1. Open https://overload-v2-sage.vercel.app. If an update/RELOAD banner shows, take it, so you're on the new bundle. Check that the deploy landed: the chunk 3 merge is `1e77e94`. If the Vercel dashboard is handy, confirm that commit's production deploy is Ready. (Chunk 2's production deploy wasn't confirmed from here either; it changed nothing at runtime.)
-2. In Plan, on a workout you'll train next, give one exercise a planned dropset: a set with two stages (ADD STAGE twice in the plan). This is your own planning edit, so do it only if you want a dropset in that session; otherwise wait for a session that already has one.
-3. Start that session. Before logging anything, that exercise should show:
-   - The head row, enabled: weight and reps fields and LOG.
-   - Two stage rows under it, each marked `↳`, dimmed, with weight and reps fields you can't tap into and a button reading **LOCKED** in the LOG position.
-   Screenshot it.
-4. Log the head. Stage 1 becomes the normal row with LOG, in the same place and shape, now usable. Stage 2 stays LOCKED. Screenshot.
-5. Log stage 1. Stage 2 unlocks. Log it. Nothing on that set is LOCKED any more.
-6. Also, on any set with **no** planned stages: after logging it, the small "mark as dropset" link appears exactly as before, and no LOCKED rows appear anywhere else.
-7. In the SQL Editor (your user only):
-   `select set_number, stage_index, parent_set_id, is_dropset, id, week_plan_set_id from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and session_id = (select id from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by created_at desc limit 1) order by set_number, stage_index;`
-   The two stage rows must carry `parent_set_id` = the head row's `id`, `stage_index` 1 and 2, and `is_dropset` true.
-8. Tell me the result and attach the screenshots. A failure is blocking.
-**Answer:**
-**Evidence:**
-What happened: Chunk 3 is merged into master (PR #11, `1e77e94`). Every check I can run passed: jsdom tests over SetRow, SetGroup and the real ExerciseCard write path, with each test proven by an injected break; typecheck, build, every script; and my own DOM dump of two planned dropsets. SPEC requires the fix to be seen in a real session ("checking stored data alone doesn't catch this regression"), and TASKS.md's done-when is the real-session check at 375 px, recorded with a screenshot. I can't reach or sign in to the app (entry 31), so per the standing rule these are your steps.
-A competent default would: count the jsdom tests as the verification — doesn't apply because: SPEC names a real session as the only check that catches this regression.
-Cost of deferral: if it fails, chunk 3 is fixed and re-merged. Chunk 4 doesn't depend on it (it touches the logged-set edit form, not stage rendering).
-Provisional path taken: merged; continuing with chunk 4.
-
-### 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes (Adam's steps)
-Severity: deferred
-Chunk: 4
-**Ask:** Chunk 4 live check — editing a logged set shows no note field and keeps stored notes. Do the steps below and tell me the results. A failed step is blocking.
-**When:** your next session (Adam, 2026-10-04).
-**Blocked until done:** nothing now; a failure blocks the next merge.
-**Steps:**
-1. Before your next session, record your stored set notes in the SQL Editor:
-   `select id, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and note is not null order by id;`
-   It may return nothing. Set-note editing was the only way to write one, so that's possible.
-2. Open https://overload-v2-sage.vercel.app. If the update/RELOAD banner shows, take it. The chunk 4 merge is `89719b1`; if the Vercel dashboard is handy, confirm its production deploy is Ready.
-3. In your next real session, log a set, then tap it to edit. The edit form should show weight, reps and the RIR chips with its save/cancel controls, and **no Note field**, laid out cleanly at phone width. Change the reps by one and save, then change it back and save.
-4. Re-run the step 1 query. The result must be identical: same ids, same notes. Then check the edited set:
-   `select id, reps, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by logged_at desc limit 3;`
-   That set should show its original reps, and `note` should be `null`.
-5. Tell me the result. A failure is blocking.
-**Answer:**
-**Evidence:**
-What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I can run passed: jsdom and service tests, proven by injected breaks; typecheck, build, every script. I also called `updateSetLog` directly with a stray `note`, and the Supabase payload was `{weight, reps, rir}`. TASKS.md's verification and done-when need the deployed app and an Adam-scoped query, which I can't reach (entry 31).
-A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
-Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
-Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
-
-### 37 Chunk 1 live check after 027 deployed (Adam's steps), and two stuck deploy checks
-Severity: deferred
-Chunk: 1
-**Ask:** Chunk 1 live check — 027's deploy log (incl. two stuck `Supabase Preview` runs), and the app's main screens on the new schema. Do the steps below and tell me the results. A failed step is blocking.
-**When:** your next session (Adam, 2026-10-04).
-**Blocked until done:** nothing now; a failure blocks the next merge.
-**Steps:**
-1. Supabase Dashboard → Branches: open the production deploy log for `7f4405d` and check that it applied `027_planner_p1_schema` without error. Tell me if the two stuck runs show anything, e.g. a duplicate trigger.
-2. Optionally, in the SQL Editor: `select version from supabase_migrations.schema_migrations order by version desc limit 3;` The top row should be `027`.
-3. Open https://overload-v2-sage.vercel.app (take the update banner if shown). Today, Plan, Program and History each load your data as before, with no error toast. 027 changed no app code; this checks the old client against the new schema.
-4. In your next real session, log one set. It saves normally: still there after a reload, and no pending-sync marker.
-5. Tell me the results. A failed step is blocking.
-**Answer:**
-**Evidence:**
-What happened: Adam merged PR #17 (`7f4405d`, 2026-10-04 19:11 UTC). Under his standing counts rule, 027 is add-only, so no live counts are needed; its proof is the green `migration-replay` plus my scratch-copy check (row counts and per-row fingerprints unchanged on all nine altered tables). On master's merge commit GitHub shows **three** `Supabase Preview` runs:
-- `111509721064`: success (19:12:16→19:12:22);
-- `111509705063` and `111509600539`: still `in_progress` more than 8 minutes later.
-That hasn't been seen before; the first automatic run had a single check. I tested the real outcome instead. `node scripts/probe-live-columns.mjs scripts/probe-specs/027.json` (anon key, every request filtered to Adam's user_id, `limit=0`, so no data can return) answered 36 of 36 probes as expected:
-- every one of 027's 72 columns on the 15 tables answers `200 []`;
-- each table's made-up control column answers `400 / 42703`;
-- the six new tables show anon 0 rows.
-The probe itself was proven: a spec with one non-existent column fails (`400 42703`, exit 1). So 027 is live; the deploy is not treated as failed.
-A competent default would: treat the one successful run as the deploy result — doesn't apply because: CONTEXT.md says anything other than success counts as failed until you've read the Dashboard log, and two runs aren't success. The live probe is why I'm not treating it as failed; the log is yours to read.
-Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
-Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
 
 ### 39 Chunk 5 live check: "Session type, all time" unchanged on today's data (Adam's steps)
 Severity: deferred
@@ -285,6 +188,31 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 - What: Incident: 027's second `v2_mesocycles → v2_programs` FK made the mesocycle embed ambiguous (fixed by PR #18); run `check-embeds-local.sh` in the `migration-replay` workflow?
 - Answer: Yes, add it to the workflow. Done: PR #20 (`b427dc0`); first GitHub run resolved 25/25.
 - Date: 2026-10-04
+
+### 35 Chunk 3 live check: planned dropset stages in a real session
+- What: Planned dropset stages show LOCKED rows and unlock one by one in a real session.
+- Answer: Checked by Adam in a real gym session: works. No screenshots or SQL, by his choice. **Passed.**
+- Date: 2026-10-05
+
+### 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes
+- What: Live check of the logged-set edit form (no note field; stored notes unchanged).
+- Answer: Not checked. **Waived by Adam, not passed.**
+- Date: 2026-10-05
+
+### 37 Chunk 1 live check after 027 deployed
+- What: 027's deploy log and the app's main screens on the new schema.
+- Answer: Today, Plan, Program and History load normally, and logging worked through a whole session (Adam's gym session). Deploy-log step dropped by Adam; the two stuck `Supabase Preview` runs stay unexplained, and the live probe (36/36) stands as 027's deploy evidence. **Passed** (app steps).
+- Date: 2026-10-05
+
+### 42 Does an empty week count as "the last planned week" when a new week copies forward?
+- What: Should a workout's empty (non-deload) last occurrence be a copy source for a new week?
+- Answer: (b) skip an empty last occurrence, the same as deload. Builder is changing `v2_plan_week` (031) and `weekSources.ts` on the chunk 8 branches; re-verification and the merge entry follow.
+- Date: 2026-10-05
+
+### 43 G14 reappeared: one workout on several weekdays (Adam's second account)
+- What: L6 only checked Adam's main account; his second account has a program with one workout on every weekday, and planning one day's volume shows on all of them (one shared plan row).
+- Answer: Existing such programs keep today's behaviour until edited. Opening one in the planner asks to give each weekday its own workout or switch to a sequence; nothing is converted automatically. Deload on a shared row marks every day it covers, as today, and the UI says so. Added to TASKS.md chunks 11 and 21. Chunks 6–8 checked on scratch: no change (entry 40 Evidence). Follow-up question: 44.
+- Date: 2026-10-05
 
 ## Settled decisions
 

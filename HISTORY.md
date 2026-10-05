@@ -22916,3 +22916,112 @@ Previous wording, verbatim:
 - "- Chunk 8 (in progress): `build/chunk-8-migration` (031, `v2_plan_week`) and `build/chunk-8`, stacked on `build/chunk-7-rerun`."
 - "- **Next migration number: 031** (028 on `build/chunk-6-migration`, 029 on `build/chunk-7-migration`, 030 on `build/chunk-7-rerun`, all unmerged); then 032 …"
 — chunk 8 built and verified, unmerged (PR #27 migration, #28 code); build stopped for decision 42.
+
+
+---
+
+## 2026-10-05 (Adam's answers: 42, G14, live checks 35–37) — closed DECISIONS entries' full text, verbatim
+
+## 42 Does an empty week count as "the last planned week" when a new week copies forward?
+Severity: blocking
+Chunk: 8
+**Ask:** When a week-dependent week is planned automatically (first open in Plan, or first session), it copies each workout from "the last planned week" (SPEC), skipping deload sessions. Should a workout's last occurrence that is planned but **empty** (no exercises/sets) also be skipped?
+**Options:**
+- (a) **Literal (as built):** an empty, non-deload occurrence is a valid source, so the next week comes out empty too, and stays empty week after week until you fill one by hand or use COPY.
+- (b) **Skip empty like deload:** search back past empty and deload occurrences to the last one with content; empty only if there is none (or when `week_start = empty`).
+**Recommendation:** (b). An empty session has nothing to carry forward. With (a), one cleared week (travel, illness) or an old empty plan row silently empties every following week, which defeats "copy last week is the default". (b) costs a small change to `weekSources.ts` and `v2_plan_week` before anything merges.
+**Blocked until answered:** chunk 8's PRs (built, unmerged) and the build: chunks 9+ build on chunk 8's source rules, so the build stops here, per tonight's instruction.
+**After you answer:** if (b), the builder changes `weekSources.ts` and `v2_plan_week` on the chunk 8 branches and I re-verify. Then, after 40 and 41, merge #27 (migration 031, flagged, so yours; it adds a function only, no counts) and #28 (code) once its deploy succeeds. Live steps for chunk 8 come as a deferred entry once it's live: first open plans the week once, reopen adds none, a first session plans its week, NEW WEEK STARTS = EMPTY gives empty weeks with COPY offered, and a deload session isn't copied.
+**Answer:**
+**Evidence:**
+What happened: chunk 8's builder implemented SPEC's "Source of a new week's volume: week-dependent → the last planned week… Deload sessions are never a copy source" literally. Only deload is skipped. In its scratch run, a week left empty (week 4) made week 5 of both workouts empty. SPEC is silent on empty weeks (Escalation 14). It matters for your data because chunk 8 plans weeks automatically, and old empty plan rows may exist. TASKS.md's scratch fixture had one, and you can count yours with:
+`select count(*) from v2_week_plans wp where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and not exists (select 1 from v2_week_plan_sets s where s.week_plan_id = wp.id);`
+A competent default would: follow the spec's literal wording — doesn't apply because: the literal reading has a visible, compounding effect on what your future weeks contain, and SPEC doesn't say which you want.
+Cost of deferral: n/a (blocking).
+
+## 35 Chunk 3 live check: planned dropset stages in a real session (Adam's steps)
+Severity: deferred
+Chunk: 3
+**Ask:** Chunk 3 live check — planned dropset stages in a real session. Do the steps below and tell me the results. A failed step is blocking.
+**When:** your next session (Adam, 2026-10-04).
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (phone, or a 375 px-wide window):
+1. Open https://overload-v2-sage.vercel.app. If an update/RELOAD banner shows, take it, so you're on the new bundle. Check that the deploy landed: the chunk 3 merge is `1e77e94`. If the Vercel dashboard is handy, confirm that commit's production deploy is Ready. (Chunk 2's production deploy wasn't confirmed from here either; it changed nothing at runtime.)
+2. In Plan, on a workout you'll train next, give one exercise a planned dropset: a set with two stages (ADD STAGE twice in the plan). This is your own planning edit, so do it only if you want a dropset in that session; otherwise wait for a session that already has one.
+3. Start that session. Before logging anything, that exercise should show:
+   - The head row, enabled: weight and reps fields and LOG.
+   - Two stage rows under it, each marked `↳`, dimmed, with weight and reps fields you can't tap into and a button reading **LOCKED** in the LOG position.
+   Screenshot it.
+4. Log the head. Stage 1 becomes the normal row with LOG, in the same place and shape, now usable. Stage 2 stays LOCKED. Screenshot.
+5. Log stage 1. Stage 2 unlocks. Log it. Nothing on that set is LOCKED any more.
+6. Also, on any set with **no** planned stages: after logging it, the small "mark as dropset" link appears exactly as before, and no LOCKED rows appear anywhere else.
+7. In the SQL Editor (your user only):
+   `select set_number, stage_index, parent_set_id, is_dropset, id, week_plan_set_id from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and session_id = (select id from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by created_at desc limit 1) order by set_number, stage_index;`
+   The two stage rows must carry `parent_set_id` = the head row's `id`, `stage_index` 1 and 2, and `is_dropset` true.
+8. Tell me the result and attach the screenshots. A failure is blocking.
+**Answer:**
+**Evidence:**
+What happened: Chunk 3 is merged into master (PR #11, `1e77e94`). Every check I can run passed: jsdom tests over SetRow, SetGroup and the real ExerciseCard write path, with each test proven by an injected break; typecheck, build, every script; and my own DOM dump of two planned dropsets. SPEC requires the fix to be seen in a real session ("checking stored data alone doesn't catch this regression"), and TASKS.md's done-when is the real-session check at 375 px, recorded with a screenshot. I can't reach or sign in to the app (entry 31), so per the standing rule these are your steps.
+A competent default would: count the jsdom tests as the verification — doesn't apply because: SPEC names a real session as the only check that catches this regression.
+Cost of deferral: if it fails, chunk 3 is fixed and re-merged. Chunk 4 doesn't depend on it (it touches the logged-set edit form, not stage rendering).
+Provisional path taken: merged; continuing with chunk 4.
+
+## 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes (Adam's steps)
+Severity: deferred
+Chunk: 4
+**Ask:** Chunk 4 live check — editing a logged set shows no note field and keeps stored notes. Do the steps below and tell me the results. A failed step is blocking.
+**When:** your next session (Adam, 2026-10-04).
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:**
+1. Before your next session, record your stored set notes in the SQL Editor:
+   `select id, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and note is not null order by id;`
+   It may return nothing. Set-note editing was the only way to write one, so that's possible.
+2. Open https://overload-v2-sage.vercel.app. If the update/RELOAD banner shows, take it. The chunk 4 merge is `89719b1`; if the Vercel dashboard is handy, confirm its production deploy is Ready.
+3. In your next real session, log a set, then tap it to edit. The edit form should show weight, reps and the RIR chips with its save/cancel controls, and **no Note field**, laid out cleanly at phone width. Change the reps by one and save, then change it back and save.
+4. Re-run the step 1 query. The result must be identical: same ids, same notes. Then check the edited set:
+   `select id, reps, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by logged_at desc limit 3;`
+   That set should show its original reps, and `note` should be `null`.
+5. Tell me the result. A failure is blocking.
+**Answer:**
+**Evidence:**
+What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I can run passed: jsdom and service tests, proven by injected breaks; typecheck, build, every script. I also called `updateSetLog` directly with a stray `note`, and the Supabase payload was `{weight, reps, rir}`. TASKS.md's verification and done-when need the deployed app and an Adam-scoped query, which I can't reach (entry 31).
+A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
+Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
+Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
+
+## 37 Chunk 1 live check after 027 deployed (Adam's steps), and two stuck deploy checks
+Severity: deferred
+Chunk: 1
+**Ask:** Chunk 1 live check — 027's deploy log (incl. two stuck `Supabase Preview` runs), and the app's main screens on the new schema. Do the steps below and tell me the results. A failed step is blocking.
+**When:** your next session (Adam, 2026-10-04).
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:**
+1. Supabase Dashboard → Branches: open the production deploy log for `7f4405d` and check that it applied `027_planner_p1_schema` without error. Tell me if the two stuck runs show anything, e.g. a duplicate trigger.
+2. Optionally, in the SQL Editor: `select version from supabase_migrations.schema_migrations order by version desc limit 3;` The top row should be `027`.
+3. Open https://overload-v2-sage.vercel.app (take the update banner if shown). Today, Plan, Program and History each load your data as before, with no error toast. 027 changed no app code; this checks the old client against the new schema.
+4. In your next real session, log one set. It saves normally: still there after a reload, and no pending-sync marker.
+5. Tell me the results. A failed step is blocking.
+**Answer:**
+**Evidence:**
+What happened: Adam merged PR #17 (`7f4405d`, 2026-10-04 19:11 UTC). Under his standing counts rule, 027 is add-only, so no live counts are needed; its proof is the green `migration-replay` plus my scratch-copy check (row counts and per-row fingerprints unchanged on all nine altered tables). On master's merge commit GitHub shows **three** `Supabase Preview` runs:
+- `111509721064`: success (19:12:16→19:12:22);
+- `111509705063` and `111509600539`: still `in_progress` more than 8 minutes later.
+That hasn't been seen before; the first automatic run had a single check. I tested the real outcome instead. `node scripts/probe-live-columns.mjs scripts/probe-specs/027.json` (anon key, every request filtered to Adam's user_id, `limit=0`, so no data can return) answered 36 of 36 probes as expected:
+- every one of 027's 72 columns on the 15 tables answers `200 []`;
+- each table's made-up control column answers `400 / 42703`;
+- the six new tables show anon 0 rows.
+The probe itself was proven: a spec with one non-existent column fails (`400 42703`, exit 1). So 027 is live; the deploy is not treated as failed.
+A competent default would: treat the one successful run as the deploy result — doesn't apply because: CONTEXT.md says anything other than success counts as failed until you've read the Dashboard log, and two runs aren't success. The live probe is why I'm not treating it as failed; the log is yours to read.
+Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
+Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
+
+
+---
+
+## 2026-10-05 (Adam's answers: 42, G14, live checks) — Moved out of CONTEXT.md (no longer true)
+
+- "- **Build stopped at the chunk 8 boundary** for DECISIONS 42 (does an empty week count as a copy source? SPEC silent). Chunks 1–5 are merged and live; 6, 7 and 8 are built, verified and unmerged."
+- "Blocking DECISIONS 40: Adam merges #22 with before/after counts, then #23 right after its deploy (no mesocycle start in between)."
+- "Blocking DECISIONS 42; merge order after 40, 41: #27 then #28."
+- "- Waiting on Adam's live checks (deferred; a failure is blocking): DECISIONS.md 35 (chunk 3: planned dropset in a real session at 375 px, screenshots, stage-log query), 36 (chunk 4: edit form has no note field; stored notes unchanged), 39 (chunk 5: no lineage rows yet; all-time history pages unchanged), 37 (chunk 1: Dashboard deploy log for `7f4405d` incl. two stuck `Supabase Preview` runs; Today/Plan/Program/History load; one set saves)."
+— 42 answered (b); G14 answered (DECISIONS 43); 35/37 passed, 36 waived; 40's counts waived.
