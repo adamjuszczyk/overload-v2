@@ -1,10 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 6 boundary (stacked mode: nothing merges tonight).*
+*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 7 boundary (stacked mode: nothing merges tonight).*
 
 **Decisions**
 - 40 — Merge migration 028 (PR #22: runs own a copy of their program; your 3 programs become their runs' copies and get saved clones). Recommendation: merge when tonight's hold ends, with your before/after counts, then the code PR #23 straight after its deploy; don't start a mesocycle in between. Blocked: chunk 6 going live (chunks 7+ keep stacking).
+- 41 — Merge migration 029 (PR #24: each week plan gets its own exercise list, backfilled), then the chunk 7 code (#25), then follow-up migration 030 that re-runs the backfill (catches week plans the old app creates in between). Recommendation: in that order, after 40. Blocked: chunk 7 going live (chunks 8+ keep stacking).
 
 **To-dos**
 - 35 — Chunk 3 live check: a planned dropset in a real session at phone width, screenshots, one SQL query. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -40,6 +41,48 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
+Severity: blocking
+Chunk: 7
+**Ask:** After 40 is done (028 and chunk 6's code live), merge PR #24 (migration 029), then PR #25 (chunk 7 code) once 029's deploy succeeds, then the follow-up migration 030 once #25 has deployed. `check-migration` flags 029 and 030, so those merges are yours. Both only insert rows, so no live counts are needed (your rule).
+**Options:**
+- (a) merge 029 → #25 → 030 in that order (recommended);
+- (b) skip 030 and instead run 029's backfill block once by hand after #25 deploys — but CONTEXT says never apply migration SQL by hand under automatic deploys;
+- (c) skip the re-run and avoid ADD SET / COPY WEEK between 029's deploy and #25's.
+**Recommendation:** (a). 030 is a no-op if nothing was missed, and it catches any week plan the old app created in the gap: such a plan has no exercise rows, and the new screens would show it empty. Provisional: 030 is being built on `build/chunk-7-rerun` (stacked on `build/chunk-7`). If you pick (b) or (c), it's dropped.
+**Blocked until answered:** chunk 7 going live. Chunks 8+ keep stacking.
+**Steps:**
+1. Merge #24 (029) and tell me. I check every `Supabase Preview` run on the merge commit, probe the new manifest table live, and run `check-embeds.mjs` live.
+2. Merge #25 (chunk 7 code), or tell me to. Then merge 030's PR and tell me; I check its deploy.
+3. In the SQL Editor, the parity query (0 rows means every week plan's own list equals the workout's exercises, which is how today's screens build it):
+   ```sql
+   with old_way as (select wp.id as week_plan_id, array_agg(pe.id order by pe.position) as exercise_ids from v2_week_plans wp join v2_program_exercises pe on pe.workout_day_id = wp.workout_day_id where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by wp.id),
+        new_way as (select wp.id as week_plan_id, array_agg(wpe.program_exercise_id order by wpe.position) as exercise_ids from v2_week_plans wp join v2_week_plan_exercises wpe on wpe.week_plan_id = wp.id where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by wp.id)
+   select coalesce(o.week_plan_id, n.week_plan_id), o.exercise_ids, n.exercise_ids from old_way o full outer join new_way n on n.week_plan_id = o.week_plan_id where o.exercise_ids is distinct from n.exercise_ids;
+   ```
+   → **0 rows**.
+4. In the app (take the update banner): Plan and the workout screen show exactly the exercises they did before, in the same order. Open a session offline once it's cached; it shows the same list.
+**Answer:**
+**Evidence:**
+What happened: chunk 7 is built and verified. PR #24 is 029 only (md5 `98925a7d05ac8fd2a6e2b23eeaf63c8a`), and PR #25 is the code. Both are stacked on chunk 6, and nothing is merged.
+`check-migration` exits 1. 029's entries are the backfill `do $$ … $$` block (it inserts into `v2_week_plan_exercises` and records inserted ids in the new `v2_week_plan_exercises_backfill_manifest`) and `notify pgrst`.
+My own scratch check (`supabase/postgres:17.6.1.155`, 000–028 plus the chunk 6 fixture, then 029):
+- 0 existing rows changed or lost (column-level);
+- backfilled 8 = expected 8;
+- 0 planned sets without their exercise row;
+- 0 parity differences;
+- re-running the backfill inserts 0.
+The builder also proved: RLS on the manifest per user; the parity query fails when one exercise row is deleted; and render parity of PlanPage and GymSession against frozen chunk 6 renders, using a decoy on the old path so a regression is visible.
+All checks pass on the branch:
+- typecheck; 680 tests; build;
+- 94 script tests;
+- `replay-migrations.sh` 30/30;
+- `check-embeds-local.sh` 24/24 (incl. 6 new embeds, hinted because `v2_week_plan_exercises` has two FKs to `v2_program_exercises`);
+- `check-frozen-code`.
+The gap 030 closes: the screens use `weekPlan.exercises`, which is an empty list (not null) for a week plan without rows, so they don't fall back to the program's exercises.
+A competent default would: merge a green, insert-only migration — doesn't apply because: check-migration flags it (Escalations 8, 12), and the re-run vehicle under automatic deploys is your call.
+Cost of deferral: n/a (blocking).
 
 ### 40 Merge migration 028 (runs own a copy of their program; transition of your existing programs)
 Severity: blocking

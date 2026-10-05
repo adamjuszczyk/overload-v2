@@ -22898,3 +22898,12 @@ Previous wording, verbatim:
 - "- Current chunk: 6. Chunks 1–5 are done."
 - "- **Next migration number: 028**; then 029, 030 …"
 — chunk 6 built and verified, unmerged (PR #22 migration, #23 code).
+
+---
+
+## 2026-10-05 (chunk 7 boundary, stacked mode) — Moved out of CONTEXT.md (no longer true)
+
+- "- Current chunk: 7, stacked on `build/chunk-6`. Chunks 1–5 are merged and live."
+- "- **Next migration number: 029** (028 is on `build/chunk-6-migration`, unmerged); then 030, 031 …"
+- "Blocking DECISIONS 40: Adam merges #22 with before/after counts, then #23 right after its deploy (no mesocycle start in between)."
+— chunk 7 built and verified, unmerged (PR #24 migration, #25 code); 030 follow-up.
