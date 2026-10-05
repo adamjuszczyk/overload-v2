@@ -5,7 +5,7 @@
 
 **Decisions**
 - 41 — All merged and live: 029 (#24 `61b2670`), chunk 7 code (#25 `55bed82`), 030 (#26 `34c5887`, deploy success 18:45 UTC). Parity query: 0 rows (Adam, passed). Left: your app check (entry 41 step 4).
-- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Go-ahead given (Adam, 2026-10-05): I prepare #27, then #28 after 031's deploy, and say when each is ready. Blocked: chunk 8 going live.
+- 45 — 031 (#27, `c128d00`) merged and live (anon `v2_plan_week` → "no authenticated user"). Next: #28 (chunk 8 code; retargeted, master merged `67e9bf3`, checks green locally, own CI running). Then your app steps (entry 45 step 3).
 
 **To-dos**
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
