@@ -3,12 +3,37 @@ import { format, parseISO } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useScheduler } from './useScheduler'
 import { useCreateSession, useActiveSession, useReopenSession, useSkipSession, useUpdateSessionNote } from './useSession'
+import { usePlanWeek } from '../plan/useWeekPlan'
+import { fetchWeekPlans } from '../plan/weekPlanService'
 import GymSession from './GymSession'
 import SessionPreview from './SessionPreview'
 import RestDayScreen from './RestDayScreen'
 import MissedSessionPrompt from './MissedSessionPrompt'
 import { useToday } from '../../hooks/useToday'
 import type { Session, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
+
+// Chunk 8 (TASKS.md "Weeks plan themselves, from the right source") —
+// "or when it starts, whichever comes first": v2_plan_week runs right
+// before the session itself is created, then this re-reads that exact
+// week/workout's plan so the new session attaches to whatever just got
+// planned (createSession.weekPlanId is a plain client-supplied id, not
+// resolved server-side) — a `weekPlan` object captured by the caller
+// before planning ran is stale by definition whenever planning actually
+// did something (the "suggest_no_plan" case this chunk's goal targets).
+// Idempotent and cheap to call unconditionally, same as PlanPage.tsx's own
+// view-time call; a week already planned just plans 0 and this still
+// re-reads the (unchanged) existing plan.
+async function planThenFindWeekPlanId(
+  mesoId: string,
+  weekNumber: number,
+  workoutDayId: string,
+  planWeek: ReturnType<typeof usePlanWeek>,
+  fallback: string | null,
+): Promise<string | null> {
+  await planWeek.mutateAsync({ mesoId, weekNumber })
+  const plans = await fetchWeekPlans(mesoId, weekNumber)
+  return plans.find((p) => p.workoutDayId === workoutDayId)?.id ?? fallback
+}
 
 export default function TodayPage() {
   const today = useToday()
@@ -19,6 +44,7 @@ export default function TodayPage() {
   const [showPreview, setShowPreview] = useState(false)
   const scheduler = useScheduler(today, dismissMissed)
   const createSession = useCreateSession()
+  const planWeek = usePlanWeek()
   const navigate = useNavigate()
 
   if (scheduler.isLoading) {
@@ -89,11 +115,25 @@ export default function TodayPage() {
     const weekPlan: WeekPlan | null =
       result.type === 'suggest_from_plan' ? result.weekPlan : null
 
+    // Chunk 8 — planning now precedes session creation (see
+    // planThenFindWeekPlanId above), so "starting" has to cover that phase
+    // too: createSession.isPending alone goes true only once planning has
+    // already finished, which would leave START SESSION clickable again
+    // for the whole planning round-trip.
+    const isStartingSession = planWeek.isPending || createSession.isPending
+
     async function handleStart() {
       if (!activeMeso) return
+      const weekPlanId = await planThenFindWeekPlanId(
+        activeMeso.id,
+        currentWeek,
+        workoutDay.id,
+        planWeek,
+        weekPlan?.id ?? null,
+      )
       await createSession.mutateAsync({
         mesoId: activeMeso.id,
-        weekPlanId: weekPlan?.id ?? null,
+        weekPlanId,
         workoutDayId: workoutDay.id,
         date: today,
       })
@@ -106,7 +146,7 @@ export default function TodayPage() {
           weekPlan={weekPlan}
           weekNumber={currentWeek}
           today={today}
-          isStarting={createSession.isPending}
+          isStarting={isStartingSession}
           onBack={() => setShowPreview(false)}
           onStart={handleStart}
         />
@@ -156,16 +196,16 @@ export default function TodayPage() {
             </button>
             <button
               onClick={handleStart}
-              disabled={createSession.isPending}
+              disabled={isStartingSession}
               className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
               style={{
                 backgroundColor: 'var(--accent)',
                 color: 'var(--base)',
                 fontFamily: 'var(--font-mono)',
-                opacity: createSession.isPending ? 0.6 : 1,
+                opacity: isStartingSession ? 0.6 : 1,
               }}
             >
-              {createSession.isPending ? 'STARTING…' : 'START SESSION'}
+              {isStartingSession ? 'STARTING…' : 'START SESSION'}
             </button>
           </div>
         </div>
@@ -256,11 +296,13 @@ function CompletedTodayScreen({
   const reopenSession = useReopenSession()
   const skipSession = useSkipSession()
   const createSession = useCreateSession()
+  const planWeek = usePlanWeek()
   const updateNote = useUpdateSessionNote()
 
   const totalSets = fullSession?.setLogs?.filter((l) => !l.isSkipped).length ?? 0
   const skippedSets = fullSession?.setLogs?.filter((l) => l.isSkipped).length ?? 0
-  const isPending = reopenSession.isPending || createSession.isPending || skipSession.isPending
+  const isPending =
+    reopenSession.isPending || createSession.isPending || skipSession.isPending || planWeek.isPending
 
   async function handleContinue() {
     await reopenSession.mutateAsync(basicSession.id)
@@ -269,11 +311,20 @@ function CompletedTodayScreen({
 
   async function handleRedo() {
     if (!workoutDay) return
-    // Skip the current completed session, then start a fresh one
+    // Skip the current completed session, then start a fresh one. Chunk 8
+    // — same "plan right before starting" as TodayPage's own handleStart:
+    // redoing today's session is still "starting a session" on Today.
     await skipSession.mutateAsync(basicSession.id)
+    const weekPlanId = await planThenFindWeekPlanId(
+      activeMeso.id,
+      weekNumber,
+      workoutDay.id,
+      planWeek,
+      weekPlan?.id ?? null,
+    )
     await createSession.mutateAsync({
       mesoId: activeMeso.id,
-      weekPlanId: weekPlan?.id ?? null,
+      weekPlanId,
       workoutDayId: workoutDay.id,
       date: today,
     })

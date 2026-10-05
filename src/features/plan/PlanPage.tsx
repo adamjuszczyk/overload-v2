@@ -7,6 +7,7 @@ import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises } from '../programs/usePrograms'
 import {
   useWeekPlans,
+  useAllWeekPlans,
   useSetDeload,
   useAddSet,
   useAddStage,
@@ -14,7 +15,9 @@ import {
   useRemoveSet,
   useCopyFromPreviousWeek,
   useCopyWorkoutFromPreviousWeek,
+  usePlanWeek,
 } from './useWeekPlan'
+import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
@@ -88,17 +91,28 @@ export default function PlanPage() {
     activeMeso?.id ?? '',
     viewWeek,
   )
-  // Source-has-rows check for showCopyButton below — same shape as
-  // PRIORITY-CONTEXT-TASKS §5.8's COPY FROM gate (`previousContext?.anyExplicit`):
-  // a previous week *number* existing isn't enough, since copyFromPreviousWeek
-  // silently no-ops when that week has nothing to copy. Disabled (mesoId '')
-  // when there's no previous week to check, so it never queries week 0.
-  const { data: prevWeekPlans = [], isLoading: prevWeekPlansLoading } = useWeekPlans(
-    viewWeek > 1 ? (activeMeso?.id ?? '') : '',
-    viewWeek - 1,
-  )
+  // Chunk 8 — the meso's full planned history (every week, every workout),
+  // used below to decide whether COPY WEEK/COPY THIS WORKOUT have anything
+  // to offer (resolveManualCopySource needs a workout's whole history, not
+  // just the immediately preceding week — a partly-deload week can send it
+  // further back). The same hook the scheduler already reuses elsewhere.
+  const { data: allWeekPlans = [] } = useAllWeekPlans(activeMeso?.id ?? '')
 
   const copyPrev = useCopyFromPreviousWeek(activeMeso?.id ?? '', viewWeek)
+  const planWeek = usePlanWeek()
+
+  // Chunk 8 (TASKS.md "Weeks plan themselves... planned the first time
+  // it's opened in Plan") — v2_plan_week is atomic and idempotent, so this
+  // fires on every week this screen shows, with no guard against repeats:
+  // an already-planned week simply plans 0. Today.tsx is the other named
+  // caller, triggered "when [a session] starts" instead of on view.
+  useEffect(() => {
+    if (!activeMeso) return
+    planWeek.mutate({ mesoId: activeMeso.id, weekNumber: viewWeek })
+    // planWeek is a stable mutation object across renders (useMutation);
+    // only a real change of meso or viewed week should re-fire this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMeso?.id, viewWeek])
 
   const schedule = program?.schedule
   const scheduledDays = schedule
@@ -112,14 +126,41 @@ export default function PlanPage() {
 
   const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
 
+  // Chunk 8 — this one workout's own planned history (any week number),
+  // the shape resolveManualCopySource needs.
+  function historyFor(workoutDayId: string): PlannedWeekRecord[] {
+    return allWeekPlans
+      .filter((wp) => wp.workoutDayId === workoutDayId)
+      .map((wp) => ({ weekNumber: wp.weekNumber, isDeload: wp.isDeload }))
+  }
+
+  // Whether COPY WEEK/COPY THIS WORKOUT would actually copy something for
+  // this workout — the same search the manual actions themselves run
+  // (weekPlanService.ts's copyOneWorkoutFromHistory), so the button never
+  // promises a copy it can't deliver. SPEC's empty-state bullet names a
+  // week-dependent run specifically ("A week-dependent run whose weeks
+  // start empty → 'Copy last week'"); a stable program's volume always
+  // comes from the run's own copy (never from a prior week), so copying
+  // wouldn't change its volume and this chunk doesn't offer the action for
+  // one (no real stable program can exist before chunk 11 regardless).
+  function hasManualSourceFor(workoutDayId: string): boolean {
+    if (program?.planningType === 'stable') return false
+    return resolveManualCopySource(historyFor(workoutDayId), viewWeek).kind === 'week'
+  }
+
+  // Empty-state "Copy last week" (SPEC "Plan screen"/"Weeks and copying") —
+  // every scheduled workout already has its own (possibly empty)
+  // v2_week_plans row by the time this renders (the effect above), so
+  // "nothing planned yet" now reads as "every row exists but carries no
+  // exercises" rather than "no rows at all".
   const showCopyButton =
     !isPast &&
     viewWeek > 1 &&
-    weekPlans.length === 0 &&
     !plansLoading &&
     !daysLoading &&
-    !prevWeekPlansLoading &&
-    prevWeekPlans.length > 0
+    weekPlans.length > 0 &&
+    weekPlans.every((wp) => wp.exercises.length === 0) &&
+    scheduledDays.some((d) => hasManualSourceFor(d.workoutDay.id))
 
   // ── No active meso ────────────────────────────────────────────────────────
 
@@ -304,6 +345,7 @@ export default function PlanPage() {
               mesoId={activeMeso.id}
               weekNumber={viewWeek}
               compact={compact}
+              canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
             />
           </>
         )}
@@ -324,9 +366,13 @@ interface PanelProps {
   mesoId: string
   weekNumber: number
   compact: boolean
+  // Chunk 8 — whether COPY THIS WORKOUT has a real source to copy (the
+  // same per-workout backward search PlanPage's own showCopyButton uses),
+  // computed once by the parent (it alone holds the meso-wide history).
+  canCopyFromHistory: boolean
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -349,12 +395,18 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
 
   const sets = weekPlan?.sets ?? []
 
-  // Copy just this workout (TASKS.md §4 item 31 / SPEC §5) — offered
-  // whenever this specific workout has nothing planned yet this week, even
-  // if other workouts in the week already do (which is exactly when the
-  // page-level "copy whole week" button above has already disappeared —
-  // see showCopyButton's weekPlans.length===0 gate).
-  const showCopyWorkoutButton = !isPast && weekNumber > 1 && sets.length === 0
+  // Copy just this workout (TASKS.md §4 item 31 / SPEC §5; chunk 8 revises
+  // the gate itself) — offered whenever this specific workout has nothing
+  // planned yet this week (v2_plan_week already creates its row, possibly
+  // with zero exercises — "a week-dependent run whose weeks start empty",
+  // SPEC — so "nothing planned" is exercises.length === 0, not merely "no
+  // row"), even if other workouts in the week already do (which is exactly
+  // when the page-level "copy whole week" button above has already
+  // disappeared), AND there is actually something non-deload in this
+  // workout's own history to copy (canCopyFromHistory — the same check
+  // showCopyButton uses, computed once by the parent).
+  const showCopyWorkoutButton =
+    !isPast && weekNumber > 1 && (weekPlan?.exercises.length ?? 0) === 0 && canCopyFromHistory
 
   function handleAddSet(pe: ProgramExercise) {
     // Count heads only — a dropset's stage rows must not inflate the next

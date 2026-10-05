@@ -14,6 +14,7 @@ import {
   removeSet,
   copyFromPreviousWeek,
   copyWorkoutFromPreviousWeek,
+  planWeek,
 } from './weekPlanService'
 
 function key(mesoId: string, weekNumber: number) {
@@ -32,6 +33,27 @@ export function useWeekPlans(mesoId: string, weekNumber: number) {
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
+
+// Chunk 8 (TASKS.md "Weeks plan themselves, from the right source") — calls
+// v2_plan_week. Callers: PlanPage.tsx, on every week it shows ("the first
+// time it's opened in Plan"); TodayPage.tsx, right before starting or
+// redoing a session ("or when it starts, whichever comes first"). Safe to
+// call on an already-planned week — it is atomic and idempotent, so this
+// hook carries no guard of its own against calling it more than once;
+// invalidates the two query keys a successful plan can change (this exact
+// week's plans, and the meso-wide list the scheduler/missed-session
+// detection and the Plan screen's copy-button history both read), using
+// the mutation's own variables rather than a closed-over mesoId/weekNumber,
+// so one shared hook instance can be reused for different weeks.
+export function usePlanWeek() {
+  return useMutation({
+    mutationFn: ({ mesoId, weekNumber }: { mesoId: string; weekNumber: number }) => planWeek(mesoId, weekNumber),
+    onSuccess: (_count, { mesoId, weekNumber }) => {
+      queryClient.invalidateQueries({ queryKey: key(mesoId, weekNumber) })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
 
 export function useSetDeload(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)

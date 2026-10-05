@@ -9,6 +9,7 @@ import type {
   MuscleSubgroup,
   MovementPattern,
   ProgramKind,
+  PlanningType,
 } from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -24,6 +25,9 @@ type DbProgram = {
   // weight_unit below) — a program predating 027 reads as 'saved', exactly
   // the default 027 gave every existing row.
   kind?: ProgramKind
+  // Absent until migration 027 — chunk 8's own field, same fallback. Reads
+  // as 'week_dependent', 027's own column default.
+  planning_type?: PlanningType
 }
 
 type DbWorkoutDay = {
@@ -77,6 +81,7 @@ function toProgram(row: DbProgram): Program {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     kind: row.kind ?? 'saved',
+    planningType: row.planning_type ?? 'week_dependent',
   }
 }
 

@@ -190,6 +190,14 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: [weekPlan], isLoading: false }),
+  // Chunk 8 — the meso-wide history query PlanPage now reads for its
+  // manual-copy-button gating; [weekPlan] is enough for this fixture (this
+  // test's weekPlan already has exercises, so every button-visibility
+  // branch chunk 8 added evaluates to false here, same as before this
+  // chunk — see the chunk 8 report for why this fixture's render is
+  // unaffected) and usePlanWeek's mutate is never awaited by this render.
+  useAllWeekPlans: () => ({ data: [weekPlan], isLoading: false }),
+  usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),

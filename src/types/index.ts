@@ -35,6 +35,14 @@ export type WeightUnit = 'kg' | 'lbs'
 // which is a 'run' program for an active run's copy).
 export type ProgramKind = 'saved' | 'run'
 
+// v2_programs.planning_type (migration 027, chunk 8 — SPEC.md "Weeks and
+// copying") — decides a new week's volume source (weekSources.ts):
+// 'stable' always re-derives it from the run's own copy; 'week_dependent'
+// (the column default) copies the last planned non-deload week beyond
+// week 1. No saved-program UI sets this yet — every program is
+// 'week_dependent' until chunk 11's planner can create a stable one.
+export type PlanningType = 'stable' | 'week_dependent'
+
 // ─── Exercise ─────────────────────────────────────────────────────────────────
 
 // The two stored values (exercises.status, migration 019, not null default
@@ -175,6 +183,10 @@ export interface Program {
   // Optional for the same reason as WorkoutDay.sourceWorkoutDayId above —
   // frozen Coach code builds placeholder Program values that predate it.
   kind?: ProgramKind
+  // Optional for the same reason — absent on a placeholder, and on any
+  // real row read before migration 027. Undefined is treated as
+  // 'week_dependent' (the column default) wherever this is read.
+  planningType?: PlanningType
 }
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────
@@ -350,6 +362,13 @@ export interface UserSettings {
   weightUnit: WeightUnit
   autoFinishMinutes: number | null  // null = auto-finish disabled
   measureSetTime: boolean    // global Start Set toggle (v3 §2.2 / SPEC §4.2)
+  // v2_user_settings.week_start (migration 027, chunk 8 — SPEC.md "Weeks
+  // and copying": "'copy last week' is the default; a setting lets weeks
+  // start empty instead"). Governs only the AUTOMATIC fill of a
+  // week-dependent run's week beyond week 1 (weekSources.ts); the manual
+  // "Copy last week"/"Copy this workout" actions always try to copy,
+  // regardless of this setting.
+  weekStart: 'copy' | 'empty'
 }
 
 // ─── Coach (Daily Session Analysis) ────────────────────────────────────────────
