@@ -26,6 +26,16 @@ interface CachedWeekPlan {
   weekNumber: number
   isDeload: boolean
   sets: unknown // serialised WeekPlanSet[]
+  // v2_week_plan_exercises (chunk 7, TASKS.md "Each planned session owns
+  // its exercise list") — this week's own exercise list (serialised
+  // ProgramExercise[] with joined exercise data, same shape as
+  // CachedWorkoutDay.exercises above), primed by offlineCache.ts alongside
+  // sets. Plain field, not an index — same no-version-bump precedent as
+  // stageIndex/isWarmup/setSeconds/enteredUnit on CachedSetLog below. A row
+  // cached before this shipped won't have it; readers must treat it as
+  // absent (undefined), not crash, and fall back to CachedWorkoutDay's own
+  // program-exercises list.
+  exercises?: unknown
 }
 
 interface CachedSession {

@@ -60,7 +60,9 @@ export async function primeOfflineCache(params: {
     exercises: programExercises,
   })
 
-  // 2. Cache week plan with sets
+  // 2. Cache week plan with sets and its own exercise list (chunk 7,
+  // TASKS.md "Each planned session owns its exercise list" — db.ts's
+  // CachedWeekPlan.exercises).
   if (weekPlan) {
     await db.week_plans.put({
       id: weekPlan.id,
@@ -69,6 +71,7 @@ export async function primeOfflineCache(params: {
       weekNumber: weekPlan.weekNumber,
       isDeload: weekPlan.isDeload,
       sets: weekPlan.sets,
+      exercises: weekPlan.exercises,
     })
   }
 

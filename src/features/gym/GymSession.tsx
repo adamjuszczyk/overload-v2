@@ -152,7 +152,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const isOnline = useOnlineStatus()
 
   const { data: session } = useActiveSession(sessionId)
-  const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
+  // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
+  // week's own v2_week_plan_exercises list when a week plan exists for this
+  // session (weekPlan.exercises); the program's own exercises directly
+  // otherwise (no week plan — same source this screen always read before
+  // this chunk). fallbackProgramExercises keeps its own name/identity below
+  // (the priming effect and the offline-cache-for-this-workout-day branch
+  // both still key off the PROGRAM's own list, never the week-preferring
+  // one — see each effect's own comment).
+  const { data: fallbackProgramExercises = [] } = useProgramExercises(workoutDay.id)
+  const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
   // Swap exercise for this session only (SPEC v1.1 "Part C") — the
   // structural link (migration 025, 2026-09-03) between a swapped-out slot
   // and its replacement. Read here (not derived from local state) so a
@@ -177,21 +186,47 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   useAutoFinishSession(session, weekPlan)
   const duration = useSessionDuration(session)
 
-  // Prime the Dexie cache once exercises are loaded and we're online
+  // Prime the Dexie cache once exercises are loaded and we're online. Keyed
+  // off fallbackProgramExercises (the PROGRAM's own list), not the
+  // week-preferring `programExercises` above — db.workout_days is cached by
+  // workoutDayId alone, with no week number, so caching the week's own list
+  // there would leak one week's exercises into every other week's offline
+  // fallback. primeOfflineCache separately caches weekPlan.exercises onto
+  // the week-scoped cache entry (db.week_plans, offlineCache.ts) when a
+  // week plan exists — this gating condition and dependency array are
+  // otherwise unchanged from before this chunk (fallbackProgramExercises
+  // ≡ the pre-chunk-7 `programExercises`).
   useEffect(() => {
-    if (!isOnline || !user || programExercises.length === 0) return
-    primeOfflineCache({ userId: user.id, sessionId, workoutDay, weekPlan, programExercises }).catch(
-      () => {}, // non-critical — best effort
-    )
-  }, [isOnline, user?.id, sessionId, workoutDay.id, programExercises.length])
+    if (!isOnline || !user || fallbackProgramExercises.length === 0) return
+    primeOfflineCache({
+      userId: user.id,
+      sessionId,
+      workoutDay,
+      weekPlan,
+      programExercises: fallbackProgramExercises,
+    }).catch(() => {}) // non-critical — best effort
+  }, [isOnline, user?.id, sessionId, workoutDay.id, fallbackProgramExercises.length])
 
-  // When offline and Supabase returns nothing, fall back to Dexie
+  // When offline and Supabase returns nothing, fall back to Dexie — the
+  // cached week plan's own exercise list first (same week-preferring order
+  // as the online branch above), the cached workout day's program
+  // exercises otherwise (no week plan, or nothing cached for it yet).
   useEffect(() => {
     if (isOnline || programExercises.length > 0) return
-    db.workout_days.get(workoutDay.id).then((cached) => {
-      if (cached?.exercises) setCachedExercises(cached.exercises as ProgramExercise[])
-    })
-  }, [isOnline, programExercises.length, workoutDay.id])
+    const fromWorkoutDayCache = () =>
+      db.workout_days.get(workoutDay.id).then((cached) => {
+        if (cached?.exercises) setCachedExercises(cached.exercises as ProgramExercise[])
+      })
+    if (weekPlan) {
+      db.week_plans.get(weekPlan.id).then((cachedPlan) => {
+        const cachedPlanExercises = cachedPlan?.exercises as ProgramExercise[] | undefined
+        if (cachedPlanExercises && cachedPlanExercises.length > 0) setCachedExercises(cachedPlanExercises)
+        else fromWorkoutDayCache()
+      })
+      return
+    }
+    fromWorkoutDayCache()
+  }, [isOnline, programExercises.length, workoutDay.id, weekPlan?.id])
 
   const allCurrentLogs = session?.setLogs ?? []
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises

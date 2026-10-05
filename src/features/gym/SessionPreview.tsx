@@ -25,7 +25,12 @@ export default function SessionPreview({
   onBack,
   onStart,
 }: SessionPreviewProps) {
-  const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
+  // Chunk 7 — same week-preferring source as PlanPage.tsx's WorkoutDayPanel
+  // and GymSession.tsx: the week's own exercise list when a week plan
+  // exists for this preview, the program's own exercises otherwise (no
+  // plan for this week yet — unaffected by this chunk).
+  const { data: fallbackProgramExercises = [] } = useProgramExercises(workoutDay.id)
+  const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
   const sortedExercises = [...programExercises].sort((a, b) => a.position - b.position)
 
   // No active session yet — currentSessionId is null, same as the old

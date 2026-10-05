@@ -47,6 +47,7 @@ const TABLES = [
   'v2_sessions',
   'v2_set_logs',
   'v2_user_settings',
+  'v2_week_plan_exercises',
   'v2_week_plan_sets',
   'v2_week_plans',
   'v2_workout_days',
