@@ -176,8 +176,10 @@ export function formatRepTarget(target: RepTarget): string {
 }
 
 // Conservative-parsing judgement calls (the brief leaves these open):
-// - 'AMRAP' / 'none' must match case exactly as written above; lowercase
-//   ('amrap') or mixed case is rejected, not folded.
+// - Per DECISIONS 34 (owner, 2026-10-04): 'AMRAP' / 'none' accept any input
+//   casing ('amrap', 'Amrap', 'aMrAp', 'NONE', 'None', ...) and are folded
+//   to the matching type; formatRepTarget still only ever emits the
+//   canonical 'AMRAP' / 'none' text.
 // - Only the input's outer whitespace is trimmed; no internal whitespace is
 //   accepted around the separator ("8 - 12" is rejected, not reformatted).
 // - The range separator accepts a hyphen or an en dash on input (the brief,
@@ -195,8 +197,8 @@ const REP_NUMBER_PATTERN = /^\d+$/
 
 export function parseRepTarget(input: string): RepTarget | null {
   const trimmed = input.trim()
-  if (trimmed === REP_TARGET_AMRAP_TEXT) return { type: 'amrap' }
-  if (trimmed === REP_TARGET_NONE_TEXT) return { type: 'none' }
+  if (trimmed.toUpperCase() === REP_TARGET_AMRAP_TEXT) return { type: 'amrap' }
+  if (trimmed.toLowerCase() === REP_TARGET_NONE_TEXT) return { type: 'none' }
 
   const rangeMatch = REP_RANGE_PATTERN.exec(trimmed)
   if (rangeMatch) {
@@ -225,22 +227,24 @@ export const TEMPO_FIELD_COUNT = 4
 export const TEMPO_MAX_LENGTH = 20
 
 // Conservative-parsing judgement calls (the brief leaves these open):
-// - Only uppercase 'X' is accepted, matching SPEC's own literal written
-//   form; lowercase 'x' is rejected, not folded.
+// - Per DECISIONS 34 (owner, 2026-10-04): lowercase 'x' is accepted and
+//   normalised to uppercase 'X' on output — SPEC's own written form stays
+//   the canonical shape every caller sees, while typing the easy lowercase
+//   key isn't rejected.
 // - Only the input's outer whitespace is trimmed before validating; no
 //   internal whitespace is accepted ("3 - 1 - 1 - 0" is rejected).
 // - The length check (<= 20) runs on the trimmed string — "normalising"
-//   here is exactly that outer trim and nothing else; a validly-formatted
-//   tempo is otherwise returned unchanged.
+//   here is exactly that outer trim, plus upper-casing an 'x' field; a
+//   validly-formatted tempo is otherwise returned unchanged.
 // - Fields are separated by a plain hyphen only — unlike rep targets, SPEC
 //   never shows an en dash for tempo, so none is accepted here.
-// - Each field is one or more ASCII digits, or exactly 'X' — never mixed
-//   ('3X'), never empty, never more than one letter.
+// - Each field is one or more ASCII digits, or exactly one 'X'/'x' — never
+//   mixed ('3X'), never empty, never more than one letter.
 // - An empty or whitespace-only input returns null, the same as any other
 //   invalid string. Tempo is optional (SPEC); a caller treats a genuinely
 //   blank field as "no tempo" before calling this, rather than reading that
 //   meaning into a null return.
-const TEMPO_FIELD_PATTERN = /^(\d+|X)$/
+const TEMPO_FIELD_PATTERN = /^(\d+|[Xx])$/
 
 export function normaliseTempo(input: string): string | null {
   const trimmed = input.trim()
@@ -250,7 +254,7 @@ export function normaliseTempo(input: string): string | null {
   if (fields.length !== TEMPO_FIELD_COUNT) return null
   if (!fields.every((field) => TEMPO_FIELD_PATTERN.test(field))) return null
 
-  return trimmed
+  return fields.map((field) => field.toUpperCase()).join('-')
 }
 
 // ─── Deload rules — starting values ────────────────────────────────────────
@@ -283,21 +287,19 @@ export const DEFAULT_DELOAD_SETS_RULE = {
   rounding: 'down',
 } as const satisfies DeloadSetsRuleDefaults
 
-// Deliberately missing `percent`. TASKS.md states only that the weight rule
-// "starts at rounding down to 2.5 kg" when switched on — rounding and step
-// only. The deload-rules shape shown elsewhere in TASKS.md includes
-// `"percent": 90` in its example, but that is illustrating the JSON shape's
-// fields, not stated as the switched-on starting value, and no default
-// percent is given anywhere in the brief. Inventing a number here is a real
-// product decision, not a formatting detail — left out on purpose and
-// flagged in the chunk 2 report rather than guessed at.
+// Starting percentage per DECISIONS 33 (owner, 2026-10-04): the weight
+// deload rule starts at 75%. Field order and naming match the JSON shape
+// the plan uses for the weight rule (TASKS.md "Data models"): `{ "percent",
+// "rounding", "step", "stepUnit" }`.
 export interface DeloadWeightRuleDefaults {
+  percent: number
   rounding: DeloadRounding
   step: number
   stepUnit: 'kg' | 'lbs'
 }
 
 export const DEFAULT_DELOAD_WEIGHT_RULE = {
+  percent: 75,
   rounding: 'down',
   step: 2.5,
   stepUnit: 'kg',

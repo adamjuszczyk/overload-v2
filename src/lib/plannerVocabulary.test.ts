@@ -206,6 +206,22 @@ describe('parseRepTarget — accepts', () => {
     expect(parseRepTarget('none')).toEqual({ type: 'none' })
   })
 
+  it('AMRAP in any input casing, folded to the type (DECISIONS 34)', () => {
+    expect(parseRepTarget('amrap')).toEqual({ type: 'amrap' })
+    expect(parseRepTarget('Amrap')).toEqual({ type: 'amrap' })
+    expect(parseRepTarget('aMrAp')).toEqual({ type: 'amrap' })
+  })
+
+  it('none in any input casing, folded to the type (DECISIONS 34)', () => {
+    expect(parseRepTarget('NONE')).toEqual({ type: 'none' })
+    expect(parseRepTarget('None')).toEqual({ type: 'none' })
+  })
+
+  it('formatRepTarget still only ever emits the canonical casing', () => {
+    expect(formatRepTarget({ type: 'amrap' })).toBe('AMRAP')
+    expect(formatRepTarget({ type: 'none' })).toBe('none')
+  })
+
   it('trims only outer whitespace', () => {
     expect(parseRepTarget('  8  ')).toEqual({ type: 'number', value: 8 })
     expect(parseRepTarget('  AMRAP  ')).toEqual({ type: 'amrap' })
@@ -250,13 +266,6 @@ describe('parseRepTarget — rejects', () => {
     expect(parseRepTarget('8-8')).toBeNull()
   })
 
-  it('wrong case for AMRAP or none', () => {
-    expect(parseRepTarget('amrap')).toBeNull()
-    expect(parseRepTarget('Amrap')).toBeNull()
-    expect(parseRepTarget('NONE')).toBeNull()
-    expect(parseRepTarget('None')).toBeNull()
-  })
-
   it('internal whitespace around the separator', () => {
     expect(parseRepTarget('8 - 12')).toBeNull()
     expect(parseRepTarget('8 –12')).toBeNull()
@@ -296,6 +305,14 @@ describe('normaliseTempo — accepts', () => {
     expect(normaliseTempo('X-1-X-0')).toBe('X-1-X-0')
   })
 
+  it('a lowercase x field, normalised to uppercase (DECISIONS 34)', () => {
+    expect(normaliseTempo('3-1-x-0')).toBe('3-1-X-0')
+  })
+
+  it('more than one lowercase x field, normalised to uppercase', () => {
+    expect(normaliseTempo('x-1-x-0')).toBe('X-1-X-0')
+  })
+
   it('trims outer whitespace', () => {
     expect(normaliseTempo('  3-1-1-0  ')).toBe('3-1-1-0')
   })
@@ -318,10 +335,6 @@ describe('normaliseTempo — rejects', () => {
 
   it('5 fields', () => {
     expect(normaliseTempo('3-1-1-0-1')).toBeNull()
-  })
-
-  it('lowercase x', () => {
-    expect(normaliseTempo('3-1-x-0')).toBeNull()
   })
 
   it('a mixed digit+letter field ("3X")', () => {
@@ -357,11 +370,11 @@ describe('DEFAULT_DELOAD_SETS_RULE', () => {
 })
 
 describe('DEFAULT_DELOAD_WEIGHT_RULE', () => {
-  it('matches TASKS.md\'s starting values exactly: down, 2.5, kg (percent deliberately omitted)', () => {
-    expect(DEFAULT_DELOAD_WEIGHT_RULE).toEqual({ rounding: 'down', step: 2.5, stepUnit: 'kg' })
+  it('matches the starting values exactly: 75%, down, 2.5, kg (DECISIONS 33)', () => {
+    expect(DEFAULT_DELOAD_WEIGHT_RULE).toEqual({ percent: 75, rounding: 'down', step: 2.5, stepUnit: 'kg' })
   })
 
-  it('does not include a percent field — no default is stated anywhere in the brief', () => {
-    expect('percent' in DEFAULT_DELOAD_WEIGHT_RULE).toBe(false)
+  it('pins the starting percentage at 75 (DECISIONS 33, owner, 2026-10-04)', () => {
+    expect(DEFAULT_DELOAD_WEIGHT_RULE.percent).toBe(75)
   })
 })
