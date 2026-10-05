@@ -4,7 +4,8 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:58 UTC, chunk 8 boundary — chunks 1–8 merged and live. Nothing is held; no PR is open.*
 
 **Decisions**
-- Go-ahead to build chunk 9 (edit a week's exercises), then 10 (priorities). Recommendation: yes; both are unblocked (chunk 11's question, 44, is answered). Blocked: the build.
+- 48 — Should adding or removing an exercise in a week also offer "only this week"? (SPEC line 212 vs 224.) Recommendation: (a) swap and reorder only, as SPEC defines the tick. Blocked: nothing (chunk 9 built with (a)).
+- Chunk 12's blocking decision, asked early so it doesn't stop the build: existing suggested-reps values — (a) back up and discard, (b) convert into rep targets on the active run's unlogged planned sets that have none, (c) other. Recommendation: (a), because rep targets are planned per week from chunk 11 on. (b) would invent targets you never set, though it keeps the information visible.
 
 **To-dos**
 - 46 — Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -39,6 +40,22 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 48 Should adding or removing an exercise in a week also offer "only this week"?
+Severity: deferred
+Chunk: 9
+**Ask:** SPEC defines "only this week" as a tick on **swap and reorder** (Weeks and copying, line 212). Its add/remove rule (line 224) also says week-dependent adds and removes carry forward "unless 'only this week' is ticked". Should add and remove get the tick too?
+**Options:**
+- (a) **Swap and reorder only (as built):** adds and removes in a week-dependent run always carry forward; to undo one, remove or re-add it in the next week. Stable runs: every week edit is a one-off anyway.
+- (b) **Also add and remove:** "added only this week" is not copied forward, and "removed only this week" comes back next week. This needs a new column on `v2_week_plan_exercises` (additive migration). It also needs a rule for which sets the returning exercise gets: the last week it had sets, or the run copy's sets.
+**Recommendation:** (a). It matches SPEC's own definition of the tick and needs no new schema. "Removed only this week" in (b) also needs a rule for where the returning exercise's sets come from, which SPEC doesn't give.
+**Blocked until answered:** nothing. Chunk 9 is built with (a); (b) would be an addition later.
+**Answer:**
+**Evidence:**
+What happened: while briefing chunk 9 I compared SPEC with TASKS' data model. `carry_program_exercise_id` and `carry_position` cover an only-this-week swap and reorder. No column can mark a row as "don't copy forward" (an added-only-this-week exercise) or keep a removed slot for next week. SPEC line 212 and line 224 disagree on whether add/remove get the tick.
+A competent default would: follow SPEC's own definition (line 212) — doesn't apply because: line 224 suggests you may want the tick on add/remove too, which changes the schema.
+Cost of deferral: if (b), one additive migration plus the tick on two more actions, plus the copy rule in `v2_plan_week` and the client copy. Nothing built under (a) is thrown away.
+Provisional path taken: (a).
 
 ### 47 Chunk 8 live check: weeks plan themselves (Adam's steps)
 Severity: deferred
