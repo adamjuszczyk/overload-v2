@@ -1,11 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 7 boundary (stacked mode: nothing merges tonight).*
+*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 8 boundary — build stopped at decision 42 (stacked mode: nothing merged).*
 
 **Decisions**
 - 40 — Merge migration 028 (PR #22: runs own a copy of their program; your 3 programs become their runs' copies and get saved clones). Recommendation: merge when tonight's hold ends, with your before/after counts, then the code PR #23 straight after its deploy; don't start a mesocycle in between. Blocked: chunk 6 going live (chunks 7+ keep stacking).
 - 41 — Merge migration 029 (PR #24: each week plan gets its own exercise list, backfilled), then the chunk 7 code (#25), then follow-up migration 030 that re-runs the backfill (catches week plans the old app creates in between). Recommendation: in that order, after 40. Blocked: chunk 7 going live (chunks 8+ keep stacking).
+- 42 — When a new week copies forward, should an empty (but non-deload) last occurrence count as the source? Recommendation: no, skip empty like deload (option b). Blocked: chunk 8 (PRs #27 migration 031, #28 code, unmerged) and the build — stopped here.
 
 **To-dos**
 - 35 — Chunk 3 live check: a planned dropset in a real session at phone width, screenshots, one SQL query. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -41,6 +42,23 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 42 Does an empty week count as "the last planned week" when a new week copies forward?
+Severity: blocking
+Chunk: 8
+**Ask:** When a week-dependent week is planned automatically (first open in Plan, or first session), it copies each workout from "the last planned week" (SPEC), skipping deload sessions. Should a workout's last occurrence that is planned but **empty** (no exercises/sets) also be skipped?
+**Options:**
+- (a) **Literal (as built):** an empty, non-deload occurrence is a valid source, so the next week comes out empty too, and stays empty week after week until you fill one by hand or use COPY.
+- (b) **Skip empty like deload:** search back past empty and deload occurrences to the last one with content; empty only if there is none (or when `week_start = empty`).
+**Recommendation:** (b). An empty session has nothing to carry forward. With (a), one cleared week (travel, illness) or an old empty plan row silently empties every following week, which defeats "copy last week is the default". (b) costs a small change to `weekSources.ts` and `v2_plan_week` before anything merges.
+**Blocked until answered:** chunk 8's PRs (built, unmerged) and the build: chunks 9+ build on chunk 8's source rules, so the build stops here, per tonight's instruction.
+**After you answer:** if (b), the builder changes `weekSources.ts` and `v2_plan_week` on the chunk 8 branches and I re-verify. Then, after 40 and 41, merge #27 (migration 031, flagged, so yours; it adds a function only, no counts) and #28 (code) once its deploy succeeds. Live steps for chunk 8 come as a deferred entry once it's live: first open plans the week once, reopen adds none, a first session plans its week, NEW WEEK STARTS = EMPTY gives empty weeks with COPY offered, and a deload session isn't copied.
+**Answer:**
+**Evidence:**
+What happened: chunk 8's builder implemented SPEC's "Source of a new week's volume: week-dependent → the last planned week… Deload sessions are never a copy source" literally. Only deload is skipped. In its scratch run, a week left empty (week 4) made week 5 of both workouts empty. SPEC is silent on empty weeks (Escalation 14). It matters for your data because chunk 8 plans weeks automatically, and old empty plan rows may exist. TASKS.md's scratch fixture had one, and you can count yours with:
+`select count(*) from v2_week_plans wp where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and not exists (select 1 from v2_week_plan_sets s where s.week_plan_id = wp.id);`
+A competent default would: follow the spec's literal wording — doesn't apply because: the literal reading has a visible, compounding effect on what your future weeks contain, and SPEC doesn't say which you want.
+Cost of deferral: n/a (blocking).
 
 ### 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
 Severity: blocking

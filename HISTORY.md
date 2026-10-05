@@ -22907,3 +22907,12 @@ Previous wording, verbatim:
 - "- **Next migration number: 029** (028 is on `build/chunk-6-migration`, unmerged); then 030, 031 …"
 - "Blocking DECISIONS 40: Adam merges #22 with before/after counts, then #23 right after its deploy (no mesocycle start in between)."
 — chunk 7 built and verified, unmerged (PR #24 migration, #25 code); 030 follow-up.
+
+---
+
+## 2026-10-05 (chunk 8 boundary, build stopped at DECISIONS 42) — Moved out of CONTEXT.md (no longer true)
+
+- "- Current chunk: 8, stacked on `build/chunk-7-rerun` (030). Chunks 1–5 are merged and live."
+- "- Chunk 8 (in progress): `build/chunk-8-migration` (031, `v2_plan_week`) and `build/chunk-8`, stacked on `build/chunk-7-rerun`."
+- "- **Next migration number: 031** (028 on `build/chunk-6-migration`, 029 on `build/chunk-7-migration`, 030 on `build/chunk-7-rerun`, all unmerged); then 032 …"
+— chunk 8 built and verified, unmerged (PR #27 migration, #28 code); build stopped for decision 42.
