@@ -4,13 +4,13 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:25 UTC — the hold is lifted for 40 and 41: Adam merges in order, the reviewer confirms each deploy green before the next merge. Chunk 8 being changed for 42 (b).*
 
 **Decisions**
-- 40 — Merge migration 028 (PR #22), then the chunk 6 code (#23) after its deploy. No backup or counts (your call); 028's manifest is the rollback. G14 checked: no change to chunk 6. Recommendation: merge when tonight's hold ends; don't start a mesocycle between the two merges. Blocked: chunk 6 going live.
+- 40 — 028 (#22) merged and live (`71247e7`, 2026-10-05). Next: merge #23 (chunk 6 code; ready: base retargeted, master merged in, own CI green). Don't start a mesocycle until #23 is live.
 - 41 — Merge migration 029 (#24), then the chunk 7 code (#25), then follow-up 030 (#26). Recommendation: in that order, after 40. Blocked: chunk 7 going live.
+- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: after 41, each when I say the previous deploy is green. Blocked: chunk 8 going live.
 
 **To-dos**
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 
-*Chunk 8's merge entry (migration 031 + code, after 42 (b)) follows once I've re-verified the builder's change.*
 
 ## Format for all new entries
 
@@ -40,6 +40,33 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 45 Merge migration 031 (weeks plan themselves) and the chunk 8 code
+Severity: blocking
+Chunk: 8
+**Ask:** After 41 is done (029, #25 and 030 live), merge PR #27 (migration 031). Then, once its deploy succeeds, merge PR #28 (chunk 8 code). `check-migration` flags 031, so the merge is yours. It adds one function and changes no data, so no counts are needed.
+**Options:** (a) merge #27 → #28 in that order, each when I say its predecessor's deploy is green; (b) hold.
+**Recommendation:** (a). 42 (b) is built and verified (Evidence).
+**Blocked until answered:** chunk 8 going live. Chunks 9 and 10 can be built meanwhile once you say so.
+**Steps:**
+1. When I say 030's deploy is green, merge #27. Before that I merge master into its branch, re-run every check, and wait for its own CI.
+2. I check the deploy and probe `v2_plan_week` live: an anonymous call must be refused before it writes anything.
+3. Merge #28 when I say. After its deploy, in the app (take the update banner):
+   - opening Plan on a week not yet planned plans it once, and reopening adds nothing;
+   - your first session of a new week plans that week;
+   - Settings → NEW WEEK STARTS = EMPTY gives empty weeks, with COPY offered;
+   - a deload session isn't copied into the next week.
+**Answer:**
+**Evidence:**
+What happened: chunk 8 was built and verified, then changed for 42 (b) on `2d26e90` (031, md5 `214fd8706ee049a00a9a1807b776b438`) and `95651e3` (code). Reviewer's own checks on `95651e3`:
+- typecheck; 738 tests; build; 96 script tests; frozen code; replay 32/32; embeds 25/25.
+- Removing the empty skip fails 14 tests; restored, md5 matched.
+- Independent scratch fixture, three workouts with weeks 1–3, then `v2_plan_week(meso, 4)` as the user:
+  - the new 031 copies week 2 past an empty week 3 (105), and week 1 past deload plus empty (50);
+  - all-empty stays empty; re-planning adds 0;
+  - the old 031 gives all three empty, so the fixture tells the two versions apart.
+A competent default would: merge a green, function-only migration — doesn't apply because: check-migration flags it (Escalations 8, 12).
+Cost of deferral: n/a (blocking).
 
 
 ### 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
@@ -190,7 +217,7 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 
 ### 42 Does an empty week count as "the last planned week" when a new week copies forward?
 - What: Should a workout's empty (non-deload) last occurrence be a copy source for a new week?
-- Answer: (b) skip an empty last occurrence, the same as deload. Builder is changing `v2_plan_week` (031) and `weekSources.ts` on the chunk 8 branches; re-verification and the merge entry follow.
+- Answer: (b) skip an empty last occurrence, the same as deload. Done on `2d26e90` (031, md5 `214fd870…`) and `95651e3`; reviewer-verified; merge is entry 45.
 - Date: 2026-10-05
 
 ### 43 G14 reappeared: one workout on several weekdays (Adam's second account)
