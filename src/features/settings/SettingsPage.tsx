@@ -339,6 +339,25 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* ── Planning ─────────────────────────────────────────────────── */}
+        {/* v2_user_settings.week_start (chunk 8, SPEC "Weeks and copying")
+            — a week-dependent run's weeks beyond week 1 either copy the
+            last planned week automatically (the default) or start empty,
+            left for "Copy last week" to fill in by hand. No effect on a
+            stable program, which always re-derives its volume from the
+            run's own copy. */}
+        <section>
+          {sectionTitle('PLANNING')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            <p className="text-xs mb-2.5" style={labelStyle}>NEW WEEK STARTS</p>
+            {chipRow(
+              [{ value: 'copy', label: 'COPY' }, { value: 'empty', label: 'EMPTY' }],
+              settings.weekStart,
+              (weekStart) => set({ weekStart }),
+            )}
+          </div>
+        </section>
+
         {/* ── Account ──────────────────────────────────────────────────── */}
         <section>
           {sectionTitle('ACCOUNT')}

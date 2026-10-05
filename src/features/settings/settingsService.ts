@@ -11,6 +11,7 @@ type DbSettings = {
   weight_unit: string
   auto_finish_minutes: number | null
   measure_set_time?: boolean  // absent until migration 005 has been applied
+  week_start?: string  // absent until migration 027 has been applied
 }
 
 function toUserSettings(row: DbSettings): UserSettings {
@@ -26,6 +27,9 @@ function toUserSettings(row: DbSettings): UserSettings {
     // rather than null, since the column doesn't exist yet.
     autoFinishMinutes: row.auto_finish_minutes === undefined ? 5 : row.auto_finish_minutes,
     measureSetTime: row.measure_set_time ?? false,
+    // Falls back to the column default ('copy' — SPEC G4) until migration
+    // 027 has been run, same "key missing" convention as the others above.
+    weekStart: (row.week_start as UserSettings['weekStart'] | undefined) ?? 'copy',
   }
 }
 
@@ -58,6 +62,7 @@ export async function upsertSettings(
     weight_unit: settings.weightUnit,
     auto_finish_minutes: settings.autoFinishMinutes,
     measure_set_time: settings.measureSetTime,
+    week_start: settings.weekStart,
   }
 
   const { error } = await supabase

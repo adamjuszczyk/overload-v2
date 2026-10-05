@@ -14,6 +14,7 @@ import {
   removeSet,
   copyFromPreviousWeek,
   copyWorkoutFromPreviousWeek,
+  planWeek,
 } from './weekPlanService'
 
 function key(mesoId: string, weekNumber: number) {
@@ -32,6 +33,71 @@ export function useWeekPlans(mesoId: string, weekNumber: number) {
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
+
+// Chunk 8 (TASKS.md "Weeks plan themselves, from the right source") — calls
+// v2_plan_week. Callers: PlanPage.tsx, on every week it shows ("the first
+// time it's opened in Plan"); TodayPage.tsx/MissedSessionPrompt.tsx, right
+// before starting a session ("or when it starts, whichever comes first" —
+// see planWeekThenFindId below, which both use). Safe to call on an
+// already-planned week — it is atomic and idempotent, so this hook carries
+// no guard of its own against calling it more than once; invalidates the
+// two query keys a successful plan can change (this exact week's plans,
+// and the meso-wide list the scheduler/missed-session detection and the
+// Plan screen's copy-button history both read), using the mutation's own
+// variables rather than a closed-over mesoId/weekNumber, so one shared
+// hook instance can be reused for different weeks.
+//
+// networkMode: 'always' (CONTEXT.md: "all write mutations use
+// networkMode: 'always'"; useSession.ts's useDeleteSetLog states the same
+// reasoning) — under the default 'online', TanStack Query PAUSES an
+// offline mutation indefinitely rather than running it, so mutateAsync
+// never settles. Found in review: that left TodayPage/MissedSessionPrompt's
+// "plan then start" hanging forever on "STARTING…" offline, when TASKS.md
+// explicitly says a week started offline just starts without a plan, as
+// today. 'always' attempts the call regardless of connectivity, so an
+// offline attempt fails fast with a normal network error instead — which
+// planWeekThenFindId below catches and falls back from, never blocking or
+// failing the start itself.
+export function usePlanWeek() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ mesoId, weekNumber }: { mesoId: string; weekNumber: number }) => planWeek(mesoId, weekNumber),
+    onSuccess: (_count, { mesoId, weekNumber }) => {
+      queryClient.invalidateQueries({ queryKey: key(mesoId, weekNumber) })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+// Shared by TodayPage.tsx (starting/redoing today's session) and
+// MissedSessionPrompt.tsx (DO IT NOW on a missed session) — "or when it
+// starts, whichever comes first" (TASKS.md), made best-effort: planning is
+// never allowed to block or fail the start itself. If the plan call or the
+// re-read rejects (offline, a real error, anything), this falls back to
+// whatever weekPlanId the caller already had — createSession then runs
+// exactly as it does today, unplanned, per TASKS.md's own "a week started
+// offline — that session starts without a plan, as today". `fetchPlans` is
+// the real fetchWeekPlans by default; injectable so a test can supply a
+// fake without a network round trip, the same seam weekPlanService.ts's
+// insertPlanSet/upsertPlanExercises already use. `planWeek` is typed to the
+// one method actually used (mutateAsync), so a test fake needs nothing
+// else — but a real usePlanWeek() result satisfies it too.
+export async function planWeekThenFindId(
+  mesoId: string,
+  weekNumber: number,
+  workoutDayId: string,
+  fallback: string | null,
+  planWeekMutation: { mutateAsync: (vars: { mesoId: string; weekNumber: number }) => Promise<number> },
+  fetchPlans: (mesoId: string, weekNumber: number) => Promise<{ id: string; workoutDayId: string }[]> = fetchWeekPlans,
+): Promise<string | null> {
+  try {
+    await planWeekMutation.mutateAsync({ mesoId, weekNumber })
+    const plans = await fetchPlans(mesoId, weekNumber)
+    return plans.find((p) => p.workoutDayId === workoutDayId)?.id ?? fallback
+  } catch {
+    return fallback
+  }
+}
 
 export function useSetDeload(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)

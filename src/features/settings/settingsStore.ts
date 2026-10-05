@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   weightUnit: 'kg',
   autoFinishMinutes: 5,
   measureSetTime: false,
+  weekStart: 'copy',
 }
 
 interface SettingsStoreState extends UserSettings {

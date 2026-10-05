@@ -1,7 +1,8 @@
 import { X } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, differenceInCalendarWeeks } from 'date-fns'
 import type { MissedSession, Mesocycle } from '../../types'
 import { useCreateSession, useSkipMissedSession } from './useSession'
+import { usePlanWeek, planWeekThenFindId } from '../plan/useWeekPlan'
 
 interface MissedSessionPromptProps {
   queue: MissedSession[]
@@ -12,14 +13,31 @@ interface MissedSessionPromptProps {
 export default function MissedSessionPrompt({ queue, activeMeso, onDismiss }: MissedSessionPromptProps) {
   const createSession = useCreateSession()
   const skipMissed = useSkipMissedSession()
+  const planWeek = usePlanWeek()
 
   // Show the most recent missed session first
   const sorted = [...queue].sort((a, b) => b.date.localeCompare(a.date))
 
+  // Chunk 8 (TASKS.md "starting the first session of a new week plans
+  // it") — DO IT NOW starts a session for `missed.date`, not today, so the
+  // week to plan is THAT date's week, not the current one: the house rule
+  // (CONTEXT.md), the same expression every other file in this codebase
+  // uses (ProgramPage.tsx, PlanPage.tsx, useScheduler.ts, scheduler.ts,
+  // and Coach's own meso/week inputs) — no shared helper exists to import,
+  // so this is the identical formula, not a second one.
   async function handleDoItNow(missed: MissedSession) {
+    const missedWeekNumber =
+      differenceInCalendarWeeks(parseISO(missed.date), parseISO(activeMeso.startDate), { weekStartsOn: 1 }) + 1
+    const weekPlanId = await planWeekThenFindId(
+      activeMeso.id,
+      missedWeekNumber,
+      missed.workoutDay.id,
+      missed.weekPlan?.id ?? null,
+      planWeek,
+    )
     await createSession.mutateAsync({
       mesoId: activeMeso.id,
-      weekPlanId: missed.weekPlan?.id ?? null,
+      weekPlanId,
       workoutDayId: missed.workoutDay.id,
       date: missed.date,
     })
@@ -104,20 +122,20 @@ export default function MissedSessionPrompt({ queue, activeMeso, onDismiss }: Mi
               <div className="flex gap-2">
                 <button
                   onClick={() => handleDoItNow(missed)}
-                  disabled={createSession.isPending || skipMissed.isPending}
+                  disabled={planWeek.isPending || createSession.isPending || skipMissed.isPending}
                   className="flex-1 py-3 rounded-xl font-black text-sm tracking-wider"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: 'var(--base)',
                     fontFamily: 'var(--font-mono)',
-                    opacity: createSession.isPending ? 0.6 : 1,
+                    opacity: planWeek.isPending || createSession.isPending ? 0.6 : 1,
                   }}
                 >
                   DO IT NOW
                 </button>
                 <button
                   onClick={() => handleSkip(missed)}
-                  disabled={createSession.isPending || skipMissed.isPending}
+                  disabled={planWeek.isPending || createSession.isPending || skipMissed.isPending}
                   className="flex-1 py-3 rounded-xl font-bold text-sm tracking-wider"
                   style={{
                     border: '1px solid var(--border)',

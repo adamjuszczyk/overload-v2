@@ -231,6 +231,89 @@ describe('copySetsWithGrouping — single-workout scope', () => {
   })
 })
 
+describe('copySetsWithGrouping — chunk 8: carries 027\'s weight/RIR/rep-target/design-link columns forward, never tags', () => {
+  it('carries program_set_id, stage_kind, target_weight, rep_min, rep_max and is_amrap through for a head', async () => {
+    const head = makeDbSet({
+      id: 'head',
+      parent_week_plan_set_id: null,
+      program_set_id: 'program-set-1',
+      stage_kind: 'rest_pause',
+      target_weight: 82.5,
+      rep_min: 8,
+      rep_max: 10,
+      is_amrap: false,
+    })
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [head], insert)
+
+    expect(calls[0].program_set_id).toBe('program-set-1')
+    expect(calls[0].stage_kind).toBe('rest_pause')
+    expect(calls[0].target_weight).toBe(82.5)
+    expect(calls[0].rep_min).toBe(8)
+    expect(calls[0].rep_max).toBe(10)
+    expect(calls[0].is_amrap).toBe(false)
+  })
+
+  it('carries the same columns through for a stage row (its own stage_kind stays null, as 027 requires)', async () => {
+    const head = makeDbSet({ id: 'head', parent_week_plan_set_id: null })
+    const stage = makeDbSet({
+      id: 'stage',
+      parent_week_plan_set_id: 'head',
+      stage_index: 1,
+      is_dropset: true,
+      program_set_id: 'program-set-stage',
+      stage_kind: null,
+      target_weight: 60,
+      rep_min: null,
+      rep_max: null,
+      is_amrap: false,
+    })
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [head, stage], insert)
+
+    const stageCall = calls[1]
+    expect(stageCall.program_set_id).toBe('program-set-stage')
+    expect(stageCall.stage_kind).toBeNull()
+    expect(stageCall.target_weight).toBe(60)
+  })
+
+  it('an AMRAP set carries is_amrap true with null rep_min/rep_max', async () => {
+    const head = makeDbSet({ id: 'head', parent_week_plan_set_id: null, is_amrap: true, rep_min: null, rep_max: null })
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [head], insert)
+
+    expect(calls[0].is_amrap).toBe(true)
+    expect(calls[0].rep_min).toBeNull()
+    expect(calls[0].rep_max).toBeNull()
+  })
+
+  it('a source row missing the new 027 columns entirely (as if 027 had not run) falls back to null/false, never undefined/crash', async () => {
+    const head = makeDbSet({ id: 'head', parent_week_plan_set_id: null }) // no program_set_id/stage_kind/etc. at all
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [head], insert)
+
+    expect(calls[0].program_set_id).toBeNull()
+    expect(calls[0].stage_kind).toBeNull()
+    expect(calls[0].target_weight).toBeNull()
+    expect(calls[0].rep_min).toBeNull()
+    expect(calls[0].rep_max).toBeNull()
+    expect(calls[0].is_amrap).toBe(false)
+  })
+
+  it('never includes tags in the payload, even when the source row carries some (SPEC: "Tags are never copied")', async () => {
+    const head = makeDbSet({ id: 'head', parent_week_plan_set_id: null, ...( { tags: ['heavy', 'pr-attempt'] } as Partial<DbWeekPlanSet>) })
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [head], insert)
+
+    expect('tags' in calls[0]).toBe(false)
+  })
+})
+
 describe('copySetsWithGrouping — whole-week scope (sequential per-plan calls)', () => {
   it('does not leak id-map state between two plans copied in the same whole-week operation', async () => {
     // Workout A's dropset
