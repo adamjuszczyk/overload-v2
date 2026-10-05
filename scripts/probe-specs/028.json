@@ -1,0 +1,7 @@
+{
+ "migration": "028_planner_p1_run_copies.sql",
+ "new": ["v2_run_transition_manifest"],
+ "columns": {
+  "v2_run_transition_manifest": ["id", "user_id", "original_program_id", "clone_program_id", "created_at"]
+ }
+}

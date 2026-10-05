@@ -1,12 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05, after Adam's answers (42 = b, G14, live checks) — stacked mode: nothing merged; chunk 8 being changed for 42 (b).*
+*Rewritten at every chunk boundary. Last: 2026-10-05 18:25 UTC — the hold is lifted for 40 and 41: Adam merges in order, the reviewer confirms each deploy green before the next merge. Chunk 8 being changed for 42 (b).*
 
 **Decisions**
 - 40 — Merge migration 028 (PR #22), then the chunk 6 code (#23) after its deploy. No backup or counts (your call); 028's manifest is the rollback. G14 checked: no change to chunk 6. Recommendation: merge when tonight's hold ends; don't start a mesocycle between the two merges. Blocked: chunk 6 going live.
 - 41 — Merge migration 029 (#24), then the chunk 7 code (#25), then follow-up 030 (#26). Recommendation: in that order, after 40. Blocked: chunk 7 going live.
-- 44 — What the planner's "switch to a sequence" choice does before sequence runs exist (chunk 25). Recommendation: (a) chunk 11 offers per-weekday or keep-as-is; chunk 25 adds sequence. Blocked: chunk 11 only.
 
 **To-dos**
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -42,21 +41,6 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 44 What does the planner's "switch to a sequence" choice do before sequence runs exist?
-Severity: blocking
-Chunk: 11
-**Ask:** Your G14 answer has the planner, when it opens a program with one workout on several weekdays, offer "give each weekday its own workout" or "switch the program to a sequence". The planner is chunk 11; sequence runs arrive in chunk 25. What should the sequence choice do in chunks 11–24?
-**Options:**
-- (a) Chunk 11 offers per-weekday workouts and "keep as is"; chunk 25 adds the sequence choice to the same prompt.
-- (b) Chunk 11 shows both; the sequence choice is disabled with "arrives with sequence runs" until chunk 25.
-- (c) Move sequence runs (chunk 25) ahead of chunk 11, a large reorder of TASKS.md.
-**Recommendation:** (a). It keeps your "nothing is converted automatically" (keep-as-is is today's behaviour), adds no dead control, and chunk 25 completes the prompt as you described it.
-**Blocked until answered:** chunk 11 only. Chunks 9 and 10 don't depend on it, so the build can continue to the chunk 10 boundary first.
-**Answer:**
-**Evidence:**
-What happened: G14 reappeared on 2026-10-05 (your second account has a program with one workout on every weekday, sharing one plan row; L6 had only checked your main account). Your answer is recorded in TASKS.md chunks 11 and 21. Chunk order puts the planner (11) 14 chunks before sequence runs (25), so one half of the prompt has nothing to switch to yet.
-A competent default would: show only what can work today (a) — doesn't apply because: your answer names both choices, and dropping one for 14 chunks changes what the prompt offers.
-Cost of deferral: n/a (blocking).
 
 ### 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
 Severity: blocking
@@ -212,6 +196,11 @@ Provisional path taken: merge once green; chunk 6 waits on its own blocking entr
 ### 43 G14 reappeared: one workout on several weekdays (Adam's second account)
 - What: L6 only checked Adam's main account; his second account has a program with one workout on every weekday, and planning one day's volume shows on all of them (one shared plan row).
 - Answer: Existing such programs keep today's behaviour until edited. Opening one in the planner asks to give each weekday its own workout or switch to a sequence; nothing is converted automatically. Deload on a shared row marks every day it covers, as today, and the UI says so. Added to TASKS.md chunks 11 and 21. Chunks 6–8 checked on scratch: no change (entry 40 Evidence). Follow-up question: 44.
+- Date: 2026-10-05
+
+### 44 What does the planner's "switch to a sequence" choice do before sequence runs exist?
+- What: The G14 prompt offers "switch to a sequence", but sequence runs arrive in chunk 25, after the planner (chunk 11).
+- Answer: (a) chunk 11 offers per-weekday workouts or keep-as-is; chunk 25 adds the sequence choice to the same prompt.
 - Date: 2026-10-05
 
 ## Settled decisions
