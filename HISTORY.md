@@ -22890,3 +22890,11 @@ Previous wording, verbatim:
 - "- Reviewer to-dos from Adam's answers (2026-10-04): 33 — weight deload rule starts at 75%; 34 — accept lowercase tempo `x` / `amrap`, normalise to `X` / `AMRAP` (both in `plannerVocabulary.ts`, via a builder); 38 — done (PR #20)."
 - "`normaliseTempo` (four fields, digits or uppercase `X`, ≤ 20 chars), `DEFAULT_DELOAD_SETS_RULE`, `DEFAULT_DELOAD_WEIGHT_RULE` (no percent — DECISIONS 33)."
 — PR #21 merged.
+
+---
+
+## 2026-10-05 (chunk 6 boundary, stacked mode) — Moved out of CONTEXT.md (no longer true)
+
+- "- Current chunk: 6. Chunks 1–5 are done."
+- "- **Next migration number: 028**; then 029, 030 …"
+— chunk 6 built and verified, unmerged (PR #22 migration, #23 code).

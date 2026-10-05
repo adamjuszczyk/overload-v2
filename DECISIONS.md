@@ -1,10 +1,10 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-04, chunk 6 in progress.*
+*Rewritten at every chunk boundary. Last: 2026-10-05, chunk 6 boundary (stacked mode: nothing merges tonight).*
 
 **Decisions**
-Nothing.
+- 40 — Merge migration 028 (PR #22: runs own a copy of their program; your 3 programs become their runs' copies and get saved clones). Recommendation: merge when tonight's hold ends, with your before/after counts, then the code PR #23 straight after its deploy; don't start a mesocycle in between. Blocked: chunk 6 going live (chunks 7+ keep stacking).
 
 **To-dos**
 - 35 — Chunk 3 live check: a planned dropset in a real session at phone width, screenshots, one SQL query. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -40,6 +40,59 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 40 Merge migration 028 (runs own a copy of their program; transition of your existing programs)
+Severity: blocking
+Chunk: 6
+**Ask:** Merge PR #22 (migration 028), with your before/after counts around it. Then, once its deploy succeeds, merge the code PR #23 straight after. `check-migration` flags 028, and it changes existing data, so the merge is yours.
+**Options:** (a) merge #22 now, following the steps below, then #23 once the deploy succeeds; (b) hold both; (c) ask for changes first.
+**Recommendation:** (a), whenever tonight's "merge nothing" hold ends. Merge #23 promptly after #22's deploy. In between, the current app lists both the run copies and their saved clones on the Program page, and its old START MESOCYCLE path would start a run without copying. **Don't start a mesocycle in that window.**
+**Blocked until answered:** chunk 6 going live. Chunks 7+ keep being built and stacked on `build/chunk-6` meanwhile; none of them merges before 028 and #23 do.
+**Steps:**
+1. **Before merging #22**, record:
+   - `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before-028.json`
+   - the id-hash query below → save the output as "ids before".
+   ```sql
+   select 'v2_sessions.id' t, md5(coalesce(string_agg(id::text, ',' order by id), '')) h from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   union all select 'v2_week_plans.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_week_plans where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   union all select 'v2_week_plan_sets.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_week_plan_sets where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   union all select 'v2_set_logs.id', md5(coalesce(string_agg(id::text, ',' order by id), '')) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   union all select 'v2_mesocycles.id+program_id', md5(coalesce(string_agg(id::text || ':' || program_id::text, ',' order by id), '')) from v2_mesocycles where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   order by 1;
+   ```
+2. Merge #22 and tell me. I check every `Supabase Preview` run on the merge commit (anything but success is blocking), confirm the live schema with `probe-live-columns.mjs` plus a manifest-table probe, and run `check-embeds.mjs` live.
+3. **After the deploy succeeds**:
+   - `live-counts.sql` again into `counts-after-028.json`. Expected:
+     - `v2_programs` **+3**;
+     - `v2_workout_days` + the three programs' workout count;
+     - `v2_program_exercises` **+82** (L8's total);
+     - `v2_program_sets`, `v2_program_superset_blocks`, `v2_program_sequence_items`, `v2_workout_warmup_items` and `v2_program_priorities` grow by the clones' copies (0 today for most of them);
+     - **every other table unchanged.**
+   - The id-hash query again: every line identical to "ids before".
+   - `select kind, count(*) from v2_programs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by kind order by 1;` → `run 3`, `saved 3`.
+   Send me both outputs.
+4. Merge #23 (or tell me to). After its deploy: the Program page lists only your 3 saved programs; Plan has a PROGRAM tab listing the active run's workouts, each opening the workout editor; Today, Plan and History show your active run unchanged. A first real START, whenever you next start a program, gets a complete-copy spot check from me (SQL I'll give you then).
+**Answer:**
+**Evidence:**
+What happened: chunk 6 is built and verified: PR #22 is migration 028 only (md5 `695fa92f3ce15363b0ffe4c0b87cb837`), and PR #23 is the code, stacked on it.
+`node scripts/check-migration.mjs origin/master` exits 1 with 10 statements, all "not on the safe list":
+- `create or replace function v2_copy_program(…)` and its `grant execute … to authenticated`;
+- `create or replace function v2_start_run(…)` and its `grant execute … to authenticated`;
+- the transition `do $$ … $$` block (clones every program a meso uses and records it in the manifest);
+- `update v2_workout_days … set source_workout_day_id = clone_wd.id` (run workouts → saved clone's);
+- `update v2_workout_days set source_workout_day_id = null where program_id in (clones)`;
+- `update v2_programs set kind = 'run' where id in (originals)`;
+- `update v2_mesocycles … set source_program_id = clone`;
+- `notify pgrst, 'reload schema'`.
+None changes an id or removes a row. My own scratch check (real `supabase/postgres:17.6.1.155`, 000–027 plus the builder's fixture, then 028):
+- **Column-level before/after diff of every row:** only `v2_programs.kind` (4 rows), `v2_workout_days.source_workout_day_id` (5) and `v2_mesocycles.source_program_id` (4) changed; 0 rows lost.
+- **Lineage:** run copy ← meso, `source_program_id` → saved clone, run workouts → saved workouts, saved workouts without lineage; clones complete.
+- **Coach's real input assembly** (Mesocycle Analysis for both completed mesos; week resolution and weekly input for three weeks) through PostgREST is **byte-identical before vs after**. That is TASKS.md's "Meso Analysis input identical" check, done on scratch.
+- `replay-migrations.sh` 29/29; `check-embeds-local.sh` 24/24.
+The builder also proved R7 (complete copy, 0 back-references), R8 (race: 2 active without the lock, proven overlapping; 1 with it), R9 (injected error appears, nothing persists) and RLS (B can't start on A's program; manifest rows are per user).
+A competent default would: merge an all-green migration — doesn't apply because: check-migration flags it and it rewrites existing rows, so the merge and the before/after counts are yours (CONTEXT migration flow; Escalations 8, 12).
+Cost of deferral: n/a (blocking).
+
 
 ### 35 Chunk 3 live check: planned dropset stages in a real session (Adam's steps)
 Severity: deferred
