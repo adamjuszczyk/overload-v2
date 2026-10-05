@@ -50,7 +50,7 @@ Chunk: 7
 - (a) merge 029 → #25 → 030 in that order (recommended);
 - (b) skip 030 and instead run 029's backfill block once by hand after #25 deploys — but CONTEXT says never apply migration SQL by hand under automatic deploys;
 - (c) skip the re-run and avoid ADD SET / COPY WEEK between 029's deploy and #25's.
-**Recommendation:** (a). 030 is a no-op if nothing was missed, and it catches any week plan the old app created in the gap: such a plan has no exercise rows, and the new screens would show it empty. Provisional: 030 is being built on `build/chunk-7-rerun` (stacked on `build/chunk-7`). If you pick (b) or (c), it's dropped.
+**Recommendation:** (a). 030 is a no-op if nothing was missed, and it catches any week plan the old app created in the gap: such a plan has no exercise rows, and the new screens would show it empty. Provisional: 030 is PR #26 (`build/chunk-7-rerun`, stacked on `build/chunk-7`; md5 `47fae288…`; its block is 029's plus a counter; gap scenario proven: inserts exactly the missing rows, then 0). If you pick (b) or (c), it's dropped.
 **Blocked until answered:** chunk 7 going live. Chunks 8+ keep stacking.
 **Steps:**
 1. Merge #24 (029) and tell me. I check every `Supabase Preview` run on the merge commit, probe the new manifest table live, and run `check-embeds.mjs` live.
