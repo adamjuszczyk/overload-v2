@@ -4,8 +4,8 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:46 UTC — 40 and 41 merged and live (hold lifted for them only). Chunk 8 verified and waiting on 45.*
 
 **Decisions**
-- 41 — All merged and live: 029 (#24 `61b2670`), chunk 7 code (#25 `55bed82`), 030 (#26 `34c5887`, deploy success 18:45 UTC). Left: your parity query (expect 0 rows) and app check (entry 41 steps 3–4).
-- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: go ahead now if you want; I prepare each (retarget, master merge, full checks, own CI) and say when it's ready. Your go-ahead covered 40 and 41 only. Blocked: chunk 8 going live.
+- 41 — All merged and live: 029 (#24 `61b2670`), chunk 7 code (#25 `55bed82`), 030 (#26 `34c5887`, deploy success 18:45 UTC). Parity query: 0 rows (Adam, passed). Left: your app check (entry 41 step 4).
+- 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Go-ahead given (Adam, 2026-10-05): I prepare #27, then #28 after 031's deploy, and say when each is ready. Blocked: chunk 8 going live.
 
 **To-dos**
 - 39 — Chunk 5 live check: one SQL count (expect 0), then two or three workouts' all-time history pages unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
