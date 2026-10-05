@@ -53,42 +53,57 @@
 -- them with — so the row is always inserted first, and what (if anything)
 -- gets copied into it is decided after.
 --
--- **Sources, per SPEC "Weeks and copying" — kept identical to
--- src/features/plan/weekSources.ts's resolveWeekSources (chunk 8's
--- scratch report proves both agree on one fixture):**
+-- **Sources, per SPEC "Weeks and copying" plus Adam's answer to DECISIONS
+-- 42 (2026-10-05) — kept identical to src/features/plan/weekSources.ts's
+-- resolveWeekSources (chunk 8's scratch report proves both agree on one
+-- fixture, re-run after DECISIONS 42):**
 --   - Volume: `stable` → the run's own copy (v2_program_exercises +
 --     v2_program_sets of this workout, read fresh at plan time — so a
 --     stable program edited between two weeks being planned gives the
 --     later week the NEW sets, never a stale snapshot), always, for every
 --     week including week 1. `week_dependent` week 1 → the same run copy
 --     (SPEC: "week 1 from the run copy"). `week_dependent` week > 1 → the
---     workout's last planned NON-DELOAD occurrence (its own
+--     workout's last planned USABLE occurrence (its own
 --     v2_week_plan_exercises, honouring carry_program_exercise_id/
 --     carry_position, and its own v2_week_plan_sets, copied by a direct
 --     old-id → new-id remap — the same approach weekPlanService.ts's
 --     copySetsWithGrouping/copyExercisesForward already use client-side
 --     for the manual copy actions), found by walking week_number back from
---     p_week_number − 1, skipping any week whose session for THIS workout
---     was deload (SPEC: "Deload sessions are never a copy source. A week
---     that's partly deload still copies its normal sessions; its deload
---     sessions copy from the last normal occurrence.") — or empty, when
---     v2_user_settings.week_start = 'empty' (SPEC: the setting governs
---     whether an unplanned week-dependent week fills automatically at
---     all), or when no non-deload occurrence exists yet (nothing to copy,
---     so empty by elimination — SPEC names exactly two sources for a
---     week-dependent week beyond week 1, "the last planned [non-deload]
---     week" or empty; with neither available the only one left is empty).
---     "Empty" means exactly that: no v2_week_plan_exercises, no
---     v2_week_plan_sets — the row exists (so the week is "planned") but
---     carries nothing, which is what lets the empty-state "Copy last week"
---     (PlanPage.tsx) recognise it and offer the manual action.
---   - Weight and RIR targets: the last planned NON-DELOAD week, for BOTH
---     planning types (SPEC: "the last planned week, for both types") — the
---     exact same backward, deload-skipping search as the volume search
---     above (computed once per workout, reused for both). For a
---     week-to-week volume copy this falls out for free: a week's own
---     v2_week_plan_sets rows already carry their own target_weight/
---     target_rir, copied verbatim along with everything else. For a
+--     p_week_number − 1 and skipping any week whose session for THIS
+--     workout is **deload OR empty** (DECISIONS 42 (b): "skip an empty
+--     last occurrence, the same as deload" — before this answer, an empty
+--     non-deload occurrence was wrongly treated as usable and its
+--     emptiness propagated forward week after week; SPEC's own "Deload
+--     sessions are never a copy source. A week that's partly deload still
+--     copies its normal sessions; its deload sessions copy from the last
+--     normal occurrence." now reads with "normal" meaning "neither deload
+--     nor empty") — or empty, when v2_user_settings.week_start = 'empty'
+--     (SPEC: the setting governs whether an unplanned week-dependent week
+--     fills automatically at all), or when no usable occurrence exists yet
+--     (nothing to copy, so empty by elimination — SPEC names exactly two
+--     sources for a week-dependent week beyond week 1, "the last planned
+--     [usable] week" or empty; with neither available the only one left is
+--     empty). **"Empty", defined once, used everywhere (DECISIONS 42):** a
+--     v2_week_plans row with zero v2_week_plan_sets rows — checked by
+--     `exists (select 1 from v2_week_plan_sets where week_plan_id = ...)`,
+--     never by its v2_week_plan_exercises count (a week can carry exercise
+--     rows with no sets under them; only sets decide "empty" here, exactly
+--     as weekSources.ts's isEmpty flag does). The row still exists (so the
+--     week is "planned") and still carries whatever exercise rows it has
+--     — only its SUITABILITY AS A SOURCE is affected; the empty-state
+--     "Copy last week" (PlanPage.tsx) still recognises a row this way too.
+--   - Weight and RIR targets: the last planned USABLE week (deload OR
+--     empty skipped, DECISIONS 42 — "Apply the same skip to the weight/RIR
+--     source search, so it stays aligned with the volume source"), for
+--     BOTH planning types (SPEC: "the last planned week, for both types")
+--     — the exact same backward search as the volume search above
+--     (computed once per workout, reused for both, so the two can never
+--     disagree). For a week-to-week volume copy this falls out for free: a
+--     week's own v2_week_plan_sets rows already carry their own
+--     target_weight/target_rir, copied verbatim along with everything
+--     else — and since the source is now guaranteed non-empty (it has at
+--     least one v2_week_plan_sets row, by the search's own definition of
+--     usable), there is always at least one real set to carry. For a
 --     `stable`/week-1 volume copy (fresh rows from v2_program_sets, which
 --     has no weight/RIR columns at all — "week plan only, never in the
 --     program") there is nothing to carry by row identity, so this
@@ -176,7 +191,7 @@ declare
   v_planned_count        integer := 0;
 
   v_source_kind          text;   -- 'program' | 'week' | 'empty'
-  v_wr_week_plan_id      uuid;   -- last planned non-deload week's plan id for this workout, or null
+  v_wr_week_plan_id      uuid;   -- last planned USABLE (not deload, not empty) week's plan id, or null
 
   v_pe                   record;
   v_ps                   record;
@@ -239,12 +254,17 @@ begin
 
     -- The weight/RIR source — and, for a week-dependent week beyond week 1,
     -- the volume source too (SPEC: "Deload sessions are never a copy
-    -- source"). One search, reused for both purposes.
-    select id into v_wr_week_plan_id
-      from v2_week_plans
-     where mesocycle_id = p_mesocycle_id and workout_day_id = v_workout_day_id
-       and user_id = v_user_id and week_number < p_week_number and is_deload = false
-     order by week_number desc
+    -- source"; DECISIONS 42 (b): skip an empty occurrence the same as a
+    -- deload one, for both searches alike). One search, reused for both
+    -- purposes. "Empty" := zero v2_week_plan_sets rows (DECISIONS 42's
+    -- definition, used exactly this way in weekSources.ts's isEmpty flag
+    -- too) — the `not exists` below is the SQL form of that same check.
+    select wp.id into v_wr_week_plan_id
+      from v2_week_plans wp
+     where wp.mesocycle_id = p_mesocycle_id and wp.workout_day_id = v_workout_day_id
+       and wp.user_id = v_user_id and wp.week_number < p_week_number and wp.is_deload = false
+       and exists (select 1 from v2_week_plan_sets s where s.week_plan_id = wp.id and s.user_id = v_user_id)
+     order by wp.week_number desc
      limit 1;
 
     if p_week_number = 1 or v_planning_type = 'stable' then
@@ -254,7 +274,7 @@ begin
     elsif v_wr_week_plan_id is not null then
       v_source_kind := 'week';
     else
-      v_source_kind := 'empty'; -- week-dependent, copy requested, but nothing non-deload to copy
+      v_source_kind := 'empty'; -- week-dependent, copy requested, but nothing usable to copy (DECISIONS 42)
     end if;
 
     if v_source_kind = 'program' then
