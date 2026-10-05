@@ -23085,3 +23085,88 @@ The builder also proved R7 (complete copy, 0 back-references), R8 (race: 2 activ
 G14 check (2026-10-05, scratch, `supabase/postgres:17.6.1.155`): a fixture program with one workout on Mon–Fri and one shared plan row, run through 028, `v2_start_run`, 029, 030 and 031. The original becomes `kind = run` with 1 workout over 5 weekdays; its saved clone has 1 workout over 5 weekdays; the shared plan row is 1 row before and after the transition; 029 gives it its exercise rows; `v2_plan_week` plans 1 row for week 2; a new run started from the clone has 1 workout over 5 weekdays and plans 1 row per week. Same behaviour as today throughout, so nothing in chunks 6–8 changes.
 A competent default would: merge an all-green migration — doesn't apply because: check-migration flags it and it rewrites existing rows, so the merge is yours (CONTEXT migration flow; Escalations 8, 12). Counts and backup waived by you (2026-10-05).
 Cost of deferral: n/a (blocking).
+
+
+---
+
+## 2026-10-05 (chunk 8 boundary: 41 and 45 closed) — closed DECISIONS entries' full text, verbatim
+
+## 45 Merge migration 031 (weeks plan themselves) and the chunk 8 code
+Severity: blocking
+Chunk: 8
+**Ask:** After 41 is done (029, #25 and 030 live), merge PR #27 (migration 031). Then, once its deploy succeeds, merge PR #28 (chunk 8 code). `check-migration` flags 031, so the merge is yours. It adds one function and changes no data, so no counts are needed.
+**Options:** (a) merge #27 → #28 in that order, each when I say its predecessor's deploy is green; (b) hold.
+**Recommendation:** (a). 42 (b) is built and verified (Evidence).
+**Blocked until answered:** chunk 8 going live. Chunks 9 and 10 can be built meanwhile once you say so.
+**Steps:**
+1. When I say 030's deploy is green, merge #27. Before that I merge master into its branch, re-run every check, and wait for its own CI.
+2. I check the deploy and probe `v2_plan_week` live: an anonymous call must be refused before it writes anything.
+3. Merge #28 when I say. After its deploy, in the app (take the update banner):
+   - opening Plan on a week not yet planned plans it once, and reopening adds nothing;
+   - your first session of a new week plans that week;
+   - Settings → NEW WEEK STARTS = EMPTY gives empty weeks, with COPY offered;
+   - a deload session isn't copied into the next week.
+**Answer:**
+**Evidence:**
+What happened: chunk 8 was built and verified, then changed for 42 (b) on `2d26e90` (031, md5 `214fd8706ee049a00a9a1807b776b438`) and `95651e3` (code). Reviewer's own checks on `95651e3`:
+- typecheck; 738 tests; build; 96 script tests; frozen code; replay 32/32; embeds 25/25.
+- Removing the empty skip fails 14 tests; restored, md5 matched.
+- Independent scratch fixture, three workouts with weeks 1–3, then `v2_plan_week(meso, 4)` as the user:
+  - the new 031 copies week 2 past an empty week 3 (105), and week 1 past deload plus empty (50);
+  - all-empty stays empty; re-planning adds 0;
+  - the old 031 gives all three empty, so the fixture tells the two versions apart.
+A competent default would: merge a green, function-only migration — doesn't apply because: check-migration flags it (Escalations 8, 12).
+Cost of deferral: n/a (blocking).
+
+## 41 Merge migration 029 (each week plan's exercise list), the chunk 7 code, and a follow-up 030 that re-runs the backfill
+Severity: blocking
+Chunk: 7
+**Ask:** After 40 is done (028 and chunk 6's code live), merge PR #24 (migration 029), then PR #25 (chunk 7 code) once 029's deploy succeeds, then the follow-up migration 030 once #25 has deployed. `check-migration` flags 029 and 030, so those merges are yours. Both only insert rows, so no live counts are needed (your rule).
+**Options:**
+- (a) merge 029 → #25 → 030 in that order (recommended);
+- (b) skip 030 and instead run 029's backfill block once by hand after #25 deploys — but CONTEXT says never apply migration SQL by hand under automatic deploys;
+- (c) skip the re-run and avoid ADD SET / COPY WEEK between 029's deploy and #25's.
+**Recommendation:** (a). 030 is a no-op if nothing was missed, and it catches any week plan the old app created in the gap: such a plan has no exercise rows, and the new screens would show it empty. Provisional: 030 is PR #26 (`build/chunk-7-rerun`, stacked on `build/chunk-7`; md5 `47fae288…`; its block is 029's plus a counter; gap scenario proven: inserts exactly the missing rows, then 0). If you pick (b) or (c), it's dropped.
+**Blocked until answered:** chunk 7 going live. Chunks 8+ keep stacking.
+**Steps:**
+1. Merge #24 (029) and tell me. I check every `Supabase Preview` run on the merge commit, probe the new manifest table live, and run `check-embeds.mjs` live.
+2. Merge #25 (chunk 7 code), or tell me to. Then merge 030's PR and tell me; I check its deploy.
+3. In the SQL Editor, the parity query (0 rows means every week plan's own list equals the workout's exercises, which is how today's screens build it):
+   ```sql
+   with old_way as (select wp.id as week_plan_id, array_agg(pe.id order by pe.position) as exercise_ids from v2_week_plans wp join v2_program_exercises pe on pe.workout_day_id = wp.workout_day_id where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by wp.id),
+        new_way as (select wp.id as week_plan_id, array_agg(wpe.program_exercise_id order by wpe.position) as exercise_ids from v2_week_plans wp join v2_week_plan_exercises wpe on wpe.week_plan_id = wp.id where wp.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' group by wp.id)
+   select coalesce(o.week_plan_id, n.week_plan_id), o.exercise_ids, n.exercise_ids from old_way o full outer join new_way n on n.week_plan_id = o.week_plan_id where o.exercise_ids is distinct from n.exercise_ids;
+   ```
+   → **0 rows**.
+4. In the app (take the update banner): Plan and the workout screen show exactly the exercises they did before, in the same order. Open a session offline once it's cached; it shows the same list.
+**Answer:**
+**Evidence:**
+What happened: chunk 7 is built and verified. PR #24 is 029 only (md5 `98925a7d05ac8fd2a6e2b23eeaf63c8a`), and PR #25 is the code. Both are stacked on chunk 6, and nothing is merged.
+`check-migration` exits 1. 029's entries are the backfill `do $$ … $$` block (it inserts into `v2_week_plan_exercises` and records inserted ids in the new `v2_week_plan_exercises_backfill_manifest`) and `notify pgrst`.
+My own scratch check (`supabase/postgres:17.6.1.155`, 000–028 plus the chunk 6 fixture, then 029):
+- 0 existing rows changed or lost (column-level);
+- backfilled 8 = expected 8;
+- 0 planned sets without their exercise row;
+- 0 parity differences;
+- re-running the backfill inserts 0.
+The builder also proved: RLS on the manifest per user; the parity query fails when one exercise row is deleted; and render parity of PlanPage and GymSession against frozen chunk 6 renders, using a decoy on the old path so a regression is visible.
+All checks pass on the branch:
+- typecheck; 680 tests; build;
+- 94 script tests;
+- `replay-migrations.sh` 30/30;
+- `check-embeds-local.sh` 24/24 (incl. 6 new embeds, hinted because `v2_week_plan_exercises` has two FKs to `v2_program_exercises`);
+- `check-frozen-code`.
+The gap 030 closes: the screens use `weekPlan.exercises`, which is an empty list (not null) for a week plan without rows, so they don't fall back to the program's exercises.
+A competent default would: merge a green, insert-only migration — doesn't apply because: check-migration flags it (Escalations 8, 12), and the re-run vehicle under automatic deploys is your call.
+Cost of deferral: n/a (blocking).
+
+
+---
+
+## 2026-10-05 (chunk 8 boundary) — Moved out of CONTEXT.md (no longer true)
+
+- "- **Build stopped at the chunk 8 boundary** for DECISIONS 42, now answered (b: skip an empty last occurrence like deload, 2026-10-05). Chunk 8 is changed for it and verified (DECISIONS 45). Chunks 1–5 are merged and live; 6, 7 and 8 are built, verified and unmerged. **40 and 41 merged and live (2026-10-05, 18:22–18:45 UTC)**: #22 → #23 → #24 → #25 → #26, each after the reviewer confirmed the previous deploy and prepared the next PR (retarget, master merge, full checks, own CI). The hold covered only these; #27/#28 (chunk 8) wait for Adam's go-ahead (DECISIONS 45). 44 answered (a). Chunks 9 and 10 continue when Adam says."
+— chunks 6, 7 and 8 merged and live; see the chunk lines.
+- "- **Next migration number: 032** (028–031 on the stacked chunk 6–8 branches, all unmerged); then 033 …"
+- "- Live checks (2026-10-05, Adam's gym session): 35 (chunk 3 dropset stages) passed, no screenshots/SQL by his choice; 37 (chunk 1) passed on the app steps, deploy-log step dropped; 36 (chunk 4 note field) **waived, not passed**. Still open: 39 (chunk 5: no lineage rows yet; all-time history pages unchanged)."
+— updated at the chunk 8 boundary.
