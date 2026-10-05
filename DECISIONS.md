@@ -4,7 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:25 UTC — the hold is lifted for 40 and 41: Adam merges in order, the reviewer confirms each deploy green before the next merge. Chunk 8 being changed for 42 (b).*
 
 **Decisions**
-- 40 — 028 (#22) merged and live (`71247e7`, 2026-10-05). Next: merge #23 (chunk 6 code; ready: base retargeted, master merged in, own CI green). Don't start a mesocycle until #23 is live.
+- 40 — 028 (#22, `71247e7`) and the chunk 6 code (#23, `9fd4876`) are merged and live (2026-10-05). Left: your app check (entry 40 step 3: Program page lists only the 3 saved programs; Plan → PROGRAM tab; active run unchanged; second account unchanged).
 - 41 — Merge migration 029 (#24), then the chunk 7 code (#25), then follow-up 030 (#26). Recommendation: in that order, after 40. Blocked: chunk 7 going live.
 - 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: after 41, each when I say the previous deploy is green. Blocked: chunk 8 going live.
 
