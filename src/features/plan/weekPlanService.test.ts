@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { copySetsWithGrouping, type DbWeekPlanSet } from './weekPlanService'
+import { copySetsWithGrouping, copyExercisesForward, type DbWeekPlanSet, type DbWeekPlanExercise } from './weekPlanService'
 
 // copySetsWithGrouping is the shared reattachment engine both
 // copyFromPreviousWeek (whole-week — calls this once per plan, in a loop)
@@ -296,5 +296,113 @@ describe('copySetsWithGrouping — whole-week scope (sequential per-plan calls)'
     // head is the 3rd insert overall — its stage must resolve to that id,
     // not to anything left over from the unrelated plain plan.
     expect(dropCalls[1].parent_week_plan_set_id).toBe('new-3')
+  })
+})
+
+// copyExercisesForward — chunk 7's exercise-list twin of copySetsWithGrouping
+// above, called alongside it from copyOnePlanForward. Same "unit-test the
+// pure/injectable logic, leave the thin Supabase fetch untested" convention
+// this file's own header comment states; v2_program_exercises is required by
+// DbWeekPlanExercise's type (every real select in this file embeds it) but
+// never read by copyExercisesForward itself, so the fixture below carries a
+// placeholder value purely to satisfy the type.
+function makeDbWeekPlanExercise(overrides: Partial<DbWeekPlanExercise> = {}): DbWeekPlanExercise {
+  return {
+    id: 'old-wpe-id',
+    week_plan_id: 'wp-old',
+    user_id: 'u1',
+    program_exercise_id: 'pe1',
+    position: 0,
+    carry_program_exercise_id: null,
+    carry_position: null,
+    created_at: '2026-01-01T00:00:00Z',
+    v2_program_exercises: {
+      id: 'pe1',
+      workout_day_id: 'wd1',
+      user_id: 'u1',
+      exercise_id: 'ex1',
+      position: 0,
+      target_reps: null,
+      weight_unit: null,
+      exercises: null,
+    },
+    ...overrides,
+  }
+}
+
+function makeFakeUpsert() {
+  const calls: Record<string, unknown>[][] = []
+  const upsert = async (payloads: Record<string, unknown>[]): Promise<void> => {
+    calls.push(payloads)
+  }
+  return { upsert, calls }
+}
+
+describe('copyExercisesForward — carries program_exercise_id/position forward verbatim when there is no override', () => {
+  it('copies every exercise\'s own program_exercise_id and position when carry_* is null (true of every row before chunk 9)', async () => {
+    const exA = makeDbWeekPlanExercise({ program_exercise_id: 'peA', position: 0 })
+    const exB = makeDbWeekPlanExercise({ program_exercise_id: 'peB', position: 1 })
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [exA, exB], upsert)
+
+    expect(calls).toHaveLength(1) // one batched upsert call, not one per row
+    const [payloads] = calls
+    expect(payloads).toEqual([
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peA', position: 0 },
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peB', position: 1 },
+    ])
+  })
+
+  it('an empty source list upserts nothing', async () => {
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [], upsert)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual([])
+  })
+})
+
+describe('copyExercisesForward — "what copying forward uses" (TASKS.md\'s own words for carry_*)', () => {
+  it('uses carry_program_exercise_id instead of program_exercise_id when it is set (an "only this week" swap\'s pre-swap slot)', async () => {
+    const ex = makeDbWeekPlanExercise({
+      program_exercise_id: 'peSwappedIn', // this week's own (post-swap) slot
+      carry_program_exercise_id: 'peOriginal', // what copying forward should use instead
+      position: 2,
+    })
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [ex], upsert)
+
+    expect(calls[0]).toEqual([
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peOriginal', position: 2 },
+    ])
+  })
+
+  it('uses carry_position instead of position when it is set (an "only this week" reorder\'s pre-reorder order)', async () => {
+    const ex = makeDbWeekPlanExercise({
+      program_exercise_id: 'pe1',
+      position: 5, // this week's own (post-reorder) order
+      carry_position: 1, // what copying forward should use instead
+    })
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [ex], upsert)
+
+    expect(calls[0]).toEqual([
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'pe1', position: 1 },
+    ])
+  })
+
+  it('every copied row starts with no carry_* of its own, regardless of the source row\'s', async () => {
+    const ex = makeDbWeekPlanExercise({ carry_program_exercise_id: 'peOriginal', carry_position: 1 })
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [ex], upsert)
+
+    const [payload] = calls[0]
+    expect('carry_program_exercise_id' in payload).toBe(false)
+    expect('carry_position' in payload).toBe(false)
   })
 })

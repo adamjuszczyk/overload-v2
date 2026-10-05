@@ -191,7 +191,7 @@ export function useDeleteProgramExercise(workoutDayId: string) {
 export function useReorderProgramExercises(workoutDayId: string) {
   return useMutation({
     mutationFn: (updates: { id: string; position: number }[]) =>
-      reorderProgramExercises(updates),
+      reorderProgramExercises(workoutDayId, updates),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
   })

@@ -212,6 +212,14 @@ export interface WeekPlan {
   isDeload: boolean
   notes: string | null
   sets: WeekPlanSet[]        // all planned sets for all exercises in this session
+  // v2_week_plan_exercises (migration 027/029, chunk 7 — "Each planned
+  // session owns its exercise list"). This week's own exercise list, in
+  // this week's own order (position on the v2_week_plan_exercises row, not
+  // the underlying program exercise's). Until chunk 9, every write path
+  // that edits either list keeps the other in step (weekPlanService.ts /
+  // programService.ts), so this always mirrors workoutDay.exercises
+  // exactly — nothing yet reads this as capable of diverging from it.
+  exercises: ProgramExercise[]
   createdAt: string
 }
 

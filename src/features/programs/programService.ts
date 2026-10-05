@@ -255,7 +255,40 @@ export async function addProgramExercise(
     .select('*, exercises(*)')
     .single()
   if (error) throw error
-  return toProgramExercise(data as DbProgramExercise)
+  const pe = data as DbProgramExercise
+  await addExerciseToExistingWeekPlans(userId, workoutDayId, pe.id, pe.position)
+  return toProgramExercise(pe)
+}
+
+// Chunk 7 (TASKS.md "Each planned session owns its exercise list") — until
+// chunk 9 drops per-week divergence, an edit made here (the workout editor,
+// on the run's own copy) must land in every week that has already planned
+// this workout day, the same instant it happens — exactly what rendering
+// straight off v2_program_exercises already gave PlanPage/GymSession for
+// free before this chunk. A week with no v2_week_plans row yet needs
+// nothing done now: whenever one is created later (createWeekPlan /
+// copyOnePlanForward, weekPlanService.ts), it reads the program's CURRENT
+// exercises at that moment, which by then already includes this one.
+async function addExerciseToExistingWeekPlans(
+  userId: string,
+  workoutDayId: string,
+  programExerciseId: string,
+  position: number,
+): Promise<void> {
+  const { data, error } = await supabase.from('v2_week_plans').select('id').eq('workout_day_id', workoutDayId)
+  if (error) throw error
+  const plans = (data ?? []) as { id: string }[]
+  if (plans.length === 0) return
+
+  const { error: insertError } = await supabase.from('v2_week_plan_exercises').insert(
+    plans.map((p) => ({
+      week_plan_id: p.id,
+      user_id: userId,
+      program_exercise_id: programExerciseId,
+      position,
+    })),
+  )
+  if (insertError) throw insertError
 }
 
 export async function updateProgramExerciseReps(
@@ -282,12 +315,20 @@ export async function updateProgramExerciseWeightUnit(
   if (error) throw error
 }
 
+// Chunk 7 — no v2_week_plan_exercises code needed here: that table's
+// program_exercise_id is `references v2_program_exercises(id) on delete
+// cascade` (027), so deleting a program exercise already removes it from
+// every week's own exercise list in the same statement, exactly as it
+// already removed it from every week's v2_week_plan_sets (same cascade,
+// unchanged since migration 001) — the one existing-behaviour-preserving
+// path that needed nothing new written for it.
 export async function deleteProgramExercise(id: string): Promise<void> {
   const { error } = await supabase.from('v2_program_exercises').delete().eq('id', id)
   if (error) throw error
 }
 
 export async function reorderProgramExercises(
+  workoutDayId: string,
   updates: { id: string; position: number }[],
 ): Promise<void> {
   for (const { id, position } of updates) {
@@ -296,5 +337,34 @@ export async function reorderProgramExercises(
       .update({ position })
       .eq('id', id)
     if (error) throw error
+  }
+  await reorderExercisesInExistingWeekPlans(workoutDayId, updates)
+}
+
+// Chunk 7's reorder twin of addExerciseToExistingWeekPlans above — same
+// "every week that has already planned this workout day, kept in step
+// until chunk 9" rule, for a position change instead of a brand new row.
+// No unique constraint on (week_plan_id, position), so there is no
+// transient-collision ordering concern the way there would be if position
+// were part of a unique key (it is not — only (week_plan_id,
+// program_exercise_id) is, 027).
+async function reorderExercisesInExistingWeekPlans(
+  workoutDayId: string,
+  updates: { id: string; position: number }[],
+): Promise<void> {
+  const { data, error } = await supabase.from('v2_week_plans').select('id').eq('workout_day_id', workoutDayId)
+  if (error) throw error
+  const plans = (data ?? []) as { id: string }[]
+  if (plans.length === 0) return
+
+  for (const plan of plans) {
+    for (const { id, position } of updates) {
+      const { error: updateError } = await supabase
+        .from('v2_week_plan_exercises')
+        .update({ position })
+        .eq('week_plan_id', plan.id)
+        .eq('program_exercise_id', id)
+      if (updateError) throw updateError
+    }
   }
 }

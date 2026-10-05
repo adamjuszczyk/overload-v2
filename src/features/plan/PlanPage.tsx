@@ -327,7 +327,18 @@ interface PanelProps {
 }
 
 function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact }: PanelProps) {
-  const { data: programExercises = [] } = useProgramExercises(workoutDay.id)
+  // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
+  // week's own v2_week_plan_exercises list when a week plan row exists for
+  // this workout (weekPlan.exercises, written alongside the plan row itself
+  // — weekPlanService.ts's createWeekPlan/copyOnePlanForward, kept in step
+  // with the program by programService.ts's add/reorder sync until chunk
+  // 9); the program's own exercises directly otherwise — no week plan has
+  // been planned for this workout/week yet, the same source this screen
+  // always read before this chunk. fallbackProgramExercises is still
+  // fetched unconditionally (same as before) so that "no week plan" case
+  // renders exactly as today.
+  const { data: fallbackProgramExercises = [] } = useProgramExercises(workoutDay.id)
+  const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
 
   const addSet = useAddSet(mesoId, weekNumber)
   const addStage = useAddStage(mesoId, weekNumber)
