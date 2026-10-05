@@ -18,6 +18,7 @@ import {
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
+import ProgramTab from './ProgramTab'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,18 @@ const DOW_LABEL: Record<DayOfWeek, string> = {
   monday: 'MONDAY', tuesday: 'TUESDAY', wednesday: 'WEDNESDAY',
   thursday: 'THURSDAY', friday: 'FRIDAY', saturday: 'SATURDAY', sunday: 'SUNDAY',
 }
+
+// Plan screen tabs (chunk 6, SPEC.md "Plan screen" — Program tab + Weeks).
+// Same tab-bar shape as CoachPage.tsx's own ANALYSIS/ASK/CONTEXT bar
+// (flex row, rounded + overflow-hidden border, accent/surface fill),
+// written in this file's own inline-style idiom rather than CoachPage's
+// Tailwind classes.
+type PlanTab = 'weeks' | 'program'
+
+const PLAN_TABS: { id: PlanTab; label: string }[] = [
+  { id: 'weeks', label: 'WEEKS' },
+  { id: 'program', label: 'PROGRAM' },
+]
 
 function computeWeekNumber(startDate: string): number {
   return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
@@ -54,6 +67,10 @@ export default function PlanPage() {
   // list, so this is page-local UI state, not a persisted setting: it resets
   // on reload, same as isPast/viewWeek here.
   const [compact, setCompact] = useState(false)
+
+  // Program/Weeks tab (chunk 6) — page-local, resets on reload like compact
+  // above; nothing in SPEC says it should persist across visits.
+  const [activeTab, setActiveTab] = useState<PlanTab>('weeks')
 
   useEffect(() => {
     if (activeMeso) setViewWeek(computeWeekNumber(activeMeso.startDate))
@@ -188,11 +205,36 @@ export default function PlanPage() {
             </button>
           </div>
         </div>
+
+        {/* Program / Weeks tab bar */}
+        <div style={{ display: 'flex', marginTop: 12, borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          {PLAN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{ flex: 1, padding: '10px 0', background: activeTab === tab.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: activeTab === tab.id ? 'var(--base)' : 'var(--text-muted)' }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Content */}
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 32px', minHeight: 0 }}>
 
+        {/* Program tab — the active run's copy: its workouts, each opening
+            the existing workout editor on the run's copy (SPEC.md "Plan
+            screen"). Volume/design-field editing from this tab is later
+            chunks' scope (chunk 6 brief: "the tab can edit it" already,
+            through the existing editor this links to — chunk 9 adds the
+            per-type rules on top). */}
+        {activeTab === 'program' && (
+          <ProgramTab programId={activeMeso.programId} workoutDays={workoutDays} isLoading={daysLoading} />
+        )}
+
+        {activeTab === 'weeks' && (
+        <>
         {/* Past week notice */}
         {isPast && (
           <div style={{ marginBottom: 14, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 8 }}>
@@ -264,6 +306,8 @@ export default function PlanPage() {
               compact={compact}
             />
           </>
+        )}
+        </>
         )}
       </div>
     </div>
