@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise } from '../../types'
 import {
   fetchPrograms,
+  fetchSavedPrograms,
   createProgram,
   updateProgramName,
   updateSchedule,
@@ -26,6 +27,21 @@ export function usePrograms() {
   return useQuery({
     queryKey: ['v2_programs'],
     queryFn: fetchPrograms,
+    enabled: !!user,
+  })
+}
+
+// Program lists only (chunk 6) — ProgramPage's "My Programs" and its Start
+// Mesocycle picker. Query key is ['v2_programs', 'saved'], a child of
+// ['v2_programs'] by TanStack Query's own prefix-matching, so every existing
+// invalidation of the broad key (useCreateProgram, useUpdateProgramName,
+// useUpdateSchedule, useDeleteWorkoutDay, useStartRun below) already
+// invalidates this one too — nothing else needed to keep it in step.
+export function useSavedPrograms() {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_programs', 'saved'],
+    queryFn: fetchSavedPrograms,
     enabled: !!user,
   })
 }

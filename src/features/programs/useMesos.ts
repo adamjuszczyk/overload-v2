@@ -2,13 +2,8 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import {
-  fetchMesos,
-  createMeso,
-  completeAllActiveMesos,
-  completeMeso,
-  deleteMeso,
-} from './mesoService'
+import { fetchMesos, completeMeso, deleteMeso } from './mesoService'
+import { startRun } from './runService'
 
 const MESOS_KEY = ['v2_mesos']
 
@@ -21,16 +16,26 @@ export function useMesos() {
   })
 }
 
-export function useCreateMeso() {
-  const { user } = useAuth()
+// Replaces useCreateMeso (chunk 6, TASKS.md): one atomic, race-safe RPC
+// (v2_start_run) instead of the old completeAllActiveMesos + createMeso
+// two-request path — no user id to pass (the function reads auth.uid()
+// itself). Starting a run also creates a brand new v2_programs row (the
+// run's own copy), which the old path never did, so this invalidates
+// ['v2_programs'] too — a cache PlanPage/ProgramBuilderPage/ProgramPage all
+// read by a program id that didn't exist before this call. That key's
+// invalidation also reaches ['v2_programs', 'saved'] (TanStack Query
+// matches by prefix), so usePrograms.ts's useSavedPrograms needs no
+// separate invalidation of its own.
+export function useStartRun() {
   return useMutation({
-    mutationFn: async ({ name, programId }: { name: string; programId: string }) => {
-      // Enforce one-active-at-a-time at the application layer
-      await completeAllActiveMesos(user!.id)
+    mutationFn: ({ name, programId }: { name: string; programId: string }) => {
       const today = format(new Date(), 'yyyy-MM-dd')
-      return createMeso(user!.id, name, programId, today)
+      return startRun(programId, name, today)
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: MESOS_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: MESOS_KEY })
+      queryClient.invalidateQueries({ queryKey: ['v2_programs'] })
+    },
   })
 }
 

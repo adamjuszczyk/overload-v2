@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronRight, Trash2, X, CheckCircle } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO, format } from 'date-fns'
 import type { Mesocycle } from '../../types'
-import { usePrograms, useCreateProgram } from './usePrograms'
-import { useMesos, useCreateMeso, useCompleteMeso, useDeleteMeso } from './useMesos'
+import { useSavedPrograms, useCreateProgram } from './usePrograms'
+import { useMesos, useStartRun, useCompleteMeso, useDeleteMeso } from './useMesos'
+import { useToastStore } from '../notifications/toastStore'
 
 function weekNumber(startDate: string): number {
   return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
@@ -18,7 +19,7 @@ export default function ProgramPage() {
   const navigate = useNavigate()
 
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
-  const { data: programs = [], isLoading: programsLoading } = usePrograms()
+  const { data: programs = [], isLoading: programsLoading } = useSavedPrograms()
 
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
   const completedMesos = mesos.filter((m) => m.status === 'completed')
@@ -32,10 +33,11 @@ export default function ProgramPage() {
   const [showCreateProgram, setShowCreateProgram] = useState(false)
   const [newProgramName, setNewProgramName] = useState('')
 
-  const createMeso = useCreateMeso()
+  const startRun = useStartRun()
   const completeMeso = useCompleteMeso()
   const deleteMeso = useDeleteMeso()
   const createProgram = useCreateProgram()
+  const showToast = useToastStore((s) => s.show)
 
   function openStartMeso() {
     setMesoName('')
@@ -47,12 +49,23 @@ export default function ProgramPage() {
     e.preventDefault()
     const name = mesoName.trim() || programs.find((p) => p.id === selectedProgramId)?.name || 'Mesocycle'
     if (!selectedProgramId) return
-    const created = await createMeso.mutateAsync({ name, programId: selectedProgramId })
-    setShowStartMeso(false)
-    // Create-then-configure (TASKS §5.1), mirroring handleCreateProgram just
-    // below: the meso row is real before any priority row references it, so
-    // no client-minted uuid is needed.
-    navigate(`/meso/${created.id}/priorities`)
+    // v2_start_run (chunk 6) replaces the old completeAllActiveMesos +
+    // createMeso two-request path with one atomic, race-safe RPC call — this
+    // is the one call site in the app that starts a run, so it's also the
+    // one place that can surface the function's own refusals (another
+    // user's program, a program that's already a run's copy) and any
+    // network/offline failure. No try/catch existed here before this chunk
+    // (CONTEXT.md's own open-items note) — errors previously failed silently.
+    try {
+      const newMesoId = await startRun.mutateAsync({ name, programId: selectedProgramId })
+      setShowStartMeso(false)
+      // Create-then-configure (TASKS §5.1), mirroring handleCreateProgram
+      // just below: the meso row is real before any priority row references
+      // it, so no client-minted uuid is needed.
+      navigate(`/meso/${newMesoId}/priorities`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not start the mesocycle')
+    }
   }
 
   async function handleComplete() {
@@ -283,10 +296,10 @@ export default function ProgramPage() {
 
               <button
                 type="submit"
-                disabled={!selectedProgramId || createMeso.isPending}
-                style={{ width: '100%', height: 54, background: (!selectedProgramId || createMeso.isPending) ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: (!selectedProgramId || createMeso.isPending) ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: (!selectedProgramId || createMeso.isPending) ? 'var(--text-muted)' : 'var(--base)' }}
+                disabled={!selectedProgramId || startRun.isPending}
+                style={{ width: '100%', height: 54, background: (!selectedProgramId || startRun.isPending) ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: (!selectedProgramId || startRun.isPending) ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: (!selectedProgramId || startRun.isPending) ? 'var(--text-muted)' : 'var(--base)' }}
               >
-                {createMeso.isPending ? '…' : 'START MESOCYCLE'}
+                {startRun.isPending ? '…' : 'START MESOCYCLE'}
               </button>
             </form>
           )}

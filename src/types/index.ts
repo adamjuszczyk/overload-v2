@@ -27,6 +27,14 @@ export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'skipped'
 export type MesocycleStatus = 'active' | 'completed'
 export type WeightUnit = 'kg' | 'lbs'
 
+// v2_programs.kind (migration 027/028, chunk 6) — 'saved' is the reusable
+// template; 'run' is a run's own copy, created by v2_start_run and never
+// shown in a program list (programService.ts's fetchSavedPrograms filters
+// to 'saved' at the query; fetchPrograms stays unfiltered — PlanPage and
+// ProgramBuilderPage both look a program up by a meso's/route's own id,
+// which is a 'run' program for an active run's copy).
+export type ProgramKind = 'saved' | 'run'
+
 // ─── Exercise ─────────────────────────────────────────────────────────────────
 
 // The two stored values (exercises.status, migration 019, not null default
@@ -147,6 +155,13 @@ export interface WorkoutDay {
   name: string
   position: number
   exercises: ProgramExercise[]
+  // v2_workout_days.source_workout_day_id (migration 027/028) — on a run's
+  // copy, the saved program's workout it came from; null on a saved
+  // program's own workouts (never a copy of anything). Optional, not
+  // required: frozen Coach code (weekResolution.ts) builds placeholder
+  // WorkoutDay values that predate this field and must keep compiling
+  // unchanged (CONTEXT.md — no Coach change).
+  sourceWorkoutDayId?: string | null
 }
 
 export interface Program {
@@ -157,6 +172,9 @@ export interface Program {
   workoutDays: WorkoutDay[]
   createdAt: string
   updatedAt: string
+  // Optional for the same reason as WorkoutDay.sourceWorkoutDayId above —
+  // frozen Coach code builds placeholder Program values that predate it.
+  kind?: ProgramKind
 }
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────
@@ -171,6 +189,13 @@ export interface Mesocycle {
   startDate: string          // ISO date
   endDate: string | null     // set when status → 'completed'
   createdAt: string
+  // v2_mesocycles.source_program_id (migration 027/028) — the saved program
+  // this run started from (v2_start_run sets it; null for a run that
+  // predates chunk 6 and hasn't gone through the transition — not expected
+  // once 028 is live, every existing run gets one then). Optional for the
+  // same reason as WorkoutDay.sourceWorkoutDayId above — frozen Coach code
+  // (weekResolution.ts) builds placeholder Mesocycle values that predate it.
+  sourceProgramId?: string | null
 }
 
 // ─── Weekly Plan (Layer 2) ────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import type {
   WeightUnit,
   MuscleSubgroup,
   MovementPattern,
+  ProgramKind,
 } from '../../types'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -19,6 +20,10 @@ type DbProgram = {
   schedule: Record<string, string | null>
   created_at: string
   updated_at: string
+  // Absent until migration 027 (same "key missing, not null" fallback as
+  // weight_unit below) — a program predating 027 reads as 'saved', exactly
+  // the default 027 gave every existing row.
+  kind?: ProgramKind
 }
 
 type DbWorkoutDay = {
@@ -27,6 +32,7 @@ type DbWorkoutDay = {
   user_id: string
   name: string
   position: number
+  source_workout_day_id?: string | null  // absent until migration 027
 }
 
 type DbExerciseJoin = {
@@ -70,6 +76,7 @@ function toProgram(row: DbProgram): Program {
     workoutDays: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    kind: row.kind ?? 'saved',
   }
 }
 
@@ -81,6 +88,7 @@ function toWorkoutDay(row: DbWorkoutDay): WorkoutDay {
     name: row.name,
     position: row.position,
     exercises: [],
+    sourceWorkoutDayId: row.source_workout_day_id ?? null,
   }
 }
 
@@ -121,6 +129,24 @@ export async function fetchPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
     .select('*')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data as DbProgram[]).map(toProgram)
+}
+
+// Program lists (chunk 6, TASKS.md — "program lists show kind = 'saved'
+// only"): the programs page's own list and its Start Mesocycle picker, the
+// only two places a user picks a reusable template from. Everywhere else
+// that reads a program by a known id — PlanPage's active-run lookup,
+// ProgramBuilderPage/WorkoutDayEditorPage's route param, which is a run's
+// own copy (kind = 'run') while a run is active — keeps using the
+// unfiltered fetchPrograms above; filtering that one too would make the
+// active run's own copy invisible to the very pages that edit it.
+export async function fetchSavedPrograms(): Promise<Program[]> {
+  const { data, error } = await supabase
+    .from('v2_programs')
+    .select('*')
+    .eq('kind', 'saved')
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as DbProgram[]).map(toProgram)

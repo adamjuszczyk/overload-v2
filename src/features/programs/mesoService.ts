@@ -1,6 +1,6 @@
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
-import type { Mesocycle, MesocycleStatus, WeeklySchedule } from '../../types'
+import type { Mesocycle, MesocycleStatus, ProgramKind, WeeklySchedule } from '../../types'
 
 type DbMesoProgram = { id: string; name: string }
 
@@ -14,6 +14,7 @@ type DbMeso = {
   end_date: string | null
   created_at: string
   v2_programs: DbMesoProgram | null
+  source_program_id?: string | null  // absent until migration 027
 }
 
 function toMesocycle(row: DbMeso): Mesocycle {
@@ -31,12 +32,18 @@ function toMesocycle(row: DbMeso): Mesocycle {
           workoutDays: [],
           createdAt: '',
           updatedAt: '',
+          // Not selected by this row's embed (id, name only) — every run's
+          // copy this list can show is 'run' by construction (program_id
+          // always names the run's own copy from chunk 6 on), so this is a
+          // safe, honest default rather than a fetched value.
+          kind: 'run' as ProgramKind,
         }
       : undefined,
     status: row.status,
     startDate: row.start_date,
     endDate: row.end_date,
     createdAt: row.created_at,
+    sourceProgramId: row.source_program_id ?? null,
   }
 }
 
@@ -49,39 +56,10 @@ export async function fetchMesos(): Promise<Mesocycle[]> {
   return (data as DbMeso[]).map(toMesocycle)
 }
 
-export async function createMeso(
-  userId: string,
-  name: string,
-  programId: string,
-  startDate: string,
-): Promise<Mesocycle> {
-  const { data, error } = await supabase
-    .from('v2_mesocycles')
-    .insert({
-      user_id: userId,
-      name: name.trim(),
-      program_id: programId,
-      start_date: startDate,
-      status: 'active',
-    })
-    .select('*, v2_programs!v2_mesocycles_program_id_fkey(id, name)')
-    .single()
-  if (error) throw error
-  return toMesocycle(data as DbMeso)
-}
-
-export async function completeAllActiveMesos(userId: string): Promise<void> {
-  // Local date, matching every other "today" computation in the app
-  // (e.g. useCreateMeso, TodayPage) — UTC would give the wrong end_date
-  // for users west of UTC late in the evening.
-  const today = format(new Date(), 'yyyy-MM-dd')
-  const { error } = await supabase
-    .from('v2_mesocycles')
-    .update({ status: 'completed', end_date: today })
-    .eq('user_id', userId)
-    .eq('status', 'active')
-  if (error) throw error
-}
+// createMeso / completeAllActiveMesos (the old two-request start path) are
+// retired as of chunk 6 — v2_start_run (runService.ts) replaces both in one
+// atomic, race-safe call (TASKS.md; scratch R8). Removed rather than kept
+// exported-but-unused: nothing else in the app called either.
 
 export async function completeMeso(id: string): Promise<void> {
   const today = format(new Date(), 'yyyy-MM-dd')
