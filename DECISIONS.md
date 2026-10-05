@@ -4,7 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-05 18:25 UTC — the hold is lifted for 40 and 41: Adam merges in order, the reviewer confirms each deploy green before the next merge. Chunk 8 being changed for 42 (b).*
 
 **Decisions**
-- 41 — 029 (#24, `61b2670`) merged and live. Next: #25 (chunk 7 code; I say when ready), then 030 (#26), then your parity query and app check (entry 41 steps 3–4).
+- 41 — 029 (#24, `61b2670`) and the chunk 7 code (#25, `55bed82`, Vercel success 18:42 UTC) are live. Next: merge 030 (#26; ready, CI green), then your parity query (expect 0 rows) and app check (entry 41 steps 3–4).
 - 45 — Merge migration 031 (#27), then the chunk 8 code (#28). Recommendation: after 41, each when I say the previous deploy is green. Blocked: chunk 8 going live.
 
 **To-dos**
