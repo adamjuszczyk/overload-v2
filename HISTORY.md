@@ -23046,3 +23046,42 @@ Chunk: 11
 What happened: G14 reappeared on 2026-10-05 (your second account has a program with one workout on every weekday, sharing one plan row; L6 had only checked your main account). Your answer is recorded in TASKS.md chunks 11 and 21. Chunk order puts the planner (11) 14 chunks before sequence runs (25), so one half of the prompt has nothing to switch to yet.
 A competent default would: show only what can work today (a) — doesn't apply because: your answer names both choices, and dropping one for 14 chunks changes what the prompt offers.
 Cost of deferral: n/a (blocking).
+
+
+---
+
+## 2026-10-05 (40 closed) — closed DECISIONS entry's full text, verbatim
+
+## 40 Merge migration 028 (runs own a copy of their program; transition of your existing programs)
+Severity: blocking
+Chunk: 6
+**Ask:** Merge PR #22 (migration 028). Then, once its deploy succeeds, merge the code PR #23 straight after. `check-migration` flags 028 and it changes existing data, so the merge is yours. **No backup and no before/after counts** (your call, 2026-10-05): if the transition needs undoing, 028's own manifest (`v2_run_transition_manifest`: every clone it made, per user) is the rollback, and I verify what I can after the deploy.
+**Options:** (a) merge #22 now, following the steps below, then #23 once the deploy succeeds; (b) hold both; (c) ask for changes first.
+**Recommendation:** (a), whenever tonight's "merge nothing" hold ends. G14 (one workout on several weekdays, your second account) was checked against 028 and chunks 7–8 on 2026-10-05 and changes nothing (Evidence), so 028 is unchanged. Merge #23 promptly after #22's deploy. In between, the current app lists both the run copies and their saved clones on the Program page, and its old START MESOCYCLE path would start a run without copying. **Don't start a mesocycle in that window.**
+**Blocked until answered:** chunk 6 going live. Chunks 7+ keep being built and stacked on `build/chunk-6` meanwhile; none of them merges before 028 and #23 do.
+**Steps:**
+1. Merge #22 and tell me. I check every `Supabase Preview` run on the merge commit (anything but success is blocking), probe the live schema (`probe-live-columns.mjs`: the manifest table exists and anon sees 0 rows; `v2_start_run` exists — an anon call is refused before it writes anything), and run `check-embeds.mjs` live. Under anon + RLS I can't see your rows, so the row-level result (your 3 programs became runs with saved clones) is checked in the app at step 3.
+2. Merge #23 (or tell me to).
+3. After #23's deploy, in the app (take the update banner): the Program page lists only your 3 saved programs; Plan has a PROGRAM tab listing the active run's workouts, each opening the workout editor; Today, Plan and History show your active run unchanged. Your second account: its program still shows one workout on every weekday, and planning one day still shows on all of them (today's behaviour, G14). A failure here is blocking.
+4. Whenever you next START a program, I give you one SQL query for a complete-copy spot check.
+**Answer:**
+**Evidence:**
+What happened: chunk 6 is built and verified: PR #22 is migration 028 only (md5 `695fa92f3ce15363b0ffe4c0b87cb837`), and PR #23 is the code, stacked on it.
+`node scripts/check-migration.mjs origin/master` exits 1 with 10 statements, all "not on the safe list":
+- `create or replace function v2_copy_program(…)` and its `grant execute … to authenticated`;
+- `create or replace function v2_start_run(…)` and its `grant execute … to authenticated`;
+- the transition `do $$ … $$` block (clones every program a meso uses and records it in the manifest);
+- `update v2_workout_days … set source_workout_day_id = clone_wd.id` (run workouts → saved clone's);
+- `update v2_workout_days set source_workout_day_id = null where program_id in (clones)`;
+- `update v2_programs set kind = 'run' where id in (originals)`;
+- `update v2_mesocycles … set source_program_id = clone`;
+- `notify pgrst, 'reload schema'`.
+None changes an id or removes a row. My own scratch check (real `supabase/postgres:17.6.1.155`, 000–027 plus the builder's fixture, then 028):
+- **Column-level before/after diff of every row:** only `v2_programs.kind` (4 rows), `v2_workout_days.source_workout_day_id` (5) and `v2_mesocycles.source_program_id` (4) changed; 0 rows lost.
+- **Lineage:** run copy ← meso, `source_program_id` → saved clone, run workouts → saved workouts, saved workouts without lineage; clones complete.
+- **Coach's real input assembly** (Mesocycle Analysis for both completed mesos; week resolution and weekly input for three weeks) through PostgREST is **byte-identical before vs after**. That is TASKS.md's "Meso Analysis input identical" check, done on scratch.
+- `replay-migrations.sh` 29/29; `check-embeds-local.sh` 24/24.
+The builder also proved R7 (complete copy, 0 back-references), R8 (race: 2 active without the lock, proven overlapping; 1 with it), R9 (injected error appears, nothing persists) and RLS (B can't start on A's program; manifest rows are per user).
+G14 check (2026-10-05, scratch, `supabase/postgres:17.6.1.155`): a fixture program with one workout on Mon–Fri and one shared plan row, run through 028, `v2_start_run`, 029, 030 and 031. The original becomes `kind = run` with 1 workout over 5 weekdays; its saved clone has 1 workout over 5 weekdays; the shared plan row is 1 row before and after the transition; 029 gives it its exercise rows; `v2_plan_week` plans 1 row for week 2; a new run started from the clone has 1 workout over 5 weekdays and plans 1 row per week. Same behaviour as today throughout, so nothing in chunks 6–8 changes.
+A competent default would: merge an all-green migration — doesn't apply because: check-migration flags it and it rewrites existing rows, so the merge is yours (CONTEXT migration flow; Escalations 8, 12). Counts and backup waived by you (2026-10-05).
+Cost of deferral: n/a (blocking).
