@@ -4,7 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-06 07:45 UTC, chunk 10 boundary — chunks 1–10 merged and live; chunk 11 being built.*
 
 **Decisions**
-- 54 — Merge migration 034 (#35: drop suggested reps, convert them into rep targets). Steps: take the update banner on every device after I say #34 is live, run the before queries, merge, run the after queries. Recommendation: merge. Blocked: chunk 12 going live.
+- 54 — Merge migration 034 (#35: drop suggested reps, convert them into rep targets). **Ready:** #34 has been live since 13:32 UTC and #35's CI is green. Steps: take the update banner on every device, run the before queries, merge, run the after queries. Recommendation: merge. Blocked: chunk 12 going live.
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
