@@ -38,7 +38,7 @@ const workoutDay: WorkoutDay = {
 
 const pe1: ProgramExercise = {
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-1', position: 0,
-  targetReps: 8, weightUnit: null,
+  weightUnit: null,
 }
 
 function makeProgram(planningType: Program['planningType']): Program {

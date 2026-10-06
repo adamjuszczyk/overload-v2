@@ -33,7 +33,7 @@ const EX_A: Exercise = {
 }
 const pe1: ProgramExercise = {
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0,
-  targetReps: 8, weightUnit: null, exercise: EX_A, // targetReps set on purpose — proves it no longer renders
+  weightUnit: null, exercise: EX_A,
 }
 
 function makeProgram(): Program {
@@ -96,7 +96,7 @@ function renderPlanPage() {
 }
 
 describe('PlanPage — exercise header no longer shows the old suggested-reps line', () => {
-  it('does not render "· 8 REPS" even though pe1.targetReps is still 8', () => {
+  it('does not render "· 8 REPS" (chunk 12: the field itself is gone, nothing can set it anymore)', () => {
     mockState.plans = [makePlan([makeSet({ repMin: null, repMax: null, isAmrap: false })])]
     renderPlanPage()
     expect(screen.queryByText(/8 REPS/)).toBeNull()

@@ -124,7 +124,6 @@ const pe1: ProgramExercise = {
   userId: 'user-1',
   exerciseId: 'ex-1',
   position: 0,
-  targetReps: 8,
   weightUnit: null,
   exercise: {
     id: 'ex-1',
@@ -147,7 +146,6 @@ const pe2: ProgramExercise = {
   userId: 'user-1',
   exerciseId: 'ex-2',
   position: 1,
-  targetReps: null,
   weightUnit: null,
   exercise: {
     id: 'ex-2',
@@ -195,7 +193,6 @@ const decoyProgramExercise: ProgramExercise = {
   userId: 'user-1',
   exerciseId: 'ex-decoy',
   position: 0,
-  targetReps: null,
   weightUnit: null,
   exercise: {
     id: 'ex-decoy',

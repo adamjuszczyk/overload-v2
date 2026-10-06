@@ -58,7 +58,6 @@ describe('fetchRunProgramExercises — the program tab\'s list excludes week_onl
       user_id: 'u1',
       exercise_id: 'ex-1',
       position: 0,
-      target_reps: 8,
       weight_unit: 'kg',
       exercises: {
         id: 'ex-1',
@@ -86,7 +85,6 @@ describe('fetchRunProgramExercises — the program tab\'s list excludes week_onl
         userId: 'u1',
         exerciseId: 'ex-1',
         position: 0,
-        targetReps: 8,
         weightUnit: 'kg',
         exercise: {
           id: 'ex-1',
@@ -106,8 +104,8 @@ describe('fetchRunProgramExercises — the program tab\'s list excludes week_onl
   })
 })
 
-describe('createWeekOnlyProgramExercise — always week_only = true, fresh target_reps/weight_unit', () => {
-  it('writes the slot with week_only: true and null target_reps/weight_unit', async () => {
+describe('createWeekOnlyProgramExercise — always week_only = true, fresh weight_unit', () => {
+  it('writes the slot with week_only: true and null weight_unit', async () => {
     const chain = makeChain({
       data: {
         id: 'pe-new',
@@ -115,7 +113,6 @@ describe('createWeekOnlyProgramExercise — always week_only = true, fresh targe
         user_id: 'u1',
         exercise_id: 'ex-new',
         position: 2,
-        target_reps: null,
         weight_unit: null,
         exercises: null,
       },
@@ -136,7 +133,6 @@ describe('createWeekOnlyProgramExercise — always week_only = true, fresh targe
       workout_day_id: 'wd-1',
       exercise_id: 'ex-new',
       position: 2,
-      target_reps: null,
       weight_unit: null,
       superset_block_id: 'block-1',
       week_only: true,

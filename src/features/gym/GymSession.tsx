@@ -506,7 +506,6 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             exerciseId: ex.id,
             exercise: ex,
             position: sortedExercises.length + i,
-            targetReps: null,
             weightUnit: null,
           }
           return (

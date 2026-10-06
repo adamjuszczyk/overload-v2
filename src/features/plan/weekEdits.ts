@@ -9,7 +9,7 @@
 //     (its planned sets move with it — weekPlanService.ts's swapWeekExercise
 //     updates both the v2_week_plan_exercises row and that week's own
 //     v2_week_plan_sets rows to the new slot); the replacement takes the
-//     replaced slot's superset block, never its target_reps/weight_unit
+//     replaced slot's superset block, never its weight_unit
 //     (resolveSwapSlot). "Only this week", ticked, keeps the ORIGINAL
 //     pre-swap slot in carry_program_exercise_id so copying forward
 //     reverts to it (resolveSwapCarry) — "original" meaning whatever this
@@ -77,8 +77,8 @@ export interface NewWeekOnlySlot {
 // The replacement's own row: the replaced slot's position and superset
 // block (SPEC "Supersets": "a week-only slot created by a swap keeps the
 // replaced slot's block"), the picked exercise's identity — nothing else
-// carries over (not target_reps, not weight_unit: a different exercise
-// identity's own suggested reps/unit preference don't apply to it).
+// carries over (not weight_unit: a different exercise identity's own unit
+// preference doesn't apply to it).
 export function resolveSwapSlot(source: SwapSourceSlot, replacementExerciseId: string): NewWeekOnlySlot {
   return {
     workoutDayId: source.workoutDayId,
