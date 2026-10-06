@@ -595,3 +595,133 @@ describe('ExerciseCard — logging an auto-unlocked planned stage reuses ADD STA
     expect(stage2Params.isDropset).toBe(true)
   })
 })
+
+// Chunk 14 — "Staged sets: all four stage kinds" (SPEC.md / TASKS.md).
+// Same end-to-end shape as the dropset ExerciseCard test directly above
+// (a planned 3-row staged set: head + 2 stages, logged head-first-then-
+// stage-in-turn), for a planned REST-PAUSE set instead of a dropset — the
+// reviewer's own "real session" proof: all rows render from the start,
+// locked in turn, stage weights default to the previous row's own weight,
+// and the head's write carries stage_kind = 'rest_pause' while both stages
+// carry parentSetId + stageIndex 1/2, exactly as a dropset's stages always
+// have.
+describe('ExerciseCard — a planned rest-pause set of 3 stages (chunk 14)', () => {
+  type OnLogParams = Parameters<ComponentProps<typeof ExerciseCard>['onLog']>[0]
+
+  it('renders every stage from the start, carries weight stage to stage, and writes stage_kind "as planned"', () => {
+    const programExercise = makeProgramExercise()
+    const head = makePlanSet({ id: 'plan-head', setNumber: 1, stageIndex: 0, parentWeekPlanSetId: null, stageKind: 'rest_pause' })
+    const stage1 = makePlanSet({ id: 'plan-s1', setNumber: 1, stageIndex: 1, parentWeekPlanSetId: 'plan-head', isDropset: true })
+    const stage2 = makePlanSet({ id: 'plan-s2', setNumber: 1, stageIndex: 2, parentWeekPlanSetId: 'plan-head', isDropset: true })
+    const plannedSets = [head, stage1, stage2]
+
+    const onLog = vi.fn((params: OnLogParams) => Promise.resolve(makeLog({ ...params })))
+
+    function renderCard(currentLogs: SetLog[]) {
+      return (
+        <MemoryRouter>
+          <ExerciseCard
+            programExercise={programExercise}
+            plannedSets={plannedSets}
+            currentLogs={currentLogs}
+            lastLogs={[]}
+            lastLogsLoading={false}
+            referenceSessions={[]}
+            referenceLoading={false}
+            referenceMesocycleId={null}
+            referenceIsError={false}
+            referenceIsFromCache={false}
+            onRetryReference={noop}
+            today="2026-10-04"
+            onLog={onLog}
+            onUpdateSet={noop}
+            onDeleteSet={asyncNoop}
+            onSwap={noop}
+          />
+        </MemoryRouter>
+      )
+    }
+
+    const { rerender } = render(renderCard([]))
+
+    // 1. All three rows render from the start — head enabled, both stages
+    // present and locked — same shape as a dropset's own 3-row case, plus
+    // each locked stage now shows its kind.
+    let inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(6)
+    expect(isDisabled(inputs[0])).toBe(false) // head
+    expect(isDisabled(inputs[2])).toBe(true) // stage 1 — locked
+    expect(isDisabled(inputs[4])).toBe(true) // stage 2 — locked
+    expect(screen.getAllByText('REST-PAUSE')).toHaveLength(2) // one per locked stage
+
+    // Log the head at 100 kg.
+    fireEvent.change(inputs[0], { target: { value: '100' } })
+    fireEvent.change(inputs[1], { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    const headParams = onLog.mock.calls[0][0]
+    expect(headParams.parentSetId).toBeNull()
+    // The core logging rule (TASKS.md "Logging"): the head's write carries
+    // the planned kind, "as planned".
+    expect(headParams.stageKind).toBe('rest_pause')
+
+    const headLog = makeLog({
+      id: 'real-head-id',
+      exerciseId: headParams.exerciseId,
+      weekPlanSetId: 'plan-head',
+      setNumber: 1,
+      weight: 100,
+      stageKind: 'rest_pause',
+    })
+    rerender(renderCard([headLog]))
+
+    // 2. Stage 1 auto-unlocks; its weight input defaults to the head's own
+    // 100 (carry-over, SPEC "Staged sets" — "instead of being dropped").
+    inputs = screen.getAllByPlaceholderText('0')
+    expect(isDisabled(inputs[0])).toBe(false)
+    expect(screen.getByDisplayValue('100')).toBeTruthy()
+    expect(isDisabled(inputs[2])).toBe(true) // stage 2 — still locked
+
+    // Keep the carried value — logging it unchanged proves the prefill is
+    // real input state, not just a placeholder.
+    fireEvent.change(inputs[1], { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(2)
+    const stage1Params = onLog.mock.calls[1][0]
+    expect(stage1Params.parentSetId).toBe('real-head-id')
+    expect(stage1Params.stageIndex).toBe(1)
+    // A stage's own write never carries a kind of its own (the DB's check).
+    expect(stage1Params.stageKind).toBeNull()
+    expect(stage1Params.weight).toBe(100)
+
+    const stage1Log = makeLog({
+      id: 'real-stage1-id',
+      exerciseId: headParams.exerciseId,
+      weekPlanSetId: 'plan-s1',
+      setNumber: 1,
+      parentSetId: 'real-head-id',
+      stageIndex: 1,
+      isDropset: true,
+      weight: 100,
+    })
+    rerender(renderCard([headLog, stage1Log]))
+
+    // 3. Stage 2 auto-unlocks, now carrying stage 1's own weight (100 —
+    // unchanged from the head in this run, same as the brief's own "stage
+    // weights defaulting to the head's weight").
+    inputs = screen.getAllByPlaceholderText('0')
+    expect(inputs).toHaveLength(2)
+    expect(screen.getByDisplayValue('100')).toBeTruthy()
+
+    fireEvent.change(inputs[1], { target: { value: '6' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(3)
+    const stage2Params = onLog.mock.calls[2][0]
+    expect(stage2Params.parentSetId).toBe('real-head-id')
+    expect(stage2Params.stageIndex).toBe(2)
+    expect(stage2Params.stageKind).toBeNull()
+  })
+})

@@ -205,3 +205,138 @@ describe('SetRow — planned rep target hint (chunk 11)', () => {
     expect(screen.getByText('TARGET RIR 2')).toBeTruthy()
   })
 })
+
+// Chunk 14 — "Staged sets: all four stage kinds" (SPEC.md). Three things at
+// this component's own boundary: a stage row is labelled by its resolved
+// kind (dropset keeps today's plain "STAGE"/no-hint look, unchanged); a
+// carrying kind's weight input defaults to the resolved carry value
+// (stageCarryLogic.ts, exercised through the `carryWeightKg` prop SetGroup.tsx
+// computes — this file tests the prop's effect in isolation, same precedent
+// as every other SetGroup-computed prop here); and LOG/SKIP always resolve
+// `stageKind` from this row's own `plannedSet`, never from the display-only
+// `stageKind` prop.
+describe('SetRow — stage kind label, carry-over weight, logged "as planned" (chunk 14)', () => {
+  function unloggedStageProps(overrides: Partial<Parameters<typeof SetRow>[0]> = {}) {
+    return { ...baseSetRowProps(), currentLog: null, isStage: true, ...overrides }
+  }
+
+  it('a dropset stage (explicit or absent) shows no new label — the locked/unlogged row looks exactly as before this chunk', () => {
+    const { rerender } = render(<SetRow {...unloggedStageProps({ isLocked: true })} />)
+    expect(screen.queryByText('DROPSET')).toBeNull()
+    expect(screen.queryByText('REST-PAUSE')).toBeNull()
+    rerender(<SetRow {...unloggedStageProps({ isLocked: true, stageKind: 'dropset' })} />)
+    expect(screen.queryByText('DROPSET')).toBeNull()
+  })
+
+  it.each([
+    ['rest_pause', 'REST-PAUSE'],
+    ['myo_reps', 'MYO-REPS'],
+    ['cluster', 'CLUSTER'],
+  ] as const)('a locked %s stage shows its kind label %s', (stageKind, label) => {
+    render(<SetRow {...unloggedStageProps({ isLocked: true, stageKind })} />)
+    expect(screen.getByText(label)).toBeTruthy()
+  })
+
+  it('a non-stage (head) row never shows a kind label, even if stageKind is passed', () => {
+    render(<SetRow {...baseSetRowProps()} currentLog={null} isStage={false} stageKind="rest_pause" />)
+    expect(screen.queryByText('REST-PAUSE')).toBeNull()
+  })
+
+  it('an already-logged dropset stage keeps the plain "STAGE" badge; a rest-pause stage shows its kind instead', () => {
+    const { rerender } = render(
+      <SetRow {...baseSetRowProps()} isStage currentLog={makeLog({ isDropset: true, parentSetId: 'head1', stageIndex: 1 })} />,
+    )
+    expect(screen.getByText('STAGE')).toBeTruthy()
+    expect(screen.queryByText('REST-PAUSE')).toBeNull()
+
+    rerender(
+      <SetRow
+        {...baseSetRowProps()}
+        isStage
+        stageKind="rest_pause"
+        currentLog={makeLog({ isDropset: true, parentSetId: 'head1', stageIndex: 1 })}
+      />,
+    )
+    expect(screen.queryByText('STAGE')).toBeNull()
+    expect(screen.getByText('REST-PAUSE')).toBeTruthy()
+  })
+
+  it('carryWeightKg prefills the weight input (converted to the active unit), same guard as the lastLog prefill', () => {
+    render(<SetRow {...unloggedStageProps({ stageKind: 'rest_pause', carryWeightKg: 92.5 })} />)
+    expect(screen.getByDisplayValue('92.5')).toBeTruthy()
+  })
+
+  it('carryWeightKg null (dropset, or nothing to carry yet) leaves the weight input blank, same as today', () => {
+    render(<SetRow {...unloggedStageProps({ stageKind: 'dropset', carryWeightKg: null })} />)
+    const weightInput = screen.getAllByRole('textbox')[0] as HTMLInputElement
+    expect(weightInput.value).toBe('')
+  })
+
+  it("LOG resolves stageKind from THIS row's own plannedSet, not the display-only stageKind prop", () => {
+    const onLog = vi.fn()
+    render(
+      <SetRow
+        {...unloggedStageProps({ stageKind: 'rest_pause' })}
+        plannedSet={makeWeekPlanSet({ id: 'stage-plan-1', stageKind: null })}
+        onLog={onLog}
+      />,
+    )
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '100' } })
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    // A stage's own plan row always carries a null stage_kind (the DB's own
+    // check) — correctly null here even though the group's resolved
+    // display kind (the prop above) is 'rest_pause'.
+    expect(onLog.mock.calls[0][0].stageKind).toBeNull()
+  })
+
+  it('a HEAD\'s LOG writes its OWN plannedSet.stageKind — "as planned"', () => {
+    const onLog = vi.fn()
+    render(
+      <SetRow
+        {...baseSetRowProps()}
+        currentLog={null}
+        isStage={false}
+        plannedSet={makeWeekPlanSet({ id: 'head-plan-1', stageKind: 'cluster' })}
+        onLog={onLog}
+      />,
+    )
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '60' } })
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    expect(onLog.mock.calls[0][0].stageKind).toBe('cluster')
+  })
+
+  it('a head with no plannedSet at all (an extra/unplanned set) writes stageKind: null', () => {
+    const onLog = vi.fn()
+    render(<SetRow {...baseSetRowProps()} currentLog={null} isStage={false} plannedSet={null} onLog={onLog} />)
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '60' } })
+    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog.mock.calls[0][0].stageKind).toBeNull()
+  })
+
+  it('SKIP also resolves stageKind "as planned", same as LOG', () => {
+    const onLog = vi.fn()
+    render(
+      <SetRow
+        {...baseSetRowProps()}
+        currentLog={null}
+        isStage={false}
+        plannedSet={makeWeekPlanSet({ id: 'head-plan-2', stageKind: 'myo_reps' })}
+        onLog={onLog}
+      />,
+    )
+    fireEvent.click(screen.getByText('▼ MORE'))
+    fireEvent.click(screen.getByRole('button', { name: 'SKIP' }))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    expect(onLog.mock.calls[0][0].stageKind).toBe('myo_reps')
+    expect(onLog.mock.calls[0][0].isSkipped).toBe(true)
+  })
+})
