@@ -23,6 +23,7 @@ import {
 } from './useWeekPlan'
 import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
+import { columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
@@ -202,11 +203,16 @@ export default function PlanPage() {
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', textAlign: 'center' }}>
             NO ACTIVE MESOCYCLE
           </p>
+          {/* Chunk 11 (SPEC.md "Plan screen" — "no active run → 'Start a
+              program', leading to the planner"): the programs page (/program,
+              unchanged this chunk) is where a program is picked or created —
+              "+" there now opens the new planner (PlannerPage, /program/:id)
+              instead of the old builder. */}
           <button
             onClick={() => navigate('/program')}
             style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)', cursor: 'pointer' }}
           >
-            START A MESO →
+            START A PROGRAM →
           </button>
         </div>
       </div>
@@ -294,7 +300,13 @@ export default function PlanPage() {
             through the existing editor this links to — chunk 9 adds the
             per-type rules on top). */}
         {activeTab === 'program' && (
-          <ProgramTab programId={activeMeso.programId} workoutDays={workoutDays} isLoading={daysLoading} />
+          program
+            ? <ProgramTab program={program} />
+            : (
+              <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
+                <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+              </div>
+            )
         )}
 
         {activeTab === 'weeks' && (
@@ -335,8 +347,12 @@ export default function PlanPage() {
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
               NO DAYS SCHEDULED
             </p>
+            {/* Chunk 11 — ProgramBuilderPage (the old target, a whole-program
+                schedule editor at /program/:id) is gone; schedule assignment
+                now lives inline in the Program tab's own StepExercises, so
+                this switches tabs instead of navigating away. */}
             <button
-              onClick={() => navigate(`/program/${activeMeso.programId}`)}
+              onClick={() => setActiveTab('program')}
               style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)' }}
             >
               Set up weekly schedule →
@@ -760,9 +776,6 @@ function ExerciseSection({
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
             {pe.exercise?.muscleGroup?.toUpperCase()}
-            {pe.targetReps !== null && (
-              <span style={{ color: 'var(--text-dim)' }}> · {pe.targetReps} REPS</span>
-            )}
           </div>
         </div>
         {!isPast && (
@@ -870,6 +883,7 @@ function PlanSetGroup({
       <SetRow
         displayNumber={displayNumber}
         targetRir={head.targetRir}
+        repTarget={columnsToRepTarget({ repMin: head.repMin ?? null, repMax: head.repMax ?? null, isAmrap: head.isAmrap ?? false })}
         isPast={isPast}
         onRemove={onRemoveHead}
         onUpdate={(changes) => onUpdate(head.id, changes)}
@@ -882,6 +896,7 @@ function PlanSetGroup({
               key={stage.id}
               isStage
               targetRir={stage.targetRir}
+              repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
               isPast={isPast}
               onRemove={() => onRemoveStage(stage.id)}
               onUpdate={(changes) => onUpdate(stage.id, changes)}
@@ -911,6 +926,7 @@ function SetRow({
   displayNumber,
   isStage = false,
   targetRir,
+  repTarget,
   isPast,
   onRemove,
   onUpdate,
@@ -918,6 +934,11 @@ function SetRow({
   displayNumber?: number
   isStage?: boolean
   targetRir: number | null
+  // Chunk 11 (SPEC.md "Removals") — the planned rep target, read-only here
+  // (copied from the program at plan time; chunk 19's SetTargetsEditor owns
+  // editing it in the week plan). 'none' renders nothing, same as a null
+  // targetRir today.
+  repTarget: RepTarget
   isPast: boolean
   onRemove: () => void
   onUpdate: (changes: { targetRir?: number | null }) => void
@@ -928,6 +949,13 @@ function SetRow({
       <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
         {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
       </span>
+
+      {/* Planned rep target (read-only) */}
+      {repTarget.type !== 'none' && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
+          {formatRepTarget(repTarget)}
+        </span>
+      )}
 
       {/* RIR stepper */}
       <RirStepper

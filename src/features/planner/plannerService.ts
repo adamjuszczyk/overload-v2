@@ -1,0 +1,340 @@
+import { supabase } from '../../lib/supabase'
+import type { ProgramSet, WeeklySchedule, DayOfWeek, WorkoutDay } from '../../types'
+import { repTargetToColumns, columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
+import { fetchRunProgramExercises } from '../programs/runProgramExercises'
+import { createWorkoutDay } from '../programs/programService'
+
+// Chunk 11 — the stepped program planner (TASKS.md "file layout: ...
+// plannerService.ts"). First user of v2_program_sets (CONTEXT rule:
+// scripts/verify-rls.mjs's TABLES gains it in this same change).
+//
+// v2_program_exercises is read here ONLY through fetchRunProgramExercises
+// (runProgramExercises.ts, chunk 9's one read path) — this file otherwise
+// only ever WRITES a brand new row there (cloneProgramExerciseRow, below),
+// with an explicit client-chosen id and nothing chained back to read it, so
+// scripts/check-program-exercise-reads.mjs needs no new exception for this
+// file.
+
+// ─── DB type + mapper ───────────────────────────────────────────────────────
+
+type DbProgramSet = {
+  id: string
+  user_id: string
+  program_exercise_id: string
+  position: number
+  is_warmup: boolean
+  stage_kind: string | null
+  stage_rest_seconds: number | null
+  parent_program_set_id: string | null
+  stage_index: number
+  rep_min: number | null
+  rep_max: number | null
+  is_amrap: boolean
+  rest_seconds: number | null
+  created_at: string
+}
+
+function toProgramSet(row: DbProgramSet): ProgramSet {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    programExerciseId: row.program_exercise_id,
+    position: row.position,
+    isWarmup: row.is_warmup,
+    stageKind: row.stage_kind as ProgramSet['stageKind'],
+    stageRestSeconds: row.stage_rest_seconds,
+    parentProgramSetId: row.parent_program_set_id,
+    stageIndex: row.stage_index,
+    repMin: row.rep_min,
+    repMax: row.rep_max,
+    isAmrap: row.is_amrap,
+    restSeconds: row.rest_seconds,
+    createdAt: row.created_at,
+  }
+}
+
+// ─── Reads ──────────────────────────────────────────────────────────────────
+
+// Bulk fetch for every program-exercise id given, one request — the
+// per-workout volume view (StepVolume.tsx) calls this once per workout with
+// every one of its exercises' ids, not once per exercise.
+export async function fetchProgramSets(programExerciseIds: string[]): Promise<ProgramSet[]> {
+  if (programExerciseIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('v2_program_sets')
+    .select('*')
+    .in('program_exercise_id', programExerciseIds)
+    .order('position', { ascending: true })
+  if (error) throw error
+  return (data as DbProgramSet[]).map(toProgramSet)
+}
+
+// Heads only (027: "a stage shares its head's position"). Chunk 11 never
+// creates a stage (chunk 14's scope — stage_kind/parent_program_set_id stay
+// null on every row this file writes), but every count/display this module
+// feeds stays correct once stages exist too, by going through this filter
+// rather than assuming every row is a head.
+export function headSets(sets: ProgramSet[]): ProgramSet[] {
+  return sets.filter((s) => s.parentProgramSetId === null)
+}
+
+// Reviewer note: "keep the flag in one place so (b), blocking Start, would
+// be a one-line guard." The one place: a program-exercise with zero heads.
+// DECISIONS 52 (provisional a) — Save/Start never read this; only the
+// step-3 per-exercise "no sets yet" flag does, today.
+export function hasNoSets(sets: ProgramSet[]): boolean {
+  return headSets(sets).length === 0
+}
+
+// ─── Set count — step 3's one required value ───────────────────────────────
+// Reconciles an exercise's own head rows to exactly `count`, in one of two
+// directions, never both: short of `count` -> appends new rows; over
+// `count` -> deletes the excess TRAILING rows (highest position first).
+// Every RETAINED row (every position <= min(old, new) count) is left
+// completely untouched, including whatever rep target it already carries —
+// a per-set override "survives an unrelated count change" (review fix)
+// because growing/shrinking never writes to a row it didn't just insert.
+//
+// Review fix — a newly APPENDED row no longer starts blank: it takes the
+// rep target of the exercise's own last existing head (highest position),
+// or no target when there was none to copy (first-ever sets). TASKS.md:
+// "sets added by the stepper take the rep target of the exercise's last
+// existing set" — so raising the count after an exercise-level "set 8–12"
+// (setRepTargetForAllSets, below) keeps adding 8–12 sets, the same "stays
+// quick for the plain case" SPEC asks of the stepper itself.
+export async function setExerciseSetCount(
+  userId: string,
+  programExerciseId: string,
+  currentHeads: ProgramSet[],
+  count: number,
+): Promise<void> {
+  if (count < 0) throw new Error('setExerciseSetCount: count must be >= 0')
+  const sorted = [...currentHeads].sort((a, b) => a.position - b.position)
+
+  if (count > sorted.length) {
+    const last = sorted[sorted.length - 1] ?? null
+    const rows = []
+    for (let position = sorted.length + 1; position <= count; position++) {
+      rows.push({
+        user_id: userId,
+        program_exercise_id: programExerciseId,
+        position,
+        is_warmup: false,
+        rep_min: last?.repMin ?? null,
+        rep_max: last?.repMax ?? null,
+        is_amrap: last?.isAmrap ?? false,
+      })
+    }
+    const { error } = await supabase.from('v2_program_sets').insert(rows)
+    if (error) throw error
+  } else if (count < sorted.length) {
+    const idsToRemove = sorted.slice(count).map((s) => s.id)
+    const { error } = await supabase.from('v2_program_sets').delete().in('id', idsToRemove)
+    if (error) throw error
+  }
+}
+
+// Per-set adjustment (SPEC.md "Stepped program planner" step 3; "Targets" —
+// "a number, a range, or AMRAP"). repTargetToColumns (plannerVocabulary.ts,
+// chunk 2) is the one place min/max/AMRAP are derived from a RepTarget;
+// re-used here rather than re-deriving so this and the week-plan's own
+// display (columnsToRepTarget, the read direction) can never disagree.
+export async function updateProgramSetRepTarget(id: string, target: RepTarget): Promise<void> {
+  const columns = repTargetToColumns(target)
+  const { error } = await supabase
+    .from('v2_program_sets')
+    .update({ rep_min: columns.repMin, rep_max: columns.repMax, is_amrap: columns.isAmrap })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// Review fix — "fill all sets of an exercise at once" (SPEC.md step 3's own
+// plain-case shortcut, missing from the first pass): one call, one write,
+// covering every CURRENT head of the exercise — not one updateProgramSetRepTarget
+// per set, which would be several round trips for what SPEC frames as a
+// single action. Takes the ids directly (the caller already has the heads
+// in hand to render them) rather than re-deriving them, so it never risks
+// racing a concurrent read of "current heads". A caller with zero heads has
+// nothing to fill — short-circuits with no Supabase call, same posture as
+// fetchProgramSets' own empty-input guard.
+export async function setRepTargetForAllSets(headIds: string[], target: RepTarget): Promise<void> {
+  if (headIds.length === 0) return
+  const columns = repTargetToColumns(target)
+  const { error } = await supabase
+    .from('v2_program_sets')
+    .update({ rep_min: columns.repMin, rep_max: columns.repMax, is_amrap: columns.isAmrap })
+    .in('id', headIds)
+  if (error) throw error
+}
+
+// Pure — the exercise-level summary StepVolume.tsx shows beside the SETS
+// stepper: every head's own target when they all agree, or 'mixed' when
+// they don't (review fix: "a neutral 'mixed' state with existing tokens").
+// Compared by formatted text (same shortcut updateProgramSetRepTarget's own
+// UI uses, StepVolume.tsx's SetTargetRow.commit) — two RepTargets format
+// identically iff they're the same target, since format is injective per
+// type (plannerVocabulary.ts: digits / "min–max" / "AMRAP" / "none", never
+// overlapping). Null (no heads at all) is the caller's own call — SPEC
+// gives nothing to summarise when there's nothing to fill yet.
+export function summarizeRepTargets(heads: ProgramSet[]): RepTarget | 'mixed' | null {
+  if (heads.length === 0) return null
+  const targets = heads.map((h) => columnsToRepTarget({ repMin: h.repMin, repMax: h.repMax, isAmrap: h.isAmrap }))
+  const first = targets[0]
+  const firstText = formatRepTarget(first)
+  return targets.every((t) => formatRepTarget(t) === firstText) ? first : 'mixed'
+}
+
+// ─── Schedule: one weekday per workout ──────────────────────────────────────
+
+const DAYS_ORDER: DayOfWeek[] = [
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+]
+
+// Pure. The schedule after assigning `workoutDayId` to `dow` (or clearing it
+// with dow = null). TASKS.md step 2: "one weekday per workout" — clears any
+// OTHER day this workout already held first, so a workout is never on two
+// days after this call. The converse ("no two workouts on one weekday",
+// SPEC.md "later") needs no code: the map shape (one id per day key) already
+// makes it impossible to represent two workouts on the same day.
+export function assignWorkoutWeekday(
+  schedule: WeeklySchedule,
+  workoutDayId: string,
+  dow: DayOfWeek | null,
+): WeeklySchedule {
+  const next = { ...schedule }
+  for (const d of DAYS_ORDER) {
+    if (next[d] === workoutDayId) next[d] = null
+  }
+  if (dow) next[dow] = workoutDayId
+  return next
+}
+
+// ─── G14: one workout on several weekdays ──────────────────────────────────
+// TASKS.md, verbatim: "Existing programs with one workout on several
+// weekdays... Opening such a program in the planner asks [to] either give
+// each weekday its own workout or switch the program to a sequence; nothing
+// is converted automatically." The sequence choice is chunk 25's
+// (DECISIONS 44 (a)); this file only ever offers the other two.
+
+export interface SharedWeekdayGroup {
+  workoutDayId: string
+  weekdays: DayOfWeek[]
+}
+
+// Pure, read-only — never mutates `schedule`. A program whose schedule was
+// built entirely through assignWorkoutWeekday above can never produce a
+// result here (that function's own invariant rules it out); this exists for
+// every program authored before this chunk shipped.
+export function detectSharedWeekdayWorkouts(schedule: WeeklySchedule): SharedWeekdayGroup[] {
+  const byWorkout = new Map<string, DayOfWeek[]>()
+  for (const dow of DAYS_ORDER) {
+    const id = schedule[dow]
+    if (!id) continue
+    const days = byWorkout.get(id) ?? []
+    days.push(dow)
+    byWorkout.set(id, days)
+  }
+  return [...byWorkout.entries()]
+    .filter(([, days]) => days.length >= 2)
+    .map(([workoutDayId, weekdays]) => ({ workoutDayId, weekdays }))
+}
+
+// A brand-new v2_program_exercises row with an explicit, client-chosen id
+// and no .select() chained back — deliberately NOT programService.ts's own
+// addProgramExercise, for two reasons: (1) that function always writes a
+// literal weight_unit, never null/"inherit", which would silently change the
+// clone's own unit preference away from the source's; (2) its
+// .insert(...).select().single() would be a direct read of
+// v2_program_exercises outside runProgramExercises.ts. crypto.randomUUID()
+// for a client-chosen id written straight into an insert payload is already
+// this codebase's own pattern for exactly this reason (useSession.ts).
+async function cloneProgramExerciseRow(
+  userId: string,
+  workoutDayId: string,
+  source: { exerciseId: string; position: number; weightUnit: string | null; targetReps: number | null },
+): Promise<string> {
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('v2_program_exercises').insert({
+    id,
+    user_id: userId,
+    workout_day_id: workoutDayId,
+    exercise_id: source.exerciseId,
+    position: source.position,
+    // Review fix: carry the source's own value through verbatim. The
+    // suggested-reps UI is gone (chunk 11), but the column itself (and
+    // whatever a pre-chunk-11 program already stored in it) is still real
+    // data until chunk 12 converts or backs it up — a split must not be
+    // the thing that quietly loses it first.
+    target_reps: source.targetReps,
+    weight_unit: source.weightUnit,
+  })
+  if (error) throw error
+  return id
+}
+
+// One workout's full deep copy: a fresh v2_workout_days row (same name,
+// same position), then every current (week_only=false, removed_at=null —
+// fetchRunProgramExercises' own filter) exercise and its own head sets,
+// copied verbatim. No program this prompt ever runs against (kind='saved')
+// can have week_only/removed_at rows in the first place (027: "run copies
+// only"), so that filter is a no-op here, same as everywhere else
+// runProgramExercises.ts documents it to be for a saved program.
+async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<string> {
+  const copy = await createWorkoutDay(userId, source.programId, source.name, source.position)
+  const exercises = await fetchRunProgramExercises(source.id)
+
+  for (const ex of exercises) {
+    const newExerciseId = await cloneProgramExerciseRow(userId, copy.id, {
+      exerciseId: ex.exerciseId,
+      position: ex.position,
+      weightUnit: ex.weightUnit,
+      targetReps: ex.targetReps,
+    })
+    const heads = headSets(await fetchProgramSets([ex.id])).sort((a, b) => a.position - b.position)
+    if (heads.length > 0) {
+      const rows = heads.map((h) => ({
+        user_id: userId,
+        program_exercise_id: newExerciseId,
+        position: h.position,
+        is_warmup: h.isWarmup,
+        rep_min: h.repMin,
+        rep_max: h.repMax,
+        is_amrap: h.isAmrap,
+        rest_seconds: h.restSeconds,
+      }))
+      const { error } = await supabase.from('v2_program_sets').insert(rows)
+      if (error) throw error
+    }
+  }
+
+  return copy.id
+}
+
+// "Give each weekday its own workout" (TASKS.md G14) — runs ONLY after an
+// explicit confirm (PlannerPage's own prompt), never automatically. Keeps
+// the group's FIRST weekday (schedule order, i.e. DAYS_ORDER order — the
+// same order detectSharedWeekdayWorkouts walks to build `weekdays`) pointing
+// at the original workout; every other weekday in the group gets its own
+// fresh deep copy, and the returned schedule points that weekday at the copy
+// instead. Touches v2_programs/v2_workout_days/v2_program_exercises/
+// v2_program_sets only — this prompt only ever runs against a saved program
+// (kind='saved'), which has no v2_week_plans row to begin with, so there is
+// nothing of that kind to leave untouched; it is simply never reached.
+export async function splitSharedWeekdayWorkouts(
+  userId: string,
+  workoutDays: WorkoutDay[],
+  schedule: WeeklySchedule,
+  groups: SharedWeekdayGroup[],
+): Promise<WeeklySchedule> {
+  let next = { ...schedule }
+  for (const group of groups) {
+    const [, ...rest] = group.weekdays
+    const source = workoutDays.find((d) => d.id === group.workoutDayId)
+    if (!source) continue
+    for (const dow of rest) {
+      const newWorkoutId = await cloneWorkoutDay(userId, source)
+      next = { ...next, [dow]: newWorkoutId }
+    }
+  }
+  return next
+}

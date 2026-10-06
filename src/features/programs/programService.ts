@@ -143,8 +143,8 @@ export async function fetchPrograms(): Promise<Program[]> {
 // Program lists (chunk 6, TASKS.md — "program lists show kind = 'saved'
 // only"): the programs page's own list and its Start Mesocycle picker, the
 // only two places a user picks a reusable template from. Everywhere else
-// that reads a program by a known id — PlanPage's active-run lookup,
-// ProgramBuilderPage/WorkoutDayEditorPage's route param, which is a run's
+// that reads a program by a known id — PlanPage's active-run lookup, the
+// planner's (PlannerPage.tsx, chunk 11) own route param — which is a run's
 // own copy (kind = 'run') while a run is active — keeps using the
 // unfiltered fetchPrograms above; filtering that one too would make the
 // active run's own copy invisible to the very pages that edit it.
@@ -180,6 +180,18 @@ export async function updateSchedule(id: string, schedule: WeeklySchedule): Prom
   const { error } = await supabase
     .from('v2_programs')
     .update({ schedule, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// Chunk 11 (SPEC.md "Stepped program planner" step 3 — "choose stable or
+// week-dependent"). The planner's own first writer of this column (027 adds
+// it with the 'week_dependent' default; nothing before this chunk ever lets
+// the user change it).
+export async function updatePlanningType(id: string, planningType: PlanningType): Promise<void> {
+  const { error } = await supabase
+    .from('v2_programs')
+    .update({ planning_type: planningType, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }

@@ -131,6 +131,13 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     parentWeekPlanSetId: row.parent_week_plan_set_id ?? null,
     stageIndex: row.stage_index ?? 0,
     isWarmup: row.is_warmup ?? false,
+    // Chunk 11 — the planned rep target (SPEC.md "Removals"), read-only here
+    // (chunk 19 owns editing it). Same "may not exist yet" fallback as the
+    // fields above; a row with none of the three set reads as "no target"
+    // (columnsToRepTarget's own 'none' case) everywhere this is displayed.
+    repMin: row.rep_min ?? null,
+    repMax: row.rep_max ?? null,
+    isAmrap: row.is_amrap ?? false,
   }
 }
 

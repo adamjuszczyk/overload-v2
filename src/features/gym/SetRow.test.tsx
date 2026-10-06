@@ -144,3 +144,65 @@ describe('SetRow — edit mode has no note field (chunk 4)', () => {
     expect(payload).toHaveProperty('formRating')
   })
 })
+
+// Chunk 11 (SPEC.md "Removals" — suggested reps per program exercise
+// replaced by per-set rep targets). Mirrors the existing TARGET RIR hint's
+// own render contract exactly (same pl-7 row, same "null/false -> nothing"
+// rule) — see plannerVocabulary.ts's columnsToRepTarget for the 'none' case
+// this builds on.
+function makeWeekPlanSet(overrides: Partial<import('../../types').WeekPlanSet> = {}): import('../../types').WeekPlanSet {
+  return {
+    id: 'wps1',
+    weekPlanId: 'wp1',
+    userId: 'u1',
+    programExerciseId: 'pe1',
+    setNumber: 1,
+    targetRir: null,
+    isDropset: false,
+    parentWeekPlanSetId: null,
+    stageIndex: 0,
+    isWarmup: false,
+    ...overrides,
+  }
+}
+
+describe('SetRow — planned rep target hint (chunk 11)', () => {
+  // The hint lives in the "not yet logged" input row (the same row the
+  // TARGET RIR hint and the LOG/SKIP buttons live in) — currentLog: null,
+  // unlike the edit-mode tests above (which cover an ALREADY-logged set's
+  // own edit form, a different render branch entirely).
+  function unloggedProps() {
+    return { ...baseSetRowProps(), currentLog: null }
+  }
+
+  it('no plannedSet at all -> no TARGET REPS text', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={null} />)
+    expect(screen.queryByText(/TARGET REPS/)).toBeNull()
+  })
+
+  it('a plannedSet with no rep target (all null/false) -> no TARGET REPS text, same as no target today', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ repMin: null, repMax: null, isAmrap: false })} />)
+    expect(screen.queryByText(/TARGET REPS/)).toBeNull()
+  })
+
+  it('a plain number (repMin === repMax) shows "TARGET REPS 8"', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ repMin: 8, repMax: 8 })} />)
+    expect(screen.getByText('TARGET REPS 8')).toBeTruthy()
+  })
+
+  it('a range shows "TARGET REPS 8–12" (en dash)', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ repMin: 8, repMax: 12 })} />)
+    expect(screen.getByText('TARGET REPS 8–12')).toBeTruthy()
+  })
+
+  it('AMRAP shows "TARGET REPS AMRAP"', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ isAmrap: true })} />)
+    expect(screen.getByText('TARGET REPS AMRAP')).toBeTruthy()
+  })
+
+  it('renders alongside an existing TARGET RIR hint without replacing it', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ repMin: 8, repMax: 12, targetRir: 2 })} />)
+    expect(screen.getByText('TARGET REPS 8–12')).toBeTruthy()
+    expect(screen.getByText('TARGET RIR 2')).toBeTruthy()
+  })
+})

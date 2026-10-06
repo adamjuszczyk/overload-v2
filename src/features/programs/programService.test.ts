@@ -10,11 +10,12 @@ vi.mock('../../lib/supabase', () => ({
 }))
 vi.mock('../../lib/muscleGroup', () => ({ toMuscleGroup: (v: unknown) => v }))
 
-const { fetchPrograms, fetchSavedPrograms } = await import('./programService')
+const { fetchPrograms, fetchSavedPrograms, updatePlanningType } = await import('./programService')
 
 function makeChain(result: { data?: unknown; error?: unknown }) {
   const chain: Record<string, unknown> = {
     select: vi.fn(() => chain),
+    update: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     order: vi.fn(() => chain),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
@@ -31,8 +32,9 @@ beforeEach(() => {
 // functions, not one filtered conditionally: fetchSavedPrograms is for
 // ProgramPage's own list and its Start Mesocycle picker — the only two
 // places a user picks a reusable template from; fetchPrograms stays
-// unfiltered for PlanPage/ProgramBuilderPage, which look a program up by a
-// known id that is a run's own copy (kind = 'run') while a run is active.
+// unfiltered for PlanPage/the planner (PlannerPage.tsx), which look a
+// program up by a known id that is a run's own copy (kind = 'run') while a
+// run is active.
 describe('fetchSavedPrograms — filters to kind = \'saved\' at the query', () => {
   it('calls v2_programs with .eq(\'kind\', \'saved\')', async () => {
     const chain = makeChain({ data: [], error: null })
@@ -64,7 +66,7 @@ describe('fetchSavedPrograms — filters to kind = \'saved\' at the query', () =
   })
 })
 
-describe('fetchPrograms — stays unfiltered (PlanPage/ProgramBuilderPage need a run\'s own copy too)', () => {
+describe('fetchPrograms — stays unfiltered (PlanPage/the planner need a run\'s own copy too)', () => {
   it('does not call .eq(\'kind\', ...) at all', async () => {
     const chain = makeChain({ data: [], error: null })
     fromMock.mockReturnValue(chain)
@@ -91,5 +93,29 @@ describe('fetchPrograms — stays unfiltered (PlanPage/ProgramBuilderPage need a
     const result = await fetchPrograms()
 
     expect(result[0].kind).toBe('run')
+  })
+})
+
+// Chunk 11 (SPEC.md "Stepped program planner" step 3) — the planner's own
+// first writer of v2_programs.planning_type.
+describe('updatePlanningType', () => {
+  it('updates v2_programs by id, writing exactly planning_type (+ updated_at)', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await updatePlanningType('prog-1', 'stable')
+
+    expect(fromMock).toHaveBeenCalledWith('v2_programs')
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ planning_type: 'stable' }),
+    )
+    expect(chain.eq).toHaveBeenCalledWith('id', 'prog-1')
+  })
+
+  it('throws on a Supabase error rather than swallowing it', async () => {
+    const chain = makeChain({ data: null, error: new Error('boom') })
+    fromMock.mockReturnValue(chain)
+
+    await expect(updatePlanningType('prog-1', 'week_dependent')).rejects.toThrow('boom')
   })
 })

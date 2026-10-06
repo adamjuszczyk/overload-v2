@@ -42,6 +42,7 @@ const TABLES = [
   'v2_mesocycles',
   'v2_program_exercises',
   'v2_program_priorities',
+  'v2_program_sets',
   'v2_programs',
   'v2_session_exercise_swaps',
   'v2_session_type_history',

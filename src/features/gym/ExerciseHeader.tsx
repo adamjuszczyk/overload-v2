@@ -38,11 +38,6 @@ export default function ExerciseHeader({
           >
             {ex?.name ?? '—'}
           </span>
-          {programExercise.targetReps && (
-            <span className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              {programExercise.targetReps} REPS
-            </span>
-          )}
         </div>
         <span
           className="text-xs font-bold tracking-widest"

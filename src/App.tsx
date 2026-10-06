@@ -11,8 +11,7 @@ import HistoryPage from './features/history/HistoryPage'
 import ExerciseHistoryPage from './features/history/ExerciseHistoryPage'
 import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
 import ProgramPage from './features/programs/ProgramPage'
-import ProgramBuilderPage from './features/programs/ProgramBuilderPage'
-import WorkoutDayEditorPage from './features/programs/WorkoutDayEditorPage'
+import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import CoachPage from './features/coach/CoachPage'
@@ -102,8 +101,10 @@ function AppRoutes() {
           <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
           <Route path="/session-type/:workoutDayId" element={<SessionTypeHistoryPage />} />
           <Route path="/program"                           element={<ProgramPage />}         />
-          <Route path="/program/:programId"             element={<ProgramBuilderPage />}   />
-          <Route path="/program/:programId/day/:dayId"  element={<WorkoutDayEditorPage />} />
+          {/* Chunk 11 — the stepped program planner replaces
+              ProgramBuilderPage/WorkoutDayEditorPage/WeeklyScheduleGrid
+              (removed) at this same route. */}
+          <Route path="/program/:programId"             element={<PlannerPage />}           />
           <Route path="/meso/:mesocycleId/priorities"   element={<MesoPrioritiesPage />}   />
           <Route path="/library"  element={<LibraryPage />}  />
           <Route path="/settings" element={<SettingsPage />} />
