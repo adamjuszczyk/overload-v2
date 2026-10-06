@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react'
 import type { ProgramExercise, WeightUnit } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import {
+  usePrograms,
   useWorkoutDays,
   useUpdateWorkoutDayName,
   useProgramExercises,
@@ -18,6 +19,20 @@ import ExercisePicker from './ExercisePicker'
 export default function WorkoutDayEditorPage() {
   const { programId, dayId } = useParams<{ programId: string; dayId: string }>()
   const navigate = useNavigate()
+
+  // Chunk 9 (SPEC.md "Programs and runs" — "What the program tab can edit
+  // mid-run": "Volume... week-dependent: read-only, shown as week 1's
+  // reference"). This editor is shared, unchanged, between the planner
+  // (editing a saved program, kind = 'saved') and the Plan screen's Program
+  // tab (editing a run's own copy, kind = 'run') — ProgramTab.tsx's own
+  // header comment. Every run is week-dependent until chunk 11 can create a
+  // stable one (planningType undefined reads as 'week_dependent', the
+  // column default — src/types/index.ts), so volumeReadOnly is true for
+  // every run today; a saved program (kind undefined reads as 'saved', same
+  // fallback convention) is never read-only here.
+  const { data: programs = [] } = usePrograms()
+  const program = programs.find((p) => p.id === programId)
+  const volumeReadOnly = program?.kind === 'run' && (program?.planningType ?? 'week_dependent') !== 'stable'
 
   const { data: workoutDays = [] } = useWorkoutDays(programId ?? '')
   const day = workoutDays.find((d) => d.id === dayId)
@@ -118,6 +133,15 @@ export default function WorkoutDayEditorPage() {
           </p>
         )}
 
+        {/* Volume read-only notice (SPEC.md "Programs and runs") — the
+            exercise list and sets are week-dependent reference here; permanent
+            changes are made in a week (the Weeks tab) and carry forward. */}
+        {volumeReadOnly && !isLoading && exercises.length > 0 && (
+          <p style={{ textAlign: 'center', padding: '0 0 16px', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+            VOLUME IS READ-ONLY HERE — EDIT IT IN A WEEK
+          </p>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
           {exercises.map((pe, index) => (
             <ExerciseRow
@@ -125,6 +149,7 @@ export default function WorkoutDayEditorPage() {
               pe={pe}
               index={index}
               total={exercises.length}
+              readOnly={volumeReadOnly}
               onMoveUp={() => moveExercise(index, 'up')}
               onMoveDown={() => moveExercise(index, 'down')}
               onDelete={() => setConfirmDeleteExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
@@ -135,16 +160,18 @@ export default function WorkoutDayEditorPage() {
           ))}
         </div>
 
-        <button
-          onClick={() => setShowPicker(true)}
-          style={{ width: '100%', height: 52, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 12, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 13, letterSpacing: '1.5px' }}
-        >
-          <Plus size={16} style={{ color: 'var(--accent)' }} />
-          ADD EXERCISE FROM LIBRARY
-        </button>
+        {!volumeReadOnly && (
+          <button
+            onClick={() => setShowPicker(true)}
+            style={{ width: '100%', height: 52, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 12, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 13, letterSpacing: '1.5px' }}
+          >
+            <Plus size={16} style={{ color: 'var(--accent)' }} />
+            ADD EXERCISE FROM LIBRARY
+          </button>
+        )}
       </div>
 
-      {showPicker && (
+      {showPicker && !volumeReadOnly && (
         <ExercisePicker
           workoutDayId={dayId ?? ''}
           existingExerciseIds={exercises.map((e) => e.exerciseId)}
@@ -196,6 +223,12 @@ interface ExerciseRowProps {
   pe: ProgramExercise
   index: number
   total: number
+  // Chunk 9 — volume (the exercise list) is read-only for a week-dependent
+  // run (SPEC.md "Programs and runs"); only the design-field-adjacent
+  // controls below (suggested reps, weight unit — neither is "volume" nor a
+  // design field named by SPEC, so this chunk leaves them as they are)
+  // stay interactive.
+  readOnly: boolean
   onMoveUp: () => void
   onMoveDown: () => void
   onDelete: () => void
@@ -208,6 +241,7 @@ function ExerciseRow({
   pe,
   index,
   total,
+  readOnly,
   onMoveUp,
   onMoveDown,
   onDelete,
@@ -230,11 +264,13 @@ function ExerciseRow({
             {pe.exercise?.muscleGroup?.toUpperCase() ?? ''}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-          <IconBtn onClick={onMoveUp} disabled={index === 0}><ChevronUp size={14} /></IconBtn>
-          <IconBtn onClick={onMoveDown} disabled={index === total - 1}><ChevronDown size={14} /></IconBtn>
-          <IconBtn onClick={onDelete}><Trash2 size={13} /></IconBtn>
-        </div>
+        {!readOnly && (
+          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+            <IconBtn onClick={onMoveUp} disabled={index === 0}><ChevronUp size={14} /></IconBtn>
+            <IconBtn onClick={onMoveDown} disabled={index === total - 1}><ChevronDown size={14} /></IconBtn>
+            <IconBtn onClick={onDelete}><Trash2 size={13} /></IconBtn>
+          </div>
+        )}
       </div>
 
       {/* Suggested reps row */}

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, Minus, Trash2, Copy, Rows3 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
-import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay } from '../../types'
+import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises } from '../programs/usePrograms'
 import {
@@ -16,12 +16,17 @@ import {
   useCopyFromPreviousWeek,
   useCopyWorkoutFromPreviousWeek,
   usePlanWeek,
+  useSwapWeekExercise,
+  useAddWeekExercise,
+  useRemoveWeekExercise,
+  useReorderWeekExercises,
 } from './useWeekPlan'
 import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
+import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -70,6 +75,12 @@ export default function PlanPage() {
   // list, so this is page-local UI state, not a persisted setting: it resets
   // on reload, same as isPast/viewWeek here.
   const [compact, setCompact] = useState(false)
+
+  // "Only this week" (chunk 9, SPEC.md "Weeks and copying" — "a tick on
+  // swap and reorder actions... off by default"). Page-local, resets on
+  // reload like compact/isPast/viewWeek above; nothing says it should
+  // persist, and it only ever governs the NEXT swap/reorder tap.
+  const [onlyThisWeek, setOnlyThisWeek] = useState(false)
 
   // Program/Weeks tab (chunk 6) — page-local, resets on reload like compact
   // above; nothing in SPEC says it should persist across visits.
@@ -330,7 +341,19 @@ export default function PlanPage() {
         {/* Workout switcher + the one selected workout's panel */}
         {!plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+              {/* "Only this week" (SPEC "Weeks and copying") — week-dependent
+                  only (DECISIONS 48 (a): stable's every edit is already a
+                  one-off, no tick needed); governs the NEXT swap/reorder tap
+                  below. Same toggle-pill pattern as COMPACT, to its left. */}
+              {!isPast && (program?.planningType ?? 'week_dependent') !== 'stable' && (
+                <button
+                  onClick={() => setOnlyThisWeek((v) => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: onlyThisWeek ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${onlyThisWeek ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: onlyThisWeek ? 'var(--accent)' : 'var(--text-dim)' }}
+                >
+                  ONLY THIS WEEK
+                </button>
+              )}
               <button
                 onClick={() => setCompact((c) => !c)}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
@@ -352,6 +375,7 @@ export default function PlanPage() {
               weekNumber={viewWeek}
               compact={compact}
               canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
+              onlyThisWeek={onlyThisWeek}
             />
           </>
         )}
@@ -376,9 +400,13 @@ interface PanelProps {
   // same per-workout backward search PlanPage's own showCopyButton uses),
   // computed once by the parent (it alone holds the meso-wide history).
   canCopyFromHistory: boolean
+  // Chunk 9 — SPEC "Weeks and copying": a tick on swap/reorder, off by
+  // default, governing the NEXT one of either action (computed once by the
+  // parent, which alone owns the toggle's state).
+  onlyThisWeek: boolean
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -398,6 +426,19 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const updateSet = useUpdateSet(mesoId, weekNumber)
   const toggleDeload = useSetDeload(mesoId, weekNumber)
   const copyWorkout = useCopyWorkoutFromPreviousWeek(mesoId, weekNumber)
+
+  // Chunk 9 — swap/reorder/add/remove an exercise in THIS week.
+  const swapExercise = useSwapWeekExercise(mesoId, weekNumber)
+  const addExercise = useAddWeekExercise(mesoId, weekNumber)
+  const removeExercise = useRemoveWeekExercise(mesoId, weekNumber)
+  const reorderExercises = useReorderWeekExercises(mesoId, weekNumber)
+
+  // Which sheet (if any) is open: swapping a specific slot, or adding a new
+  // one. Exclusive — only one picker at a time, same as GymSession's own
+  // showAddExerciseSheet/swap state never overlapping.
+  const [swapTarget, setSwapTarget] = useState<ProgramExercise | null>(null)
+  const [showAddExerciseSheet, setShowAddExerciseSheet] = useState(false)
+  const [confirmRemoveExercise, setConfirmRemoveExercise] = useState<{ id: string; name: string } | null>(null)
 
   const sets = weekPlan?.sets ?? []
 
@@ -440,6 +481,57 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       // stage has been individually deleted (setGroupLogic.ts's
       // nextStageIndex explains the collision this avoids).
       stageIndex: nextStageIndex(group, (s) => s.stageIndex),
+    })
+  }
+
+  // Chunk 9 — Week actions: swap, reorder, add, remove (weekEdits.ts's
+  // carry semantics, applied by weekPlanService.ts).
+  function handlePickReplacement(exercise: Exercise) {
+    if (!weekPlan || !swapTarget) return
+    swapExercise.mutate({
+      weekPlanId: weekPlan.id,
+      programExerciseId: swapTarget.id,
+      replacementExerciseId: exercise.id,
+      onlyThisWeek,
+    })
+    setSwapTarget(null)
+  }
+
+  function handlePickAdd(exercise: Exercise) {
+    if (!weekPlan) return
+    addExercise.mutate({
+      weekPlanId: weekPlan.id,
+      workoutDayId: workoutDay.id,
+      exerciseId: exercise.id,
+      position: programExercises.length,
+    })
+    setShowAddExerciseSheet(false)
+  }
+
+  function handleConfirmRemove() {
+    if (!weekPlan || !confirmRemoveExercise) return
+    removeExercise.mutate({ weekPlanId: weekPlan.id, programExerciseId: confirmRemoveExercise.id })
+    setConfirmRemoveExercise(null)
+  }
+
+  // Adjacent-swap reorder (same interaction as the planner's own
+  // WorkoutDayEditorPage.tsx moveExercise) — the two affected rows' OWN
+  // pre-move positions feed weekEdits.ts's resolveReorderCarry (inside
+  // reorderWeekExercises), one per row.
+  function handleMoveExercise(index: number, direction: 'up' | 'down') {
+    if (!weekPlan) return
+    const ordered = [...programExercises].sort((a, b) => a.position - b.position)
+    const swapIdx = direction === 'up' ? index - 1 : index + 1
+    if (swapIdx < 0 || swapIdx >= ordered.length) return
+    const a = ordered[index]
+    const b = ordered[swapIdx]
+    reorderExercises.mutate({
+      weekPlanId: weekPlan.id,
+      moves: [
+        { programExerciseId: a.id, oldPosition: a.position, newPosition: b.position },
+        { programExerciseId: b.id, oldPosition: b.position, newPosition: a.position },
+      ],
+      onlyThisWeek,
     })
   }
 
@@ -525,11 +617,85 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 onRemoveSet={(id) => removeSet.mutate(id)}
                 onRemoveLastSet={() => removeSet.mutate(groups[groups.length - 1].head.id)}
                 onUpdateSet={(id, changes) => updateSet.mutate({ id, changes })}
+                onSwap={() => setSwapTarget(pe)}
+                onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
+                canMoveUp={idx > 0}
+                canMoveDown={idx < programExercises.length - 1}
+                onMoveUp={() => handleMoveExercise(idx, 'up')}
+                onMoveDown={() => handleMoveExercise(idx, 'down')}
               />
             )
           })
         )}
       </div>
+
+      {/* Add exercise to this week (SPEC "Weeks and copying" — "Adding or
+          removing an exercise in a week is allowed for both planning
+          types"). Hidden once a week plan is past (read-only, same as every
+          other edit on this screen) or missing (v2_plan_week always creates
+          one the moment the week is shown — chunk 8 — so this is only
+          absent during that first instant of loading). */}
+      {!isPast && weekPlan && (
+        <button
+          onClick={() => setShowAddExerciseSheet(true)}
+          style={{ width: '100%', height: 44, marginTop: 8, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 10, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px' }}
+        >
+          <Plus size={14} style={{ color: 'var(--accent)' }} />
+          ADD EXERCISE
+        </button>
+      )}
+
+      {/* Swap / add pickers — presentational only; the actual write is this
+          panel's own swapExercise/addExercise mutation (weekPlanService.ts). */}
+      {swapTarget && (
+        <WeekExercisePickerSheet
+          title={`SWAP ${swapTarget.exercise?.name ?? 'EXERCISE'}`}
+          excludeExerciseIds={programExercises.map((p) => p.exerciseId)}
+          onPick={handlePickReplacement}
+          onClose={() => setSwapTarget(null)}
+        />
+      )}
+      {showAddExerciseSheet && (
+        <WeekExercisePickerSheet
+          title="ADD EXERCISE"
+          excludeExerciseIds={programExercises.map((p) => p.exerciseId)}
+          onPick={handlePickAdd}
+          onClose={() => setShowAddExerciseSheet(false)}
+        />
+      )}
+
+      {/* Remove-from-this-week confirmation — same bottom-sheet pattern as
+          the planner's own delete-exercise sheet (WorkoutDayEditorPage.tsx). */}
+      {confirmRemoveExercise && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,6,7,0.88)', zIndex: 50, display: 'flex', alignItems: 'flex-end' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmRemoveExercise(null) }}
+        >
+          <div style={{ background: 'var(--surface-raised)', borderRadius: '20px 20px 0 0', width: '100%', padding: '24px 20px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', border: '1px solid var(--border)', borderBottom: 'none' }}>
+            <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Remove "{confirmRemoveExercise.name}" from week {weekNumber}?
+            </p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+              This deletes its planned sets for this week only. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setConfirmRemoveExercise(null)}
+                style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleConfirmRemove}
+                disabled={removeExercise.isPending}
+                style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: removeExercise.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
+              >
+                {removeExercise.isPending ? '…' : 'REMOVE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -548,9 +714,36 @@ interface ExerciseSectionProps {
   onRemoveSet: (id: string) => void
   onRemoveLastSet: () => void
   onUpdateSet: (id: string, changes: { targetRir?: number | null }) => void
+  // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
+  // from this week (SPEC "Weeks and copying"). Hidden whenever the other
+  // per-row controls above are (isPast — a past week is read-only).
+  onSwap: () => void
+  onRemoveExercise: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
 }
 
-function ExerciseSection({ pe, groups, isPast, isLast, compact, addOrRemovePending, onAddSet, onAddStage, onRemoveSet, onRemoveLastSet, onUpdateSet }: ExerciseSectionProps) {
+function ExerciseSection({
+  pe,
+  groups,
+  isPast,
+  isLast,
+  compact,
+  addOrRemovePending,
+  onAddSet,
+  onAddStage,
+  onRemoveSet,
+  onRemoveLastSet,
+  onUpdateSet,
+  onSwap,
+  onRemoveExercise,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: ExerciseSectionProps) {
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
@@ -594,6 +787,26 @@ function ExerciseSection({ pe, groups, isPast, isLast, compact, addOrRemovePendi
           </div>
         )}
       </div>
+
+      {/* Week actions row (chunk 9) — swap, reorder, remove. Its own row,
+          below the header: cramming four more icon buttons beside ADD
+          SET/MINUS at 375px would overflow, and these are exercise-level
+          actions (not per-set), so a visually separate row reads clearer. */}
+      {!isPast && (
+        <div style={{ padding: '0 16px 8px', display: 'flex', gap: 6 }}>
+          <button
+            onClick={onSwap}
+            aria-label={`Swap ${pe.exercise?.name ?? 'this exercise'}`}
+            style={{ height: 26, padding: '0 9px', display: 'flex', alignItems: 'center', gap: 5, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px' }}
+          >
+            <ArrowLeftRight size={11} />
+            SWAP
+          </button>
+          <IconBtn onClick={onMoveUp} disabled={!canMoveUp} ariaLabel="Move up"><ChevronUp size={13} /></IconBtn>
+          <IconBtn onClick={onMoveDown} disabled={!canMoveDown} ariaLabel="Move down"><ChevronDown size={13} /></IconBtn>
+          <IconBtn onClick={onRemoveExercise} ariaLabel={`Remove ${pe.exercise?.name ?? 'this exercise'} from this week`}><Trash2 size={12} /></IconBtn>
+        </div>
+      )}
 
       {/* Set groups — one row per head, its stages nested beneath it.
           Compact mode swaps this for CompactPlanRows' collapsed summary;
@@ -777,5 +990,34 @@ function RirStepper({
         +
       </button>
     </div>
+  )
+}
+
+// ─── Icon Button ──────────────────────────────────────────────────────────────
+// Chunk 9's week-actions row (ExerciseSection, above) — same small
+// square-icon-button tokens as WorkoutDayEditorPage.tsx's own local IconBtn
+// (the planner's equivalent reorder/delete row), reimplemented here rather
+// than imported so this file stays self-contained like every other
+// plan/*.tsx component already is.
+function IconBtn({
+  onClick,
+  disabled = false,
+  ariaLabel,
+  children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  ariaLabel: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', flexShrink: 0, opacity: disabled ? 0.5 : 1 }}
+    >
+      {children}
+    </button>
   )
 }
