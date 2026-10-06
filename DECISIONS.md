@@ -1,12 +1,13 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-05 18:58 UTC, chunk 8 boundary — chunks 1–8 merged and live. Nothing is held; no PR is open.*
+*Rewritten at every chunk boundary. Last: 2026-10-06 03:33 UTC, chunk 9 boundary — chunks 1–9 merged and live; chunk 10 being built.*
 
 **Decisions**
 - Nothing open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 51 — Chunk 9 app steps: only-this-week swap reverts next week; permanent swap and add carry; remove stays removed; only-this-week reorder reverts; program tab read-only for volume. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 46 — Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 47 — Chunk 8 app steps: a new week plans itself once; first session plans its week; NEW WEEK STARTS = EMPTY; deload and empty weeks aren't copy sources. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 39 — Chunk 5 live check: one SQL query (step 1 rewritten for chunk 6: run workouts all linked, saved ones none), then two or three workouts' all-time history pages unchanged (sessions are logged on run workouts, so each page still lists exactly what it did). When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -39,6 +40,32 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 51 Chunk 9 live check: editing a week's exercises (Adam's steps)
+Severity: deferred
+Chunk: 9
+**Ask:** Chunk 9 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 9 is `2340c48`)
+1. In Plan, on a week not yet trained, swap one exercise with ONLY THIS WEEK on. Then open the next week (it plans itself): the original exercise is back, with its sets.
+2. Swap another exercise without ONLY THIS WEEK. The next week keeps the replacement.
+3. ADD EXERCISE in a week. It's in the next planned week too. REMOVE it there: it's gone from the week after.
+4. Move an exercise up with ONLY THIS WEEK on. The next week has the original order.
+5. Plan → PROGRAM tab: the workout editor shows the exercises but no add, reorder or delete (volume is read-only on your week-dependent run). It lists no exercise you added or swapped in a week.
+6. Your second account (one workout on every weekday): a week edit there shows on every weekday, as before.
+**Answer:**
+**Evidence:**
+What happened: 032 (#29 `25b2a61`, merged by the reviewer under D29) and the code (#30 `2340c48`, Vercel success 03:32 UTC) are live.
+- Reviewer's checks: 798 tests; replay 33/33; embeds 27/27 local and live.
+- D29 scratch check: 37/37 tables identical.
+- Double-swap and exclusion scenario: correct on 032, wrong on 031 (control).
+- TS vs SQL: 6/6.
+- D30: full-screen render with a dropset identical to master's; logSet row and rest timer unchanged.
+The code failed review once (carry bug) and passed on the retry.
+A competent default would: count the scratch and jsdom proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 9 is fixed before chunk 10's code merges.
+Provisional path taken: merged; chunk 10 is being built.
 
 ### 47 Chunk 8 live check: weeks plan themselves (Adam's steps)
 Severity: deferred
