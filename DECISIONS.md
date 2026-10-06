@@ -1,13 +1,14 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-06 03:33 UTC, chunk 9 boundary — chunks 1–9 merged and live; chunk 10 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-06 07:45 UTC, chunk 10 boundary — chunks 1–10 merged and live; chunk 11 being built.*
 
 **Decisions**
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 53 — Chunk 10 app steps: Plan → PRIORITIES shows your mapped marks (1+2 focus, 4+5 don't care); summary wording; set/clear persists; completed runs keep the old page. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 51 — Chunk 9 app steps: only-this-week swap reverts next week; permanent swap and add carry; remove stays removed; only-this-week reorder reverts; program tab read-only for volume. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 46 — Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 47 — Chunk 8 app steps: a new week plans itself once; first session plans its week; NEW WEEK STARTS = EMPTY; deload and empty weeks aren't copy sources. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -41,6 +42,27 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 53 Chunk 10 live check: priorities in the new form (Adam's steps)
+Severity: deferred
+Chunk: 10
+**Ask:** Chunk 10 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 10 is `a0d1651`)
+1. Plan → PRIORITIES opens the new editor. Your active run shows **focus** on 1 group and 2 subgroups, and **don't care** on 4 groups and 5 subgroups: your old top and low marks, mapped by 033. Your old high and normal marks show as normal (unmarked).
+2. Mark one group focus and leave its subgroups unmarked. The summary reads from the group (e.g. "chest"). Mark one of its subgroups differently: it reads "chest without upper chest".
+3. Set a mark, reload: it's still there. Clear it (tap the active chip), reload: gone.
+4. Programs → a completed run still opens its old four-level priorities page, unchanged.
+**Answer:**
+**Evidence:**
+What happened: 033 (#31 `5fe3045`, reviewer under D29; probe 0/3 → 3/3; deploy success 07:35 UTC) and the code (#32 `a0d1651`, Vercel success 07:44 UTC) are live.
+- Reviewer's D29 scratch check: every pre-existing table identical; 3 + 9 on both the run copy and the clone; a re-run inserts 0.
+- 840 tests; embeds 27/27 live.
+- The code failed review once (START redirected to the old page) and passed on the retry.
+A competent default would: count the scratch result — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 10 is fixed before chunk 11 merges.
+Provisional path taken: merged; chunk 11 is being built.
 
 ### 52 Planner: what does "number of sets is required" block, for programs that have none yet?
 Severity: deferred
