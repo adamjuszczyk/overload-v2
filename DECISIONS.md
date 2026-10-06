@@ -4,7 +4,8 @@
 *Rewritten at every chunk boundary. Last: 2026-10-06 03:33 UTC, chunk 9 boundary — chunks 1–9 merged and live; chunk 10 being built.*
 
 **Decisions**
-- Nothing open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
+- 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
+- Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
 - 51 — Chunk 9 app steps: only-this-week swap reverts next week; permanent swap and add carry; remove stays removed; only-this-week reorder reverts; program tab read-only for volume. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -40,6 +41,23 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 52 Planner: what does "number of sets is required" block, for programs that have none yet?
+Severity: deferred
+Chunk: 11
+**Ask:** SPEC: "The only required value is the number of sets per exercise," and also "Saving stores the program as it is." Your 3 existing saved programs have **no** per-set rows (`v2_program_sets`): their volume has always been planned week by week. Starting one today plans week 1 with no sets, which is today's behaviour too. What should "required" block?
+**Options:**
+- (a) **Nothing is blocked; incomplete exercises are flagged.** Save and Start always work. Step 3 marks each exercise without a set count ("no sets yet"). Your existing programs behave exactly as today until you fill them in.
+- (b) **Start is blocked** until every exercise has at least 1 set; Save is never blocked. Your existing programs can't be started again until their sets are filled in.
+- (c) **Save is blocked too.**
+**Recommendation:** (a). It keeps "saving stores the program as it is" and changes nothing for your existing programs, and the flag still shows what's missing. With (b), the next time you start an existing program you'd first have to plan its sets, which is a reasonable rule but new behaviour.
+**Blocked until answered:** nothing. Chunk 11 is built with (a); (b) is a small change to the Start button.
+**Answer:**
+**Evidence:**
+What happened: while briefing chunk 11 I checked how the planner meets existing data. The programs predate per-set rows. TASKS' verification covers a new program (3 sets each) and "reopen and save unchanged → no row changes", which (c) would break for existing programs.
+A competent default would: block Start on missing sets — doesn't apply because: it changes what you can do with programs you already have.
+Cost of deferral: if (b), one guard on Start plus a message; nothing built under (a) is thrown away.
+Provisional path taken: (a).
 
 ### 51 Chunk 9 live check: editing a week's exercises (Adam's steps)
 Severity: deferred
