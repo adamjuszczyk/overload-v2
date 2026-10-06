@@ -32,8 +32,14 @@ export default function PreviewExerciseCard({
   today,
 }: PreviewExerciseCardProps) {
   // Heads only, stages nested beneath (§2.7 item 7) — a planned dropset's
-  // stage rows are never their own top-level entry.
-  const groups = groupWeekPlanSets(plannedSets).sort((a, b) => a.head.setNumber - b.head.setNumber)
+  // stage rows are never their own top-level entry. Chunk 15 (SPEC "Warmup
+  // sets" — "never counted in ... set counts"): a warmup head is filtered
+  // out here too, same reasoning as PlanTargetsPanel.tsx's own filter —
+  // this read-only preview has no warmup-specific rendering yet, and
+  // showing one as "NO TARGET" would be misleading rather than absent.
+  const groups = groupWeekPlanSets(plannedSets)
+    .filter((g) => !g.head.isWarmup)
+    .sort((a, b) => a.head.setNumber - b.head.setNumber)
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
   return (
