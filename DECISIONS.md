@@ -4,6 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-06 07:45 UTC, chunk 10 boundary — chunks 1–10 merged and live; chunk 11 being built.*
 
 **Decisions**
+- 54 — Merge migration 034 (#35: drop suggested reps, convert them into rep targets). Steps: take the update banner on every device after I say #34 is live, run the before queries, merge, run the after queries. Recommendation: merge. Blocked: chunk 12 going live.
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
@@ -42,6 +43,73 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 54 Merge migration 034 (drop suggested reps: backup, convert into rep targets, drop the column)
+Severity: blocking
+Chunk: 12
+**Ask:** Merge PR #35 (migration 034). It's destructive, so the merge and the before/after checks are yours. Two preconditions:
+- I've told you chunk 12's code (#34) is live.
+- Every device you use has taken the update banner.
+**Options:** (a) merge with the steps below; (b) hold.
+**Recommendation:** (a). The code that stops using the column is already live, the conversion matches your decision (b), and my scratch run shows exactly the qualifying sets converted and nothing else changed.
+**Blocked until answered:** chunk 12 going live. Until then the workout screen shows neither suggested reps (gone since chunk 11) nor the converted rep targets. Chunks 13+ keep being built.
+**Steps:**
+1. **Precondition:** on your phone and any other device, open the app and take the update banner, so no device runs a bundle older than #34. Chunk 11's bundle still writes `target_reps` and would fail after the drop.
+2. **Before merging**, in the SQL Editor:
+   - `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before-034.json`;
+   - then the prediction queries below. Save the output as "before".
+   ```sql
+   -- B1: suggested-reps values that go into the backup (expect 52: 26 on the run copies + 26 on their clones)
+   select count(*) from v2_program_exercises where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and target_reps is not null;
+   -- B2: planned sets 034 will convert (count + id hash)
+   select count(*), md5(coalesce(string_agg(id::text, ',' order by id), '')) from (select wps.id from v2_week_plan_sets wps join v2_week_plans wp on wp.id = wps.week_plan_id join v2_mesocycles m on m.id = wp.mesocycle_id join v2_program_exercises pe on pe.id = wps.program_exercise_id
+ where wps.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and m.status = 'active' and wps.parent_week_plan_set_id is null and wps.is_warmup = false and wps.rep_min is null and wps.rep_max is null and wps.is_amrap = false and pe.target_reps is not null
+   and not exists (select 1 from v2_set_logs sl where sl.week_plan_set_id = wps.id)) q;
+   -- B3: every OTHER planned set's targets (must be unchanged after)
+   select md5(coalesce(string_agg(s.id::text || ':' || coalesce(s.rep_min::text,'-') || ':' || coalesce(s.rep_max::text,'-') || ':' || s.is_amrap::text, ',' order by s.id), ''))
+     from v2_week_plan_sets s where s.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and s.id not in (select wps.id from v2_week_plan_sets wps join v2_week_plans wp on wp.id = wps.week_plan_id join v2_mesocycles m on m.id = wp.mesocycle_id join v2_program_exercises pe on pe.id = wps.program_exercise_id
+ where wps.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and m.status = 'active' and wps.parent_week_plan_set_id is null and wps.is_warmup = false and wps.rep_min is null and wps.rep_max is null and wps.is_amrap = false and pe.target_reps is not null
+   and not exists (select 1 from v2_set_logs sl where sl.week_plan_set_id = wps.id));
+   ```
+3. Merge #35 and tell me. I check the deploy:
+   - every `Supabase Preview` run on the merge commit;
+   - `select=target_reps` → `400 / 42703`;
+   - the backup table exists, and anon sees 0 rows;
+   - `check-embeds.mjs` live.
+4. **After the deploy**: `live-counts.sql` again into `counts-after-034.json`. Every table's count must be identical (034 adds a backup table, which live-counts doesn't count, and changes values, not row counts). Then:
+   ```sql
+   -- A1: backup rows (must equal B1)
+   select count(*) from v2_target_reps_backup where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f';
+   -- A2: converted sets (must equal B2's count and hash)
+   select count(*), md5(coalesce(string_agg(id::text, ',' order by id), '')) from (select unnest(converted_week_plan_set_ids) id from v2_target_reps_backup where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f') q;
+   -- A3: every other planned set (must equal B3)
+   select md5(coalesce(string_agg(s.id::text || ':' || coalesce(s.rep_min::text,'-') || ':' || coalesce(s.rep_max::text,'-') || ':' || s.is_amrap::text, ',' order by s.id), ''))
+     from v2_week_plan_sets s where s.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and s.id not in (select unnest(converted_week_plan_set_ids) from v2_target_reps_backup where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f');
+   -- A4: each converted set carries its exercise's old value (expect 0)
+   select count(*) from v2_target_reps_backup b, unnest(b.converted_week_plan_set_ids) cid join v2_week_plan_sets s on s.id = cid
+    where b.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and not (s.rep_min = b.target_reps and s.rep_max = b.target_reps and s.is_amrap = false);
+   ```
+   Send me both outputs.
+5. In the app: open your next session. Where an exercise had suggested reps, its planned sets now show the target (e.g. "TARGET REPS 8"). Open a saved program in the planner and save it unchanged: no error.
+**Answer:**
+**Evidence:**
+What happened: chunk 12 was built and verified.
+- **034** (`9ab44cc`, md5 `90c37dfa159eefb9c23f7901f70b3940`), in order:
+  - creates the backup table `v2_target_reps_backup` (every non-null value, every user);
+  - converts the active run's unlogged head working sets that have no target;
+  - replaces `v2_copy_program` (the only difference from 028: `target_reps` removed, so START keeps working);
+  - drops the column.
+  `check-migration` exits 1 (the drop, the function, the `DO` block).
+- **Reviewer's own scratch**, active meso with two exercises (10 and 6):
+  - a logged set, an already-targeted set (5) and a warmup were untouched;
+  - the other 3 sets converted;
+  - the backup lists 2 + 1 converted ids;
+  - only `v2_program_exercises` (the drop), `v2_week_plan_sets` (the conversion) and the new backup changed; every other table was identical.
+- **Builder's scratch:** R14 with 2 users and a completed meso. The backup equalled the non-null count; exactly the listed sets converted; `v2_start_run` worked after the drop (complete copy); the rollback restored every value and the function byte-identically.
+- **Adam's queries B1–B3 / A1–A4** ran on a scratch replay (fixture, before and after 034): they parse, and before = after exactly (1 / 3 + hash / other-sets hash / 0 mismatches).
+- **Order:** TASKS' precondition said "no bundle older than chunk 11", but chunk 11's own bundle writes `target_reps`. So the code (#34) ships first, and that's why the order is inverted.
+A competent default would: merge a fully verified migration — doesn't apply because: it drops a column with your data, so it's yours (standing rules; D29 excludes 12).
+Cost of deferral: n/a (blocking).
 
 ### 53 Chunk 10 live check: priorities in the new form (Adam's steps)
 Severity: deferred
