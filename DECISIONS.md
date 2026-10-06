@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-06 07:45 UTC, chunk 10 boundary — chunks 1–10 merged and live; chunk 11 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-06 18:00 UTC, chunk 13 boundary — chunks 1–11 and 13 live, plus chunk 12's code; 034 (#35) waits for Adam; chunk 14 being built.*
 
 **Decisions**
 - 54 — Merge migration 034 (#35: drop suggested reps, convert them into rep targets). **Ready:** #34 has been live since 13:32 UTC and #35's CI is green. Steps: take the update banner on every device, run the before queries, merge, run the after queries. Recommendation: merge. Blocked: chunk 12 going live.
@@ -9,6 +9,8 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 56 — Chunk 13 app steps: link two exercises; rounds A1, B1, A2…; per-member prefill, swap, skip, ADD SET; block moves as one. When: next session. Blocked: nothing (a failure blocks the next merge).
+- 55 — Chunk 11 app steps: the planner opens and saves unchanged; a test program with 8–12 entered once per exercise; NO SETS YET on existing programs; G14 prompt; program tab read-only volume. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 53 — Chunk 10 app steps: Plan → PRIORITIES shows your mapped marks (1+2 focus, 4+5 don't care); summary wording; set/clear persists; completed runs keep the old page. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 51 — Chunk 9 app steps: only-this-week swap reverts next week; permanent swap and add carry; remove stays removed; only-this-week reorder reverts; program tab read-only for volume. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 46 — Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -43,6 +45,49 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 56 Chunk 13 live check: supersets (Adam's steps)
+Severity: deferred
+Chunk: 13
+**Ask:** Chunk 13 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 13 is `90cd1e4`)
+1. Plan → PROGRAM: link two neighbouring exercises into a superset. It applies from your next session.
+2. In that session they show as one block of rounds: A1, B1, A2, B2, … If their set counts differ, the extra sets stay in the block. The current-set marker follows A1 → B1 → A2.
+3. Inside the block each exercise still has its own prefill, SWAP, SKIP REST OF EXERCISE and ADD SET. Swapping one takes it out of the block for that session.
+4. In Plan, moving the block up or down moves both exercises together.
+5. A session with no superset looks and logs exactly as before.
+**Answer:**
+**Evidence:**
+What happened: chunk 13 (#36 `90cd1e4`, Vercel success 17:59 UTC) is live.
+- Reviewer's checks: 991 tests; D30 fixture byte-identical; replay 34/34; embeds 27/27 local and live.
+- Failed review once (superset members had lost prefill, swap, skip and ADD SET); passed on the retry, plus a hardening (block keyed by its members).
+A competent default would: count the jsdom proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 13 is fixed before chunk 14 merges.
+Provisional path taken: merged; chunk 14 is being built.
+
+### 55 Chunk 11 live check: the stepped planner (Adam's steps)
+Severity: deferred
+Chunk: 11
+**Ask:** Chunk 11 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 11 is `eb54190`)
+1. Programs → open a saved program: it opens in the planner (priorities → exercises & weekdays → volume). Save it unchanged, then reopen it: nothing changed.
+2. Create a test program (3 workouts Mon/Wed/Fri, stable, 3 sets each, 8–12 entered **once per exercise**). Save. Reopen: exactly as entered. Delete it afterwards if you don't want it.
+3. An existing program without per-set data shows "NO SETS YET" on its exercises, and Save and Start still work (DECISIONS 52 (a)).
+4. Your second account: its program with one workout on every weekday opens with the prompt. KEEP AS IS changes nothing.
+5. Plan → PROGRAM on your active (week-dependent) run: volume is read-only, and the weekday row is still editable.
+**Answer:**
+**Evidence:**
+What happened: chunk 11 (#33 `eb54190`, Vercel success) is live.
+- Reviewer's checks: 943 tests; D30 diff exactly the removed suggested-reps line; replay 34/34; embeds 27/27.
+- Failed review once (no "fill all sets at once"); passed on the retry.
+- Suggested reps disappeared from the workout screen with this chunk; 034 (entry 54) turns them into rep targets.
+A competent default would: count the scratch and jsdom proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 11 is fixed before later planner work merges.
+Provisional path taken: merged.
 
 ### 54 Merge migration 034 (drop suggested reps: backup, convert into rep targets, drop the column)
 Severity: blocking
