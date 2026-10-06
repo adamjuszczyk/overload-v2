@@ -405,7 +405,6 @@ function makeDbWeekPlanExercise(overrides: Partial<DbWeekPlanExercise> = {}): Db
       user_id: 'u1',
       exercise_id: 'ex1',
       position: 0,
-      target_reps: null,
       weight_unit: null,
       exercises: null,
     },

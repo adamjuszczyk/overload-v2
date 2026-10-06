@@ -66,7 +66,6 @@ type DbProgramExerciseJoin = {
   user_id: string
   exercise_id: string
   position: number
-  target_reps: number | null
   weight_unit?: string | null // absent until migration 006 has been applied
   exercises: DbExerciseJoin | null
 }
@@ -155,7 +154,6 @@ function toProgramExerciseFromWeekPlanExercise(row: DbWeekPlanExercise): Program
     userId: pe.user_id,
     exerciseId: pe.exercise_id,
     position: row.position,
-    targetReps: pe.target_reps,
     weightUnit: (pe.weight_unit ?? null) as ProgramExercise['weightUnit'],
     exercise: ex
       ? {
@@ -750,7 +748,7 @@ async function fetchCurrentCarry(
 
 // A swap: creates a week-only program exercise for the replacement
 // (runProgramExercises.ts — takes the replaced slot's superset block, never
-// its target_reps/weight_unit), points this week's own
+// its weight_unit), points this week's own
 // v2_week_plan_exercises row at it, and moves this week's own planned sets
 // for that exercise onto it too (so the exercise card and its sets agree on
 // what's actually planned this week). "Only this week" records the

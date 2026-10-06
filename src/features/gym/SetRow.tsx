@@ -481,7 +481,7 @@ export default function SetRow({
   // PlanPage's own per-set row uses, so the two screens can never disagree on
   // what "no target" vs. a number/range/AMRAP looks like. 'none' renders
   // nothing, same as the TARGET RIR hint below when targetRir is null.
-  const targetReps = columnsToRepTarget({
+  const repTarget = columnsToRepTarget({
     repMin: plannedSet?.repMin ?? null,
     repMax: plannedSet?.repMax ?? null,
     isAmrap: plannedSet?.isAmrap ?? false,
@@ -731,13 +731,13 @@ export default function SetRow({
           right below, kept as its own independent block (rather than merged
           into one line) so a set with no rep target renders exactly as
           before: nothing here, same as today. */}
-      {targetReps.type !== 'none' && (
+      {repTarget.type !== 'none' && (
         <div className="flex items-center gap-2 pl-7">
           <span
             className="text-xs"
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
-            TARGET REPS {formatRepTarget(targetReps)}
+            TARGET REPS {formatRepTarget(repTarget)}
           </span>
         </div>
       )}

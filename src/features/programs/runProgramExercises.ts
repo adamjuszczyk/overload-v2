@@ -92,7 +92,6 @@ type DbProgramExerciseJoin = {
   user_id: string
   exercise_id: string
   position: number
-  target_reps: number | null
   weight_unit?: string | null // absent until migration 006 has been applied
   exercises: DbExerciseJoin | null
 }
@@ -105,7 +104,6 @@ function toProgramExercise(row: DbProgramExerciseJoin): ProgramExercise {
     userId: row.user_id,
     exerciseId: row.exercise_id,
     position: row.position,
-    targetReps: row.target_reps,
     weightUnit: (row.weight_unit ?? null) as ProgramExercise['weightUnit'],
     exercise: ex
       ? {
@@ -160,11 +158,10 @@ export interface NewWeekOnlySlot {
 }
 
 // Always week_only = true (027: "a slot created by a week edit"), always a
-// fresh target_reps/weight_unit (null — inherit; a different exercise
-// identity doesn't inherit the replaced slot's own suggested reps or unit
-// preference). Returned mapped (not the raw row) so the caller can use it
-// exactly like any other ProgramExercise — e.g. to read its own `.id` when
-// pointing a week_plan_exercises row at it.
+// fresh weight_unit (null — inherit; a different exercise identity doesn't
+// inherit the replaced slot's own unit preference). Returned mapped (not the
+// raw row) so the caller can use it exactly like any other ProgramExercise —
+// e.g. to read its own `.id` when pointing a week_plan_exercises row at it.
 export async function createWeekOnlyProgramExercise(
   userId: string,
   slot: NewWeekOnlySlot,
@@ -176,7 +173,6 @@ export async function createWeekOnlyProgramExercise(
       workout_day_id: slot.workoutDayId,
       exercise_id: slot.exerciseId,
       position: slot.position,
-      target_reps: null,
       weight_unit: null,
       superset_block_id: slot.supersetBlockId,
       week_only: true,

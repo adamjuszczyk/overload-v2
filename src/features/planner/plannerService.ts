@@ -251,7 +251,7 @@ export function detectSharedWeekdayWorkouts(schedule: WeeklySchedule): SharedWee
 async function cloneProgramExerciseRow(
   userId: string,
   workoutDayId: string,
-  source: { exerciseId: string; position: number; weightUnit: string | null; targetReps: number | null },
+  source: { exerciseId: string; position: number; weightUnit: string | null },
 ): Promise<string> {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('v2_program_exercises').insert({
@@ -260,12 +260,6 @@ async function cloneProgramExerciseRow(
     workout_day_id: workoutDayId,
     exercise_id: source.exerciseId,
     position: source.position,
-    // Review fix: carry the source's own value through verbatim. The
-    // suggested-reps UI is gone (chunk 11), but the column itself (and
-    // whatever a pre-chunk-11 program already stored in it) is still real
-    // data until chunk 12 converts or backs it up — a split must not be
-    // the thing that quietly loses it first.
-    target_reps: source.targetReps,
     weight_unit: source.weightUnit,
   })
   if (error) throw error
@@ -288,7 +282,6 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       exerciseId: ex.exerciseId,
       position: ex.position,
       weightUnit: ex.weightUnit,
-      targetReps: ex.targetReps,
     })
     const heads = headSets(await fetchProgramSets([ex.id])).sort((a, b) => a.position - b.position)
     if (heads.length > 0) {

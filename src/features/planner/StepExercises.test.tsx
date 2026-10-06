@@ -82,7 +82,7 @@ function day(overrides: Partial<WorkoutDay> = {}): WorkoutDay {
 function exercise(overrides: Partial<ProgramExercise> = {}): ProgramExercise {
   return {
     id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-1', position: 0,
-    targetReps: null, weightUnit: null,
+    weightUnit: null,
     exercise: { id: 'ex-1', userId: 'user-1', name: 'Bench Press', muscleGroup: 'chest', isArchived: false, createdAt: '2026-01-01T00:00:00Z', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null },
     ...overrides,
   }

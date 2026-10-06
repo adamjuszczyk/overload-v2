@@ -55,7 +55,6 @@ const pe1: ProgramExercise = {
   userId: 'user-1',
   exerciseId: 'ex-1',
   position: 0,
-  targetReps: 8,
   weightUnit: null,
   exercise: {
     id: 'ex-1',

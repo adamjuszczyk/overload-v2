@@ -75,7 +75,6 @@ function makeProgramExercise(overrides: Partial<ProgramExercise> = {}): ProgramE
       lostAt: null,
     },
     position: 0,
-    targetReps: null,
     weightUnit: null,
     ...overrides,
   }
