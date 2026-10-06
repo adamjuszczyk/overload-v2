@@ -29,6 +29,8 @@ const {
   fetchProgramSets,
   setExerciseSetCount,
   updateProgramSetRepTarget,
+  setRepTargetForAllSets,
+  summarizeRepTargets,
   splitSharedWeekdayWorkouts,
 } = await import('./plannerService')
 
@@ -202,7 +204,7 @@ describe('fetchProgramSets', () => {
 // ─── setExerciseSetCount ────────────────────────────────────────────────────
 
 describe('setExerciseSetCount — reconciles head rows to exactly `count`', () => {
-  it('growing from 0 inserts `count` blank rows at positions 1..count', async () => {
+  it('growing from 0 inserts `count` rows at positions 1..count, with no target to copy (none existed)', async () => {
     const chain = makeChain({ data: null, error: null })
     fromMock.mockReturnValue(chain)
 
@@ -210,22 +212,58 @@ describe('setExerciseSetCount — reconciles head rows to exactly `count`', () =
 
     expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
     expect(chain.insert).toHaveBeenCalledWith([
-      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 1, is_warmup: false },
-      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 2, is_warmup: false },
-      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 3, is_warmup: false },
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 1, is_warmup: false, rep_min: null, rep_max: null, is_amrap: false },
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 2, is_warmup: false, rep_min: null, rep_max: null, is_amrap: false },
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 3, is_warmup: false, rep_min: null, rep_max: null, is_amrap: false },
     ])
   })
 
-  it('growing from an existing count continues positions after the highest existing one', async () => {
+  // Review fix: "sets added by the stepper take the rep target of the
+  // exercise's last existing set" (TASKS.md) — so raising the count after
+  // an exercise-level "fill all" keeps adding sets with that same target.
+  it('growing from an existing count continues positions after the highest existing one, copying ITS rep target onto every new row', async () => {
     const chain = makeChain({ data: null, error: null })
     fromMock.mockReturnValue(chain)
-    const existing = [programSet({ id: 'a', position: 1 }), programSet({ id: 'b', position: 2 })]
+    const existing = [
+      programSet({ id: 'a', position: 1, repMin: 10, repMax: 10 }),
+      programSet({ id: 'b', position: 2, repMin: 8, repMax: 12 }), // the LAST one — this is what gets copied
+    ]
 
     await setExerciseSetCount('user-1', 'pe-1', existing, 4)
 
     expect(chain.insert).toHaveBeenCalledWith([
-      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 3, is_warmup: false },
-      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 4, is_warmup: false },
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 3, is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false },
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 4, is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false },
+    ])
+  })
+
+  it('growing copies AMRAP too when that is the last set\'s own target', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    const existing = [programSet({ id: 'a', position: 1, isAmrap: true })]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 2)
+
+    expect(chain.insert).toHaveBeenCalledWith([
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 2, is_warmup: false, rep_min: null, rep_max: null, is_amrap: true },
+    ])
+  })
+
+  it('"last existing set" means highest POSITION, not array order', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    // Deliberately out of position order, as a caller's own re-sort might
+    // not be guaranteed — position 2 (repMin 8/12) is the true last, even
+    // though it appears first in this array.
+    const existing = [
+      programSet({ id: 'b', position: 2, repMin: 8, repMax: 12 }),
+      programSet({ id: 'a', position: 1, repMin: 10, repMax: 10 }),
+    ]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 3)
+
+    expect(chain.insert).toHaveBeenCalledWith([
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 3, is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false },
     ])
   })
 
@@ -244,6 +282,30 @@ describe('setExerciseSetCount — reconciles head rows to exactly `count`', () =
     expect(chain.in).toHaveBeenCalledWith('id', ['b', 'c'])
   })
 
+  // Review fix: "a per-set override survives an unrelated count change" —
+  // growing NEVER updates or deletes a retained row (every position <= the
+  // old count), so a set someone already overrode away from the rest stays
+  // exactly as it was, whatever the new count is.
+  it('a per-set override survives growing the count — no update/delete touches any retained row', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    const existing = [
+      programSet({ id: 'a', position: 1, repMin: 8, repMax: 12 }),
+      programSet({ id: 'overridden', position: 2, isAmrap: true }), // deliberately different from the rest
+      programSet({ id: 'c', position: 3, repMin: 8, repMax: 12 }),
+    ]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 4)
+
+    expect(chain.update).not.toHaveBeenCalled()
+    expect(chain.delete).not.toHaveBeenCalled()
+    // The only write is the new row, copying set 3's (the true last) own
+    // target — 'overridden' (position 2) is untouched by this call entirely.
+    expect(chain.insert).toHaveBeenCalledWith([
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 4, is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false },
+    ])
+  })
+
   it('equal count: no insert, no delete (a true no-op — reviewer note 1\'s own guarantee)', async () => {
     const existing = [programSet({ id: 'a', position: 1 })]
 
@@ -254,6 +316,64 @@ describe('setExerciseSetCount — reconciles head rows to exactly `count`', () =
 
   it('rejects a negative count rather than silently clamping', async () => {
     await expect(setExerciseSetCount('user-1', 'pe-1', [], -1)).rejects.toThrow()
+  })
+})
+
+// ─── setRepTargetForAllSets ("fill all sets of an exercise at once") ───────
+
+describe('setRepTargetForAllSets', () => {
+  it('writes every given head id in ONE update call', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await setRepTargetForAllSets(['a', 'b', 'c'], { type: 'range', min: 8, max: 12 })
+
+    expect(fromMock).toHaveBeenCalledTimes(1)
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    expect(chain.update).toHaveBeenCalledWith({ rep_min: 8, rep_max: 12, is_amrap: false })
+    expect(chain.in).toHaveBeenCalledWith('id', ['a', 'b', 'c'])
+  })
+
+  it('AMRAP clears any stray numbers on every head', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await setRepTargetForAllSets(['a', 'b'], { type: 'amrap' })
+
+    expect(chain.update).toHaveBeenCalledWith({ rep_min: null, rep_max: null, is_amrap: true })
+  })
+
+  it('no heads given -> no Supabase call at all', async () => {
+    await setRepTargetForAllSets([], { type: 'number', value: 8 })
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+})
+
+// ─── summarizeRepTargets ────────────────────────────────────────────────────
+
+describe('summarizeRepTargets', () => {
+  it('no heads -> null (nothing to summarise yet)', () => {
+    expect(summarizeRepTargets([])).toBeNull()
+  })
+
+  it('every head agreeing on a range -> that range', () => {
+    const heads = [programSet({ id: 'a', repMin: 8, repMax: 12 }), programSet({ id: 'b', repMin: 8, repMax: 12 })]
+    expect(summarizeRepTargets(heads)).toEqual({ type: 'range', min: 8, max: 12 })
+  })
+
+  it('every head agreeing on "no target" -> {type: none}, not mixed', () => {
+    const heads = [programSet({ id: 'a' }), programSet({ id: 'b' })]
+    expect(summarizeRepTargets(heads)).toEqual({ type: 'none' })
+  })
+
+  it('heads disagreeing -> \'mixed\'', () => {
+    const heads = [programSet({ id: 'a', repMin: 8, repMax: 12 }), programSet({ id: 'b', isAmrap: true })]
+    expect(summarizeRepTargets(heads)).toBe('mixed')
+  })
+
+  it('a single head -> that head\'s own target (trivially "agreeing" with itself)', () => {
+    const heads = [programSet({ id: 'a', repMin: 10, repMax: 10 })]
+    expect(summarizeRepTargets(heads)).toEqual({ type: 'number', value: 10 })
   })
 })
 
@@ -321,12 +441,16 @@ describe('splitSharedWeekdayWorkouts', () => {
     expect(createWorkoutDayMock).toHaveBeenCalledTimes(2) // one clone per EXTRA weekday
   })
 
-  it('clones every current exercise (name, position, weight unit) and its own head sets', async () => {
+  it('clones every current exercise (name, position, weight unit, target reps) and its own head sets', async () => {
     createWorkoutDayMock.mockResolvedValue({
       id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
     })
+    // targetReps deliberately non-null — review fix: a pre-chunk-11 program's
+    // suggested-reps value is still real data (its UI is gone, but the
+    // column itself isn't dropped until chunk 12) and a split must not be
+    // what quietly loses it first.
     const sourceExercise: ProgramExercise = {
-      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: null, weightUnit: 'lbs',
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: 8, weightUnit: 'lbs',
     }
     fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
     const insertChain = makeChain({ data: null, error: null })
@@ -352,7 +476,7 @@ describe('splitSharedWeekdayWorkouts', () => {
       (c) => c[0]?.exercise_id === 'ex-1',
     )
     expect(peInsertCall?.[0]).toMatchObject({
-      workout_day_id: 'wd-clone', exercise_id: 'ex-1', position: 0, target_reps: null, weight_unit: 'lbs',
+      workout_day_id: 'wd-clone', exercise_id: 'ex-1', position: 0, target_reps: 8, weight_unit: 'lbs',
     })
     expect(typeof peInsertCall?.[0]?.id).toBe('string')
 
@@ -367,6 +491,45 @@ describe('splitSharedWeekdayWorkouts', () => {
       user_id: 'user-1', program_exercise_id: peInsertCall?.[0]?.id, position: 1,
       is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false, rest_seconds: null,
     }])
+  })
+
+  // Review fix, its own dedicated proof (not just folded into the broader
+  // clone test above): cloneProgramExerciseRow's target_reps column must
+  // mirror the source row, in both directions — a real value AND null.
+  it('carries target_reps through verbatim — a real value, not forced to null', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    const sourceExercise: ProgramExercise = {
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: 12, weightUnit: null,
+    }
+    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
+    fromMock.mockReturnValue(makeChain({ data: [], error: null }))
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, detectSharedWeekdayWorkouts(schedule))
+
+    const insertMock = (fromMock.mock.results[0]?.value as { insert: ReturnType<typeof vi.fn> }).insert
+    const peInsertCall = insertMock.mock.calls.find((c) => c[0]?.exercise_id === 'ex-1')
+    expect(peInsertCall?.[0]?.target_reps).toBe(12)
+  })
+
+  it('carries target_reps through verbatim — null stays null (no suggestion either way)', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    const sourceExercise: ProgramExercise = {
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: null, weightUnit: null,
+    }
+    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
+    fromMock.mockReturnValue(makeChain({ data: [], error: null }))
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, detectSharedWeekdayWorkouts(schedule))
+
+    const insertMock = (fromMock.mock.results[0]?.value as { insert: ReturnType<typeof vi.fn> }).insert
+    const peInsertCall = insertMock.mock.calls.find((c) => c[0]?.exercise_id === 'ex-1')
+    expect(peInsertCall?.[0]?.target_reps).toBeNull()
   })
 
   it('an unlisted group (no matching workoutDays entry) is skipped, not thrown', async () => {

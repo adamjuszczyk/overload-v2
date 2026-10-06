@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import type { ProgramSet, WeeklySchedule, DayOfWeek, WorkoutDay } from '../../types'
-import { repTargetToColumns, type RepTarget } from '../../lib/plannerVocabulary.js'
+import { repTargetToColumns, columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
 import { fetchRunProgramExercises } from '../programs/runProgramExercises'
 import { createWorkoutDay } from '../programs/programService'
 
@@ -88,13 +88,20 @@ export function hasNoSets(sets: ProgramSet[]): boolean {
 
 // ─── Set count — step 3's one required value ───────────────────────────────
 // Reconciles an exercise's own head rows to exactly `count`, in one of two
-// directions, never both: short of `count` -> appends new, blank (no rep
-// target) rows; over `count` -> deletes the excess TRAILING rows (highest
-// position first). Every retained row (every position <= min(old, new)
-// count) is left completely untouched, including whatever rep target it
-// already carries — "filled for all sets at once, then adjustable per set"
-// (SPEC.md "Stepped program planner" step 3) only works if growing/shrinking
-// the count never clobbers a set someone already adjusted.
+// directions, never both: short of `count` -> appends new rows; over
+// `count` -> deletes the excess TRAILING rows (highest position first).
+// Every RETAINED row (every position <= min(old, new) count) is left
+// completely untouched, including whatever rep target it already carries —
+// a per-set override "survives an unrelated count change" (review fix)
+// because growing/shrinking never writes to a row it didn't just insert.
+//
+// Review fix — a newly APPENDED row no longer starts blank: it takes the
+// rep target of the exercise's own last existing head (highest position),
+// or no target when there was none to copy (first-ever sets). TASKS.md:
+// "sets added by the stepper take the rep target of the exercise's last
+// existing set" — so raising the count after an exercise-level "set 8–12"
+// (setRepTargetForAllSets, below) keeps adding 8–12 sets, the same "stays
+// quick for the plain case" SPEC asks of the stepper itself.
 export async function setExerciseSetCount(
   userId: string,
   programExerciseId: string,
@@ -105,6 +112,7 @@ export async function setExerciseSetCount(
   const sorted = [...currentHeads].sort((a, b) => a.position - b.position)
 
   if (count > sorted.length) {
+    const last = sorted[sorted.length - 1] ?? null
     const rows = []
     for (let position = sorted.length + 1; position <= count; position++) {
       rows.push({
@@ -112,6 +120,9 @@ export async function setExerciseSetCount(
         program_exercise_id: programExerciseId,
         position,
         is_warmup: false,
+        rep_min: last?.repMin ?? null,
+        rep_max: last?.repMax ?? null,
+        is_amrap: last?.isAmrap ?? false,
       })
     }
     const { error } = await supabase.from('v2_program_sets').insert(rows)
@@ -135,6 +146,42 @@ export async function updateProgramSetRepTarget(id: string, target: RepTarget): 
     .update({ rep_min: columns.repMin, rep_max: columns.repMax, is_amrap: columns.isAmrap })
     .eq('id', id)
   if (error) throw error
+}
+
+// Review fix — "fill all sets of an exercise at once" (SPEC.md step 3's own
+// plain-case shortcut, missing from the first pass): one call, one write,
+// covering every CURRENT head of the exercise — not one updateProgramSetRepTarget
+// per set, which would be several round trips for what SPEC frames as a
+// single action. Takes the ids directly (the caller already has the heads
+// in hand to render them) rather than re-deriving them, so it never risks
+// racing a concurrent read of "current heads". A caller with zero heads has
+// nothing to fill — short-circuits with no Supabase call, same posture as
+// fetchProgramSets' own empty-input guard.
+export async function setRepTargetForAllSets(headIds: string[], target: RepTarget): Promise<void> {
+  if (headIds.length === 0) return
+  const columns = repTargetToColumns(target)
+  const { error } = await supabase
+    .from('v2_program_sets')
+    .update({ rep_min: columns.repMin, rep_max: columns.repMax, is_amrap: columns.isAmrap })
+    .in('id', headIds)
+  if (error) throw error
+}
+
+// Pure — the exercise-level summary StepVolume.tsx shows beside the SETS
+// stepper: every head's own target when they all agree, or 'mixed' when
+// they don't (review fix: "a neutral 'mixed' state with existing tokens").
+// Compared by formatted text (same shortcut updateProgramSetRepTarget's own
+// UI uses, StepVolume.tsx's SetTargetRow.commit) — two RepTargets format
+// identically iff they're the same target, since format is injective per
+// type (plannerVocabulary.ts: digits / "min–max" / "AMRAP" / "none", never
+// overlapping). Null (no heads at all) is the caller's own call — SPEC
+// gives nothing to summarise when there's nothing to fill yet.
+export function summarizeRepTargets(heads: ProgramSet[]): RepTarget | 'mixed' | null {
+  if (heads.length === 0) return null
+  const targets = heads.map((h) => columnsToRepTarget({ repMin: h.repMin, repMax: h.repMax, isAmrap: h.isAmrap }))
+  const first = targets[0]
+  const firstText = formatRepTarget(first)
+  return targets.every((t) => formatRepTarget(t) === firstText) ? first : 'mixed'
 }
 
 // ─── Schedule: one weekday per workout ──────────────────────────────────────
@@ -204,7 +251,7 @@ export function detectSharedWeekdayWorkouts(schedule: WeeklySchedule): SharedWee
 async function cloneProgramExerciseRow(
   userId: string,
   workoutDayId: string,
-  source: { exerciseId: string; position: number; weightUnit: string | null },
+  source: { exerciseId: string; position: number; weightUnit: string | null; targetReps: number | null },
 ): Promise<string> {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('v2_program_exercises').insert({
@@ -213,7 +260,12 @@ async function cloneProgramExerciseRow(
     workout_day_id: workoutDayId,
     exercise_id: source.exerciseId,
     position: source.position,
-    target_reps: null, // suggested reps — UI removed chunk 11; never carried to a clone
+    // Review fix: carry the source's own value through verbatim. The
+    // suggested-reps UI is gone (chunk 11), but the column itself (and
+    // whatever a pre-chunk-11 program already stored in it) is still real
+    // data until chunk 12 converts or backs it up — a split must not be
+    // the thing that quietly loses it first.
+    target_reps: source.targetReps,
     weight_unit: source.weightUnit,
   })
   if (error) throw error
@@ -236,6 +288,7 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       exerciseId: ex.exerciseId,
       position: ex.position,
       weightUnit: ex.weightUnit,
+      targetReps: ex.targetReps,
     })
     const heads = headSets(await fetchProgramSets([ex.id])).sort((a, b) => a.position - b.position)
     if (heads.length > 0) {

@@ -8,6 +8,7 @@ import {
   fetchProgramSets,
   setExerciseSetCount,
   updateProgramSetRepTarget,
+  setRepTargetForAllSets,
   assignWorkoutWeekday,
   splitSharedWeekdayWorkouts,
   type SharedWeekdayGroup,
@@ -74,6 +75,18 @@ export function useUpdateSetRepTarget() {
   })
 }
 
+// Review fix — "fill all sets of an exercise at once" (SPEC.md step 3),
+// the exercise-level control beside the SETS stepper (StepVolume.tsx's
+// ExerciseTargetRow). One mutation, one write, covering every head id given.
+export function useSetRepTargetForAllSets() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ headIds, target }: { headIds: string[]; target: RepTarget }) =>
+      setRepTargetForAllSets(headIds, target),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
 // Step 2's weekday-per-workout control (StepExercises.tsx). Wraps the pure
 // assignWorkoutWeekday + the existing updateSchedule write (programService.ts
 // — the same function useUpdateSchedule already calls; this hook exists
@@ -121,5 +134,5 @@ export function useSplitSharedWeekdayWorkouts(programId: string) {
   })
 }
 
-export { headSets, hasNoSets, detectSharedWeekdayWorkouts } from './plannerService'
+export { headSets, hasNoSets, detectSharedWeekdayWorkouts, summarizeRepTargets } from './plannerService'
 export type { SharedWeekdayGroup } from './plannerService'

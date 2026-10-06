@@ -1,7 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import type { Program, ProgramExercise, ProgramSet, PlanningType } from '../../types'
+import type { RepTarget } from '../../lib/plannerVocabulary.js'
 import { useWorkoutDays, useProgramExercises, useUpdatePlanningType } from '../programs/usePrograms'
-import { useProgramSets, useSetExerciseSetCount, useUpdateSetRepTarget, headSets } from './usePlanner'
+import {
+  useProgramSets,
+  useSetExerciseSetCount,
+  useUpdateSetRepTarget,
+  useSetRepTargetForAllSets,
+  headSets,
+  summarizeRepTargets,
+} from './usePlanner'
 import { formatRepTarget, parseRepTarget, columnsToRepTarget } from '../../lib/plannerVocabulary.js'
 
 // Step 3 — Volume (SPEC.md "Stepped program planner" step 3; TASKS.md "step
@@ -192,14 +200,95 @@ function ExerciseSetsEditor({
         </div>
       </div>
 
-      {/* Per-set rep targets — "filled for all sets at once [by the stepper
-          above], then adjust individual sets" (SPEC). */}
+      {/* "Fill all sets of an exercise at once" (SPEC.md step 3's own
+          plain-case shortcut) — one tap sets every current head's target in
+          one write (useSetRepTargetForAllSets); per-set rows right below
+          still adjust one set at a time. */}
+      {heads.length > 0 && (
+        <ExerciseTargetRow heads={heads} readOnly={volumeReadOnly} exerciseName={exercise.exercise?.name ?? 'this exercise'} />
+      )}
+
+      {/* Per-set rep targets — filled by the row above, then adjustable
+          individually. */}
       {heads.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {heads.map((set, i) => (
             <SetTargetRow key={set.id} displayNumber={i + 1} set={set} readOnly={volumeReadOnly} />
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── "Fill all sets at once" (review fix) ──────────────────────────────────
+// Same tap-to-edit text field as SetTargetRow (number / range / AMRAP,
+// parsed the same way), but committing writes every CURRENT head's target
+// in one call instead of one set's. Shows the shared target when every head
+// agrees, "MIXED" (a neutral, existing-tokens label — same muted/dim
+// styling StepExercises.tsx's own "NO EXERCISES YET" uses) when they don't,
+// or "—" when every head has no target at all.
+function ExerciseTargetRow({
+  heads,
+  readOnly,
+  exerciseName,
+}: {
+  heads: ProgramSet[]
+  readOnly: boolean
+  exerciseName: string
+}) {
+  const setAll = useSetRepTargetForAllSets()
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  const summary = summarizeRepTargets(heads) // heads.length > 0 here, so never null
+  const displayText = summary === 'mixed' ? 'MIXED' : summary && summary.type !== 'none' ? formatRepTarget(summary) : '—'
+
+  function startEditing() {
+    if (readOnly) return
+    setValue(summary && summary !== 'mixed' && summary.type !== 'none' ? formatRepTarget(summary) : '')
+    setEditing(true)
+  }
+
+  function commit() {
+    setEditing(false)
+    const trimmed = value.trim()
+    const target: RepTarget | null = trimmed === '' ? { type: 'none' } : parseRepTarget(trimmed)
+    if (target === null) return
+    // No-op guard: every head already shows exactly this target.
+    if (summary !== 'mixed' && summary && formatRepTarget(target) === formatRepTarget(summary)) return
+    setAll.mutate({ headIds: heads.map((h) => h.id), target })
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0 8px' }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
+        ALL SETS
+      </span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
+          placeholder="8, 8-12, or AMRAP"
+          style={{ flex: 1, height: 30, background: 'var(--surface-overlay)', border: '1px solid var(--accent)', borderRadius: 7, padding: '0 10px', fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
+        />
+      ) : (
+        <button
+          onClick={startEditing}
+          disabled={readOnly}
+          aria-label={`Set every set's rep target for ${exerciseName}`}
+          style={{ flex: 1, textAlign: 'left', background: 'transparent', border: 'none', padding: '4px 0', cursor: readOnly ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: summary === 'mixed' || !summary || summary.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)' }}
+        >
+          {displayText}
+        </button>
       )}
     </div>
   )

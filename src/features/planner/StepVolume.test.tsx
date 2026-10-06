@@ -9,6 +9,7 @@ let setsByExercise: Record<string, ProgramSet[]> = {}
 const updatePlanningTypeMutateMock = vi.fn()
 const setCountMutateMock = vi.fn()
 const updateTargetMutateMock = vi.fn()
+const setAllTargetMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -25,7 +26,9 @@ vi.mock('./usePlanner', async () => {
     }),
     useSetExerciseSetCount: () => ({ mutate: setCountMutateMock, isPending: false }),
     useUpdateSetRepTarget: () => ({ mutate: updateTargetMutateMock, isPending: false }),
+    useSetRepTargetForAllSets: () => ({ mutate: setAllTargetMutateMock, isPending: false }),
     headSets: actual.headSets,
+    summarizeRepTargets: actual.summarizeRepTargets,
   }
 })
 
@@ -36,6 +39,7 @@ afterEach(() => {
   updatePlanningTypeMutateMock.mockReset()
   setCountMutateMock.mockReset()
   updateTargetMutateMock.mockReset()
+  setAllTargetMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -142,19 +146,29 @@ describe('StepVolume — the SETS stepper (the one required value)', () => {
   })
 })
 
+// The per-set row's own target button carries no aria-label of its own (its
+// accessible name falls back to its text), unlike the new "fill all sets"
+// row right above it (ExerciseTargetRow, its own describe block below),
+// which does — so getByRole, not getByText, is what tells the two apart
+// once both can show the exact same text (a single-set exercise's one head
+// and "every set" necessarily agree).
+function perSetTargetButton(text: string) {
+  return screen.getByRole('button', { name: text })
+}
+
 describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
   it('a set with no target shows the dash placeholder', () => {
     setup()
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
-    expect(screen.getByText('—')).toBeTruthy()
+    expect(perSetTargetButton('—')).toBeTruthy()
   })
 
   it('a set with a range shows it formatted with an en dash', () => {
     setup()
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1, repMin: 8, repMax: 12 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
-    expect(screen.getByText('8–12')).toBeTruthy()
+    expect(perSetTargetButton('8–12')).toBeTruthy()
   })
 
   it('tapping a target, typing a range, and blurring commits the parsed RepTarget', () => {
@@ -162,7 +176,7 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
 
-    fireEvent.click(screen.getByText('—'))
+    fireEvent.click(perSetTargetButton('—'))
     const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
     fireEvent.change(input, { target: { value: '8-12' } })
     fireEvent.blur(input)
@@ -175,7 +189,7 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
 
-    fireEvent.click(screen.getByText('—'))
+    fireEvent.click(perSetTargetButton('—'))
     const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
     fireEvent.change(input, { target: { value: 'amrap' } })
     fireEvent.blur(input)
@@ -188,7 +202,7 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
 
-    fireEvent.click(screen.getByText('—'))
+    fireEvent.click(perSetTargetButton('—'))
     const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
     fireEvent.change(input, { target: { value: 'lots' } })
     fireEvent.blur(input)
@@ -201,7 +215,7 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1, repMin: 8, repMax: 8 })]
     render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
 
-    fireEvent.click(screen.getByText('8'))
+    fireEvent.click(perSetTargetButton('8'))
     const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
     fireEvent.blur(input) // unchanged value
 
@@ -213,7 +227,101 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
     setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
     render(<StepVolume program={program()} volumeReadOnly canChangePlanningType={false} />)
 
-    expect((screen.getByText('—').closest('button') as HTMLButtonElement).disabled).toBe(true)
+    expect((perSetTargetButton('—') as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('StepVolume — "fill all sets at once" (review fix)', () => {
+  function allSetsButton(exerciseName = 'Bench Press') {
+    return screen.getByRole('button', { name: `Set every set's rep target for ${exerciseName}` })
+  }
+
+  it('shows the shared target when every head agrees', () => {
+    setup()
+    setsByExercise['pe-1'] = [
+      set({ id: 'a', position: 1, repMin: 8, repMax: 12 }),
+      set({ id: 'b', position: 2, repMin: 8, repMax: 12 }),
+    ]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+    expect(allSetsButton().textContent).toBe('8–12')
+  })
+
+  it('shows MIXED when heads disagree', () => {
+    setup()
+    setsByExercise['pe-1'] = [
+      set({ id: 'a', position: 1, repMin: 8, repMax: 12 }),
+      set({ id: 'b', position: 2, isAmrap: true }),
+    ]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+    expect(allSetsButton().textContent).toBe('MIXED')
+  })
+
+  it('shows the dash when no head has a target yet', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'a', position: 1 }), set({ id: 'b', position: 2 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+    expect(allSetsButton().textContent).toBe('—')
+  })
+
+  it('setting 8–12 writes every current head in one call', () => {
+    setup()
+    setsByExercise['pe-1'] = [
+      set({ id: 'a', position: 1 }),
+      set({ id: 'b', position: 2 }),
+      set({ id: 'c', position: 3, isAmrap: true }), // mixed beforehand — still all get overwritten
+    ]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+
+    fireEvent.click(allSetsButton())
+    const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
+    fireEvent.change(input, { target: { value: '8-12' } })
+    fireEvent.blur(input)
+
+    expect(setAllTargetMutateMock).toHaveBeenCalledTimes(1)
+    expect(setAllTargetMutateMock).toHaveBeenCalledWith({
+      headIds: ['a', 'b', 'c'],
+      target: { type: 'range', min: 8, max: 12 },
+    })
+  })
+
+  it('does not call the per-set mutation — one bulk write, not several', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'a', position: 1 }), set({ id: 'b', position: 2 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+
+    fireEvent.click(allSetsButton())
+    fireEvent.change(screen.getByPlaceholderText('8, 8-12, or AMRAP'), { target: { value: 'amrap' } })
+    fireEvent.blur(screen.getByPlaceholderText('8, 8-12, or AMRAP'))
+
+    expect(updateTargetMutateMock).not.toHaveBeenCalled()
+  })
+
+  it('committing the same shared value as every head already has does not call mutate', () => {
+    setup()
+    setsByExercise['pe-1'] = [
+      set({ id: 'a', position: 1, repMin: 8, repMax: 12 }),
+      set({ id: 'b', position: 2, repMin: 8, repMax: 12 }),
+    ]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+
+    fireEvent.click(allSetsButton())
+    fireEvent.blur(screen.getByPlaceholderText('8, 8-12, or AMRAP')) // unchanged
+
+    expect(setAllTargetMutateMock).not.toHaveBeenCalled()
+  })
+
+  it('hidden entirely when there are no sets yet (nothing to fill)', () => {
+    setup()
+    setsByExercise['pe-1'] = []
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+    expect(screen.queryByText("Set every set's rep target for Bench Press")).toBeNull()
+  })
+
+  it('volumeReadOnly: not tappable', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'a', position: 1 })]
+    render(<StepVolume program={program()} volumeReadOnly canChangePlanningType={false} />)
+    expect((allSetsButton() as HTMLButtonElement).disabled).toBe(true)
   })
 })
 
