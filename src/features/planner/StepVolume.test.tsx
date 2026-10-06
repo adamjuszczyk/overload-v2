@@ -27,6 +27,13 @@ vi.mock('./usePlanner', async () => {
     useSetExerciseSetCount: () => ({ mutate: setCountMutateMock, isPending: false }),
     useUpdateSetRepTarget: () => ({ mutate: updateTargetMutateMock, isPending: false }),
     useSetRepTargetForAllSets: () => ({ mutate: setAllTargetMutateMock, isPending: false }),
+    // Chunk 14 — stage authoring; not this file's own concern (that's
+    // StepVolume.stageKind.test.tsx), but every render goes through
+    // ProgramSetGroupEditor now, so these must resolve against this mock
+    // too, same reason every hook above is listed.
+    useUpdateProgramSetStageKind: () => ({ mutate: vi.fn() }),
+    useAddProgramSetStage: () => ({ mutate: vi.fn(), isPending: false }),
+    useRemoveProgramSetStage: () => ({ mutate: vi.fn() }),
     headSets: actual.headSets,
     summarizeRepTargets: actual.summarizeRepTargets,
   }

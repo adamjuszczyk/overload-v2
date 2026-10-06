@@ -86,6 +86,66 @@ export function hasNoSets(sets: ProgramSet[]): boolean {
   return headSets(sets).length === 0
 }
 
+// ─── Stages (chunk 14 — SPEC.md "Staged sets") ─────────────────────────────
+// Program-level staging: a head's own stage_kind (one of the four — null
+// reads as a dropset, resolveStageKind, plannerVocabulary.ts) plus its
+// stage rows (parent_program_set_id + stage_index), same relational shape
+// 027 gives v2_week_plan_sets/v2_set_logs. Program sets carry no weight/RIR
+// at all (SPEC "Targets": week-plan-only), so authoring here is only ever
+// the kind and each stage's own rep target — never a weight carry-over
+// concern (that is wholly a workout-screen/runtime rule, stageCarryLogic.ts).
+
+// Head-only (the DB's own check, v2_program_sets_stage_row_check, refuses
+// this on a stage row); null reverts to "no kind chosen" (resolveStageKind
+// then reads it as a dropset, same as a legacy/never-set row).
+export async function updateProgramSetStageKind(
+  id: string,
+  stageKind: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null,
+): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ stage_kind: stageKind }).eq('id', id)
+  if (error) throw error
+}
+
+// Mirrors weekPlanService.ts's addStage: the parent id is given directly
+// by the caller (StepVolume.tsx already has the head in hand), never
+// inferred. A stage shares its head's position (027's own invariant,
+// enforced by the caller passing it through, not re-derived here) and
+// carries no kind/rest/warmup of its own (the DB's own check) — this
+// function simply never sets those columns, so they take the table's
+// default/null, satisfying the check by construction.
+export async function addProgramSetStage(
+  userId: string,
+  programExerciseId: string,
+  parentId: string,
+  position: number,
+  stageIndex: number,
+): Promise<ProgramSet> {
+  const { data, error } = await supabase
+    .from('v2_program_sets')
+    .insert({
+      user_id: userId,
+      program_exercise_id: programExerciseId,
+      position,
+      is_warmup: false,
+      parent_program_set_id: parentId,
+      stage_index: stageIndex,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return toProgramSet(data as DbProgramSet)
+}
+
+// A single row, head or stage — the SETS stepper's own shrink path
+// (setExerciseSetCount below) bulk-deletes heads directly; this is the
+// one-at-a-time delete STAGE's own remove button uses. Deleting a head
+// this way cascades its stages too (027: parent_program_set_id ... on
+// delete cascade), same as the week-plan/log-side stage cascade.
+export async function removeProgramSet(id: string): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ─── Set count — step 3's one required value ───────────────────────────────
 // Reconciles an exercise's own head rows to exactly `count`, in one of two
 // directions, never both: short of `count` -> appends new rows; over

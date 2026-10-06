@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 import type { Program, ProgramExercise, ProgramSet, PlanningType } from '../../types'
 import type { RepTarget } from '../../lib/plannerVocabulary.js'
 import { useWorkoutDays, useProgramExercises, useUpdatePlanningType } from '../programs/usePrograms'
@@ -7,10 +8,15 @@ import {
   useSetExerciseSetCount,
   useUpdateSetRepTarget,
   useSetRepTargetForAllSets,
+  useUpdateProgramSetStageKind,
+  useAddProgramSetStage,
+  useRemoveProgramSetStage,
   headSets,
   summarizeRepTargets,
 } from './usePlanner'
-import { formatRepTarget, parseRepTarget, columnsToRepTarget } from '../../lib/plannerVocabulary.js'
+import { formatRepTarget, parseRepTarget, columnsToRepTarget, STAGE_KINDS, STAGE_KIND_LABELS, resolveStageKind } from '../../lib/plannerVocabulary.js'
+import { groupByParent, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
+import RatingChips from '../gym/RatingChips.js'
 
 // Step 3 — Volume (SPEC.md "Stepped program planner" step 3; TASKS.md "step
 // 3 picks stable / week-dependent and plans sets"). Reused as-is by a
@@ -209,12 +215,22 @@ function ExerciseSetsEditor({
       )}
 
       {/* Per-set rep targets — filled by the row above, then adjustable
-          individually. */}
+          individually. One group per head (chunk 14 — SPEC "Staged
+          sets"): its own stage rows nested beneath it, exactly the same
+          head+stages shape the week plan's own PlanSetGroup renders. */}
       {heads.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {heads.map((set, i) => (
-            <SetTargetRow key={set.id} displayNumber={i + 1} set={set} readOnly={volumeReadOnly} />
-          ))}
+          {groupByParent(sets, (s) => s.id, (s) => s.parentProgramSetId, (s) => s.stageIndex)
+            .sort((a, b) => a.head.position - b.head.position)
+            .map((group, i) => (
+              <ProgramSetGroupEditor
+                key={group.head.id}
+                displayNumber={i + 1}
+                exercise={exercise}
+                group={group}
+                readOnly={volumeReadOnly}
+              />
+            ))}
         </div>
       )}
     </div>
@@ -298,10 +314,20 @@ function SetTargetRow({
   displayNumber,
   set,
   readOnly,
+  isStage = false,
+  stageKindLabel,
+  onRemove,
 }: {
   displayNumber: number
   set: ProgramSet
   readOnly: boolean
+  // Chunk 14 — a stage shares its head's displayNumber by convention (↳,
+  // no number of its own), same as the week plan's own SetRow/the workout
+  // screen's SetRow.
+  isStage?: boolean
+  stageKindLabel?: string
+  // Stage rows only — the SETS stepper owns removing a whole head.
+  onRemove?: () => void
 }) {
   const updateTarget = useUpdateSetRepTarget()
   const [editing, setEditing] = useState(false)
@@ -338,8 +364,13 @@ function SetTargetRow({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
       <span style={{ width: 20, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, color: 'var(--text-dim)', flexShrink: 0 }}>
-        {String(displayNumber).padStart(2, '0')}
+        {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
       </span>
+      {isStage && stageKindLabel && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
+          {stageKindLabel}
+        </span>
+      )}
       {editing ? (
         <input
           ref={inputRef}
@@ -357,6 +388,98 @@ function SetTargetRow({
           style={{ flex: 1, textAlign: 'left', background: 'transparent', border: 'none', padding: '4px 0', cursor: readOnly ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: current.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)' }}
         >
           {displayText}
+        </button>
+      )}
+      {isStage && !readOnly && onRemove && (
+        <button
+          onClick={onRemove}
+          aria-label="Remove stage"
+          style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', flexShrink: 0 }}
+        >
+          <Trash2 size={11} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── One head + its stages (chunk 14 — SPEC.md "Staged sets") ─────────────
+// Mirrors PlanPage.tsx's own PlanSetGroup (the week plan's equivalent
+// authoring UI) one layer up: the head's existing SetTargetRow, its stage
+// rows nested beneath it (labelled by kind), ADD STAGE, and — once there's
+// at least one real stage — the same STAGE KIND chip row (RatingChips).
+// Program sets carry no weight (SPEC "Targets": week-plan-only), so unlike
+// the workout screen there is no carry-over concern here at all — only the
+// kind, and each stage's own independent rep target (already handled by
+// reusing SetTargetRow as-is for a stage row).
+function ProgramSetGroupEditor({
+  displayNumber,
+  exercise,
+  group,
+  readOnly,
+}: {
+  displayNumber: number
+  exercise: ProgramExercise
+  group: Group<ProgramSet>
+  readOnly: boolean
+}) {
+  const { head, stages } = group
+  const stageKind = resolveStageKind(head.stageKind ?? null)
+  const updateStageKind = useUpdateProgramSetStageKind()
+  const addStage = useAddProgramSetStage()
+  const removeStage = useRemoveProgramSetStage()
+
+  function handleAddStage() {
+    if (readOnly) return
+    addStage.mutate({
+      programExerciseId: exercise.id,
+      parentId: head.id,
+      position: head.position,
+      // max(existing) + 1, not stages.length + 1 — same collision setGroupLogic
+      // .ts's own nextStageIndex avoids for the week plan/workout screen.
+      stageIndex: nextStageIndex(group, (s) => s.stageIndex),
+    })
+  }
+
+  return (
+    <div>
+      <SetTargetRow displayNumber={displayNumber} set={head} readOnly={readOnly} />
+
+      {stages.length > 0 && (
+        <div style={{ paddingLeft: 20, borderLeft: '1px dashed var(--border-strong)', marginLeft: 10 }}>
+          {stages.map((stage) => (
+            <SetTargetRow
+              key={stage.id}
+              displayNumber={displayNumber}
+              set={stage}
+              readOnly={readOnly}
+              isStage
+              stageKindLabel={STAGE_KIND_LABELS[stageKind]}
+              onRemove={() => removeStage.mutate(stage.id)}
+            />
+          ))}
+
+          {!readOnly && (
+            <div style={{ padding: '2px 0 6px' }}>
+              <RatingChips
+                scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
+                value={stageKind}
+                onChange={(kind) => updateStageKind.mutate({ id: head.id, stageKind: kind })}
+                label="STAGE KIND"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!readOnly && (
+        <button
+          onClick={handleAddStage}
+          disabled={addStage.isPending}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, height: 24, padding: stages.length > 0 ? '0 9px 4px 20px' : '0 9px 4px 0', background: 'transparent', border: 'none', cursor: addStage.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', opacity: addStage.isPending ? 0.6 : 1 }}
+        >
+          <Plus size={11} />
+          ADD STAGE
         </button>
       )}
     </div>
