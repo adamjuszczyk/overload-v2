@@ -14,7 +14,7 @@ import type { Mesocycle, Program } from '../../types'
 // more direct than reconstructing a Supabase query-builder chain two layers
 // down for a component test.
 
-const mesosData: Mesocycle[] = []
+let mesosData: Mesocycle[] = []
 let savedPrograms: Program[] = []
 const startRunMutateAsyncMock = vi.fn()
 const completeMesoMutateAsyncMock = vi.fn()
@@ -48,6 +48,7 @@ afterEach(() => {
   createProgramMutateAsyncMock.mockReset()
   showToastMock.mockReset()
   savedPrograms = []
+  mesosData = []
 })
 
 const SAVED_PROGRAM: Program = {
@@ -61,9 +62,33 @@ const SAVED_PROGRAM: Program = {
   kind: 'saved',
 }
 
+// A completed meso whose row (ProgramPage's own COMPLETED list) must still
+// open the OLD per-mesocycle screen — chunk 10 review fix only moves where
+// the ACTIVE run lands right after START; completed runs keep editing/
+// viewing v2_coach_meso_tag_priorities through MesoPrioritiesPage exactly
+// as before (TASKS.md chunk 10: "Completed runs' rows stay ... untouched").
+const COMPLETED_MESO: Mesocycle = {
+  id: 'meso-completed-1',
+  userId: 'user-1',
+  name: 'Finished Block',
+  programId: 'prog-1',
+  status: 'completed',
+  startDate: '2026-01-01',
+  endDate: '2026-02-01',
+  createdAt: '2026-01-01T00:00:00Z',
+}
+
 function MesoProbe() {
   const { mesoId } = useParams<{ mesoId: string }>()
   return <div>PRIORITIES SCREEN mesoId={mesoId}</div>
+}
+
+// The new Plan-driven editor (chunk 10: PrioritiesEditor.tsx) — no route
+// param (it looks up the active run itself), so this probe needs none
+// either; a distinct marker string from MesoProbe's is what lets a test
+// assert "the NEW screen, not the old one" unambiguously.
+function PlanPrioritiesProbe() {
+  return <div>PLAN PRIORITIES EDITOR</div>
 }
 
 function renderProgramPage() {
@@ -72,6 +97,7 @@ function renderProgramPage() {
       <Routes>
         <Route path="/program" element={<ProgramPage />} />
         <Route path="/meso/:mesoId/priorities" element={<MesoProbe />} />
+        <Route path="/plan/priorities" element={<PlanPrioritiesProbe />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -101,14 +127,26 @@ describe('ProgramPage — START MESOCYCLE calls v2_start_run (useStartRun), not 
     expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Upper/Lower', programId: 'prog-1' })
   })
 
-  it('on success, navigates to the new mesocycle\'s priorities screen using the id v2_start_run returned', async () => {
+  // Chunk 10 review fix (behaviour change, on purpose — flagged in the
+  // commit): this used to navigate to /meso/:id/priorities (the OLD
+  // four-level MesoPrioritiesPage) using the id v2_start_run returned.
+  // The new run IS the active run, so from here on it opens the NEW
+  // editor instead — which needs no id (it looks up the active run
+  // itself, PlanPage.tsx's own pattern). Landing on the old screen would
+  // write the new run's marks into v2_coach_meso_tag_priorities, against
+  // TASKS.md/SPEC.md's "Run marks are stored only in the new form", and
+  // would show none of the marks v2_start_run actually copied onto the
+  // run's own program (those live in v2_program_priorities, which that
+  // screen never reads).
+  it('on success, navigates to the new Plan priorities editor for the active run — never the old per-meso screen', async () => {
     savedPrograms = [SAVED_PROGRAM]
     startRunMutateAsyncMock.mockResolvedValue('new-meso-1')
     renderProgramPage()
 
     await openAndSubmitStartMeso()
 
-    await waitFor(() => expect(screen.getByText('PRIORITIES SCREEN mesoId=new-meso-1')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('PLAN PRIORITIES EDITOR')).toBeTruthy())
+    expect(screen.queryByText(/PRIORITIES SCREEN mesoId/)).toBeNull()
   })
 
   it('a custom meso name is passed through instead of the program name', async () => {
@@ -163,5 +201,20 @@ describe('ProgramPage — START MESOCYCLE surfaces errors (CONTEXT.md: handleSta
     await openAndSubmitStartMeso()
 
     await waitFor(() => expect(showToastMock).toHaveBeenCalledWith('Could not start the mesocycle'))
+  })
+})
+
+// Chunk 10 review fix's other half: proves the completed list's own
+// navigation (lines ~153/160 in ProgramPage.tsx) is untouched by the
+// START-flow fix above — a completed meso still opens the OLD screen.
+describe('ProgramPage — a completed meso still opens the old per-meso priorities screen', () => {
+  it('clicking a completed meso row navigates to /meso/:id/priorities (MesoPrioritiesPage), not the new Plan editor', async () => {
+    mesosData = [COMPLETED_MESO]
+    renderProgramPage()
+
+    fireEvent.click(screen.getByText('Finished Block'))
+
+    await waitFor(() => expect(screen.getByText('PRIORITIES SCREEN mesoId=meso-completed-1')).toBeTruthy())
+    expect(screen.queryByText('PLAN PRIORITIES EDITOR')).toBeNull()
   })
 })

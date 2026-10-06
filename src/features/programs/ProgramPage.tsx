@@ -57,12 +57,18 @@ export default function ProgramPage() {
     // network/offline failure. No try/catch existed here before this chunk
     // (CONTEXT.md's own open-items note) — errors previously failed silently.
     try {
-      const newMesoId = await startRun.mutateAsync({ name, programId: selectedProgramId })
+      await startRun.mutateAsync({ name, programId: selectedProgramId })
       setShowStartMeso(false)
-      // Create-then-configure (TASKS §5.1), mirroring handleCreateProgram
-      // just below: the meso row is real before any priority row references
-      // it, so no client-minted uuid is needed.
-      navigate(`/meso/${newMesoId}/priorities`)
+      // Chunk 10 review fix: the new run IS the active run, so its
+      // priorities belong in the new editor (v2_program_priorities, on the
+      // run's own program copy), not the old per-mesocycle screen — writing
+      // there would land in v2_coach_meso_tag_priorities, against
+      // TASKS.md/SPEC.md's "Run marks are stored only in the new form", and
+      // the run's real marks (copied onto its own program copy by
+      // v2_start_run) wouldn't even show on that page. PrioritiesEditor
+      // looks up the active run itself (PlanPage.tsx's own pattern), so no
+      // id from v2_start_run's result is needed here any more.
+      navigate('/plan/priorities')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not start the mesocycle')
     }
