@@ -28,6 +28,14 @@ export interface LogParams {
   // needed here (a stage's own planned row, if any, carries no kind of its
   // own either — the DB's own check).
   stageKind: StageKind | null
+  // Chunk 15 (SPEC "Warmup sets") — optional, same convention as stageKind
+  // above: every caller SetGroup.tsx itself drives (onLogHead/onLogStage,
+  // via SetRow's working-row handleLog/handleSkip) never sets this.
+  // ExerciseCard.tsx's own warmup block bypasses SetGroup entirely (a
+  // warmup is never staged, so it needs none of SetGroup's nesting/ADD
+  // STAGE machinery) and calls SetRow directly instead — see
+  // useExerciseCardState.ts's handleLogWarmup.
+  isWarmup?: boolean
 }
 
 interface SetGroupProps {

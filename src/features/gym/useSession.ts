@@ -181,8 +181,12 @@ async function fetchReferenceSessionsFromCache(
   const cachedLogs = await db.set_logs.where('exerciseId').anyOf(exerciseIds).toArray()
 
   const byExercise = new Map<string, Map<string, SetLog[]>>()
+  // Chunk 15 (SPEC "Warmup sets" — "never counted in ... 'last time'
+  // matching") — same call-site exclusion as sessionService.ts's own
+  // fetchReferenceSessions, so the offline fallback agrees with the online
+  // path: a warmup never reaches a ReferenceSession's `.logs` here either.
   for (const l of cachedLogs) {
-    if (!sessionIds.has(l.sessionId)) continue
+    if (!sessionIds.has(l.sessionId) || l.isWarmup) continue
     const setLog: SetLog = {
       id: l.id,
       userId,
@@ -708,6 +712,13 @@ export function useLogSet(sessionId: string) {
       // handleSkip, via ExerciseCard/SupersetBlock's onLog chain) always
       // resolves this from the row's own plannedSet before calling.
       stageKind: StageKind | null
+      // Chunk 15 (SPEC "Warmup sets") — optional, same "every pre-existing
+      // caller never passes it" convention as stageKind above: handleLog/
+      // handleSkip (SetRow.tsx's working-set path) never set it, so this
+      // mutation's existing behaviour for a plain/dropset set is unchanged.
+      // handleLogWarmup (useExerciseCardState.ts) is the one caller that
+      // sets it to true.
+      isWarmup?: boolean
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -741,7 +752,7 @@ export function useLogSet(sessionId: string) {
           isDropset: params.isDropset,
           parentSetId: params.parentSetId,
           stageIndex: params.stageIndex,
-          isWarmup: false,
+          isWarmup: params.isWarmup ?? false,
           setSeconds: params.setSeconds,
           enteredUnit: params.enteredUnit,
           isSkipped: params.isSkipped,
@@ -778,6 +789,12 @@ export function useLogSet(sessionId: string) {
             entered_unit: params.enteredUnit,
             form_rating: params.formRating,
             stage_kind: params.stageKind,
+            // Chunk 15 — offline logging of a warmup goes through this same
+            // sync queue; the online branch's logSet() already writes this
+            // column (sessionService.ts), so the queued payload must carry
+            // it too, or a warmup logged offline would flush to Supabase as
+            // a plain working set the moment the queue replays it.
+            is_warmup: params.isWarmup ?? false,
           },
           createdAt: loggedAt,
         })
@@ -798,7 +815,7 @@ export function useLogSet(sessionId: string) {
           isDropset: params.isDropset,
           parentSetId: params.parentSetId,
           stageIndex: params.stageIndex,
-          isWarmup: false,
+          isWarmup: params.isWarmup ?? false,
           setSeconds: params.setSeconds,
           enteredUnit: params.enteredUnit,
           isSkipped: params.isSkipped,
@@ -838,7 +855,7 @@ export function useLogSet(sessionId: string) {
         isDropset: params.isDropset,
         parentSetId: params.parentSetId,
         stageIndex: params.stageIndex,
-        isWarmup: false,
+        isWarmup: params.isWarmup ?? false,
         setSeconds: params.setSeconds,
         enteredUnit: params.enteredUnit,
         isSkipped: params.isSkipped,

@@ -98,6 +98,11 @@ function ExerciseSection({
     stageIndex: number
     formRating: FormRating | null
     stageKind: StageKind | null
+    // Chunk 15 (SPEC "Warmup sets") — optional, same convention as
+    // stageKind above: every existing caller through this chain (SetRow's
+    // working-set handleLog/handleSkip) never sets it. handleLogWarmup
+    // (useExerciseCardState.ts) is the one caller that does.
+    isWarmup?: boolean
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>

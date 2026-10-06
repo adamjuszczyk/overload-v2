@@ -147,13 +147,28 @@ export default function SupersetBlock({
     }),
   )
 
-  // Chunk 15 hasn't built warmup sets yet (TASKS.md "Rounds and zigzag": "if
-  // is_warmup rows appear, leave them out of rounds and say how"): a planned
-  // row whose set carries isWarmup is dropped here, before supersetRounds.ts
-  // ever sees it — left out of the round grid (and so out of this block)
-  // entirely, since warmups have no display/authoring path yet and don't
-  // belong in a round count. An extra (ADD SET) row is never a warmup (it
-  // has no plannedSet at all), so this only ever filters planned rows.
+  // Chunk 15 (TASKS.md "Rounds and zigzag": "if is_warmup rows appear, leave
+  // them out of rounds and say how") — how: a warmup planned set is ALREADY
+  // gone from state.plannedDisplay by the time it reaches this file.
+  // useExerciseCardState.ts filters allPlannedSets/allCurrentLogs down to
+  // non-warmup rows once, right at the top (the same "plannedSets"/
+  // "currentLogs" names, pre-filtered), before any of its grouping/
+  // numbering/display logic runs — so plannedDisplay, extraDisplay and
+  // every count this file reads from `state` already exclude warmups
+  // structurally, the same way a never-logged row already does. The
+  // `.filter((row) => !row.plannedSet.isWarmup)` below is therefore always
+  // a no-op now (every row.plannedSet.isWarmup is already false) — kept as
+  // a defensive second layer, not removed, since it costs nothing and
+  // documents the invariant at the one place that actually builds the round
+  // grid. A superset member's own warmup sets (if ever planned) are real,
+  // loggable rows the same as any other exercise's — ExerciseCard.tsx's own
+  // WARMUP section — but this chunk does not add that section inside a
+  // superset block's per-member UI; `state.warmupRows`/
+  // `state.handleLogWarmup` are available on every member here exactly as
+  // they are on a plain card, for a follow-up to wire in without touching
+  // useExerciseCardState.ts again. An extra (ADD SET) row is never a
+  // warmup (it has no plannedSet at all), so this only ever filters
+  // planned rows.
   const memberRowLists: MemberRow[][] = memberStates.map((state) => [
     ...state.plannedDisplay
       .filter((row) => !row.plannedSet.isWarmup)
