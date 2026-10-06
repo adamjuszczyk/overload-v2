@@ -10,15 +10,29 @@
 //     updates both the v2_week_plan_exercises row and that week's own
 //     v2_week_plan_sets rows to the new slot); the replacement takes the
 //     replaced slot's superset block, never its target_reps/weight_unit
-//     (resolveSwapSlot). "Only this week", ticked, keeps the PRE-swap slot
-//     in carry_program_exercise_id so copying forward reverts
-//     (resolveSwapCarry); off (the default), the swap carries forward like
-//     any other permanent change.
+//     (resolveSwapSlot). "Only this week", ticked, keeps the ORIGINAL
+//     pre-swap slot in carry_program_exercise_id so copying forward
+//     reverts to it (resolveSwapCarry) — "original" meaning whatever this
+//     row's carry_program_exercise_id ALREADY held, if a previous
+//     only-this-week swap of the same row already recorded one; only when
+//     there is no existing carry does this swap's own pre-swap identity
+//     become it. A REPEATED only-this-week swap must never overwrite an
+//     already-recorded original with the (already a week-only slot from
+//     the last swap) intermediate identity — that was chunk 9's own review
+//     bug: S swapped only-this-week to W1 (carry=S), then W1 swapped
+//     only-this-week to W2 recomputed carry from W1 alone and got W1, not
+//     S. Off (permanent), carry_program_exercise_id always resets to null,
+//     regardless of what it held — a permanent change is never reverted.
+//     Either way, a swap never touches carry_position (reorder's own
+//     field) — it is echoed back unchanged.
 //   - REORDER changes the week's own position only — no new
 //     v2_program_exercises row, no carry_program_exercise_id. "Only this
-//     week", ticked, keeps the PRE-reorder position in carry_position so
-//     copying forward reverts to the old order (resolveReorderCarry); off,
-//     the new order carries forward.
+//     week", ticked, keeps the ORIGINAL pre-reorder position in
+//     carry_position (same "existing carry wins" rule as swap above, so a
+//     second only-this-week reorder of the same row doesn't overwrite the
+//     true original order with the already-moved intermediate one) so
+//     copying forward reverts to it (resolveReorderCarry); off, carry_position
+//     always resets to null.
 //   - ADD creates a week-only slot with no superset block (resolveAddSlot)
 //     and no carry_* at all — week-dependent: it carries forward simply
 //     because the new week's own copy-forward includes whatever the source
@@ -36,12 +50,14 @@
 //     (or not) purely by not being there to carry. Same DECISIONS 48 (a)
 //     reasoning as add.
 //
-// Every function here recomputes its result from the edit's own before-
-// state and its own onlyThisWeek flag alone — never from whatever a PRIOR
-// edit may have left in carry_program_exercise_id/carry_position — so a
-// later permanent edit always correctly clears a stale "only this week"
-// override from an earlier one, and there is no stale-carry state to track
-// across edits.
+// resolveSwapCarry/resolveReorderCarry both take the row's CURRENT carry_*
+// (read by weekPlanService.ts before writing the new one) alongside this
+// edit's own before-state and onlyThisWeek flag: an only-this-week edit
+// preserves whatever original value is already there (so repeating the
+// same kind of only-this-week edit never drifts away from the true
+// original), while a permanent edit always resets to null regardless of
+// what was there (so a later permanent edit still correctly clears a stale
+// "only this week" override from an earlier one).
 
 // ─── Swap ───────────────────────────────────────────────────────────────────
 
@@ -72,41 +88,77 @@ export function resolveSwapSlot(source: SwapSourceSlot, replacementExerciseId: s
   }
 }
 
+export interface CurrentSwapCarry {
+  carryProgramExerciseId: string | null
+  carryPosition: number | null
+}
+
 export interface SwapCarryFields {
   carryProgramExerciseId: string | null
-  carryPosition: null
+  carryPosition: number | null
 }
 
 // SPEC "Weeks and copying": "'Only this week'... a tick on swap and reorder
 // actions... off by default, week-dependent only. When ticked, that change
 // is not copied forward." preSwapProgramExerciseId is the slot's identity
 // immediately BEFORE this swap (what the week_plan_exercises row's own
-// program_exercise_id was) — stored in carry_program_exercise_id only when
-// ticked, so copying forward reverts to it (migration 032 / weekPlanService
-// copy logic: coalesce(carry_program_exercise_id, program_exercise_id)).
-// carry_position is untouched by a swap (reorder's own field).
-export function resolveSwapCarry(preSwapProgramExerciseId: string, onlyThisWeek: boolean): SwapCarryFields {
+// program_exercise_id was right now — possibly already a week-only
+// replacement from an earlier swap, not necessarily the true original).
+//
+// Only this week: `current.carryProgramExerciseId ?? preSwapProgramExerciseId`
+// — if this row ALREADY carries an original (an earlier only-this-week
+// swap of it), that original wins and is kept; only when there is no
+// existing carry does this swap's own pre-swap identity become the
+// recorded original. This is what makes a REPEATED only-this-week swap
+// keep reverting to the true original instead of drifting to whatever the
+// most recent swap's own pre-swap slot happened to be.
+//
+// Permanent (off): always null, regardless of `current` — a permanent
+// change is never reverted, and it also clears any stale carry an earlier
+// only-this-week swap of this same row left behind.
+//
+// carry_position is a swap's to leave alone either way — echoed back from
+// `current` unchanged (reorder's own field; see resolveReorderCarry).
+export function resolveSwapCarry(
+  current: CurrentSwapCarry,
+  preSwapProgramExerciseId: string,
+  onlyThisWeek: boolean,
+): SwapCarryFields {
   return {
-    carryProgramExerciseId: onlyThisWeek ? preSwapProgramExerciseId : null,
-    carryPosition: null,
+    carryProgramExerciseId: onlyThisWeek ? (current.carryProgramExerciseId ?? preSwapProgramExerciseId) : null,
+    carryPosition: current.carryPosition,
   }
 }
 
 // ─── Reorder ────────────────────────────────────────────────────────────────
 
+export interface CurrentReorderCarry {
+  carryPosition: number | null
+}
+
 export interface ReorderCarryFields {
   carryPosition: number | null
 }
 
-// prePosition is the row's own position immediately BEFORE this reorder.
-// Ticked: carry_position keeps the old order, so copying forward reverts to
-// it. Off: carry_position clears (null), so copying forward uses the new
-// position — including clearing a STALE carry_position a previous
-// only-this-week reorder of the SAME row may have left (this function never
-// reads that prior value, only prePosition/onlyThisWeek, so there is
-// nothing stale to carry by accident).
-export function resolveReorderCarry(prePosition: number, onlyThisWeek: boolean): ReorderCarryFields {
-  return { carryPosition: onlyThisWeek ? prePosition : null }
+// prePosition is the row's own position immediately BEFORE this reorder
+// (possibly already a moved position from an earlier reorder, not
+// necessarily the true original order).
+//
+// Only this week: `current.carryPosition ?? prePosition` — the same
+// "existing carry wins" rule resolveSwapCarry uses, so a REPEATED
+// only-this-week reorder of the same row keeps reverting to the true
+// original order instead of drifting to whatever the most recent reorder's
+// own pre-reorder position happened to be.
+//
+// Permanent (off): always null, regardless of `current` — clears a stale
+// carry an earlier only-this-week reorder of this row left behind, so
+// copying forward uses the new position.
+export function resolveReorderCarry(
+  current: CurrentReorderCarry,
+  prePosition: number,
+  onlyThisWeek: boolean,
+): ReorderCarryFields {
+  return { carryPosition: onlyThisWeek ? (current.carryPosition ?? prePosition) : null }
 }
 
 // ─── Add ────────────────────────────────────────────────────────────────────

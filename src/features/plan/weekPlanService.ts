@@ -720,6 +720,27 @@ export async function copySetsWithGrouping(
 // tested there, directly); this file gathers what each decision needs and
 // performs the writes, same split as every other action in this file.
 
+// weekEdits.ts's resolveSwapCarry/resolveReorderCarry both need the row's
+// CURRENT carry_program_exercise_id/carry_position, not just this edit's
+// own before-state — an only-this-week edit must keep whatever original an
+// earlier only-this-week edit of the same kind already recorded there,
+// rather than recompute from this edit's own (possibly already-intermediate)
+// before-state alone. Read before every swap/reorder write, never cached.
+async function fetchCurrentCarry(
+  weekPlanId: string,
+  programExerciseId: string,
+): Promise<{ carryProgramExerciseId: string | null; carryPosition: number | null }> {
+  const { data, error } = await supabase
+    .from('v2_week_plan_exercises')
+    .select('carry_program_exercise_id, carry_position')
+    .eq('week_plan_id', weekPlanId)
+    .eq('program_exercise_id', programExerciseId)
+    .single()
+  if (error) throw error
+  const row = data as { carry_program_exercise_id: string | null; carry_position: number | null }
+  return { carryProgramExerciseId: row.carry_program_exercise_id, carryPosition: row.carry_position }
+}
+
 // A swap: creates a week-only program exercise for the replacement
 // (runProgramExercises.ts — takes the replaced slot's superset block, never
 // its target_reps/weight_unit), points this week's own
@@ -727,8 +748,14 @@ export async function copySetsWithGrouping(
 // for that exercise onto it too (so the exercise card and its sets agree on
 // what's actually planned this week). "Only this week" records the
 // pre-swap slot in carry_program_exercise_id (weekEdits.ts's
-// resolveSwapCarry) so copying forward reverts to it — off (the default),
-// the swap is a permanent, carried-forward change.
+// resolveSwapCarry) — unless this row already carries one from an earlier
+// only-this-week swap, in which case that original wins and is kept (so a
+// repeated only-this-week swap keeps reverting to the true original
+// instead of drifting to the most recent swap's own pre-swap, already
+// week-only, identity) — so copying forward reverts to it; off (the
+// default), the swap is a permanent, carried-forward change, and always
+// clears carry_program_exercise_id even if an earlier only-this-week swap
+// left one behind.
 export async function swapWeekExercise(params: {
   userId: string
   weekPlanId: string
@@ -738,10 +765,13 @@ export async function swapWeekExercise(params: {
 }): Promise<ProgramExercise> {
   const { userId, weekPlanId, programExerciseId, replacementExerciseId, onlyThisWeek } = params
 
-  const source = await fetchSwapSourceSlot(programExerciseId)
+  const [source, currentCarry] = await Promise.all([
+    fetchSwapSourceSlot(programExerciseId),
+    fetchCurrentCarry(weekPlanId, programExerciseId),
+  ])
   const slot = resolveSwapSlot(source, replacementExerciseId)
   const replacement = await createWeekOnlyProgramExercise(userId, slot)
-  const carry = resolveSwapCarry(programExerciseId, onlyThisWeek)
+  const carry = resolveSwapCarry(currentCarry, programExerciseId, onlyThisWeek)
 
   const { error: exError } = await supabase
     .from('v2_week_plan_exercises')
@@ -823,17 +853,21 @@ export async function removeWeekExercise(weekPlanId: string, programExerciseId: 
 // A reorder: each moved row's own position, plus (weekEdits.ts's
 // resolveReorderCarry) its carry_position — "only this week" ticked keeps
 // the PRE-reorder position there so copying forward reverts to the old
-// order; off, carry_position clears (even overwriting a stale value an
-// earlier only-this-week reorder of the same row may have left — resolved
-// fresh from oldPosition/onlyThisWeek alone every time, never from
-// whatever was already stored).
+// order, unless this row already carries one from an earlier only-this-week
+// reorder, in which case that original position wins and is kept (same
+// "existing carry wins" rule swap uses, so a repeated only-this-week
+// reorder keeps reverting to the true original order instead of drifting
+// to the most recent reorder's own pre-reorder, already-moved, position);
+// off, carry_position always clears, even overwriting a stale value an
+// earlier only-this-week reorder of the same row left behind.
 export async function reorderWeekExercises(
   weekPlanId: string,
   moves: { programExerciseId: string; oldPosition: number; newPosition: number }[],
   onlyThisWeek: boolean,
 ): Promise<void> {
   for (const m of moves) {
-    const carry = resolveReorderCarry(m.oldPosition, onlyThisWeek)
+    const currentCarry = await fetchCurrentCarry(weekPlanId, m.programExerciseId)
+    const carry = resolveReorderCarry(currentCarry, m.oldPosition, onlyThisWeek)
     const { error } = await supabase
       .from('v2_week_plan_exercises')
       .update({ position: m.newPosition, carry_position: carry.carryPosition })
