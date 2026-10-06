@@ -1,478 +1,59 @@
-import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
-import type { ReferenceSession } from './sessionService'
-import SetGroup, { type LogParams } from './SetGroup'
+import SetGroup from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import SwapExerciseSheet from './SwapExerciseSheet'
-import { useRestTimerStore } from './restTimerStore'
-import { useWeightDisplay } from '../../hooks/useWeightDisplay'
-import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, nextStageIndex, type SetGroup as Group } from './setGroupLogic'
+import { nextStageIndex } from './setGroupLogic'
+import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 
-interface ExerciseCardProps {
-  programExercise: ProgramExercise
-  plannedSets: WeekPlanSet[]
-  currentLogs: SetLog[]      // set logs already recorded in the current session
-  lastLogs: SetLog[]         // set logs from previous session for this exercise — prefill only
-  lastLogsLoading: boolean   // true until the previous-session query resolves
-  // This exercise's eligible sessions for the two-slot reference panel
-  // (v3 §2.3) — already fetched once per workout day, sliced per exercise
-  // by the caller (GymSession.tsx's ExerciseSection). occurrenceCount/
-  // workoutDayId are gone — the session-first query is already scoped to
-  // the right workout day, and per-exercise multiplicity now falls out of
-  // THIS WEEK being a list rather than needing a pre-computed count.
-  referenceSessions: ReferenceSession[]
-  referenceLoading: boolean
-  // See ExerciseReference.tsx's own prop docs — threaded straight through,
-  // not re-derived here.
-  referenceMesocycleId: string | null
-  referenceIsError: boolean
-  referenceIsFromCache: boolean
-  onRetryReference: () => void
-  today: string
-  onLog: (params: {
-    exerciseId: string
-    weekPlanSetId: string | null
-    setNumber: number
-    weight: number | null
-    reps: number | null
-    rir: number | null
-    isDropset: boolean
-    isSkipped: boolean
-    restSeconds: number | null
-    setSeconds: number | null
-    enteredUnit: WeightUnit | null
-    // Direct, not inferred (v3 §2.1 / Phase 3.1) — null for a head, the
-    // head's own id for a stage. The ADD STAGE tap that produces this
-    // already knows which head it belongs to.
-    parentSetId: string | null
-    stageIndex: number
-    formRating: FormRating | null
-  }) => Promise<SetLog>
-  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
-  onDeleteSet: (id: string) => Promise<void>
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — called once
-  // the swap is confirmed and the original exercise's remaining sets have
-  // already been skipped (see handleConfirmSwap below). Passes the
-  // original programExercise along too (2026-09-03 position/presentation
-  // fix) — GymSession.tsx needs its id to record the structural link
-  // (migration 025) and to know which slot to render the replacement in,
-  // in place of the original rather than appended after it.
-  onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
-  // Position/presentation/prefill fix (2026-09-03) — present only when this
-  // card is rendering in place of a swapped-out slot (GymSession.tsx keys
-  // this off v2_session_exercise_swaps). Drives three things: the header's
-  // "SWAPPED FROM" line, seeding the extra-set slots below to the original
-  // plan's shape (same set count / dropset structure — weights/reps stay
-  // empty, see extraSlotCount below), and nothing else — the planned
-  // section above still renders plannedSets exactly as it always has
-  // (which, for a swapped slot, is the original's now-fully-resolved plan:
-  // real logs and SKIPPED marks, both real tracking data, not hidden).
-  swappedFrom?: { exerciseName: string }
-}
+// Review fix (chunk 13) — every computation and handler this card needs now
+// lives in useExerciseCardState.ts (a mechanical extraction, nothing about
+// the VALUES changed), so SupersetBlock.tsx can give each member of a
+// superset block the exact same per-exercise behaviour instead of a
+// thinned-down reimplementation. This file's own rendered output is
+// unchanged (D30): same JSX, same props read, just sourced from the hook's
+// return value instead of local consts.
+export default function ExerciseCard(props: ExerciseCardProps) {
+  const {
+    programExercise,
+    plannedSets,
+    referenceSessions,
+    referenceLoading,
+    referenceMesocycleId,
+    referenceIsError,
+    referenceIsFromCache,
+    onRetryReference,
+    today,
+    onUpdateSet,
+    lastLogsLoading,
+    swappedFrom,
+  } = props
 
-export default function ExerciseCard({
-  programExercise,
-  plannedSets,
-  currentLogs,
-  lastLogs,
-  lastLogsLoading,
-  referenceSessions,
-  referenceLoading,
-  referenceMesocycleId,
-  referenceIsError,
-  referenceIsFromCache,
-  onRetryReference,
-  today,
-  onLog,
-  onUpdateSet,
-  onDeleteSet,
-  onSwap,
-  swappedFrom,
-}: ExerciseCardProps) {
-  const { startedAt, start: startTimer } = useRestTimerStore()
-  const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
-
-  // Heads currently mid-cascade-delete — gates ADD STAGE on that group (see
-  // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
-  // second concurrent invocation for the same head.
-  const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
-
-  // "Skip whole exercise" (SPEC §4.3) — heads and, per explicit instruction,
-  // any already-planned stages under them, both.
-  const [isSkippingExercise, setIsSkippingExercise] = useState(false)
-  const [showSkipConfirm, setShowSkipConfirm] = useState(false)
-
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — reuses
-  // handleSkipExercise below unchanged (a swap IS "skip the rest of this
-  // exercise", plus registering a replacement), so it shares the same
-  // in-flight flag rather than introducing a second one.
-  const [showSwapSheet, setShowSwapSheet] = useState(false)
-
-  // A head is a set with no parent — the stage-exclusion rule (TASKS.md
-  // §2.1 / CONTEXT.md "Key architectural rules"): a drop stage is never
-  // counted as an independent set. Every count below goes through this
-  // grouping instead of raw currentLogs.length (§2.7 item 1).
-  const logGroups = groupSetLogs(currentLogs)
-  const lastLogGroups = groupSetLogs(lastLogs)
-  const totalLoggedHeads = logGroups.length
-
-  // setNumber is "1-based, per exercise within this session" (types/index.ts
-  // SetLog's own doc comment) — every other consumer (positionMatch.ts,
-  // history) relies on that. A merged (swapped) card's currentLogs union two
-  // real exercise identities (linkedExerciseIds, GymSession.tsx) so the
-  // original's already-resolved head count must not leak into the
-  // replacement's own sequence. Only differs from totalLoggedHeads on a
-  // merged card — currentLogs is already single-identity everywhere else, so
-  // this is the same value as totalLoggedHeads there.
-  const ownLoggedHeadCount = swappedFrom
-    ? groupSetLogs(currentLogs.filter((l) => l.exerciseId === programExercise.exerciseId)).length
-    : totalLoggedHeads
-
-  // A logged set either targets a planned slot (weekPlanSetId set) or is an
-  // extra, on-demand set (weekPlanSetId null) — identity, not array
-  // position, decides which section it belongs to and whether that slot
-  // still needs an input row. Only heads are matched here; a group's stages
-  // travel with their head and are never matched independently.
-  const plannedLogGroups = logGroups.filter((g) => g.head.weekPlanSetId != null)
-  const extraLogGroups = logGroups
-    .filter((g) => g.head.weekPlanSetId == null)
-    .sort((a, b) => a.head.setNumber - b.head.setNumber)
-
-  // Planned heads only — a planned dropset's stage rows are never their own
-  // top-level slot (§2.7 item 7); they're pulled in per-head via
-  // plannedGroups below, for stage prefill/target-RIR when ADD STAGE is used.
-  const plannedHeads = headsOnly(plannedSets, (s) => s.parentWeekPlanSetId)
-  const plannedGroups = groupWeekPlanSets(plannedSets)
-  // Same emptiness PlanTargetsPanel would compute internally from the same
-  // plannedSets input — read here instead of duplicating groupWeekPlanSets
-  // a second time just to ask "would this panel render NO PLAN".
-  const showPlanTargets = plannedGroups.length > 0
-
-  // Number of extra-set input slots to show. Starts at (and never drops
-  // below) the number of extra sets already logged, so already-logged extra
-  // sets keep rendering after a remount/refresh. Otherwise it only grows
-  // when the user taps ADD SET — logging a set never adds another slot.
-  //
-  // Prefill fix (2026-09-03): when swappedFrom is set, plannedSets IS the
-  // original exercise's plan (already fully resolved — see the prop's own
-  // doc comment), so plannedGroups.length is that plan's head count. Seeded
-  // here rather than as a separately-computed prop, so the replacement's
-  // shape can never drift from what the planned section above is showing
-  // as the original's resolved history — same source, read twice.
-  const [extraSlotCount, setExtraSlotCount] = useState(
-    Math.max(extraLogGroups.length, swappedFrom ? plannedGroups.length : 0),
-  )
-  // swappedFrom is a fresh object literal from GymSession.tsx every render
-  // (its identity isn't meaningful, only whether it's present) — depend on
-  // !!swappedFrom rather than the object itself, so this doesn't re-run on
-  // every render for no reason; the effect body still reads the current
-  // swappedFrom from the closure either way.
-  useEffect(() => {
-    setExtraSlotCount((n) => Math.max(n, extraLogGroups.length, swappedFrom ? plannedGroups.length : 0))
-  }, [extraLogGroups.length, !!swappedFrom, plannedGroups.length])
-
-  // The plan side's head/stage structure isn't authoritative for what a log
-  // actually turned out to be — the log's OWN parentSetId is (a log-side
-  // head is always its own top-level set, never hidden, regardless of which
-  // plan slot its weekPlanSetId happens to reference). This matters for real
-  // data: a set logged against what the plan now calls a stage slot, but
-  // that was itself logged as a plain working set (parentSetId null — common
-  // in pre-3.1 history, where the log-side DROP toggle was independent of
-  // the plan's own structure), must still get its own row. So the set of
-  // "planned" slots to render is planned heads (for the empty/unlogged
-  // affordance) UNIONED with every weekPlanSetId that's actually a
-  // logged-side head, even if the plan considers that slot a stage.
-  const loggedHeadSlotIds = new Set(
-    plannedLogGroups.map((g) => g.head.weekPlanSetId).filter((id): id is string => id != null),
-  )
-  const plannedSlotIds = new Set([...plannedHeads.map((ps) => ps.id), ...loggedHeadSlotIds])
-  const plannedSetById = new Map(plannedSets.map((ps) => [ps.id, ps]))
-
-  const plannedRows = [...plannedSlotIds]
-    .map((id) => plannedSetById.get(id))
-    .filter((ps): ps is WeekPlanSet => ps != null)
-    .sort((a, b) => a.setNumber - b.setNumber)
-    .map((ps) => ({
-      plannedSet: ps,
-      // Only meaningful when ps is itself a plan-side head — a plan-side
-      // stage has no stages of its own to prefill from.
-      plannedStages: plannedGroups.find((g) => g.head.id === ps.id)?.stages ?? [],
-      group: plannedLogGroups.find((g) => g.head.weekPlanSetId === ps.id) ?? null,
-    }))
-    // On a merged (swapped) card the planned section is the ORIGINAL
-    // exercise's already-resolved history, shown in place of a second card —
-    // never a live input for THIS card's identity, which is the
-    // replacement's. An unlogged planned row here would render a LOG input
-    // whose write would carry exerciseId=replacement with the ORIGINAL's
-    // weekPlanSetId: exactly the cross-identity plan link swappedFrom's own
-    // doc comment says the prefill design exists to avoid. Normally
-    // unreachable (handleConfirmSwap resolves every planned row before the
-    // swap is recorded), but deleting one of the original's real logged sets
-    // from this card reopens its slot — so drop such rows instead of
-    // re-offering them. A no-op on every non-merged card.
-    .filter((row) => !swappedFrom || row.group != null)
-
-  const extraRows = Array.from({ length: extraSlotCount }, (_, i) => ({
-    group: extraLogGroups[i] ?? null,
-  }))
-
-  function currentRestElapsed() {
-    return startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
-  }
-
-  // setNumberOverride lets handleSkipExercise assign sequential numbers to
-  // several heads skipped in one batch — totalLoggedHeads is a render-time
-  // snapshot that never changes mid-loop, so relying on it there would give
-  // every skipped head in the batch the same (duplicate) setNumber.
-  async function handleLogHead(
-    plannedSet: WeekPlanSet | null,
-    params: LogParams,
-    setNumberOverride?: number,
-  ): Promise<SetLog> {
-    const restElapsed = currentRestElapsed()
-    startTimer()
-    // plannedSet non-null means a planned-slot head. On a merged card that's
-    // now structurally unreachable — plannedRows drops unlogged rows there
-    // and hasUnfinishedPlannedWork is forced false, so neither a LOG input
-    // nor SKIP REST OF EXERCISE can reach here against the original's plan.
-    // handleSkipExercise is the one remaining caller, and it only ever runs
-    // on the pre-swap card (single-identity currentLogs) and supplies
-    // setNumberOverride itself — so totalLoggedHeads below is never read
-    // from a mixed-identity count. A null plannedSet means an extra
-    // (ADD SET) slot, which on a merged card belongs to the replacement's
-    // own identity — see ownLoggedHeadCount's comment above for why that
-    // must not include the original's already-resolved heads.
-    const fallbackBase = plannedSet ? totalLoggedHeads : ownLoggedHeadCount
-    return onLog({
-      ...params,
-      exerciseId: programExercise.exerciseId,
-      weekPlanSetId: plannedSet?.id ?? null,
-      setNumber: setNumberOverride ?? fallbackBase + 1,
-      // A non-null setSeconds means SetRow's Start Set flow already froze
-      // the honest rest value at the moment Start Set was tapped — trust it
-      // rather than overwrite with a fresh read, which by then would only
-      // measure set-performance time, not rest. Otherwise (off, or skip)
-      // this is unconditionally restElapsed, exactly as before.
-      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
-      parentSetId: null,
-      stageIndex: 0,
-    })
-  }
-
-  // weekPlanSetId is already correct in params — SetGroup's stage-input row
-  // resolves it internally (its own plannedSet prop) via the same identity
-  // matching SetRow has always used; only the group-level fields need adding.
-  async function handleLogStage(headLog: SetLog, stageIndex: number, params: LogParams): Promise<SetLog> {
-    const restElapsed = currentRestElapsed()
-    startTimer()
-    return onLog({
-      ...params,
-      exerciseId: programExercise.exerciseId,
-      setNumber: headLog.setNumber,
-      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
-      parentSetId: headLog.id,
-      stageIndex,
-    })
-  }
-
-  // Client-side cascade guard (TASKS.md §2.1 "The guard — cascade
-  // client-side, stages first"): deletes stage rows first, in descending
-  // stage_index order, then the head last — deliberately the less obvious
-  // order. Head-first would leave orphaned stages permanently if this
-  // (non-transactional) mutation fails partway through; stages-first fails
-  // into a head with fewer stages, which is visible, harmless, and
-  // re-deletable. Renumbering (heads only — §2.7 item 3) only runs once the
-  // whole cascade has actually succeeded.
-  //
-  // Two races closed here, found via an independent adversarial review of
-  // this exact guard: (1) each delete is a real, separately-awaited network
-  // round trip (plus its mutation's own refetch), so the cascade can span
-  // several seconds — during that window the head is still live, and
-  // without deletingHeadIds gating SetGroup's ADD STAGE (see that prop),
-  // a stage logged mid-cascade would never be in `order` and, once the head
-  // goes, would be silently orphaned by the log-side FK's ON DELETE SET
-  // NULL until migration 010 (Phase 3.8) — exactly the corruption this
-  // guard exists to prevent, and it stays in place unchanged after 010
-  // lands: the FK stops the database from orphaning stages, this guard
-  // keeps TanStack Query's optimistic cache correct in the meantime, since
-  // a server-side cascade removes rows the client still holds until the
-  // next refetch. (2) the renumbering step
-  // below sends only `setNumber`, not the head's full captured weight/reps/
-  // rir/note — those were snapshotted before the (now genuinely multi-step)
-  // cascade and would silently clobber a concurrent edit to that set made
-  // while the cascade was in flight.
-  async function handleDeleteHead(group: Group<SetLog>) {
-    if (deletingHeadIds.has(group.head.id)) return // already in progress
-    const order = cascadeDeleteOrder(group, (l) => l.stageIndex)
-    setDeletingHeadIds((prev) => new Set(prev).add(group.head.id))
-    try {
-      for (const row of order) {
-        await onDeleteSet(row.id)
-      }
-    } catch (err) {
-      // Fails safe: whatever didn't get deleted stays put, and — because we
-      // stop here — no renumbering happens for a delete that didn't
-      // actually complete.
-      console.error('Failed to delete set group', err)
-      return
-    } finally {
-      setDeletingHeadIds((prev) => {
-        const next = new Set(prev)
-        next.delete(group.head.id)
-        return next
-      })
-    }
-
-    // Scoped to the deleted head's own exerciseId, not just logGroups at
-    // large — on a merged (swapped) card, logGroups spans two real exercise
-    // identities (linkedExerciseIds, GymSession.tsx), and setNumber is
-    // per-exercise (see ownLoggedHeadCount's comment above). Without this,
-    // deleting a head on one identity could renumber a higher-setNumber head
-    // that happens to belong to the *other* identity, corrupting its
-    // sequence. A no-op filter change for every non-merged card, where every
-    // head already shares one exerciseId.
-    logGroups
-      .filter(
-        (g) =>
-          g.head.id !== group.head.id &&
-          g.head.exerciseId === group.head.exerciseId &&
-          g.head.setNumber > group.head.setNumber,
-      )
-      .sort((a, b) => a.head.setNumber - b.head.setNumber)
-      .forEach((g, i) => {
-        onUpdateSet(g.head.id, { setNumber: group.head.setNumber + i })
-      })
-  }
-
-  // A lone stage has no descendants — a plain delete is safe, no cascade,
-  // no renumbering (stages don't occupy their own slot in the head sequence).
-  function handleDeleteStage(stageId: string) {
-    onDeleteSet(stageId).catch((err) => console.error('Failed to delete stage', err))
-  }
-
-  // Skip whole exercise: every remaining unlogged PLANNED set — heads and
-  // any already-planned stages under them, both (SPEC §4.3 / TASKS.md §4
-  // item 15). Deliberately scoped to plannedRows only: "extra" (ADD SET)
-  // slots are user-elective on-demand rows, not part of the plan's
-  // remaining work, so they're left untouched.
-  //
-  // Sequential and awaited, same reasoning as handleDeleteHead's cascade:
-  // a stage being skipped may need its head's real id, and if that head is
-  // itself being skipped in the same pass, that id doesn't exist until its
-  // own mutation resolves. totalLoggedHeads is a render-time snapshot that
-  // never advances mid-loop, so skipped heads get an explicit, manually
-  // incremented setNumber instead (handleLogHead's setNumberOverride).
-  async function handleSkipExercise() {
-    let nextHeadNumber = totalLoggedHeads + 1
-    for (const row of plannedRows) {
-      let headLog = row.group?.head ?? null
-      if (!headLog) {
-        headLog = await handleLogHead(
-          row.plannedSet,
-          {
-            weekPlanSetId: row.plannedSet.id,
-            setNumber: 0,
-            weight: null,
-            reps: null,
-            rir: null,
-            isDropset: false,
-            isSkipped: true,
-            restSeconds: null,
-            setSeconds: null,
-            enteredUnit: null,
-            formRating: null,
-          },
-          nextHeadNumber,
-        )
-        nextHeadNumber += 1
-      }
-
-      const loggedStages = row.group?.stages ?? []
-      const remainingCount = row.plannedStages.length - loggedStages.length
-      let nextStageIdx = loggedStages.reduce((max, s) => Math.max(max, s.stageIndex), 0) + 1
-      for (let i = 0; i < remainingCount; i++) {
-        await handleLogStage(headLog, nextStageIdx, {
-          weekPlanSetId: row.plannedStages[loggedStages.length + i]?.id ?? null,
-          setNumber: 0,
-          weight: null,
-          reps: null,
-          rir: null,
-          isDropset: true,
-          isSkipped: true,
-          restSeconds: null,
-          setSeconds: null,
-          enteredUnit: null,
-          formRating: null,
-        })
-        nextStageIdx += 1
-      }
-    }
-  }
-
-  // Whether there's anything left for "skip whole exercise" to actually do —
-  // hides/disables the affordance once every planned head and stage is
-  // already logged, avoiding a confusing no-op action.
-  // Never on a merged (swapped) card: everything this would write belongs to
-  // the original exercise's plan, but would be written under the
-  // replacement's exerciseId — see plannedRows' own filter above. The
-  // original's remaining work was already skipped at swap time, by this very
-  // function, back when the card still carried the original's identity.
-  const hasUnfinishedPlannedWork = !swappedFrom && plannedRows.some(
-    (row) => !row.group || row.group.stages.length < row.plannedStages.length,
-  )
-
-  // Same "anything left" question, as a count rather than a boolean — shown
-  // in SwapExerciseSheet's confirm step so swapping mid-exercise is honest
-  // about how many remaining sets are about to be marked skipped.
-  const remainingPlannedCount = plannedRows.reduce((sum, row) => {
-    const headRemaining = row.group ? 0 : 1
-    const stagesRemaining = Math.max(0, row.plannedStages.length - (row.group?.stages.length ?? 0))
-    return sum + headRemaining + stagesRemaining
-  }, 0)
-
-  // Swap: skip whatever's left of the original exercise (same function "skip
-  // rest of exercise" already uses — a swap that produced zero unfinished
-  // rows is a harmless no-op loop), then hand the chosen replacement up to
-  // GymSession.tsx. Sequential and awaited so a skip failure doesn't still
-  // register the swap as if it had gone through.
-  async function handleConfirmSwap(newExercise: Exercise) {
-    setShowSwapSheet(false)
-    setIsSkippingExercise(true)
-    try {
-      await handleSkipExercise()
-      onSwap(newExercise, programExercise)
-    } catch (err) {
-      console.error('Failed to swap exercise', err)
-    } finally {
-      setIsSkippingExercise(false)
-    }
-  }
-
-  // Display numbers run sequentially top-to-bottom (planned section first,
-  // then extra) purely for the row badge — the setNumber actually sent on a
-  // head log is computed fresh from handleLogHead's own fallbackBase at
-  // click time, from the same two counts used here, so an unlogged row's
-  // badge never jumps to a different number than what it actually gets
-  // written as the instant it's logged. extraDisplay uses ownLoggedHeadCount
-  // (not totalLoggedHeads) for the same reason handleLogHead's fallbackBase
-  // does — on a merged card, unloggedSeen alone would otherwise continue the
-  // original's already-resolved count into the replacement's own sequence.
-  let unloggedSeen = 0
-  const plannedDisplay = plannedRows.map((row) => {
-    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
-    const displayNumber = totalLoggedHeads + unloggedSeen + 1
-    unloggedSeen += 1
-    return { ...row, displayNumber }
-  })
-  const extraDisplay = extraRows.map((row) => {
-    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
-    const displayNumber = ownLoggedHeadCount + unloggedSeen + 1
-    unloggedSeen += 1
-    return { ...row, displayNumber }
-  })
+  const {
+    resolvedWeightUnit,
+    deletingHeadIds,
+    isSkippingExercise,
+    showSkipConfirm,
+    setShowSkipConfirm,
+    showSwapSheet,
+    setShowSwapSheet,
+    lastLogGroups,
+    showPlanTargets,
+    plannedGroups,
+    plannedDisplay,
+    extraDisplay,
+    hasUnfinishedPlannedWork,
+    remainingPlannedCount,
+    currentRestElapsed,
+    handleLogHead,
+    handleLogStage,
+    handleDeleteHead,
+    handleDeleteStage,
+    handleConfirmSkip,
+    handleConfirmSwap,
+    handleAddSet,
+  } = useExerciseCardState(props)
 
   return (
     <div
@@ -582,7 +163,7 @@ export default function ExerciseCard({
 
         {/* Add set button — adds exactly one extra slot on demand */}
         <button
-          onClick={() => setExtraSlotCount((n) => n + 1)}
+          onClick={handleAddSet}
           className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
           style={{
             minHeight: 44,
@@ -612,17 +193,7 @@ export default function ExerciseCard({
                 CANCEL
               </button>
               <button
-                onClick={async () => {
-                  setShowSkipConfirm(false)
-                  setIsSkippingExercise(true)
-                  try {
-                    await handleSkipExercise()
-                  } catch (err) {
-                    console.error('Failed to skip exercise', err)
-                  } finally {
-                    setIsSkippingExercise(false)
-                  }
-                }}
+                onClick={handleConfirmSkip}
                 disabled={isSkippingExercise}
                 className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
                 style={{

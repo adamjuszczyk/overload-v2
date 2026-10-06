@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup, fireEvent, within, act } from '@testing-library/react'
+import { render, cleanup, fireEvent, within, act, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import type { ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog } from '../../types'
+import type { ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog, Exercise } from '../../types'
 
 // Chunk 13 (TASKS.md "Supersets" — reviewer's note 3): "the existing
 // 'current set' button follows the first [data-unlogged-set] in DOM order.
@@ -66,6 +66,24 @@ let session: Session = {
   setLogs: [], energyRating: null, pumpRating: null,
 }
 
+// Review fix — "starting a swap on a member makes it leave the block for
+// this session (your existing fallback)". Mutable, same pattern as
+// `session` above: useRecordExerciseSwap's mock pushes a real row here;
+// useSessionSwaps reads it fresh, so GymSession's own existing
+// swapByProgramExerciseId/grouping logic (unchanged) sees it on the next
+// render, exactly as it would from a real optimistic-cache update.
+let sessionSwaps: {
+  id: string; sessionId: string; programExerciseId: string | null
+  originalExerciseId: string | null; originalExerciseName: string
+  replacementExerciseId: string | null; replacementExerciseName: string
+  createdAt: string
+}[] = []
+
+const REPLACEMENT: Exercise = {
+  id: 'ex-replacement', userId: 'user-1', name: 'Incline Press', muscleGroup: 'chest', isArchived: false,
+  createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null,
+}
+
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 vi.mock('../offline/offlineCache', () => ({ primeOfflineCache: vi.fn().mockResolvedValue(undefined) }))
@@ -78,7 +96,17 @@ vi.mock('./useScrollToCurrentSet', () => ({
 vi.mock('./RestTimer', () => ({ default: () => null }))
 vi.mock('./SessionComplete', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
+// A functional stub (not `() => null` — D30's own precedent — since this
+// file's own swap test needs to actually confirm one), same shape as
+// SupersetBlock.test.tsx's own.
+vi.mock('./SwapExerciseSheet', () => ({
+  default: ({ onConfirm, onClose }: { onConfirm: (ex: Exercise) => void; onClose: () => void }) => (
+    <div>
+      <button onClick={() => onConfirm(REPLACEMENT)}>CONFIRM PICK</button>
+      <button onClick={onClose}>close sheet</button>
+    </div>
+  ),
+}))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({
@@ -117,8 +145,21 @@ vi.mock('./useSession', () => ({
   useExerciseReferenceSessions: () => ({
     data: new Map(), isLoading: false, isError: false, isFromCache: false, retry: vi.fn(),
   }),
-  useSessionSwaps: () => ({ data: [] }),
-  useRecordExerciseSwap: () => ({ mutate: vi.fn() }),
+  useSessionSwaps: () => ({ data: sessionSwaps }),
+  useRecordExerciseSwap: () => ({
+    mutate: vi.fn((params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) => {
+      sessionSwaps = [...sessionSwaps, {
+        id: `swap-${sessionSwaps.length + 1}`,
+        sessionId: 'session-1',
+        programExerciseId: params.programExerciseId,
+        originalExerciseId: params.originalExercise.id,
+        originalExerciseName: params.originalExercise.name,
+        replacementExerciseId: params.replacementExercise.id,
+        replacementExerciseName: params.replacementExercise.name,
+        createdAt: '2026-01-05T10:10:00Z',
+      }]
+    }),
+  }),
 }))
 
 const { default: GymSession } = await import('./GymSession')
@@ -160,5 +201,45 @@ describe('GymSession — superset current-set zigzag (TASKS.md chunk 13 note 3)'
     expect(unloggedAfter).not.toBe(unloggedBefore)
     const labelAfter = unloggedAfter.parentElement!.parentElement!.querySelector('p')!.textContent!
     expect(labelAfter).toContain('BARBELL ROW') // B1 is next, not A2
+  })
+})
+
+describe('GymSession — review fix: starting a swap on a block member makes it leave the block for this session', () => {
+  it('confirming a swap on A renders it as its own merged card, leaving only B inside the SUPERSET block', async () => {
+    session = { ...session, setLogs: [] }
+    sessionSwaps = []
+    const { container, rerender } = renderSession()
+
+    // Both members' own SWAP triggers live inside the block
+    // (useExerciseCardState — the review fix) — A is first.
+    const swapButtons = screen.getAllByLabelText('Swap exercise for this session')
+    expect(swapButtons).toHaveLength(2)
+    fireEvent.click(swapButtons[0])
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('CONFIRM PICK'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(sessionSwaps).toHaveLength(1)
+    expect(sessionSwaps[0]).toMatchObject({ programExerciseId: 'pe-a', originalExerciseName: 'Bench Press' })
+
+    rerender(
+      <MemoryRouter>
+        <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={weekPlan} weekNumber={1} today="2026-01-05" />
+      </MemoryRouter>,
+    )
+
+    // A's slot is now its own merged single card (GymSession's existing,
+    // unchanged swapped-card rendering — ExerciseHeader's own marker), not
+    // inside the SUPERSET block any more; B is still there alone — fewer
+    // than 2 members, so it too falls back to a plain single card (not a
+    // "SUPERSET" of one).
+    expect(container.textContent).toContain('SWAPPED FROM BENCH PRESS')
+    expect(container.textContent).not.toContain('SUPERSET')
+    expect(container.textContent).toContain('Incline Press')
+    expect(container.textContent).toContain('Barbell Row')
   })
 })

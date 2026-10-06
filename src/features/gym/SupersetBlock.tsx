@@ -1,23 +1,15 @@
-import { useState } from 'react'
-import { Link2 } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating } from '../../types'
+import { Plus, Link2 } from 'lucide-react'
+import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
 import type { ReferenceSession } from './sessionService'
-import SetGroup, { type LogParams } from './SetGroup'
+import SetGroup from './SetGroup'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
-import { useRestTimerStore } from './restTimerStore'
-import { useSettingsStore } from '../settings/settingsStore'
-import { resolveWeightUnit } from '../../lib/weightUnit'
-import {
-  groupSetLogs,
-  groupWeekPlanSets,
-  headsOnly,
-  cascadeDeleteOrder,
-  nextStageIndex,
-  type SetGroup as Group,
-} from './setGroupLogic'
+import SwapExerciseSheet from './SwapExerciseSheet'
+import { nextStageIndex, type SetGroup as Group } from './setGroupLogic'
+import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import { buildSupersetRounds } from './supersetRounds'
+import { useLastSessionLogs } from './useSession'
 
 // Chunk 13 (TASKS.md "Supersets" / SPEC.md "Supersets [P1]") — the workout
 // screen's superset block: a shared card for 2+ exercises sharing one
@@ -29,73 +21,63 @@ import { buildSupersetRounds } from './supersetRounds'
 // session with no supersets never constructs this component at all (every
 // `pe.supersetBlockId` is null there), which is what keeps D30 byte-identical.
 //
-// Built from the SAME existing pieces ExerciseCard.tsx already renders a
-// plain exercise with — SetGroup (one head + its stages), ExerciseHeader,
-// PlanTargetsPanel, ExerciseReference — per the reviewer's UI rule, not a
-// new visual language. What's different here is only the ARRANGEMENT: a
-// round groups one cell per member instead of one member owning a whole
-// card's worth of rows top to bottom.
+// Review fix — grouping only changes layout and order; every member keeps
+// the exact per-exercise behaviour ExerciseCard.tsx gives a plain card
+// (prefill, logging, dropset stages, delete/renumber, skip-whole-exercise,
+// swap, ADD SET), via useExerciseCardState.ts (the same logic ExerciseCard
+// itself now calls — extracted once, not reimplemented here). Only the
+// ARRANGEMENT differs: a round interleaves one cell per member instead of
+// one member owning a whole card's rows top to bottom; each member's own
+// header/reference/actions still render in full, once each, same pieces
+// (ExerciseHeader, PlanTargetsPanel, ExerciseReference, SwapExerciseSheet)
+// ExerciseCard.tsx uses.
 //
-// Deliberately out of scope for this chunk (SPEC/TASKS are silent on all
-// three for a superset specifically, and none is in chunk 13's verification
-// list — see the chunk's own report for this call):
-//   - "Last session" row PREFILL (the weight/reps inputs auto-filling from
-//     last time) — SetGroup/SetRow still take lastLog/lastLogsLoading, so
-//     every row below passes null/false, same shape as a card whose
-//     previous-session query hasn't resolved. This is NOT the "Last time"
-//     SPEC means to stay per exercise — that's the reference PANEL
-//     (ExerciseReference, below), which every member keeps in full,
-//     fed from the same session-batched `referenceSessions` GymSession.tsx
-//     already fetches for every exercise regardless of grouping.
-//   - Swap exercise and "skip rest of exercise" (ExerciseCard's own
-//     per-card actions) — a card inside a block never offers either here;
-//     GymSession.tsx falls a block member back to its normal single-card
-//     render instead whenever a session-only swap is active on it (see that
-//     file's own grouping comment), so swap is never silently unavailable
-//     mid-use, only before one starts.
-//   - "ADD SET" (an extra, unplanned set beyond the plan) — a block only
-//     ever renders its planned heads; adding one exercise's own extra set
-//     would need its own, not-yet-specified place in the round grid.
-// Logging (including a planned dropset's ADD STAGE) and deleting an
-// already-logged set both work exactly as on a plain card — the one
-// correctness bar every verification item in this chunk actually needs.
+// One useExerciseCardState call per member, below — React's own rule (a
+// stable hook-call COUNT per component instance across its renders) is kept
+// by GymSession.tsx's own key on this component: `block-${blockId}-${member
+// count}`, so a change in HOW MANY members share a block always remounts a
+// fresh SupersetBlock instance (count changes only via a reload anyway —
+// SPEC "Supersets": grouping "applies to this run from the next session
+// on") instead of changing an already-mounted instance's own hook count. A
+// change in WHICH exercises they are, same count, is an ordinary prop
+// change — exactly what hooks are for.
+//
+// Starting a swap on a member hands off to GymSession.tsx's own onSwap
+// (recordSwap.mutate, unchanged) exactly like a plain card does; once
+// confirmed, GymSession's existing grouping pass (sessionSwaps-aware)
+// naturally renders that slot as its own merged card next render — a
+// member leaves the block the same way any other mid-session swap already
+// worked, nothing new built here for it.
 
 export interface SupersetMember {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
   // Already filtered to this exercise's own identity by the caller
   // (GymSession.tsx) — same `allCurrentLogs.filter(l => l.exerciseId === …)`
-  // every other card-level caller does before reaching SetGroup.
+  // every other card-level caller does before reaching ExerciseCard.
   currentLogs: SetLog[]
   referenceSessions: ReferenceSession[]
 }
 
 interface SupersetBlockProps {
   members: SupersetMember[] // 2+, in block/position order
+  // Each member's own previous-session logs are fetched HERE (one
+  // useLastSessionLogs call per member, below) rather than passed in —
+  // GymSession.tsx's ExerciseSection does the equivalent for a plain card,
+  // one query per exercise; this is the block's own version of that, kept
+  // in this file since it already owns the one-hook-call-per-member pattern
+  // (see the file header).
+  sessionId: string
   referenceLoading: boolean
   referenceMesocycleId: string | null
   referenceIsError: boolean
   referenceIsFromCache: boolean
   onRetryReference: () => void
   today: string
-  onLog: (params: {
-    exerciseId: string
-    weekPlanSetId: string | null
-    setNumber: number
-    weight: number | null
-    reps: number | null
-    rir: number | null
-    isDropset: boolean
-    isSkipped: boolean
-    restSeconds: number | null
-    setSeconds: number | null
-    enteredUnit: WeightUnit | null
-    parentSetId: string | null
-    stageIndex: number
-    formRating: FormRating | null
-  }) => Promise<SetLog>
-  onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
-  onDeleteSet: (id: string) => Promise<void>
+  onLog: ExerciseCardProps['onLog']
+  onUpdateSet: ExerciseCardProps['onUpdateSet']
+  onDeleteSet: ExerciseCardProps['onDeleteSet']
+  onSwap: ExerciseCardProps['onSwap']
 }
 
 // A, B, C, … Z, then #27, #28, … — "any number of exercises" (SPEC) never
@@ -104,54 +86,20 @@ function memberLabel(index: number): string {
   return index < 26 ? String.fromCharCode(65 + index) : `#${index + 1}`
 }
 
+// One member's planned-then-extra rows, normalised to a single shape
+// (`plannedSet: null` for an extra/ADD-SET row, matching ExerciseCard's own
+// SetGroup usage for that case) so supersetRounds.ts can treat every
+// member's list uniformly regardless of which section a row came from.
 interface MemberRow {
-  plannedSet: WeekPlanSet
+  plannedSet: WeekPlanSet | null
   plannedStages: WeekPlanSet[]
   group: Group<SetLog> | null
   displayNumber: number
 }
 
-// Per-member row list: this exercise's own planned heads, each paired with
-// whatever's already logged for it (or null, still to come) — the same
-// "plannedRows"/"plannedDisplay" shape ExerciseCard.tsx computes for a
-// plain card, minus the extra/swap-merge machinery this block doesn't offer
-// (see the file header). Warmups don't exist yet (chunk 15): a plannedSet
-// that ever carries isWarmup is filtered out here, before supersetRounds.ts
-// ever sees it, so it is left out of the round grid entirely rather than
-// occupying a cell or miscounting a round — TASKS.md "Rounds and zigzag"'s
-// own instruction to "leave them out... and say how".
-function buildMemberRows(member: SupersetMember): MemberRow[] {
-  const logGroups = groupSetLogs(member.currentLogs)
-  const totalLoggedHeads = logGroups.length
-  const plannedLogGroups = logGroups.filter((g) => g.head.weekPlanSetId != null)
-  const plannedHeads = headsOnly(member.plannedSets, (s) => s.parentWeekPlanSetId)
-    .filter((s) => !s.isWarmup)
-    .sort((a, b) => a.setNumber - b.setNumber)
-  const plannedGroups = groupWeekPlanSets(member.plannedSets)
-
-  const rows: MemberRow[] = []
-  let unloggedSeen = 0
-  for (const ps of plannedHeads) {
-    const group = plannedLogGroups.find((g) => g.head.weekPlanSetId === ps.id) ?? null
-    let displayNumber: number
-    if (group) {
-      displayNumber = group.head.setNumber
-    } else {
-      unloggedSeen += 1
-      displayNumber = totalLoggedHeads + unloggedSeen
-    }
-    rows.push({
-      plannedSet: ps,
-      plannedStages: plannedGroups.find((g) => g.head.id === ps.id)?.stages ?? [],
-      group,
-      displayNumber,
-    })
-  }
-  return rows
-}
-
 export default function SupersetBlock({
   members,
+  sessionId,
   referenceLoading,
   referenceMesocycleId,
   referenceIsError,
@@ -161,85 +109,56 @@ export default function SupersetBlock({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  onSwap,
 }: SupersetBlockProps) {
-  const { startedAt, start: startTimer } = useRestTimerStore()
-  const globalWeightUnit = useSettingsStore((s) => s.weightUnit)
+  // One useLastSessionLogs + one useExerciseCardState call per member — see
+  // the file header for why a stable call COUNT (never a stable call
+  // ARGUMENT) is all React's own rule actually needs, and how GymSession.tsx
+  // guarantees it via this component's key.
+  const lastLogsQueries = members.map((m) => useLastSessionLogs(m.programExercise.exerciseId, sessionId))
+  const memberStates = members.map((m, i) =>
+    useExerciseCardState({
+      programExercise: m.programExercise,
+      plannedSets: m.plannedSets,
+      currentLogs: m.currentLogs,
+      lastLogs: lastLogsQueries[i].data ?? [],
+      lastLogsLoading: lastLogsQueries[i].isLoading,
+      referenceSessions: m.referenceSessions,
+      referenceLoading,
+      referenceMesocycleId,
+      referenceIsError,
+      referenceIsFromCache,
+      onRetryReference,
+      today,
+      onLog,
+      onUpdateSet,
+      onDeleteSet,
+      onSwap,
+    }),
+  )
 
-  // Mid-cascade-delete heads, keyed by head id — same guard ExerciseCard.tsx
-  // keeps per card, kept here per BLOCK (one state object, not one hook call
-  // per member) since every member's heads already carry distinct ids.
-  const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
-
-  function currentRestElapsed(): number | null {
-    return startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
-  }
-
-  async function handleLogHead(member: SupersetMember, row: MemberRow, params: LogParams): Promise<SetLog> {
-    const restElapsed = currentRestElapsed()
-    startTimer()
-    return onLog({
-      ...params,
-      exerciseId: member.programExercise.exerciseId,
-      weekPlanSetId: row.plannedSet.id,
-      setNumber: row.displayNumber,
-      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
-      parentSetId: null,
-      stageIndex: 0,
-    })
-  }
-
-  async function handleLogStage(
-    member: SupersetMember,
-    headLog: SetLog,
-    group: Group<SetLog> | null,
-    params: LogParams,
-  ): Promise<SetLog> {
-    const restElapsed = currentRestElapsed()
-    startTimer()
-    return onLog({
-      ...params,
-      exerciseId: member.programExercise.exerciseId,
-      setNumber: headLog.setNumber,
-      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
-      parentSetId: headLog.id,
-      stageIndex: group ? nextStageIndex(group, (l) => l.stageIndex) : 1,
-    })
-  }
-
-  // Same cascade guard as ExerciseCard.handleDeleteHead (stages first,
-  // descending, head last), scoped to THIS member's own logs for the
-  // renumbering pass — setNumber is per-exercise, and a block's members
-  // never share one sequence.
-  async function handleDeleteHead(member: SupersetMember, group: Group<SetLog>) {
-    if (deletingHeadIds.has(group.head.id)) return
-    const order = cascadeDeleteOrder(group, (l) => l.stageIndex)
-    setDeletingHeadIds((prev) => new Set(prev).add(group.head.id))
-    try {
-      for (const row of order) await onDeleteSet(row.id)
-    } catch (err) {
-      console.error('Failed to delete set group', err)
-      return
-    } finally {
-      setDeletingHeadIds((prev) => {
-        const next = new Set(prev)
-        next.delete(group.head.id)
-        return next
-      })
-    }
-    groupSetLogs(member.currentLogs)
-      .filter((g) => g.head.id !== group.head.id && g.head.setNumber > group.head.setNumber)
-      .sort((a, b) => a.head.setNumber - b.head.setNumber)
-      .forEach((g, i) => onUpdateSet(g.head.id, { setNumber: group.head.setNumber + i }))
-  }
-
-  function handleDeleteStage(stageId: string) {
-    onDeleteSet(stageId).catch((err) => console.error('Failed to delete stage', err))
-  }
+  // Chunk 15 hasn't built warmup sets yet (TASKS.md "Rounds and zigzag": "if
+  // is_warmup rows appear, leave them out of rounds and say how"): a planned
+  // row whose set carries isWarmup is dropped here, before supersetRounds.ts
+  // ever sees it — left out of the round grid (and so out of this block)
+  // entirely, since warmups have no display/authoring path yet and don't
+  // belong in a round count. An extra (ADD SET) row is never a warmup (it
+  // has no plannedSet at all), so this only ever filters planned rows.
+  const memberRowLists: MemberRow[][] = memberStates.map((state) => [
+    ...state.plannedDisplay
+      .filter((row) => !row.plannedSet.isWarmup)
+      .map((row) => ({ plannedSet: row.plannedSet as WeekPlanSet | null, plannedStages: row.plannedStages, group: row.group, displayNumber: row.displayNumber })),
+    // Review fix — an extra set added to one member (ADD SET) extends that
+    // member's own row list, so it lands in the next round that already
+    // exists for the other members, or starts a brand new trailing round if
+    // this member is now the longest — supersetRounds.ts's existing
+    // unequal-count handling does this with no change of its own.
+    ...state.extraDisplay.map((row) => ({ plannedSet: null, plannedStages: [] as WeekPlanSet[], group: row.group, displayNumber: row.displayNumber })),
+  ])
 
   // Rendered round-major below, which — per supersetRounds.ts's own comment
   // on zigzagOrder — already reads as the current-set zigzag order (A1, B1,
   // A2, B2, …) with no further reordering needed here.
-  const memberRowLists = members.map(buildMemberRows)
   const rounds = buildSupersetRounds(memberRowLists)
 
   return (
@@ -259,7 +178,7 @@ export default function SupersetBlock({
           trio ExerciseCard.tsx renders for a plain card, once per member,
           in block order. */}
       {members.map((member, i) => {
-        const showPlanTargets = groupWeekPlanSets(member.plannedSets).length > 0
+        const state = memberStates[i]
         return (
           <div key={member.programExercise.id}>
             <div className="px-4 pt-2 flex items-center gap-2">
@@ -278,15 +197,22 @@ export default function SupersetBlock({
                 {memberLabel(i)}
               </span>
             </div>
-            <ExerciseHeader programExercise={member.programExercise} />
+            {/* Always offered (never swappedFrom inside a block — a member
+                mid-swap falls back to its own merged single card instead,
+                see this file's own header comment), so the swap button is
+                unconditional here unlike ExerciseCard's own ternary. */}
+            <ExerciseHeader
+              programExercise={member.programExercise}
+              onSwapClick={() => state.setShowSwapSheet(true)}
+            />
             <div
-              className={showPlanTargets ? 'grid' : undefined}
+              className={state.showPlanTargets ? 'grid' : undefined}
               style={{
-                ...(showPlanTargets ? { gridTemplateColumns: '1fr 1fr' } : {}),
+                ...(state.showPlanTargets ? { gridTemplateColumns: '1fr 1fr' } : {}),
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              {showPlanTargets && <PlanTargetsPanel plannedSets={member.plannedSets} />}
+              {state.showPlanTargets && <PlanTargetsPanel plannedSets={member.plannedSets} />}
               <div className="px-3 py-2">
                 <ExerciseReference
                   today={today}
@@ -296,7 +222,7 @@ export default function SupersetBlock({
                   isError={referenceIsError}
                   isFromCache={referenceIsFromCache}
                   onRetry={onRetryReference}
-                  weightUnit={resolveWeightUnit(member.programExercise.weightUnit, globalWeightUnit)}
+                  weightUnit={state.resolvedWeightUnit}
                 />
               </div>
             </div>
@@ -304,10 +230,7 @@ export default function SupersetBlock({
         )
       })}
 
-      {/* Rounds — round 1 = A1, B1, C1; round 2 = A2, B2, C2; … (SPEC). Cells
-          render in round-major order, which is already the zigzag order the
-          current-set button needs (supersetRounds.ts's own comment) — no
-          extra reordering here. */}
+      {/* Rounds — round 1 = A1, B1, C1; round 2 = A2, B2, C2; … (SPEC). */}
       <div className="px-3 py-3 space-y-4">
         {rounds.map((round) => (
           <div key={`round-${round.roundNumber}`}>
@@ -320,9 +243,10 @@ export default function SupersetBlock({
             <div className="space-y-3">
               {round.cells.map((cell) => {
                 const member = members[cell.memberIndex]
+                const state = memberStates[cell.memberIndex]
                 const row = cell.head
                 return (
-                  <div key={`${member.programExercise.id}-${row.plannedSet.id}`}>
+                  <div key={`${member.programExercise.id}-r${round.roundNumber}`}>
                     <p
                       className="text-xs font-bold tracking-wide mb-1"
                       style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
@@ -334,17 +258,19 @@ export default function SupersetBlock({
                       programExercise={member.programExercise}
                       plannedSet={row.plannedSet}
                       plannedStages={row.plannedStages}
-                      lastLog={null}
-                      lastLogsLoading={false}
+                      lastLog={state.lastLogGroups[row.displayNumber - 1]?.head ?? null}
+                      lastLogsLoading={lastLogsQueries[cell.memberIndex].isLoading}
                       group={row.group}
-                      isDeleting={row.group != null && deletingHeadIds.has(row.group.head.id)}
+                      isDeleting={row.group != null && state.deletingHeadIds.has(row.group.head.id)}
                       expectStage={row.plannedStages.length > (row.group?.stages.length ?? 0)}
-                      onLogHead={(params) => handleLogHead(member, row, params)}
-                      onLogStage={(headLog, params) => handleLogStage(member, headLog, row.group, params)}
+                      onLogHead={(params) => state.handleLogHead(row.plannedSet, params)}
+                      onLogStage={(headLog, params) =>
+                        state.handleLogStage(headLog, row.group ? nextStageIndex(row.group, (l) => l.stageIndex) : 1, params)
+                      }
                       onUpdate={(id, changes) => onUpdateSet(id, changes)}
-                      onDeleteHead={(group) => handleDeleteHead(member, group)}
-                      onDeleteStage={handleDeleteStage}
-                      restElapsed={currentRestElapsed()}
+                      onDeleteHead={state.handleDeleteHead}
+                      onDeleteStage={state.handleDeleteStage}
+                      restElapsed={state.currentRestElapsed()}
                     />
                   </div>
                 )
@@ -353,6 +279,102 @@ export default function SupersetBlock({
           </div>
         ))}
       </div>
+
+      {/* Per-member actions — ADD SET and SKIP REST OF EXERCISE, the same
+          two ExerciseCard.tsx offers at the bottom of a plain card, once per
+          member instead of once per card (a block's rows are interleaved by
+          round above, so these exercise-level actions get their own
+          section below it rather than living inside any one round). */}
+      <div className="px-3 pb-3 space-y-4">
+        {members.map((member, i) => {
+          const state = memberStates[i]
+          return (
+            <div key={`actions-${member.programExercise.id}`} className="space-y-2">
+              <p
+                className="text-xs font-bold tracking-wide"
+                style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+              >
+                {memberLabel(i)} · {(member.programExercise.exercise?.name ?? '—').toUpperCase()}
+              </p>
+
+              <button
+                onClick={state.handleAddSet}
+                className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
+                style={{
+                  minHeight: 44,
+                  border: '1px dashed var(--border)',
+                  color: 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <Plus size={12} />
+                ADD SET
+              </button>
+
+              {state.hasUnfinishedPlannedWork && (
+                state.showSkipConfirm ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => state.setShowSkipConfirm(false)}
+                      disabled={state.isSkippingExercise}
+                      className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
+                      style={{
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-muted)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      onClick={state.handleConfirmSkip}
+                      disabled={state.isSkippingExercise}
+                      className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
+                      style={{
+                        backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                        color: 'var(--error)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
+                    >
+                      CONFIRM SKIP
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => state.setShowSkipConfirm(true)}
+                    disabled={state.isSkippingExercise}
+                    className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
+                    style={{
+                      minHeight: 44,
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                      opacity: state.isSkippingExercise ? 0.6 : 1,
+                    }}
+                  >
+                    {state.isSkippingExercise ? 'SKIPPING…' : 'SKIP REST OF EXERCISE'}
+                  </button>
+                )
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {members.map((member, i) => {
+        const state = memberStates[i]
+        if (!state.showSwapSheet) return null
+        return (
+          <SwapExerciseSheet
+            key={`swap-${member.programExercise.id}`}
+            currentExerciseId={member.programExercise.exerciseId}
+            currentExerciseName={member.programExercise.exercise?.name ?? 'this exercise'}
+            muscleGroup={member.programExercise.exercise?.muscleGroup ?? 'other'}
+            remainingSetCount={state.remainingPlannedCount}
+            onConfirm={state.handleConfirmSwap}
+            onClose={() => state.setShowSwapSheet(false)}
+          />
+        )
+      })}
     </div>
   )
 }

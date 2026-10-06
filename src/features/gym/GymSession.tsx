@@ -259,10 +259,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // A member with an active SESSION-only swap (SwapExerciseSheet,
   // v2_session_exercise_swaps — unrelated to the week-level superset_block_id
   // chunk 9's resolveSwapSlot carries) is deliberately excluded from ever
-  // joining a block's round grid: SupersetBlock.tsx offers no swap/skip
-  // affordance (this chunk's own scope decision, see that file's header),
-  // so a slot mid-swap always falls back to its normal single merged-card
-  // render instead, same as it always has.
+  // joining a block's round grid: once a swap is CONFIRMED (sessionSwaps
+  // carries a row for it), that slot renders as its own merged single card
+  // in the position/presentation style every swapped exercise already uses
+  // (below), never inside a block — "position/presentation" is about one
+  // exercise identity being replaced by another, which the round grid has
+  // no notion of. Starting (not yet confirming) a swap from within a block
+  // is unaffected by this: SupersetBlock.tsx's own members still each offer
+  // a working SWAP button (useExerciseCardState — same as a plain card);
+  // only the CONFIRMED swap's slot moves out, on the next render, exactly
+  // the same way any other mid-session swap already worked.
   type RenderUnit =
     | { kind: 'single'; pe: ProgramExercise }
     | { kind: 'block'; blockId: string; members: ProgramExercise[] }
@@ -487,7 +493,12 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           if (unit.kind === 'block') {
             return (
               <SupersetBlock
-                key={`block-${unit.blockId}`}
+                // Includes the member COUNT, not just the block id — see
+                // SupersetBlock.tsx's own header comment: a change in HOW
+                // MANY exercises share this block always remounts a fresh
+                // instance (safe for its one-hook-call-per-member pattern),
+                // never changes an already-mounted one's own hook count.
+                key={`block-${unit.blockId}-${unit.members.length}`}
                 members={unit.members.map((pe) => ({
                   programExercise: pe,
                   plannedSets: (weekPlan?.sets ?? [])
@@ -496,6 +507,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                   currentLogs: allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId),
                   referenceSessions: referenceSessionsByExercise.get(pe.exerciseId) ?? [],
                 }))}
+                sessionId={sessionId}
                 referenceLoading={referenceLoading}
                 referenceMesocycleId={session?.mesocycleId ?? null}
                 referenceIsError={referenceIsError}
@@ -505,6 +517,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 onLog={handleLog}
                 onUpdateSet={handleUpdateSet}
                 onDeleteSet={handleDeleteSet}
+                onSwap={handleSwap}
               />
             )
           }
