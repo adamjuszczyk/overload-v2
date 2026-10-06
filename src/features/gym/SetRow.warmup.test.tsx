@@ -150,11 +150,11 @@ describe('SetRow — warmup, rows mode (default)', () => {
     expect(payload.isWarmup).toBe(true)
   })
 
-  it('a logged warmup (both values present) renders read-only, weight × reps, no edit/delete', () => {
+  it('a logged warmup (both values present) renders weight × reps, with edit and delete (review fix)', () => {
     render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} />)
     expect(screen.getByText('WARMUP')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Edit set' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Delete set' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit set' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Delete set' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'LOG' })).toBeNull()
   })
 
@@ -186,10 +186,93 @@ describe('SetRow — warmup, tick mode (v2_user_settings.warmup_display = "tick"
     expect(payload.isWarmup).toBe(true)
   })
 
-  it('a logged warmup still renders read-only (same as rows mode) regardless of the setting', () => {
+  it('a ticked (logged) warmup offers delete but no edit — "unticking" is deleting it (review fix)', () => {
     useSettingsStore.setState({ warmupDisplay: 'tick' })
     render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} />)
-    expect(screen.queryByRole('button')).toBeNull()
     expect(screen.getByText('WARMUP')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Edit set' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Delete set' })).toBeTruthy()
+  })
+
+  it('tapping Delete on a ticked warmup calls onDelete (untick)', () => {
+    useSettingsStore.setState({ warmupDisplay: 'tick' })
+    const onDelete = vi.fn()
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete set' }))
+    fireEvent.click(screen.getByRole('button', { name: 'DELETE' }))
+    expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Review fix (reviewer, chunk 15) — "SPEC's 'nothing else' limits what a
+// warmup records, not whether it can be corrected": a logged warmup gets
+// the same edit (weight/reps only) and delete affordances a logged working
+// set already has, reusing the existing onUpdate/onDelete props.
+describe('SetRow — warmup, logged: edit and delete (review fix)', () => {
+  it('Edit opens weight/reps inputs only, pre-filled from the logged values — no RIR, no FORM', () => {
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog({ weight: 40, reps: 10 })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit set' }))
+
+    expect(screen.getByRole('button', { name: 'SAVE' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toBeTruthy()
+    expect(screen.queryByText('RIR')).toBeNull()
+    expect(screen.queryByText('FORM')).toBeNull()
+    const [weightInput, repsInput] = screen.getAllByRole('textbox').concat(screen.getAllByRole('spinbutton'))
+    expect((weightInput as HTMLInputElement).value).toBe('40')
+    expect((repsInput as HTMLInputElement).value).toBe('10')
+  })
+
+  it('SAVE calls onUpdate with weight/reps only — no rir or formRating key at all', () => {
+    const onUpdate = vi.fn()
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog({ weight: 40, reps: 10 })} onUpdate={onUpdate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit set' }))
+
+    const weightInput = screen.getAllByRole('textbox')[0]
+    const repsInput = screen.getAllByRole('spinbutton')[0]
+    fireEvent.change(weightInput, { target: { value: '45' } })
+    fireEvent.change(repsInput, { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'SAVE' }))
+
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+    const payload = onUpdate.mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ weight: 45, reps: 8 })
+    expect('rir' in payload).toBe(false)
+    expect('formRating' in payload).toBe(false)
+  })
+
+  it('CANCEL closes the edit form without calling onUpdate', () => {
+    const onUpdate = vi.fn()
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} onUpdate={onUpdate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit set' }))
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    expect(onUpdate).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Edit set' })).toBeTruthy()
+  })
+
+  it('Delete needs confirmation, then calls onDelete', () => {
+    const onDelete = vi.fn()
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete set' }))
+    expect(onDelete).not.toHaveBeenCalled() // not yet — confirm step first
+    fireEvent.click(screen.getByRole('button', { name: 'DELETE' }))
+    expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('Delete\'s CANCEL backs out without calling onDelete', () => {
+    const onDelete = vi.fn()
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog()} onDelete={onDelete} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete set' }))
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Delete set' })).toBeTruthy()
+  })
+
+  it('break proof: a logged warmup with no values (tick-logged) can still be edited in rows mode, weight/reps starting blank', () => {
+    render(<SetRow {...baseProps()} currentLog={makeWarmupLog({ weight: null, reps: null })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit set' }))
+    const weightInput = screen.getAllByRole('textbox')[0] as HTMLInputElement
+    const repsInput = screen.getAllByRole('spinbutton')[0] as HTMLInputElement
+    expect(weightInput.value).toBe('')
+    expect(repsInput.value).toBe('')
   })
 })

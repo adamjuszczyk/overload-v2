@@ -84,7 +84,14 @@ interface SetGroupProps {
   expectStage?: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
-  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
+  // Chunk 15 — rir/formRating optional (not required), matching SetRow.tsx's
+  // own loosened onUpdate type one level down (its isWarmup branch sends
+  // weight/reps only). SetGroup.tsx is never used for a warmup row itself
+  // (ExerciseCard.tsx/SupersetBlock.tsx call SetRow directly for those), so
+  // this is purely a type-compatibility passthrough — every real call this
+  // file makes (the two below) still forwards whatever SetRow's own
+  // (unchanged, non-warmup) saveEdit sent, which is still all four keys.
+  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir?: number | null; formRating?: FormRating | null }) => void
   onDeleteHead: (group: Group<SetLog>) => void
   onDeleteStage: (stageId: string) => void
   restElapsed: number | null

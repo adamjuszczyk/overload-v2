@@ -69,7 +69,13 @@ interface SetRowProps {
     stageKind: StageKind | null
     isWarmup?: boolean
   }) => void
-  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
+  // Chunk 15 — rir/formRating optional (not required): a warmup's own edit
+  // (this component's isWarmup branch) sends weight/reps only, matching
+  // the reviewer's "weight and reps only" instruction and updateSetLog's
+  // own `'x' in changes` convention (sessionService.ts) — an omitted key
+  // touches nothing. The existing working-set edit (saveEdit, below) is
+  // unchanged: it still sends all four explicitly every time.
+  onUpdate: (changes: { weight: number | null; reps: number | null; rir?: number | null; formRating?: FormRating | null }) => void
   onDelete: () => void
   restElapsed: number | null   // seconds since last set logged (for rest_seconds)
 }
@@ -206,6 +212,134 @@ export default function SetRow({
   // stageKind/carryWeightKg/isLocked never apply here.
   if (isWarmup) {
     if (currentLog) {
+      const isPending = pendingIds.has(currentLog.id)
+      const isFailed = failedIds.has(currentLog.id)
+      // Same unit convention as the working-set logged row below: whatever
+      // this set was actually logged in (enteredUnit), falling back to
+      // today's resolved default for a legacy row that predates the column.
+      const editUnit = currentLog.enteredUnit ?? resolvedUnit
+
+      // Review fix (reviewer, chunk 15) — "SPEC's 'nothing else' limits
+      // what a warmup *records* (weight, reps, rest timer), not whether it
+      // can be corrected": edit (rows mode only — tick mode never had a
+      // value, only a done/not-done state, so editing doesn't apply there,
+      // same reasoning the tick button below already uses) and delete (both
+      // modes — "a ticked warmup can be unticked" is exactly this delete).
+      // Reuses the same onUpdate/onDelete props and isEditing/editWeight/
+      // editReps/confirmDelete state the working-set logged row below
+      // already declares (top of this component) — nothing new added to
+      // this component's own state.
+      if (isEditing && warmupDisplay !== 'tick') {
+        const saveWarmupEdit = () => {
+          const editedDisplay = editWeight.trim() === '' ? null : parseFloat(editWeight.replace(',', '.'))
+          if (editedDisplay !== null && Number.isNaN(editedDisplay)) {
+            setLogError('Enter a valid weight')
+            return
+          }
+          const originalKg = currentLog.weight
+          const w =
+            editedDisplay === null || originalKg === null
+              ? editedDisplay
+              : resolveEditedWeightKg(originalKg, editUnit, editedDisplay)
+          const r = editReps.trim() === '' ? null : parseInt(editReps, 10)
+          setLogError('')
+          // Weight and reps only (reviewer's instruction) — no rir, no
+          // formRating keys at all, so updateSetLog (sessionService.ts)
+          // never touches those columns for a warmup edit.
+          onUpdate({ weight: w, reps: r })
+          setIsEditing(false)
+        }
+
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span
+                className="text-xs font-bold w-5 text-center flex-shrink-0"
+                style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+              >
+                {String(setNumber).padStart(2, '0')}
+              </span>
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoFocus
+                  value={editWeight}
+                  onChange={(e) => setEditWeight(e.target.value)}
+                  className="w-full px-3 rounded-lg text-sm font-bold text-center"
+                  style={{
+                    height: 44,
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                />
+                <span
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+                  style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                >
+                  {editUnit}
+                </span>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>×</span>
+              <div style={{ width: 60 }} className="flex-shrink-0">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={editReps}
+                  onChange={(e) => setEditReps(e.target.value)}
+                  className="w-full px-2 rounded-lg text-sm font-bold text-center"
+                  style={{
+                    height: 44,
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                />
+              </div>
+              <button
+                onClick={saveWarmupEdit}
+                className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+                style={{
+                  height: 44,
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--base)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                SAVE
+              </button>
+            </div>
+            <div className="flex items-center gap-2 pl-7">
+              <button
+                onClick={() => {
+                  setLogError('')
+                  setIsEditing(false)
+                }}
+                className="flex items-center justify-center text-xs px-3 rounded"
+                style={{
+                  minHeight: 44,
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+            {logError && (
+              <div className="pl-7">
+                <span className="text-xs" style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}>
+                  {logError}
+                </span>
+              </div>
+            )}
+          </div>
+        )
+      }
+
       return (
         <div
           className="flex items-center gap-3 px-3 rounded-lg"
@@ -223,8 +357,8 @@ export default function SetRow({
           >
             {currentLog.weight !== null && currentLog.reps !== null ? (
               <>
-                {toDisplayWeight(currentLog.weight, resolvedUnit)}
-                <span style={{ color: 'var(--text-muted)' }}>{resolvedUnit} × </span>
+                {toDisplayWeight(currentLog.weight, editUnit)}
+                <span style={{ color: 'var(--text-muted)' }}>{editUnit} × </span>
                 {currentLog.reps}
               </>
             ) : (
@@ -237,7 +371,93 @@ export default function SetRow({
           >
             WARMUP
           </span>
-          <Check size={14} style={{ color: 'var(--accent)' }} />
+          {isFailed ? (
+            <span
+              className="text-xs font-bold px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                color: 'var(--error)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.06em',
+              }}
+              title="Failed to sync after 3 attempts — this set only exists on this device"
+            >
+              SYNC FAILED
+            </span>
+          ) : isPending ? (
+            <span
+              className="text-xs font-bold px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: 'var(--accent-muted)',
+                color: 'var(--accent)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.06em',
+              }}
+            >
+              SYNC
+            </span>
+          ) : (
+            <Check size={14} style={{ color: 'var(--accent)' }} />
+          )}
+          {confirmDelete ? (
+            <>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex-shrink-0 text-xs font-bold px-2 rounded"
+                style={{
+                  height: 28,
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={onDelete}
+                className="flex-shrink-0 text-xs font-bold px-2 rounded"
+                style={{
+                  height: 28,
+                  backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                  color: 'var(--error)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                DELETE
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Edit — rows mode only (see this block's own comment above). */}
+              {warmupDisplay !== 'tick' && (
+                <button
+                  onClick={() => {
+                    setEditWeight(currentLog.weight != null ? String(toDisplayWeight(currentLog.weight, editUnit)) : '')
+                    setEditReps(currentLog.reps != null ? String(currentLog.reps) : '')
+                    setLogError('')
+                    setIsEditing(true)
+                  }}
+                  className="flex-shrink-0 flex items-center justify-center"
+                  style={{ width: 28, height: 28, color: 'var(--text-muted)' }}
+                  aria-label="Edit set"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+              {/* Delete — both modes. In tick mode this IS "untick": a ticked
+                  warmup has no value to edit, only to undo. */}
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex-shrink-0 flex items-center justify-center"
+                style={{ width: 28, height: 28, color: 'var(--text-muted)' }}
+                aria-label="Delete set"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
         </div>
       )
     }

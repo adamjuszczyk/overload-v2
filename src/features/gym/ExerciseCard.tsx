@@ -29,6 +29,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     onRetryReference,
     today,
     onUpdateSet,
+    onDeleteSet,
     lastLogsLoading,
     swappedFrom,
   } = props
@@ -141,8 +142,14 @@ export default function ExerciseCard(props: ExerciseCardProps) {
                 lastLogsLoading={false}
                 currentLog={group?.head ?? null}
                 onLog={(params) => handleLogWarmup(plannedSet, params)}
-                onUpdate={() => {}}
-                onDelete={() => {}}
+                // Review fix (chunk 15) — a logged warmup can be corrected
+                // or removed, same as any other logged set: reuses the
+                // same onUpdateSet/onDeleteSet this card already threads
+                // through to every working-set SetGroup below.
+                onUpdate={(changes) => group && onUpdateSet(group.head.id, changes)}
+                onDelete={() => {
+                  if (group) onDeleteSet(group.head.id).catch((err) => console.error('Failed to delete warmup', err))
+                }}
                 restElapsed={currentRestElapsed()}
               />
               {group && timerAnchorId === group.head.id && <RestTimerInline />}
