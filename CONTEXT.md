@@ -172,6 +172,7 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
 19. Any UI that can't be built from the app's existing components and design tokens. Builders never invent a new visual language.
 
 ## Reviewer's own rules
+- **Never switch branches in the main checkout (`/home/user/overload-v2`) while a builder is running or resuming.** Builders work in that checkout. Do reviewer checks in a `git worktree` under the scratchpad. (2026-10-06: the reviewer switched it to master just after resuming chunk 13's builder, caught it and restored it, and told the builder to confirm the branch.)
 - Verify against the real thing. A passing check proves only
   what it actually touched. If unreachable and passing produce
   the same signal, the check is wrong.
