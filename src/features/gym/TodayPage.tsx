@@ -9,7 +9,24 @@ import SessionPreview from './SessionPreview'
 import RestDayScreen from './RestDayScreen'
 import MissedSessionPrompt from './MissedSessionPrompt'
 import { useToday } from '../../hooks/useToday'
-import type { Session, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
+import type { Session, Mesocycle, WorkoutDay, WeekPlan, SetLog } from '../../types'
+
+// Chunk 15 (SPEC "Warmup sets" — "never counted in ... set counts").
+// Extracted (not inlined in CompletedTodayScreen below) so this one count
+// is directly testable without rendering the whole scheduler-dependent
+// screen — same "pure logic lives in testable modules" precedent as
+// setGroupLogic.ts/e1rm.ts elsewhere in this app. A warmup is never
+// skipped in practice (SetRow.tsx's isWarmup branch offers no SKIP
+// affordance), so excluding it from both counts keeps them mutually
+// exclusive and exhaustive over every non-warmup log, same as before this
+// chunk.
+export function countCompletedSets(setLogs: SetLog[]): { total: number; skipped: number } {
+  const real = setLogs.filter((l) => !l.isWarmup)
+  return {
+    total: real.filter((l) => !l.isSkipped).length,
+    skipped: real.filter((l) => l.isSkipped).length,
+  }
+}
 
 export default function TodayPage() {
   const today = useToday()
@@ -275,8 +292,7 @@ function CompletedTodayScreen({
   const planWeek = usePlanWeek()
   const updateNote = useUpdateSessionNote()
 
-  const totalSets = fullSession?.setLogs?.filter((l) => !l.isSkipped).length ?? 0
-  const skippedSets = fullSession?.setLogs?.filter((l) => l.isSkipped).length ?? 0
+  const { total: totalSets, skipped: skippedSets } = countCompletedSets(fullSession?.setLogs ?? [])
   const isPending =
     reopenSession.isPending || createSession.isPending || skipSession.isPending || planWeek.isPending
 
