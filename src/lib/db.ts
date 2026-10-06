@@ -84,6 +84,10 @@ interface CachedSetLog {
   // above. Rows cached before this shipped won't have it; readers must
   // treat undefined as null, same rule as those fields.
   formRating: string | null
+  // Chunk 14 — heads only (TASKS.md "Logging": "as planned"). Same
+  // no-version-bump precedent as formRating above: rows cached before this
+  // shipped won't have it; readers must treat undefined as null.
+  stageKind: string | null
 }
 
 interface SyncQueueItem {

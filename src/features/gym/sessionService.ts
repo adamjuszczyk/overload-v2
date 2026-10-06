@@ -13,6 +13,7 @@ import type {
 } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
+import type { StageKind } from '../../lib/plannerVocabulary.js'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,8 @@ type DbSetLog = {
   entered_unit?: string | null
   // Absent until migration 016 has been applied.
   form_rating?: string | null
+  // Absent until migration 027 has been applied.
+  stage_kind?: string | null
 }
 
 type DbSession = {
@@ -115,6 +118,9 @@ function toSetLog(row: DbSetLog): SetLog {
     restSeconds: row.rest_seconds,
     // Same "column may not exist yet" fallback as stageIndex/isWarmup above.
     formRating: (row.form_rating ?? null) as FormRating | null,
+    // Chunk 14 — heads only; a stage row's own value is always null (the
+    // DB's own check). Same fallback as formRating above.
+    stageKind: (row.stage_kind ?? null) as SetLog['stageKind'],
   }
 }
 
@@ -389,6 +395,15 @@ export async function logSet(params: {
   setSeconds: number | null
   enteredUnit: WeightUnit | null
   formRating: FormRating | null
+  // Chunk 14 — "as planned" (TASKS.md "Logging"). Optional (not required):
+  // the one thing every real caller (useLogSet's mutationFn, below) always
+  // supplies, but the D30-adjacent "logSet payload test"
+  // (sessionService.test.ts) calls this function directly without it and
+  // its exact-shape `toEqual` must stay byte-identical — an omitted key
+  // here serialises to no key at all (Supabase's insert drops `undefined`
+  // values), so an existing caller that never passes it writes exactly the
+  // row it always has.
+  stageKind?: StageKind | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -417,6 +432,7 @@ export async function logSet(params: {
       set_seconds: params.setSeconds,
       entered_unit: params.enteredUnit,
       form_rating: params.formRating,
+      stage_kind: params.stageKind,
     })
     .select('*, exercises(*)')
     .single()

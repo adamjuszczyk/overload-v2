@@ -6,6 +6,7 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
+import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
   fetchSessionsInRange,
   fetchSession,
@@ -96,6 +97,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               restSeconds: log.restSeconds,
               sessionStatus: 'completed',
               formRating: log.formRating,
+              stageKind: log.stageKind ?? null,
             }),
           ),
         )
@@ -141,6 +143,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               loggedAt: l.loggedAt,
               restSeconds: l.restSeconds,
               formRating: (l.formRating ?? null) as SetLog['formRating'],
+              stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
             }),
           )
       }
@@ -201,6 +204,7 @@ async function fetchReferenceSessionsFromCache(
       loggedAt: l.loggedAt,
       restSeconds: l.restSeconds,
       formRating: (l.formRating ?? null) as SetLog['formRating'],
+      stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
     }
     let bySession = byExercise.get(l.exerciseId)
     if (!bySession) {
@@ -697,6 +701,13 @@ export function useLogSet(sessionId: string) {
       setSeconds: number | null
       enteredUnit: WeightUnit | null
       formRating: FormRating | null
+      // Chunk 14 — "as planned" (TASKS.md "Logging"); null for a stage (the
+      // DB's own check) and for a head with no planned stage kind (reads
+      // as a dropset once it has stages — plannerVocabulary.ts's
+      // resolveStageKind). Every real caller (SetRow.tsx's handleLog/
+      // handleSkip, via ExerciseCard/SupersetBlock's onLog chain) always
+      // resolves this from the row's own plannedSet before calling.
+      stageKind: StageKind | null
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -740,6 +751,7 @@ export function useLogSet(sessionId: string) {
           // must not be mistaken for a completed "last session" reference.
           sessionStatus: 'in_progress',
           formRating: params.formRating,
+          stageKind: params.stageKind,
         })
 
         await db.sync_queue.add({
@@ -765,6 +777,7 @@ export function useLogSet(sessionId: string) {
             set_seconds: params.setSeconds,
             entered_unit: params.enteredUnit,
             form_rating: params.formRating,
+            stage_kind: params.stageKind,
           },
           createdAt: loggedAt,
         })
@@ -792,6 +805,7 @@ export function useLogSet(sessionId: string) {
           loggedAt,
           restSeconds: params.restSeconds,
           formRating: params.formRating,
+          stageKind: params.stageKind,
         } satisfies SetLog
       }
 
@@ -831,6 +845,7 @@ export function useLogSet(sessionId: string) {
         loggedAt: new Date().toISOString(),
         restSeconds: params.restSeconds,
         formRating: params.formRating,
+        stageKind: params.stageKind,
       }
 
       queryClient.setQueryData(qk, (old: Session | undefined) => {

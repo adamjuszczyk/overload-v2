@@ -29,6 +29,14 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // file keeps proving, chunk over chunk — each chunk that visibly changes
 // PlanPage's render re-captures this same fixture the same way, exactly as
 // this one now does for chunk 9's own new buttons.
+//
+// Chunk 14 re-capture: this fixture's weekPlan already has a dropset
+// (set-1/set-1-drop), so PlanSetGroup's new stage-kind label and STAGE
+// KIND chip row (SPEC "Staged sets" — "labels stages by kind") now appear
+// in it too — re-captured the same way, same unchanged fixture data (no
+// stageKind set anywhere in it, so it reads as a dropset, same as before
+// this chunk; PlanPage.repTargets.test.tsx/PlanPage.copyButtons.test.tsx
+// stay green unmodified, confirming this is additive, not a regression).
 
 afterEach(() => cleanup())
 

@@ -30,6 +30,9 @@ const {
   setExerciseSetCount,
   updateProgramSetRepTarget,
   setRepTargetForAllSets,
+  updateProgramSetStageKind,
+  addProgramSetStage,
+  removeProgramSet,
   summarizeRepTargets,
   splitSharedWeekdayWorkouts,
 } = await import('./plannerService')
@@ -43,6 +46,10 @@ function makeChain(result: { data?: unknown; error?: unknown }) {
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
     order: vi.fn(() => chain),
+    // addProgramSetStage's own .insert(...).select().single() (chunk 14,
+    // mirrors weekPlanService.ts's addStage) — unused by every other test
+    // in this file, which never calls .single().
+    single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   }
@@ -418,6 +425,67 @@ describe('updateProgramSetRepTarget — mirrors repTargetToColumns exactly', () 
   })
 })
 
+// ─── Stages (chunk 14 — SPEC.md "Staged sets") ──────────────────────────────
+
+describe('updateProgramSetStageKind — head-only (027: a stage carries no kind of its own)', () => {
+  it('writes exactly { stage_kind } against the given head id', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await updateProgramSetStageKind('head-1', 'rest_pause')
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    expect(chain.update).toHaveBeenCalledWith({ stage_kind: 'rest_pause' })
+    expect(chain.eq).toHaveBeenCalledWith('id', 'head-1')
+  })
+
+  it('null clears it back to "no kind chosen" (reads as a dropset, resolveStageKind)', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await updateProgramSetStageKind('head-1', null)
+
+    expect(chain.update).toHaveBeenCalledWith({ stage_kind: null })
+  })
+})
+
+describe('addProgramSetStage — parent id given directly, never inferred (mirrors weekPlanService.ts\'s addStage)', () => {
+  it('inserts a stage row: the head\'s own parentId/position, the caller\'s stageIndex, no kind/rest/warmup of its own', async () => {
+    const chain = makeChain({ data: { id: 'new-stage' }, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await addProgramSetStage('user-1', 'pe-1', 'head-1', 3, 1)
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    const payload = (chain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({
+      user_id: 'user-1',
+      program_exercise_id: 'pe-1',
+      position: 3,
+      is_warmup: false,
+      parent_program_set_id: 'head-1',
+      stage_index: 1,
+    })
+    // Satisfies 027's stage_row_check by construction: no stage_kind,
+    // stage_rest_seconds key at all (not even null) on a stage insert.
+    expect('stage_kind' in payload).toBe(false)
+    expect('stage_rest_seconds' in payload).toBe(false)
+  })
+})
+
+describe('removeProgramSet — one row at a time (the SETS stepper\'s own bulk shrink is untouched)', () => {
+  it('deletes by id against v2_program_sets', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await removeProgramSet('stage-1')
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    expect(chain.delete).toHaveBeenCalled()
+    expect(chain.eq).toHaveBeenCalledWith('id', 'stage-1')
+  })
+})
+
 // ─── splitSharedWeekdayWorkouts (G14 — "give each weekday its own workout") ─
 
 describe('splitSharedWeekdayWorkouts', () => {
@@ -476,17 +544,102 @@ describe('splitSharedWeekdayWorkouts', () => {
     })
     expect(typeof peInsertCall?.[0]?.id).toBe('string')
 
-    // v2_program_sets: one row cloned from the source head. Both the
-    // earlier SELECT (fetchProgramSets) and this INSERT share the same
+    // v2_program_sets: one row cloned from the source head — a fresh
+    // client-chosen id (review fix, chunk 14: needed so a stage's own
+    // parent_program_set_id can be remapped to it, see the test below),
+    // plus the two columns the pre-fix insert never even selected
+    // (stage_kind/stage_rest_seconds), both null for this plain head. Both
+    // the earlier SELECT (fetchProgramSets) and this INSERT share the same
     // 'v2_program_sets' table name, so both land on setsSelectChain —
     // insertChain is only ever hit by the v2_program_exercises write.
     const setsInsertCall = (setsSelectChain.insert as ReturnType<typeof vi.fn>).mock.calls.find(
       (c) => Array.isArray(c[0]) && c[0][0]?.rep_min === 8,
     )
-    expect(setsInsertCall?.[0]).toEqual([{
+    expect(setsInsertCall?.[0]).toHaveLength(1)
+    expect(typeof setsInsertCall?.[0][0]?.id).toBe('string')
+    expect(setsInsertCall?.[0][0]).toMatchObject({
       user_id: 'user-1', program_exercise_id: peInsertCall?.[0]?.id, position: 1,
-      is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false, rest_seconds: null,
-    }])
+      is_warmup: false, stage_kind: null, stage_rest_seconds: null,
+      rep_min: 8, rep_max: 12, is_amrap: false, rest_seconds: null,
+    })
+  })
+
+  // Review fix (chunk 14): the pre-fix clone used headSets() and selected
+  // neither stage_kind nor stage_rest_seconds, so a staged set's stages
+  // (and the head's own kind) were silently dropped by this exact split —
+  // harmless before chunk 14 (nothing could create a program-set stage
+  // yet), reachable the moment chunk 14's planner UI can.
+  it('clones a staged set in full: the head keeps its stage_kind, both stages carry the NEW head id and stage_index 1-2', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    const sourceExercise: ProgramExercise = {
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, weightUnit: null,
+    }
+    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
+    const insertChain = makeChain({ data: null, error: null })
+    const setsSelectChain = makeChain({
+      data: [
+        {
+          id: 'ps-head', user_id: 'user-1', program_exercise_id: 'pe-src', position: 1, is_warmup: false,
+          stage_kind: 'rest_pause', stage_rest_seconds: null, parent_program_set_id: null, stage_index: 0,
+          rep_min: null, rep_max: null, is_amrap: false, rest_seconds: null, created_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'ps-stage-1', user_id: 'user-1', program_exercise_id: 'pe-src', position: 1, is_warmup: false,
+          stage_kind: null, stage_rest_seconds: null, parent_program_set_id: 'ps-head', stage_index: 1,
+          rep_min: null, rep_max: null, is_amrap: false, rest_seconds: null, created_at: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'ps-stage-2', user_id: 'user-1', program_exercise_id: 'pe-src', position: 1, is_warmup: false,
+          stage_kind: null, stage_rest_seconds: null, parent_program_set_id: 'ps-head', stage_index: 2,
+          rep_min: null, rep_max: null, is_amrap: false, rest_seconds: null, created_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      error: null,
+    })
+    fromMock.mockImplementation((table: string) => (table === 'v2_program_sets' ? setsSelectChain : insertChain))
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    const groups = detectSharedWeekdayWorkouts(schedule)
+
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, groups)
+
+    // Two separate v2_program_sets inserts: heads first (awaited), then
+    // stages — never one combined call, and never an update/delete against
+    // the source rows (this function only ever inserts new ones; the
+    // original 3 rows are untouched).
+    const insertCalls = (setsSelectChain.insert as ReturnType<typeof vi.fn>).mock.calls
+    const headCall = insertCalls.find((c) => Array.isArray(c[0]) && c[0][0]?.stage_kind === 'rest_pause')
+    const stageCall = insertCalls.find((c) => Array.isArray(c[0]) && c[0][0]?.parent_program_set_id)
+    expect(headCall).toBeTruthy()
+    expect(stageCall).toBeTruthy()
+    expect(setsSelectChain.update).not.toHaveBeenCalled()
+    expect(setsSelectChain.delete).not.toHaveBeenCalled()
+
+    const headRows = headCall![0] as Record<string, unknown>[]
+    expect(headRows).toHaveLength(1)
+    const newHeadId = headRows[0].id as string
+    expect(typeof newHeadId).toBe('string')
+    expect(newHeadId).not.toBe('ps-head') // a fresh id, not the source's own
+    expect(headRows[0]).toMatchObject({ position: 1, stage_kind: 'rest_pause', stage_rest_seconds: null })
+
+    const stageRows = (stageCall![0] as Record<string, unknown>[]).sort(
+      (a, b) => (a.stage_index as number) - (b.stage_index as number),
+    )
+    expect(stageRows).toHaveLength(2)
+    expect(stageRows[0]).toMatchObject({
+      position: 1, is_warmup: false, stage_kind: null, stage_rest_seconds: null,
+      parent_program_set_id: newHeadId, stage_index: 1,
+    })
+    expect(stageRows[1]).toMatchObject({
+      position: 1, is_warmup: false, stage_kind: null, stage_rest_seconds: null,
+      parent_program_set_id: newHeadId, stage_index: 2,
+    })
+    // Neither stage reused the source's own id, and both point at the same
+    // new head (not at each other, not at the source head).
+    expect(stageRows[0].id).not.toBe('ps-stage-1')
+    expect(stageRows[1].id).not.toBe('ps-stage-2')
   })
 
   it('an unlisted group (no matching workoutDays entry) is skipped, not thrown', async () => {

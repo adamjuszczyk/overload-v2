@@ -86,6 +86,66 @@ export function hasNoSets(sets: ProgramSet[]): boolean {
   return headSets(sets).length === 0
 }
 
+// ─── Stages (chunk 14 — SPEC.md "Staged sets") ─────────────────────────────
+// Program-level staging: a head's own stage_kind (one of the four — null
+// reads as a dropset, resolveStageKind, plannerVocabulary.ts) plus its
+// stage rows (parent_program_set_id + stage_index), same relational shape
+// 027 gives v2_week_plan_sets/v2_set_logs. Program sets carry no weight/RIR
+// at all (SPEC "Targets": week-plan-only), so authoring here is only ever
+// the kind and each stage's own rep target — never a weight carry-over
+// concern (that is wholly a workout-screen/runtime rule, stageCarryLogic.ts).
+
+// Head-only (the DB's own check, v2_program_sets_stage_row_check, refuses
+// this on a stage row); null reverts to "no kind chosen" (resolveStageKind
+// then reads it as a dropset, same as a legacy/never-set row).
+export async function updateProgramSetStageKind(
+  id: string,
+  stageKind: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null,
+): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ stage_kind: stageKind }).eq('id', id)
+  if (error) throw error
+}
+
+// Mirrors weekPlanService.ts's addStage: the parent id is given directly
+// by the caller (StepVolume.tsx already has the head in hand), never
+// inferred. A stage shares its head's position (027's own invariant,
+// enforced by the caller passing it through, not re-derived here) and
+// carries no kind/rest/warmup of its own (the DB's own check) — this
+// function simply never sets those columns, so they take the table's
+// default/null, satisfying the check by construction.
+export async function addProgramSetStage(
+  userId: string,
+  programExerciseId: string,
+  parentId: string,
+  position: number,
+  stageIndex: number,
+): Promise<ProgramSet> {
+  const { data, error } = await supabase
+    .from('v2_program_sets')
+    .insert({
+      user_id: userId,
+      program_exercise_id: programExerciseId,
+      position,
+      is_warmup: false,
+      parent_program_set_id: parentId,
+      stage_index: stageIndex,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return toProgramSet(data as DbProgramSet)
+}
+
+// A single row, head or stage — the SETS stepper's own shrink path
+// (setExerciseSetCount below) bulk-deletes heads directly; this is the
+// one-at-a-time delete STAGE's own remove button uses. Deleting a head
+// this way cascades its stages too (027: parent_program_set_id ... on
+// delete cascade), same as the week-plan/log-side stage cascade.
+export async function removeProgramSet(id: string): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ─── Set count — step 3's one required value ───────────────────────────────
 // Reconciles an exercise's own head rows to exactly `count`, in one of two
 // directions, never both: short of `count` -> appends new rows; over
@@ -268,11 +328,27 @@ async function cloneProgramExerciseRow(
 
 // One workout's full deep copy: a fresh v2_workout_days row (same name,
 // same position), then every current (week_only=false, removed_at=null —
-// fetchRunProgramExercises' own filter) exercise and its own head sets,
-// copied verbatim. No program this prompt ever runs against (kind='saved')
-// can have week_only/removed_at rows in the first place (027: "run copies
+// fetchRunProgramExercises' own filter) exercise and its own sets, copied
+// verbatim. No program this prompt ever runs against (kind='saved') can
+// have week_only/removed_at rows in the first place (027: "run copies
 // only"), so that filter is a no-op here, same as everywhere else
 // runProgramExercises.ts documents it to be for a saved program.
+//
+// Review fix (chunk 14): this used to copy heads only (headSets), dropping
+// every column that matters for a staged set — the whole row (stage rows
+// entirely) plus stage_kind/stage_rest_seconds on the head, which it never
+// even selected. Harmless before chunk 14 (nothing could create a program-
+// set stage yet), but chunk 14 is exactly what makes that reachable — a
+// chunk that makes a gap reachable owns closing it, same reasoning as the
+// chunk 3/9 precedents this repo's own history already has. Client-chosen
+// ids (crypto.randomUUID(), same precedent as cloneProgramExerciseRow just
+// above — a direct read-after-insert outside runProgramExercises.ts/this
+// file's own fetchProgramSets would be the alternative, and still needs
+// the same id map) let every stage's parent_program_set_id be remapped to
+// its new head's id without reading anything back; heads are inserted and
+// committed (awaited) before stages so the FK is always satisfied, the
+// same two-phase order copySetsWithGrouping (weekPlanService.ts) and
+// 028's v2_copy_program use for the identical self-referencing shape.
 async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<string> {
   const copy = await createWorkoutDay(userId, source.programId, source.name, source.position)
   const exercises = await fetchRunProgramExercises(source.id)
@@ -283,19 +359,58 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       position: ex.position,
       weightUnit: ex.weightUnit,
     })
-    const heads = headSets(await fetchProgramSets([ex.id])).sort((a, b) => a.position - b.position)
+
+    const sets = await fetchProgramSets([ex.id])
+    const heads = headSets(sets).sort((a, b) => a.position - b.position)
+    const stages = sets.filter((s) => s.parentProgramSetId !== null).sort((a, b) => a.stageIndex - b.stageIndex)
+
+    // A stage row's own stage_kind/stage_rest_seconds/is_warmup are already
+    // null/null/false by 027's own check (v2_program_sets_stage_row_check)
+    // — carried through verbatim below the same way 028's v2_copy_program
+    // does, never forced or special-cased per row.
+    const headIdMap = new Map<string, string>()
     if (heads.length > 0) {
-      const rows = heads.map((h) => ({
+      const headRows = heads.map((h) => {
+        const newId = crypto.randomUUID()
+        headIdMap.set(h.id, newId)
+        return {
+          id: newId,
+          user_id: userId,
+          program_exercise_id: newExerciseId,
+          position: h.position,
+          is_warmup: h.isWarmup,
+          stage_kind: h.stageKind,
+          stage_rest_seconds: h.stageRestSeconds,
+          rep_min: h.repMin,
+          rep_max: h.repMax,
+          is_amrap: h.isAmrap,
+          rest_seconds: h.restSeconds,
+        }
+      })
+      const { error } = await supabase.from('v2_program_sets').insert(headRows)
+      if (error) throw error
+    }
+
+    if (stages.length > 0) {
+      const stageRows = stages.map((s) => ({
+        id: crypto.randomUUID(),
         user_id: userId,
         program_exercise_id: newExerciseId,
-        position: h.position,
-        is_warmup: h.isWarmup,
-        rep_min: h.repMin,
-        rep_max: h.repMax,
-        is_amrap: h.isAmrap,
-        rest_seconds: h.restSeconds,
+        position: s.position,
+        is_warmup: s.isWarmup,
+        stage_kind: s.stageKind,
+        stage_rest_seconds: s.stageRestSeconds,
+        // s.parentProgramSetId is non-null for every row in `stages` (the
+        // filter above) and, for a well-formed exercise, always one of
+        // THIS exercise's own heads — already inserted and awaited above.
+        parent_program_set_id: headIdMap.get(s.parentProgramSetId!) ?? null,
+        stage_index: s.stageIndex,
+        rep_min: s.repMin,
+        rep_max: s.repMax,
+        is_amrap: s.isAmrap,
+        rest_seconds: s.restSeconds,
       }))
-      const { error } = await supabase.from('v2_program_sets').insert(rows)
+      const { error } = await supabase.from('v2_program_sets').insert(stageRows)
       if (error) throw error
     }
   }

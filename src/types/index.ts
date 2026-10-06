@@ -307,6 +307,17 @@ export interface WeekPlanSet {
   repMin?: number | null
   repMax?: number | null
   isAmrap?: boolean
+  // v2_week_plan_sets.stage_kind (migration 027; read/written starting
+  // chunk 14 — SPEC.md "Staged sets": "The dropset machinery generalised.
+  // Stage kinds: dropset, rest-pause, myo-reps, cluster"). Heads only — a
+  // stage row's own value is always null by the DB's own check
+  // (v2_week_plan_sets_stage_row_check). Optional for the same reason as
+  // repMin/repMax/isAmrap above: every hand-built WeekPlanSet literal
+  // across the existing gym/plan test suite predates this column.
+  // Absent/undefined reads as null wherever this is used — a null (or
+  // legacy-absent) stage_kind on a head that has stages reads as a dropset
+  // (plannerVocabulary.ts's resolveStageKind).
+  stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────
@@ -374,6 +385,17 @@ export interface SetLog {
   // too"). Forces every SetLog mapper to say what it produces (v3
   // Personalization TASKS §4.1) rather than silently defaulting to null.
   formRating: FormRating | null
+
+  // v2_set_logs.stage_kind (migration 027; read/written starting chunk 14
+  // — TASKS.md "Logging": "the head's v2_set_logs.stage_kind records the
+  // planned kind (as planned)"). Heads only — a stage row's own value is
+  // always null by the DB's own check (v2_set_logs_stage_row_check).
+  // Optional, same "may not exist yet" precedent as WeekPlanSet.stageKind
+  // above: every hand-built SetLog literal across the existing gym/coach/
+  // history test suite predates this column and must keep compiling
+  // unchanged. Absent/undefined reads as null (a legacy or unplanned head
+  // — reads as a dropset once it has stages, same resolveStageKind rule).
+  stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
 }
 
 // ─── Coach Personalization ratings (v3, phase 1) ───────────────────────────

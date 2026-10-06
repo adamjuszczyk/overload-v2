@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
+import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
 import {
   useActiveSession,
@@ -96,6 +97,7 @@ function ExerciseSection({
     parentSetId: string | null
     stageIndex: number
     formRating: FormRating | null
+    stageKind: StageKind | null
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>

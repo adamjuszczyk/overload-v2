@@ -6,7 +6,7 @@ import { useSettingsStore } from '../settings/settingsStore'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { formatRestTime } from '../../lib/formatRestTime'
-import { columnsToRepTarget, formatRepTarget } from '../../lib/plannerVocabulary.js'
+import { columnsToRepTarget, formatRepTarget, STAGE_KIND_LABELS, type StageKind } from '../../lib/plannerVocabulary.js'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { FORM_SCALE } from './ratingScales'
@@ -34,6 +34,19 @@ interface SetRowProps {
   // stage is next and simply stops passing this once it is — the row
   // becomes interactive, no change of shape.
   isLocked?: boolean
+  // Chunk 14 — "Staged sets: all four stage kinds". This group's resolved
+  // kind (SetGroup.tsx's own resolveStageKind call), for a stage row only
+  // — undefined/null/'dropset' all render exactly as a dropset stage
+  // always has (D30's fixture never passes this at all). Display only:
+  // the actual *write* value ("as planned") is resolved below from
+  // plannedSet.stageKind directly, not from this prop — see handleLog's
+  // own comment.
+  stageKind?: StageKind | null
+  // Chunk 14 carry-over (SPEC "Staged sets"): the weight (kg) this stage's
+  // input should default to, already resolved by SetGroup.tsx
+  // (stageCarryLogic.ts) — null for a dropset stage (today's unchanged
+  // "starts blank" behaviour) or when there's nothing to carry from yet.
+  carryWeightKg?: number | null
   onLog: (params: {
     weekPlanSetId: string | null
     setNumber: number
@@ -46,6 +59,7 @@ interface SetRowProps {
     setSeconds: number | null
     enteredUnit: WeightUnit | null
     formRating: FormRating | null
+    stageKind: StageKind | null
   }) => void
   onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
   onDelete: () => void
@@ -61,6 +75,8 @@ export default function SetRow({
   currentLog,
   isStage = false,
   isLocked = false,
+  stageKind = null,
+  carryWeightKg = null,
   onLog,
   onUpdate,
   onDelete,
@@ -151,6 +167,22 @@ export default function SetRow({
     if (lastLog.weight != null) setWeight(String(toDisplayWeight(lastLog.weight, activeUnit)))
     if (lastLog.reps != null) setReps(String(lastLog.reps))
   }, [lastLogsLoading, lastLog, activeUnit])
+
+  // Chunk 14 carry-over (SPEC "Staged sets") — same guard shape as the
+  // lastLog prefill above (never clobber something the user already
+  // typed), reading stageCarryLogic.ts's already-resolved value instead of
+  // a previous session's log. null (dropset, or nothing to carry from yet)
+  // is a no-op, same as lastLog being absent above.
+  useEffect(() => {
+    if (carryWeightKg == null || userEditedRef.current) return
+    setWeight(String(toDisplayWeight(carryWeightKg, activeUnit)))
+  }, [carryWeightKg, activeUnit])
+
+  // Chunk 14 — "the workout screen labels stages by kind": null whenever
+  // there's nothing new to say (not a stage row, or a dropset — today's
+  // exact look, the D30 fixture's own case) so every existing render path
+  // is untouched; the label text itself for the three carrying kinds.
+  const stageLabel = isStage && stageKind && stageKind !== 'dropset' ? STAGE_KIND_LABELS[stageKind] : null
 
   // ── Already logged — read-only row ──────────────────────────────────────
   if (currentLog) {
@@ -381,7 +413,10 @@ export default function SetRow({
               className="ml-2 text-xs px-1 rounded"
               style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
             >
-              STAGE
+              {/* Chunk 14 — labelled by kind for rest-pause/myo-reps/
+                  cluster; a dropset (stageLabel null, same as before this
+                  chunk) keeps this exact "STAGE" text, unchanged. */}
+              {stageLabel ?? 'STAGE'}
             </span>
           )}
         </span>
@@ -530,6 +565,13 @@ export default function SetRow({
       setSeconds,
       enteredUnit: activeUnit === resolvedUnit ? null : activeUnit,
       formRating,
+      // Chunk 14 — "as planned" (TASKS.md "Logging"): this row's OWN
+      // planned slot, not the display-only `stageKind` prop above. For a
+      // head that's a stage row, `plannedSet` (if any) is that stage's own
+      // plan row, which by the DB's own check always carries a null
+      // stage_kind — so this is correctly null for every stage write with
+      // no special-casing, and correctly "as planned" for a head write.
+      stageKind: plannedSet?.stageKind ?? null,
     })
   }
 
@@ -548,6 +590,8 @@ export default function SetRow({
       setSeconds: null,
       enteredUnit: null,
       formRating: null,
+      // Same reasoning as handleLog's own stageKind above.
+      stageKind: plannedSet?.stageKind ?? null,
     })
   }
 
@@ -750,6 +794,22 @@ export default function SetRow({
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
             TARGET RIR {targetRir}
+          </span>
+        </div>
+      )}
+
+      {/* Stage-kind hint (chunk 14, "the workout screen labels stages by
+          kind") — same row shape as the two hints above, so a dropset stage
+          (stageLabel null) renders exactly as before this chunk: nothing
+          here, whether the row is locked (not its turn yet) or the one
+          actively loggable now. */}
+      {stageLabel && (
+        <div className="flex items-center gap-2 pl-7">
+          <span
+            className="text-xs"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {stageLabel}
           </span>
         </div>
       )}

@@ -2,13 +2,16 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import type { ProgramSet, WeeklySchedule, DayOfWeek, WorkoutDay } from '../../types'
-import type { RepTarget } from '../../lib/plannerVocabulary.js'
+import type { RepTarget, StageKind } from '../../lib/plannerVocabulary.js'
 import { updateSchedule } from '../programs/programService'
 import {
   fetchProgramSets,
   setExerciseSetCount,
   updateProgramSetRepTarget,
   setRepTargetForAllSets,
+  updateProgramSetStageKind,
+  addProgramSetStage,
+  removeProgramSet,
   assignWorkoutWeekday,
   splitSharedWeekdayWorkouts,
   type SharedWeekdayGroup,
@@ -71,6 +74,50 @@ export function useUpdateSetRepTarget() {
   return useMutation({
     networkMode: 'always',
     mutationFn: ({ id, target }: { id: string; target: RepTarget }) => updateProgramSetRepTarget(id, target),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// Chunk 14 — StepVolume.tsx's STAGE KIND chip row (same affordance
+// PlanPage.tsx's own week-plan chips use, one layer up — SPEC "Staged
+// sets").
+export function useUpdateProgramSetStageKind() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, stageKind }: { id: string; stageKind: StageKind | null }) =>
+      updateProgramSetStageKind(id, stageKind),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// StepVolume.tsx's own ADD STAGE — parentId given directly, same posture
+// as useAddStage (PlanPage.tsx's week-plan equivalent, useWeekPlan.ts).
+export function useAddProgramSetStage() {
+  const { user } = useAuth()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({
+      programExerciseId,
+      parentId,
+      position,
+      stageIndex,
+    }: {
+      programExerciseId: string
+      parentId: string
+      position: number
+      stageIndex: number
+    }) => addProgramSetStage(user!.id, programExerciseId, parentId, position, stageIndex),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// One row at a time — StepVolume.tsx's per-stage remove button. (The SETS
+// stepper's own bulk head-shrink path, useSetExerciseSetCount above, stays
+// its own thing — this is only ever a single stage id.)
+export function useRemoveProgramSetStage() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (id: string) => removeProgramSet(id),
     onSuccess: invalidateProgramSets,
   })
 }
