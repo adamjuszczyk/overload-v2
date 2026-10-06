@@ -221,11 +221,15 @@ export default function PlanPage() {
       {/* Header */}
       <div style={{ padding: '20px 20px 12px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
         {/* The meso-name line, made tappable (PRIORITY-CONTEXT-TASKS.md
-            §5.3) — the primary route to the active meso's priorities screen,
+            §5.3) — the primary route to the active run's priorities screen,
             since this is where Adam actually is while planning a block. A
-            real touch target rather than relying on the 9px text alone. */}
+            real touch target rather than relying on the 9px text alone.
+            Chunk 10: now opens PrioritiesEditor.tsx (v2_program_priorities,
+            focus/don't-care, on this run's own program copy), not the old
+            MesoPrioritiesPage — that stays for completed runs only, reached
+            from ProgramPage (TASKS.md "Priorities: focus / don't care"). */}
         <button
-          onClick={() => navigate(`/meso/${activeMeso.id}/priorities`)}
+          onClick={() => navigate('/plan/priorities')}
           style={{ width: '100%', minHeight: 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'transparent', border: 'none', padding: 0, marginBottom: 2, cursor: 'pointer' }}
         >
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

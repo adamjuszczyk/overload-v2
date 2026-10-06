@@ -17,6 +17,7 @@ import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import CoachPage from './features/coach/CoachPage'
 import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
+import PrioritiesEditor from './features/plan/PrioritiesEditor'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
@@ -95,6 +96,7 @@ function AppRoutes() {
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today"    element={<TodayPage />}    />
           <Route path="/plan"     element={<PlanPage />}     />
+          <Route path="/plan/priorities" element={<PrioritiesEditor />} />
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/history"  element={<HistoryPage />}  />
           <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
