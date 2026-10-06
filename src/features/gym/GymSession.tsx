@@ -21,6 +21,7 @@ import { db } from '../../lib/db'
 import { primeOfflineCache } from '../offline/offlineCache'
 import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
+import SupersetBlock from './SupersetBlock'
 import SwapExerciseSheet from './SwapExerciseSheet'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
@@ -244,6 +245,62 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     if (swap.programExerciseId) swapByProgramExerciseId.set(swap.programExerciseId, swap)
   }
 
+  // Chunk 13 (TASKS.md "Supersets" / SPEC.md "Supersets [P1]") — "the
+  // workout screen reads blocks from the run copy when the session loads":
+  // group CONSECUTIVE sortedExercises sharing one non-null supersetBlockId
+  // (2+ of them) into a SupersetBlock; render everything else exactly as
+  // before. D30: a session with no supersets has `pe.supersetBlockId` null
+  // on every exercise (the field doesn't exist on any fixture that predates
+  // this chunk, and nothing before it ever writes the column), so every
+  // unit below is a single-member one and the loop that renders it
+  // (unchanged body, see the 'single' branch) produces byte-identical
+  // output to the plain `sortedExercises.map(...)` this file always had.
+  //
+  // A member with an active SESSION-only swap (SwapExerciseSheet,
+  // v2_session_exercise_swaps — unrelated to the week-level superset_block_id
+  // chunk 9's resolveSwapSlot carries) is deliberately excluded from ever
+  // joining a block's round grid: once a swap is CONFIRMED (sessionSwaps
+  // carries a row for it), that slot renders as its own merged single card
+  // in the position/presentation style every swapped exercise already uses
+  // (below), never inside a block — "position/presentation" is about one
+  // exercise identity being replaced by another, which the round grid has
+  // no notion of. Starting (not yet confirming) a swap from within a block
+  // is unaffected by this: SupersetBlock.tsx's own members still each offer
+  // a working SWAP button (useExerciseCardState — same as a plain card);
+  // only the CONFIRMED swap's slot moves out, on the next render, exactly
+  // the same way any other mid-session swap already worked.
+  type RenderUnit =
+    | { kind: 'single'; pe: ProgramExercise }
+    | { kind: 'block'; blockId: string; members: ProgramExercise[] }
+
+  const renderUnits: RenderUnit[] = []
+  for (let i = 0; i < sortedExercises.length; ) {
+    const pe = sortedExercises[i]
+    const blockId = pe.supersetBlockId ?? null
+    if (blockId == null || swapByProgramExerciseId.has(pe.id)) {
+      renderUnits.push({ kind: 'single', pe })
+      i += 1
+      continue
+    }
+    const members = [pe]
+    let j = i + 1
+    while (
+      j < sortedExercises.length &&
+      sortedExercises[j].supersetBlockId === blockId &&
+      !swapByProgramExerciseId.has(sortedExercises[j].id)
+    ) {
+      members.push(sortedExercises[j])
+      j += 1
+    }
+    if (members.length < 2) {
+      renderUnits.push({ kind: 'single', pe })
+      i += 1
+      continue
+    }
+    renderUnits.push({ kind: 'block', blockId, members })
+    i = j
+  }
+
   // Extra, unplanned exercise cards — no plan slot, rendered with
   // plannedSets: []. Two sources feed this same list, deduped by exercise
   // id since both render identically:
@@ -432,7 +489,49 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
       {/* Exercise cards */}
       <div className="px-4 space-y-4" ref={exercisesContainerRef}>
-        {sortedExercises.map((pe) => {
+        {renderUnits.map((unit) => {
+          if (unit.kind === 'block') {
+            return (
+              <SupersetBlock
+                // Hardening (reviewer) — includes every member's OWN id, not
+                // just the block id and count: a same-count membership
+                // change (reordered, or one exercise replaced by another —
+                // e.g. a regroup from another device reaching this open
+                // session through a refetch) changes this string too, so it
+                // still remounts a fresh instance. A count-only key would
+                // have kept the OLD instance in that case, and
+                // SupersetBlock.tsx's one-hook-call-per-member pattern binds
+                // each hook's own state (deletingHeadIds, showSwapSheet,
+                // showSkipConfirm, extraSlotCount, …) to its POSITION in the
+                // member list, not to which exercise occupies it — so that
+                // state would have stayed on the old position and applied
+                // to whichever exercise now sits there instead, e.g. an open
+                // skip-confirm or swap sheet surfacing on the wrong card.
+                key={`block-${unit.blockId}-${unit.members.map((pe) => pe.id).join('.')}`}
+                members={unit.members.map((pe) => ({
+                  programExercise: pe,
+                  plannedSets: (weekPlan?.sets ?? [])
+                    .filter((s) => s.programExerciseId === pe.id)
+                    .sort((a, b) => a.setNumber - b.setNumber),
+                  currentLogs: allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId),
+                  referenceSessions: referenceSessionsByExercise.get(pe.exerciseId) ?? [],
+                }))}
+                sessionId={sessionId}
+                referenceLoading={referenceLoading}
+                referenceMesocycleId={session?.mesocycleId ?? null}
+                referenceIsError={referenceIsError}
+                referenceIsFromCache={referenceIsFromCache}
+                onRetryReference={retryReference}
+                today={today}
+                onLog={handleLog}
+                onUpdateSet={handleUpdateSet}
+                onDeleteSet={handleDeleteSet}
+                onSwap={handleSwap}
+              />
+            )
+          }
+
+          const pe = unit.pe
           const plannedSets = (weekPlan?.sets ?? [])
             .filter((s) => s.programExerciseId === pe.id)
             .sort((a, b) => a.setNumber - b.setNumber)

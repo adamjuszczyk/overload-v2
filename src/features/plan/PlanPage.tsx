@@ -23,6 +23,7 @@ import {
 } from './useWeekPlan'
 import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
+import { groupIntoUnits, moveUnit } from '../../lib/supersetGroups.js'
 import { columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
@@ -442,6 +443,16 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const { data: fallbackProgramExercises = [] } = useProgramExercises(workoutDay.id)
   const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
 
+  // Chunk 13 — contiguous same-block runs, in this week's own order. Move
+  // controls render only on a unit's first member (see the render below);
+  // a plain, ungrouped week (every unit size 1 — every week before this
+  // chunk) shows one pair per row, unchanged.
+  const exerciseUnits = groupIntoUnits(programExercises)
+  const unitIndexByProgramExerciseId = new Map<string, number>()
+  exerciseUnits.forEach((unit, unitIndex) =>
+    unit.forEach((pe) => unitIndexByProgramExerciseId.set(pe.id, unitIndex)),
+  )
+
   const addSet = useAddSet(mesoId, weekNumber)
   const addStage = useAddStage(mesoId, weekNumber)
   const removeSet = useRemoveSet(mesoId, weekNumber)
@@ -536,25 +547,26 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
     setConfirmRemoveExercise(null)
   }
 
-  // Adjacent-swap reorder (same interaction as the planner's own
-  // WorkoutDayEditorPage.tsx moveExercise) — the two affected rows' OWN
-  // pre-move positions feed weekEdits.ts's resolveReorderCarry (inside
-  // reorderWeekExercises), one per row.
+  // Block-aware reorder (chunk 13 — SPEC.md "Supersets": "Every reorder
+  // (program, week plan, session) moves a superset as one block"). With no
+  // grouping at all (every unit size 1 — every week before this chunk),
+  // moveUnit degrades to exactly the old adjacent-swap behaviour, so this
+  // still sends exactly the two affected rows' own pre-move positions (in
+  // their ORIGINAL order) to weekEdits.ts's resolveReorderCarry (inside
+  // reorderWeekExercises), byte-identical to before for that case. A
+  // block's every member gets its own move in the same call, each carrying
+  // its own true oldPosition.
   function handleMoveExercise(index: number, direction: 'up' | 'down') {
     if (!weekPlan) return
     const ordered = [...programExercises].sort((a, b) => a.position - b.position)
-    const swapIdx = direction === 'up' ? index - 1 : index + 1
-    if (swapIdx < 0 || swapIdx >= ordered.length) return
-    const a = ordered[index]
-    const b = ordered[swapIdx]
-    reorderExercises.mutate({
-      weekPlanId: weekPlan.id,
-      moves: [
-        { programExerciseId: a.id, oldPosition: a.position, newPosition: b.position },
-        { programExerciseId: b.id, oldPosition: b.position, newPosition: a.position },
-      ],
-      onlyThisWeek,
-    })
+    const reordered = moveUnit(ordered, index, direction)
+    if (reordered === ordered) return
+    const newPositionById = new Map(reordered.map((pe, i) => [pe.id, i]))
+    const moves = ordered
+      .map((pe) => ({ programExerciseId: pe.id, oldPosition: pe.position, newPosition: newPositionById.get(pe.id)! }))
+      .filter((m) => m.oldPosition !== m.newPosition)
+    if (moves.length === 0) return
+    reorderExercises.mutate({ weekPlanId: weekPlan.id, moves, onlyThisWeek })
   }
 
   return (
@@ -610,6 +622,9 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
             const groups = groupWeekPlanSets(exerciseSets).sort(
               (a, b) => a.head.setNumber - b.head.setNumber,
             )
+            const unitIndex = unitIndexByProgramExerciseId.get(pe.id) ?? idx
+            const unit = exerciseUnits[unitIndex]
+            const isFirstInUnit = unit?.[0]?.id === pe.id
 
             return (
               <ExerciseSection
@@ -618,6 +633,10 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 groups={groups}
                 isPast={isPast}
                 isLast={idx === programExercises.length - 1}
+                // Read-only indicator only — grouping itself is edited in
+                // the program tab, never here (SPEC "Supersets").
+                inSuperset={(unit?.length ?? 0) > 1}
+                showMoveControls={isFirstInUnit}
                 compact={compact}
                 // Disables ADD SET/minus while either mutation is in flight
                 // for this workout day (found by adversarial review):
@@ -641,8 +660,8 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 onUpdateSet={(id, changes) => updateSet.mutate({ id, changes })}
                 onSwap={() => setSwapTarget(pe)}
                 onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
-                canMoveUp={idx > 0}
-                canMoveDown={idx < programExercises.length - 1}
+                canMoveUp={unitIndex > 0}
+                canMoveDown={unitIndex < exerciseUnits.length - 1}
                 onMoveUp={() => handleMoveExercise(idx, 'up')}
                 onMoveDown={() => handleMoveExercise(idx, 'down')}
               />
@@ -745,6 +764,13 @@ interface ExerciseSectionProps {
   canMoveDown: boolean
   onMoveUp: () => void
   onMoveDown: () => void
+  // Chunk 13 — read-only here: grouping itself is only ever edited in the
+  // program tab (SPEC "Supersets"). inSuperset marks every member of a 2+
+  // block (a plain week shows it on nobody, unchanged); showMoveControls
+  // hides Move up/down on every member but the block's first, since a
+  // reorder here moves the whole unit (PlanPage's own handleMoveExercise).
+  inSuperset: boolean
+  showMoveControls: boolean
 }
 
 function ExerciseSection({
@@ -765,6 +791,8 @@ function ExerciseSection({
   canMoveDown,
   onMoveUp,
   onMoveDown,
+  inSuperset,
+  showMoveControls,
 }: ExerciseSectionProps) {
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
@@ -776,6 +804,9 @@ function ExerciseSection({
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
             {pe.exercise?.muscleGroup?.toUpperCase()}
+            {inSuperset && (
+              <span style={{ marginLeft: 8, color: 'var(--accent)' }}>· SUPERSET</span>
+            )}
           </div>
         </div>
         {!isPast && (
@@ -821,8 +852,12 @@ function ExerciseSection({
             <ArrowLeftRight size={11} />
             SWAP
           </button>
-          <IconBtn onClick={onMoveUp} disabled={!canMoveUp} ariaLabel="Move up"><ChevronUp size={13} /></IconBtn>
-          <IconBtn onClick={onMoveDown} disabled={!canMoveDown} ariaLabel="Move down"><ChevronDown size={13} /></IconBtn>
+          {showMoveControls && (
+            <>
+              <IconBtn onClick={onMoveUp} disabled={!canMoveUp} ariaLabel="Move up"><ChevronUp size={13} /></IconBtn>
+              <IconBtn onClick={onMoveDown} disabled={!canMoveDown} ariaLabel="Move down"><ChevronDown size={13} /></IconBtn>
+            </>
+          )}
           <IconBtn onClick={onRemoveExercise} ariaLabel={`Remove ${pe.exercise?.name ?? 'this exercise'} from this week`}><Trash2 size={12} /></IconBtn>
         </div>
       )}

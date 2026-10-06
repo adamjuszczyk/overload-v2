@@ -61,6 +61,7 @@ type DbProgramExercise = {
   exercise_id: string
   position: number
   weight_unit?: string | null  // absent until migration 006 has been applied
+  superset_block_id?: string | null  // absent until migration 027 has been applied
   exercises: DbExerciseJoin | null
 }
 
@@ -109,6 +110,8 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
     // key is absent from the row entirely rather than null, since the column
     // doesn't exist yet (same pattern as autoFinishMinutes in settingsService).
     weightUnit: (row.weight_unit ?? null) as ProgramExercise['weightUnit'],
+    // Chunk 13 — same "column may not exist yet" fallback as weightUnit above.
+    supersetBlockId: row.superset_block_id ?? null,
     exercise: ex
       ? {
           id: ex.id,
@@ -327,4 +330,37 @@ export async function reorderProgramExercises(updates: { id: string; position: n
       .eq('id', id)
     if (error) throw error
   }
+}
+
+// ─── Superset grouping (chunk 13) ──────────────────────────────────────────
+// SPEC "Supersets" / "Programs and runs": grouping is a design field,
+// editable in the program tab (and the planner's step 2 — the same
+// StepExercises.tsx component) for both planning types, never gated by
+// volumeReadOnly the way add/reorder/delete-exercise are (same posture this
+// file's own weekday assignment already takes — "schedule is not volume").
+// supersetGroups.ts's planLinkToggle decides WHAT to write (pure, unit
+// tested there); these two functions are the writes themselves. Both are
+// plain updates with no `.select()` chained, so
+// check-program-exercise-reads.mjs (which flags READS of
+// v2_program_exercises) has nothing to say about either — same shape as
+// updateProgramExerciseWeightUnit/reorderProgramExercises above.
+// v2_program_superset_blocks' first use — joins verify-rls.mjs's TABLES in
+// this chunk's own change.
+export async function createSupersetBlock(userId: string, workoutDayId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('v2_program_superset_blocks')
+    .insert({ user_id: userId, workout_day_id: workoutDayId })
+    .select('id')
+    .single()
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+export async function setSupersetBlockForExercises(ids: string[], blockId: string | null): Promise<void> {
+  if (ids.length === 0) return
+  const { error } = await supabase
+    .from('v2_program_exercises')
+    .update({ superset_block_id: blockId })
+    .in('id', ids)
+  if (error) throw error
 }

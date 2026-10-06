@@ -17,6 +17,7 @@ const reorderMutateMock = vi.fn()
 const deleteExerciseMutateMock = vi.fn()
 const updateWeightUnitMutateMock = vi.fn()
 const assignWeekdayMutateMock = vi.fn()
+const toggleLinkMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -27,6 +28,7 @@ vi.mock('../programs/usePrograms', () => ({
   useReorderProgramExercises: () => ({ mutate: reorderMutateMock, isPending: false }),
   useDeleteProgramExercise: () => ({ mutate: deleteExerciseMutateMock, isPending: false }),
   useUpdateProgramExerciseWeightUnit: () => ({ mutate: updateWeightUnitMutateMock, isPending: false }),
+  useToggleSupersetLink: () => ({ mutate: toggleLinkMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', () => ({
@@ -57,6 +59,7 @@ afterEach(() => {
   deleteExerciseMutateMock.mockReset()
   updateWeightUnitMutateMock.mockReset()
   assignWeekdayMutateMock.mockReset()
+  toggleLinkMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -198,5 +201,76 @@ describe('StepExercises — reorder, 375px', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe('StepExercises — superset grouping (chunk 13, never gated by volumeReadOnly)', () => {
+  it('two ungrouped exercises show LINK AS SUPERSET; tapping it plans a new shared block', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0 }),
+      exercise({ id: 'pe-2', position: 1 }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    expect(screen.getByText('LINK AS SUPERSET')).toBeTruthy()
+    fireEvent.click(screen.getByText('LINK AS SUPERSET'))
+
+    expect(toggleLinkMutateMock).toHaveBeenCalledWith([
+      { ids: ['pe-1', 'pe-2'], blockId: null, needsNewBlock: true },
+    ])
+  })
+
+  it('already-linked exercises show SUPERSET — TAP TO UNLINK; tapping it plans clearing both', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, supersetBlockId: 'blk-1' }),
+      exercise({ id: 'pe-2', position: 1, supersetBlockId: 'blk-1' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByText('SUPERSET — TAP TO UNLINK'))
+
+    expect(toggleLinkMutateMock).toHaveBeenCalledWith([
+      { ids: ['pe-1'], blockId: null, needsNewBlock: false },
+      { ids: ['pe-2'], blockId: null, needsNewBlock: false },
+    ])
+  })
+
+  it('stays interactive and visible even when volumeReadOnly (grouping is a design field, not volume)', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0 }),
+      exercise({ id: 'pe-2', position: 1 }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    const toggle = screen.getByText('LINK AS SUPERSET')
+    expect(toggle).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(toggleLinkMutateMock).toHaveBeenCalled()
+  })
+
+  it('reorder moves a 2-member block as one unit past a neighbouring single exercise', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, supersetBlockId: 'blk-1', exercise: { ...exercise().exercise!, name: 'Bench Press' } }),
+      exercise({ id: 'pe-2', position: 1, supersetBlockId: 'blk-1', exercise: { ...exercise().exercise!, name: 'Incline Press' } }),
+      exercise({ id: 'pe-3', position: 2, exercise: { ...exercise().exercise!, name: 'Dips' } }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    // Exactly one up/down pair for the whole 2-member block (shown on its
+    // first member only), plus one more pair for the trailing single — not
+    // one pair per row.
+    const downButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-down'))
+    expect(downButtons).toHaveLength(2)
+    fireEvent.click(downButtons[0]) // moves [pe-1, pe-2] down past pe-3
+
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-3', position: 0 },
+      { id: 'pe-1', position: 1 },
+      { id: 'pe-2', position: 2 },
+    ])
   })
 })
