@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-06 18:00 UTC, chunk 13 boundary — chunks 1–11 and 13 live, plus chunk 12's code; 034 (#35) waits for Adam; chunk 14 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-06 22:38 UTC, chunk 14 boundary — chunks 1–14 merged and live (034 too); chunk 15 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -9,6 +9,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 57 — Chunk 14 app steps: plan a rest-pause with 2 stages; all rows visible and locked in turn; carried weight; counts as 1 set; dropsets unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 56 — Chunk 13 app steps: link two exercises; rounds A1, B1, A2…; per-member prefill, swap, skip, ADD SET; block moves as one. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 55 — Chunk 11 app steps: the planner opens and saves unchanged; a test program with 8–12 entered once per exercise; NO SETS YET on existing programs; G14 prompt; program tab read-only volume. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 53 — Chunk 10 app steps: Plan → PRIORITIES shows your mapped marks (1+2 focus, 4+5 don't care); summary wording; set/clear persists; completed runs keep the old page. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -45,6 +46,27 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 57 Chunk 14 live check: staged sets in all four kinds (Adam's steps)
+Severity: deferred
+Chunk: 14
+**Ask:** Chunk 14 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 14 is `a66e803`)
+1. In Plan, on a coming week, give one set two stages and set STAGE KIND = REST-PAUSE.
+2. In that session all three rows show from the start: the stages are labelled rest-pause and locked in turn. After you log the head, the first stage's weight is pre-filled with the head's.
+3. Log all three. History shows it as **1 set**, and the volume includes every stage.
+4. An existing dropset looks and works exactly as before, and in-session ADD STAGE still makes a dropset.
+**Answer:**
+**Evidence:**
+What happened: chunk 14 (#37 `a66e803`, Vercel success 22:37 UTC) is live.
+- Reviewer's checks: 1028 tests; D30 fixture byte-identical; frozen exports unchanged; replay 35/35; embeds 27/27 local and live.
+- Scratch: a planned rest-pause lands in week 1 intact; logged it counts 1 set, and volume = all stages.
+- Failed review once (the G14 split dropped stages); passed on the retry.
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 14 is fixed before chunk 16 (stage rest) merges.
+Provisional path taken: merged; chunk 15 is being built.
 
 ### 56 Chunk 13 live check: supersets (Adam's steps)
 Severity: deferred
