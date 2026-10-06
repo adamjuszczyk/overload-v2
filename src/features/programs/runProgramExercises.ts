@@ -93,6 +93,7 @@ type DbProgramExerciseJoin = {
   exercise_id: string
   position: number
   weight_unit?: string | null // absent until migration 006 has been applied
+  superset_block_id?: string | null // absent until migration 027 has been applied
   exercises: DbExerciseJoin | null
 }
 
@@ -105,6 +106,8 @@ function toProgramExercise(row: DbProgramExerciseJoin): ProgramExercise {
     exerciseId: row.exercise_id,
     position: row.position,
     weightUnit: (row.weight_unit ?? null) as ProgramExercise['weightUnit'],
+    // Chunk 13 — same "column may not exist yet" fallback as weightUnit above.
+    supersetBlockId: row.superset_block_id ?? null,
     exercise: ex
       ? {
           id: ex.id,

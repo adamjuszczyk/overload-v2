@@ -2,6 +2,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType } from '../../types'
+import type { LinkPlan } from '../../lib/supersetGroups'
 import {
   fetchPrograms,
   fetchSavedPrograms,
@@ -18,6 +19,8 @@ import {
   updateProgramExerciseWeightUnit,
   deleteProgramExercise,
   reorderProgramExercises,
+  createSupersetBlock,
+  setSupersetBlockForExercises,
 } from './programService'
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
@@ -194,6 +197,25 @@ export function useDeleteProgramExercise(workoutDayId: string) {
 export function useReorderProgramExercises(workoutDayId: string) {
   return useMutation({
     mutationFn: (updates: { id: string; position: number }[]) => reorderProgramExercises(updates),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
+  })
+}
+
+// Chunk 13 — applies one or two supersetGroups.ts LinkPlans in sequence
+// (an unlink produces two independent sides; a link produces one). A plan
+// with needsNewBlock mints a fresh v2_program_superset_blocks row first and
+// writes ITS id instead of the plan's own (null) blockId.
+export function useToggleSupersetLink(workoutDayId: string) {
+  const { user } = useAuth()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async (plans: LinkPlan[]) => {
+      for (const plan of plans) {
+        const blockId = plan.needsNewBlock ? await createSupersetBlock(user!.id, workoutDayId) : plan.blockId
+        await setSupersetBlockForExercises(plan.ids, blockId)
+      }
+    },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
   })

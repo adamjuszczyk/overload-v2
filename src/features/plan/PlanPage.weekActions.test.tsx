@@ -214,6 +214,50 @@ describe('PlanPage — reorder', () => {
   })
 })
 
+describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPEC "Supersets")', () => {
+  const pe1Blocked: ProgramExercise = { ...pe1, supersetBlockId: 'blk-1' }
+  const pe2Blocked: ProgramExercise = { ...pe2, supersetBlockId: 'blk-1' }
+  const pe3: ProgramExercise = {
+    id: 'pe-3', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-c', position: 2,
+    weightUnit: null, exercise: { ...EX_REPLACEMENT, id: 'ex-c', name: 'Dips' },
+  }
+
+  it('shows exactly one move-down pair for the whole 2-member block, not one per row', () => {
+    mockState.program = makeProgram('week_dependent')
+    mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
+    renderPlanPage()
+
+    // 2 units total (the block, and pe3) → 2 move-down buttons, not 3.
+    expect(screen.getAllByLabelText('Move down')).toHaveLength(2)
+  })
+
+  it('reads SUPERSET on both members of the block, not on the plain exercise', () => {
+    mockState.program = makeProgram('week_dependent')
+    mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
+    const { container } = renderPlanPage()
+    const text = container.textContent ?? ''
+    expect(text).toContain('SUPERSET')
+  })
+
+  it('moving the block down carries BOTH its members\' own positions in one call, past the single exercise', () => {
+    mockState.program = makeProgram('week_dependent')
+    mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getAllByLabelText('Move down')[0]) // the block's own (only) down button
+
+    expect(reorderMutate).toHaveBeenCalledWith({
+      weekPlanId: 'wp-1',
+      moves: [
+        { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
+        { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 2 },
+        { programExerciseId: 'pe-3', oldPosition: 2, newPosition: 0 },
+      ],
+      onlyThisWeek: false,
+    })
+  })
+})
+
 describe('PlanPage — add', () => {
   it('ADD EXERCISE opens the picker and confirms with the next position', () => {
     mockState.program = makeProgram('week_dependent')

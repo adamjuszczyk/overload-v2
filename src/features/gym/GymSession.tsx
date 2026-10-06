@@ -21,6 +21,7 @@ import { db } from '../../lib/db'
 import { primeOfflineCache } from '../offline/offlineCache'
 import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
+import SupersetBlock from './SupersetBlock'
 import SwapExerciseSheet from './SwapExerciseSheet'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
@@ -244,6 +245,56 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     if (swap.programExerciseId) swapByProgramExerciseId.set(swap.programExerciseId, swap)
   }
 
+  // Chunk 13 (TASKS.md "Supersets" / SPEC.md "Supersets [P1]") — "the
+  // workout screen reads blocks from the run copy when the session loads":
+  // group CONSECUTIVE sortedExercises sharing one non-null supersetBlockId
+  // (2+ of them) into a SupersetBlock; render everything else exactly as
+  // before. D30: a session with no supersets has `pe.supersetBlockId` null
+  // on every exercise (the field doesn't exist on any fixture that predates
+  // this chunk, and nothing before it ever writes the column), so every
+  // unit below is a single-member one and the loop that renders it
+  // (unchanged body, see the 'single' branch) produces byte-identical
+  // output to the plain `sortedExercises.map(...)` this file always had.
+  //
+  // A member with an active SESSION-only swap (SwapExerciseSheet,
+  // v2_session_exercise_swaps — unrelated to the week-level superset_block_id
+  // chunk 9's resolveSwapSlot carries) is deliberately excluded from ever
+  // joining a block's round grid: SupersetBlock.tsx offers no swap/skip
+  // affordance (this chunk's own scope decision, see that file's header),
+  // so a slot mid-swap always falls back to its normal single merged-card
+  // render instead, same as it always has.
+  type RenderUnit =
+    | { kind: 'single'; pe: ProgramExercise }
+    | { kind: 'block'; blockId: string; members: ProgramExercise[] }
+
+  const renderUnits: RenderUnit[] = []
+  for (let i = 0; i < sortedExercises.length; ) {
+    const pe = sortedExercises[i]
+    const blockId = pe.supersetBlockId ?? null
+    if (blockId == null || swapByProgramExerciseId.has(pe.id)) {
+      renderUnits.push({ kind: 'single', pe })
+      i += 1
+      continue
+    }
+    const members = [pe]
+    let j = i + 1
+    while (
+      j < sortedExercises.length &&
+      sortedExercises[j].supersetBlockId === blockId &&
+      !swapByProgramExerciseId.has(sortedExercises[j].id)
+    ) {
+      members.push(sortedExercises[j])
+      j += 1
+    }
+    if (members.length < 2) {
+      renderUnits.push({ kind: 'single', pe })
+      i += 1
+      continue
+    }
+    renderUnits.push({ kind: 'block', blockId, members })
+    i = j
+  }
+
   // Extra, unplanned exercise cards — no plan slot, rendered with
   // plannedSets: []. Two sources feed this same list, deduped by exercise
   // id since both render identically:
@@ -432,7 +483,33 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
       {/* Exercise cards */}
       <div className="px-4 space-y-4" ref={exercisesContainerRef}>
-        {sortedExercises.map((pe) => {
+        {renderUnits.map((unit) => {
+          if (unit.kind === 'block') {
+            return (
+              <SupersetBlock
+                key={`block-${unit.blockId}`}
+                members={unit.members.map((pe) => ({
+                  programExercise: pe,
+                  plannedSets: (weekPlan?.sets ?? [])
+                    .filter((s) => s.programExerciseId === pe.id)
+                    .sort((a, b) => a.setNumber - b.setNumber),
+                  currentLogs: allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId),
+                  referenceSessions: referenceSessionsByExercise.get(pe.exerciseId) ?? [],
+                }))}
+                referenceLoading={referenceLoading}
+                referenceMesocycleId={session?.mesocycleId ?? null}
+                referenceIsError={referenceIsError}
+                referenceIsFromCache={referenceIsFromCache}
+                onRetryReference={retryReference}
+                today={today}
+                onLog={handleLog}
+                onUpdateSet={handleUpdateSet}
+                onDeleteSet={handleDeleteSet}
+              />
+            )
+          }
+
+          const pe = unit.pe
           const plannedSets = (weekPlan?.sets ?? [])
             .filter((s) => s.programExerciseId === pe.id)
             .sort((a, b) => a.setNumber - b.setNumber)

@@ -67,6 +67,7 @@ type DbProgramExerciseJoin = {
   exercise_id: string
   position: number
   weight_unit?: string | null // absent until migration 006 has been applied
+  superset_block_id?: string | null // absent until migration 027 has been applied
   exercises: DbExerciseJoin | null
 }
 
@@ -155,6 +156,13 @@ function toProgramExerciseFromWeekPlanExercise(row: DbWeekPlanExercise): Program
     exerciseId: pe.exercise_id,
     position: row.position,
     weightUnit: (pe.weight_unit ?? null) as ProgramExercise['weightUnit'],
+    // Chunk 13 — "the workout screen reads blocks from the run copy when
+    // the session loads" (SPEC "Supersets"): a week's own exercise list
+    // comes through THIS join (v2_week_plan_exercises -> v2_program_exercises),
+    // so the block id must be read from the joined row here, not from
+    // `row` (the week_plan_exercises row itself never carries one — the
+    // design field lives on the program exercise, always read live).
+    supersetBlockId: pe.superset_block_id ?? null,
     exercise: ex
       ? {
           id: ex.id,

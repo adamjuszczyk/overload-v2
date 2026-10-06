@@ -158,6 +158,17 @@ export interface ProgramExercise {
   exercise?: Exercise        // joined when loading the full day
   position: number           // 0-based
   weightUnit: WeightUnit | null  // null = inherit v2_user_settings.weightUnit (v3 §2.4)
+  // v2_program_exercises.superset_block_id (migration 027; read/written
+  // starting chunk 13 — SPEC.md "Supersets" / TASKS.md data model: "exercises
+  // pointing at the same block form one superset"). Design field: regrouped
+  // in the program tab for both planning types, from the next session on
+  // (SupersetBlock.tsx reads it on the run copy when a session loads). A
+  // week-only slot created by a swap keeps the replaced slot's block
+  // (weekEdits.ts's resolveSwapSlot); one created by an add never has one
+  // (resolveAddSlot). Optional, same "may not exist yet" convention as
+  // Program.kind?/WorkoutDay.sourceWorkoutDayId? above — absent/undefined
+  // reads exactly like null (not in a superset) everywhere this is read.
+  supersetBlockId?: string | null
 }
 
 // ─── Program Set (v2_program_sets, chunk 11 — SPEC.md "Objects stored:

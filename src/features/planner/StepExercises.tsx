@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { useState, useRef, useEffect, Fragment } from 'react'
+import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
 import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import {
@@ -11,10 +11,12 @@ import {
   useReorderProgramExercises,
   useDeleteProgramExercise,
   useUpdateProgramExerciseWeightUnit,
+  useToggleSupersetLink,
 } from '../programs/usePrograms'
 import { useAssignWorkoutWeekday } from './usePlanner'
 import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from '../programs/ExercisePicker'
+import { groupIntoUnits, moveUnit, isLinkedGap, planLinkToggle } from '../../lib/supersetGroups.js'
 
 // Step 2 — Exercises and order (SPEC.md "Stepped program planner" step 2;
 // TASKS.md "step 2 adds workouts, exercises (existing picker), order
@@ -23,8 +25,19 @@ import ExercisePicker from '../programs/ExercisePicker'
 // edits the run's copy... with the same step 2/step 3 components").
 //
 // Not in this step, on purpose (their own later chunks, TASKS.md): design
-// fields (rest/rest-after/tempo), superset grouping, the warmup routine
-// checklist. Schedule type stays weekday-only until chunk 25.
+// fields (rest/rest-after/tempo), the warmup routine checklist. Schedule
+// type stays weekday-only until chunk 25.
+//
+// Superset grouping (chunk 13 — SPEC.md "Supersets" / "Stepped program
+// planner" step 2: "exercises per workout, their order, superset grouping")
+// lives HERE too: a SupersetLinkToggle between every adjacent pair of rows
+// links/unlinks them (src/lib/supersetGroups.ts's planLinkToggle decides
+// the resulting block membership; useToggleSupersetLink, usePrograms.ts,
+// performs the writes), and a reorder moves a whole linked run as one unit
+// (moveUnit). Grouping is a design field (SPEC "Programs and runs"): never
+// gated by volumeReadOnly, same posture the weekday row below already
+// takes — "schedule is not volume", and neither is "which exercises share
+// a block".
 //
 // `volumeReadOnly` (chunk 9's own rule, SPEC.md "Programs and runs" —
 // "Volume — the exercise list and the sets... week-dependent: read-only")
@@ -160,7 +173,15 @@ function WorkoutEditor({
   const deleteExercise = useDeleteProgramExercise(workoutDay.id)
   const updateWeightUnit = useUpdateProgramExerciseWeightUnit(workoutDay.id)
   const assignWeekday = useAssignWorkoutWeekday(programId)
+  const toggleLink = useToggleSupersetLink(workoutDay.id)
   const globalWeightUnit = useSettingsStore((s) => s.weightUnit)
+
+  // Contiguous same-block runs, in this workout's own exercise order — one
+  // "unit" moves together on reorder (moveUnit), and is the thing a move
+  // button shown on only its first member controls (see the render below).
+  const units = groupIntoUnits(exercises)
+  const unitIndexByExerciseId = new Map<string, number>()
+  units.forEach((unit, unitIndex) => unit.forEach((pe) => unitIndexByExerciseId.set(pe.id, unitIndex)))
 
   useEffect(() => {
     if (editingName) nameRef.current?.focus()
@@ -174,16 +195,28 @@ function WorkoutEditor({
     setEditingName(false)
   }
 
+  // Moves the WHOLE unit containing exercises[index] — SPEC "Supersets":
+  // "Every reorder (program, week plan, session) moves a superset as one
+  // block." With no grouping at all (every unit size 1 — every workout
+  // before this chunk), moveUnit degrades to exactly the old adjacent-swap
+  // behaviour, so this still sends the full list in its new order, byte-
+  // identical to before for that case.
   function moveExercise(index: number, direction: 'up' | 'down') {
-    const swapIdx = direction === 'up' ? index - 1 : index + 1
-    if (swapIdx < 0 || swapIdx >= exercises.length) return
-    const next = [...exercises]
-    ;[next[index], next[swapIdx]] = [next[swapIdx], next[index]]
+    const next = moveUnit(exercises, index, direction)
+    if (next === exercises) return
     queryClient.setQueryData(
       ['v2_programExercises', workoutDay.id],
       next.map((ex, i) => ({ ...ex, position: i })),
     )
     reorder.mutate(next.map((ex, i) => ({ id: ex.id, position: i })))
+  }
+
+  // Toggles the gap after exercises[gapIndex] — link merges the two
+  // neighbouring runs into one block, unlink splits one run in two
+  // (supersetGroups.ts's planLinkToggle decides exactly which ids get which
+  // block id, including minting a fresh one when needed).
+  function handleToggleLink(gapIndex: number) {
+    toggleLink.mutate(planLinkToggle(exercises, gapIndex))
   }
 
   const currentDow = DAYS.find((d) => schedule[d.key] === workoutDay.id)?.key ?? null
@@ -283,20 +316,36 @@ function WorkoutEditor({
           )
         )}
 
-        {!isLoading && exercises.map((ex, index) => (
-          <ExerciseRow
-            key={ex.id}
-            pe={ex}
-            index={index}
-            total={exercises.length}
-            readOnly={volumeReadOnly}
-            onMoveUp={() => moveExercise(index, 'up')}
-            onMoveDown={() => moveExercise(index, 'down')}
-            onDelete={() => setConfirmDeleteExercise({ id: ex.id, name: ex.exercise?.name ?? 'this exercise' })}
-            globalWeightUnit={globalWeightUnit}
-            onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: ex.id, weightUnit })}
-          />
-        ))}
+        {!isLoading && exercises.map((ex, index) => {
+          const unitIndex = unitIndexByExerciseId.get(ex.id) ?? index
+          const isFirstInUnit = units[unitIndex]?.[0]?.id === ex.id
+          return (
+            <Fragment key={ex.id}>
+              <ExerciseRow
+                pe={ex}
+                index={index}
+                readOnly={volumeReadOnly}
+                showMoveControls={isFirstInUnit}
+                canMoveUp={unitIndex > 0}
+                canMoveDown={unitIndex < units.length - 1}
+                onMoveUp={() => moveExercise(index, 'up')}
+                onMoveDown={() => moveExercise(index, 'down')}
+                onDelete={() => setConfirmDeleteExercise({ id: ex.id, name: ex.exercise?.name ?? 'this exercise' })}
+                globalWeightUnit={globalWeightUnit}
+                onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: ex.id, weightUnit })}
+              />
+              {/* Chunk 13 — never gated by volumeReadOnly, see this file's
+                  own header comment on why grouping isn't "volume". */}
+              {index < exercises.length - 1 && (
+                <SupersetLinkToggle
+                  linked={isLinkedGap(exercises, index)}
+                  disabled={toggleLink.isPending}
+                  onToggle={() => handleToggleLink(index)}
+                />
+              )}
+            </Fragment>
+          )
+        })}
 
         {!isLoading && !volumeReadOnly && exercises.length > 0 && (
           <button
@@ -377,8 +426,10 @@ function WorkoutEditor({
 function ExerciseRow({
   pe,
   index,
-  total,
   readOnly,
+  showMoveControls,
+  canMoveUp,
+  canMoveDown,
   onMoveUp,
   onMoveDown,
   onDelete,
@@ -387,8 +438,14 @@ function ExerciseRow({
 }: {
   pe: ProgramExercise
   index: number
-  total: number
   readOnly: boolean
+  // Chunk 13 — shown only on a unit's FIRST member (a plain, ungrouped
+  // exercise is always its own size-1 unit, so this is always true then —
+  // unchanged from before this chunk). canMoveUp/canMoveDown reflect the
+  // UNIT's own position among units, not this row's own index among rows.
+  showMoveControls: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
   onMoveUp: () => void
   onMoveDown: () => void
   onDelete: () => void
@@ -411,8 +468,12 @@ function ExerciseRow({
         </div>
         {!readOnly && (
           <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-            <IconBtn onClick={onMoveUp} disabled={index === 0}><ChevronUp size={13} /></IconBtn>
-            <IconBtn onClick={onMoveDown} disabled={index === total - 1}><ChevronDown size={13} /></IconBtn>
+            {showMoveControls && (
+              <>
+                <IconBtn onClick={onMoveUp} disabled={!canMoveUp}><ChevronUp size={13} /></IconBtn>
+                <IconBtn onClick={onMoveDown} disabled={!canMoveDown}><ChevronDown size={13} /></IconBtn>
+              </>
+            )}
             <IconBtn onClick={onDelete}><Trash2 size={12} /></IconBtn>
           </div>
         )}
@@ -480,6 +541,50 @@ function IconBtn({
       style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', borderRadius: 6, flexShrink: 0 }}
     >
       {children}
+    </button>
+  )
+}
+
+// ─── Superset grouping editor — one toggle per gap between adjacent rows
+// (chunk 13, SPEC.md "Supersets") ───────────────────────────────────────────
+// Deliberately between every pair of rows, not just at a unit's own edges:
+// "any number of exercises" (SPEC) falls out of being able to link/unlink
+// at any point, including splitting an existing 3+ member block part way
+// through (supersetGroups.ts's planLinkToggle).
+function SupersetLinkToggle({
+  linked,
+  disabled,
+  onToggle,
+}: {
+  linked: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={disabled}
+      style={{
+        width: '100%',
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        background: linked ? 'var(--accent-muted)' : 'transparent',
+        border: linked ? '1px solid var(--accent)' : '1px dashed var(--border-strong)',
+        borderRadius: 7,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '1.5px',
+        color: linked ? 'var(--accent)' : 'var(--text-muted)',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <Link2 size={11} />
+      {linked ? 'SUPERSET — TAP TO UNLINK' : 'LINK AS SUPERSET'}
     </button>
   )
 }
