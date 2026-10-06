@@ -5,6 +5,8 @@ import SetRow from './SetRow'
 import RestTimerInline from './RestTimerInline'
 import { useRestTimerStore } from './restTimerStore'
 import { canAddStageTo, type SetGroup as Group } from './setGroupLogic'
+import { resolveStageKind, type StageKind } from '../../lib/plannerVocabulary.js'
+import { resolveStageCarryWeightKg } from './stageCarryLogic'
 
 export interface LogParams {
   weekPlanSetId: string | null
@@ -20,6 +22,12 @@ export interface LogParams {
   // "the resolved default for this program-exercise", never an override.
   enteredUnit: WeightUnit | null
   formRating: FormRating | null
+  // Chunk 14 — "as planned" (TASKS.md "Logging"); SetRow.tsx's handleLog/
+  // handleSkip resolve this from the row's own plannedSet prop, so it's
+  // always correct (null) for a stage row too, with no special-casing
+  // needed here (a stage's own planned row, if any, carries no kind of its
+  // own either — the DB's own check).
+  stageKind: StageKind | null
 }
 
 interface SetGroupProps {
@@ -112,6 +120,24 @@ export default function SetGroup({
     if (isDeleting) setAddingStage(false)
   }, [isDeleting])
 
+  // Chunk 14 — "the workout screen labels stages by kind" and SPEC's
+  // carry-over rule. Resolved once per render from whichever side actually
+  // knows the head's kind right now: the logged head once it exists,
+  // otherwise this group's own planned head row — same source either way
+  // (resolveStageKind's own "null/legacy reads as dropset" rule), so a
+  // dropset (explicit or legacy-null) always resolves here exactly as it
+  // always has, and D30's fixture (no stageKind anywhere in it) is
+  // unaffected. Stage rows never carry their own kind (the DB's own
+  // check), so there is no second place this could disagree.
+  const stageKind = resolveStageKind((group ? group.head.stageKind : plannedSet?.stageKind) ?? null)
+  // Carry-over (SPEC "Staged sets"): only meaningful for the one stage
+  // slot that's actually about to be logged next — a dropset's own
+  // resolveStageCarryWeightKg always returns null (today's unchanged
+  // "starts blank" behaviour), and a row further out than the very next
+  // stage has no logged predecessor yet to carry from (chunk 3's locking
+  // rule — see stageCarryLogic.ts's own header comment).
+  const carryWeightKg = group ? resolveStageCarryWeightKg(stageKind, group) : null
+
   if (!group) {
     // Planned staged sets render (fix) [P1]: a planned dropset's stage rows
     // show from the start, every one of them, not just after the head is
@@ -160,6 +186,7 @@ export default function SetGroup({
                 currentLog={null}
                 isStage
                 isLocked
+                stageKind={stageKind}
                 onLog={() => {}}
                 onUpdate={() => {}}
                 onDelete={() => {}}
@@ -204,6 +231,7 @@ export default function SetGroup({
               lastLogsLoading={false}
               currentLog={stage}
               isStage
+              stageKind={stageKind}
               onLog={() => {}}
               onUpdate={(changes) => onUpdate(stage.id, changes)}
               onDelete={() => onDeleteStage(stage.id)}
@@ -261,6 +289,8 @@ export default function SetGroup({
                 lastLogsLoading={false}
                 currentLog={null}
                 isStage
+                stageKind={stageKind}
+                carryWeightKg={carryWeightKg}
                 onLog={(params) => {
                   onLogStage(headLog, params)
                   setAddingStage(false)
@@ -335,6 +365,7 @@ export default function SetGroup({
                 currentLog={null}
                 isStage
                 isLocked
+                stageKind={stageKind}
                 onLog={() => {}}
                 onUpdate={() => {}}
                 onDelete={() => {}}

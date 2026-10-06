@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
+import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession } from './sessionService'
 import type { LogParams } from './SetGroup'
 import { useRestTimerStore } from './restTimerStore'
@@ -56,6 +57,7 @@ export interface ExerciseCardProps {
     parentSetId: string | null
     stageIndex: number
     formRating: FormRating | null
+    stageKind: StageKind | null
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
@@ -382,6 +384,9 @@ export function useExerciseCardState({
             setSeconds: null,
             enteredUnit: null,
             formRating: null,
+            // "As planned" (TASKS.md "Logging"), same as a real LOG tap —
+            // SetRow.tsx's handleSkip resolves this from plannedSet too.
+            stageKind: row.plannedSet.stageKind ?? null,
           },
           nextHeadNumber,
         )
@@ -404,6 +409,8 @@ export function useExerciseCardState({
           setSeconds: null,
           enteredUnit: null,
           formRating: null,
+          // A stage's own stage_kind is always null (the DB's own check).
+          stageKind: null,
         })
         nextStageIdx += 1
       }
