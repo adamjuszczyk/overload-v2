@@ -50,11 +50,11 @@ const EX_REPLACEMENT: Exercise = {
 
 const pe1: ProgramExercise = {
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0,
-  targetReps: null, weightUnit: null, exercise: EX_A,
+  weightUnit: null, exercise: EX_A,
 }
 const pe2: ProgramExercise = {
   id: 'pe-2', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-b', position: 1,
-  targetReps: null, weightUnit: null, exercise: EX_B,
+  weightUnit: null, exercise: EX_B,
 }
 
 function makeProgram(planningType: Program['planningType'], schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday: 'wd-1' }): Program {

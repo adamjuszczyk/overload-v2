@@ -15,7 +15,6 @@ import {
   deleteWorkoutDay,
   fetchProgramExercises,
   addProgramExercise,
-  updateProgramExerciseReps,
   updateProgramExerciseWeightUnit,
   deleteProgramExercise,
   reorderProgramExercises,
@@ -154,15 +153,6 @@ export function useAddProgramExercise(workoutDayId: string) {
       // resolution itself reads the Settings store.
       weightUnit: WeightUnit
     }) => addProgramExercise(user!.id, workoutDayId, exerciseId, position, weightUnit),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
-  })
-}
-
-export function useUpdateProgramExerciseReps(workoutDayId: string) {
-  return useMutation({
-    mutationFn: ({ id, targetReps }: { id: string; targetReps: number | null }) =>
-      updateProgramExerciseReps(id, targetReps),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
   })

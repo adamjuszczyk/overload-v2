@@ -216,7 +216,7 @@ describe('reprimeAfterReassign — the offline workout-day blob (§5.5 item 2)',
     return {
       id: 'pe-' + exerciseId, workoutDayId: 'day-1', userId: 'u1', exerciseId,
       exercise: { id: exerciseId, userId: 'u1', name, muscleGroup: 'chest', isArchived: false },
-      position: 0, targetReps: null, weightUnit: null,
+      position: 0, weightUnit: null,
     }
   }
 

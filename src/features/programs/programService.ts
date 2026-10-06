@@ -60,7 +60,6 @@ type DbProgramExercise = {
   user_id: string
   exercise_id: string
   position: number
-  target_reps: number | null
   weight_unit?: string | null  // absent until migration 006 has been applied
   exercises: DbExerciseJoin | null
 }
@@ -106,7 +105,6 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
     userId: row.user_id,
     exerciseId: row.exercise_id,
     position: row.position,
-    targetReps: row.target_reps,
     // Falls back to inherit (null) until migration 006 has been applied — the
     // key is absent from the row entirely rather than null, since the column
     // doesn't exist yet (same pattern as autoFinishMinutes in settingsService).
@@ -277,7 +275,6 @@ export async function addProgramExercise(
       workout_day_id: workoutDayId,
       exercise_id: exerciseId,
       position,
-      target_reps: null,
       weight_unit: weightUnit,
     })
     .select('*, exercises(*)')
@@ -285,17 +282,6 @@ export async function addProgramExercise(
   if (error) throw error
   const pe = data as DbProgramExercise
   return toProgramExercise(pe)
-}
-
-export async function updateProgramExerciseReps(
-  id: string,
-  targetReps: number | null,
-): Promise<void> {
-  const { error } = await supabase
-    .from('v2_program_exercises')
-    .update({ target_reps: targetReps })
-    .eq('id', id)
-  if (error) throw error
 }
 
 // The per-program-exercise unit picker (TASKS.md §4 item 28) — null means

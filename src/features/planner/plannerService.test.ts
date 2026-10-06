@@ -441,16 +441,12 @@ describe('splitSharedWeekdayWorkouts', () => {
     expect(createWorkoutDayMock).toHaveBeenCalledTimes(2) // one clone per EXTRA weekday
   })
 
-  it('clones every current exercise (name, position, weight unit, target reps) and its own head sets', async () => {
+  it('clones every current exercise (name, position, weight unit) and its own head sets', async () => {
     createWorkoutDayMock.mockResolvedValue({
       id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
     })
-    // targetReps deliberately non-null — review fix: a pre-chunk-11 program's
-    // suggested-reps value is still real data (its UI is gone, but the
-    // column itself isn't dropped until chunk 12) and a split must not be
-    // what quietly loses it first.
     const sourceExercise: ProgramExercise = {
-      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: 8, weightUnit: 'lbs',
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, weightUnit: 'lbs',
     }
     fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
     const insertChain = makeChain({ data: null, error: null })
@@ -476,7 +472,7 @@ describe('splitSharedWeekdayWorkouts', () => {
       (c) => c[0]?.exercise_id === 'ex-1',
     )
     expect(peInsertCall?.[0]).toMatchObject({
-      workout_day_id: 'wd-clone', exercise_id: 'ex-1', position: 0, target_reps: 8, weight_unit: 'lbs',
+      workout_day_id: 'wd-clone', exercise_id: 'ex-1', position: 0, weight_unit: 'lbs',
     })
     expect(typeof peInsertCall?.[0]?.id).toBe('string')
 
@@ -491,45 +487,6 @@ describe('splitSharedWeekdayWorkouts', () => {
       user_id: 'user-1', program_exercise_id: peInsertCall?.[0]?.id, position: 1,
       is_warmup: false, rep_min: 8, rep_max: 12, is_amrap: false, rest_seconds: null,
     }])
-  })
-
-  // Review fix, its own dedicated proof (not just folded into the broader
-  // clone test above): cloneProgramExerciseRow's target_reps column must
-  // mirror the source row, in both directions — a real value AND null.
-  it('carries target_reps through verbatim — a real value, not forced to null', async () => {
-    createWorkoutDayMock.mockResolvedValue({
-      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
-    })
-    const sourceExercise: ProgramExercise = {
-      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: 12, weightUnit: null,
-    }
-    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
-    fromMock.mockReturnValue(makeChain({ data: [], error: null }))
-
-    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
-    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, detectSharedWeekdayWorkouts(schedule))
-
-    const insertMock = (fromMock.mock.results[0]?.value as { insert: ReturnType<typeof vi.fn> }).insert
-    const peInsertCall = insertMock.mock.calls.find((c) => c[0]?.exercise_id === 'ex-1')
-    expect(peInsertCall?.[0]?.target_reps).toBe(12)
-  })
-
-  it('carries target_reps through verbatim — null stays null (no suggestion either way)', async () => {
-    createWorkoutDayMock.mockResolvedValue({
-      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
-    })
-    const sourceExercise: ProgramExercise = {
-      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, targetReps: null, weightUnit: null,
-    }
-    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
-    fromMock.mockReturnValue(makeChain({ data: [], error: null }))
-
-    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
-    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, detectSharedWeekdayWorkouts(schedule))
-
-    const insertMock = (fromMock.mock.results[0]?.value as { insert: ReturnType<typeof vi.fn> }).insert
-    const peInsertCall = insertMock.mock.calls.find((c) => c[0]?.exercise_id === 'ex-1')
-    expect(peInsertCall?.[0]?.target_reps).toBeNull()
   })
 
   it('an unlisted group (no matching workoutDays entry) is skipped, not thrown', async () => {

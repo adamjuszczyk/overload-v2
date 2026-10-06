@@ -143,16 +143,13 @@ export interface ReassignResult {
 
 export type WeeklySchedule = Record<DayOfWeek, string | null>
 
-// Layer 1: program stores exercises + optional rep suggestion only.
-// Sets and RIR targets live in WeekPlan (Layer 2).
-//
-// targetReps (chunk 11, SPEC.md "Removals" — "Suggested reps per program
-// exercise are replaced by per-set rep targets"): the UI that read/wrote
-// this is gone (PlanPage's "· N REPS", ExerciseHeader's reps line,
-// WorkoutDayEditorPage's stepper, now removed with that page). The column
-// and this field stay — dropped only in chunk 12 — so existing rows and
-// every object literal across the test suite that still sets it keep
-// compiling and reading back unchanged.
+// Layer 1: program stores exercises only — identity, ordering, unit
+// preference. Chunk 12 (SPEC.md "Removals" — "Suggested reps per program
+// exercise are replaced by per-set rep targets"): the old suggested-reps
+// column (and this field) is gone — the UI that read/wrote it was already
+// removed in chunk 11 (PlanPage's "· N REPS", ExerciseHeader's reps line,
+// WorkoutDayEditorPage's stepper). Rep targets now live per set: ProgramSet
+// (below) in the program, WeekPlanSet (Layer 2) for the week's own override.
 export interface ProgramExercise {
   id: string
   workoutDayId: string
@@ -160,7 +157,6 @@ export interface ProgramExercise {
   exerciseId: string
   exercise?: Exercise        // joined when loading the full day
   position: number           // 0-based
-  targetReps: number | null  // suggestion only — never enforced; UI removed chunk 11, column drops chunk 12
   weightUnit: WeightUnit | null  // null = inherit v2_user_settings.weightUnit (v3 §2.4)
 }
 
