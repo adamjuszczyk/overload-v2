@@ -262,3 +262,101 @@ describe('SupersetBlock — review fix: full per-exercise behaviour inside a blo
     expect(cellLabels.map((p) => p.textContent?.[0])).toEqual(['A', 'B'])
   })
 })
+
+// Chunk 14 — "Superset members (chunk 13) with staged sets must work too:
+// stages ride with their head inside a round" (reviewer's brief). SetGroup
+// .tsx is the one component both a plain ExerciseCard and every member cell
+// here render through (cell.head/row.plannedStages/row.group, wired
+// unchanged from chunk 13), so this is the same proof SetGroup.test.tsx's
+// own ExerciseCard-level rest-pause test gives, mounted one layer up
+// through the real round-building path instead.
+function makeSetLog(overrides: Partial<SetLog> = {}): SetLog {
+  return {
+    id: 'log-1', userId: 'u1', sessionId: 'session-1', exerciseId: 'ex-pe-a',
+    weekPlanSetId: null, setNumber: 1, weight: null, reps: null, rir: null, note: null,
+    isDropset: false, parentSetId: null, stageIndex: 0, isWarmup: false,
+    setSeconds: null, enteredUnit: null, isSkipped: false,
+    loggedAt: '2026-01-05T10:00:00.000Z', restSeconds: null, formRating: null,
+    ...overrides,
+  }
+}
+
+describe('SupersetBlock — a staged set rides with its head inside a round (chunk 14)', () => {
+  it('a planned rest-pause set (head + 2 stages) renders every row under its round, carries weight stage to stage, and writes stage_kind "as planned"', () => {
+    const peA = makeExercise('pe-a', 'Bench Press')
+    const peB = makeExercise('pe-b', 'Barbell Row')
+
+    const stagedHead: WeekPlanSet = {
+      id: 'pe-a-head', weekPlanId: 'wp-1', userId: 'u1', programExerciseId: peA.id,
+      setNumber: 1, targetRir: 2, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false,
+      stageKind: 'rest_pause',
+    }
+    const stage1: WeekPlanSet = {
+      id: 'pe-a-stage-1', weekPlanId: 'wp-1', userId: 'u1', programExerciseId: peA.id,
+      setNumber: 1, targetRir: 0, isDropset: true, parentWeekPlanSetId: 'pe-a-head', stageIndex: 1, isWarmup: false,
+    }
+    const stage2: WeekPlanSet = {
+      id: 'pe-a-stage-2', weekPlanId: 'wp-1', userId: 'u1', programExerciseId: peA.id,
+      setNumber: 1, targetRir: 0, isDropset: true, parentWeekPlanSetId: 'pe-a-head', stageIndex: 2, isWarmup: false,
+    }
+
+    function ms(currentLogs: SetLog[]): SupersetMember[] {
+      return [
+        { programExercise: peA, plannedSets: [stagedHead, stage1, stage2], currentLogs, referenceSessions: [] },
+        { programExercise: peB, plannedSets: plannedHeads(peB.id, 1), currentLogs: [], referenceSessions: [] },
+      ]
+    }
+
+    const onLog = vi.fn((params: Parameters<ComponentProps<typeof SupersetBlock>['onLog']>[0]) =>
+      Promise.resolve(makeSetLog({ ...params })),
+    )
+
+    const { container, rerender } = renderBlock(ms([]), { onLog })
+    function rerenderWith(currentLogs: SetLog[]) {
+      rerender(
+        <MemoryRouter>
+          <SupersetBlock
+            members={ms(currentLogs)}
+            sessionId="session-1"
+            referenceLoading={false}
+            referenceMesocycleId={null}
+            referenceIsError={false}
+            referenceIsFromCache={false}
+            onRetryReference={() => {}}
+            today="2026-01-05"
+            onLog={onLog}
+            onUpdateSet={() => {}}
+            onDeleteSet={async () => {}}
+            onSwap={() => {}}
+          />
+        </MemoryRouter>,
+      )
+    }
+
+    // Round 1 shows both members' rows, A's own staged set labelled by kind
+    // (its 2 locked stages, still inside A's own round-1 cell).
+    expect(container.textContent).toContain('ROUND 1')
+    expect(screen.getAllByText('REST-PAUSE').length).toBeGreaterThan(0)
+
+    // Log A's head (round 1) at 100kg — the exercise identified by its
+    // weekPlanSetId (A's head), not B's.
+    const firstUnlogged = container.querySelector('[data-unlogged-set]') as HTMLElement
+    fireEvent.change(within(firstUnlogged).getAllByRole('textbox')[0], { target: { value: '100' } })
+    fireEvent.change(within(firstUnlogged).getByRole('spinbutton'), { target: { value: '10' } })
+    fireEvent.click(within(firstUnlogged).getByText('LOG'))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    const headParams = onLog.mock.calls[0][0]
+    expect(headParams.weekPlanSetId).toBe('pe-a-head')
+    // The core logging rule (TASKS.md "Logging"), proven inside a round.
+    expect(headParams.stageKind).toBe('rest_pause')
+
+    const headLog = makeSetLog({ id: 'real-head-id', weekPlanSetId: 'pe-a-head', weight: 100, stageKind: 'rest_pause' })
+    rerenderWith([headLog])
+
+    // Stage 1 (still under A's own round-1 cell) auto-unlocks, carrying the
+    // head's own 100 forward — SPEC "Staged sets": "instead of being
+    // dropped".
+    expect(screen.getByDisplayValue('100')).toBeTruthy()
+  })
+})
