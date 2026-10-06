@@ -138,6 +138,10 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     repMin: row.rep_min ?? null,
     repMax: row.rep_max ?? null,
     isAmrap: row.is_amrap ?? false,
+    // Chunk 14 — heads only; a stage row's own value is always null (the
+    // DB's own check, v2_week_plan_sets_stage_row_check). Same "may not
+    // exist yet" fallback as the fields above.
+    stageKind: row.stage_kind ?? null,
   }
 }
 
@@ -342,10 +346,14 @@ export async function addStage(
 
 export async function updateSet(
   id: string,
-  changes: { targetRir?: number | null },
+  changes: { targetRir?: number | null; stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('targetRir' in changes) patch.target_rir = changes.targetRir
+  // Chunk 14 — the week plan's own stage-kind picker (PlanPage.tsx), a
+  // head-only field (the DB's own check — v2_week_plan_sets_stage_row_check
+  // — refuses it on a stage row; this UI never targets one).
+  if ('stageKind' in changes) patch.stage_kind = changes.stageKind
 
   const { error } = await supabase.from('v2_week_plan_sets').update(patch).eq('id', id)
   if (error) throw error

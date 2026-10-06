@@ -24,7 +24,16 @@ import {
 import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import { groupIntoUnits, moveUnit } from '../../lib/supersetGroups.js'
-import { columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
+import {
+  columnsToRepTarget,
+  formatRepTarget,
+  type RepTarget,
+  STAGE_KINDS,
+  STAGE_KIND_LABELS,
+  resolveStageKind,
+  type StageKind,
+} from '../../lib/plannerVocabulary.js'
+import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
@@ -754,7 +763,7 @@ interface ExerciseSectionProps {
   onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
   onRemoveLastSet: () => void
-  onUpdateSet: (id: string, changes: { targetRir?: number | null }) => void
+  onUpdateSet: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
   // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
   // from this week (SPEC "Weeks and copying"). Hidden whenever the other
   // per-row controls above are (isPast — a past week is read-only).
@@ -909,10 +918,14 @@ function PlanSetGroup({
   isPast: boolean
   onRemoveHead: () => void
   onRemoveStage: (id: string) => void
-  onUpdate: (id: string, changes: { targetRir?: number | null }) => void
+  onUpdate: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
   onAddStage: () => void
 }) {
   const { head, stages } = group
+  // Chunk 14 — resolved once per group, same rule the workout screen's own
+  // SetGroup.tsx uses (a legacy/null kind reads as a dropset): labels each
+  // stage row, and is the chip row's own selected value below.
+  const stageKind = resolveStageKind(head.stageKind ?? null)
   return (
     <div>
       <SetRow
@@ -930,6 +943,7 @@ function PlanSetGroup({
             <SetRow
               key={stage.id}
               isStage
+              stageKindLabel={STAGE_KIND_LABELS[stageKind]}
               targetRir={stage.targetRir}
               repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
               isPast={isPast}
@@ -937,6 +951,25 @@ function PlanSetGroup({
               onUpdate={(changes) => onUpdate(stage.id, changes)}
             />
           ))}
+
+          {/* Stage kind (chunk 14, SPEC "Staged sets" — "Stage kinds:
+              dropset, rest-pause, myo-reps, cluster"): once this head has
+              at least one real stage, pick which of the four this set is.
+              ADD STAGE itself is unchanged (still just adds a stage row,
+              defaulting the head's own stage_kind to null/dropset until a
+              different chip is tapped — "a head with stages and no
+              stage_kind reads as a dropset"). Existing "chip" look
+              (RatingChips, same component the FORM rating uses). */}
+          {stages.length > 0 && !isPast && (
+            <div style={{ padding: '2px 0 6px' }}>
+              <RatingChips
+                scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
+                value={stageKind}
+                onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
+                label="STAGE KIND"
+              />
+            </div>
+          )}
 
           {!isPast && (
             <button
@@ -960,6 +993,7 @@ function PlanSetGroup({
 function SetRow({
   displayNumber,
   isStage = false,
+  stageKindLabel,
   targetRir,
   repTarget,
   isPast,
@@ -968,6 +1002,10 @@ function SetRow({
 }: {
   displayNumber?: number
   isStage?: boolean
+  // Chunk 14 (SPEC "Staged sets" — "labels stages by kind") — a stage
+  // row's own group, resolved once by PlanSetGroup (today's legacy/null ->
+  // dropset rule); undefined for a head row, which never shows this.
+  stageKindLabel?: string
   targetRir: number | null
   // Chunk 11 (SPEC.md "Removals") — the planned rep target, read-only here
   // (copied from the program at plan time; chunk 19's SetTargetsEditor owns
@@ -976,7 +1014,7 @@ function SetRow({
   repTarget: RepTarget
   isPast: boolean
   onRemove: () => void
-  onUpdate: (changes: { targetRir?: number | null }) => void
+  onUpdate: (changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 8 }}>
@@ -984,6 +1022,15 @@ function SetRow({
       <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
         {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
       </span>
+
+      {/* Stage kind (chunk 14) — same slot/style as the rep-target span
+          right below, so a stage row reads "↳ REST-PAUSE 8–12" in one
+          line. */}
+      {isStage && stageKindLabel && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
+          {stageKindLabel}
+        </span>
+      )}
 
       {/* Planned rep target (read-only) */}
       {repTarget.type !== 'none' && (
