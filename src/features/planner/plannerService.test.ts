@@ -30,6 +30,9 @@ const {
   setExerciseSetCount,
   updateProgramSetRepTarget,
   setRepTargetForAllSets,
+  updateProgramSetStageKind,
+  addProgramSetStage,
+  removeProgramSet,
   summarizeRepTargets,
   splitSharedWeekdayWorkouts,
 } = await import('./plannerService')
@@ -43,6 +46,10 @@ function makeChain(result: { data?: unknown; error?: unknown }) {
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
     order: vi.fn(() => chain),
+    // addProgramSetStage's own .insert(...).select().single() (chunk 14,
+    // mirrors weekPlanService.ts's addStage) — unused by every other test
+    // in this file, which never calls .single().
+    single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   }
@@ -415,6 +422,67 @@ describe('updateProgramSetRepTarget — mirrors repTargetToColumns exactly', () 
     await updateProgramSetRepTarget('ps-1', { type: 'none' })
 
     expect(chain.update).toHaveBeenCalledWith({ rep_min: null, rep_max: null, is_amrap: false })
+  })
+})
+
+// ─── Stages (chunk 14 — SPEC.md "Staged sets") ──────────────────────────────
+
+describe('updateProgramSetStageKind — head-only (027: a stage carries no kind of its own)', () => {
+  it('writes exactly { stage_kind } against the given head id', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await updateProgramSetStageKind('head-1', 'rest_pause')
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    expect(chain.update).toHaveBeenCalledWith({ stage_kind: 'rest_pause' })
+    expect(chain.eq).toHaveBeenCalledWith('id', 'head-1')
+  })
+
+  it('null clears it back to "no kind chosen" (reads as a dropset, resolveStageKind)', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await updateProgramSetStageKind('head-1', null)
+
+    expect(chain.update).toHaveBeenCalledWith({ stage_kind: null })
+  })
+})
+
+describe('addProgramSetStage — parent id given directly, never inferred (mirrors weekPlanService.ts\'s addStage)', () => {
+  it('inserts a stage row: the head\'s own parentId/position, the caller\'s stageIndex, no kind/rest/warmup of its own', async () => {
+    const chain = makeChain({ data: { id: 'new-stage' }, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await addProgramSetStage('user-1', 'pe-1', 'head-1', 3, 1)
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    const payload = (chain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({
+      user_id: 'user-1',
+      program_exercise_id: 'pe-1',
+      position: 3,
+      is_warmup: false,
+      parent_program_set_id: 'head-1',
+      stage_index: 1,
+    })
+    // Satisfies 027's stage_row_check by construction: no stage_kind,
+    // stage_rest_seconds key at all (not even null) on a stage insert.
+    expect('stage_kind' in payload).toBe(false)
+    expect('stage_rest_seconds' in payload).toBe(false)
+  })
+})
+
+describe('removeProgramSet — one row at a time (the SETS stepper\'s own bulk shrink is untouched)', () => {
+  it('deletes by id against v2_program_sets', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+
+    await removeProgramSet('stage-1')
+
+    expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
+    expect(chain.delete).toHaveBeenCalled()
+    expect(chain.eq).toHaveBeenCalledWith('id', 'stage-1')
   })
 })
 
