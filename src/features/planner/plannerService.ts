@@ -95,6 +95,18 @@ export function hasNoSets(sets: ProgramSet[]): boolean {
 // the kind and each stage's own rep target — never a weight carry-over
 // concern (that is wholly a workout-screen/runtime rule, stageCarryLogic.ts).
 
+// Chunk 15 (SPEC "Warmup sets" — "A set kind, planned in step 3"). Head-only
+// by the same DB check that keeps stage_kind off a stage row
+// (v2_program_sets_warmup_check: "not is_warmup or (stage_kind is null and
+// parent_program_set_id is null)" — a warmup is never staged, and a stage
+// never carries the warmup flag). StepVolume.tsx only ever calls this on a
+// head, never offering the toggle on a stage row or ADD STAGE once a head
+// is marked warmup, so this never needs to validate the combination itself.
+export async function updateProgramSetIsWarmup(id: string, isWarmup: boolean): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ is_warmup: isWarmup }).eq('id', id)
+  if (error) throw error
+}
+
 // Head-only (the DB's own check, v2_program_sets_stage_row_check, refuses
 // this on a stage row); null reverts to "no kind chosen" (resolveStageKind
 // then reads it as a dropset, same as a legacy/never-set row).

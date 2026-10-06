@@ -33,6 +33,7 @@ vi.mock('./usePlanner', async () => {
     useSetExerciseSetCount: () => ({ mutate: vi.fn(), isPending: false }),
     useUpdateSetRepTarget: () => ({ mutate: vi.fn(), isPending: false }),
     useSetRepTargetForAllSets: () => ({ mutate: vi.fn(), isPending: false }),
+    useUpdateProgramSetIsWarmup: () => ({ mutate: vi.fn() }),
     useUpdateProgramSetStageKind: () => ({ mutate: updateStageKindMutateMock }),
     useAddProgramSetStage: () => ({ mutate: addStageMutateMock, isPending: false }),
     useRemoveProgramSetStage: () => ({ mutate: removeStageMutateMock }),

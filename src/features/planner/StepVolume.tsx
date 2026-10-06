@@ -8,6 +8,7 @@ import {
   useSetExerciseSetCount,
   useUpdateSetRepTarget,
   useSetRepTargetForAllSets,
+  useUpdateProgramSetIsWarmup,
   useUpdateProgramSetStageKind,
   useAddProgramSetStage,
   useRemoveProgramSetStage,
@@ -426,6 +427,7 @@ function ProgramSetGroupEditor({
   const { head, stages } = group
   const stageKind = resolveStageKind(head.stageKind ?? null)
   const updateStageKind = useUpdateProgramSetStageKind()
+  const setWarmup = useUpdateProgramSetIsWarmup()
   const addStage = useAddProgramSetStage()
   const removeStage = useRemoveProgramSetStage()
 
@@ -472,7 +474,28 @@ function ProgramSetGroupEditor({
         </div>
       )}
 
-      {!readOnly && (
+      {/* Chunk 15 (SPEC "Warmup sets" — "A set kind, planned in step 3").
+          Head-only, same slot STAGE KIND occupies one level in (no stages
+          yet) — one chip, tap to mark WARMUP, tap again to clear back to a
+          working set (RatingChips' own "tap the active chip to clear"
+          behaviour, same as every other single-chip use in this app).
+          Hidden once this head has stages: a warmup is never staged
+          (v2_program_sets_warmup_check), and ADD STAGE right below is
+          hidden the same way once this head IS a warmup — the two
+          affordances are mutually exclusive by construction, not by a
+          validation message. */}
+      {!readOnly && stages.length === 0 && (
+        <div style={{ padding: '2px 0 4px' }}>
+          <RatingChips
+            scale={{ values: ['warmup'] as const, labels: { warmup: 'WARMUP' } }}
+            value={head.isWarmup ? 'warmup' : null}
+            onChange={(kind) => setWarmup.mutate({ id: head.id, isWarmup: kind === 'warmup' })}
+            label="SET KIND"
+          />
+        </div>
+      )}
+
+      {!readOnly && !head.isWarmup && (
         <button
           onClick={handleAddStage}
           disabled={addStage.isPending}

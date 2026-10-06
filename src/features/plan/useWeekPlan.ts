@@ -163,7 +163,11 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
       changes,
     }: {
       id: string
-      changes: { targetRir?: number | null; stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null }
+      changes: {
+        targetRir?: number | null
+        stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
+        isWarmup?: boolean
+      }
     }) => updateSet(id, changes),
     onMutate: async ({ id, changes }) => {
       await queryClient.cancelQueries({ queryKey: qk })
@@ -177,6 +181,7 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
                   ...s,
                   ...('targetRir' in changes ? { targetRir: changes.targetRir } : {}),
                   ...('stageKind' in changes ? { stageKind: changes.stageKind } : {}),
+                  ...('isWarmup' in changes ? { isWarmup: changes.isWarmup } : {}),
                 }
               : s,
           ),

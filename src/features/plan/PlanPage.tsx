@@ -763,7 +763,7 @@ interface ExerciseSectionProps {
   onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
   onRemoveLastSet: () => void
-  onUpdateSet: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
+  onUpdateSet: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null; isWarmup?: boolean }) => void
   // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
   // from this week (SPEC "Weeks and copying"). Hidden whenever the other
   // per-row controls above are (isPast — a past week is read-only).
@@ -918,7 +918,7 @@ function PlanSetGroup({
   isPast: boolean
   onRemoveHead: () => void
   onRemoveStage: (id: string) => void
-  onUpdate: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
+  onUpdate: (id: string, changes: { targetRir?: number | null; stageKind?: StageKind | null; isWarmup?: boolean }) => void
   onAddStage: () => void
 }) {
   const { head, stages } = group
@@ -933,11 +933,30 @@ function PlanSetGroup({
         targetRir={head.targetRir}
         repTarget={columnsToRepTarget({ repMin: head.repMin ?? null, repMax: head.repMax ?? null, isAmrap: head.isAmrap ?? false })}
         isPast={isPast}
+        isWarmup={head.isWarmup}
         onRemove={onRemoveHead}
         onUpdate={(changes) => onUpdate(head.id, changes)}
       />
 
-      {(stages.length > 0 || !isPast) && (
+      {/* Chunk 15 (SPEC "Warmup sets" — "the week plan offer[s] warmup
+          sets"). Head-only, same mutual-exclusion-with-staging posture as
+          StepVolume.tsx's own WARMUP chip: hidden once this head has a real
+          stage (a warmup is never staged — v2_program_sets_warmup_check's
+          same rule, enforced on v2_week_plan_sets by the app since there is
+          no equivalent column-level check there yet); ADD STAGE below is
+          hidden the same way once the head IS a warmup. */}
+      {!isPast && stages.length === 0 && (
+        <div style={{ padding: '2px 16px 4px' }}>
+          <RatingChips
+            scale={{ values: ['warmup'] as const, labels: { warmup: 'WARMUP' } }}
+            value={head.isWarmup ? 'warmup' : null}
+            onChange={(kind) => onUpdate(head.id, { isWarmup: kind === 'warmup' })}
+            label="SET KIND"
+          />
+        </div>
+      )}
+
+      {!head.isWarmup && (stages.length > 0 || !isPast) && (
         <div style={{ paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }}>
           {stages.map((stage) => (
             <SetRow
@@ -997,6 +1016,7 @@ function SetRow({
   targetRir,
   repTarget,
   isPast,
+  isWarmup = false,
   onRemove,
   onUpdate,
 }: {
@@ -1013,8 +1033,13 @@ function SetRow({
   // targetRir today.
   repTarget: RepTarget
   isPast: boolean
+  // Chunk 15 (SPEC "Warmup sets") — a head only (PlanSetGroup never passes
+  // this on a stage row). Swaps the RIR stepper for a plain WARMUP label:
+  // "Mandatory fields never apply to warmup sets" [P2], and RIR is never
+  // logged on one in the first place (nothing else, per SPEC).
+  isWarmup?: boolean
   onRemove: () => void
-  onUpdate: (changes: { targetRir?: number | null; stageKind?: StageKind | null }) => void
+  onUpdate: (changes: { targetRir?: number | null; stageKind?: StageKind | null; isWarmup?: boolean }) => void
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 8 }}>
@@ -1032,6 +1057,14 @@ function SetRow({
         </span>
       )}
 
+      {/* Warmup (chunk 15) — same slot/style as stageKindLabel above; the
+          two never both apply (a warmup is never a stage). */}
+      {isWarmup && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
+          WARMUP
+        </span>
+      )}
+
       {/* Planned rep target (read-only) */}
       {repTarget.type !== 'none' && (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
@@ -1039,12 +1072,16 @@ function SetRow({
         </span>
       )}
 
-      {/* RIR stepper */}
-      <RirStepper
-        value={targetRir}
-        disabled={isPast}
-        onChange={(v) => onUpdate({ targetRir: v })}
-      />
+      {/* RIR stepper — not for a warmup (SPEC "Warmup sets": nothing but
+          weight/reps/rest is ever logged on one, so a target RIR here would
+          promise something that can never be fulfilled). */}
+      {!isWarmup && (
+        <RirStepper
+          value={targetRir}
+          disabled={isPast}
+          onChange={(v) => onUpdate({ targetRir: v })}
+        />
+      )}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
