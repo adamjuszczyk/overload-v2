@@ -9,28 +9,26 @@ import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan } from '
 import { EMPTY_SCHEDULE } from '../programs/programService'
 
 // Chunk 7 (TASKS.md "Each planned session owns its exercise list — refactor,
-// no visible change"): proves PlanPage renders byte-identical output before
-// and after this chunk, for the same underlying data, and that it is
-// actually reading the NEW source (weekPlan.exercises) rather than
-// coincidentally matching.
+// no visible change") introduced this test to prove PlanPage reads the
+// week's own exercise list (weekPlan.exercises) rather than falling back to
+// useProgramExercises while a week plan exists — via a decoy: the fallback
+// mock returns a deliberately WRONG exercise, so a regression back to the
+// old source would show "DECOY EXERCISE" instead of Bench Press/Incline
+// Press, and the HTML comparison below would fail.
 //
-// __fixtures__/planpage-chunk6-render.html is the frozen "before": captured
-// by rendering build/chunk-6's own PlanPage.tsx (commit 5f0b03e) with this
-// exact fixture data, mocking useProgramExercises (chunk 6's only exercise
-// source) to return [pe1, pe2] — see the capture procedure in this chunk's
-// report for the exact throwaway script used (run once on a build/chunk-6
-// worktree, output copied here, never committed there).
-//
-// This test renders the SAME component tree on THIS branch with the SAME
-// fixture, but swaps which mock carries the real data: useProgramExercises
-// (the fallback, used only when no week plan exists) now returns a
-// deliberately WRONG list, and weekPlan.exercises (the new source) carries
-// the real [pe1, pe2] instead. If PlanPage still read useProgramExercises
-// while a week plan exists, the rendered output would show the wrong
-// exercise ("DECOY EXERCISE") instead of Bench Press/Incline Press, and
-// this test would fail — see the "breaks" section of this chunk's report
-// for that exact failure, captured by temporarily reverting
-// WorkoutDayPanel's fallback-preference line.
+// Chunk 9 review retry fix #4: chunk 9 adds real, visible UI to this same
+// render (SWAP/move-up/move-down/REMOVE/ADD EXERCISE) — so the fixture this
+// test compares against is no longer "byte-identical to build/chunk-6", and
+// pretending it still is would be actively wrong. __fixtures__/
+// planpage-chunk6-render.html is RE-CAPTURED here from build/chunk-9's own
+// PlanPage.tsx, same fixture data as chunk 7/8 (unchanged — pe1/pe2/
+// decoyExercise/weekPlan, no new props needed since this test exercises
+// the decoy mechanism, not chunk 9's new buttons specifically), capturing
+// whatever this branch currently renders for it. The decoy proof (does
+// PlanPage read weekPlan.exercises or the fallback) is the invariant this
+// file keeps proving, chunk over chunk — each chunk that visibly changes
+// PlanPage's render re-captures this same fixture the same way, exactly as
+// this one now does for chunk 9's own new buttons.
 
 afterEach(() => cleanup())
 
@@ -205,6 +203,14 @@ vi.mock('./useWeekPlan', () => ({
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
+  // Chunk 9 — week actions (TASKS.md "Edit a week's exercises"). None of
+  // these mutate on a plain render; this fixture only needs them exported
+  // so PlanPage.tsx's own import resolves against this mock, same reason
+  // every other hook above is listed.
+  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
@@ -212,8 +218,8 @@ const { default: PlanPage } = await import('./PlanPage')
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url))
 const EXPECTED_HTML = readFileSync(join(FIXTURE_DIR, '__fixtures__', 'planpage-chunk6-render.html'), 'utf8')
 
-describe('PlanPage — renders from the week\'s own exercise list, byte-identical to build/chunk-6', () => {
-  it('matches the frozen build/chunk-6 render exactly, for the same underlying data', () => {
+describe('PlanPage — renders from the week\'s own exercise list, not the useProgramExercises fallback', () => {
+  it('matches the frozen build/chunk-9 render exactly, for the same underlying data (re-captured each time this render visibly changes)', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/plan']}>
         <PlanPage />

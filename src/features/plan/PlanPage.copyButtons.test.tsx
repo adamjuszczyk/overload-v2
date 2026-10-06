@@ -89,6 +89,12 @@ vi.mock('./useWeekPlan', () => ({
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
+  // Chunk 9 — Week actions, called unconditionally by WorkoutDayPanel on
+  // every render; not exercised by this file's own copy-button assertions.
+  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 const { default: PlanPage } = await import('./PlanPage')

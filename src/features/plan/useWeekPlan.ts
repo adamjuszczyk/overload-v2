@@ -15,6 +15,10 @@ import {
   copyFromPreviousWeek,
   copyWorkoutFromPreviousWeek,
   planWeek,
+  swapWeekExercise,
+  addWeekExercise,
+  removeWeekExercise,
+  reorderWeekExercises,
 } from './weekPlanService'
 
 function key(mesoId: string, weekNumber: number) {
@@ -284,5 +288,68 @@ export function useWeekPlanById(id: string | null) {
     queryKey: ['v2_weekPlan', id],
     queryFn: () => fetchWeekPlanById(id!),
     enabled: !!user && !!id,
+  })
+}
+
+// ─── Week actions — swap, reorder, add, remove (chunk 9) ───────────────────
+// Each invalidates this week's own plans (exercises AND sets both live on
+// the same WeekPlan query) and the meso-wide history (the copy-forward
+// buttons' own source search reads it, same as every other plan-mutating
+// hook above).
+
+export function useSwapWeekExercise(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: (params: { weekPlanId: string; programExerciseId: string; replacementExerciseId: string; onlyThisWeek: boolean }) =>
+      swapWeekExercise({ userId: user!.id, ...params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+export function useAddWeekExercise(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: (params: { weekPlanId: string; workoutDayId: string; exerciseId: string; position: number }) =>
+      addWeekExercise({ userId: user!.id, ...params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+export function useRemoveWeekExercise(mesoId: string, weekNumber: number) {
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: ({ weekPlanId, programExerciseId }: { weekPlanId: string; programExerciseId: string }) =>
+      removeWeekExercise(weekPlanId, programExerciseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    mutationFn: ({
+      weekPlanId,
+      moves,
+      onlyThisWeek,
+    }: {
+      weekPlanId: string
+      moves: { programExerciseId: string; oldPosition: number; newPosition: number }[]
+      onlyThisWeek: boolean
+    }) => reorderWeekExercises(weekPlanId, moves, onlyThisWeek),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
