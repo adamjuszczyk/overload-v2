@@ -7,9 +7,9 @@ Overload is a strength training PWA for a serious intermediate-to-advanced lifte
 This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.md. Phase 2 and SPEC's "Later" list are not being done.
 
 ## Where the build is
-- **Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunks 11 (`eb54190`), 12's code (`6b725da`) and **13 (supersets, #36 `90cd1e4`, Vercel 17:59 UTC)** are merged and live. 11 and 13 each failed review once and passed on the retry; 13 was also hardened (block keyed by its members' ids). Chunk 12 **migration 034** (#35, `build/chunk-12-migration` @ `3f2fa7d`, md5 `90c37dfa…`) is green and waits for Adam (DECISIONS 54). **Chunk 14 (staged sets) in progress** (builder, base master `90cd1e4`; D30 gate). Next migration number: **035** (034 is pending).
+- **Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunks 11 (`eb54190`), 12's code (`6b725da`) and **13 (supersets, #36 `90cd1e4`, Vercel 17:59 UTC)** are merged and live. 11 and 13 each failed review once and passed on the retry; 13 was also hardened (block keyed by its members' ids). Chunk 12 **migration 034** merged by Adam (#35 `a76b146`, 2026-10-06 18:27 UTC) and live: deploy success; `select=target_reps` → 42703; backup table present; embeds 27/27 live. Adam's before/after query outputs are pending (DECISIONS 54). **Chunk 14 (staged sets) in progress** (builder, base master `90cd1e4`; D30 gate). Next migration number: **035**.
 - **Merge flow (Adam, 2026-10-05):** the reviewer merges code-only chunks once verified and green. The reviewer also merges flagged migrations that change no existing row (D29: chunk 15's still to come). Chunks 12, 24 and 25's migrations are Adam's. Migration first, code after a green deploy. Stacked PRs follow the stacked-PR rule. Chunk 12 = (b) (DECISIONS 49); chunk 25's throwaway run has the go-ahead (50). Remaining stops: a failed live check, a second review failure.
-- **Next migration number: 035** (034 on #35, pending Adam).
+- **Next migration number: 035** (028–034 merged and live).
 - Finished (details in HISTORY.md and DECISIONS):
   - 1–5 (2026-10-04);
   - 6: 028 `71247e7`, code `9fd4876`;

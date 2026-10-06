@@ -4,7 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-06 18:00 UTC, chunk 13 boundary — chunks 1–11 and 13 live, plus chunk 12's code; 034 (#35) waits for Adam; chunk 14 being built.*
 
 **Decisions**
-- 54 — Merge migration 034 (#35: drop suggested reps, convert them into rep targets). **Ready:** #34 has been live since 13:32 UTC and #35's CI is green. Steps: take the update banner on every device, run the before queries, merge, run the after queries. Recommendation: merge. Blocked: chunk 12 going live.
+- 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
