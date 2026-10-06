@@ -246,6 +246,7 @@ export default function PlanPage() {
             <button
               onClick={() => setViewWeek((w) => Math.max(1, w - 1))}
               disabled={viewWeek <= 1}
+              aria-label="Previous week"
               style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 8, color: viewWeek <= 1 ? 'var(--text-dim)' : 'var(--text-secondary)', cursor: viewWeek <= 1 ? 'default' : 'pointer' }}
             >
               <ChevronLeft size={14} />
@@ -257,6 +258,7 @@ export default function PlanPage() {
             </div>
             <button
               onClick={() => setViewWeek((w) => w + 1)}
+              aria-label="Next week"
               style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer' }}
             >
               <ChevronRight size={14} />
