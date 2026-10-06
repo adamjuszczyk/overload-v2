@@ -243,3 +243,47 @@ describe('GymSession — review fix: starting a swap on a block member makes it 
     expect(container.textContent).toContain('Barbell Row')
   })
 })
+
+describe('GymSession — hardening: the block key includes member identity, not just a count', () => {
+  it('replacing the second member (same count, 2) does not carry its stray per-member UI state onto the new exercise', () => {
+    session = { ...session, setLogs: [] }
+    sessionSwaps = []
+
+    const { container, rerender } = renderSession()
+
+    // Open B's (second member, index 1) own skip-confirm.
+    const skipButtons = screen.getAllByText('SKIP REST OF EXERCISE')
+    expect(skipButtons).toHaveLength(2)
+    fireEvent.click(skipButtons[1]) // B's own
+    expect(screen.getByText('CONFIRM SKIP')).toBeTruthy()
+
+    // "A regroup from another device reaching this open session through a
+    // refetch" (reviewer's own example) — the block's second member is now
+    // Deadlift (a different program-exercise id), not Barbell Row, same
+    // count (2), same block id.
+    const peC = makeExercise('pe-c', 'ex-c', 'Deadlift', 1)
+    const weekPlanWithC: WeekPlan = {
+      ...weekPlan,
+      exercises: [peA, peC],
+      sets: [
+        planSet('set-a1', 'pe-a', 1),
+        planSet('set-a2', 'pe-a', 2),
+        planSet('set-c1', 'pe-c', 1),
+        planSet('set-c2', 'pe-c', 2),
+      ],
+    }
+
+    rerender(
+      <MemoryRouter>
+        <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={weekPlanWithC} weekNumber={1} today="2026-01-05" />
+      </MemoryRouter>,
+    )
+
+    // Deadlift must render in its own normal, fresh state — not carrying
+    // Barbell Row's confirm-skip UI (CANCEL/CONFIRM SKIP) onto itself.
+    expect(container.textContent).toContain('Deadlift')
+    expect(container.textContent).not.toContain('Barbell Row')
+    expect(screen.queryByText('CONFIRM SKIP')).toBeNull()
+    expect(screen.getAllByText('SKIP REST OF EXERCISE')).toHaveLength(2)
+  })
+})

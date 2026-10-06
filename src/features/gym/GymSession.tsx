@@ -493,12 +493,21 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           if (unit.kind === 'block') {
             return (
               <SupersetBlock
-                // Includes the member COUNT, not just the block id — see
-                // SupersetBlock.tsx's own header comment: a change in HOW
-                // MANY exercises share this block always remounts a fresh
-                // instance (safe for its one-hook-call-per-member pattern),
-                // never changes an already-mounted one's own hook count.
-                key={`block-${unit.blockId}-${unit.members.length}`}
+                // Hardening (reviewer) — includes every member's OWN id, not
+                // just the block id and count: a same-count membership
+                // change (reordered, or one exercise replaced by another —
+                // e.g. a regroup from another device reaching this open
+                // session through a refetch) changes this string too, so it
+                // still remounts a fresh instance. A count-only key would
+                // have kept the OLD instance in that case, and
+                // SupersetBlock.tsx's one-hook-call-per-member pattern binds
+                // each hook's own state (deletingHeadIds, showSwapSheet,
+                // showSkipConfirm, extraSlotCount, …) to its POSITION in the
+                // member list, not to which exercise occupies it — so that
+                // state would have stayed on the old position and applied
+                // to whichever exercise now sits there instead, e.g. an open
+                // skip-confirm or swap sheet surfacing on the wrong card.
+                key={`block-${unit.blockId}-${unit.members.map((pe) => pe.id).join('.')}`}
                 members={unit.members.map((pe) => ({
                   programExercise: pe,
                   plannedSets: (weekPlan?.sets ?? [])

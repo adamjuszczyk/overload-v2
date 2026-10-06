@@ -32,15 +32,25 @@ import { useLastSessionLogs } from './useSession'
 // (ExerciseHeader, PlanTargetsPanel, ExerciseReference, SwapExerciseSheet)
 // ExerciseCard.tsx uses.
 //
-// One useExerciseCardState call per member, below — React's own rule (a
-// stable hook-call COUNT per component instance across its renders) is kept
-// by GymSession.tsx's own key on this component: `block-${blockId}-${member
-// count}`, so a change in HOW MANY members share a block always remounts a
-// fresh SupersetBlock instance (count changes only via a reload anyway —
-// SPEC "Supersets": grouping "applies to this run from the next session
-// on") instead of changing an already-mounted instance's own hook count. A
-// change in WHICH exercises they are, same count, is an ordinary prop
-// change — exactly what hooks are for.
+// One useExerciseCardState call per member, below, at `members[i]`'s own
+// index — so that call's internal state (deletingHeadIds, showSwapSheet,
+// showSkipConfirm, extraSlotCount, …) is tied to POSITION i, not to which
+// exercise currently occupies it. React's own rule (a stable hook-call
+// COUNT per component instance across its renders) only guarantees the Nth
+// useState call keeps being "the same" one across renders — it says
+// nothing about WHICH logical member that position means, so a same-count
+// membership change (reordered, or one exercise replaced by another — e.g.
+// a regroup from another device reaching this open session through a
+// refetch) would otherwise leave position i's open sheet/confirm/counts
+// sitting on whichever exercise now renders there. Hardening (reviewer):
+// GymSession.tsx's own key on this component is therefore
+// `block-${blockId}-${each member's own programExerciseId, joined}`, not
+// just the block id and a count — ANY membership change, same count or
+// not, changes that string and remounts a fresh SupersetBlock instance
+// with fresh state at every position. Membership changes only via a
+// reload in the common case anyway (SPEC "Supersets": grouping "applies to
+// this run from the next session on"), so this costs nothing day to day;
+// it only matters for the edge case above.
 //
 // Starting a swap on a member hands off to GymSession.tsx's own onSwap
 // (recordSwap.mutate, unchanged) exactly like a plain card does; once
