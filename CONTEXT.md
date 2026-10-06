@@ -7,7 +7,7 @@ Overload is a strength training PWA for a serious intermediate-to-advanced lifte
 This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.md. Phase 2 and SPEC's "Later" list are not being done.
 
 ## Where the build is
-- **Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunk 11 (the stepped planner) is being built on `build/chunk-11` from master `a0d1651`. It has no migration; DECISIONS 52 is provisional (a).
+- **Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunk 11 (the stepped planner, `build/chunk-11` from master `a0d1651`, no migration; DECISIONS 52 provisional (a)) **failed review once** (2026-10-06): step 3 had no "fill all sets at once" rep target, so every set's target was typed separately. Retry in progress, plus G14 clones keep `target_reps`. **Merge timing:** chunk 11 removes the suggested-reps line from the workout screen, and chunk 12's migration (Adam's) converts those values into rep targets. Chunk 11 is held until chunk 12's migration PR is ready, so the gap is short (Adam may say merge sooner). Chunk 12's brief is ready: 034 replaces `v2_copy_program` without `target_reps` before the drop.
 - **Merge flow (Adam, 2026-10-05):** the reviewer merges code-only chunks once verified and green. The reviewer also merges flagged migrations that change no existing row (D29: chunk 15's still to come). Chunks 12, 24 and 25's migrations are Adam's. Migration first, code after a green deploy. Stacked PRs follow the stacked-PR rule. Chunk 12 = (b) (DECISIONS 49); chunk 25's throwaway run has the go-ahead (50). Remaining stops: a failed live check, a second review failure.
 - **Next migration number: 034.**
 - Finished (details in HISTORY.md and DECISIONS):
