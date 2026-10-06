@@ -1,65 +1,53 @@
-// Plan screen's Program tab (chunk 6, TASKS.md "A run owns a copy of its
-// program" / SPEC.md "Plan screen" — "Program tab: the run's copy of the
-// plan... workouts..."). At this stage (SPEC: "the run copy's exercise list
-// still drives every week live, exactly as the shared program does today,
-// so the tab can edit it") this is only the workout list; chunk 9
-// introduces the per-type rules this comment in TASKS.md's chunk 6 brief
-// flags as later work.
+import type { Program } from '../../types'
+import StepExercises from '../planner/StepExercises'
+import StepVolume from '../planner/StepVolume'
+
+// Plan screen's Program tab (chunk 6: TASKS.md "A run owns a copy of its
+// program" — then chunk 11: SPEC.md "Plan screen" — "Program tab: the run's
+// copy of the plan... edits change this run only"; TASKS.md "On a stable
+// run, the program tab edits the run's copy (exercises and sets) with the
+// same step 2/step 3 components").
 //
-// Presentational only, same row built from the same existing tokens as
-// ProgramBuilderPage.tsx's own workout-day row (name + chevron, minus the
-// delete action — deleting a workout isn't this chunk's scope) — the run's
-// copy opens into the exact same existing workout editor
-// (/program/:id/day/:dayId, WorkoutDayEditorPage.tsx) a saved program's
-// workouts already do, so the row that gets there looks the same too.
-
-import { useNavigate } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
-import type { WorkoutDay } from '../../types'
-
-export default function ProgramTab({
-  programId,
-  workoutDays,
-  isLoading,
-}: {
-  programId: string
-  workoutDays: WorkoutDay[]
-  isLoading: boolean
-}) {
-  const navigate = useNavigate()
-
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
-        <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
-      </div>
-    )
-  }
-
-  if (workoutDays.length === 0) {
-    return (
-      <p style={{ textAlign: 'center', paddingTop: 60, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
-        NO WORKOUTS YET
-      </p>
-    )
-  }
+// Not a separate route any more — ProgramBuilderPage/WorkoutDayEditorPage
+// (what this tab used to link each workout row into) are both removed this
+// chunk. Editing now happens inline, directly on the run's own `program`
+// (kind = 'run'): the exact same StepExercises/StepVolume the planner uses
+// for a saved program, just with no priorities step (that stays on
+// PrioritiesEditor.tsx, reached from Plan's header, "as today" — SPEC
+// "Programs and runs": "Priorities live on the program and can be changed
+// per run in the plan screen") and no Save/Start (there is nothing to save
+// — every edit here already commits live — and nothing to start, a run
+// already is one).
+//
+// volumeReadOnly (chunk 9's rule, unchanged by this chunk): week-dependent
+// -> the exercise list and the sets are read-only, shown as week 1's
+// reference; stable -> both editable, and those changes reach weeks not yet
+// planned (SPEC "Programs and runs" / "Weeks and copying"). Schedule
+// (weekday assignment, inside StepExercises) is never read-only — it isn't
+// "Volume", for either planning type.
+export default function ProgramTab({ program }: { program: Program }) {
+  const volumeReadOnly = (program.planningType ?? 'week_dependent') !== 'stable'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {workoutDays.map((day) => (
-        <button
-          key={day.id}
-          onClick={() => navigate(`/program/${programId}/day/${day.id}`)}
-          style={{ width: '100%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left' }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {day.name}
-            </div>
-          </div>
-          <ChevronRight size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
-        </button>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 10 }}>
+          EXERCISES & SCHEDULE
+        </p>
+        <StepExercises program={program} volumeReadOnly={volumeReadOnly} />
+      </div>
+
+      <div>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 10 }}>
+          VOLUME
+        </p>
+        {volumeReadOnly && (
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)', lineHeight: 1.6, marginBottom: 10 }}>
+            VOLUME IS READ-ONLY HERE — EDIT IT IN A WEEK
+          </p>
+        )}
+        <StepVolume program={program} volumeReadOnly={volumeReadOnly} canChangePlanningType={false} />
+      </div>
     </div>
   )
 }

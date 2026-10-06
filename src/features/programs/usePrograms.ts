@@ -1,13 +1,14 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise } from '../../types'
+import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType } from '../../types'
 import {
   fetchPrograms,
   fetchSavedPrograms,
   createProgram,
   updateProgramName,
   updateSchedule,
+  updatePlanningType,
   fetchWorkoutDays,
   createWorkoutDay,
   updateWorkoutDayName,
@@ -64,6 +65,18 @@ export function useUpdateProgramName() {
 export function useUpdateSchedule(programId: string) {
   return useMutation({
     mutationFn: (schedule: WeeklySchedule) => updateSchedule(programId, schedule),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
+  })
+}
+
+// Chunk 11 — the planner's step 3 stable/week-dependent picker. New mutation,
+// so networkMode: 'always' (CONTEXT.md), unlike this file's pre-chunk-11
+// siblings above.
+export function useUpdatePlanningType() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, planningType }: { id: string; planningType: PlanningType }) =>
+      updatePlanningType(id, planningType),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }

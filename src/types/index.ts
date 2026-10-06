@@ -31,8 +31,8 @@ export type WeightUnit = 'kg' | 'lbs'
 // template; 'run' is a run's own copy, created by v2_start_run and never
 // shown in a program list (programService.ts's fetchSavedPrograms filters
 // to 'saved' at the query; fetchPrograms stays unfiltered — PlanPage and
-// ProgramBuilderPage both look a program up by a meso's/route's own id,
-// which is a 'run' program for an active run's copy).
+// the planner (PlannerPage.tsx, chunk 11) both look a program up by a
+// meso's/route's own id, which is a 'run' program for an active run's copy).
 export type ProgramKind = 'saved' | 'run'
 
 // v2_programs.planning_type (migration 027, chunk 8 — SPEC.md "Weeks and
@@ -145,6 +145,14 @@ export type WeeklySchedule = Record<DayOfWeek, string | null>
 
 // Layer 1: program stores exercises + optional rep suggestion only.
 // Sets and RIR targets live in WeekPlan (Layer 2).
+//
+// targetReps (chunk 11, SPEC.md "Removals" — "Suggested reps per program
+// exercise are replaced by per-set rep targets"): the UI that read/wrote
+// this is gone (PlanPage's "· N REPS", ExerciseHeader's reps line,
+// WorkoutDayEditorPage's stepper, now removed with that page). The column
+// and this field stay — dropped only in chunk 12 — so existing rows and
+// every object literal across the test suite that still sets it keep
+// compiling and reading back unchanged.
 export interface ProgramExercise {
   id: string
   workoutDayId: string
@@ -152,8 +160,33 @@ export interface ProgramExercise {
   exerciseId: string
   exercise?: Exercise        // joined when loading the full day
   position: number           // 0-based
-  targetReps: number | null  // suggestion only — never enforced
+  targetReps: number | null  // suggestion only — never enforced; UI removed chunk 11, column drops chunk 12
   weightUnit: WeightUnit | null  // null = inherit v2_user_settings.weightUnit (v3 §2.4)
+}
+
+// ─── Program Set (v2_program_sets, chunk 11 — SPEC.md "Objects stored:
+// Program", "sets") ─────────────────────────────────────────────────────────
+// The program's own volume: every week's for a `stable` program, week 1's
+// for a `week_dependent` one. Mirrors WeekPlanSet's stage shape
+// (parentProgramSetId/stageIndex) but carries no weight/RIR (SPEC
+// "Targets": weight is week-plan-only; RIR is week-plan-only) — only the rep
+// target, which the program DOES own.
+export interface ProgramSet {
+  id: string
+  userId: string
+  programExerciseId: string
+  position: number       // order within the exercise; a stage shares its head's position
+  isWarmup: boolean
+  // Heads only — null on every row chunk 11 ever creates (stages are chunk 14).
+  stageKind: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
+  stageRestSeconds: number | null
+  parentProgramSetId: string | null
+  stageIndex: number      // 0 = head, 1.. = stage order
+  repMin: number | null
+  repMax: number | null
+  isAmrap: boolean
+  restSeconds: number | null  // rest after this set — design field, chunk 13+
+  createdAt: string
 }
 
 export interface WorkoutDay {
@@ -252,6 +285,21 @@ export interface WeekPlanSet {
   stageIndex: number         // 0 = head (main stage), 1.. = stage order
 
   isWarmup: boolean          // never enters e1RM/volume/reference; no authoring UI yet (v3 §2.5)
+
+  // v2_week_plan_sets.rep_min/rep_max/is_amrap (migration 027; read starting
+  // chunk 11 — SPEC.md "Removals": suggested reps are replaced by per-set
+  // rep targets, shown "in Plan and on the workout screen's rows"). Copied
+  // from the source v2_program_sets row when the week is planned
+  // (v2_plan_week); editing them is chunk 19's own scope (SetTargetsEditor).
+  // Optional, not required: every hand-built WeekPlanSet literal across the
+  // existing gym/plan test suite predates these columns (same precedent as
+  // Program.kind?/WorkoutDay.sourceWorkoutDayId? above) and must keep
+  // compiling unchanged. Absent/undefined reads as "no target" wherever this
+  // is used — the same convention columnsToRepTarget (plannerVocabulary.ts)
+  // already applies to a genuinely-null row.
+  repMin?: number | null
+  repMax?: number | null
+  isAmrap?: boolean
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────

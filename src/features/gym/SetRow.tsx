@@ -6,6 +6,7 @@ import { useSettingsStore } from '../settings/settingsStore'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { columnsToRepTarget, formatRepTarget } from '../../lib/plannerVocabulary.js'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { FORM_SCALE } from './ratingScales'
@@ -475,6 +476,16 @@ export default function SetRow({
 
   // ── Input row ────────────────────────────────────────────────────────────
   const targetRir = plannedSet?.targetRir
+  // Chunk 11 (SPEC.md "Removals" — suggested reps per program exercise are
+  // replaced by per-set rep targets). Same columnsToRepTarget/formatRepTarget
+  // PlanPage's own per-set row uses, so the two screens can never disagree on
+  // what "no target" vs. a number/range/AMRAP looks like. 'none' renders
+  // nothing, same as the TARGET RIR hint below when targetRir is null.
+  const targetReps = columnsToRepTarget({
+    repMin: plannedSet?.repMin ?? null,
+    repMax: plannedSet?.repMax ?? null,
+    isAmrap: plannedSet?.isAmrap ?? false,
+  })
 
   // Resolves the final restSeconds/setSeconds pair and tears down the set
   // timer — shared by handleLog and handleSkip so both honour the Start Set
@@ -712,6 +723,21 @@ export default function SetRow({
             style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
           >
             {logError}
+          </span>
+        </div>
+      )}
+
+      {/* Target reps hint (chunk 11) — same row shape as the TARGET RIR hint
+          right below, kept as its own independent block (rather than merged
+          into one line) so a set with no rep target renders exactly as
+          before: nothing here, same as today. */}
+      {targetReps.type !== 'none' && (
+        <div className="flex items-center gap-2 pl-7">
+          <span
+            className="text-xs"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            TARGET REPS {formatRepTarget(targetReps)}
           </span>
         </div>
       )}
