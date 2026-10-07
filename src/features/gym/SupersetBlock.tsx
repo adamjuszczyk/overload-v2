@@ -262,7 +262,7 @@ export default function SupersetBlock({
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              {state.showPlanTargets && <PlanTargetsPanel plannedSets={member.plannedSets} />}
+              {state.showPlanTargets && <PlanTargetsPanel plannedSets={member.plannedSets} weightUnit={member.programExercise.weightUnit} />}
               <div className="px-3 py-2">
                 <ExerciseReference
                   today={today}

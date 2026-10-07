@@ -206,6 +206,71 @@ describe('SetRow — planned rep target hint (chunk 11)', () => {
   })
 })
 
+// Chunk 19 (SPEC "Targets"/"Tags" — "SetRow shows the weight target (in the
+// exercise's unit) and the set's tags ... A set without a target shows no
+// target: null weight, no tags ... render nothing (no label, no
+// placeholder, no empty element). That is what keeps D30 intact." / "Tags
+// are display-only on the workout screen. They're never written to
+// v2_set_logs or the offline queue."). Same "not yet logged" input row as
+// the rep-target hint above.
+describe('SetRow — planned weight target + tags (chunk 19)', () => {
+  function unloggedProps() {
+    return { ...baseSetRowProps(), currentLog: null }
+  }
+
+  it('no plannedSet at all -> no TARGET WEIGHT text, no tag chips', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={null} />)
+    expect(screen.queryByText(/TARGET WEIGHT/)).toBeNull()
+  })
+
+  it('a plannedSet with a null target_weight -> no TARGET WEIGHT text (same as no target today)', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ targetWeight: null })} />)
+    expect(screen.queryByText(/TARGET WEIGHT/)).toBeNull()
+  })
+
+  it('a weight target shows in the exercise\'s resolved unit (kg default here)', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ targetWeight: 100 })} />)
+    expect(screen.getByText('TARGET WEIGHT 100kg')).toBeTruthy()
+  })
+
+  it('renders alongside TARGET REPS/TARGET RIR without disturbing either', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ targetWeight: 100, repMin: 8, repMax: 12, targetRir: 2 })} />)
+    expect(screen.getByText('TARGET WEIGHT 100kg')).toBeTruthy()
+    expect(screen.getByText('TARGET REPS 8–12')).toBeTruthy()
+    expect(screen.getByText('TARGET RIR 2')).toBeTruthy()
+  })
+
+  it('no tags (null or empty) -> no tag chip rendered at all', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ tags: null })} />)
+    expect(screen.queryByText('push here')).toBeNull()
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ tags: [] })} />)
+    expect(screen.queryByText('push here')).toBeNull()
+  })
+
+  it('two tags both show on the row', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ tags: ['push here', 'maintain strength'] })} />)
+    expect(screen.getByText('push here')).toBeTruthy()
+    expect(screen.getByText('maintain strength')).toBeTruthy()
+  })
+
+  it('tags are display-only: LOG\'s payload never carries a tags key', () => {
+    const onLog = vi.fn()
+    const { container } = render(
+      <SetRow
+        {...unloggedProps()}
+        plannedSet={makeWeekPlanSet({ tags: ['push here'] })}
+        onLog={onLog}
+      />,
+    )
+    fireEvent.change(container.querySelector('input[inputmode="decimal"]')!, { target: { value: '100' } })
+    fireEvent.change(container.querySelector('input[inputmode="numeric"]')!, { target: { value: '8' } })
+    fireEvent.click(screen.getByRole('button', { name: 'LOG' }))
+
+    expect(onLog).toHaveBeenCalledTimes(1)
+    expect('tags' in onLog.mock.calls[0][0]).toBe(false)
+  })
+})
+
 // Chunk 14 — "Staged sets: all four stage kinds" (SPEC.md). Three things at
 // this component's own boundary: a stage row is labelled by its resolved
 // kind (dropset keeps today's plain "STAGE"/no-hint look, unchanged); a

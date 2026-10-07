@@ -1172,6 +1172,30 @@ export default function SetRow({
         </div>
       )}
 
+      {/* Target weight hint (chunk 19, SPEC "Targets" — "Weight targets:
+          per set, in the week plan only"). Same row shape as the hints
+          below; a null target (every set before this chunk, and any set
+          this chunk's own week-plan editor leaves blank) renders nothing
+          here at all — no label, no placeholder, no empty element — which
+          is what keeps D30 intact (CONTEXT.md D30; this hint sits ABOVE
+          the existing TARGET REPS/TARGET RIR hints so it reads "weight,
+          reps, RIR" in that order, never disturbing either of their own
+          markup). resolvedUnit: this exercise's own resolved unit (same
+          value the weight INPUT above already shows as its unit suffix),
+          never the logging-time unitOverride — a planned target is shown
+          in the exercise's configured unit regardless of how THIS set
+          happens to be logged. */}
+      {plannedSet?.targetWeight != null && (
+        <div className="flex items-center gap-2 pl-7">
+          <span
+            className="text-xs"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            TARGET WEIGHT {toDisplayWeight(plannedSet.targetWeight, resolvedUnit)}{resolvedUnit}
+          </span>
+        </div>
+      )}
+
       {/* Target reps hint (chunk 11) — same row shape as the TARGET RIR hint
           right below, kept as its own independent block (rather than merged
           into one line) so a set with no rep target renders exactly as
@@ -1212,6 +1236,27 @@ export default function SetRow({
           >
             {stageLabel}
           </span>
+        </div>
+      )}
+
+      {/* Tags (chunk 19, SPEC "Tags" — "Shown on the set's row during the
+          workout. Never tracked. Never copied."). Display-only: never part
+          of onLog's payload, never sent to v2_set_logs or the offline queue
+          — this reads plannedSet.tags only, the same read-only pattern the
+          hints above already use, and writes nothing. No tags (null/empty
+          — every set before this chunk, and a head with none authored yet)
+          renders nothing here at all, same discipline as every hint above. */}
+      {plannedSet?.tags != null && plannedSet.tags.length > 0 && (
+        <div className="flex items-center gap-1 pl-7 flex-wrap">
+          {plannedSet.tags.map((tag) => (
+            <span
+              key={tag}
+              className="text-xs px-1.5 rounded"
+              style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       )}
 

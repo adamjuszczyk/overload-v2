@@ -64,3 +64,70 @@ describe('updateSet — stageKind patch (chunk 14)', () => {
     expect('stage_kind' in payload).toBe(false)
   })
 })
+
+// Chunk 19 — SPEC "Targets"/"Tags": weight target, the week's rep-target
+// override, and tags, each writing only its own column(s), same "named only
+// when present" convention the existing stageKind tests above already pin.
+describe('updateSet — weight target, rep target, tags (chunk 19)', () => {
+  it('a weight-only change writes exactly { target_weight } in kg — nothing else', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetWeight: 102.06 })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ target_weight: 102.06 })
+  })
+
+  it('blank clears the weight target: writes { target_weight: null }, not an absent key', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetWeight: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ target_weight: null })
+  })
+
+  it('a rep-target change writes exactly rep_min/rep_max/is_amrap — never target_rir unless the caller asks', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { repMin: 8, repMax: 12, isAmrap: false })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ rep_min: 8, rep_max: 12, is_amrap: false })
+    expect('target_rir' in payload).toBe(false)
+  })
+
+  it('AMRAP\'s RIR default rides in the SAME update, when the caller includes it', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { repMin: null, repMax: null, isAmrap: true, targetRir: 0 })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ rep_min: null, rep_max: null, is_amrap: true, target_rir: 0 })
+    expect(fromMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a tags change writes exactly { tags }', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { tags: ['push here', 'maintain strength'] })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ tags: ['push here', 'maintain strength'] })
+  })
+
+  it('removing the last tag writes { tags: null }, not an absent key', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { tags: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ tags: null })
+  })
+})

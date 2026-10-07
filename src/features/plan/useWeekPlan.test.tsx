@@ -18,17 +18,22 @@ import type { ReactNode } from 'react'
 // planWeekThenFindId's own seam, so this file needs no module mock for it.
 
 const planWeekMock = vi.fn()
+// Chunk 19 — useUpdateSet's own networkMode: 'always' proof below, same
+// injection seam as planWeek's.
+const updateSetMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
   planWeek: (...args: unknown[]) => planWeekMock(...args),
+  updateSet: (...args: unknown[]) => updateSetMock(...args),
 }))
 
-const { usePlanWeek, planWeekThenFindId } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
   // process — leaving it false would silently break unrelated suites.
   onlineManager.setOnline(true)
   planWeekMock.mockReset()
+  updateSetMock.mockReset()
 })
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -62,6 +67,25 @@ describe('usePlanWeek — networkMode: always', () => {
     await expect(result.current.mutateAsync({ mesoId: 'm1', weekNumber: 2 })).rejects.toThrow(
       'network unavailable',
     )
+  })
+})
+
+// Chunk 19 (reviewer's note: "Every write uses networkMode: 'always'") —
+// useUpdateSet now also carries the week's weight/rep-target/tags edits;
+// same regression shape and same proof as usePlanWeek's own block above.
+describe('useUpdateSet — networkMode: always (chunk 19)', () => {
+  it('never pauses, online or offline — the mutation always attempts the call', async () => {
+    updateSetMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useUpdateSet('meso-1', 1), { wrapper })
+
+    onlineManager.setOnline(false)
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetWeight: 100 } })
+    })
+
+    await waitFor(() => expect(result.current.isPaused).toBe(false))
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(updateSetMock).toHaveBeenCalledWith('set-1', { targetWeight: 100 })
   })
 })
 

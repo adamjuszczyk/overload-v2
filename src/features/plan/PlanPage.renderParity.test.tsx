@@ -37,6 +37,21 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // stageKind set anywhere in it, so it reads as a dropset, same as before
 // this chunk; PlanPage.repTargets.test.tsx/PlanPage.copyButtons.test.tsx
 // stay green unmodified, confirming this is additive, not a regression).
+//
+// Chunk 19 re-capture: SetRow now always shows a WEIGHT editor (head and
+// stage) and, on the head only, a TAGS chip row — neither existed before
+// this chunk, so this fixture's two rows (set-1, no weight/tags of their
+// own) now show both, both at rest ("—"/every preset inactive/"+ CUSTOM"):
+// still the same unchanged fixture data, re-captured the same way as every
+// prior visible change to this render. The rep target span is now a
+// clickable RepTargetEditor; this fixture's own sets carry no repMin/repMax
+// either, so it renders the new "—" placeholder (nothing rendered at all,
+// pre-chunk-19) rather than the formatted-text span — see
+// PlanPage.targetsParity.test.tsx for the narrower, assertion-based proof
+// that an EXISTING rep target's own rendering is undisturbed by any of this
+// (a literal whole-row byte-diff against master is no longer possible once
+// weight/rep targets are genuinely editable — that test's own header
+// explains why, and what it checks instead).
 
 afterEach(() => cleanup())
 
