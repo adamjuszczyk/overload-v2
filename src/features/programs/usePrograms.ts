@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType } from '../../types'
+import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, WarmupRoutineItem } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
 import {
   fetchPrograms,
@@ -26,6 +26,13 @@ import {
   fetchSupersetBlockRests,
   updateSupersetBlockRest,
 } from './programService'
+import {
+  fetchWarmupItems,
+  addWarmupItem,
+  updateWarmupItemBody,
+  removeWarmupItem,
+  reorderWarmupItems,
+} from './warmupRoutineService'
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
 
@@ -313,5 +320,90 @@ export function useUpdateSupersetBlockRest(workoutDayId: string) {
     }) => updateSupersetBlockRest(id, changes),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programSupersetBlocks', workoutDayId] }),
+  })
+}
+
+// ─── Warmup routine (chunk 18 — SPEC.md "Warmup routine") ──────────────────
+// One fetch per workout, same batching precedent as useProgramExercises/
+// useSupersetBlockRests above — StepExercises.tsx's own editor and
+// GymSession's own checklist (via useWarmupRoutineItems) each call this once
+// per workout, not once per item. Design field: editable in the planner and
+// the program tab for both planning types, never gated by volumeReadOnly —
+// same posture rest/tempo/superset grouping already take above. Read by the
+// workout screen too (GymSession.tsx's WarmupRoutineChecklist.tsx), online-
+// only — the same posture every other program/run read on that screen
+// takes (CONTEXT.md's offline list doesn't cover this; see that component's
+// own header for what happens with no data, online or off). First app use
+// of v2_workout_warmup_items (CONTEXT rule: scripts/verify-rls.mjs's TABLES
+// gains it in this same change).
+const warmupItemsKey = (workoutDayId: string) => ['v2_workoutWarmupItems', workoutDayId] as const
+
+export function useWarmupRoutineItems(workoutDayId: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: warmupItemsKey(workoutDayId),
+    queryFn: () => fetchWarmupItems(workoutDayId),
+    enabled: !!user && !!workoutDayId,
+  })
+}
+
+// Not optimistic — same posture useAddProgramExercise takes (plain
+// mutation, invalidate onSuccess): a new item's real id (and any server-
+// assigned default) is only known once the insert returns.
+export function useAddWarmupItem(workoutDayId: string) {
+  const { user } = useAuth()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ body, position }: { body: string; position: number }) =>
+      addWarmupItem(user!.id, workoutDayId, body, position),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: warmupItemsKey(workoutDayId) }),
+  })
+}
+
+// Optimistic-with-rollback — same shape useUpdateProgramExerciseRest/
+// useUpdateProgramExerciseTempo already take above: a failed/offline edit
+// must not leave the planner/program tab showing text that was never
+// actually persisted. The caller (StepExercises.tsx's WarmupItemRow)
+// refuses a blank body itself and never calls this for one.
+export function useUpdateWarmupItemBody(workoutDayId: string) {
+  const qk = warmupItemsKey(workoutDayId)
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, body }: { id: string; body: string }) => updateWarmupItemBody(id, body),
+    onMutate: async ({ id, body }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<WarmupRoutineItem[]>(qk)
+      queryClient.setQueryData(qk, (old: WarmupRoutineItem[] | undefined) =>
+        old?.map((item) => (item.id === id ? { ...item, body } : item)),
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
+// Not optimistic — same posture useDeleteProgramExercise takes (plain
+// mutation; the row disappears once the refetch lands).
+export function useRemoveWarmupItem(workoutDayId: string) {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (id: string) => removeWarmupItem(id, workoutDayId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: warmupItemsKey(workoutDayId) }),
+  })
+}
+
+// Not optimistic INSIDE the hook — same posture useReorderProgramExercises
+// takes: the CALLER (StepExercises.tsx's WarmupRoutineEditor, same as
+// WorkoutEditor's own moveExercise) writes the reordered list straight into
+// this query's cache before calling mutate, so the UI reflects the new
+// order immediately without waiting on a round trip.
+export function useReorderWarmupItems(workoutDayId: string) {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (updates: { id: string; position: number }[]) => reorderWarmupItems(updates),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: warmupItemsKey(workoutDayId) }),
   })
 }

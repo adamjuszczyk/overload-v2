@@ -184,6 +184,11 @@ vi.mock('../programs/usePrograms', () => ({
   // resolution falls through to the global setting, same as before this
   // chunk existed at all.
   useSupersetBlockRests: () => ({ data: [] }),
+  // Chunk 18 (SPEC "Warmup routine") — not this test's concern (the new
+  // GymSession.warmupRoutine.test.tsx covers it); empty so
+  // WarmupRoutineChecklist renders nothing at all, same as before this
+  // chunk existed (D30).
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 // Chunk 16 — same reasoning: no program sets means no per-set/stage design
 // field is ever found, so restChain.ts falls through unchanged.

@@ -3,6 +3,7 @@ import type { ProgramSet, WeeklySchedule, DayOfWeek, WorkoutDay } from '../../ty
 import { repTargetToColumns, columnsToRepTarget, formatRepTarget, type RepTarget } from '../../lib/plannerVocabulary.js'
 import { fetchRunProgramExercises } from '../programs/runProgramExercises'
 import { createWorkoutDay } from '../programs/programService'
+import { fetchWarmupItems } from '../programs/warmupRoutineService'
 
 // Chunk 11 — the stepped program planner (TASKS.md "file layout: ...
 // plannerService.ts"). First user of v2_program_sets (CONTEXT rule:
@@ -468,6 +469,36 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       const { error } = await supabase.from('v2_program_sets').insert(stageRows)
       if (error) throw error
     }
+  }
+
+  // Chunk 18 (SPEC "Warmup routine") — same "a chunk that makes a gap
+  // reachable owns closing it" precedent as rest (chunk 16) and tempo
+  // (chunk 17) above: this chunk is the first that can ever put a warmup
+  // routine checklist on a workout, so this split's own clone owns carrying
+  // it too. A WORKOUT-level copy, not per-exercise — runs once per clone,
+  // independent of the exercises loop above, same posture 034's own
+  // v2_copy_program Postgres function takes for this exact table (its own
+  // "Warmup items" loop runs independently of its exercises loop too).
+  // Fresh client-chosen ids (same precedent as cloneProgramExerciseRow/the
+  // stage rows above); position/body carried verbatim in one batched
+  // insert — a true field-by-field copy, never a forced reset. Safe as a
+  // single multi-row insert with the SOURCE's own positions unchanged:
+  // `copy.id` is a workout day that was just created moments ago and can
+  // hold no warmup items of its own yet, so there is nothing for these rows
+  // to collide with under the table's own unique (workout_day_id, position)
+  // index.
+  const warmupItems = await fetchWarmupItems(source.id)
+  if (warmupItems.length > 0) {
+    const { error } = await supabase.from('v2_workout_warmup_items').insert(
+      warmupItems.map((item) => ({
+        id: crypto.randomUUID(),
+        user_id: userId,
+        workout_day_id: copy.id,
+        position: item.position,
+        body: item.body,
+      })),
+    )
+    if (error) throw error
   }
 
   return copy.id

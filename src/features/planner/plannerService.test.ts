@@ -21,6 +21,17 @@ vi.mock('../programs/programService', () => ({
   createWorkoutDay: (...args: unknown[]) => createWorkoutDayMock(...args),
 }))
 
+// Chunk 18 (SPEC "Warmup routine") — cloneWorkoutDay's own new warmup-items
+// copy (the G14 clone gap, same precedent as rest/tempo above). Defaults to
+// [] in beforeEach so every PRE-EXISTING test below (none of which cares
+// about warmup items) sees no items and cloneWorkoutDay's new insert simply
+// never fires — only the dedicated describe block near the bottom of this
+// file overrides it.
+const fetchWarmupItemsMock = vi.fn()
+vi.mock('../programs/warmupRoutineService', () => ({
+  fetchWarmupItems: (...args: unknown[]) => fetchWarmupItemsMock(...args),
+}))
+
 const {
   headSets,
   hasNoSets,
@@ -60,6 +71,8 @@ beforeEach(() => {
   fromMock.mockReset()
   fetchRunProgramExercisesMock.mockReset()
   createWorkoutDayMock.mockReset()
+  fetchWarmupItemsMock.mockReset()
+  fetchWarmupItemsMock.mockResolvedValue([])
 })
 
 const EMPTY_SCHEDULE: WeeklySchedule = {
@@ -702,6 +715,65 @@ describe('splitSharedWeekdayWorkouts', () => {
     // new head (not at each other, not at the source head).
     expect(stageRows[0].id).not.toBe('ps-stage-1')
     expect(stageRows[1].id).not.toBe('ps-stage-2')
+  })
+
+  // Chunk 18 (SPEC "Warmup routine") — same "a chunk that makes a gap
+  // reachable owns closing it" precedent as rest (chunk 16) and tempo
+  // (chunk 17) above: this chunk is the first that can ever put a warmup
+  // routine checklist on a workout, so this split's own clone must carry it
+  // too. A workout-level copy, independent of the exercises loop — no
+  // exercise at all here (fetchRunProgramExercisesMock resolves []),
+  // proving the warmup-items copy doesn't depend on there being any.
+  it('clones the source workout\'s warmup items, in order, with fresh ids', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    fetchRunProgramExercisesMock.mockResolvedValue([])
+    fetchWarmupItemsMock.mockResolvedValue([
+      { id: 'wi-1', userId: 'user-1', workoutDayId: 'wd-shared', position: 0, body: 'Bike 5 min' },
+      { id: 'wi-2', userId: 'user-1', workoutDayId: 'wd-shared', position: 1, body: 'Band pull-aparts' },
+    ])
+    const insertChain = makeChain({ data: null, error: null })
+    fromMock.mockImplementation(() => insertChain)
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    const groups = detectSharedWeekdayWorkouts(schedule)
+
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, groups)
+
+    expect(fetchWarmupItemsMock).toHaveBeenCalledWith('wd-shared')
+    expect(fromMock).toHaveBeenCalledWith('v2_workout_warmup_items')
+    const insertCall = (insertChain.insert as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => Array.isArray(c[0]) && c[0][0]?.body === 'Bike 5 min',
+    )
+    expect(insertCall?.[0]).toHaveLength(2)
+    const rows = insertCall![0] as Record<string, unknown>[]
+    expect(rows).toMatchObject([
+      { user_id: 'user-1', workout_day_id: 'wd-clone', position: 0, body: 'Bike 5 min' },
+      { user_id: 'user-1', workout_day_id: 'wd-clone', position: 1, body: 'Band pull-aparts' },
+    ])
+    // Fresh ids — neither row reused the source's own.
+    expect(rows[0].id).not.toBe('wi-1')
+    expect(rows[1].id).not.toBe('wi-2')
+    expect(typeof rows[0].id).toBe('string')
+    expect(typeof rows[1].id).toBe('string')
+  })
+
+  it('no warmup items on the source: writes nothing to v2_workout_warmup_items', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    fetchRunProgramExercisesMock.mockResolvedValue([])
+    fetchWarmupItemsMock.mockResolvedValue([]) // the beforeEach default, explicit here for clarity
+    const insertChain = makeChain({ data: null, error: null })
+    fromMock.mockImplementation(() => insertChain)
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    const groups = detectSharedWeekdayWorkouts(schedule)
+
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, groups)
+
+    expect(fromMock).not.toHaveBeenCalledWith('v2_workout_warmup_items')
   })
 
   it('an unlisted group (no matching workoutDays entry) is skipped, not thrown', async () => {

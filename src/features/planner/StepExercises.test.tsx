@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import type { Program, WorkoutDay, ProgramExercise } from '../../types'
+import type { Program, WorkoutDay, ProgramExercise, WarmupRoutineItem } from '../../types'
 
 // Chunk 11 — step 2 (exercises, order, weekday). Heavy-mocked at the hook
 // boundary, same precedent as ProgramPage.test.tsx/PrioritiesEditor.test.tsx:
@@ -10,6 +10,7 @@ import type { Program, WorkoutDay, ProgramExercise } from '../../types'
 
 let workoutDays: WorkoutDay[] = []
 let exercisesByDay: Record<string, ProgramExercise[]> = {}
+let warmupItemsByDay: Record<string, WarmupRoutineItem[]> = {}
 const createDayMutateAsyncMock = vi.fn()
 const updateNameMutateAsyncMock = vi.fn()
 const deleteDayMutateMock = vi.fn()
@@ -21,6 +22,10 @@ const updateTempoMutateMock = vi.fn()
 const updateBlockRestMutateMock = vi.fn()
 const assignWeekdayMutateMock = vi.fn()
 const toggleLinkMutateMock = vi.fn()
+const addWarmupItemMutateAsyncMock = vi.fn()
+const updateWarmupItemMutateMock = vi.fn()
+const removeWarmupItemMutateMock = vi.fn()
+const reorderWarmupItemsMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -43,6 +48,16 @@ vi.mock('../programs/usePrograms', () => ({
   // override" default throughout.
   useSupersetBlockRests: () => ({ data: [] }),
   useUpdateSupersetBlockRest: () => ({ mutate: updateBlockRestMutateMock, isPending: false }),
+  // Chunk 18 (SPEC "Warmup routine") — the warmup routine describe block
+  // below is the one that cares what these are called with; every OTHER
+  // describe block gets an empty list by default (warmupItemsByDay starts
+  // {} in beforeEach), so WarmupRoutineEditor renders only its own
+  // "ADD ITEM" affordance and never interferes with those tests.
+  useWarmupRoutineItems: (workoutDayId: string) => ({ data: warmupItemsByDay[workoutDayId] ?? [], isLoading: false }),
+  useAddWarmupItem: () => ({ mutateAsync: addWarmupItemMutateAsyncMock, isPending: false }),
+  useUpdateWarmupItemBody: () => ({ mutate: updateWarmupItemMutateMock, isPending: false }),
+  useRemoveWarmupItem: () => ({ mutate: removeWarmupItemMutateMock, isPending: false }),
+  useReorderWarmupItems: () => ({ mutate: reorderWarmupItemsMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', () => ({
@@ -75,12 +90,17 @@ afterEach(() => {
   updateTempoMutateMock.mockReset()
   assignWeekdayMutateMock.mockReset()
   toggleLinkMutateMock.mockReset()
+  addWarmupItemMutateAsyncMock.mockReset()
+  updateWarmupItemMutateMock.mockReset()
+  removeWarmupItemMutateMock.mockReset()
+  reorderWarmupItemsMutateMock.mockReset()
 })
 
 beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
   workoutDays = []
   exercisesByDay = {}
+  warmupItemsByDay = {}
 })
 
 function program(overrides: Partial<Program> = {}): Program {
@@ -104,6 +124,10 @@ function exercise(overrides: Partial<ProgramExercise> = {}): ProgramExercise {
     exercise: { id: 'ex-1', userId: 'user-1', name: 'Bench Press', muscleGroup: 'chest', isArchived: false, createdAt: '2026-01-01T00:00:00Z', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null },
     ...overrides,
   }
+}
+
+function warmupItem(overrides: Partial<WarmupRoutineItem> = {}): WarmupRoutineItem {
+  return { id: 'wi-1', userId: 'user-1', workoutDayId: 'wd-1', position: 0, body: 'Bike 5 min', ...overrides }
 }
 
 describe('StepExercises — empty states', () => {
@@ -408,5 +432,150 @@ describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly)', ()
     fireEvent.blur(input)
 
     expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: null })
+  })
+})
+
+// Chunk 18 (SPEC "Warmup routine") — WarmupRoutineEditor lives below the
+// exercise list, inside the same per-workout box. Every fixture here keeps
+// exercisesByDay empty unless a test says otherwise, so the only
+// up/down/delete icon buttons rendered belong to warmup items, not exercise
+// rows — same isolation precedent the reorder/superset describe blocks
+// above already rely on for their own icon-button queries.
+describe('StepExercises — warmup routine checklist (chunk 18, never gated by volumeReadOnly)', () => {
+  it('empty: shows NO WARMUP ITEMS YET and an ADD ITEM affordance, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    expect(screen.getByText('NO WARMUP ITEMS YET')).toBeTruthy()
+    expect(screen.getByText('ADD ITEM')).toBeTruthy()
+  })
+
+  it('shows existing items in position order', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [
+      warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' }),
+      warmupItem({ id: 'wi-2', position: 1, body: 'Band pull-aparts' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    expect(screen.getByText('Bike 5 min')).toBeTruthy()
+    expect(screen.getByText('Band pull-aparts')).toBeTruthy()
+  })
+
+  it('add: typing text and submitting calls useAddWarmupItem with the trimmed body and the next position, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    fireEvent.click(screen.getByText('ADD ITEM'))
+    const input = screen.getByLabelText('New warmup item')
+    fireEvent.change(input, { target: { value: '  Jumping jacks  ' } })
+    fireEvent.click(screen.getByText('ADD'))
+
+    expect(addWarmupItemMutateAsyncMock).toHaveBeenCalledWith({ body: 'Jumping jacks', position: 1 })
+  })
+
+  it('add: a blank entry is refused — nothing is written, the add form stays open', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByText('ADD ITEM'))
+    const input = screen.getByLabelText('New warmup item')
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.click(screen.getByText('ADD'))
+
+    expect(addWarmupItemMutateAsyncMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('New warmup item')).toBeTruthy() // still open
+  })
+
+  it('edit: tap-to-edit text, blur commits the trimmed body via useUpdateWarmupItemBody, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    fireEvent.click(screen.getByText('Bike 5 min'))
+    const input = screen.getByLabelText('Warmup item text')
+    fireEvent.change(input, { target: { value: '  Rower 5 min  ' } })
+    fireEvent.blur(input)
+
+    expect(updateWarmupItemMutateMock).toHaveBeenCalledWith({ id: 'wi-1', body: 'Rower 5 min' })
+  })
+
+  it('edit: a blank entry is refused — nothing is written, the original text is still shown', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByText('Bike 5 min'))
+    const input = screen.getByLabelText('Warmup item text')
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.blur(input)
+
+    expect(updateWarmupItemMutateMock).not.toHaveBeenCalled()
+    expect(screen.getByText('Bike 5 min')).toBeTruthy()
+  })
+
+  it('remove: the delete icon opens a confirm sheet; confirming calls useRemoveWarmupItem with the item id, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    const deleteButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-trash2'))
+    expect(deleteButtons).toHaveLength(1)
+    fireEvent.click(deleteButtons[0])
+
+    expect(screen.getByText('Remove this item?')).toBeTruthy()
+    fireEvent.click(screen.getByText('REMOVE'))
+
+    expect(removeWarmupItemMutateMock).toHaveBeenCalledWith('wi-1')
+  })
+
+  it('reorder: moving the second item up swaps its position with the first, with dense positions, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [
+      warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' }),
+      warmupItem({ id: 'wi-2', position: 1, body: 'Band pull-aparts' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    const upButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-up'))
+    expect(upButtons).toHaveLength(2) // one per item — a flat list, no grouping
+    fireEvent.click(upButtons[1]) // "Band pull-aparts" own up arrow
+
+    expect(reorderWarmupItemsMutateMock).toHaveBeenCalledWith([
+      { id: 'wi-2', position: 0 },
+      { id: 'wi-1', position: 1 },
+    ])
+  })
+
+  it('the first item\'s own up arrow and the last item\'s own down arrow are disabled', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [
+      warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' }),
+      warmupItem({ id: 'wi-2', position: 1, body: 'Band pull-aparts' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    const upButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-up')) as HTMLButtonElement[]
+    const downButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-down')) as HTMLButtonElement[]
+    expect(upButtons[0].disabled).toBe(true)
+    expect(downButtons[1].disabled).toBe(true)
+    expect(upButtons[1].disabled).toBe(false)
+    expect(downButtons[0].disabled).toBe(false)
+  })
+
+  it('375px: no element carries a fixed pixel width wider than 375px', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    warmupItemsByDay['wd-1'] = [warmupItem({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
+    const { container } = render(<StepExercises program={program()} volumeReadOnly={false} />)
+    const offenders: string[] = []
+    for (const el of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const prop of ['width', 'minWidth'] as const) {
+        const value = el.style[prop]
+        const m = /^(\d+(?:\.\d+)?)px$/.exec(value)
+        if (m && Number(m[1]) > 375) offenders.push(`${el.tagName}.${prop}=${value}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })
