@@ -10,6 +10,7 @@ const updatePlanningTypeMutateMock = vi.fn()
 const setCountMutateMock = vi.fn()
 const updateTargetMutateMock = vi.fn()
 const setAllTargetMutateMock = vi.fn()
+const updateRestMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -33,6 +34,11 @@ vi.mock('./usePlanner', async () => {
     // too, same reason every hook above is listed.
     useUpdateProgramSetIsWarmup: () => ({ mutate: vi.fn() }),
     useUpdateProgramSetStageKind: () => ({ mutate: vi.fn() }),
+    // Chunk 16 (SPEC "Rest") — not this file's own concern (rep targets,
+    // the SETS stepper); every render now also mounts a RestStepper per
+    // row, so these must resolve too, same reason every hook above does.
+    useUpdateProgramSetRest: () => ({ mutate: updateRestMutateMock }),
+    useUpdateProgramSetStageRest: () => ({ mutate: vi.fn() }),
     useAddProgramSetStage: () => ({ mutate: vi.fn(), isPending: false }),
     useRemoveProgramSetStage: () => ({ mutate: vi.fn() }),
     headSets: actual.headSets,
@@ -48,6 +54,7 @@ afterEach(() => {
   setCountMutateMock.mockReset()
   updateTargetMutateMock.mockReset()
   setAllTargetMutateMock.mockReset()
+  updateRestMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -349,6 +356,32 @@ describe('StepVolume — planning type picker', () => {
 
     expect((screen.getByText('STABLE') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByText('WEEK-DEPENDENT') as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('StepVolume — per-set rest override (chunk 16, never gated by volumeReadOnly)', () => {
+  // Scoped to the stepper's own value span (its parentElement, the stepper's
+  // outer pill) rather than a bare getAllByText('+')/('−') — the SETS
+  // stepper right above (ExerciseSetsEditor) uses the identical literal
+  // '+'/'−' glyphs for its own, unrelated count control.
+  it('a set with no override shows CHAIN; stepping it writes restSeconds', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1, restSeconds: null })]
+    render(<StepVolume program={program()} volumeReadOnly canChangePlanningType={false} />)
+
+    const stepper = screen.getByText('CHAIN').parentElement!
+    fireEvent.click(stepper.querySelector('button:last-of-type')!)
+    expect(updateRestMutateMock).toHaveBeenCalledWith({ id: 'ps-1', restSeconds: 15 })
+  })
+
+  it('a set\'s own override is shown and steps by 15s, down to clearing back to null', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1, restSeconds: 15 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+
+    const stepper = screen.getByText('15s').parentElement!
+    fireEvent.click(stepper.querySelector('button:first-of-type')!)
+    expect(updateRestMutateMock).toHaveBeenCalledWith({ id: 'ps-1', restSeconds: null })
   })
 })
 

@@ -10,14 +10,25 @@ import {
   useSetRepTargetForAllSets,
   useUpdateProgramSetIsWarmup,
   useUpdateProgramSetStageKind,
+  useUpdateProgramSetRest,
+  useUpdateProgramSetStageRest,
   useAddProgramSetStage,
   useRemoveProgramSetStage,
   headSets,
   summarizeRepTargets,
 } from './usePlanner'
-import { formatRepTarget, parseRepTarget, columnsToRepTarget, STAGE_KINDS, STAGE_KIND_LABELS, resolveStageKind } from '../../lib/plannerVocabulary.js'
+import {
+  formatRepTarget,
+  parseRepTarget,
+  columnsToRepTarget,
+  STAGE_KINDS,
+  STAGE_KIND_LABELS,
+  resolveStageKind,
+  DEFAULT_STAGE_REST_SECONDS,
+} from '../../lib/plannerVocabulary.js'
 import { groupByParent, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import RatingChips from '../gym/RatingChips.js'
+import { formatRestTime } from '../../lib/formatRestTime'
 
 // Step 3 — Volume (SPEC.md "Stepped program planner" step 3; TASKS.md "step
 // 3 picks stable / week-dependent and plans sets"). Reused as-is by a
@@ -331,6 +342,7 @@ function SetTargetRow({
   onRemove?: () => void
 }) {
   const updateTarget = useUpdateSetRepTarget()
+  const updateRest = useUpdateProgramSetRest()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -391,6 +403,20 @@ function SetTargetRow({
           {displayText}
         </button>
       )}
+      {/* Chunk 16 (SPEC "Rest") — per-set rest override, a design field:
+          never gated by `readOnly` (volumeReadOnly) the way the rep target
+          above is, same posture StepExercises.tsx's own exercise-level REST
+          takes. Any row, head or stage — no DB check restricts rest_seconds
+          to heads only. null = "no override", falls through to the
+          exercise's own rest, then global (restChain.ts). */}
+      {/* No label here (unlike the exercise/stage/block-level steppers
+          elsewhere in this file) — this row already reads as "set N's own
+          rest" by position, and the row is tight on width at 375px. */}
+      <RestStepper
+        value={set.restSeconds}
+        onChange={(v) => updateRest.mutate({ id: set.id, restSeconds: v })}
+        defaultText="CHAIN"
+      />
       {isStage && !readOnly && onRemove && (
         <button
           onClick={onRemove}
@@ -427,9 +453,12 @@ function ProgramSetGroupEditor({
   const { head, stages } = group
   const stageKind = resolveStageKind(head.stageKind ?? null)
   const updateStageKind = useUpdateProgramSetStageKind()
+  const updateStageRest = useUpdateProgramSetStageRest()
   const setWarmup = useUpdateProgramSetIsWarmup()
   const addStage = useAddProgramSetStage()
   const removeStage = useRemoveProgramSetStage()
+  const stageKindDefaultSeconds = DEFAULT_STAGE_REST_SECONDS[stageKind]
+  const stageRestDefaultText = stageKindDefaultSeconds == null ? 'NO TIMER' : formatRestTime(stageKindDefaultSeconds).toUpperCase()
 
   function handleAddStage() {
     if (readOnly) return
@@ -471,6 +500,21 @@ function ProgramSetGroupEditor({
               />
             </div>
           )}
+
+          {/* Chunk 16 (SPEC "Rest") — stage rest, a design field: never
+              gated by readOnly, same posture every other rest control in
+              this file takes. null = "the kind's own default" (dropset no
+              timer, others 15s — plannerVocabulary.ts's
+              DEFAULT_STAGE_REST_SECONDS), shown contextually below. Head-
+              only (the DB's own check, same as STAGE KIND above). */}
+          <div style={{ padding: '2px 0 6px' }}>
+            <RestStepper
+              label="STAGE REST"
+              value={head.stageRestSeconds}
+              onChange={(v) => updateStageRest.mutate({ id: head.id, stageRestSeconds: v })}
+              defaultText={stageRestDefaultText}
+            />
+          </div>
         </div>
       )}
 
@@ -505,6 +549,62 @@ function ProgramSetGroupEditor({
           ADD STAGE
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── Rest stepper (chunk 16) — same +/- stepper shape as PlanPage.tsx's own
+// RirStepper (this build's existing rest/RIR pattern) and StepExercises.tsx's
+// own copy of this same control (not shared between files — this codebase's
+// existing convention, see StepExercises.tsx's own Sheet precedent): 15s per
+// tap, tapping "−" at the floor clears back to null ("no override" — the
+// caller's own defaultText says what that falls through to), tapping "+"
+// from null starts at 15s. Capped at 600s (10 min).
+const REST_STEP_SECONDS = 15
+const REST_MAX_SECONDS = 600
+
+function RestStepper({
+  label,
+  value,
+  onChange,
+  defaultText,
+}: {
+  // Optional — omitted where the row's own position already says what this
+  // rest belongs to (SetTargetRow's own per-set use, too tight on width at
+  // 375px for a third label).
+  label?: string
+  value: number | null
+  onChange: (v: number | null) => void
+  defaultText: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+      {label && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
+          {label}
+        </span>
+      )}
+      <div style={{ display: 'inline-flex', alignItems: 'center', height: 26, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0 }}>
+        <button
+          disabled={value === null}
+          onClick={() => {
+            if (value === null) return
+            onChange(value - REST_STEP_SECONDS <= 0 ? null : value - REST_STEP_SECONDS)
+          }}
+          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: value === null ? 'var(--text-dim)' : 'var(--text-muted)', cursor: value === null ? 'default' : 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          −
+        </button>
+        <span style={{ minWidth: 48, textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: value === null ? 'var(--text-dim)' : 'var(--text-primary)' }}>
+          {value === null ? defaultText : formatRestTime(value)}
+        </span>
+        <button
+          onClick={() => onChange(Math.min((value ?? 0) + REST_STEP_SECONDS, REST_MAX_SECONDS))}
+          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          +
+        </button>
+      </div>
     </div>
   )
 }

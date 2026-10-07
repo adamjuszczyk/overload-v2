@@ -199,6 +199,31 @@ describe('GymSession — rest chain, real session (non-superset)', () => {
     expect(useRestTimerStore.getState().startedAt).not.toBeNull()
   })
 
+  it('D30: with no overrides anywhere (no exercise rest/rest-after, no set override, no superset, no stage), the resolved target and the GO point are the global Settings value — exactly as master', async () => {
+    programSetsFixture = []
+    blockRestsFixture = []
+    const plainExercise: ProgramExercise = { ...pe1, restSeconds: null, restAfterSeconds: null }
+    const weekPlan: WeekPlan = {
+      id: 'wp-1', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1,
+      isDeload: false, notes: null, sets: twoPlainSets(), exercises: [plainExercise],
+      createdAt: '2026-01-01T00:00:00Z',
+    }
+    const { container } = render(sessionJsx(workoutDay, weekPlan))
+
+    await logFirstActiveRow(container, '60', '10')
+
+    // The resolved target...
+    expect(useRestTimerStore.getState().targetSeconds).toBe(useSettingsStore.getState().targetRestSeconds)
+    // ...and the GO point (RestTimer.d30.test.tsx's own proof, repeated
+    // here through the REAL logging chain rather than a direct
+    // useRestTimerStore.start() call): "GO" appears exactly at
+    // targetRestSeconds, read the same way RestTimer.tsx itself does
+    // (chainTarget ?? settingsTarget).
+    const chainTarget = useRestTimerStore.getState().targetSeconds
+    const goPoint = chainTarget ?? useSettingsStore.getState().targetRestSeconds
+    expect(goPoint).toBe(90) // this file's own beforeEach sets targetRestSeconds: 90
+  })
+
   it('"rest after" fires only on the exercise\'s last set', async () => {
     programSetsFixture = []
     blockRestsFixture = []

@@ -16,6 +16,8 @@ const deleteDayMutateMock = vi.fn()
 const reorderMutateMock = vi.fn()
 const deleteExerciseMutateMock = vi.fn()
 const updateWeightUnitMutateMock = vi.fn()
+const updateRestMutateMock = vi.fn()
+const updateBlockRestMutateMock = vi.fn()
 const assignWeekdayMutateMock = vi.fn()
 const toggleLinkMutateMock = vi.fn()
 
@@ -28,7 +30,14 @@ vi.mock('../programs/usePrograms', () => ({
   useReorderProgramExercises: () => ({ mutate: reorderMutateMock, isPending: false }),
   useDeleteProgramExercise: () => ({ mutate: deleteExerciseMutateMock, isPending: false }),
   useUpdateProgramExerciseWeightUnit: () => ({ mutate: updateWeightUnitMutateMock, isPending: false }),
+  useUpdateProgramExerciseRest: () => ({ mutate: updateRestMutateMock, isPending: false }),
   useToggleSupersetLink: () => ({ mutate: toggleLinkMutateMock, isPending: false }),
+  // Chunk 16 (SPEC "Rest") — not this test file's own concern (workout/
+  // exercise CRUD, weekday assignment, superset grouping); empty blocks so
+  // every exercise's own REST/REST AFTER steppers render at their "no
+  // override" default throughout.
+  useSupersetBlockRests: () => ({ data: [] }),
+  useUpdateSupersetBlockRest: () => ({ mutate: updateBlockRestMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', () => ({
@@ -272,5 +281,60 @@ describe('StepExercises — superset grouping (chunk 13, never gated by volumeRe
       { id: 'pe-1', position: 1 },
       { id: 'pe-2', position: 2 },
     ])
+  })
+})
+
+describe('StepExercises — rest / rest after / superset rest (chunk 16, never gated by volumeReadOnly)', () => {
+  it('an exercise\'s own REST and REST AFTER steppers write restSeconds/restAfterSeconds, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, restSeconds: null, restAfterSeconds: null })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    expect(screen.getByText('GLOBAL')).toBeTruthy() // REST, no override
+    expect(screen.getByText('NONE')).toBeTruthy() // REST AFTER, no override
+
+    const plusButtons = screen.getAllByText('+')
+    fireEvent.click(plusButtons[0]) // REST's own +15s
+    expect(updateRestMutateMock).toHaveBeenCalledWith({ id: 'pe-1', changes: { restSeconds: 15 } })
+
+    fireEvent.click(plusButtons[1]) // REST AFTER's own +15s
+    expect(updateRestMutateMock).toHaveBeenCalledWith({ id: 'pe-1', changes: { restAfterSeconds: 15 } })
+  })
+
+  it('a linked block shows its own WITHIN ROUND / AFTER ROUND steppers once, writing restWithinRoundSeconds/restAfterRoundSeconds', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, supersetBlockId: 'blk-1' }),
+      exercise({ id: 'pe-2', position: 1, supersetBlockId: 'blk-1' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    expect(screen.getByText('WITHIN ROUND')).toBeTruthy()
+    expect(screen.getByText('AFTER ROUND')).toBeTruthy()
+    // Exactly one of each — rendered once per block (its last member), not
+    // once per member.
+    expect(screen.getAllByText('NO TIMER')).toHaveLength(1)
+    expect(screen.getAllByText('PER EXERCISE')).toHaveLength(1)
+
+    fireEvent.click(screen.getByText('NO TIMER').parentElement!.querySelector('button:last-of-type')!)
+    expect(updateBlockRestMutateMock).toHaveBeenCalledWith({ id: 'blk-1', changes: { restWithinRoundSeconds: 15 } })
+  })
+
+  it('375px: the per-exercise rest steppers and a block\'s own rest editor carry no fixed pixel width wider than 375px', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, supersetBlockId: 'blk-1', restSeconds: 45, restAfterSeconds: 90 }),
+      exercise({ id: 'pe-2', position: 1, supersetBlockId: 'blk-1' }),
+    ]
+    const { container } = render(<StepExercises program={program()} volumeReadOnly={false} />)
+    const offenders: string[] = []
+    for (const el of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const prop of ['width', 'minWidth'] as const) {
+        const value = el.style[prop]
+        const m = /^(\d+(?:\.\d+)?)px$/.exec(value)
+        if (m && Number(m[1]) > 375) offenders.push(`${el.tagName}.${prop}=${value}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })

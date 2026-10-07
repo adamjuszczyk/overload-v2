@@ -11,12 +11,16 @@ import {
   useReorderProgramExercises,
   useDeleteProgramExercise,
   useUpdateProgramExerciseWeightUnit,
+  useUpdateProgramExerciseRest,
   useToggleSupersetLink,
+  useSupersetBlockRests,
+  useUpdateSupersetBlockRest,
 } from '../programs/usePrograms'
 import { useAssignWorkoutWeekday } from './usePlanner'
 import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from '../programs/ExercisePicker'
 import { groupIntoUnits, moveUnit, isLinkedGap, planLinkToggle } from '../../lib/supersetGroups.js'
+import { formatRestTime } from '../../lib/formatRestTime'
 
 // Step 2 — Exercises and order (SPEC.md "Stepped program planner" step 2;
 // TASKS.md "step 2 adds workouts, exercises (existing picker), order
@@ -24,9 +28,17 @@ import { groupIntoUnits, moveUnit, isLinkedGap, planLinkToggle } from '../../lib
 // a stable run's Program tab (ProgramTab.tsx, TASKS.md "the program tab
 // edits the run's copy... with the same step 2/step 3 components").
 //
-// Not in this step, on purpose (their own later chunks, TASKS.md): design
-// fields (rest/rest-after/tempo), the warmup routine checklist. Schedule
-// type stays weekday-only until chunk 25.
+// Not in this step, on purpose (their own later chunks, TASKS.md): tempo,
+// the warmup routine checklist. Schedule type stays weekday-only until
+// chunk 25.
+//
+// Rest / rest-after / superset rest (chunk 16 — SPEC.md "Rest"/"Programs and
+// runs": design fields, "editable for both planning types... applying to
+// this run from the next session on"). Like superset grouping above, NEVER
+// gated by volumeReadOnly — rest is a design field, not "volume". Exercise-
+// level REST/REST AFTER steppers live on ExerciseRow below; a block's own
+// WITHIN ROUND/AFTER ROUND steppers render once per linked unit (2+
+// members), right after its last member — BlockRestEditor, below.
 //
 // Superset grouping (chunk 13 — SPEC.md "Supersets" / "Stepped program
 // planner" step 2: "exercises per workout, their order, superset grouping")
@@ -172,8 +184,15 @@ function WorkoutEditor({
   const reorder = useReorderProgramExercises(workoutDay.id)
   const deleteExercise = useDeleteProgramExercise(workoutDay.id)
   const updateWeightUnit = useUpdateProgramExerciseWeightUnit(workoutDay.id)
+  const updateRest = useUpdateProgramExerciseRest(workoutDay.id)
   const assignWeekday = useAssignWorkoutWeekday(programId)
   const toggleLink = useToggleSupersetLink(workoutDay.id)
+  // Chunk 16 (SPEC "Rest"/"Supersets") — this workout's own superset blocks'
+  // rest fields, same "one fetch per workout" batching as useProgramExercises
+  // above.
+  const { data: blockRests = [] } = useSupersetBlockRests(workoutDay.id)
+  const blockRestById = new Map(blockRests.map((b) => [b.id, b]))
+  const updateBlockRest = useUpdateSupersetBlockRest(workoutDay.id)
   const globalWeightUnit = useSettingsStore((s) => s.weightUnit)
 
   // Contiguous same-block runs, in this workout's own exercise order — one
@@ -317,8 +336,10 @@ function WorkoutEditor({
         )}
 
         {!isLoading && exercises.map((ex, index) => {
+          const unit = units[unitIndexByExerciseId.get(ex.id) ?? index] ?? [ex]
           const unitIndex = unitIndexByExerciseId.get(ex.id) ?? index
-          const isFirstInUnit = units[unitIndex]?.[0]?.id === ex.id
+          const isFirstInUnit = unit[0]?.id === ex.id
+          const isLastInUnit = unit[unit.length - 1]?.id === ex.id
           return (
             <Fragment key={ex.id}>
               <ExerciseRow
@@ -333,7 +354,19 @@ function WorkoutEditor({
                 onDelete={() => setConfirmDeleteExercise({ id: ex.id, name: ex.exercise?.name ?? 'this exercise' })}
                 globalWeightUnit={globalWeightUnit}
                 onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: ex.id, weightUnit })}
+                onRest={(changes) => updateRest.mutate({ id: ex.id, changes })}
               />
+              {/* Chunk 16 (SPEC "Rest"/"Supersets": "Both overridable per
+                  superset") — once per linked unit (2+ members), right after
+                  its last one; never gated by volumeReadOnly, same posture
+                  as the grouping toggle right below. */}
+              {isLastInUnit && unit.length >= 2 && ex.supersetBlockId && (
+                <BlockRestEditor
+                  blockId={ex.supersetBlockId}
+                  rest={blockRestById.get(ex.supersetBlockId) ?? null}
+                  onChange={(changes) => updateBlockRest.mutate({ id: ex.supersetBlockId!, changes })}
+                />
+              )}
               {/* Chunk 13 — never gated by volumeReadOnly, see this file's
                   own header comment on why grouping isn't "volume". */}
               {index < exercises.length - 1 && (
@@ -435,6 +468,7 @@ function ExerciseRow({
   onDelete,
   globalWeightUnit,
   onWeightUnit,
+  onRest,
 }: {
   pe: ProgramExercise
   index: number
@@ -451,6 +485,11 @@ function ExerciseRow({
   onDelete: () => void
   globalWeightUnit: WeightUnit
   onWeightUnit: (unit: WeightUnit | null) => void
+  // Chunk 16 (SPEC "Rest") — design field, never gated by `readOnly` (this
+  // row's own `readOnly` IS volumeReadOnly, passed straight through from
+  // StepExercises — see this file's own header comment on why rest stays
+  // editable regardless).
+  onRest: (changes: { restSeconds?: number | null; restAfterSeconds?: number | null }) => void
 }) {
   return (
     <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -521,6 +560,122 @@ function ExerciseRow({
           })}
         </div>
       </div>
+
+      {/* Rest / rest after (chunk 16 — SPEC.md "Rest") — design fields,
+          never gated by readOnly (this row's readOnly is volumeReadOnly —
+          see this file's own header comment). null = "no override": REST
+          falls through to the global Settings value, REST AFTER simply
+          never applies (the exercise's own last set then also falls
+          through to REST, then global). */}
+      <div style={{ padding: '0 12px 10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, paddingTop: 8 }}>
+        <RestStepper
+          label="REST"
+          value={pe.restSeconds ?? null}
+          disabled={false}
+          onChange={(v) => onRest({ restSeconds: v })}
+          defaultText="GLOBAL"
+        />
+        <RestStepper
+          label="REST AFTER"
+          value={pe.restAfterSeconds ?? null}
+          disabled={false}
+          onChange={(v) => onRest({ restAfterSeconds: v })}
+          defaultText="NONE"
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Rest stepper (chunk 16) — same +/- stepper shape as PlanPage.tsx's own
+// RirStepper (this build's existing rest/RIR pattern), seconds instead of
+// RIR: 15s per tap, tapping "−" at the floor clears back to null ("no
+// override" — the caller's own defaultText says what that falls through
+// to), tapping "+" from null starts at 15s. Capped at 600s (10 min) — generous
+// enough for any real rest, so the stepper target that caps RirStepper's own
+// range stays meaningful here rather than open-ended.
+const REST_STEP_SECONDS = 15
+const REST_MAX_SECONDS = 600
+
+function RestStepper({
+  label,
+  value,
+  disabled,
+  onChange,
+  defaultText,
+}: {
+  label: string
+  value: number | null
+  disabled: boolean
+  onChange: (v: number | null) => void
+  defaultText: string
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
+        {label}
+      </span>
+      <div style={{ display: 'inline-flex', alignItems: 'center', height: 26, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0 }}>
+        <button
+          disabled={disabled || value === null}
+          onClick={() => {
+            if (value === null) return
+            onChange(value - REST_STEP_SECONDS <= 0 ? null : value - REST_STEP_SECONDS)
+          }}
+          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: (disabled || value === null) ? 'var(--text-dim)' : 'var(--text-muted)', cursor: (disabled || value === null) ? 'default' : 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          −
+        </button>
+        <span style={{ minWidth: 48, textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: value === null ? 'var(--text-dim)' : 'var(--text-primary)' }}>
+          {value === null ? defaultText : formatRestTime(value)}
+        </span>
+        <button
+          disabled={disabled}
+          onClick={() => onChange(Math.min((value ?? 0) + REST_STEP_SECONDS, REST_MAX_SECONDS))}
+          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Superset block rest (chunk 16 — SPEC.md "Rest"/"Supersets") ──────────
+// Once per linked unit, right after its last member — "within round"/"after
+// round", both overridable, both null by SPEC default (no timer within a
+// round; the chain of the exercise that ends a round).
+function BlockRestEditor({
+  blockId,
+  rest,
+  onChange,
+}: {
+  blockId: string
+  rest: { restWithinRoundSeconds: number | null; restAfterRoundSeconds: number | null } | null
+  onChange: (changes: { restWithinRoundSeconds?: number | null; restAfterRoundSeconds?: number | null }) => void
+}) {
+  return (
+    <div
+      key={`block-rest-${blockId}`}
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '2px 4px 6px' }}
+    >
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', flexShrink: 0 }}>
+        SUPERSET
+      </span>
+      <RestStepper
+        label="WITHIN ROUND"
+        value={rest?.restWithinRoundSeconds ?? null}
+        disabled={false}
+        onChange={(v) => onChange({ restWithinRoundSeconds: v })}
+        defaultText="NO TIMER"
+      />
+      <RestStepper
+        label="AFTER ROUND"
+        value={rest?.restAfterRoundSeconds ?? null}
+        disabled={false}
+        onChange={(v) => onChange({ restAfterRoundSeconds: v })}
+        defaultText="PER EXERCISE"
+      />
     </div>
   )
 }
