@@ -34,7 +34,7 @@ afterEach(() => {
 
 const noop = () => {}
 
-function makeProgramExercise(): ProgramExercise {
+function makeProgramExercise(overrides: Partial<ProgramExercise> = {}): ProgramExercise {
   return {
     id: 'pe1',
     workoutDayId: 'wd1',
@@ -55,6 +55,7 @@ function makeProgramExercise(): ProgramExercise {
     },
     position: 0,
     weightUnit: null,
+    ...overrides,
   }
 }
 
@@ -231,6 +232,22 @@ describe('SetRow — planned weight target + tags (chunk 19)', () => {
   it('a weight target shows in the exercise\'s resolved unit (kg default here)', () => {
     render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ targetWeight: 100 })} />)
     expect(screen.getByText('TARGET WEIGHT 100kg')).toBeTruthy()
+  })
+
+  // Review fix (chunk 19, first retry) — the first version of this hint
+  // hard-coded 'kg' and every test here still passed, because none of them
+  // gave the exercise its own lbs override: resolvedUnit must come from
+  // useWeightDisplay(programExercise.weightUnit), not a literal.
+  it('resolves to the EXERCISE\'s own unit (lbs), not the kg default — 102.06kg stored shows 225lbs', () => {
+    render(
+      <SetRow
+        {...unloggedProps()}
+        programExercise={makeProgramExercise({ weightUnit: 'lbs' })}
+        plannedSet={makeWeekPlanSet({ targetWeight: 102.06 })}
+      />,
+    )
+    expect(screen.getByText('TARGET WEIGHT 225lbs')).toBeTruthy()
+    expect(screen.queryByText(/kg/)).toBeNull()
   })
 
   it('renders alongside TARGET REPS/TARGET RIR without disturbing either', () => {
