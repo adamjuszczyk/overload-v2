@@ -7,7 +7,7 @@ Overload is a strength training PWA for a serious intermediate-to-advanced lifte
 This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.md. Phase 2 and SPEC's "Later" list are not being done.
 
 ## Where the build is
-- **Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunks 11 (`eb54190`), 12's code (`6b725da`) and **13 (supersets, #36 `90cd1e4`, Vercel 17:59 UTC)** are merged and live. 11 and 13 each failed review once and passed on the retry; 13 was also hardened (block keyed by its members' ids). Chunk 12 **migration 034** merged by Adam (#35 `a76b146`, 2026-10-06 18:27 UTC) and live: deploy success; `select=target_reps` → 42703; backup table present; embeds 27/27 live. Adam's before/after query outputs are pending (DECISIONS 54). **Chunk 14 (staged sets) merged and live** (#37 `a66e803`, Vercel 22:37 UTC; failed review once: the G14 split dropped stages). **Chunk 15 (warmup sets) merged and live**: 035 via #38 `9c0e679` (reviewer, D29), code via #39 `11beaac` (Vercel 09:39 UTC; failed review once: superset members' warmups not rendered, no warmup edit/delete). `scripts/check-warmup-consumers.mjs` now runs at every boundary. **Chunk 16 (rest chain) merged and live** (#40 c6e5120, Vercel 14:57 UTC; failed review once: no real-session proof that a legacy null-kind dropset keeps its timer). **Chunk 17 (tempo) merged and live** (#41 8ce2b3b, Vercel 15:30 UTC; passed review first time). **Chunk 18 (warmup routine) merged and live** (#42 76f7bed, Vercel 16:15 UTC; passed review first time). **Chunk 19 (week targets and tags) merged and live** (#43 da386c4, Vercel 20:24 UTC; failed review once: no proof the workout screen shows a weight target in the exercise's unit). **Chunk 20 (apply ahead) in progress.**
+- **Chunk 19 boundary (2026-10-07 20:25 UTC): chunks 1–19 merged and live; chunk 20 (apply ahead) in progress.** The per-chunk merge record (PRs, merge commits, deploy times, review failures) for 11–19 is in HISTORY.md (2026-10-07 compaction) and each chunk's DECISIONS live-check entry. Adam's 034 before/after outputs are still pending (DECISIONS 54).
 - **Merge flow (Adam, 2026-10-05):** the reviewer merges code-only chunks once verified and green. The reviewer also merges flagged migrations that change no existing row (D29: chunk 15's still to come). Chunks 12, 24 and 25's migrations are Adam's. Migration first, code after a green deploy. Stacked PRs follow the stacked-PR rule. Chunk 12 = (b) (DECISIONS 49); chunk 25's throwaway run has the go-ahead (50). Remaining stops: a failed live check, a second review failure.
 - **Next migration number: 036** (028–035 merged and live).
 - Finished (details in HISTORY.md and DECISIONS):
@@ -16,13 +16,11 @@ This build is phase 1 of the Overload Planner Extension: the [P1] items in SPEC.
   - 7: 029 `61b2670`, code `55bed82`, 030 `34c5887`;
   - 8: 031 `c128d00`, code `071151b`;
   - 9: 032 `25b2a61`, code `2340c48`;
-  - 10: 033 `5fe3045`, code `a0d1651`.
+  - 10: 033 `5fe3045`, code `a0d1651`;
+  - 11–19: see HISTORY.md (2026-10-07 compaction); 034 by Adam, 035 by the reviewer (D29), code by the reviewer.
   6–8 were merged by Adam (2026-10-05); 9–10 by the reviewer (D29). 9 and 10 each failed review once and passed on the retry.
 - Every merge commit shows one `Supabase Preview` success plus two runs left `in_progress`, code-only commits included. It's a quirk of the integration: count the success run plus a live probe as the deploy. For a function replaced with the same signature, the success run is the only evidence.
-- Live checks:
-  - passed: 35, 37, 40, 41's parity query;
-  - waived (not passed): 36;
-  - open: 39 (chunk 5, step 1 rewritten), 46 (chunk 7), 47 (chunk 8), 51 (chunk 9), 53 (chunk 10).
+- Live checks: passed 35, 37, 40, 41's parity query; waived (not passed) 36; every open one is listed under DECISIONS "Waiting on Adam" → To-dos (one per chunk, 39 onward).
 - `verify-rls.mjs` was last run 2026-10-03 and needs Adam's go-ahead per run. Tables added to `TABLES` since: `v2_week_plan_exercises` (7), `v2_program_priorities` (10), `v2_program_sets` (11), `v2_program_superset_blocks` (13), `v2_workout_warmup_items` (18); none has been probed live yet (needs Adam's go-ahead, DECISIONS 62).
 - Scratch copies: the chunk 1 cluster (`/var/lib/postgresql/chunk1-pg16`, port 54329) is not running in this container any more; a faithful replay is now `bash scripts/replay-migrations.sh --keep` (Docker; start `dockerd` first).
 
