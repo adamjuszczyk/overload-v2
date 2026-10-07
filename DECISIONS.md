@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 14:58 UTC, chunk 16 boundary — chunks 1–16 merged and live (migrations through 035); chunk 17 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-07 15:31 UTC, chunk 17 boundary — chunks 1–17 merged and live (migrations through 035); chunk 18 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -9,6 +9,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 60 — Chunk 17 app steps: enter a tempo (x → X), invalid refused, blank clears; it shows beside the exercise name in the session; exercises without one unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 59 — Chunk 16 app steps: exercise REST / REST AFTER and one set's own REST show as the timer targets; nothing set = your Settings rest; a never-kinded dropset keeps its timer, an explicitly picked DROPSET has none; superset: no timer inside a round. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 58 — Chunk 15 app steps: plan a warmup; log, edit, delete; TICK mode; not counted in History, volume or Progress. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 57 — Chunk 14 app steps: plan a rest-pause with 2 stages; all rows visible and locked in turn; carried weight; counts as 1 set; dropsets unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -48,6 +49,24 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 60 Chunk 17 live check: tempo (Adam's steps)
+Severity: deferred
+Chunk: 17
+**Ask:** Chunk 17 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 17 is `8ce2b3b`)
+1. In the program tab, tap the TEMPO field (it shows "—") on one exercise and enter `3-1-x-0`: it saves as `3-1-X-0`. Enter `abc`: an error shows and nothing saves. Clear it and save: back to "—".
+2. Set a tempo again, then open (or reload) that session: the tempo shows next to the exercise's name. Exercises without one look exactly as before.
+3. Logging a set works as before (the tempo isn't recorded anywhere).
+**Answer:**
+**Evidence:**
+What happened: chunk 17 (#41 `8ce2b3b`, Vercel 15:30 UTC) is live. No migration (`tempo` dates from 027).
+- Reviewer's checks: 1122 tests; replay 36/36; embeds 27/27; D30 test files and fixture untouched; six breaks, all caught. Passed review first time.
+A competent default would: count the jsdom real-session tests — doesn't apply because: TASKS.md's done-when is "tempo is planned and visible during the workout".
+Cost of deferral: if it fails, chunk 17 is fixed before chunk 18 merges.
+Provisional path taken: merged; chunk 18 is being built.
 
 ### 59 Chunk 16 live check: the rest chain (Adam's steps)
 Severity: deferred
