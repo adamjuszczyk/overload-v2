@@ -94,7 +94,13 @@ vi.mock('./SessionComplete', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
 vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
-vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: [] }) }))
+vi.mock('../programs/usePrograms', () => ({
+  useProgramExercises: () => ({ data: [] }),
+  // Chunk 16 (SPEC "Rest") — not this test's own concern (warmup numbering);
+  // empty so nothing about the rest chain affects it.
+  useSupersetBlockRests: () => ({ data: [] }),
+}))
+vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({ mutateAsync: logSetMutateAsync }),

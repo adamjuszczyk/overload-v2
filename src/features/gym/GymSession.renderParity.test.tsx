@@ -188,7 +188,13 @@ vi.mock('./ExerciseCard', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // The fallback source only — deliberately wrong, see decoyExercise above.
-vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: [decoyExercise] }) }))
+vi.mock('../programs/usePrograms', () => ({
+  useProgramExercises: () => ({ data: [decoyExercise] }),
+  // Chunk 16 (SPEC "Rest") — not this test's own concern (exercise-list
+  // source precedence); empty so nothing about the rest chain affects it.
+  useSupersetBlockRests: () => ({ data: [] }),
+}))
+vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({ mutateAsync: vi.fn() }),

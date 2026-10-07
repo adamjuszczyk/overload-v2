@@ -1,5 +1,5 @@
 import { Plus, Link2 } from 'lucide-react'
-import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, ProgramSet, ProgramSupersetBlock } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import SetGroup from './SetGroup'
 import SetRow from './SetRow'
@@ -12,6 +12,7 @@ import { useRestTimerStore } from './restTimerStore'
 import { nextStageIndex, type SetGroup as Group } from './setGroupLogic'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import { buildSupersetRounds } from './supersetRounds'
+import type { SupersetChainInput } from './restChain'
 import { useLastSessionLogs } from './useSession'
 
 // Chunk 13 (TASKS.md "Supersets" / SPEC.md "Supersets [P1]") — the workout
@@ -70,10 +71,24 @@ export interface SupersetMember {
   // every other card-level caller does before reaching ExerciseCard.
   currentLogs: SetLog[]
   referenceSessions: ReferenceSession[]
+  // Chunk 16 (SPEC "Rest") — this member's own v2_program_sets rows, same
+  // "already filtered by the caller" convention as plannedSets/currentLogs
+  // above; threaded straight into useExerciseCardState below. Optional
+  // (defaults to []) so every pre-chunk-16 test fixture that builds a
+  // SupersetMember by hand keeps compiling unchanged — same convention as
+  // ExerciseCardProps.programSets.
+  programSets?: ProgramSet[]
 }
 
 interface SupersetBlockProps {
   members: SupersetMember[] // 2+, in block/position order
+  // Chunk 16 — this block's own two rest fields (v2_program_superset_blocks),
+  // read once by GymSession.tsx (useSupersetBlockRests) and passed straight
+  // through; null fields mean "no override" (SPEC's own superset defaults —
+  // no timer within a round; the chain of the exercise that ends a round).
+  // Optional (defaults to null, same as the block row not being found) for
+  // the same "pre-chunk-16 fixture" reason as SupersetMember.programSets.
+  blockRest?: Pick<ProgramSupersetBlock, 'restWithinRoundSeconds' | 'restAfterRoundSeconds'> | null
   // Each member's own previous-session logs are fetched HERE (one
   // useLastSessionLogs call per member, below) rather than passed in —
   // GymSession.tsx's ExerciseSection does the equivalent for a plain card,
@@ -112,6 +127,7 @@ interface MemberRow {
 
 export default function SupersetBlock({
   members,
+  blockRest = null,
   sessionId,
   referenceLoading,
   referenceMesocycleId,
@@ -138,6 +154,7 @@ export default function SupersetBlock({
     useExerciseCardState({
       programExercise: m.programExercise,
       plannedSets: m.plannedSets,
+      programSets: m.programSets ?? [],
       currentLogs: m.currentLogs,
       lastLogs: lastLogsQueries[i].data ?? [],
       lastLogsLoading: lastLogsQueries[i].isLoading,
@@ -311,10 +328,25 @@ export default function SupersetBlock({
               ROUND {round.roundNumber}
             </p>
             <div className="space-y-3">
-              {round.cells.map((cell) => {
+              {round.cells.map((cell, cellIndex) => {
                 const member = members[cell.memberIndex]
                 const state = memberStates[cell.memberIndex]
                 const row = cell.head
+                // Chunk 16 (SPEC "Rest"/"Supersets") — this cell's own round
+                // context for restChain.ts: "ends the round" is simply "the
+                // last cell in THIS round's own zigzag/member-order list"
+                // (round.cells is already built that way, supersetRounds.ts);
+                // "the block's final round" is the highest round number this
+                // block has at all. Both are per-CELL facts only SupersetBlock
+                // (which alone builds the round grid) can supply — see this
+                // chunk's own report for the SPEC-literal reading of the
+                // "member finishes mid-block" case this feeds.
+                const supersetContext: SupersetChainInput = {
+                  endsRound: cellIndex === round.cells.length - 1,
+                  isFinalRound: round.roundNumber === rounds.length,
+                  restWithinRoundSeconds: blockRest?.restWithinRoundSeconds ?? null,
+                  restAfterRoundSeconds: blockRest?.restAfterRoundSeconds ?? null,
+                }
                 return (
                   <div key={`${member.programExercise.id}-r${round.roundNumber}`}>
                     <p
@@ -333,9 +365,14 @@ export default function SupersetBlock({
                       group={row.group}
                       isDeleting={row.group != null && state.deletingHeadIds.has(row.group.head.id)}
                       expectStage={row.plannedStages.length > (row.group?.stages.length ?? 0)}
-                      onLogHead={(params) => state.handleLogHead(row.plannedSet, params)}
+                      onLogHead={(params) => state.handleLogHead(row.plannedSet, params, undefined, supersetContext)}
                       onLogStage={(headLog, params) =>
-                        state.handleLogStage(headLog, row.group ? nextStageIndex(row.group, (l) => l.stageIndex) : 1, params)
+                        state.handleLogStage(
+                          headLog,
+                          row.group ? nextStageIndex(row.group, (l) => l.stageIndex) : 1,
+                          params,
+                          supersetContext,
+                        )
                       }
                       onUpdate={(id, changes) => onUpdateSet(id, changes)}
                       onDeleteHead={state.handleDeleteHead}

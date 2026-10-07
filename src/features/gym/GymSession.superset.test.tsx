@@ -108,7 +108,15 @@ vi.mock('./SwapExerciseSheet', () => ({
   ),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
-vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: [] }) }))
+vi.mock('../programs/usePrograms', () => ({
+  useProgramExercises: () => ({ data: [] }),
+  // Chunk 16 (SPEC "Rest") — not this test file's own concern (the zigzag/
+  // swap/key-identity behaviours it proves); empty blocks so every block's
+  // rest resolution falls through to SPEC's own defaults unless a given
+  // test overrides it.
+  useSupersetBlockRests: () => ({ data: [] }),
+}))
+vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({

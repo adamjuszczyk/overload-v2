@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
-import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
+import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
 import {
@@ -13,7 +13,14 @@ import {
   useSessionSwaps,
   useRecordExerciseSwap,
 } from './useSession'
-import { useProgramExercises } from '../programs/usePrograms'
+import { useProgramExercises, useSupersetBlockRests } from '../programs/usePrograms'
+// Chunk 16 (SPEC "Rest") — reused as-is, not reimplemented: the same
+// batched-by-program-exercise-id fetch the planner's own StepVolume.tsx
+// already uses (plannerService.ts's fetchProgramSets), cross-feature import
+// following this codebase's own existing precedent (weekPlanService.ts
+// importing runProgramExercises.ts; plannerService.ts importing
+// programService.ts's createWorkoutDay).
+import { useProgramSets } from '../planner/usePlanner'
 import { useExercises } from '../library/useExercises'
 import { resolveReplacementExercise } from './exerciseSwapLogic'
 import { useAuth } from '../auth/useAuth'
@@ -46,6 +53,7 @@ interface GymSessionProps {
 function ExerciseSection({
   programExercise,
   plannedSets,
+  programSets,
   allCurrentLogs,
   linkedExerciseIds = [],
   swappedFrom,
@@ -64,6 +72,10 @@ function ExerciseSection({
 }: {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
+  // Chunk 16 (SPEC "Rest") — this slot's own v2_program_sets rows, already
+  // filtered by the caller (below) the same way plannedSets/allCurrentLogs
+  // are — threaded straight through to ExerciseCard/useExerciseCardState.
+  programSets: ProgramSet[]
   allCurrentLogs: SetLog[]
   // Position/presentation fix (2026-09-03) — for a card rendering in place
   // of a swapped-out slot, the original exercise's own logs (real sets
@@ -120,6 +132,7 @@ function ExerciseSection({
     <ExerciseCard
       programExercise={programExercise}
       plannedSets={plannedSets}
+      programSets={programSets}
       currentLogs={currentLogs}
       lastLogs={lastLogs}
       lastLogsLoading={lastLogsLoading}
@@ -239,6 +252,23 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const allCurrentLogs = session?.setLogs ?? []
   const activeExercises = programExercises.length > 0 ? programExercises : cachedExercises
   const sortedExercises = [...activeExercises].sort((a, b) => a.position - b.position)
+
+  // Chunk 16 (SPEC "Rest") — "the workout screen reads design fields from
+  // the run copy when the session loads": this session's own v2_program_sets
+  // (per-set rest override, per-staged-head stage rest — found via each
+  // WeekPlanSet's own programSetId) and this workout's own superset blocks
+  // (rest within/after round), each batched once per screen — same
+  // "one query per exercise card"-avoidance precedent
+  // useExerciseReferenceSessions below already follows, not one fetch per
+  // card. Keyed off sortedExercises' own ids (the TEMPLATE's real
+  // v2_program_exercises rows, including a swap's original slot — see that
+  // section's own comment on why pe.id is preserved across a swap); an
+  // extra/synthetic card's id never matches a real
+  // v2_program_sets.program_exercise_id, so it simply finds none, correctly
+  // falling through the chain to the exercise/global levels.
+  const { data: allProgramSets = [] } = useProgramSets(sortedExercises.map((pe) => pe.id))
+  const { data: supersetBlockRests = [] } = useSupersetBlockRests(workoutDay.id)
+  const supersetBlockRestById = new Map(supersetBlockRests.map((b) => [b.id, b]))
 
   // Swap exercise for this session only (SPEC v1.1 "Part C") — position/
   // presentation fix, 2026-09-03. Keyed by program_exercise_id (the "slot"
@@ -522,7 +552,14 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                     .sort((a, b) => a.setNumber - b.setNumber),
                   currentLogs: allCurrentLogs.filter((l) => l.exerciseId === pe.exerciseId),
                   referenceSessions: referenceSessionsByExercise.get(pe.exerciseId) ?? [],
+                  // Chunk 16 (SPEC "Rest") — same "already filtered by the
+                  // caller" convention as plannedSets/currentLogs above.
+                  programSets: allProgramSets.filter((ps) => ps.programExerciseId === pe.id),
                 }))}
+                // Chunk 16 — this block's own two rest fields, looked up
+                // once per block render; null when the block row can't be
+                // found (shouldn't happen for a real block — defensive).
+                blockRest={supersetBlockRestById.get(unit.blockId) ?? null}
                 sessionId={sessionId}
                 referenceLoading={referenceLoading}
                 referenceMesocycleId={session?.mesocycleId ?? null}
@@ -560,6 +597,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 key={`${pe.id}-swapped-${swap.id}`}
                 programExercise={mergedProgramExercise}
                 plannedSets={plannedSets}
+                programSets={allProgramSets.filter((ps) => ps.programExerciseId === pe.id)}
                 allCurrentLogs={allCurrentLogs}
                 linkedExerciseIds={swap.originalExerciseId ? [swap.originalExerciseId] : []}
                 swappedFrom={{ exerciseName: swap.originalExerciseName }}
@@ -584,6 +622,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               key={pe.id}
               programExercise={pe}
               plannedSets={plannedSets}
+              programSets={allProgramSets.filter((ps) => ps.programExerciseId === pe.id)}
               allCurrentLogs={allCurrentLogs}
               sessionId={sessionId}
               referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
@@ -619,6 +658,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               key={syntheticProgramExercise.id}
               programExercise={syntheticProgramExercise}
               plannedSets={[]}
+              programSets={[]}
               allCurrentLogs={allCurrentLogs}
               sessionId={sessionId}
               referenceSessions={referenceSessionsByExercise.get(ex.id) ?? []}
