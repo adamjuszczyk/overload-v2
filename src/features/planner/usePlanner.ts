@@ -9,6 +9,7 @@ import {
   setExerciseSetCount,
   updateProgramSetRepTarget,
   setRepTargetForAllSets,
+  updateProgramSetIsWarmup,
   updateProgramSetStageKind,
   addProgramSetStage,
   removeProgramSet,
@@ -74,6 +75,16 @@ export function useUpdateSetRepTarget() {
   return useMutation({
     networkMode: 'always',
     mutationFn: ({ id, target }: { id: string; target: RepTarget }) => updateProgramSetRepTarget(id, target),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// Chunk 15 — StepVolume.tsx's WARMUP toggle, head-only (same posture as
+// useUpdateProgramSetStageKind below).
+export function useUpdateProgramSetIsWarmup() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, isWarmup }: { id: string; isWarmup: boolean }) => updateProgramSetIsWarmup(id, isWarmup),
     onSuccess: invalidateProgramSets,
   })
 }

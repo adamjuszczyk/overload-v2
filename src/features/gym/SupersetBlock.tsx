@@ -2,10 +2,13 @@ import { Plus, Link2 } from 'lucide-react'
 import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import SetGroup from './SetGroup'
+import SetRow from './SetRow'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import SwapExerciseSheet from './SwapExerciseSheet'
+import RestTimerInline from './RestTimerInline'
+import { useRestTimerStore } from './restTimerStore'
 import { nextStageIndex, type SetGroup as Group } from './setGroupLogic'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import { buildSupersetRounds } from './supersetRounds'
@@ -121,6 +124,11 @@ export default function SupersetBlock({
   onDeleteSet,
   onSwap,
 }: SupersetBlockProps) {
+  // Review fix (reviewer, chunk 15) — same anchor ExerciseCard.tsx reads,
+  // so a member's warmup row anchors the shared inline rest timer the same
+  // way a plain card's does.
+  const timerAnchorId = useRestTimerStore((s) => (s.startedAt ? s.anchorId : null))
+
   // One useLastSessionLogs + one useExerciseCardState call per member — see
   // the file header for why a stable call COUNT (never a stable call
   // ARGUMENT) is all React's own rule actually needs, and how GymSession.tsx
@@ -147,13 +155,28 @@ export default function SupersetBlock({
     }),
   )
 
-  // Chunk 15 hasn't built warmup sets yet (TASKS.md "Rounds and zigzag": "if
-  // is_warmup rows appear, leave them out of rounds and say how"): a planned
-  // row whose set carries isWarmup is dropped here, before supersetRounds.ts
-  // ever sees it — left out of the round grid (and so out of this block)
-  // entirely, since warmups have no display/authoring path yet and don't
-  // belong in a round count. An extra (ADD SET) row is never a warmup (it
-  // has no plannedSet at all), so this only ever filters planned rows.
+  // Chunk 15 (TASKS.md "Rounds and zigzag": "if is_warmup rows appear, leave
+  // them out of rounds and say how") — how: a warmup planned set is ALREADY
+  // gone from state.plannedDisplay by the time it reaches this file.
+  // useExerciseCardState.ts filters allPlannedSets/allCurrentLogs down to
+  // non-warmup rows once, right at the top (the same "plannedSets"/
+  // "currentLogs" names, pre-filtered), before any of its grouping/
+  // numbering/display logic runs — so plannedDisplay, extraDisplay and
+  // every count this file reads from `state` already exclude warmups
+  // structurally, the same way a never-logged row already does. The
+  // `.filter((row) => !row.plannedSet.isWarmup)` below is therefore always
+  // a no-op now (every row.plannedSet.isWarmup is already false) — kept as
+  // a defensive second layer, not removed, since it costs nothing and
+  // documents the invariant at the one place that actually builds the round
+  // grid. Review fix (reviewer, chunk 15) — a superset member's own warmup
+  // sets are real, loggable rows the same as any other exercise's, and a
+  // member must keep everything a plain ExerciseCard gives it (the review
+  // finding this fixes): each member's own WARMUP section is rendered
+  // below, in the per-member header/reference loop, ABOVE the rounds —
+  // same `state.warmupRows`/`state.handleLogWarmup` this file already
+  // computed, same SetRow component ExerciseCard.tsx uses, never inside the
+  // round grid. An extra (ADD SET) row is never a warmup (it has no
+  // plannedSet at all), so this filter only ever touches planned rows.
   const memberRowLists: MemberRow[][] = memberStates.map((state) => [
     ...state.plannedDisplay
       .filter((row) => !row.plannedSet.isWarmup)
@@ -236,6 +259,43 @@ export default function SupersetBlock({
                 />
               </div>
             </div>
+
+            {/* Review fix (reviewer, chunk 15) — this member's own WARMUP
+                section, same shape as ExerciseCard.tsx's (SetRow with
+                isWarmup, the same onLog/onUpdate/onDelete wiring, the same
+                inline-rest-timer anchor), rendered here per member, above
+                the rounds — never inside the round grid itself. Nothing
+                renders when this member has no planned warmups. */}
+            {state.warmupRows.length > 0 && (
+              <div className="px-3 pt-3 space-y-1.5">
+                <p
+                  className="text-xs font-bold tracking-widest"
+                  style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                >
+                  WARMUP
+                </p>
+                {state.warmupRows.map(({ plannedSet, group }, wi) => (
+                  <div key={plannedSet.id} className="space-y-1.5">
+                    <SetRow
+                      isWarmup
+                      setNumber={wi + 1}
+                      programExercise={member.programExercise}
+                      plannedSet={plannedSet}
+                      lastLog={null}
+                      lastLogsLoading={false}
+                      currentLog={group?.head ?? null}
+                      onLog={(params) => state.handleLogWarmup(plannedSet, params)}
+                      onUpdate={(changes) => group && onUpdateSet(group.head.id, changes)}
+                      onDelete={() => {
+                        if (group) onDeleteSet(group.head.id).catch((err) => console.error('Failed to delete warmup', err))
+                      }}
+                      restElapsed={state.currentRestElapsed()}
+                    />
+                    {group && timerAnchorId === group.head.id && <RestTimerInline />}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )
       })}

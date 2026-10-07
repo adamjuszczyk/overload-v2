@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   autoFinishMinutes: 5,
   measureSetTime: false,
   weekStart: 'copy',
+  warmupDisplay: 'rows',
 }
 
 interface SettingsStoreState extends UserSettings {

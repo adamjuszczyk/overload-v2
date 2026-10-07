@@ -339,6 +339,24 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* ── Warmup sets ──────────────────────────────────────────────── */}
+        {/* v2_user_settings.warmup_display (chunk 15, SPEC "Warmup sets" —
+            "Display setting: rows (default; numbers optional) or tick
+            (tick-off only)"). Governs every warmup row on the workout
+            screen (SetRow.tsx's isWarmup branch), read live via
+            useSettingsStore. */}
+        <section>
+          {sectionTitle('WARMUP SETS')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            <p className="text-xs mb-2.5" style={labelStyle}>DISPLAY</p>
+            {chipRow(
+              [{ value: 'rows', label: 'ROWS' }, { value: 'tick', label: 'TICK' }],
+              settings.warmupDisplay,
+              (warmupDisplay) => set({ warmupDisplay }),
+            )}
+          </div>
+        </section>
+
         {/* ── Planning ─────────────────────────────────────────────────── */}
         {/* v2_user_settings.week_start (chunk 8, SPEC "Weeks and copying")
             — a week-dependent run's weeks beyond week 1 either copy the

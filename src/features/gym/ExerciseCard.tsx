@@ -1,9 +1,12 @@
 import { Plus } from 'lucide-react'
 import SetGroup from './SetGroup'
+import SetRow from './SetRow'
 import ExerciseReference from './ExerciseReference'
 import ExerciseHeader from './ExerciseHeader'
 import PlanTargetsPanel from './PlanTargetsPanel'
 import SwapExerciseSheet from './SwapExerciseSheet'
+import RestTimerInline from './RestTimerInline'
+import { useRestTimerStore } from './restTimerStore'
 import { nextStageIndex } from './setGroupLogic'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 
@@ -26,6 +29,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     onRetryReference,
     today,
     onUpdateSet,
+    onDeleteSet,
     lastLogsLoading,
     swappedFrom,
   } = props
@@ -53,7 +57,15 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     handleConfirmSkip,
     handleConfirmSwap,
     handleAddSet,
+    warmupRows,
+    handleLogWarmup,
   } = useExerciseCardState(props)
+
+  // Chunk 15 — same anchor SetGroup.tsx reads, so the inline rest timer can
+  // sit directly under whichever warmup row just started the shared rest
+  // period (handleLog's own setAnchor call, GymSession.tsx, is unchanged —
+  // it fires for every onLog result regardless of which row triggered it).
+  const timerAnchorId = useRestTimerStore((s) => (s.startedAt ? s.anchorId : null))
 
   return (
     <div
@@ -99,6 +111,52 @@ export default function ExerciseCard(props: ExerciseCardProps) {
           />
         </div>
       </div>
+
+      {/* Warmup sets (chunk 15 — SPEC "Warmup sets"), rendered first: warm
+          up, then work. Nothing renders here when this exercise has no
+          planned warmups (warmupRows.length === 0 whenever every planned
+          set's isWarmup is false, which is every set on the D30 fixture) —
+          this block doesn't exist for a plain session, so its own output is
+          unaffected by anything below. No ADD WARMUP affordance (SPEC:
+          "exercises that don't need warmups simply have none" — planned in
+          step 3 / the week plan, not added ad hoc here) and nothing else on
+          a row beyond weight/reps (or a tick) plus the shared rest timer —
+          no RIR, no MORE, no edit/delete, no stage machinery (a warmup is
+          never staged). */}
+      {warmupRows.length > 0 && (
+        <div className="px-3 pt-3 space-y-1.5">
+          <p
+            className="text-xs font-bold tracking-widest"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            WARMUP
+          </p>
+          {warmupRows.map(({ plannedSet, group }, i) => (
+            <div key={plannedSet.id} className="space-y-1.5">
+              <SetRow
+                isWarmup
+                setNumber={i + 1}
+                programExercise={programExercise}
+                plannedSet={plannedSet}
+                lastLog={null}
+                lastLogsLoading={false}
+                currentLog={group?.head ?? null}
+                onLog={(params) => handleLogWarmup(plannedSet, params)}
+                // Review fix (chunk 15) — a logged warmup can be corrected
+                // or removed, same as any other logged set: reuses the
+                // same onUpdateSet/onDeleteSet this card already threads
+                // through to every working-set SetGroup below.
+                onUpdate={(changes) => group && onUpdateSet(group.head.id, changes)}
+                onDelete={() => {
+                  if (group) onDeleteSet(group.head.id).catch((err) => console.error('Failed to delete warmup', err))
+                }}
+                restElapsed={currentRestElapsed()}
+              />
+              {group && timerAnchorId === group.head.id && <RestTimerInline />}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Set rows */}
       <div className="px-3 py-3 space-y-3">

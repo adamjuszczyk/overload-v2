@@ -346,7 +346,11 @@ export async function addStage(
 
 export async function updateSet(
   id: string,
-  changes: { targetRir?: number | null; stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null },
+  changes: {
+    targetRir?: number | null
+    stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
+    isWarmup?: boolean
+  },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('targetRir' in changes) patch.target_rir = changes.targetRir
@@ -354,6 +358,10 @@ export async function updateSet(
   // head-only field (the DB's own check — v2_week_plan_sets_stage_row_check
   // — refuses it on a stage row; this UI never targets one).
   if ('stageKind' in changes) patch.stage_kind = changes.stageKind
+  // Chunk 15 (SPEC "Warmup sets") — the week plan's own WARMUP toggle
+  // (PlanPage.tsx), head-only by the same posture: PlanPage never offers
+  // it on a stage row or once a head already has stages.
+  if ('isWarmup' in changes) patch.is_warmup = changes.isWarmup
 
   const { error } = await supabase.from('v2_week_plan_sets').update(patch).eq('id', id)
   if (error) throw error

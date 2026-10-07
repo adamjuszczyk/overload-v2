@@ -7,7 +7,15 @@ import { groupWeekPlanSets } from './setGroupLogic'
 // side-by-side column, not a full walkthrough (see PreviewExerciseCard.tsx
 // for the fuller nested rendering).
 export default function PlanTargetsPanel({ plannedSets }: { plannedSets: WeekPlanSet[] }) {
-  const groups = groupWeekPlanSets(plannedSets).sort((a, b) => a.head.setNumber - b.head.setNumber)
+  // Chunk 15 (SPEC "Warmup sets" — "never counted in ... set counts"): a
+  // warmup never has an RIR target by design (SPEC: "weight and reps ...
+  // plus a rest timer. Nothing else"), so showing one here would read as a
+  // working set missing a target rather than what it is — filtered out,
+  // same as a stage already is structurally (groupWeekPlanSets never
+  // surfaces a stage as its own row either).
+  const groups = groupWeekPlanSets(plannedSets)
+    .filter((g) => !g.head.isWarmup)
+    .sort((a, b) => a.head.setNumber - b.head.setNumber)
 
   return (
     <div className="px-3 py-2" style={{ borderRight: '1px solid var(--border)' }}>

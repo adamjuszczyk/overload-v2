@@ -58,6 +58,11 @@ export interface ExerciseCardProps {
     stageIndex: number
     formRating: FormRating | null
     stageKind: StageKind | null
+    // Chunk 15 (SPEC "Warmup sets") — optional, same convention as
+    // stageKind above. handleLogWarmup (below) is the one caller that sets
+    // it to true; handleLogHead/handleLogStage never do, so every existing
+    // working-set write is unaffected.
+    isWarmup?: boolean
   }) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
@@ -83,9 +88,9 @@ export interface ExerciseCardProps {
 
 export function useExerciseCardState({
   programExercise,
-  plannedSets,
-  currentLogs,
-  lastLogs,
+  plannedSets: allPlannedSets,
+  currentLogs: allCurrentLogs,
+  lastLogs: allLastLogs,
   onLog,
   onUpdateSet,
   onDeleteSet,
@@ -94,6 +99,22 @@ export function useExerciseCardState({
 }: ExerciseCardProps) {
   const { startedAt, start: startTimer } = useRestTimerStore()
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
+
+  // Chunk 15 (SPEC "Warmup sets" — "Never counted in volume, set counts, or
+  // 'last time' matching"). Every computation below this point predates
+  // warmups having any logging UI and must keep reading exactly what it
+  // always has — a plan/log list with warmups already filtered out — so
+  // nothing from here down needed to change at all: `plannedSets`/
+  // `currentLogs`/`lastLogs` are just renamed shadows of the real props,
+  // pre-filtered once, right here. The D30 fixture carries isWarmup: false
+  // on every row, so this filter is a no-op for it (same array contents,
+  // same order) — the rest of this function is byte-for-byte unchanged.
+  // The warmup rows THEMSELVES are rendered from allPlannedSets/
+  // allCurrentLogs directly — see warmupRows/handleLogWarmup at the bottom
+  // of this function.
+  const plannedSets = allPlannedSets.filter((s) => !s.isWarmup)
+  const currentLogs = allCurrentLogs.filter((l) => !l.isWarmup)
+  const lastLogs = allLastLogs.filter((l) => !l.isWarmup)
 
   // Heads currently mid-cascade-delete — gates ADD STAGE on that group (see
   // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
@@ -494,6 +515,49 @@ export function useExerciseCardState({
     return { ...row, displayNumber }
   })
 
+  // ─── Warmup sets (chunk 15 — SPEC "Warmup sets") ─────────────────────────
+  // Planned-only, in plan order — no "ADD WARMUP SET" affordance exists:
+  // SPEC's own words, "exercises that don't need warmups simply have
+  // none", and nothing names an ad-hoc extra warmup the way ADD SET does
+  // for working sets. A warmup is never staged (027's own checks,
+  // v2_program_sets_warmup_check / _stage_row_check), so every row here is
+  // always its own head — groupSetLogs still used (not a raw filter) so a
+  // warmup logged more than once for the same plan slot (shouldn't happen,
+  // but isn't assumed away) still resolves to one group per head correctly.
+  const warmupPlannedSets = allPlannedSets
+    .filter((s) => s.isWarmup)
+    .sort((a, b) => a.setNumber - b.setNumber)
+  const warmupLogGroups = groupSetLogs(allCurrentLogs.filter((l) => l.isWarmup))
+  const warmupRows = warmupPlannedSets
+    .map((plannedSet) => ({
+      plannedSet,
+      group: warmupLogGroups.find((g) => g.head.weekPlanSetId === plannedSet.id) ?? null,
+    }))
+    // Same merged-card rule plannedRows applies above (its own comment):
+    // on a swapped card the planned section is the ORIGINAL exercise's
+    // already-resolved history, never a live input under the
+    // REPLACEMENT's identity. An unlogged row here would do exactly that;
+    // a no-op filter on every non-merged card.
+    .filter((row) => !swappedFrom || row.group != null)
+
+  // SetRow.tsx's own isWarmup branch already resolves restSeconds/setSeconds
+  // (resolveTiming) and constructs the full LogParams itself (rir/isDropset/
+  // isSkipped/stageKind all fixed, isWarmup: true) — this only adds what
+  // SetRow can't know (which exercise/plan slot) and starts the shared rest
+  // timer, same as handleLogHead does for a working set.
+  async function handleLogWarmup(plannedSet: WeekPlanSet, params: LogParams): Promise<SetLog> {
+    startTimer()
+    return onLog({
+      ...params,
+      exerciseId: programExercise.exerciseId,
+      weekPlanSetId: plannedSet.id,
+      // Never a stage (a warmup is never staged) — same fixed values
+      // handleLogHead passes for a head.
+      parentSetId: null,
+      stageIndex: 0,
+    })
+  }
+
   return {
     resolvedWeightUnit,
     deletingHeadIds,
@@ -518,6 +582,8 @@ export function useExerciseCardState({
     handleConfirmSkip,
     handleConfirmSwap,
     handleAddSet: () => setExtraSlotCount((n) => n + 1),
+    warmupRows,
+    handleLogWarmup,
   }
 }
 

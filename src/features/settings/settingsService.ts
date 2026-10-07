@@ -12,6 +12,7 @@ type DbSettings = {
   auto_finish_minutes: number | null
   measure_set_time?: boolean  // absent until migration 005 has been applied
   week_start?: string  // absent until migration 027 has been applied
+  warmup_display?: string  // absent until migration 027 has been applied
 }
 
 function toUserSettings(row: DbSettings): UserSettings {
@@ -30,6 +31,10 @@ function toUserSettings(row: DbSettings): UserSettings {
     // Falls back to the column default ('copy' — SPEC G4) until migration
     // 027 has been run, same "key missing" convention as the others above.
     weekStart: (row.week_start as UserSettings['weekStart'] | undefined) ?? 'copy',
+    // Falls back to the column default ('rows' — SPEC "Warmup sets") until
+    // migration 027 has been run, same "key missing" convention as the
+    // others above.
+    warmupDisplay: (row.warmup_display as UserSettings['warmupDisplay'] | undefined) ?? 'rows',
   }
 }
 
@@ -63,6 +68,7 @@ export async function upsertSettings(
     auto_finish_minutes: settings.autoFinishMinutes,
     measure_set_time: settings.measureSetTime,
     week_start: settings.weekStart,
+    warmup_display: settings.warmupDisplay,
   }
 
   const { error } = await supabase

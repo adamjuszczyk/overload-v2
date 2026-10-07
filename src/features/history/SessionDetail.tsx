@@ -352,7 +352,7 @@ function HistorySetRowView({ set, isStage = false }: { set: HistorySetRow; isSta
           fontFamily: 'var(--font-mono)',
         }}
       >
-        {isStage ? 'STAGE' : set.setNumber}
+        {isStage ? 'STAGE' : set.isWarmup ? 'WARMUP' : set.setNumber}
       </span>
 
       {set.isSkipped ? (

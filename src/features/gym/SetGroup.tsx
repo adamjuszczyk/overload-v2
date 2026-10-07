@@ -28,6 +28,14 @@ export interface LogParams {
   // needed here (a stage's own planned row, if any, carries no kind of its
   // own either — the DB's own check).
   stageKind: StageKind | null
+  // Chunk 15 (SPEC "Warmup sets") — optional, same convention as stageKind
+  // above: every caller SetGroup.tsx itself drives (onLogHead/onLogStage,
+  // via SetRow's working-row handleLog/handleSkip) never sets this.
+  // ExerciseCard.tsx's own warmup block bypasses SetGroup entirely (a
+  // warmup is never staged, so it needs none of SetGroup's nesting/ADD
+  // STAGE machinery) and calls SetRow directly instead — see
+  // useExerciseCardState.ts's handleLogWarmup.
+  isWarmup?: boolean
 }
 
 interface SetGroupProps {
@@ -76,7 +84,14 @@ interface SetGroupProps {
   expectStage?: boolean
   onLogHead: (params: LogParams) => void
   onLogStage: (headLog: SetLog, params: LogParams) => void
-  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
+  // Chunk 15 — rir/formRating optional (not required), matching SetRow.tsx's
+  // own loosened onUpdate type one level down (its isWarmup branch sends
+  // weight/reps only). SetGroup.tsx is never used for a warmup row itself
+  // (ExerciseCard.tsx/SupersetBlock.tsx call SetRow directly for those), so
+  // this is purely a type-compatibility passthrough — every real call this
+  // file makes (the two below) still forwards whatever SetRow's own
+  // (unchanged, non-warmup) saveEdit sent, which is still all four keys.
+  onUpdate: (id: string, changes: { weight: number | null; reps: number | null; rir?: number | null; formRating?: FormRating | null }) => void
   onDeleteHead: (group: Group<SetLog>) => void
   onDeleteStage: (stageId: string) => void
   restElapsed: number | null

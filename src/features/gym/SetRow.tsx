@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Check, Pencil, Trash2 } from 'lucide-react'
+import { Check, Pencil, Trash2, Square } from 'lucide-react'
 import type { WeekPlanSet, SetLog, ProgramExercise, WeightUnit, FormRating } from '../../types'
 import { useOfflineStore } from '../offline/offlineStore'
 import { useSettingsStore } from '../settings/settingsStore'
@@ -47,6 +47,13 @@ interface SetRowProps {
   // (stageCarryLogic.ts) — null for a dropset stage (today's unchanged
   // "starts blank" behaviour) or when there's nothing to carry from yet.
   carryWeightKg?: number | null
+  // Chunk 15 (SPEC "Warmup sets") — renders this row entirely differently
+  // (see the dedicated branch near the top of the component body): weight
+  // and reps both optional, no RIR/MORE/skip/edit/stage machinery at all —
+  // "nothing else". Never true for a stage (a warmup is never staged) and
+  // never set by any pre-chunk-15 caller, so every existing render path is
+  // unaffected by this prop's mere existence.
+  isWarmup?: boolean
   onLog: (params: {
     weekPlanSetId: string | null
     setNumber: number
@@ -60,8 +67,15 @@ interface SetRowProps {
     enteredUnit: WeightUnit | null
     formRating: FormRating | null
     stageKind: StageKind | null
+    isWarmup?: boolean
   }) => void
-  onUpdate: (changes: { weight: number | null; reps: number | null; rir: number | null; formRating: FormRating | null }) => void
+  // Chunk 15 — rir/formRating optional (not required): a warmup's own edit
+  // (this component's isWarmup branch) sends weight/reps only, matching
+  // the reviewer's "weight and reps only" instruction and updateSetLog's
+  // own `'x' in changes` convention (sessionService.ts) — an omitted key
+  // touches nothing. The existing working-set edit (saveEdit, below) is
+  // unchanged: it still sends all four explicitly every time.
+  onUpdate: (changes: { weight: number | null; reps: number | null; rir?: number | null; formRating?: FormRating | null }) => void
   onDelete: () => void
   restElapsed: number | null   // seconds since last set logged (for rest_seconds)
 }
@@ -77,6 +91,7 @@ export default function SetRow({
   isLocked = false,
   stageKind = null,
   carryWeightKg = null,
+  isWarmup = false,
   onLog,
   onUpdate,
   onDelete,
@@ -104,6 +119,10 @@ export default function SetRow({
   const pendingIds  = useOfflineStore((s) => s.pendingIds)
   const failedIds   = useOfflineStore((s) => s.failedIds)
   const measureSetTime = useSettingsStore((s) => s.measureSetTime)
+  // Chunk 15 (SPEC "Warmup sets" — "Display setting: rows ... or tick").
+  // Read unconditionally (Rules of Hooks) even though only the isWarmup
+  // branch below ever uses it — harmless for every other row.
+  const warmupDisplay = useSettingsStore((s) => s.warmupDisplay)
 
   // Resolved unit for this program-exercise (v3 §2.4): its own override, else
   // the global Settings default. `resolvedUnit` is fixed — it changes only
@@ -183,6 +202,388 @@ export default function SetRow({
   // exact look, the D30 fixture's own case) so every existing render path
   // is untouched; the label text itself for the three carrying kinds.
   const stageLabel = isStage && stageKind && stageKind !== 'dropset' ? STAGE_KIND_LABELS[stageKind] : null
+
+  // ── Warmup (chunk 15 — SPEC "Warmup sets": "Logged values: weight and
+  // reps, both optional; plus a rest timer. Nothing else.") A hard branch,
+  // entirely separate from every path below it — isWarmup is false (the
+  // default) on every pre-chunk-15 call site and the D30 fixture, so this
+  // is never reached there, and nothing below this block is affected by
+  // its existence. Never a stage (a warmup is never staged), so isStage/
+  // stageKind/carryWeightKg/isLocked never apply here.
+  if (isWarmup) {
+    if (currentLog) {
+      const isPending = pendingIds.has(currentLog.id)
+      const isFailed = failedIds.has(currentLog.id)
+      // Same unit convention as the working-set logged row below: whatever
+      // this set was actually logged in (enteredUnit), falling back to
+      // today's resolved default for a legacy row that predates the column.
+      const editUnit = currentLog.enteredUnit ?? resolvedUnit
+
+      // Review fix (reviewer, chunk 15) — "SPEC's 'nothing else' limits
+      // what a warmup *records* (weight, reps, rest timer), not whether it
+      // can be corrected": edit (rows mode only — tick mode never had a
+      // value, only a done/not-done state, so editing doesn't apply there,
+      // same reasoning the tick button below already uses) and delete (both
+      // modes — "a ticked warmup can be unticked" is exactly this delete).
+      // Reuses the same onUpdate/onDelete props and isEditing/editWeight/
+      // editReps/confirmDelete state the working-set logged row below
+      // already declares (top of this component) — nothing new added to
+      // this component's own state.
+      if (isEditing && warmupDisplay !== 'tick') {
+        const saveWarmupEdit = () => {
+          const editedDisplay = editWeight.trim() === '' ? null : parseFloat(editWeight.replace(',', '.'))
+          if (editedDisplay !== null && Number.isNaN(editedDisplay)) {
+            setLogError('Enter a valid weight')
+            return
+          }
+          const originalKg = currentLog.weight
+          const w =
+            editedDisplay === null || originalKg === null
+              ? editedDisplay
+              : resolveEditedWeightKg(originalKg, editUnit, editedDisplay)
+          const r = editReps.trim() === '' ? null : parseInt(editReps, 10)
+          setLogError('')
+          // Weight and reps only (reviewer's instruction) — no rir, no
+          // formRating keys at all, so updateSetLog (sessionService.ts)
+          // never touches those columns for a warmup edit.
+          onUpdate({ weight: w, reps: r })
+          setIsEditing(false)
+        }
+
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span
+                className="text-xs font-bold w-5 text-center flex-shrink-0"
+                style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
+              >
+                {String(setNumber).padStart(2, '0')}
+              </span>
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoFocus
+                  value={editWeight}
+                  onChange={(e) => setEditWeight(e.target.value)}
+                  className="w-full px-3 rounded-lg text-sm font-bold text-center"
+                  style={{
+                    height: 44,
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                />
+                <span
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+                  style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+                >
+                  {editUnit}
+                </span>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>×</span>
+              <div style={{ width: 60 }} className="flex-shrink-0">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={editReps}
+                  onChange={(e) => setEditReps(e.target.value)}
+                  className="w-full px-2 rounded-lg text-sm font-bold text-center"
+                  style={{
+                    height: 44,
+                    backgroundColor: 'var(--surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--accent)',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                />
+              </div>
+              <button
+                onClick={saveWarmupEdit}
+                className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+                style={{
+                  height: 44,
+                  backgroundColor: 'var(--accent)',
+                  color: 'var(--base)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                SAVE
+              </button>
+            </div>
+            <div className="flex items-center gap-2 pl-7">
+              <button
+                onClick={() => {
+                  setLogError('')
+                  setIsEditing(false)
+                }}
+                className="flex items-center justify-center text-xs px-3 rounded"
+                style={{
+                  minHeight: 44,
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+            </div>
+            {logError && (
+              <div className="pl-7">
+                <span className="text-xs" style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}>
+                  {logError}
+                </span>
+              </div>
+            )}
+          </div>
+        )
+      }
+
+      return (
+        <div
+          className="flex items-center gap-3 px-3 rounded-lg"
+          style={{ backgroundColor: 'var(--surface)', minHeight: 44 }}
+        >
+          <span
+            className="text-xs font-bold w-5 text-center"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {String(setNumber).padStart(2, '0')}
+          </span>
+          <span
+            className="flex-1 text-sm font-bold"
+            style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
+          >
+            {currentLog.weight !== null && currentLog.reps !== null ? (
+              <>
+                {toDisplayWeight(currentLog.weight, editUnit)}
+                <span style={{ color: 'var(--text-muted)' }}>{editUnit} × </span>
+                {currentLog.reps}
+              </>
+            ) : (
+              'DONE'
+            )}
+          </span>
+          <span
+            className="text-xs px-1 rounded"
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
+          >
+            WARMUP
+          </span>
+          {isFailed ? (
+            <span
+              className="text-xs font-bold px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                color: 'var(--error)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.06em',
+              }}
+              title="Failed to sync after 3 attempts — this set only exists on this device"
+            >
+              SYNC FAILED
+            </span>
+          ) : isPending ? (
+            <span
+              className="text-xs font-bold px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: 'var(--accent-muted)',
+                color: 'var(--accent)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.06em',
+              }}
+            >
+              SYNC
+            </span>
+          ) : (
+            <Check size={14} style={{ color: 'var(--accent)' }} />
+          )}
+          {confirmDelete ? (
+            <>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="flex-shrink-0 text-xs font-bold px-2 rounded"
+                style={{
+                  height: 28,
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={onDelete}
+                className="flex-shrink-0 text-xs font-bold px-2 rounded"
+                style={{
+                  height: 28,
+                  backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
+                  color: 'var(--error)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                DELETE
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Edit — rows mode only (see this block's own comment above). */}
+              {warmupDisplay !== 'tick' && (
+                <button
+                  onClick={() => {
+                    setEditWeight(currentLog.weight != null ? String(toDisplayWeight(currentLog.weight, editUnit)) : '')
+                    setEditReps(currentLog.reps != null ? String(currentLog.reps) : '')
+                    setLogError('')
+                    setIsEditing(true)
+                  }}
+                  className="flex-shrink-0 flex items-center justify-center"
+                  style={{ width: 28, height: 28, color: 'var(--text-muted)' }}
+                  aria-label="Edit set"
+                >
+                  <Pencil size={13} />
+                </button>
+              )}
+              {/* Delete — both modes. In tick mode this IS "untick": a ticked
+                  warmup has no value to edit, only to undo. */}
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex-shrink-0 flex items-center justify-center"
+                style={{ width: 28, height: 28, color: 'var(--text-muted)' }}
+                aria-label="Delete set"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      )
+    }
+
+    // Shares resolveTiming (declared below, hoisted — a function
+    // declaration) so a warmup's restSeconds is captured exactly like a
+    // working set's: time since the rest timer last started, nothing else
+    // (no Start Set flow is ever offered on a warmup row).
+    const handleWarmupLog = () => {
+      const wEntered = weight.trim() === '' ? null : parseFloat(weight.replace(',', '.'))
+      const r = reps.trim() === '' ? null : parseInt(reps, 10)
+      const { restSeconds, setSeconds } = resolveTiming()
+      onLog({
+        weekPlanSetId: plannedSet?.id ?? null,
+        setNumber,
+        // Both optional (SPEC, verbatim) — unlike handleLog's working-set
+        // guard below, an empty/unparsed field is simply null, never a
+        // validation error.
+        weight: wEntered !== null && !Number.isNaN(wEntered) ? toStorageWeight(wEntered, resolvedUnit) : null,
+        reps: r !== null && !Number.isNaN(r) ? r : null,
+        rir: null,
+        isDropset: false,
+        isSkipped: false,
+        restSeconds,
+        setSeconds,
+        enteredUnit: null,
+        formRating: null,
+        stageKind: null,
+        isWarmup: true,
+      })
+    }
+
+    if (warmupDisplay === 'tick') {
+      return (
+        <button
+          onClick={handleWarmupLog}
+          className="w-full flex items-center gap-3 px-3 rounded-lg"
+          style={{ minHeight: 44, border: '1px solid var(--border)', background: 'transparent' }}
+        >
+          <span
+            className="text-xs font-bold w-5 text-center"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {String(setNumber).padStart(2, '0')}
+          </span>
+          <span
+            className="flex-1 text-sm text-left"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            WARMUP
+          </span>
+          <Square size={16} style={{ color: 'var(--text-muted)' }} />
+        </button>
+      )
+    }
+
+    // 'rows' (default) — the same two-input + LOG shape a working set's
+    // input row uses, minus RIR/MORE/skip/stage — "nothing else".
+    return (
+      <div className="flex items-center gap-2">
+        <span
+          className="text-xs font-bold w-5 text-center flex-shrink-0"
+          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+        >
+          {String(setNumber).padStart(2, '0')}
+        </span>
+
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            className="w-full px-3 rounded-lg text-sm font-bold text-center"
+            style={{
+              height: 44,
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          />
+          <span
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs pointer-events-none"
+            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            {resolvedUnit}
+          </span>
+        </div>
+
+        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>×</span>
+
+        <div style={{ width: 60 }} className="flex-shrink-0">
+          <input
+            type="number"
+            inputMode="numeric"
+            placeholder="0"
+            value={reps}
+            onChange={(e) => setReps(e.target.value)}
+            className="w-full px-2 rounded-lg text-sm font-bold text-center"
+            style={{
+              height: 44,
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          />
+        </div>
+
+        <button
+          onClick={handleWarmupLog}
+          className="flex-shrink-0 px-4 rounded-lg font-black text-sm tracking-wider"
+          style={{
+            height: 44,
+            backgroundColor: 'var(--accent)',
+            color: 'var(--base)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          LOG
+        </button>
+      </div>
+    )
+  }
 
   // ── Already logged — read-only row ──────────────────────────────────────
   if (currentLog) {

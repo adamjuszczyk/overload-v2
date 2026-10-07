@@ -60,7 +60,7 @@ export interface WeekPoint {
 
 // ─── Exercise progress ────────────────────────────────────────────────────────
 
-type RawSetLogRow = {
+export type RawSetLogRow = {
   id: string
   session_id: string
   weight: number | null
@@ -140,6 +140,55 @@ export function isStageOfSkippedHead(
   return parentSetId != null && skippedById.get(parentSetId) === true
 }
 
+// Chunk 15 (SPEC "Warmup sets" — "never counted in volume, set counts")
+// extracted the same way isStageOfSkippedHead is just above, and for the
+// same reason this file has no unit tests of its own otherwise
+// (I/O-bound, verified live per this project's established convention,
+// this function's own header comment originally): the aggregation this
+// adds a real edge case to (a session that logged ONLY warmups for this
+// exercise would otherwise hit Math.max(...[]) / a 0-length average) is
+// worth testing directly, without mocking Supabase.
+//
+// `logs` is one session's full row set for this exercise (already past the
+// completed/not-skipped/isStageOfSkippedHead filter fetchExerciseProgress
+// applies before grouping by session) — null when every head here is a
+// warmup (nothing real happened for this exercise that session), the same
+// "no data point" treatment an all-skipped session already gets upstream.
+export function computeExerciseSessionStats(
+  logs: RawSetLogRow[],
+): Omit<ExerciseSessionPoint, 'sessionId' | 'date'> | null {
+  // Stage-exclusion rule (§2.1 / §2.7 item 4) — a drop stage is never
+  // counted as an independent set. volume is the deliberate exception and
+  // keeps stages, since a stage is real work performed.
+  const headLogs = headsOnly(logs, (l) => l.parent_set_id)
+  // workingLogs/workingHeadLogs exclude warmups on top of the
+  // stage-exclusion rule above; volume is the one place this still keeps
+  // stages (workingLogs, not workingHeadLogs), same as the existing rule.
+  const workingLogs = logs.filter((l) => !l.is_warmup)
+  const workingHeadLogs = headLogs.filter((l) => !l.is_warmup)
+  if (workingHeadLogs.length === 0) return null
+
+  const topWeight = Math.max(...workingHeadLogs.map((l) => l.weight!))
+  const topLog = workingHeadLogs.find((l) => l.weight === topWeight) ?? workingHeadLogs[0]
+
+  const rirLogs = workingHeadLogs.filter((l) => l.rir !== null)
+  const restLogs = logs.filter((l) => l.rest_seconds !== null)
+
+  return {
+    topWeight,
+    volume: workingLogs.reduce((s, l) => s + l.weight! * l.reps!, 0),
+    avgRir: rirLogs.length > 0 ? rirLogs.reduce((s, l) => s + l.rir!, 0) / rirLogs.length : null,
+    avgRestSeconds:
+      restLogs.length > 0
+        ? restLogs.reduce((s, l) => s + l.rest_seconds!, 0) / restLogs.length
+        : null,
+    setCount: workingHeadLogs.length,
+    avgReps: workingHeadLogs.reduce((s, l) => s + l.reps!, 0) / workingHeadLogs.length,
+    avgFormRating: averageRating(FORM_SCALE, workingHeadLogs.map((l) => l.form_rating)),
+    topSet: { weight: topLog.weight!, reps: topLog.reps!, rir: topLog.rir },
+  }
+}
+
 export async function fetchExerciseProgress(
   userId: string,
   exerciseId: string,
@@ -187,33 +236,13 @@ export async function fetchExerciseProgress(
   const points: ExerciseSessionPoint[] = []
   const e1rmSessions: ExerciseE1rmSessionData[] = []
   for (const [sessionId, { date, mesocycleId, isDeload, logs }] of sessionMap.entries()) {
-    // Stage-exclusion rule (§2.1 / §2.7 item 4) — a drop stage is never
-    // counted as an independent set. volume is the deliberate exception and
-    // keeps stages, since a stage is real work performed.
-    const headLogs = headsOnly(logs, (l) => l.parent_set_id)
-
-    const topWeight = Math.max(...headLogs.map((l) => l.weight!))
-    const topLog = headLogs.find((l) => l.weight === topWeight) ?? headLogs[0]
-
-    const rirLogs = headLogs.filter((l) => l.rir !== null)
-    const restLogs = logs.filter((l) => l.rest_seconds !== null)
-
-    points.push({
-      sessionId,
-      date,
-      topWeight,
-      volume: logs.reduce((s, l) => s + l.weight! * l.reps!, 0),
-      avgRir:
-        rirLogs.length > 0 ? rirLogs.reduce((s, l) => s + l.rir!, 0) / rirLogs.length : null,
-      avgRestSeconds:
-        restLogs.length > 0
-          ? restLogs.reduce((s, l) => s + l.rest_seconds!, 0) / restLogs.length
-          : null,
-      setCount: headLogs.length,
-      avgReps: headLogs.reduce((s, l) => s + l.reps!, 0) / headLogs.length,
-      avgFormRating: averageRating(FORM_SCALE, headLogs.map((l) => l.form_rating)),
-      topSet: { weight: topLog.weight!, reps: topLog.reps!, rir: topLog.rir },
-    })
+    // computeExerciseSessionStats (above) — null exactly when this session
+    // logged only warmups for this exercise (no working set at all), the
+    // same "nothing real happened" treatment an all-skipped session
+    // already gets upstream (it never reaches sessionMap in the first
+    // place).
+    const stats = computeExerciseSessionStats(logs)
+    if (stats) points.push({ sessionId, date, ...stats })
 
     e1rmSessions.push({
       sessionId,
@@ -285,16 +314,25 @@ export async function fetchPositionMatchedHeadline(
     fetchSession(sessionPair.lastSessionId),
   ])
 
+  // Chunk 15 (SPEC "Warmup sets" — "never counted in ... set counts" —
+  // position-matched "slots" are this headline's own set count). Dropped
+  // here, at the call site, not inside matchSessionsByPosition/
+  // buildLoggedSlots (positionMatch.ts) itself: Coach's analysisInput.ts
+  // imports matchSessionsByPosition directly and relies on it seeing every
+  // row, warmups included (SPEC G1 — Coach counts them as working sets);
+  // filtering positionMatch.ts's own shared function would change that too.
+  // Filtering the INPUT here instead changes only this (Progress's own)
+  // caller.
   const result = matchSessionsByPosition(
     {
       sessionId: sessionPair.firstSessionId,
       date: sessionPair.firstDate,
-      logs: (firstSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+      logs: (firstSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId && !l.isWarmup),
     },
     {
       sessionId: sessionPair.lastSessionId,
       date: sessionPair.lastDate,
-      logs: (lastSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+      logs: (lastSession.setLogs ?? []).filter((l) => l.exerciseId === exerciseId && !l.isWarmup),
     },
   )
 
@@ -360,11 +398,16 @@ export async function fetchPositionMatchTable(
 ): Promise<PositionMatchTable> {
   const fullSessions = await fetchSessionsBatched(sessions.map((s) => s.sessionId))
 
+  // Chunk 15 — same call-site exclusion as fetchPositionMatchedHeadline
+  // above, for the same reason (buildPositionMatchTable is positionMatch.ts's
+  // own shared function, but nothing in Coach calls it, so filtering here
+  // doesn't need the same care matchSessionsByPosition's shared use does —
+  // still done at the call site for consistency with the headline).
   return buildPositionMatchTable(
     fullSessions.map((full, i) => ({
       sessionId: sessions[i].sessionId,
       date: sessions[i].date,
-      logs: (full.setLogs ?? []).filter((l) => l.exerciseId === exerciseId),
+      logs: (full.setLogs ?? []).filter((l) => l.exerciseId === exerciseId && !l.isWarmup),
     })),
   )
 }
@@ -386,6 +429,7 @@ type RawSession = {
     is_skipped: boolean
     parent_set_id: string | null
     form_rating: FormRating | null
+    is_warmup: boolean
   }>
 }
 
@@ -398,7 +442,7 @@ export async function fetchMesoWeeklyProgress(
     supabase
       .from('v2_sessions')
       .select(
-        'id, date, started_at, completed_at, energy_rating, pump_rating, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id, form_rating)',
+        'id, date, started_at, completed_at, energy_rating, pump_rating, v2_set_logs(weight, reps, rir, rest_seconds, is_skipped, parent_set_id, form_rating, is_warmup)',
       )
       .eq('user_id', userId)
       .eq('mesocycle_id', mesoId)
@@ -455,9 +499,11 @@ export async function fetchMesoWeeklyProgress(
   for (const [weekNumber, allLogs] of weekMap.entries()) {
     // Stage-exclusion rule (§2.1 / §2.7 item 5) — a drop stage is never
     // counted as an independent set on the meso overview dashboard either.
+    // Chunk 15 (SPEC "Warmup sets") — nor is a warmup: `!l.is_warmup` added
+    // alongside the existing is_skipped/weight/reps filter.
     const headLogs = headsOnly(allLogs, (l) => l.parent_set_id)
     const valid = headLogs.filter(
-      (l) => !l.is_skipped && l.weight !== null && l.reps !== null,
+      (l) => !l.is_skipped && !l.is_warmup && l.weight !== null && l.reps !== null,
     )
     const withRir = valid.filter((l) => l.rir !== null)
     const withRest = allLogs.filter((l) => l.rest_seconds !== null)

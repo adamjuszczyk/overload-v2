@@ -404,6 +404,13 @@ export async function logSet(params: {
   // values), so an existing caller that never passes it writes exactly the
   // row it always has.
   stageKind?: StageKind | null
+  // Chunk 15 (SPEC "Warmup sets") — same "omitted key serialises to no key
+  // at all" convention as stageKind above: every pre-chunk-15 caller (and
+  // the D30-adjacent logSet payload test) never passes this, so an existing
+  // row's insert is unaffected; the DB column default (false) applies.
+  // handleLogWarmup (useExerciseCardState.ts) is the one real caller that
+  // ever sets it to true.
+  isWarmup?: boolean
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -433,6 +440,7 @@ export async function logSet(params: {
       entered_unit: params.enteredUnit,
       form_rating: params.formRating,
       stage_kind: params.stageKind,
+      is_warmup: params.isWarmup,
     })
     .select('*, exercises(*)')
     .single()
@@ -586,7 +594,15 @@ export async function fetchReferenceSessions(
   if (error) throw error
 
   const logsByExercise = new Map<string, Map<string, SetLog[]>>()
-  for (const row of logRows as DbSetLog[]) {
+  // Chunk 15 (SPEC "Warmup sets" — "never counted in ... 'last time'
+  // matching"): dropped here, at the call site, before any ReferenceSession
+  // is built — referenceLogic.ts itself (resolveExerciseReference,
+  // resolveSecondaryReference, hasRealLoggedSet) is frozen (Coach imports
+  // it) and stays byte-identical; filtering the rows it will ever see is
+  // how its existing logic (which already treats an all-skipped session as
+  // not "real") also treats an all-warmup session as not real, with no
+  // change to that file at all.
+  for (const row of (logRows as DbSetLog[]).filter((r) => !r.is_warmup)) {
     const log = toSetLog(row)
     let bySession = logsByExercise.get(log.exerciseId)
     if (!bySession) {

@@ -446,6 +446,12 @@ export interface UserSettings {
   // "Copy last week"/"Copy this workout" actions always try to copy,
   // regardless of this setting.
   weekStart: 'copy' | 'empty'
+  // v2_user_settings.warmup_display (migration 027, chunk 15 — SPEC.md
+  // "Warmup sets": "Display setting: rows (default; numbers optional) or
+  // tick (tick-off only)"). Governs every warmup row on the workout screen
+  // (SetRow.tsx's isWarmup branch) — read live via useSettingsStore, same
+  // convention as measureSetTime.
+  warmupDisplay: 'rows' | 'tick'
 }
 
 // ─── Coach (Daily Session Analysis) ────────────────────────────────────────────

@@ -33,6 +33,10 @@ export interface HistorySetRow {
   parentSetId: string | null
   stageIndex: number
   formRating: FormRating | null
+  // Chunk 15 (SPEC "Warmup sets") — display only here (SessionDetail.tsx's
+  // WARMUP label, same slot as a stage's own); the session's own setCount
+  // below already excludes it from the number shown at the top.
+  isWarmup: boolean
 }
 
 export interface HistoryExerciseGroup {
@@ -71,6 +75,7 @@ type RawLogFull = {
   stage_index: number
   logged_at: string
   form_rating: FormRating | null
+  is_warmup: boolean
   exercises: { id: string; name: string; muscle_group: string | null } | null
 }
 
@@ -181,7 +186,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       workout_day_id, mesocycle_id, energy_rating, pump_rating,
       v2_set_logs(
         id, exercise_id, set_number, weight, reps, rir,
-        rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at, form_rating,
+        rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at, form_rating, is_warmup,
         exercises(id, name, muscle_group)
       ),
       v2_mesocycles(id, name)
@@ -252,6 +257,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
       parentSetId: log.parent_set_id,
       stageIndex: log.stage_index,
       formRating: log.form_rating,
+      isWarmup: log.is_warmup,
     })
   }
 
@@ -286,8 +292,13 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     workoutDayName,
     mesocycleId: session.mesocycle_id,
     mesocycleName: session.v2_mesocycles?.name ?? null,
-    // Heads only (stage-exclusion rule, TASKS.md §2.1 / §2.7 item 6).
-    setCount: activeLogs.filter((l) => l.parent_set_id == null).length,
+    // Heads only (stage-exclusion rule, TASKS.md §2.1 / §2.7 item 6), and
+    // never a warmup (chunk 15, SPEC "Warmup sets" — "never counted in ...
+    // set counts"). Mirrors the 035 migration's own v2_history_session_
+    // summary.set_count filter, for the one place this screen computes it
+    // client-side instead of reading that view (this is a single-session
+    // detail fetch, not the history list).
+    setCount: activeLogs.filter((l) => l.parent_set_id == null && !l.is_warmup).length,
     muscleGroups,
     exerciseGroups,
     energyRating: session.energy_rating,

@@ -31,6 +31,7 @@ vi.mock('./usePlanner', async () => {
     // StepVolume.stageKind.test.tsx), but every render goes through
     // ProgramSetGroupEditor now, so these must resolve against this mock
     // too, same reason every hook above is listed.
+    useUpdateProgramSetIsWarmup: () => ({ mutate: vi.fn() }),
     useUpdateProgramSetStageKind: () => ({ mutate: vi.fn() }),
     useAddProgramSetStage: () => ({ mutate: vi.fn(), isPending: false }),
     useRemoveProgramSetStage: () => ({ mutate: vi.fn() }),
