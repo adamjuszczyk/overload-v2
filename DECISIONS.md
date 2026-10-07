@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 16:16 UTC, chunk 18 boundary — chunks 1–18 merged and live (migrations through 035); chunk 19 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-07 20:25 UTC, chunk 19 boundary — chunks 1–19 merged and live (migrations through 035); chunk 20 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -10,6 +10,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 63 — Chunk 19 app steps: weight, rep override and tags on a set; apply-to-all; AMRAP → RIR 0; shown in the session; next week carries weight and RIR, not tags; say if the busier Plan rows should collapse. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 61 — Chunk 18 app steps: add/edit/reorder/delete warmup routine items; the checklist at the top of the session in order; a tick survives a reload; no items = unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 60 — Chunk 17 app steps: enter a tempo (x → X), invalid refused, blank clears; it shows beside the exercise name in the session; exercises without one unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 59 — Chunk 16 app steps: exercise REST / REST AFTER and one set's own REST show as the timer targets; nothing set = your Settings rest; a never-kinded dropset keeps its timer, an explicitly picked DROPSET has none; superset: no timer inside a round. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -51,6 +52,27 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 63 Chunk 19 live check: week targets and tags (Adam's steps)
+Severity: deferred
+Chunk: 19
+**Ask:** Chunk 19 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 19 is `da386c4`)
+1. In Plan, on a coming week, give one set WEIGHT 100 (in that exercise's unit), change its rep target to `8-10`, and tap two tags (e.g. "push here" plus a custom one). On another exercise, tap the apply-to-all icon next to a tag: every working set of that exercise gets it, warmups don't.
+2. Change a set's rep target to `AMRAP` where it had no RIR: its RIR becomes 0. Where it had one, it stays.
+3. In that session, the set shows `TARGET WEIGHT 100` with your unit, the rep target and both tags; sets without them look as before. The PLANNED RIR panel shows the weight.
+4. Open the next week (planning it for the first time): weights and RIR carried, tags empty.
+5. Your call: Plan rows are busier now (WEIGHT and a TAGS chip row on every working set). Say if you want the tags row collapsed until tapped.
+**Answer:**
+**Evidence:**
+What happened: chunk 19 (#43 `da386c4`, Vercel 20:24 UTC) is live. No migration (the columns date from 027).
+- Reviewer's checks: 1239 tests; replay 36/36; embeds 27/27; D30 test files and fixture untouched; Plan's render fixture changed only by addition; scratch SQL: tags null after `v2_plan_week`.
+- The code failed review once (no proof of the workout screen's weight unit) and passed on the retry.
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md's verification is live.
+Cost of deferral: if it fails, chunk 19 is fixed before chunk 20 merges.
+Provisional path taken: merged; chunk 20 is being built.
 
 ### 62 Go-ahead to run verify-rls.mjs (five tables added since its last run)
 Severity: deferred
