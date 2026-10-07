@@ -169,6 +169,27 @@ export interface ProgramExercise {
   // Program.kind?/WorkoutDay.sourceWorkoutDayId? above — absent/undefined
   // reads exactly like null (not in a superset) everywhere this is read.
   supersetBlockId?: string | null
+  // v2_program_exercises.rest_seconds / rest_after_seconds (migration 027;
+  // read/written starting chunk 16 — SPEC.md "Rest": levels 2–3 of the
+  // chain). Design fields: edited in the planner and the program tab (run
+  // copy only, applying from the next session on). Optional, same "may not
+  // exist yet" convention as supersetBlockId above — absent/undefined reads
+  // as null (no exercise-level rest/rest-after) everywhere this is read,
+  // which is every existing fixture/test predating this chunk.
+  restSeconds?: number | null
+  restAfterSeconds?: number | null
+}
+
+// ─── Program superset block (v2_program_superset_blocks, chunk 13's table;
+// its own rest fields read/written starting chunk 16 — SPEC.md "Rest" /
+// "Supersets": "Both overridable per superset") ────────────────────────────
+// Exercises sharing one ProgramExercise.supersetBlockId form one superset;
+// null rest fields = SPEC's own defaults (no timer within a round; the
+// chain of the exercise that ends a round).
+export interface ProgramSupersetBlock {
+  id: string
+  restWithinRoundSeconds: number | null
+  restAfterRoundSeconds: number | null
 }
 
 // ─── Program Set (v2_program_sets, chunk 11 — SPEC.md "Objects stored:
@@ -318,6 +339,15 @@ export interface WeekPlanSet {
   // legacy-absent) stage_kind on a head that has stages reads as a dropset
   // (plannerVocabulary.ts's resolveStageKind).
   stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
+  // v2_week_plan_sets.program_set_id (migration 027; read starting chunk 16
+  // — SPEC.md "Rest"/TASKS.md "Planned set": "the run copy's set this came
+  // from; how the workout screen finds the set's design fields (rest
+  // override, stage rest)"). Optional, same "may not exist yet" convention
+  // as the fields above; absent/undefined means no per-set design fields are
+  // reachable for this row (falls through restChain.ts's own chain) — true
+  // of every existing fixture/test predating this chunk, and of any row
+  // created before 027 or outside a program-set-backed plan.
+  programSetId?: string | null
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────

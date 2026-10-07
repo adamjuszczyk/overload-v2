@@ -118,6 +118,24 @@ export async function updateProgramSetStageKind(
   if (error) throw error
 }
 
+// Chunk 16 (SPEC "Rest") — per-set rest override, any row (head or stage —
+// no CHECK restricts rest_seconds to heads only, unlike stage_kind/
+// stage_rest_seconds). Design field: editable for both planning types,
+// never gated by volumeReadOnly (StepVolume.tsx's own rule — see that
+// file's header comment).
+export async function updateProgramSetRest(id: string, restSeconds: number | null): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ rest_seconds: restSeconds }).eq('id', id)
+  if (error) throw error
+}
+
+// Head-only (the DB's own check, same as stage_kind above); null reverts to
+// "the kind's own default" (plannerVocabulary.ts's DEFAULT_STAGE_REST_SECONDS
+// — dropset none, others 15s), read by restChain.ts at session load.
+export async function updateProgramSetStageRest(id: string, stageRestSeconds: number | null): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ stage_rest_seconds: stageRestSeconds }).eq('id', id)
+  if (error) throw error
+}
+
 // Mirrors weekPlanService.ts's addStage: the parent id is given directly
 // by the caller (StepVolume.tsx already has the head in hand), never
 // inferred. A stage shares its head's position (027's own invariant,

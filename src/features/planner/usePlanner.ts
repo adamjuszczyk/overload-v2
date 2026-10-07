@@ -11,6 +11,8 @@ import {
   setRepTargetForAllSets,
   updateProgramSetIsWarmup,
   updateProgramSetStageKind,
+  updateProgramSetRest,
+  updateProgramSetStageRest,
   addProgramSetStage,
   removeProgramSet,
   assignWorkoutWeekday,
@@ -97,6 +99,29 @@ export function useUpdateProgramSetStageKind() {
     networkMode: 'always',
     mutationFn: ({ id, stageKind }: { id: string; stageKind: StageKind | null }) =>
       updateProgramSetStageKind(id, stageKind),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// Chunk 16 (SPEC "Rest") — StepVolume.tsx's per-set REST stepper, any row
+// (head or stage). Design field: never gated by volumeReadOnly — see that
+// file's own header comment.
+export function useUpdateProgramSetRest() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, restSeconds }: { id: string; restSeconds: number | null }) =>
+      updateProgramSetRest(id, restSeconds),
+    onSuccess: invalidateProgramSets,
+  })
+}
+
+// Chunk 16 — StepVolume.tsx's per-stage-HEAD "stage rest" stepper (overrides
+// the kind's own default — DEFAULT_STAGE_REST_SECONDS, plannerVocabulary.ts).
+export function useUpdateProgramSetStageRest() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, stageRestSeconds }: { id: string; stageRestSeconds: number | null }) =>
+      updateProgramSetStageRest(id, stageRestSeconds),
     onSuccess: invalidateProgramSets,
   })
 }
