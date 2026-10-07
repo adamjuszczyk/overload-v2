@@ -244,44 +244,55 @@ describe('GymSession — rest chain, real session (non-superset)', () => {
 })
 
 describe('GymSession — rest chain, real session (staged sets)', () => {
-  function stagedFixture(workoutDayId: string, kind: 'dropset' | 'rest_pause') {
+  // kind: null is the LEGACY case (review fix) — a head with stages but no
+  // stage_kind ever written (every row this build produced before chunk
+  // 14's STAGE KIND chip existed, and every head authored since that never
+  // had that chip explicitly re-tapped — see restChain.ts's own header,
+  // reading 1; null here reads identically to the field being absent
+  // entirely, same "?? null" fallback every mapper in this build already
+  // uses). Program sets are still present (program_set_id resolves to a
+  // real row), every one of their own rest fields null too, so this proves
+  // the fallthrough is driven by the KIND itself being unset, not by there
+  // being no program-set row to find at all.
+  function stagedFixture(workoutDayId: string, kind: 'dropset' | 'rest_pause' | null) {
+    const idSuffix = kind ?? 'legacy'
     const workoutDay: WorkoutDay = { id: workoutDayId, programId: 'prog-1', userId: 'user-1', name: 'Push Day', position: 0, exercises: [] }
     const pe: ProgramExercise = {
-      id: `pe-${kind}`, workoutDayId, userId: 'user-1', exerciseId: `ex-${kind}`, position: 0, weightUnit: null,
+      id: `pe-${idSuffix}`, workoutDayId, userId: 'user-1', exerciseId: `ex-${idSuffix}`, position: 0, weightUnit: null,
       exercise: {
-        id: `ex-${kind}`, userId: 'user-1', name: 'Leg Press', muscleGroup: 'quads', isArchived: false,
+        id: `ex-${idSuffix}`, userId: 'user-1', name: 'Leg Press', muscleGroup: 'quads', isArchived: false,
         createdAt: '2026-01-01T00:00:00Z', muscleSubgroups: null, movementPattern: null,
         status: 'active', sourceLibraryId: null, lostAt: null,
       },
     }
     const head: WeekPlanSet = {
-      id: `wps-${kind}-head`, weekPlanId: `wp-${kind}`, userId: 'user-1', programExerciseId: pe.id,
+      id: `wps-${idSuffix}-head`, weekPlanId: `wp-${idSuffix}`, userId: 'user-1', programExerciseId: pe.id,
       setNumber: 1, targetRir: 2, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false,
-      stageKind: kind, programSetId: `ps-${kind}-head`,
+      stageKind: kind, programSetId: `ps-${idSuffix}-head`,
     }
     // Two planned stages — logging stage 1 still has a next stage to come,
     // so restChain.ts's hasNextStage holds and the stage-kind rule applies
     // (not the "last configured stage falls through" case, which chunk 16's
     // own report covers separately).
     const stage1: WeekPlanSet = {
-      id: `wps-${kind}-s1`, weekPlanId: `wp-${kind}`, userId: 'user-1', programExerciseId: pe.id,
+      id: `wps-${idSuffix}-s1`, weekPlanId: `wp-${idSuffix}`, userId: 'user-1', programExerciseId: pe.id,
       setNumber: 1, targetRir: 0, isDropset: true, parentWeekPlanSetId: head.id, stageIndex: 1, isWarmup: false,
-      programSetId: `ps-${kind}-s1`,
+      programSetId: `ps-${idSuffix}-s1`,
     }
     const stage2: WeekPlanSet = {
-      id: `wps-${kind}-s2`, weekPlanId: `wp-${kind}`, userId: 'user-1', programExerciseId: pe.id,
+      id: `wps-${idSuffix}-s2`, weekPlanId: `wp-${idSuffix}`, userId: 'user-1', programExerciseId: pe.id,
       setNumber: 1, targetRir: 0, isDropset: true, parentWeekPlanSetId: head.id, stageIndex: 2, isWarmup: false,
-      programSetId: `ps-${kind}-s2`,
+      programSetId: `ps-${idSuffix}-s2`,
     }
     const weekPlan: WeekPlan = {
-      id: `wp-${kind}`, userId: 'user-1', mesocycleId: 'meso-1', workoutDayId, weekNumber: 1,
+      id: `wp-${idSuffix}`, userId: 'user-1', mesocycleId: 'meso-1', workoutDayId, weekNumber: 1,
       isDeload: false, notes: null, sets: [head, stage1, stage2], exercises: [pe],
       createdAt: '2026-01-01T00:00:00Z',
     }
     programSetsFixture = [
-      programSet({ id: `ps-${kind}-head`, programExerciseId: pe.id, stageKind: kind, stageRestSeconds: null }),
-      programSet({ id: `ps-${kind}-s1`, programExerciseId: pe.id, parentProgramSetId: `ps-${kind}-head`, stageIndex: 1 }),
-      programSet({ id: `ps-${kind}-s2`, programExerciseId: pe.id, parentProgramSetId: `ps-${kind}-head`, stageIndex: 2 }),
+      programSet({ id: `ps-${idSuffix}-head`, programExerciseId: pe.id, stageKind: kind, stageRestSeconds: null }),
+      programSet({ id: `ps-${idSuffix}-s1`, programExerciseId: pe.id, parentProgramSetId: `ps-${idSuffix}-head`, stageIndex: 1 }),
+      programSet({ id: `ps-${idSuffix}-s2`, programExerciseId: pe.id, parentProgramSetId: `ps-${idSuffix}-head`, stageIndex: 2 }),
     ]
     blockRestsFixture = []
     return { workoutDay, weekPlan }
@@ -301,6 +312,32 @@ describe('GymSession — rest chain, real session (staged sets)', () => {
     rerender(sessionJsx(workoutDay, weekPlan))
     await logFirstActiveRow(container, '80', '10') // stage 1 — rests before stage 2, still "no timer"
     expect(useRestTimerStore.getState().startedAt).toBeNull()
+  })
+
+  // Review fix — D30's own gate, proven at the SESSION level, not just the
+  // resolver's (restChain.test.ts's own unit test covers resolveRestTarget
+  // in isolation; it can't see useExerciseCardState.ts's OWN mapping from a
+  // nullable DB field to that resolver's input, which is exactly where a
+  // regression was found: stageContextForHead/stageContextForStage reading
+  // `plannedSet.stageKind ?? 'dropset'` instead of `?? null` passed every
+  // existing test, including every one of THIS file's own, because none of
+  // them ever logged a null-kind staged set through the real hook). The
+  // contrast with the test right above is deliberate and direct: same
+  // session shape, same two-planned-stage structure, same "every rest field
+  // null" program sets — the only difference is stageKind itself.
+  it('D30: a LEGACY staged set (stage_kind never written) times rests exactly as before — the global setting, not "no timer"', async () => {
+    const { workoutDay, weekPlan } = stagedFixture('wd-legacy', null)
+    const { container, rerender } = render(sessionJsx(workoutDay, weekPlan))
+
+    await logFirstActiveRow(container, '100', '10') // the head — rests before stage 1
+    expect(useRestTimerStore.getState().startedAt).not.toBeNull()
+    // The GO point RestTimer.tsx would actually show: chainTarget ?? settings.
+    expect(useRestTimerStore.getState().targetSeconds ?? useSettingsStore.getState().targetRestSeconds).toBe(90)
+
+    rerender(sessionJsx(workoutDay, weekPlan))
+    await logFirstActiveRow(container, '80', '10') // stage 1 — rests before stage 2, same fallthrough
+    expect(useRestTimerStore.getState().startedAt).not.toBeNull()
+    expect(useRestTimerStore.getState().targetSeconds ?? useSettingsStore.getState().targetRestSeconds).toBe(90)
   })
 
   it('a rest-pause stage is 15s by default', async () => {
