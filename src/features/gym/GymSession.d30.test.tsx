@@ -177,7 +177,17 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 // chunk-7 renderParity test's own decoy precedent, minus the decoy itself
 // (this file isn't proving which source wins, chunk 7's own test already
 // does — just that the real card renders a dropset correctly).
-vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: [] }) }))
+vi.mock('../programs/usePrograms', () => ({
+  useProgramExercises: () => ({ data: [] }),
+  // Chunk 16 (SPEC "Rest") — not this test's concern (RestChain.d30.test.tsx
+  // and the new real-session rest tests cover it); empty so every D30
+  // resolution falls through to the global setting, same as before this
+  // chunk existed at all.
+  useSupersetBlockRests: () => ({ data: [] }),
+}))
+// Chunk 16 — same reasoning: no program sets means no per-set/stage design
+// field is ever found, so restChain.ts falls through unchanged.
+vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({ mutateAsync: vi.fn() }),

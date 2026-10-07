@@ -541,6 +541,10 @@ describe('splitSharedWeekdayWorkouts', () => {
     )
     expect(peInsertCall?.[0]).toMatchObject({
       workout_day_id: 'wd-clone', exercise_id: 'ex-1', position: 0, weight_unit: 'lbs',
+      // Chunk 16 (SPEC "Rest") — undefined on sourceExercise (every pre-
+      // chunk-16 ProgramExercise literal), so this is the "may not exist
+      // yet" fallback (null), not yet the rest-fields-present case below.
+      rest_seconds: null, rest_after_seconds: null,
     })
     expect(typeof peInsertCall?.[0]?.id).toBe('string')
 
@@ -562,6 +566,35 @@ describe('splitSharedWeekdayWorkouts', () => {
       is_warmup: false, stage_kind: null, stage_rest_seconds: null,
       rep_min: 8, rep_max: 12, is_amrap: false, rest_seconds: null,
     })
+  })
+
+  // Chunk 16 (SPEC "Rest") — same "a chunk that makes a gap reachable owns
+  // closing it" precedent as chunk 14's own review fix just below: this
+  // chunk is the first that can ever put a non-null rest_seconds/
+  // rest_after_seconds on a program exercise, so this split's own clone
+  // (cloneProgramExerciseRow) must carry them, not silently drop them.
+  it('carries an exercise\'s own rest_seconds/rest_after_seconds into the clone', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    const sourceExercise: ProgramExercise = {
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, weightUnit: null,
+      restSeconds: 45, restAfterSeconds: 120,
+    }
+    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
+    const insertChain = makeChain({ data: null, error: null })
+    const setsSelectChain = makeChain({ data: [], error: null })
+    fromMock.mockImplementation((table: string) => (table === 'v2_program_sets' ? setsSelectChain : insertChain))
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    const groups = detectSharedWeekdayWorkouts(schedule)
+
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, groups)
+
+    const peInsertCall = (insertChain.insert as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0]?.exercise_id === 'ex-1',
+    )
+    expect(peInsertCall?.[0]).toMatchObject({ rest_seconds: 45, rest_after_seconds: 120 })
   })
 
   // Review fix (chunk 14): the pre-fix clone used headSets() and selected

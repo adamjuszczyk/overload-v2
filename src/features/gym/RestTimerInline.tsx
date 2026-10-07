@@ -10,6 +10,13 @@ import { formatRestTime } from '../../lib/formatRestTime'
 // RestTimer.tsx is unchanged and keeps its own richer behaviour (GO alert,
 // haptic buzz, hide/show) — this is a lightweight supplementary display, not
 // a replacement.
+// Chunk 16 (SPEC "Rest") — unchanged. This display has always been
+// elapsed-time-only, with no target/GO comparison at all (unlike RestTimer),
+// so restChain.ts's resolved target changes nothing about what it shows; the
+// chain still governs it indirectly through restTimerStore.startedAt itself
+// — "no timer" (useExerciseCardState.ts calling stop() instead of
+// startRest()) means startedAt stays null, so this renders nothing, exactly
+// like every other "timer not running" case already does.
 export default function RestTimerInline() {
   const startedAt = useRestTimerStore((s) => s.startedAt)
   const restTimerEnabled = useSettingsStore((s) => s.restTimerEnabled)

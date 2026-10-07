@@ -5,8 +5,15 @@ import { formatRestTime } from '../../lib/formatRestTime'
 
 export default function RestTimer() {
   const { startedAt, isVisible, hide, show } = useRestTimerStore()
+  // Chunk 16 (SPEC "Rest") — restTimerStore's own targetSeconds is the rest
+  // chain's resolved per-rest value (restChain.ts), set only by startRest();
+  // a plain start() (D30 — RestTimer.d30.test.tsx, unchanged) always resets
+  // it to null, so this falls back to Settings' global value exactly as
+  // before whenever no chain-resolved override is in play.
   const restTimerEnabled  = useSettingsStore((s) => s.restTimerEnabled)
-  const targetRestSeconds = useSettingsStore((s) => s.targetRestSeconds)
+  const settingsTarget = useSettingsStore((s) => s.targetRestSeconds)
+  const chainTarget = useRestTimerStore((s) => s.targetSeconds)
+  const targetRestSeconds = chainTarget ?? settingsTarget
   const buzzOnRestComplete = useSettingsStore((s) => s.buzzOnRestComplete)
 
   const [elapsed, setElapsed] = useState(0)

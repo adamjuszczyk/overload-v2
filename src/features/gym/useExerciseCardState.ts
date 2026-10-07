@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession } from './sessionService'
 import type { LogParams } from './SetGroup'
 import { useRestTimerStore } from './restTimerStore'
+import { useSettingsStore } from '../settings/settingsStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, type SetGroup as Group } from './setGroupLogic'
+import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
 
 // Review fix (chunk 13) — every per-exercise interactive behaviour
 // ExerciseCard.tsx has always offered (prefill, logging, dropset stages,
@@ -21,6 +23,17 @@ import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, type Se
 export interface ExerciseCardProps {
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
+  // Chunk 16 (SPEC "Rest") — this exercise's own v2_program_sets rows
+  // (heads and stages alike), pre-filtered to this exercise by the caller
+  // (GymSession.tsx — same convention plannedSets/currentLogs already
+  // follow), fetched once per screen. Looked up via each WeekPlanSet's own
+  // programSetId to find a set's rest override / a staged head's own stage
+  // rest (restChain.ts's "design fields read from the run copy when the
+  // session loads"). Optional only so every pre-chunk-16 test fixture that
+  // builds ExerciseCardProps by hand keeps compiling unchanged; defaults to
+  // [] (no design fields reachable — the chain falls through to the
+  // exercise/global levels, same as today).
+  programSets?: ProgramSet[]
   currentLogs: SetLog[]      // set logs already recorded in the current session
   lastLogs: SetLog[]         // set logs from previous session for this exercise — prefill only
   lastLogsLoading: boolean   // true until the previous-session query resolves
@@ -89,6 +102,7 @@ export interface ExerciseCardProps {
 export function useExerciseCardState({
   programExercise,
   plannedSets: allPlannedSets,
+  programSets = [],
   currentLogs: allCurrentLogs,
   lastLogs: allLastLogs,
   onLog,
@@ -97,7 +111,10 @@ export function useExerciseCardState({
   onSwap,
   swappedFrom,
 }: ExerciseCardProps) {
-  const { startedAt, start: startTimer } = useRestTimerStore()
+  const startedAt = useRestTimerStore((s) => s.startedAt)
+  // Chunk 16 (SPEC "Rest") — level 4, the global rest setting; always a
+  // real number (settingsStore's own default), never null.
+  const globalRestSeconds = useSettingsStore((s) => s.targetRestSeconds)
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
   // Chunk 15 (SPEC "Warmup sets" — "Never counted in volume, set counts, or
@@ -212,6 +229,100 @@ export function useExerciseCardState({
   const plannedSlotIds = new Set([...plannedHeads.map((ps) => ps.id), ...loggedHeadSlotIds])
   const plannedSetById = new Map(plannedSets.map((ps) => [ps.id, ps]))
 
+  // ─── Rest chain (chunk 16 — SPEC "Rest") ─────────────────────────────────
+  // programSets' own ids are v2_program_sets rows (heads and stages), looked
+  // up via a WeekPlanSet's own programSetId — "how the workout screen finds
+  // the set's design fields" (TASKS.md). plannedSets here already excludes
+  // warmups (this function's own top-of-file filter) but still includes
+  // every head AND stage, so a stage's own programSetId resolves correctly
+  // too (a stage can carry its own rest_seconds override, independent of its
+  // head's — no DB check restricts rest_seconds to heads only, unlike
+  // stage_kind/stage_rest_seconds).
+  const programSetById = new Map(programSets.map((ps) => [ps.id, ps]))
+
+  // "On an exercise's last set" (SPEC level 2) — the last PLANNED head, by
+  // position (setNumber). An extra (ADD SET) row is never "the exercise's
+  // last set" for this purpose (rest-after is a planning-time concept); an
+  // exercise with no planned heads at all has no last set either.
+  const sortedPlannedHeadsByPosition = [...plannedHeads].sort((a, b) => a.setNumber - b.setNumber)
+  const lastPlannedHeadId = sortedPlannedHeadsByPosition[sortedPlannedHeadsByPosition.length - 1]?.id ?? null
+  function isLastPlannedSet(plannedSet: WeekPlanSet | null): boolean {
+    return plannedSet != null && plannedSet.id === lastPlannedHeadId
+  }
+
+  // This row's own v2_program_sets.rest_seconds, via its programSetId — null
+  // when unplanned (no programSetId) or the program set carries no override.
+  function setOverrideFor(plannedSet: WeekPlanSet | null | undefined): number | null {
+    const programSetId = plannedSet?.programSetId
+    if (!programSetId) return null
+    return programSetById.get(programSetId)?.restSeconds ?? null
+  }
+
+  // Staged-set context for a HEAD being logged (handleLogHead) — the head's
+  // own explicit stage_kind (SPEC-literal reading, restChain.ts's own header:
+  // a null/legacy kind is NOT promoted to 'dropset' here, unlike
+  // resolveStageKind's display-only use elsewhere — D30 safety) and whether
+  // it has any planned stages at all to rest before.
+  function stageContextForHead(plannedSet: WeekPlanSet | null): StageChainInput | null {
+    if (!plannedSet) return null
+    const kind = plannedSet.stageKind ?? null
+    if (kind == null) return null
+    const plannedStageCount = plannedGroups.find((g) => g.head.id === plannedSet.id)?.stages.length ?? 0
+    return {
+      kind,
+      hasNextStage: plannedStageCount > 0,
+      stageRestSecondsOverride: setOverrideForStageRest(plannedSet),
+    }
+  }
+
+  // Staged-set context for a STAGE being logged (handleLogStage) — the
+  // KIND lives on the head (a stage's own stage_kind is always null, the
+  // DB's own check), found via the head's own weekPlanSetId; hasNextStage is
+  // false once stageIndex (the one just about to be logged) reaches the
+  // planned stage count — reading 2 in restChain.ts's header: the group's
+  // last configured stage falls through to the normal chain instead,
+  // resting before the NEXT SET, not between stages any more.
+  function stageContextForStage(headLog: SetLog, stageIndex: number): StageChainInput | null {
+    const headPlannedSet = headLog.weekPlanSetId ? plannedSetById.get(headLog.weekPlanSetId) ?? null : null
+    const kind = headPlannedSet?.stageKind ?? null
+    if (kind == null) return null
+    const plannedStageCount = headPlannedSet
+      ? plannedGroups.find((g) => g.head.id === headPlannedSet.id)?.stages.length ?? 0
+      : 0
+    return {
+      kind,
+      hasNextStage: stageIndex < plannedStageCount,
+      stageRestSecondsOverride: setOverrideForStageRest(headPlannedSet),
+    }
+  }
+
+  function setOverrideForStageRest(plannedSet: WeekPlanSet | null | undefined): number | null {
+    const programSetId = plannedSet?.programSetId
+    if (!programSetId) return null
+    return programSetById.get(programSetId)?.stageRestSeconds ?? null
+  }
+
+  // Resolves the chain (restChain.ts) and applies it to the shared store:
+  // a real target starts a fresh rest period at that value; null ("no
+  // timer") stops any period in progress instead of starting one. Called
+  // at the exact point startTimer() used to be, for every working-set,
+  // stage and warmup log alike.
+  function applyRestChain(partial: {
+    setOverrideSeconds: number | null
+    isLastSetOfExercise: boolean
+    stage: StageChainInput | null
+    superset: SupersetChainInput | null
+  }) {
+    const target = resolveRestTarget({
+      ...partial,
+      exerciseRestSeconds: programExercise.restSeconds ?? null,
+      exerciseRestAfterSeconds: programExercise.restAfterSeconds ?? null,
+      globalRestSeconds,
+    })
+    if (target == null) useRestTimerStore.getState().stop()
+    else useRestTimerStore.getState().startRest(target)
+  }
+
   const plannedRows = [...plannedSlotIds]
     .map((id) => plannedSetById.get(id))
     .filter((ps): ps is WeekPlanSet => ps != null)
@@ -252,9 +363,20 @@ export function useExerciseCardState({
     plannedSet: WeekPlanSet | null,
     params: LogParams,
     setNumberOverride?: number,
+    // Chunk 16 — present only when this member is logged from inside a
+    // superset's round grid (SupersetBlock.tsx, which alone knows the round/
+    // zigzag structure); absent for a plain card (ExerciseCard.tsx never
+    // passes it) and for handleSkipExercise's own batch calls below (a skip
+    // isn't "inside a round" in any SPEC sense — see this chunk's report).
+    supersetContext?: SupersetChainInput,
   ): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
-    startTimer()
+    applyRestChain({
+      setOverrideSeconds: setOverrideFor(plannedSet),
+      isLastSetOfExercise: isLastPlannedSet(plannedSet),
+      stage: stageContextForHead(plannedSet),
+      superset: supersetContext ?? null,
+    })
     // plannedSet non-null means a planned-slot head. On a merged card that's
     // now structurally unreachable — plannedRows drops unlogged rows there
     // and hasUnfinishedPlannedWork is forced false, so neither a LOG input
@@ -286,9 +408,29 @@ export function useExerciseCardState({
   // weekPlanSetId is already correct in params — SetGroup's stage-input row
   // resolves it internally (its own plannedSet prop) via the same identity
   // matching SetRow has always used; only the group-level fields need adding.
-  async function handleLogStage(headLog: SetLog, stageIndex: number, params: LogParams): Promise<SetLog> {
+  async function handleLogStage(
+    headLog: SetLog,
+    stageIndex: number,
+    params: LogParams,
+    // Chunk 16 — same convention as handleLogHead's own 4th parameter above;
+    // only matters once this stage is the group's last configured one
+    // (stageContextForStage's own hasNextStage), where the chain falls
+    // through past the stage level to the normal/superset one.
+    supersetContext?: SupersetChainInput,
+  ): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
-    startTimer()
+    // weekPlanSetId is already correct in params (see this function's own
+    // header comment above) — the STAGE's own plannedSet, if it was
+    // pre-planned, which may carry its own rest override independent of the
+    // head's.
+    const stagePlannedSet = params.weekPlanSetId ? plannedSetById.get(params.weekPlanSetId) ?? null : null
+    const headPlannedSet = headLog.weekPlanSetId ? plannedSetById.get(headLog.weekPlanSetId) ?? null : null
+    applyRestChain({
+      setOverrideSeconds: setOverrideFor(stagePlannedSet),
+      isLastSetOfExercise: isLastPlannedSet(headPlannedSet), // stages are never independent sets
+      stage: stageContextForStage(headLog, stageIndex),
+      superset: supersetContext ?? null,
+    })
     return onLog({
       ...params,
       exerciseId: programExercise.exerciseId,
@@ -546,7 +688,18 @@ export function useExerciseCardState({
   // SetRow can't know (which exercise/plan slot) and starts the shared rest
   // timer, same as handleLogHead does for a working set.
   async function handleLogWarmup(plannedSet: WeekPlanSet, params: LogParams): Promise<SetLog> {
-    startTimer()
+    // Chunk 16 — "warmup sets follow the same chain" (SPEC), level 1 only in
+    // practice: isLastSetOfExercise is always false for a warmup (reading 4,
+    // restChain.ts's own header — finishing a warmup is never "the
+    // exercise's last [working] set"), and a warmup is never staged nor
+    // rendered inside a superset's round grid (chunk 15), so stage/superset
+    // are always null here.
+    applyRestChain({
+      setOverrideSeconds: setOverrideFor(plannedSet),
+      isLastSetOfExercise: false,
+      stage: null,
+      superset: null,
+    })
     return onLog({
       ...params,
       exerciseId: programExercise.exerciseId,

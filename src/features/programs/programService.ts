@@ -10,6 +10,7 @@ import type {
   MovementPattern,
   ProgramKind,
   PlanningType,
+  ProgramSupersetBlock,
 } from '../../types'
 import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgramExercises'
 
@@ -62,7 +63,17 @@ type DbProgramExercise = {
   position: number
   weight_unit?: string | null  // absent until migration 006 has been applied
   superset_block_id?: string | null  // absent until migration 027 has been applied
+  // Chunk 16 — same "column may not exist yet" fallback as superset_block_id.
+  rest_seconds?: number | null
+  rest_after_seconds?: number | null
   exercises: DbExerciseJoin | null
+}
+
+// ─── Superset block rest fields (chunk 16 — SPEC.md "Rest" / "Supersets") ──
+type DbProgramSupersetBlock = {
+  id: string
+  rest_within_round_seconds: number | null
+  rest_after_round_seconds: number | null
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -112,6 +123,9 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
     weightUnit: (row.weight_unit ?? null) as ProgramExercise['weightUnit'],
     // Chunk 13 — same "column may not exist yet" fallback as weightUnit above.
     supersetBlockId: row.superset_block_id ?? null,
+    // Chunk 16 — same fallback convention.
+    restSeconds: row.rest_seconds ?? null,
+    restAfterSeconds: row.rest_after_seconds ?? null,
     exercise: ex
       ? {
           id: ex.id,
@@ -362,5 +376,57 @@ export async function setSupersetBlockForExercises(ids: string[], blockId: strin
     .from('v2_program_exercises')
     .update({ superset_block_id: blockId })
     .in('id', ids)
+  if (error) throw error
+}
+
+// ─── Design fields: rest / rest after (chunk 16 — SPEC.md "Rest") ─────────
+// Exercise-level rest fields, editable in the planner and the program tab
+// for both planning types (never gated by volumeReadOnly — same posture
+// superset grouping above and the weekday row already take: rest is a
+// design field, not "volume"). Plain update, no .select() chained, so
+// check-program-exercise-reads.mjs (which flags READS of
+// v2_program_exercises) has nothing to say about this, same shape as
+// updateProgramExerciseWeightUnit above.
+export async function updateProgramExerciseRest(
+  id: string,
+  changes: { restSeconds?: number | null; restAfterSeconds?: number | null },
+): Promise<void> {
+  const patch: Record<string, number | null> = {}
+  if ('restSeconds' in changes) patch.rest_seconds = changes.restSeconds ?? null
+  if ('restAfterSeconds' in changes) patch.rest_after_seconds = changes.restAfterSeconds ?? null
+  const { error } = await supabase.from('v2_program_exercises').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+// ─── Superset block rest fields (chunk 16 — SPEC.md "Rest"/"Supersets":
+// "Both overridable per superset") ──────────────────────────────────────────
+// Read/write v2_program_superset_blocks' own two rest columns directly (not
+// through runProgramExercises.ts — that file's read-path rule is about
+// v2_program_exercises only; this is a different table, already in
+// verify-rls.mjs's TABLES since chunk 13). Scoped by workout_day_id, same
+// shape as fetchProgramExercises/fetchProgramSets' own per-workout batching
+// — one request for every block a workout's exercises might reference, not
+// one per block.
+export async function fetchSupersetBlockRests(workoutDayId: string): Promise<ProgramSupersetBlock[]> {
+  const { data, error } = await supabase
+    .from('v2_program_superset_blocks')
+    .select('id, rest_within_round_seconds, rest_after_round_seconds')
+    .eq('workout_day_id', workoutDayId)
+  if (error) throw error
+  return (data as DbProgramSupersetBlock[]).map((row) => ({
+    id: row.id,
+    restWithinRoundSeconds: row.rest_within_round_seconds,
+    restAfterRoundSeconds: row.rest_after_round_seconds,
+  }))
+}
+
+export async function updateSupersetBlockRest(
+  id: string,
+  changes: { restWithinRoundSeconds?: number | null; restAfterRoundSeconds?: number | null },
+): Promise<void> {
+  const patch: Record<string, number | null> = {}
+  if ('restWithinRoundSeconds' in changes) patch.rest_within_round_seconds = changes.restWithinRoundSeconds ?? null
+  if ('restAfterRoundSeconds' in changes) patch.rest_after_round_seconds = changes.restAfterRoundSeconds ?? null
+  const { error } = await supabase.from('v2_program_superset_blocks').update(patch).eq('id', id)
   if (error) throw error
 }

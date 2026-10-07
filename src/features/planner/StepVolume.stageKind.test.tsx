@@ -16,6 +16,7 @@ let setsByExercise: Record<string, ProgramSet[]> = {}
 const updateStageKindMutateMock = vi.fn()
 const addStageMutateMock = vi.fn()
 const removeStageMutateMock = vi.fn()
+const updateStageRestMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -35,6 +36,11 @@ vi.mock('./usePlanner', async () => {
     useSetRepTargetForAllSets: () => ({ mutate: vi.fn(), isPending: false }),
     useUpdateProgramSetIsWarmup: () => ({ mutate: vi.fn() }),
     useUpdateProgramSetStageKind: () => ({ mutate: updateStageKindMutateMock }),
+    // Chunk 16 (SPEC "Rest") — not this file's own concern (stage kind
+    // authoring); every render now also mounts RestStepper(s), so these
+    // must resolve too.
+    useUpdateProgramSetRest: () => ({ mutate: vi.fn() }),
+    useUpdateProgramSetStageRest: () => ({ mutate: updateStageRestMutateMock }),
     useAddProgramSetStage: () => ({ mutate: addStageMutateMock, isPending: false }),
     useRemoveProgramSetStage: () => ({ mutate: removeStageMutateMock }),
     headSets: actual.headSets,
@@ -172,5 +178,56 @@ describe('StepVolume — removing a stage uses the one-at-a-time remove, not the
     fireEvent.click(screen.getByRole('button', { name: 'Remove stage' }))
 
     expect(removeStageMutateMock).toHaveBeenCalledWith('stage-1')
+  })
+})
+
+describe('StepVolume — stage rest (chunk 16 — SPEC.md "Rest": "dropset none; others 15s" by default)', () => {
+  it('a dropset head with no override shows NO TIMER as its stage rest default', () => {
+    setsByExercise['pe-1'] = [
+      set({ id: 'head', position: 1, stageRestSeconds: null }),
+      set({ id: 'stage-1', position: 1, parentProgramSetId: 'head', stageIndex: 1 }),
+    ]
+    renderStep()
+    expect(screen.getByText('STAGE REST')).toBeTruthy()
+    expect(screen.getByText('NO TIMER')).toBeTruthy()
+  })
+
+  it('a rest_pause head with no override shows 15S as its stage rest default', () => {
+    setsByExercise['pe-1'] = [
+      set({ id: 'head', position: 1, stageKind: 'rest_pause', stageRestSeconds: null }),
+      set({ id: 'stage-1', position: 1, parentProgramSetId: 'head', stageIndex: 1 }),
+    ]
+    renderStep()
+    expect(screen.getByText('15S')).toBeTruthy()
+  })
+
+  it('stepping the STAGE REST control writes stageRestSeconds on the head', () => {
+    setsByExercise['pe-1'] = [
+      set({ id: 'head', position: 1 }),
+      set({ id: 'stage-1', position: 1, parentProgramSetId: 'head', stageIndex: 1 }),
+    ]
+    renderStep()
+
+    const stepper = screen.getByText('NO TIMER').parentElement!
+    fireEvent.click(stepper.querySelector('button:last-of-type')!)
+
+    expect(updateStageRestMutateMock).toHaveBeenCalledWith({ id: 'head', stageRestSeconds: 15 })
+  })
+
+  it('375px: a staged head (STAGE KIND chips + its own STAGE REST stepper) carries no fixed pixel width wider than 375px', () => {
+    setsByExercise['pe-1'] = [
+      set({ id: 'head', position: 1, stageKind: 'cluster' }),
+      set({ id: 'stage-1', position: 1, parentProgramSetId: 'head', stageIndex: 1 }),
+    ]
+    const { container } = renderStep()
+    const offenders: string[] = []
+    for (const el of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const prop of ['width', 'minWidth'] as const) {
+        const value = el.style[prop]
+        const m = /^(\d+(?:\.\d+)?)px$/.exec(value)
+        if (m && Number(m[1]) > 375) offenders.push(`${el.tagName}.${prop}=${value}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })

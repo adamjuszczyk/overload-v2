@@ -17,10 +17,13 @@ import {
   fetchProgramExercises,
   addProgramExercise,
   updateProgramExerciseWeightUnit,
+  updateProgramExerciseRest,
   deleteProgramExercise,
   reorderProgramExercises,
   createSupersetBlock,
   setSupersetBlockForExercises,
+  fetchSupersetBlockRests,
+  updateSupersetBlockRest,
 } from './programService'
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
@@ -186,6 +189,38 @@ export function useUpdateProgramExerciseWeightUnit(workoutDayId: string) {
   })
 }
 
+// Chunk 16 (SPEC "Rest") — exercise-level rest/rest-after, editable in the
+// planner and the program tab for both planning types (never gated by
+// volumeReadOnly — see programService.ts's own header comment on why rest
+// is a design field, not volume). Same optimistic-with-rollback shape as
+// useUpdateProgramExerciseWeightUnit above — a failed/offline write must not
+// leave the planner showing a value that was never actually persisted.
+export function useUpdateProgramExerciseRest(workoutDayId: string) {
+  const qk = ['v2_programExercises', workoutDayId] as const
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({
+      id,
+      changes,
+    }: {
+      id: string
+      changes: { restSeconds?: number | null; restAfterSeconds?: number | null }
+    }) => updateProgramExerciseRest(id, changes),
+    onMutate: async ({ id, changes }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<ProgramExercise[]>(qk)
+      queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
+        old?.map((e) => (e.id === id ? { ...e, ...changes } : e)),
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
 export function useDeleteProgramExercise(workoutDayId: string) {
   return useMutation({
     mutationFn: (id: string) => deleteProgramExercise(id),
@@ -218,5 +253,34 @@ export function useToggleSupersetLink(workoutDayId: string) {
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
+  })
+}
+
+// ─── Superset block rest (chunk 16 — SPEC.md "Rest"/"Supersets") ──────────
+// One fetch per workout (StepExercises.tsx's own grouping editor calls this
+// once per workout, same batching precedent as useProgramExercises/
+// useProgramSets), keyed by workoutDayId so a block's rest fields are never
+// served stale across workouts the way a flat key would risk.
+export function useSupersetBlockRests(workoutDayId: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_programSupersetBlocks', workoutDayId],
+    queryFn: () => fetchSupersetBlockRests(workoutDayId),
+    enabled: !!user && !!workoutDayId,
+  })
+}
+
+export function useUpdateSupersetBlockRest(workoutDayId: string) {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({
+      id,
+      changes,
+    }: {
+      id: string
+      changes: { restWithinRoundSeconds?: number | null; restAfterRoundSeconds?: number | null }
+    }) => updateSupersetBlockRest(id, changes),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['v2_programSupersetBlocks', workoutDayId] }),
   })
 }

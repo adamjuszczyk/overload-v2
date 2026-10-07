@@ -32,6 +32,11 @@ vi.mock('./usePlanner', async () => {
     useSetRepTargetForAllSets: () => ({ mutate: vi.fn(), isPending: false }),
     useUpdateProgramSetIsWarmup: () => ({ mutate: setWarmupMutateMock }),
     useUpdateProgramSetStageKind: () => ({ mutate: vi.fn() }),
+    // Chunk 16 (SPEC "Rest") — not this file's own concern (the WARMUP
+    // chip); every render now also mounts RestStepper(s), so these must
+    // resolve too.
+    useUpdateProgramSetRest: () => ({ mutate: vi.fn() }),
+    useUpdateProgramSetStageRest: () => ({ mutate: vi.fn() }),
     useAddProgramSetStage: () => ({ mutate: vi.fn(), isPending: false }),
     useRemoveProgramSetStage: () => ({ mutate: vi.fn() }),
     headSets: actual.headSets,

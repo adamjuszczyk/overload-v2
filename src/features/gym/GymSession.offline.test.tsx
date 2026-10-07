@@ -104,7 +104,13 @@ vi.mock('./useSession', () => ({
 let isOnline = true
 let fallbackProgramExercisesData: ProgramExercise[] = []
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => isOnline }))
-vi.mock('../programs/usePrograms', () => ({ useProgramExercises: () => ({ data: fallbackProgramExercisesData }) }))
+vi.mock('../programs/usePrograms', () => ({
+  useProgramExercises: () => ({ data: fallbackProgramExercisesData }),
+  // Chunk 16 (SPEC "Rest") — not this test's own concern (offline exercise-
+  // list fallback); empty so nothing about the rest chain affects it.
+  useSupersetBlockRests: () => ({ data: [] }),
+}))
+vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 
 const { default: GymSession } = await import('./GymSession')
 const { primeOfflineCache } = await import('../offline/offlineCache')

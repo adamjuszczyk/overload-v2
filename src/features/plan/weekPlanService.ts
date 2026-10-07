@@ -68,6 +68,13 @@ type DbProgramExerciseJoin = {
   position: number
   weight_unit?: string | null // absent until migration 006 has been applied
   superset_block_id?: string | null // absent until migration 027 has been applied
+  // Chunk 16 — same "column may not exist yet" fallback as superset_block_id
+  // above. Read here (not only in runProgramExercises.ts) because a week's
+  // own exercise list comes through THIS join (v2_week_plan_exercises ->
+  // v2_program_exercises), same reasoning supersetBlockId's own comment below
+  // already gives for why the block id is read from the joined row here.
+  rest_seconds?: number | null
+  rest_after_seconds?: number | null
   exercises: DbExerciseJoin | null
 }
 
@@ -142,6 +149,12 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     // DB's own check, v2_week_plan_sets_stage_row_check). Same "may not
     // exist yet" fallback as the fields above.
     stageKind: row.stage_kind ?? null,
+    // Chunk 16 — how the workout screen finds this set's own design fields
+    // (rest override, stage rest) at session load — see types/index.ts's
+    // own doc comment on WeekPlanSet.programSetId. Same "may not exist yet"
+    // fallback; absent/undefined (every existing fixture) reads as null,
+    // i.e. no per-set design fields reachable, falling through restChain.ts.
+    programSetId: row.program_set_id ?? null,
   }
 }
 
@@ -167,6 +180,10 @@ function toProgramExerciseFromWeekPlanExercise(row: DbWeekPlanExercise): Program
     // `row` (the week_plan_exercises row itself never carries one — the
     // design field lives on the program exercise, always read live).
     supersetBlockId: pe.superset_block_id ?? null,
+    // Chunk 16 — same fallback convention, read from the joined row for the
+    // same reason supersetBlockId is (this is the week's own exercise list).
+    restSeconds: pe.rest_seconds ?? null,
+    restAfterSeconds: pe.rest_after_seconds ?? null,
     exercise: ex
       ? {
           id: ex.id,

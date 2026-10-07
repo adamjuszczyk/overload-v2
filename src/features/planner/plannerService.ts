@@ -118,6 +118,24 @@ export async function updateProgramSetStageKind(
   if (error) throw error
 }
 
+// Chunk 16 (SPEC "Rest") — per-set rest override, any row (head or stage —
+// no CHECK restricts rest_seconds to heads only, unlike stage_kind/
+// stage_rest_seconds). Design field: editable for both planning types,
+// never gated by volumeReadOnly (StepVolume.tsx's own rule — see that
+// file's header comment).
+export async function updateProgramSetRest(id: string, restSeconds: number | null): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ rest_seconds: restSeconds }).eq('id', id)
+  if (error) throw error
+}
+
+// Head-only (the DB's own check, same as stage_kind above); null reverts to
+// "the kind's own default" (plannerVocabulary.ts's DEFAULT_STAGE_REST_SECONDS
+// — dropset none, others 15s), read by restChain.ts at session load.
+export async function updateProgramSetStageRest(id: string, stageRestSeconds: number | null): Promise<void> {
+  const { error } = await supabase.from('v2_program_sets').update({ stage_rest_seconds: stageRestSeconds }).eq('id', id)
+  if (error) throw error
+}
+
 // Mirrors weekPlanService.ts's addStage: the parent id is given directly
 // by the caller (StepVolume.tsx already has the head in hand), never
 // inferred. A stage shares its head's position (027's own invariant,
@@ -320,10 +338,20 @@ export function detectSharedWeekdayWorkouts(schedule: WeeklySchedule): SharedWee
 // v2_program_exercises outside runProgramExercises.ts. crypto.randomUUID()
 // for a client-chosen id written straight into an insert payload is already
 // this codebase's own pattern for exactly this reason (useSession.ts).
+//
+// Chunk 16 (SPEC "Rest") — carries restSeconds/restAfterSeconds verbatim,
+// same reasoning the review fix just below (cloneWorkoutDay's own program-
+// set copy) already gives for stage_kind/stage_rest_seconds: a chunk that
+// makes a design field reachable (this one, for the exercise-level rest
+// fields — chunk 16's first use of them) owns closing the same "deep copy
+// silently drops it" gap for it, before anything can actually populate it.
+// Not superset_block_id — a cloned workout day never shares a block with
+// the source one (chunk 13's own scope; blocks are per-workout-day), so
+// that column already correctly starts null on a clone, same as today.
 async function cloneProgramExerciseRow(
   userId: string,
   workoutDayId: string,
-  source: { exerciseId: string; position: number; weightUnit: string | null },
+  source: { exerciseId: string; position: number; weightUnit: string | null; restSeconds: number | null; restAfterSeconds: number | null },
 ): Promise<string> {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('v2_program_exercises').insert({
@@ -333,6 +361,8 @@ async function cloneProgramExerciseRow(
     exercise_id: source.exerciseId,
     position: source.position,
     weight_unit: source.weightUnit,
+    rest_seconds: source.restSeconds,
+    rest_after_seconds: source.restAfterSeconds,
   })
   if (error) throw error
   return id
@@ -370,6 +400,11 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       exerciseId: ex.exerciseId,
       position: ex.position,
       weightUnit: ex.weightUnit,
+      // Chunk 16 — ?? null covers a ProgramExercise built before this field
+      // existed (every pre-chunk-16 fixture/caller), same "may not exist
+      // yet" convention the type itself documents.
+      restSeconds: ex.restSeconds ?? null,
+      restAfterSeconds: ex.restAfterSeconds ?? null,
     })
 
     const sets = await fetchProgramSets([ex.id])
