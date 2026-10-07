@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
-import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit } from '../../types'
+import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit, WarmupRoutineItem } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import {
   useWorkoutDays,
@@ -16,7 +16,13 @@ import {
   useToggleSupersetLink,
   useSupersetBlockRests,
   useUpdateSupersetBlockRest,
+  useWarmupRoutineItems,
+  useAddWarmupItem,
+  useUpdateWarmupItemBody,
+  useRemoveWarmupItem,
+  useReorderWarmupItems,
 } from '../programs/usePrograms'
+import { moveWarmupItem } from '../programs/warmupRoutineService'
 import { useAssignWorkoutWeekday } from './usePlanner'
 import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from '../programs/ExercisePicker'
@@ -30,8 +36,24 @@ import { normaliseTempo } from '../../lib/plannerVocabulary.js'
 // a stable run's Program tab (ProgramTab.tsx, TASKS.md "the program tab
 // edits the run's copy... with the same step 2/step 3 components").
 //
-// Not in this step, on purpose (their own later chunks, TASKS.md): the
-// warmup routine checklist. Schedule type stays weekday-only until chunk 25.
+// Not in this step, on purpose (their own later chunks, TASKS.md): schedule
+// type stays weekday-only until chunk 25.
+//
+// Warmup routine (chunk 18 — SPEC.md "Warmup routine": "Per workout, in the
+// program: a checklist shown at the top of the session... the warmup
+// routine checklist" is explicitly step 2's own, per SPEC's "Planner step 2"
+// excerpt). Design field, same posture as rest/tempo/superset grouping
+// below: never gated by volumeReadOnly, editable for both planning types,
+// in both the planner and the program tab (this same reused component).
+// Lives below the exercise list (WarmupRoutineEditor, below) — add an item,
+// edit its text, remove it, and reorder with the same up/down arrow pattern
+// the exercise rows above already use (moveWarmupItem,
+// warmupRoutineService.ts). A blank body is refused and nothing is written,
+// same "caller trims and checks, never the service" convention this file's
+// own TempoEditor/WorkoutEditor.saveName already use. This is the routine
+// ITSELF, not a tick — ticking happens only on the workout screen
+// (GymSession.tsx's WarmupRoutineChecklist.tsx), is session-local, and is
+// never written through this file or warmupRoutineService.ts at all.
 //
 // Rest / rest-after / superset rest (chunk 16 — SPEC.md "Rest"/"Programs and
 // runs": design fields, "editable for both planning types... applying to
@@ -399,6 +421,13 @@ function WorkoutEditor({
           </button>
         )}
       </div>
+
+      {/* Warmup routine checklist (chunk 18 — SPEC.md "Warmup routine" /
+          "Planner step 2") — below the exercise list, this file's own header
+          comment above has the full reasoning. Never gated by
+          volumeReadOnly (no readOnly prop passed at all — same posture
+          RestStepper/TempoEditor already take on ExerciseRow, below). */}
+      <WarmupRoutineEditor workoutDayId={workoutDay.id} />
 
       {showPicker && !volumeReadOnly && (
         <ExercisePicker
@@ -799,6 +828,214 @@ function BlockRestEditor({
         onChange={(v) => onChange({ restAfterRoundSeconds: v })}
         defaultText="PER EXERCISE"
       />
+    </div>
+  )
+}
+
+// ─── Warmup routine checklist (chunk 18 — SPEC.md "Warmup routine") ───────
+// One per workout, below its exercise list (this file's own header comment
+// has the full reasoning). Never gated by volumeReadOnly — no readOnly prop
+// at all, same posture RestStepper/TempoEditor already take above.
+function WarmupRoutineEditor({ workoutDayId }: { workoutDayId: string }) {
+  const { data: items = [], isLoading } = useWarmupRoutineItems(workoutDayId)
+  const addItem = useAddWarmupItem(workoutDayId)
+  const updateItem = useUpdateWarmupItemBody(workoutDayId)
+  const removeItem = useRemoveWarmupItem(workoutDayId)
+  const reorderItems = useReorderWarmupItems(workoutDayId)
+
+  const [showAdd, setShowAdd] = useState(false)
+  const [newText, setNewText] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<{ id: string; body: string } | null>(null)
+
+  // Same "write the optimistic order into this query's cache, then fire the
+  // mutation" shape WorkoutEditor's own moveExercise takes for
+  // reorderProgramExercises above — moveWarmupItem mirrors moveUnit's own
+  // "same reference back = no-op" convention, so a boundary tap is a no-op.
+  function moveItem(index: number, direction: 'up' | 'down') {
+    const next = moveWarmupItem(items, index, direction)
+    if (next === items) return
+    const reindexed = next.map((item, i) => ({ ...item, position: i }))
+    queryClient.setQueryData(['v2_workoutWarmupItems', workoutDayId], reindexed)
+    reorderItems.mutate(reindexed.map((item, i) => ({ id: item.id, position: i })))
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = newText.trim()
+    if (!trimmed) return // refused — nothing is written (reviewer's note)
+    await addItem.mutateAsync({ body: trimmed, position: items.length })
+    setNewText('')
+    setShowAdd(false)
+  }
+
+  return (
+    <div style={{ padding: '0 16px 16px' }}>
+      <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 12 }} />
+      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginBottom: 8 }}>
+        WARMUP ROUTINE
+      </p>
+
+      {isLoading && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}>
+          <div className="animate-spin" style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+        </div>
+      )}
+
+      {!isLoading && items.length === 0 && !showAdd && (
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', marginBottom: 8 }}>
+          NO WARMUP ITEMS YET
+        </p>
+      )}
+
+      {!isLoading && items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {items.map((item, index) => (
+            <WarmupItemRow
+              key={item.id}
+              item={item}
+              index={index}
+              canMoveUp={index > 0}
+              canMoveDown={index < items.length - 1}
+              onMoveUp={() => moveItem(index, 'up')}
+              onMoveDown={() => moveItem(index, 'down')}
+              onSave={(body) => updateItem.mutate({ id: item.id, body })}
+              onDelete={() => setConfirmRemove({ id: item.id, body: item.body })}
+            />
+          ))}
+        </div>
+      )}
+
+      {showAdd ? (
+        <form onSubmit={handleAdd} style={{ display: 'flex', gap: 6 }}>
+          <input
+            type="text"
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            onBlur={() => { if (!newText.trim()) setShowAdd(false) }}
+            placeholder="e.g. 5 min easy bike"
+            autoFocus
+            aria-label="New warmup item"
+            style={{ flex: 1, height: 36, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 8, padding: '0 10px', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+          />
+          <button
+            type="submit"
+            disabled={addItem.isPending}
+            style={{ height: 36, padding: '0 14px', flexShrink: 0, background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: addItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: 'var(--base)' }}
+          >
+            ADD
+          </button>
+        </form>
+      ) : (
+        <button
+          onClick={() => { setNewText(''); setShowAdd(true) }}
+          style={{ width: '100%', height: 36, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11 }}
+        >
+          <Plus size={12} style={{ color: 'var(--accent)' }} />
+          ADD ITEM
+        </button>
+      )}
+
+      {confirmRemove && (
+        <Sheet onClose={() => setConfirmRemove(null)}>
+          <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+            Remove this item?
+          </p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+            "{confirmRemove.body}" — this cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => setConfirmRemove(null)}
+              style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
+            >
+              CANCEL
+            </button>
+            <button
+              onClick={() => { removeItem.mutate(confirmRemove.id); setConfirmRemove(null) }}
+              disabled={removeItem.isPending}
+              style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: removeItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
+            >
+              {removeItem.isPending ? '…' : 'REMOVE'}
+            </button>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  )
+}
+
+// One item row — tap-to-edit text (same pattern TempoEditor above uses),
+// plus the same up/down/delete IconBtn cluster ExerciseRow's own structure
+// row uses. A blank commit is refused — the editor just closes, re-showing
+// item.body (the last saved value), same "trimmed falsy => no write, no
+// forced revert needed since nothing local held the stale text" posture
+// WorkoutEditor's own saveName already takes for a workout's own name.
+function WarmupItemRow({
+  item,
+  index,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  onSave,
+  onDelete,
+}: {
+  item: WarmupRoutineItem
+  index: number
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onSave: (body: string) => void
+  onDelete: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  function startEditing() {
+    setText(item.body)
+    setEditing(true)
+  }
+
+  function commit() {
+    const trimmed = text.trim()
+    setEditing(false)
+    if (trimmed && trimmed !== item.body) onSave(trimmed)
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, color: 'var(--text-dim)', flexShrink: 0, minWidth: 16 }}>
+        {String(index + 1).padStart(2, '0')}
+      </span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
+          aria-label="Warmup item text"
+          style={{ flex: 1, height: 32, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 7, padding: '0 8px', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+        />
+      ) : (
+        <button
+          onClick={startEditing}
+          style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', padding: '6px 0', fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        >
+          {item.body}
+        </button>
+      )}
+      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+        <IconBtn onClick={onMoveUp} disabled={!canMoveUp}><ChevronUp size={13} /></IconBtn>
+        <IconBtn onClick={onMoveDown} disabled={!canMoveDown}><ChevronDown size={13} /></IconBtn>
+        <IconBtn onClick={onDelete}><Trash2 size={12} /></IconBtn>
+      </div>
     </div>
   )
 }

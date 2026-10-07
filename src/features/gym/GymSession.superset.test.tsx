@@ -115,6 +115,9 @@ vi.mock('../programs/usePrograms', () => ({
   // rest resolution falls through to SPEC's own defaults unless a given
   // test overrides it.
   useSupersetBlockRests: () => ({ data: [] }),
+  // Chunk 18 (SPEC "Warmup routine") — same posture: not this test file's
+  // own concern, empty so WarmupRoutineChecklist renders nothing at all.
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({

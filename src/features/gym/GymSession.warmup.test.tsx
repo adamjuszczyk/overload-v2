@@ -99,6 +99,11 @@ vi.mock('../programs/usePrograms', () => ({
   // Chunk 16 (SPEC "Rest") — not this test's own concern (warmup numbering);
   // empty so nothing about the rest chain affects it.
   useSupersetBlockRests: () => ({ data: [] }),
+  // Chunk 18 (SPEC "Warmup routine") — a DIFFERENT feature from this file's
+  // own warmup SETS (is_warmup program sets); empty so
+  // WarmupRoutineChecklist renders nothing at all and never interferes with
+  // this file's own warmup-set numbering assertions.
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({

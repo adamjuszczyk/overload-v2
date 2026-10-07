@@ -109,6 +109,9 @@ vi.mock('../programs/usePrograms', () => ({
   // Chunk 16 (SPEC "Rest") — not this test's own concern (offline exercise-
   // list fallback); empty so nothing about the rest chain affects it.
   useSupersetBlockRests: () => ({ data: [] }),
+  // Chunk 18 (SPEC "Warmup routine") — same posture: not this test's own
+  // concern, empty so WarmupRoutineChecklist renders nothing at all.
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 

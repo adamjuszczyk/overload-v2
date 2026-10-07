@@ -54,6 +54,7 @@ const TABLES = [
   'v2_week_plan_sets',
   'v2_week_plans',
   'v2_workout_days',
+  'v2_workout_warmup_items',
 ];
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on

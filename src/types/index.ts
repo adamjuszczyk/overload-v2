@@ -204,6 +204,25 @@ export interface ProgramSupersetBlock {
   restAfterRoundSeconds: number | null
 }
 
+// ─── Warmup routine item (v2_workout_warmup_items, migration 027 — chunk 18:
+// SPEC.md "Warmup routine": "Per workout, in the program: a checklist shown
+// at the top of the session. Items are ticked off; nothing else is
+// logged.") ──────────────────────────────────────────────────────────────
+// Design field: editable in the planner and the program tab (run copy),
+// never gated by volumeReadOnly, same posture ProgramSupersetBlock/
+// ProgramExercise.restSeconds/tempo above already take. Read-only on the
+// workout screen (WarmupRoutineChecklist.tsx), which renders these in
+// `position` order with a session-local tick — the tick itself is never
+// part of this type; it lives only in warmupRoutineStore.ts's own
+// localStorage, keyed by session id, never sent to Supabase.
+export interface WarmupRoutineItem {
+  id: string
+  userId: string
+  workoutDayId: string
+  position: number       // 0-based, dense and unique within one workout day
+  body: string           // free text, non-blank (v2_workout_warmup_items' own CHECK)
+}
+
 // ─── Program Set (v2_program_sets, chunk 11 — SPEC.md "Objects stored:
 // Program", "sets") ─────────────────────────────────────────────────────────
 // The program's own volume: every week's for a `stable` program, week 1's

@@ -30,6 +30,7 @@ import { primeOfflineCache } from '../offline/offlineCache'
 import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
 import SupersetBlock from './SupersetBlock'
+import WarmupRoutineChecklist from './WarmupRoutineChecklist'
 import SwapExerciseSheet from './SwapExerciseSheet'
 import RestTimer from './RestTimer'
 import { useRestTimerStore } from './restTimerStore'
@@ -523,6 +524,11 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
       {/* Rest timer */}
       <RestTimer />
+
+      {/* Warmup routine checklist (chunk 18 — SPEC.md "Warmup routine") —
+          above the first card or superset block. Renders nothing at all
+          with no items (D30 — see that component's own header comment). */}
+      <WarmupRoutineChecklist sessionId={sessionId} workoutDayId={workoutDay.id} />
 
       {/* Exercise cards */}
       <div className="px-4 space-y-4" ref={exercisesContainerRef}>

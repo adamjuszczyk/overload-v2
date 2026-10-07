@@ -72,6 +72,9 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }),
   useSupersetBlockRests: () => ({ data: [] }),
+  // Chunk 18 (SPEC "Warmup routine") — not this test's own concern (tempo);
+  // empty so WarmupRoutineChecklist renders nothing at all.
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
 vi.mock('./useSession', () => ({

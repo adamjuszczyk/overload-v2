@@ -95,6 +95,9 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }),
   useSupersetBlockRests: () => ({ data: blockRestsFixture }),
+  // Chunk 18 (SPEC "Warmup routine") — not this test's own concern (the rest
+  // chain); empty so WarmupRoutineChecklist renders nothing at all.
+  useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: programSetsFixture }) }))
 vi.mock('./useSession', () => ({
