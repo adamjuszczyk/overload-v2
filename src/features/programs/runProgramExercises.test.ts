@@ -89,6 +89,7 @@ describe('fetchRunProgramExercises — the program tab\'s list excludes week_onl
         supersetBlockId: null,
         restSeconds: null,
         restAfterSeconds: null,
+        tempo: null,
         exercise: {
           id: 'ex-1',
           userId: 'u1',

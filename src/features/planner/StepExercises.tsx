@@ -12,6 +12,7 @@ import {
   useDeleteProgramExercise,
   useUpdateProgramExerciseWeightUnit,
   useUpdateProgramExerciseRest,
+  useUpdateProgramExerciseTempo,
   useToggleSupersetLink,
   useSupersetBlockRests,
   useUpdateSupersetBlockRest,
@@ -21,6 +22,7 @@ import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from '../programs/ExercisePicker'
 import { groupIntoUnits, moveUnit, isLinkedGap, planLinkToggle } from '../../lib/supersetGroups.js'
 import { formatRestTime } from '../../lib/formatRestTime'
+import { normaliseTempo } from '../../lib/plannerVocabulary.js'
 
 // Step 2 — Exercises and order (SPEC.md "Stepped program planner" step 2;
 // TASKS.md "step 2 adds workouts, exercises (existing picker), order
@@ -28,9 +30,8 @@ import { formatRestTime } from '../../lib/formatRestTime'
 // a stable run's Program tab (ProgramTab.tsx, TASKS.md "the program tab
 // edits the run's copy... with the same step 2/step 3 components").
 //
-// Not in this step, on purpose (their own later chunks, TASKS.md): tempo,
-// the warmup routine checklist. Schedule type stays weekday-only until
-// chunk 25.
+// Not in this step, on purpose (their own later chunks, TASKS.md): the
+// warmup routine checklist. Schedule type stays weekday-only until chunk 25.
 //
 // Rest / rest-after / superset rest (chunk 16 — SPEC.md "Rest"/"Programs and
 // runs": design fields, "editable for both planning types... applying to
@@ -39,6 +40,12 @@ import { formatRestTime } from '../../lib/formatRestTime'
 // level REST/REST AFTER steppers live on ExerciseRow below; a block's own
 // WITHIN ROUND/AFTER ROUND steppers render once per linked unit (2+
 // members), right after its last member — BlockRestEditor, below.
+//
+// Tempo (chunk 17 — SPEC.md "Tempo"): same design-field posture as rest
+// above — never gated by volumeReadOnly, editable for both planning types.
+// Lives right beside REST/REST AFTER on ExerciseRow (TempoEditor, below),
+// validated by plannerVocabulary.ts's normaliseTempo (chunk 2) — the one
+// parser for this format anywhere in the app.
 //
 // Superset grouping (chunk 13 — SPEC.md "Supersets" / "Stepped program
 // planner" step 2: "exercises per workout, their order, superset grouping")
@@ -185,6 +192,7 @@ function WorkoutEditor({
   const deleteExercise = useDeleteProgramExercise(workoutDay.id)
   const updateWeightUnit = useUpdateProgramExerciseWeightUnit(workoutDay.id)
   const updateRest = useUpdateProgramExerciseRest(workoutDay.id)
+  const updateTempo = useUpdateProgramExerciseTempo(workoutDay.id)
   const assignWeekday = useAssignWorkoutWeekday(programId)
   const toggleLink = useToggleSupersetLink(workoutDay.id)
   // Chunk 16 (SPEC "Rest"/"Supersets") — this workout's own superset blocks'
@@ -355,6 +363,7 @@ function WorkoutEditor({
                 globalWeightUnit={globalWeightUnit}
                 onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: ex.id, weightUnit })}
                 onRest={(changes) => updateRest.mutate({ id: ex.id, changes })}
+                onTempo={(tempo) => updateTempo.mutate({ id: ex.id, tempo })}
               />
               {/* Chunk 16 (SPEC "Rest"/"Supersets": "Both overridable per
                   superset") — once per linked unit (2+ members), right after
@@ -469,6 +478,7 @@ function ExerciseRow({
   globalWeightUnit,
   onWeightUnit,
   onRest,
+  onTempo,
 }: {
   pe: ProgramExercise
   index: number
@@ -490,6 +500,11 @@ function ExerciseRow({
   // StepExercises — see this file's own header comment on why rest stays
   // editable regardless).
   onRest: (changes: { restSeconds?: number | null; restAfterSeconds?: number | null }) => void
+  // Chunk 17 (SPEC "Tempo") — same posture: a design field, never gated by
+  // `readOnly`. Already-normalised text or null; TempoEditor (below) is the
+  // one place this row calls normaliseTempo, so this callback only ever
+  // receives a valid tempo or null, never raw user input.
+  onTempo: (tempo: string | null) => void
 }) {
   return (
     <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
@@ -561,12 +576,13 @@ function ExerciseRow({
         </div>
       </div>
 
-      {/* Rest / rest after (chunk 16 — SPEC.md "Rest") — design fields,
-          never gated by readOnly (this row's readOnly is volumeReadOnly —
-          see this file's own header comment). null = "no override": REST
-          falls through to the global Settings value, REST AFTER simply
-          never applies (the exercise's own last set then also falls
-          through to REST, then global). */}
+      {/* Rest / rest after / tempo (chunk 16 — SPEC.md "Rest"; chunk 17 —
+          SPEC.md "Tempo") — design fields, never gated by readOnly (this
+          row's readOnly is volumeReadOnly — see this file's own header
+          comment). null = "no override": REST falls through to the global
+          Settings value, REST AFTER simply never applies (the exercise's
+          own last set then also falls through to REST, then global); no
+          tempo means none is shown during the workout. */}
       <div style={{ padding: '0 12px 10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, paddingTop: 8 }}>
         <RestStepper
           label="REST"
@@ -581,6 +597,11 @@ function ExerciseRow({
           disabled={false}
           onChange={(v) => onRest({ restAfterSeconds: v })}
           defaultText="NONE"
+        />
+        <TempoEditor
+          value={pe.tempo ?? null}
+          disabled={false}
+          onChange={onTempo}
         />
       </div>
     </div>
@@ -637,6 +658,108 @@ function RestStepper({
           +
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─── Tempo (chunk 17 — SPEC.md "Tempo") ─────────────────────────────────────
+// Same tap-to-edit text-input pattern StepVolume.tsx's SetTargetRow/
+// ExerciseTargetRow already use for their own parsed free-text design field
+// (rep target), inside the same labelled-box shape RestStepper uses just
+// above (so the three sit as one row of controls) — reviewer's note: "the
+// same row and the same existing input/stepper pattern." Validated by
+// plannerVocabulary.ts's normaliseTempo (chunk 2) — the one parser for this
+// format anywhere in the app; an invalid entry shows an inline error (same
+// "input border turns --error, a message appears below" pattern
+// ExerciseForm.tsx's own name field already uses — the one existing inline-
+// validation precedent in this codebase) and writes nothing, never closing
+// the editor so the message stays visible until fixed. Clearing the field
+// (blank, trimmed) writes null, same "no override" meaning REST/REST AFTER
+// give an empty stepper.
+function TempoEditor({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string | null
+  disabled: boolean
+  onChange: (tempo: string | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const [error, setError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  function startEditing() {
+    if (disabled) return
+    setText(value ?? '')
+    setError('')
+    setEditing(true)
+  }
+
+  function commit() {
+    const trimmed = text.trim()
+    if (trimmed === '') {
+      setEditing(false)
+      setError('')
+      if (value !== null) onChange(null)
+      return
+    }
+    const normalised = normaliseTempo(trimmed)
+    if (normalised === null) {
+      // Refused — stays in edit mode with the raw input still showing, the
+      // message right below it; nothing is written (reviewer's note).
+      setError('Use 4 fields, e.g. 3-1-1-0 (X allowed)')
+      return
+    }
+    setEditing(false)
+    setError('')
+    if (normalised !== value) onChange(normalised)
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
+        TEMPO
+      </span>
+      {editing ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => { setText(e.target.value); if (error) setError('') }}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
+            placeholder="3-1-1-0"
+            aria-label="Tempo"
+            style={{ width: 96, height: 26, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 8px', fontSize: 11, fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
+          />
+          {error && (
+            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--error)', letterSpacing: '0.5px' }}>
+              {error}
+            </span>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={startEditing}
+          disabled={disabled}
+          style={{ height: 26, padding: '0 8px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: value === null ? 'var(--text-dim)' : 'var(--text-primary)' }}
+        >
+          {/* '—' (not "NONE" — RestStepper's own REST AFTER already uses
+              that exact text for a different, rest-specific meaning right
+              in this same row; reusing it here would make the two
+              ambiguous to anything querying by text, this file's own tests
+              included) — same "nothing set" placeholder ExerciseRow's own
+              exercise name fallback and StepVolume.tsx's SetTargetRow both
+              already use. */}
+          {value ?? '—'}
+        </button>
+      )}
     </div>
   )
 }

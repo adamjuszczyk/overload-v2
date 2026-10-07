@@ -66,6 +66,8 @@ type DbProgramExercise = {
   // Chunk 16 — same "column may not exist yet" fallback as superset_block_id.
   rest_seconds?: number | null
   rest_after_seconds?: number | null
+  // Chunk 17 (SPEC "Tempo") — same fallback convention.
+  tempo?: string | null
   exercises: DbExerciseJoin | null
 }
 
@@ -126,6 +128,8 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
     // Chunk 16 — same fallback convention.
     restSeconds: row.rest_seconds ?? null,
     restAfterSeconds: row.rest_after_seconds ?? null,
+    // Chunk 17 (SPEC "Tempo") — same fallback convention.
+    tempo: row.tempo ?? null,
     exercise: ex
       ? {
           id: ex.id,
@@ -395,6 +399,24 @@ export async function updateProgramExerciseRest(
   if ('restSeconds' in changes) patch.rest_seconds = changes.restSeconds ?? null
   if ('restAfterSeconds' in changes) patch.rest_after_seconds = changes.restAfterSeconds ?? null
   const { error } = await supabase.from('v2_program_exercises').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+// ─── Design field: tempo (chunk 17 — SPEC.md "Tempo") ──────────────────────
+// Exercise-level tempo, editable in the planner and the program tab for both
+// planning types (never gated by volumeReadOnly — same posture rest/rest-
+// after/superset grouping above already take: tempo is a design field, not
+// "volume"). Takes already-normalised text (plannerVocabulary.ts's
+// normaliseTempo, chunk 2) or null ("no tempo") — this function trusts its
+// caller to have validated, the same division of labour
+// updateProgramSetRepTarget (plannerService.ts) takes with
+// repTargetToColumns: the parser is the one place format is decided, this is
+// just the write. Plain update, no .select() chained, so
+// check-program-exercise-reads.mjs (which flags READS of
+// v2_program_exercises) has nothing to say about this, same shape as
+// updateProgramExerciseWeightUnit/updateProgramExerciseRest above.
+export async function updateProgramExerciseTempo(id: string, tempo: string | null): Promise<void> {
+  const { error } = await supabase.from('v2_program_exercises').update({ tempo }).eq('id', id)
   if (error) throw error
 }
 

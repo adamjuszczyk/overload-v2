@@ -18,6 +18,7 @@ import {
   addProgramExercise,
   updateProgramExerciseWeightUnit,
   updateProgramExerciseRest,
+  updateProgramExerciseTempo,
   deleteProgramExercise,
   reorderProgramExercises,
   createSupersetBlock,
@@ -211,6 +212,36 @@ export function useUpdateProgramExerciseRest(workoutDayId: string) {
       const prev = queryClient.getQueryData<ProgramExercise[]>(qk)
       queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
         old?.map((e) => (e.id === id ? { ...e, ...changes } : e)),
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
+// Chunk 17 (SPEC "Tempo") — exercise-level tempo, editable in the planner
+// and the program tab for both planning types (never gated by
+// volumeReadOnly, same posture useUpdateProgramExerciseRest already takes
+// above — this file's own header comment there on why rest is a design
+// field applies to tempo too). Same optimistic-with-rollback shape: a
+// failed/offline write must not leave the planner/program tab showing a
+// tempo that was never actually persisted. The caller (StepExercises.tsx's
+// TempoEditor) validates with plannerVocabulary.ts's normaliseTempo before
+// ever calling mutate — this hook just writes whatever string-or-null it's
+// given.
+export function useUpdateProgramExerciseTempo(workoutDayId: string) {
+  const qk = ['v2_programExercises', workoutDayId] as const
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, tempo }: { id: string; tempo: string | null }) => updateProgramExerciseTempo(id, tempo),
+    onMutate: async ({ id, tempo }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<ProgramExercise[]>(qk)
+      queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
+        old?.map((e) => (e.id === id ? { ...e, tempo } : e)),
       )
       return { prev }
     },

@@ -38,6 +38,24 @@ export default function ExerciseHeader({
           >
             {ex?.name ?? '—'}
           </span>
+          {/* Chunk 17 (SPEC "Tempo" — "Shown next to the exercise during the
+              workout. Not tracked.") — beside the name, same muted style
+              already used by the muscle-group line just below (reused
+              verbatim, not a new token). A swapped-in or extra exercise
+              shows its own slot's tempo (or none, if its slot has none —
+              TASKS.md "Would not catch"), since programExercise here is
+              always that slot's own object. With no tempo, nothing renders
+              at all: no label, no placeholder, no empty element (D30) —
+              `&&` skips the span outright for a null/undefined/empty value,
+              same as swappedFromName's own guard below. */}
+          {programExercise.tempo && (
+            <span
+              className="text-xs font-bold tracking-widest"
+              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+            >
+              {programExercise.tempo}
+            </span>
+          )}
         </div>
         <span
           className="text-xs font-bold tracking-widest"

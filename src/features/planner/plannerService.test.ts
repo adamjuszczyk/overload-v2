@@ -597,6 +597,35 @@ describe('splitSharedWeekdayWorkouts', () => {
     expect(peInsertCall?.[0]).toMatchObject({ rest_seconds: 45, rest_after_seconds: 120 })
   })
 
+  // Chunk 17 (SPEC "Tempo") — same "a chunk that makes a gap reachable owns
+  // closing it" precedent as the rest-fields test just above: this chunk is
+  // the first that can ever put a non-null tempo on a program exercise, so
+  // this split's own clone (cloneProgramExerciseRow) must carry it too, not
+  // silently drop it.
+  it('carries an exercise\'s own tempo into the clone', async () => {
+    createWorkoutDayMock.mockResolvedValue({
+      id: 'wd-clone', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [],
+    })
+    const sourceExercise: ProgramExercise = {
+      id: 'pe-src', workoutDayId: 'wd-shared', userId: 'user-1', exerciseId: 'ex-1', position: 0, weightUnit: null,
+      tempo: '3-1-X-0',
+    }
+    fetchRunProgramExercisesMock.mockResolvedValue([sourceExercise])
+    const insertChain = makeChain({ data: null, error: null })
+    const setsSelectChain = makeChain({ data: [], error: null })
+    fromMock.mockImplementation((table: string) => (table === 'v2_program_sets' ? setsSelectChain : insertChain))
+
+    const schedule: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-shared', wednesday: 'wd-shared' }
+    const groups = detectSharedWeekdayWorkouts(schedule)
+
+    await splitSharedWeekdayWorkouts('user-1', workoutDays, schedule, groups)
+
+    const peInsertCall = (insertChain.insert as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0]?.exercise_id === 'ex-1',
+    )
+    expect(peInsertCall?.[0]).toMatchObject({ tempo: '3-1-X-0' })
+  })
+
   // Review fix (chunk 14): the pre-fix clone used headSets() and selected
   // neither stage_kind nor stage_rest_seconds, so a staged set's stages
   // (and the head's own kind) were silently dropped by this exact split —

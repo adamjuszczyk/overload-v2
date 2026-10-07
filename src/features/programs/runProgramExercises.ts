@@ -98,6 +98,8 @@ type DbProgramExerciseJoin = {
   // above.
   rest_seconds?: number | null
   rest_after_seconds?: number | null
+  // Chunk 17 (SPEC "Tempo") — same fallback convention.
+  tempo?: string | null
   exercises: DbExerciseJoin | null
 }
 
@@ -115,6 +117,8 @@ function toProgramExercise(row: DbProgramExerciseJoin): ProgramExercise {
     // Chunk 16 — same fallback convention.
     restSeconds: row.rest_seconds ?? null,
     restAfterSeconds: row.rest_after_seconds ?? null,
+    // Chunk 17 (SPEC "Tempo") — same fallback convention.
+    tempo: row.tempo ?? null,
     exercise: ex
       ? {
           id: ex.id,
