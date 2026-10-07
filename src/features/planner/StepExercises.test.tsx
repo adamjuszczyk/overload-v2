@@ -17,6 +17,7 @@ const reorderMutateMock = vi.fn()
 const deleteExerciseMutateMock = vi.fn()
 const updateWeightUnitMutateMock = vi.fn()
 const updateRestMutateMock = vi.fn()
+const updateTempoMutateMock = vi.fn()
 const updateBlockRestMutateMock = vi.fn()
 const assignWeekdayMutateMock = vi.fn()
 const toggleLinkMutateMock = vi.fn()
@@ -31,6 +32,10 @@ vi.mock('../programs/usePrograms', () => ({
   useDeleteProgramExercise: () => ({ mutate: deleteExerciseMutateMock, isPending: false }),
   useUpdateProgramExerciseWeightUnit: () => ({ mutate: updateWeightUnitMutateMock, isPending: false }),
   useUpdateProgramExerciseRest: () => ({ mutate: updateRestMutateMock, isPending: false }),
+  // Chunk 17 (SPEC "Tempo") — same "not this test file's own concern" posture
+  // as useSupersetBlockRests below; TempoEditor's own describe block is the
+  // one that cares what this mock is called with.
+  useUpdateProgramExerciseTempo: () => ({ mutate: updateTempoMutateMock, isPending: false }),
   useToggleSupersetLink: () => ({ mutate: toggleLinkMutateMock, isPending: false }),
   // Chunk 16 (SPEC "Rest") — not this test file's own concern (workout/
   // exercise CRUD, weekday assignment, superset grouping); empty blocks so
@@ -67,6 +72,7 @@ afterEach(() => {
   reorderMutateMock.mockReset()
   deleteExerciseMutateMock.mockReset()
   updateWeightUnitMutateMock.mockReset()
+  updateTempoMutateMock.mockReset()
   assignWeekdayMutateMock.mockReset()
   toggleLinkMutateMock.mockReset()
 })
@@ -336,5 +342,71 @@ describe('StepExercises — rest / rest after / superset rest (chunk 16, never g
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+// Chunk 17 (SPEC "Tempo") — TempoEditor lives in the same row as REST/REST
+// AFTER (ExerciseRow), so these mirror that describe block's own shape:
+// same mock hook (useUpdateProgramExerciseTempo), same "even when
+// volumeReadOnly" proof.
+describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly)', () => {
+  it('shows "—" with no tempo', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    expect(screen.getByText('—')).toBeTruthy()
+  })
+
+  it('shows the exercise\'s own tempo text when set', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    expect(screen.getByText('3-1-1-0')).toBeTruthy()
+  })
+
+  it('a valid entry writes the normalised tempo via updateProgramExerciseTempo, even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    fireEvent.click(screen.getByText('—'))
+    const input = screen.getByPlaceholderText('3-1-1-0')
+    fireEvent.change(input, { target: { value: '3-1-x-0' } }) // lowercase x
+    fireEvent.blur(input)
+
+    // normaliseTempo upper-cases the X (chunk 2) — the editor writes exactly
+    // what the parser returns, never the raw input.
+    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: '3-1-X-0' })
+  })
+
+  it('an invalid entry is refused with an inline message, and nothing is written', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByText('—'))
+    const input = screen.getByPlaceholderText('3-1-1-0')
+    fireEvent.change(input, { target: { value: 'not-a-tempo' } })
+    fireEvent.blur(input)
+
+    expect(updateTempoMutateMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/use 4 fields/i)).toBeTruthy()
+    // The raw (unparsed) input is still right there, not silently cleared.
+    expect((input as HTMLInputElement).value).toBe('not-a-tempo')
+  })
+
+  it('clearing the field writes null', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByText('3-1-1-0'))
+    const input = screen.getByPlaceholderText('3-1-1-0')
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.blur(input)
+
+    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: null })
   })
 })

@@ -178,6 +178,18 @@ export interface ProgramExercise {
   // which is every existing fixture/test predating this chunk.
   restSeconds?: number | null
   restAfterSeconds?: number | null
+  // v2_program_exercises.tempo (migration 027; read/written starting chunk
+  // 17 — SPEC.md "Tempo": "Per exercise, in the program. Shown next to the
+  // exercise during the workout. Not tracked."). Design field: editable in
+  // the planner and the program tab (run copy only), applying from the next
+  // session on, same posture as restSeconds/restAfterSeconds above. Already
+  // normalised text (plannerVocabulary.ts's normaliseTempo, chunk 2 — e.g.
+  // "3-1-1-0", "X" allowed) or null ("no tempo"). Optional, same "may not
+  // exist yet" convention as restSeconds above — absent/undefined reads as
+  // null (no tempo) everywhere this is read, which is every existing
+  // fixture/test predating this chunk, including GymSession.d30.test.tsx's
+  // own frozen fixture.
+  tempo?: string | null
 }
 
 // ─── Program superset block (v2_program_superset_blocks, chunk 13's table;

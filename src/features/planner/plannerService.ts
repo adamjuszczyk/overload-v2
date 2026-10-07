@@ -348,10 +348,15 @@ export function detectSharedWeekdayWorkouts(schedule: WeeklySchedule): SharedWee
 // Not superset_block_id — a cloned workout day never shares a block with
 // the source one (chunk 13's own scope; blocks are per-workout-day), so
 // that column already correctly starts null on a clone, same as today.
+//
+// Chunk 17 (SPEC "Tempo") — same reasoning again, for tempo: StepExercises.tsx
+// is this chunk's own first UI that can put a non-null tempo on a program
+// exercise, so this split's own clone owns carrying it too, same as rest did
+// for chunk 16.
 async function cloneProgramExerciseRow(
   userId: string,
   workoutDayId: string,
-  source: { exerciseId: string; position: number; weightUnit: string | null; restSeconds: number | null; restAfterSeconds: number | null },
+  source: { exerciseId: string; position: number; weightUnit: string | null; restSeconds: number | null; restAfterSeconds: number | null; tempo: string | null },
 ): Promise<string> {
   const id = crypto.randomUUID()
   const { error } = await supabase.from('v2_program_exercises').insert({
@@ -363,6 +368,7 @@ async function cloneProgramExerciseRow(
     weight_unit: source.weightUnit,
     rest_seconds: source.restSeconds,
     rest_after_seconds: source.restAfterSeconds,
+    tempo: source.tempo,
   })
   if (error) throw error
   return id
@@ -405,6 +411,8 @@ async function cloneWorkoutDay(userId: string, source: WorkoutDay): Promise<stri
       // yet" convention the type itself documents.
       restSeconds: ex.restSeconds ?? null,
       restAfterSeconds: ex.restAfterSeconds ?? null,
+      // Chunk 17 — same "may not exist yet" convention.
+      tempo: ex.tempo ?? null,
     })
 
     const sets = await fetchProgramSets([ex.id])

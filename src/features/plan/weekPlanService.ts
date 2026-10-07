@@ -75,6 +75,10 @@ type DbProgramExerciseJoin = {
   // already gives for why the block id is read from the joined row here.
   rest_seconds?: number | null
   rest_after_seconds?: number | null
+  // Chunk 17 (SPEC "Tempo") — same fallback convention, read from the joined
+  // row for the same reason restSeconds is (this is the week's own exercise
+  // list).
+  tempo?: string | null
   exercises: DbExerciseJoin | null
 }
 
@@ -184,6 +188,8 @@ function toProgramExerciseFromWeekPlanExercise(row: DbWeekPlanExercise): Program
     // same reason supersetBlockId is (this is the week's own exercise list).
     restSeconds: pe.rest_seconds ?? null,
     restAfterSeconds: pe.rest_after_seconds ?? null,
+    // Chunk 17 (SPEC "Tempo") — same fallback convention.
+    tempo: pe.tempo ?? null,
     exercise: ex
       ? {
           id: ex.id,
