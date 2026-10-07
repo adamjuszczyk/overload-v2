@@ -200,6 +200,15 @@ function toProgramExerciseFromWeekPlanExercise(row: DbWeekPlanExercise): Program
     restAfterSeconds: pe.rest_after_seconds ?? null,
     // Chunk 17 (SPEC "Tempo") — same fallback convention.
     tempo: pe.tempo ?? null,
+    // Chunk 20 (applyAhead.ts's slotIdOf) — this row's OWN carry_* columns,
+    // read straight off `row` (not `pe`: carry_* lives on
+    // v2_week_plan_exercises itself, never on the joined v2_program_exercises
+    // row) so a later-week match can tell whether two weeks' own rows trace
+    // back to the same slot without a second query. Never set by
+    // runProgramExercises.ts's own toProgramExercise (the program-tab/planner
+    // read) — there is no week row there to carry it from.
+    carryProgramExerciseId: row.carry_program_exercise_id,
+    carryPosition: row.carry_position,
     exercise: ex
       ? {
           id: ex.id,
