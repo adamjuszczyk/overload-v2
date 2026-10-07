@@ -269,6 +269,13 @@ describe('SetRow — planned weight target + tags (chunk 19)', () => {
     expect(onLog).toHaveBeenCalledTimes(1)
     expect('tags' in onLog.mock.calls[0][0]).toBe(false)
   })
+
+  it('a weight target and two tags together both show on the same row (chunk 19 verification: "a set with a weight target and two tags shows both on its row")', () => {
+    render(<SetRow {...unloggedProps()} plannedSet={makeWeekPlanSet({ targetWeight: 100, tags: ['push here', 'maintain strength'] })} />)
+    expect(screen.getByText('TARGET WEIGHT 100kg')).toBeTruthy()
+    expect(screen.getByText('push here')).toBeTruthy()
+    expect(screen.getByText('maintain strength')).toBeTruthy()
+  })
 })
 
 // Chunk 14 — "Staged sets: all four stage kinds" (SPEC.md). Three things at
