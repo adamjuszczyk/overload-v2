@@ -1,14 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 15:31 UTC, chunk 17 boundary — chunks 1–17 merged and live (migrations through 035); chunk 18 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-07 16:16 UTC, chunk 18 boundary — chunks 1–18 merged and live (migrations through 035); chunk 19 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
+- 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 61 — Chunk 18 app steps: add/edit/reorder/delete warmup routine items; the checklist at the top of the session in order; a tick survives a reload; no items = unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 60 — Chunk 17 app steps: enter a tempo (x → X), invalid refused, blank clears; it shows beside the exercise name in the session; exercises without one unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 59 — Chunk 16 app steps: exercise REST / REST AFTER and one set's own REST show as the timer targets; nothing set = your Settings rest; a never-kinded dropset keeps its timer, an explicitly picked DROPSET has none; superset: no timer inside a round. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 58 — Chunk 15 app steps: plan a warmup; log, edit, delete; TICK mode; not counted in History, volume or Progress. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -49,6 +51,35 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 62 Go-ahead to run verify-rls.mjs (five tables added since its last run)
+Severity: deferred
+Chunk: 18
+**Ask:** May I run `node scripts/verify-rls.mjs` once? Yes or no.
+**When:** any time.
+**Blocked until done:** nothing.
+**Evidence:** Its last run was 2026-10-03 (25 tables, 50 probes, all pass). Since then the app started using `v2_week_plan_exercises` (7), `v2_program_priorities` (10), `v2_program_sets` (11), `v2_program_superset_blocks` (13) and `v2_workout_warmup_items` (18). All five are in `TABLES` (enforced by `verify-rls-tables.test.mjs`), and each has 027's standard RLS. The builders' scratch checks proved user B can't read A's rows, but the live policies haven't been probed. The script reads only: anon and the no-data test account, so any row returned would be a leak.
+A competent default would: run it — doesn't apply because: CONTEXT requires your go-ahead per run (its selects are unfiltered by design).
+Cost of deferral: a live RLS mistake on these tables would go unnoticed (low: same policy text as the scratch-proven one).
+Provisional path taken: not run; building continues.
+
+### 61 Chunk 18 live check: warmup routine (Adam's steps)
+Severity: deferred
+Chunk: 18
+**Ask:** Chunk 18 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 18 is `76f7bed`)
+1. In the program tab, under one workout's exercises, add three warmup routine items, edit one, move one up, delete one. A blank item can't be added.
+2. Open (or reload) that workout's session: WARMUP ROUTINE sits at the top with the items in order. Tick one, reload the page: it's still ticked. A workout with no items looks exactly as before.
+3. Ticking writes nothing (optional: in Supabase, `select count(*) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'` is unchanged by ticking).
+**Answer:**
+**Evidence:**
+What happened: chunk 18 (#42 `76f7bed`, Vercel 16:15 UTC) is live. No migration.
+- Reviewer's checks: 1166 tests; replay 36/36; embeds 27/27; D30 fixture byte-identical; six breaks, all caught. Passed review first time.
+A competent default would: count the jsdom tests — doesn't apply because: TASKS.md's done-when is "the checklist renders and ticks live".
+Cost of deferral: if it fails, chunk 18 is fixed before chunk 19 merges.
+Provisional path taken: merged; chunk 19 is being built.
 
 ### 60 Chunk 17 live check: tempo (Adam's steps)
 Severity: deferred
