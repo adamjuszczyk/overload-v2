@@ -213,4 +213,21 @@ describe('StepVolume — stage rest (chunk 16 — SPEC.md "Rest": "dropset none;
 
     expect(updateStageRestMutateMock).toHaveBeenCalledWith({ id: 'head', stageRestSeconds: 15 })
   })
+
+  it('375px: a staged head (STAGE KIND chips + its own STAGE REST stepper) carries no fixed pixel width wider than 375px', () => {
+    setsByExercise['pe-1'] = [
+      set({ id: 'head', position: 1, stageKind: 'cluster' }),
+      set({ id: 'stage-1', position: 1, parentProgramSetId: 'head', stageIndex: 1 }),
+    ]
+    const { container } = renderStep()
+    const offenders: string[] = []
+    for (const el of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const prop of ['width', 'minWidth'] as const) {
+        const value = el.style[prop]
+        const m = /^(\d+(?:\.\d+)?)px$/.exec(value)
+        if (m && Number(m[1]) > 375) offenders.push(`${el.tagName}.${prop}=${value}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
 })
