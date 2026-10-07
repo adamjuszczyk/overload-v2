@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 09:40 UTC, chunk 15 boundary — chunks 1–15 merged and live (migrations through 035); chunk 16 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-07 14:58 UTC, chunk 16 boundary — chunks 1–16 merged and live (migrations through 035); chunk 17 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -9,6 +9,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 59 — Chunk 16 app steps: exercise REST / REST AFTER and one set's own REST show as the timer targets; nothing set = your Settings rest; a never-kinded dropset keeps its timer, an explicitly picked DROPSET has none; superset: no timer inside a round. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 58 — Chunk 15 app steps: plan a warmup; log, edit, delete; TICK mode; not counted in History, volume or Progress. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 57 — Chunk 14 app steps: plan a rest-pause with 2 stages; all rows visible and locked in turn; carried weight; counts as 1 set; dropsets unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 56 — Chunk 13 app steps: link two exercises; rounds A1, B1, A2…; per-member prefill, swap, skip, ADD SET; block moves as one. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -47,6 +48,28 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 59 Chunk 16 live check: the rest chain (Adam's steps)
+Severity: deferred
+Chunk: 16
+**Ask:** Chunk 16 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 16 is `c6e5120`)
+1. Before training, in the program tab (or Plan → program), give one exercise REST 60 s and REST AFTER 180 s, and give its set 2 its own REST 30 s.
+2. In that session (reload it if it was already open), log set 1: the timer's GO point is 60 s. Log set 2: 30 s. Log the last set: 180 s.
+3. An exercise with nothing set still uses your Settings rest, as before.
+4. An existing dropset (one you never picked a kind for) still starts the timer between stages at your Settings rest. A dropset whose kind you picked on the chip starts no timer between stages.
+5. If you have a superset: no timer between the exercises inside a round; a timer after each round.
+**Answer:**
+**Evidence:**
+What happened: chunk 16 (#40 `c6e5120`, Vercel 14:57 UTC) is live. No migration (the rest columns date from 027).
+- Reviewer's checks: 1111 tests; replay 36/36; embeds 27/27 locally and live; D30 fixture byte-identical; `RestTimer.d30` and the logSet payload test untouched; four breaks, all caught after the retry.
+- The code failed review once (no real-session proof that a legacy dropset keeps its timer) and passed on the retry.
+- Your call to note: a legacy dropset (kind never set) keeps the timer between stages; one with DROPSET explicitly picked gets none (SPEC). To move an old one to the new behaviour, pick another kind and then DROPSET again.
+A competent default would: count the jsdom real-session tests — doesn't apply because: TASKS.md's done-when is "the timer target follows the chain live".
+Cost of deferral: if it fails, chunk 16 is fixed before chunk 17 merges.
+Provisional path taken: merged; chunk 17 is being built.
 
 ### 58 Chunk 15 live check: warmup sets (Adam's steps)
 Severity: deferred
