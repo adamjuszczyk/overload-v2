@@ -81,6 +81,7 @@ vi.mock('../programs/usePrograms', () => ({
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.currentPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.allPlans, isLoading: false }),
+  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),

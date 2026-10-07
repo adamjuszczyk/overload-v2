@@ -24,6 +24,9 @@ import {
 import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
 import { groupIntoUnits, moveUnit } from '../../lib/supersetGroups.js'
+import { detectSharedWeekdayWorkouts } from '../planner/usePlanner'
+import { slotIdOf, setPositionOf, laterPlannedWeeks, type ChangeRecord } from './applyAhead'
+import { useApplyAheadOffer, ApplyAheadBanner } from './ApplyAheadOffer'
 import {
   columnsToRepTarget,
   formatRepTarget,
@@ -161,6 +164,14 @@ export default function PlanPage() {
     // only a real change of meso or viewed week should re-fire this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMeso?.id, viewWeek])
+
+  // Chunk 20 (reviewer's note 7 — G14/DECISIONS 42–48): "say so in the offer
+  // text if that workout is shared, the same wording convention chunk 21
+  // will use" — detectSharedWeekdayWorkouts only ever returns a group for a
+  // workout actually on 2+ weekdays, so membership alone is "is shared".
+  const sharedWorkoutDayIds = new Set(
+    (program ? detectSharedWeekdayWorkouts(program.schedule) : []).map((g) => g.workoutDayId),
+  )
 
   const schedule = program?.schedule
   const scheduledDays = schedule
@@ -434,6 +445,7 @@ export default function PlanPage() {
               compact={compact}
               canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
               onlyThisWeek={onlyThisWeek}
+              isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
             />
           </>
         )}
@@ -462,9 +474,12 @@ interface PanelProps {
   // default, governing the NEXT one of either action (computed once by the
   // parent, which alone owns the toggle's state).
   onlyThisWeek: boolean
+  // Chunk 20 (reviewer's note 7) — this workout covers more than one
+  // weekday (G14); the offer banner says so when it applies.
+  isShared: boolean
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -500,6 +515,22 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const addExercise = useAddWeekExercise(mesoId, weekNumber)
   const removeExercise = useRemoveWeekExercise(mesoId, weekNumber)
   const reorderExercises = useReorderWeekExercises(mesoId, weekNumber)
+
+  // Chunk 20 ("Apply this change to planned weeks ahead") — allWeekPlans is
+  // the SAME meso-wide query PlanPage.tsx's own copy-history check already
+  // reads (useAllWeekPlans dedupes by query key, so this costs no extra
+  // round trip); laterPlannedWeeks filters it to this one workout's own
+  // rows after the viewed week, "planned" needing no extra check since a
+  // row's mere presence here already means one exists. The offer's own
+  // state is scoped to this one panel (one per workout day, like every
+  // other per-workout mutation above) and resets whenever the viewed
+  // week or workout changes, so it never survives into one it wasn't
+  // built for (reviewer's note 10).
+  const { data: allWeekPlansForApplyAhead = [] } = useAllWeekPlans(mesoId)
+  const applyAheadOffer = useApplyAheadOffer(mesoId, `${workoutDay.id}:${weekNumber}`)
+  function laterWeeksForThisWorkout() {
+    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber)
+  }
 
   // Which sheet (if any) is open: swapping a specific slot, or adding a new
   // one. Exclusive — only one picker at a time, same as GymSession's own
@@ -538,8 +569,9 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
     })
   }
 
-  function handleAddStage(pe: ProgramExercise, group: Group<WeekPlanSet>) {
+  function handleAddStage(pe: ProgramExercise, group: Group<WeekPlanSet>, groups: Group<WeekPlanSet>[]) {
     if (!weekPlan) return
+    const headOrdinal = groups.findIndex((g) => g.head.id === group.head.id) + 1
     addStage.mutate({
       weekPlanId: weekPlan.id,
       programExerciseId: pe.id,
@@ -550,6 +582,15 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       // nextStageIndex explains the collision this avoids).
       stageIndex: nextStageIndex(group, (s) => s.stageIndex),
     })
+    // Chunk 20 — "add/remove stage" (chunk 14), both planning types. Built
+    // right alongside the mutate call, same posture every week action in
+    // this file already takes (the swap/add/remove sheets below close
+    // immediately too, never gated on the mutation's own success) —
+    // useAddStage/useSwapWeekExercise/etc. carry no optimistic update of
+    // their own, so there is no "settled" moment to hook for these that
+    // isn't already a full query refetch away.
+    const change: ChangeRecord = { editType: 'addStage', slotId: slotIdOf(pe), headOrdinal }
+    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
   }
 
   // Chunk 19 (SPEC "Tags" — "'Apply to all sets' fills one tag across an
@@ -570,12 +611,23 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   // carry semantics, applied by weekPlanService.ts).
   function handlePickReplacement(exercise: Exercise) {
     if (!weekPlan || !swapTarget) return
+    const target = swapTarget
     swapExercise.mutate({
       weekPlanId: weekPlan.id,
-      programExerciseId: swapTarget.id,
+      programExerciseId: target.id,
       replacementExerciseId: exercise.id,
       onlyThisWeek,
     })
+    // Chunk 20, reviewer's note 4 — "never offered after an 'only this
+    // week' swap... the user said not to carry it". slotIdOf(target) is
+    // this slot's identity BEFORE the swap (what later weeks still hold),
+    // captured from `target` (the pre-swap row) rather than re-read after.
+    if (onlyThisWeek) {
+      applyAheadOffer.dismiss()
+    } else {
+      const change: ChangeRecord = { editType: 'swapExercise', slotId: slotIdOf(target), oldExerciseId: target.id, newExerciseId: exercise.id }
+      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    }
     setSwapTarget(null)
   }
 
@@ -587,12 +639,22 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       exerciseId: exercise.id,
       position: programExercises.length,
     })
+    // Chunk 20 — "Adding or removing an exercise in a week is allowed for
+    // both planning types" (SPEC), and apply-ahead covers it for both the
+    // same way (reviewer's note 4: "Both planning types").
+    const change: ChangeRecord = { editType: 'addExercise', workoutDayId: workoutDay.id, exerciseId: exercise.id }
+    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
     setShowAddExerciseSheet(false)
   }
 
   function handleConfirmRemove() {
     if (!weekPlan || !confirmRemoveExercise) return
+    const target = programExercises.find((p) => p.id === confirmRemoveExercise.id)
     removeExercise.mutate({ weekPlanId: weekPlan.id, programExerciseId: confirmRemoveExercise.id })
+    if (target) {
+      const change: ChangeRecord = { editType: 'removeExercise', slotId: slotIdOf(target) }
+      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    }
     setConfirmRemoveExercise(null)
   }
 
@@ -616,6 +678,94 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       .filter((m) => m.oldPosition !== m.newPosition)
     if (moves.length === 0) return
     reorderExercises.mutate({ weekPlanId: weekPlan.id, moves, onlyThisWeek })
+    // Chunk 20, reviewer's note 4 — same "never after only this week" rule
+    // as swap above. Each move's slotId is `ordered`'s own pre-move row
+    // (captured here, before the mutation changes any position), matching
+    // copying's own identity rule.
+    if (onlyThisWeek) {
+      applyAheadOffer.dismiss()
+    } else {
+      const change: ChangeRecord = {
+        editType: 'reorderExercise',
+        moves: moves.map((m) => {
+          const row = ordered.find((p) => p.id === m.programExerciseId)!
+          return { slotId: slotIdOf(row), oldPosition: m.oldPosition, newPosition: m.newPosition }
+        }),
+      }
+      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    }
+  }
+
+  // Chunk 20 — "remove stage" (chunk 14) only; a HEAD removal (the trash
+  // icon on a whole set, or compact mode's MINUS) is chunk 7's plain week-
+  // level remove-set, out of this chunk's enumerated scope (see the
+  // report's scope decisions) — it keeps working exactly as before, it
+  // just never builds an offer. `removeSet` is the one shared mutation
+  // both cases already use (weekPlanService.ts's removeSet, by row id),
+  // unchanged.
+  function handleRemoveSet(id: string, pe: ProgramExercise, groups: Group<WeekPlanSet>[]) {
+    // Read the pre-mutation row/position BEFORE calling mutate — useRemoveSet
+    // optimistically filters the cache synchronously (onMutate), but `sets`
+    // here is this render's own already-captured array, unaffected by that.
+    const row = sets.find((s) => s.id === id)
+    const isStage = !!row && row.parentWeekPlanSetId != null
+    const pos = isStage ? setPositionOf(groups, id) : null
+    removeSet.mutate(id)
+    if (isStage && pos) {
+      const change: ChangeRecord = { editType: 'removeStage', slotId: slotIdOf(pe), setPosition: pos }
+      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    }
+  }
+
+  // Chunk 20 — the one shared path for weight target / rep target / RIR /
+  // tags / stage kind (chunk 19 and chunk 14's stage-kind editor) all funnel
+  // through PlanPage.tsx's one onUpdateSet, keyed only by which field(s)
+  // `changes` actually carries (same convention weekPlanService.ts's own
+  // updateSet already uses). isWarmup is deliberately never turned into a
+  // change record here — SPEC.md names only these five edit families for
+  // this chunk's table (chunks 9/13/14/19 and stable's program-tab volume
+  // edits); the WARMUP toggle (chunk 15) isn't one of them (scope decision,
+  // see the report). A compound write (e.g. an AMRAP rep target that also
+  // defaults RIR — plannerVocabulary.ts's applyAmrapRirDefault) becomes more
+  // than one record, offered and applied together as one bundle.
+  function handleUpdateSet(id: string, changes: SetChanges, pe: ProgramExercise, groups: Group<WeekPlanSet>[]) {
+    // Same "read before mutate" posture as handleRemoveSet above — current
+    // is this render's own pre-edit value, read before useUpdateSet's own
+    // optimistic onMutate touches the cache.
+    const current = sets.find((s) => s.id === id)
+    updateSet.mutate({ id, changes })
+    if (!current) return
+    const pos = setPositionOf(groups, id)
+    if (!pos) return
+    const slotId = slotIdOf(pe)
+    const records: ChangeRecord[] = []
+    if ('targetWeight' in changes) {
+      records.push({ editType: 'weightTarget', slotId, setPosition: pos, oldValue: current.targetWeight ?? null, newValue: changes.targetWeight ?? null })
+    }
+    if ('targetRir' in changes) {
+      records.push({ editType: 'rir', slotId, setPosition: pos, oldValue: current.targetRir, newValue: changes.targetRir ?? null })
+    }
+    if ('repMin' in changes || 'repMax' in changes || 'isAmrap' in changes) {
+      records.push({
+        editType: 'repTarget',
+        slotId,
+        setPosition: pos,
+        oldValue: { repMin: current.repMin ?? null, repMax: current.repMax ?? null, isAmrap: current.isAmrap ?? false },
+        newValue: { repMin: changes.repMin ?? null, repMax: changes.repMax ?? null, isAmrap: changes.isAmrap ?? false },
+      })
+    }
+    // Tags/stage kind: heads only (reviewer's note 2) — PlanPage.tsx itself
+    // never offers either editor on a stage row (SetRow's own gating), so
+    // pos.stageIndex is already always null whenever these two keys
+    // appear; the check is a defensive belt, not a guess at new behaviour.
+    if ('tags' in changes && pos.stageIndex == null) {
+      records.push({ editType: 'tags', slotId, setPosition: pos, oldValue: current.tags ?? null, newValue: changes.tags ?? null })
+    }
+    if ('stageKind' in changes && pos.stageIndex == null) {
+      records.push({ editType: 'stageKind', slotId, setPosition: pos, oldValue: current.stageKind ?? null, newValue: changes.stageKind ?? null })
+    }
+    if (records.length === 0) return
+    applyAheadOffer.setOffer(records, laterWeeksForThisWorkout(), isShared)
   }
 
   return (
@@ -642,6 +792,21 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
           </button>
         )}
       </div>
+
+      {/* Apply this change to planned weeks ahead (chunk 20) — dismissible,
+          never blocking (reviewer's note 4): ignoring it leaves every later
+          week untouched, exactly as if it had never appeared. Hidden on a
+          past (read-only) week for the same reason no new offer could ever
+          arise there — every edit action above is itself hidden then. */}
+      {!isPast && (
+        <ApplyAheadBanner
+          offer={applyAheadOffer.offer}
+          outcome={applyAheadOffer.outcome}
+          isPending={applyAheadOffer.isPending}
+          onApply={applyAheadOffer.apply}
+          onDismiss={applyAheadOffer.dismiss}
+        />
+      )}
 
       {/* Copy just this workout */}
       {showCopyWorkoutButton && (
@@ -703,10 +868,10 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
                 // of adding optimistic-update logic to useAddSet itself.
                 addOrRemovePending={addSet.isPending || removeSet.isPending}
                 onAddSet={() => handleAddSet(pe)}
-                onAddStage={(group) => handleAddStage(pe, group)}
-                onRemoveSet={(id) => removeSet.mutate(id)}
-                onRemoveLastSet={() => removeSet.mutate(groups[groups.length - 1].head.id)}
-                onUpdateSet={(id, changes) => updateSet.mutate({ id, changes })}
+                onAddStage={(group) => handleAddStage(pe, group, groups)}
+                onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
+                onRemoveLastSet={() => handleRemoveSet(groups[groups.length - 1].head.id, pe, groups)}
+                onUpdateSet={(id, changes) => handleUpdateSet(id, changes, pe, groups)}
                 onApplyTagToAll={(tag) => handleApplyTagToAll(groups, tag)}
                 onSwap={() => setSwapTarget(pe)}
                 onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}

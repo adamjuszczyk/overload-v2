@@ -215,6 +215,7 @@ vi.mock('./useWeekPlan', () => ({
   // chunk — see the chunk 8 report for why this fixture's render is
   // unaffected) and usePlanWeek's mutate is never awaited by this render.
   useAllWeekPlans: () => ({ data: [weekPlan], isLoading: false }),
+  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
