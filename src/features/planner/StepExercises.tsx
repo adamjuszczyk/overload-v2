@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
 import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit, WarmupRoutineItem } from '../../types'
+import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { queryClient } from '../../lib/queryClient'
 import {
   useWorkoutDays,
@@ -101,9 +102,19 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
 export default function StepExercises({
   program,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   program: Program
   volumeReadOnly: boolean
+  // Chunk 20 ("Apply this change to planned weeks ahead") — only ever
+  // passed by ProgramTab.tsx (a stable run's own program tab); the planner
+  // (PlannerPage.tsx, saved programs and week-dependent runs) never passes
+  // this, so it stays undefined there and nothing below ever calls it —
+  // zero behaviour change for every existing caller. Reported per workout
+  // day (never per saved-program edit — ProgramTab is the only caller that
+  // can ever reach a 'stable' planningType, so this is a no-op anywhere
+  // else even if it were wired).
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const createDay = useCreateWorkoutDay(program.id)
@@ -143,6 +154,7 @@ export default function StepExercises({
           workoutDay={day}
           schedule={program.schedule}
           volumeReadOnly={volumeReadOnly}
+          onVolumeChange={onVolumeChange}
         />
       ))}
 
@@ -194,11 +206,13 @@ function WorkoutEditor({
   workoutDay,
   schedule,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   programId: string
   workoutDay: WorkoutDay
   schedule: Program['schedule']
   volumeReadOnly: boolean
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: exercises = [], isLoading } = useProgramExercises(workoutDay.id)
   const [editingName, setEditingName] = useState(false)
@@ -434,6 +448,12 @@ function WorkoutEditor({
           workoutDayId={workoutDay.id}
           existingExerciseIds={exercises.map((e) => e.exerciseId)}
           onClose={() => setShowPicker(false)}
+          // Chunk 20 — "Adding or removing an exercise in a week is allowed
+          // for both planning types" (SPEC); for stable, apply-ahead covers
+          // a PROGRAM-tab add the same way, since a stable week is always
+          // built fresh from the program and already-planned weeks
+          // wouldn't otherwise see it (SPEC "Programs and runs").
+          onAdded={(exerciseId) => onVolumeChange?.(workoutDay.id, [{ editType: 'addExercise', workoutDayId: workoutDay.id, exerciseId }])}
         />
       )}
 
@@ -479,7 +499,13 @@ function WorkoutEditor({
               CANCEL
             </button>
             <button
-              onClick={() => { deleteExercise.mutate(confirmDeleteExercise.id); setConfirmDeleteExercise(null) }}
+              onClick={() => {
+                deleteExercise.mutate(confirmDeleteExercise.id)
+                // Chunk 20 — same "both planning types, program-tab covers
+                // it for stable" reasoning as ADD above.
+                onVolumeChange?.(workoutDay.id, [{ editType: 'removeExercise', slotId: slotIdOf({ id: confirmDeleteExercise.id }) }])
+                setConfirmDeleteExercise(null)
+              }}
               disabled={deleteExercise.isPending}
               style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: deleteExercise.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
             >

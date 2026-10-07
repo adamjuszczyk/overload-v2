@@ -32,6 +32,14 @@ vi.mock('../planner/StepVolume', () => ({
     return <div>STEP VOLUME</div>
   },
 }))
+// Chunk 20 ("Apply this change to planned weeks ahead") — ProgramTab now
+// reads the meso's planned weeks and owns the offer banner's state; mocked
+// here the same way every PlanPage.*.test.tsx file already mocks this
+// module, so this file needs no real QueryClientProvider either.
+vi.mock('./useWeekPlan', () => ({
+  useAllWeekPlans: () => ({ data: [], isLoading: false }),
+  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 afterEach(() => {
   cleanup()
@@ -60,7 +68,7 @@ function program(overrides: Partial<Program> = {}): Program {
 describe('ProgramTab — stable run, same step 2/step 3 components (chunk 11)', () => {
   it('renders StepExercises and StepVolume for the run copy, both receiving this program', () => {
     const p = program()
-    render(<ProgramTab program={p} />)
+    render(<ProgramTab program={p} mesoId="meso-1" />)
 
     expect(screen.getByText('STEP EXERCISES')).toBeTruthy()
     expect(screen.getByText('STEP VOLUME')).toBeTruthy()
@@ -69,7 +77,7 @@ describe('ProgramTab — stable run, same step 2/step 3 components (chunk 11)', 
   })
 
   it('week-dependent (chunk 9\'s rule): volumeReadOnly true on both steps, read-only notice shown, planning type not offered', () => {
-    render(<ProgramTab program={program({ planningType: 'week_dependent' })} />)
+    render(<ProgramTab program={program({ planningType: 'week_dependent' })} mesoId="meso-1" />)
 
     expect(stepExercisesMock).toHaveBeenCalledWith(expect.objectContaining({ volumeReadOnly: true }))
     expect(stepVolumeMock).toHaveBeenCalledWith(
@@ -79,7 +87,7 @@ describe('ProgramTab — stable run, same step 2/step 3 components (chunk 11)', 
   })
 
   it('stable: volumeReadOnly false on both steps, no read-only notice', () => {
-    render(<ProgramTab program={program({ planningType: 'stable' })} />)
+    render(<ProgramTab program={program({ planningType: 'stable' })} mesoId="meso-1" />)
 
     expect(stepExercisesMock).toHaveBeenCalledWith(expect.objectContaining({ volumeReadOnly: false }))
     expect(stepVolumeMock).toHaveBeenCalledWith(expect.objectContaining({ volumeReadOnly: false }))
@@ -89,7 +97,7 @@ describe('ProgramTab — stable run, same step 2/step 3 components (chunk 11)', 
   it('missing planningType (a run predating chunk 8) defaults to week-dependent, read-only', () => {
     const p = program()
     delete (p as { planningType?: string }).planningType
-    render(<ProgramTab program={p} />)
+    render(<ProgramTab program={p} mesoId="meso-1" />)
 
     expect(stepExercisesMock).toHaveBeenCalledWith(expect.objectContaining({ volumeReadOnly: true }))
   })

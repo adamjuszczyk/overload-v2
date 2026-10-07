@@ -348,7 +348,7 @@ export default function PlanPage() {
             per-type rules on top). */}
         {activeTab === 'program' && (
           program
-            ? <ProgramTab program={program} />
+            ? <ProgramTab program={program} mesoId={activeMeso.id} />
             : (
               <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
                 <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
