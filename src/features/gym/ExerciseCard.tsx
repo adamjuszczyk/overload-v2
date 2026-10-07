@@ -95,7 +95,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {showPlanTargets && <PlanTargetsPanel plannedSets={plannedSets} />}
+        {showPlanTargets && <PlanTargetsPanel plannedSets={plannedSets} weightUnit={programExercise.weightUnit} />}
 
         {/* Smart last-session reference — LAST WEEK / EARLIER THIS WEEK / LAST TIME / FIRST TIME */}
         <div className="px-3 py-2">

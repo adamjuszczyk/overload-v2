@@ -158,6 +158,16 @@ export function useAddSet(mesoId: string, weekNumber: number) {
 export function useUpdateSet(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    // Chunk 19 (reviewer's note: "Every write uses networkMode: 'always',
+    // optimistic where the existing RIR stepper is") — this one mutation now
+    // also carries the week's weight/rep-target/tags edits, so it needs the
+    // same offline-doesn't-hang behaviour usePlanWeek's own comment explains
+    // (default 'online' pauses an offline mutation indefinitely rather than
+    // running it). Scope note: this also changes the EXISTING targetRir/
+    // stageKind/isWarmup writes this same mutation already made — a widening
+    // (they now attempt offline and fail fast instead of hanging forever),
+    // never a narrowing, so no existing behaviour is removed.
+    networkMode: 'always',
     mutationFn: ({
       id,
       changes,
@@ -167,6 +177,11 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
         targetRir?: number | null
         stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
         isWarmup?: boolean
+        targetWeight?: number | null
+        repMin?: number | null
+        repMax?: number | null
+        isAmrap?: boolean
+        tags?: string[] | null
       }
     }) => updateSet(id, changes),
     onMutate: async ({ id, changes }) => {
@@ -182,6 +197,11 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
                   ...('targetRir' in changes ? { targetRir: changes.targetRir } : {}),
                   ...('stageKind' in changes ? { stageKind: changes.stageKind } : {}),
                   ...('isWarmup' in changes ? { isWarmup: changes.isWarmup } : {}),
+                  ...('targetWeight' in changes ? { targetWeight: changes.targetWeight } : {}),
+                  ...('repMin' in changes ? { repMin: changes.repMin } : {}),
+                  ...('repMax' in changes ? { repMax: changes.repMax } : {}),
+                  ...('isAmrap' in changes ? { isAmrap: changes.isAmrap } : {}),
+                  ...('tags' in changes ? { tags: changes.tags } : {}),
                 }
               : s,
           ),

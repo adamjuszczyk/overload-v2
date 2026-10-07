@@ -50,7 +50,7 @@ export default function PreviewExerciseCard({
         className="grid"
         style={{ gridTemplateColumns: '1fr 1fr', borderBottom: plannedSets.length ? '1px solid var(--border)' : undefined }}
       >
-        <PlanTargetsPanel plannedSets={plannedSets} />
+        <PlanTargetsPanel plannedSets={plannedSets} weightUnit={programExercise.weightUnit} />
         <div className="px-3 py-2">
           <ExerciseReference
             today={today}

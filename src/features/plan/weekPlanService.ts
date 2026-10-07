@@ -38,6 +38,12 @@ export type DbWeekPlanSet = {
   rep_min?: number | null
   rep_max?: number | null
   is_amrap?: boolean
+  // Chunk 19 — read by toSet() below (Plan's own tags editor); never
+  // referenced by copySetsWithGrouping's insert payloads, which is what
+  // keeps "tags are never copied" true structurally, not just by omission
+  // at the call site (weekPlanService.test.ts's own "never includes tags in
+  // the payload" test pins this).
+  tags?: string[] | null
 }
 
 // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
@@ -159,6 +165,10 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     // fallback; absent/undefined (every existing fixture) reads as null,
     // i.e. no per-set design fields reachable, falling through restChain.ts.
     programSetId: row.program_set_id ?? null,
+    // Chunk 19 — SPEC "Targets"/"Tags": week-plan-only weight target (kg)
+    // and tags. Same "may not exist yet" fallback as the fields above.
+    targetWeight: row.target_weight ?? null,
+    tags: row.tags ?? null,
   }
 }
 
@@ -373,6 +383,19 @@ export async function updateSet(
     targetRir?: number | null
     stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
     isWarmup?: boolean
+    // Chunk 19 — SPEC "Targets": weight target (kg; week plan only, never
+    // in the program) and the week's own rep-target override (writes only
+    // THIS row's rep_min/rep_max/is_amrap, never the program set — this
+    // function has no notion of a program set at all, so that's true by
+    // construction, not by a guard). tags: SPEC "Tags" — several per set,
+    // head rows in practice (PlanPage.tsx never offers this change on a
+    // stage row), several allowed, no DB-level stage/head restriction the
+    // way stage_kind has one.
+    targetWeight?: number | null
+    repMin?: number | null
+    repMax?: number | null
+    isAmrap?: boolean
+    tags?: string[] | null
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
@@ -385,6 +408,15 @@ export async function updateSet(
   // (PlanPage.tsx), head-only by the same posture: PlanPage never offers
   // it on a stage row or once a head already has stages.
   if ('isWarmup' in changes) patch.is_warmup = changes.isWarmup
+  // Chunk 19 — named individually (not as one "targets" blob) so a caller
+  // that only changes one of these (e.g. the RIR stepper, unchanged above)
+  // never sends the others — same "named only when present" convention
+  // every key in this patch already follows.
+  if ('targetWeight' in changes) patch.target_weight = changes.targetWeight
+  if ('repMin' in changes) patch.rep_min = changes.repMin
+  if ('repMax' in changes) patch.rep_max = changes.repMax
+  if ('isAmrap' in changes) patch.is_amrap = changes.isAmrap
+  if ('tags' in changes) patch.tags = changes.tags
 
   const { error } = await supabase.from('v2_week_plan_sets').update(patch).eq('id', id)
   if (error) throw error

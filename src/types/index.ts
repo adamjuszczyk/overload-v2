@@ -349,7 +349,8 @@ export interface WeekPlanSet {
   // chunk 11 — SPEC.md "Removals": suggested reps are replaced by per-set
   // rep targets, shown "in Plan and on the workout screen's rows"). Copied
   // from the source v2_program_sets row when the week is planned
-  // (v2_plan_week); editing them is chunk 19's own scope (SetTargetsEditor).
+  // (v2_plan_week); editing them is chunk 19's own scope (PlanPage.tsx's
+  // RepTargetEditor).
   // Optional, not required: every hand-built WeekPlanSet literal across the
   // existing gym/plan test suite predates these columns (same precedent as
   // Program.kind?/WorkoutDay.sourceWorkoutDayId? above) and must keep
@@ -379,6 +380,23 @@ export interface WeekPlanSet {
   // of every existing fixture/test predating this chunk, and of any row
   // created before 027 or outside a program-set-backed plan.
   programSetId?: string | null
+  // v2_week_plan_sets.target_weight (migration 027; read/written starting
+  // chunk 19 — SPEC.md "Targets": "Weight targets: per set, in the week plan
+  // only. Never in the program."). Kg, same canonical-storage convention as
+  // every other weight value in this app (weightUnit.ts) — display/entry
+  // conversion is the caller's job (useWeightDisplay), not this type's.
+  // Optional, same "may not exist yet" convention as the fields above;
+  // absent/undefined reads as null (no target) everywhere this is used.
+  targetWeight?: number | null
+  // v2_week_plan_sets.tags (migration 027; read/written starting chunk 19 —
+  // SPEC.md "Tags": "Per set, several allowed, in the week plan... Shown on
+  // the set's row during the workout. Never tracked. Never copied."). Heads
+  // only by convention (chunk 19's own authoring UI never writes one on a
+  // stage row — stages are never independent sets); a stage row's own value
+  // is simply never set, not DB-enforced the way stage_kind is. Optional,
+  // same fallback convention as the fields above; absent/undefined reads as
+  // "no tags" (an empty list) everywhere this is used.
+  tags?: string[] | null
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────

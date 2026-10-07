@@ -215,6 +215,102 @@ export function parseRepTarget(input: string): RepTarget | null {
   return null
 }
 
+// ─── AMRAP's RIR default (chunk 19) ─────────────────────────────────────────
+
+// SPEC "Targets" — "AMRAP: counts as a normal working set everywhere. Its
+// RIR defaults to 0 (RPE 10), editable." Reviewer's note (chunk 19): applied
+// only at the moment a week-plan set's rep target actually CHANGES to AMRAP
+// through Plan's own editor (the one caller that ever changes is_amrap there)
+// — never retroactively on an unrelated edit, and never overwriting an
+// existing RIR (0 included: once a value is there, explicit or defaulted,
+// it is never touched again by this function). The caller is responsible for
+// only invoking this when the target actually changed (same "no-op on an
+// unchanged commit" discipline as every other editor in this chunk); this
+// function itself has no notion of "did it change", only "what should the
+// RIR be, given the new target and the RIR that exists right now". Returns
+// repTargetToColumns' own columns, plus `targetRir` ONLY when a default is
+// being applied — omitted (not merely undefined-valued) otherwise, so a
+// caller building an update patch with the `'targetRir' in columns` test
+// (this file's own convention, e.g. weekPlanService.ts's updateSet) never
+// touches the column when no default applies. v2_plan_week (the SQL
+// planner) makes no such decision of its own and is untouched by this.
+export function applyAmrapRirDefault(
+  target: RepTarget,
+  currentTargetRir: number | null,
+): RepTargetColumns & { targetRir?: number } {
+  const columns = repTargetToColumns(target)
+  return columns.isAmrap && currentTargetRir == null
+    ? { ...columns, targetRir: 0 }
+    : columns
+}
+
+// ─── Tags (chunk 19) ─────────────────────────────────────────────────────────
+// SPEC "Tags" — "Per set, several allowed, in the week plan. Preset list
+// (...) plus custom text." PRESET_TAGS above is the preset half; these three
+// pure functions are the one place "trimmed; blank refused; no duplicates"
+// and "apply to all... never removes other tags" are decided, so Plan's own
+// editor (PlanPage.tsx) and any later caller never re-derive the rule
+// differently. A tags column reads as "no tags" the same way absent/null
+// reads everywhere else in this module — these functions take and return
+// `string[] | null`, never `[]` for "none" (addTag/removeTag collapse an
+// empty result back to null, same "nothing renders nothing" convention as
+// rep target's own 'none').
+
+// Adds `input` to `tags`, or returns null when nothing should be written:
+// blank (after trimming) is refused, and a tag already present is refused
+// too (no duplicates on one set) — the caller's contract is "null = do not
+// write", exactly like parseRepTarget's own null for "refused". A
+// genuinely-new tag is appended (order-preserving, existing tags first).
+export function addTag(tags: readonly string[] | null | undefined, input: string): string[] | null {
+  const trimmed = input.trim()
+  if (trimmed.length === 0) return null
+  const current = tags ?? []
+  if (current.includes(trimmed)) return null
+  return [...current, trimmed]
+}
+
+// Removes `tag` from `tags`. Always succeeds (removing something not present
+// is a harmless no-op, same final shape); collapses back to null once the
+// last tag is gone, rather than writing an empty array.
+export function removeTag(tags: readonly string[] | null | undefined, tag: string): string[] | null {
+  const next = (tags ?? []).filter((t) => t !== tag)
+  return next.length === 0 ? null : next
+}
+
+export interface TaggableHead {
+  id: string
+  tags: readonly string[] | null | undefined
+  isWarmup: boolean
+}
+
+export interface TagUpdate {
+  id: string
+  tags: string[]
+}
+
+// SPEC "Tags" — "'Apply to all sets' fills one tag across an exercise's
+// sets." Reviewer's note: "adds one tag to every working head set of that
+// exercise in that week (not warmups; not stages, since stages are never
+// independent sets). It is idempotent, and it never removes other tags."
+// `heads` is the caller's own heads-only list for one exercise/week (the
+// same headsOnly/groupWeekPlanSets convention setGroupLogic.ts already
+// establishes — stages are never passed in at all, so this function has no
+// stage-exclusion logic of its own to get wrong); this one adds the warmup
+// exclusion and the per-head addTag call, and returns only the heads that
+// actually change — a head already carrying `tag` (or any warmup) is simply
+// left out, so calling this again with the same result is a no-op (nothing
+// to write), the same idempotence addTag's own duplicate-refusal gives a
+// single set.
+export function applyTagToAllHeads(heads: readonly TaggableHead[], tag: string): TagUpdate[] {
+  const updates: TagUpdate[] = []
+  for (const head of heads) {
+    if (head.isWarmup) continue
+    const next = addTag(head.tags, tag)
+    if (next !== null) updates.push({ id: head.id, tags: next })
+  }
+  return updates
+}
+
 // ─── Tempo ───────────────────────────────────────────────────────────────────
 
 // SPEC "Program exercise" / "Tempo": "tempo (optional, text in the form

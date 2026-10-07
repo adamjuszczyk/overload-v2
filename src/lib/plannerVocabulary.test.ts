@@ -19,6 +19,10 @@ import {
   normaliseTempo,
   DEFAULT_DELOAD_SETS_RULE,
   DEFAULT_DELOAD_WEIGHT_RULE,
+  applyAmrapRirDefault,
+  addTag,
+  removeTag,
+  applyTagToAllHeads,
   type RepTarget,
 } from './plannerVocabulary'
 
@@ -376,5 +380,129 @@ describe('DEFAULT_DELOAD_WEIGHT_RULE', () => {
 
   it('pins the starting percentage at 75 (DECISIONS 33, owner, 2026-10-04)', () => {
     expect(DEFAULT_DELOAD_WEIGHT_RULE.percent).toBe(75)
+  })
+})
+
+// Chunk 19 — SPEC "Targets": "AMRAP ... Its RIR defaults to 0 (RPE 10),
+// editable."
+describe('applyAmrapRirDefault', () => {
+  it('AMRAP with no existing RIR defaults targetRir to 0, alongside the AMRAP columns', () => {
+    expect(applyAmrapRirDefault({ type: 'amrap' }, null)).toEqual({
+      repMin: null, repMax: null, isAmrap: true, targetRir: 0,
+    })
+  })
+
+  it('AMRAP with an existing RIR (including a prior 0) never overwrites it — targetRir is omitted entirely', () => {
+    const withFive = applyAmrapRirDefault({ type: 'amrap' }, 5)
+    expect(withFive).toEqual({ repMin: null, repMax: null, isAmrap: true })
+    expect('targetRir' in withFive).toBe(false)
+
+    const withZero = applyAmrapRirDefault({ type: 'amrap' }, 0)
+    expect('targetRir' in withZero).toBe(false)
+  })
+
+  it('a non-AMRAP target never gets a targetRir default, null RIR or not', () => {
+    const number = applyAmrapRirDefault({ type: 'number', value: 8 }, null)
+    expect(number).toEqual({ repMin: 8, repMax: 8, isAmrap: false })
+    expect('targetRir' in number).toBe(false)
+
+    const range = applyAmrapRirDefault({ type: 'range', min: 8, max: 12 }, null)
+    expect('targetRir' in range).toBe(false)
+
+    const none = applyAmrapRirDefault({ type: 'none' }, null)
+    expect('targetRir' in none).toBe(false)
+  })
+})
+
+// Chunk 19 — SPEC "Tags": "Preset list ... plus custom text" (trimmed; blank
+// refused; no duplicates on one set); "Each one can be removed."
+describe('addTag', () => {
+  it('adds a genuinely new tag to an empty/null list', () => {
+    expect(addTag(null, 'push here')).toEqual(['push here'])
+    expect(addTag(undefined, 'push here')).toEqual(['push here'])
+  })
+
+  it('appends to existing tags, preserving order', () => {
+    expect(addTag(['push here'], 'maintain strength')).toEqual(['push here', 'maintain strength'])
+  })
+
+  it('trims surrounding whitespace before storing', () => {
+    expect(addTag([], '  push back  ')).toEqual(['push back'])
+  })
+
+  it('blank (or whitespace-only) input is refused: returns null, nothing to write', () => {
+    expect(addTag(['push here'], '')).toBeNull()
+    expect(addTag(['push here'], '   ')).toBeNull()
+  })
+
+  it('a duplicate (exact match, already on this set) is refused: returns null, no second copy', () => {
+    expect(addTag(['push here'], 'push here')).toBeNull()
+  })
+
+  it('custom free text is accepted the same as a preset string', () => {
+    expect(addTag(null, 'triceps feel off today')).toEqual(['triceps feel off today'])
+  })
+})
+
+describe('removeTag', () => {
+  it('removes the named tag, keeping the others in order', () => {
+    expect(removeTag(['push here', 'maintain strength', 'push back'], 'maintain strength'))
+      .toEqual(['push here', 'push back'])
+  })
+
+  it('removing the last remaining tag collapses to null, not an empty array', () => {
+    expect(removeTag(['push here'], 'push here')).toBeNull()
+  })
+
+  it('removing a tag that was never there is a harmless no-op (same array contents)', () => {
+    expect(removeTag(['push here'], 'nonexistent')).toEqual(['push here'])
+  })
+
+  it('null/undefined input has nothing to remove — stays null', () => {
+    expect(removeTag(null, 'push here')).toBeNull()
+    expect(removeTag(undefined, 'push here')).toBeNull()
+  })
+})
+
+// Chunk 19 — SPEC "Tags": "'Apply to all sets' fills one tag across an
+// exercise's sets." Reviewer's note: heads only, never warmups, never
+// removes another tag, idempotent.
+describe('applyTagToAllHeads', () => {
+  it('adds the tag to every head that does not already have it', () => {
+    const heads = [
+      { id: 'h1', tags: null, isWarmup: false },
+      { id: 'h2', tags: ['maintain strength'], isWarmup: false },
+    ]
+    expect(applyTagToAllHeads(heads, 'push here')).toEqual([
+      { id: 'h1', tags: ['push here'] },
+      { id: 'h2', tags: ['maintain strength', 'push here'] },
+    ])
+  })
+
+  it('never removes another tag already on a head — only appends', () => {
+    const heads = [{ id: 'h1', tags: ['focus on execution'], isWarmup: false }]
+    const updates = applyTagToAllHeads(heads, 'push here')
+    expect(updates).toEqual([{ id: 'h1', tags: ['focus on execution', 'push here'] }])
+  })
+
+  it('excludes warmup heads entirely — not in the result even though they have no tag yet', () => {
+    const heads = [
+      { id: 'h1', tags: null, isWarmup: false },
+      { id: 'h2', tags: null, isWarmup: true },
+    ]
+    expect(applyTagToAllHeads(heads, 'push here')).toEqual([{ id: 'h1', tags: ['push here'] }])
+  })
+
+  it('idempotent: calling it again once every head already has the tag writes nothing', () => {
+    const heads = [
+      { id: 'h1', tags: ['push here'], isWarmup: false },
+      { id: 'h2', tags: ['push here'], isWarmup: false },
+    ]
+    expect(applyTagToAllHeads(heads, 'push here')).toEqual([])
+  })
+
+  it('a blank tag updates nothing (addTag\'s own refusal propagates)', () => {
+    const heads = [{ id: 'h1', tags: null, isWarmup: false }]
+    expect(applyTagToAllHeads(heads, '   ')).toEqual([])
   })
 })
