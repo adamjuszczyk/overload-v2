@@ -161,6 +161,20 @@ function findExercise(week: WeekPlan, slotId: string): ProgramExercise | undefin
 // Heads only, this slot's own current rows, ranked the same way PlanPage.tsx
 // already displays them (ascending set_number) — see SetPosition's own
 // header comment on why this rank, not the raw column, is "head ordinal".
+//
+// Deliberately NOT warmup-aware (check-warmup-consumers.mjs's own coarse
+// scan credits this file only because WeekPlanSetChanges's own isWarmup
+// field happens to mention the word, not because of anything here): SPEC
+// "Warmup sets" says a warmup is "never counted in... set counts", but
+// PlanPage.tsx's OWN existing group numbering (ExerciseSection's
+// groups.sort((a,b) => a.head.setNumber - b.head.setNumber), displayNumber
+// = idx + 1) already includes a warmup head in that same ranking, with no
+// exclusion of its own — this function matches THAT existing, on-screen
+// convention exactly (reviewer's note: "the slot... identified across
+// weeks the same way copying identifies it"; the same posture applies to
+// a set's own position), rather than introduce a second, stricter
+// definition of "head ordinal" that would disagree with what's on screen.
+// Pre-existing, not a gap this chunk opens.
 function sortedHeadsFor(week: WeekPlan, currentProgramExerciseId: string): WeekPlanSet[] {
   return week.sets
     .filter((s) => s.programExerciseId === currentProgramExerciseId && s.parentWeekPlanSetId == null)
