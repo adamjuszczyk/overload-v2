@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
-import { useSettings, useUpdateSettings } from './useSettings'
+import { useSettings, useUpdateSettings, useUpdateDeloadRules } from './useSettings'
 import { useAuth } from '../auth/useAuth'
 import type { UserSettings } from '../../types'
+import DeloadRulesEditor from './DeloadRulesEditor'
 
 const ACCENT_SWATCHES: { colour: string; label: string }[] = [
   { colour: '#FF8C42', label: 'ORANGE' },
@@ -43,6 +44,7 @@ function parseSeconds(raw: string): number | null {
 export default function SettingsPage() {
   const { data: settings } = useSettings()
   const { mutate: update } = useUpdateSettings()
+  const { mutate: updateDeloadRules } = useUpdateDeloadRules()
   const { signOut } = useAuth()
 
   const [restInput, setRestInput] = useState('')
@@ -373,6 +375,25 @@ export default function SettingsPage() {
               settings.weekStart,
               (weekStart) => set({ weekStart }),
             )}
+          </div>
+        </section>
+
+        {/* ── Deload rules ─────────────────────────────────────────────── */}
+        {/* Chunk 22 (SPEC.md "Settings" — "default deload rules"; "Deload
+            rules": "global default in settings, override per program").
+            Off by default (settings.deloadRules is null until any rule is
+            switched on) — DeloadRulesEditor.tsx is the one shared editor,
+            reused as-is by the program override (StepVolume.tsx). Purely
+            additive: nothing above this section changed (D30 — "with
+            rules off, Settings renders as on master, except this new
+            section"). */}
+        <section>
+          {sectionTitle('DELOAD RULES')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            <DeloadRulesEditor
+              value={settings.deloadRules}
+              onChange={(deloadRules) => updateDeloadRules(deloadRules)}
+            />
           </div>
         </section>
 

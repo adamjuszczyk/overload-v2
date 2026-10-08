@@ -2,8 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { Program, ProgramExercise, ProgramSet, PlanningType } from '../../types'
 import type { RepTarget } from '../../lib/plannerVocabulary.js'
+import type { DeloadRules } from '../../lib/deloadRules'
 import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
-import { useWorkoutDays, useProgramExercises, useUpdatePlanningType } from '../programs/usePrograms'
+import { useWorkoutDays, useProgramExercises, useUpdatePlanningType, useUpdateProgramDeloadRules } from '../programs/usePrograms'
+import DeloadRulesEditor from '../settings/DeloadRulesEditor'
 import {
   useProgramSets,
   useSetExerciseSetCount,
@@ -100,6 +102,8 @@ export default function StepVolume({
         </p>
       </div>
 
+      <ProgramDeloadRulesSection program={program} />
+
       {isLoading && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 16 }}>
           <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
@@ -121,6 +125,74 @@ export default function StepVolume({
           onVolumeChange={onVolumeChange}
         />
       ))}
+    </div>
+  )
+}
+
+// ─── Deload rules override (chunk 22) ──────────────────────────────────────
+// SPEC.md "Deload rules": "global default in settings, override per
+// program"; reviewer's note 7: "Planner step 3 and the program tab: a
+// per-program override, either 'Use my default' (null) or its own rules
+// (same editor component). It's a design field, editable for both
+// planning types." — so this section renders unconditionally here
+// (StepVolume is shared, as-is, by both the planner and ProgramTab.tsx's
+// stable-run usage — see this file's own header comment), never gated by
+// volumeReadOnly/canChangePlanningType the way the PLANNING picker above
+// is: a design field applies "to this run from the next session on"
+// regardless of planning type (SPEC "Programs and runs").
+function ProgramDeloadRulesSection({ program }: { program: Program }) {
+  const updateOverride = useUpdateProgramDeloadRules()
+  const override = program.deloadRules ?? null
+  const usingDefault = override === null
+
+  function pick(next: 'default' | 'custom') {
+    if (next === 'default') {
+      if (!usingDefault) updateOverride.mutate({ id: program.id, deloadRules: null })
+    } else if (usingDefault) {
+      // Starts from an explicitly-empty override (every rule off) — the
+      // user turns individual rules on from here, same posture Settings'
+      // own section takes (DeloadRulesEditor.tsx's own onChange already
+      // canonicalises "every rule off" back toward null, but an override
+      // the user just chose to CUSTOMISE must stay a real override, {},
+      // not collapse back to "use my default" the instant it's picked).
+      updateOverride.mutate({ id: program.id, deloadRules: {} })
+    }
+  }
+
+  return (
+    <div>
+      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 8 }}>
+        DELOAD RULES
+      </p>
+      <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', marginBottom: 10 }}>
+        {(
+          [
+            { value: 'default' as const, label: 'USE MY DEFAULT' },
+            { value: 'custom' as const, label: 'CUSTOM' },
+          ]
+        ).map((opt) => {
+          const active = opt.value === 'default' ? usingDefault : !usingDefault
+          return (
+            <button
+              key={opt.value}
+              onClick={() => pick(opt.value)}
+              disabled={updateOverride.isPending}
+              style={{ flex: 1, padding: '10px 6px', background: active ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: active ? 'var(--base)' : 'var(--text-muted)' }}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+      {!usingDefault && (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' }}>
+          <DeloadRulesEditor
+            value={override}
+            disabled={updateOverride.isPending}
+            onChange={(next: DeloadRules | null) => updateOverride.mutate({ id: program.id, deloadRules: next ?? {} })}
+          />
+        </div>
+      )}
     </div>
   )
 }
