@@ -46,6 +46,8 @@ import {
 } from '../../lib/plannerVocabulary.js'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
+import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadRules'
+import { useSettingsStore } from '../settings/settingsStore'
 import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
@@ -143,6 +145,29 @@ export default function PlanPage() {
 
   const { data: programs = [] } = usePrograms()
   const program = programs.find((p) => p.id === activeMeso?.programId)
+
+  // Chunk 22 — the EFFECTIVE deload rules for this run: the program's own
+  // override if it has one, else the global default (deloadRules.ts's
+  // resolveEffectiveDeloadRules — "a program override wins over the global
+  // rules"). Resolved once, here at the screen layer, and handed to every
+  // mark/unmark call below as a plain argument — the executor
+  // (weekPlanService.ts) has no notion of settings or programs at all.
+  // Read via useSettingsStore (the hydrated Zustand store), not useSettings
+  // itself — same "read live without prop drilling" convention every other
+  // settings-reading component already follows (SetRow.tsx/RestTimer.tsx/
+  // useWeightDisplay.ts etc.); useSettings' own query is kept hydrated by
+  // whichever ancestor already calls it, and reading the store here means
+  // this page needs no QueryClientProvider of its own in tests that mock
+  // every other Supabase-touching hook already (every existing PlanPage
+  // jsdom test file).
+  const globalDeloadRules = useSettingsStore((s) => s.deloadRules)
+  const effectiveDeloadRules = resolveEffectiveDeloadRules(program?.deloadRules, globalDeloadRules)
+
+  // Chunk 22 (reviewer's note 5) — "Already started — sets left as they
+  // are", shown after a mark/unmark that the started guard caught. Cleared
+  // on every new attempt so a stale notice from a previous click never
+  // lingers once a fresh one is in flight.
+  const [weekDeloadNotice, setWeekDeloadNotice] = useState<string | null>(null)
 
   const { data: workoutDays = [], isLoading: daysLoading } = useWorkoutDays(
     activeMeso?.programId ?? '',
@@ -417,32 +442,53 @@ export default function PlanPage() {
         {/* Mark/unmark this week as deload (chunk 21, SPEC "Deload") — same
             dashed-button pattern as COPY WEEK above; a single toggle (same
             convention as the per-session DELOAD pill) rather than two
-            separate buttons, label and fill flipping with weekIsFullyDeload. */}
+            separate buttons, label and fill flipping with weekIsFullyDeload.
+            Chunk 22: hands the screen-resolved effectiveDeloadRules through
+            on every call — the hook/executor never re-resolves it. */}
         {showWeekDeloadButton && (
-          <button
-            onClick={() => setWeekDeload.mutate({ isDeload: !weekIsFullyDeload })}
-            disabled={setWeekDeload.isPending}
-            style={{
-              width: '100%',
-              height: 48,
-              marginBottom: 16,
-              background: weekIsFullyDeload ? 'var(--accent-muted)' : 'var(--surface)',
-              border: `1px dashed ${weekIsFullyDeload ? 'var(--accent)' : 'var(--border-strong)'}`,
-              borderRadius: 11,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              cursor: setWeekDeload.isPending ? 'not-allowed' : 'pointer',
-              opacity: setWeekDeload.isPending ? 0.6 : 1,
-            }}
-          >
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: weekIsFullyDeload ? 'var(--accent)' : 'var(--text-secondary)' }}>
-              {setWeekDeload.isPending
-                ? (weekIsFullyDeload ? 'UNMARKING…' : 'MARKING…')
-                : (weekIsFullyDeload ? 'UNMARK THIS WEEK' : 'MARK WEEK AS DELOAD')}
-            </span>
-          </button>
+          <>
+            <button
+              onClick={() => {
+                setWeekDeloadNotice(null)
+                setWeekDeload.mutate(
+                  { isDeload: !weekIsFullyDeload, rules: effectiveDeloadRules },
+                  {
+                    onSuccess: (result) => {
+                      if (result.anyAlreadyStarted) {
+                        setWeekDeloadNotice('Already started — sets left as they are')
+                      }
+                    },
+                  },
+                )
+              }}
+              disabled={setWeekDeload.isPending}
+              style={{
+                width: '100%',
+                height: 48,
+                marginBottom: weekDeloadNotice ? 6 : 16,
+                background: weekIsFullyDeload ? 'var(--accent-muted)' : 'var(--surface)',
+                border: `1px dashed ${weekIsFullyDeload ? 'var(--accent)' : 'var(--border-strong)'}`,
+                borderRadius: 11,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                cursor: setWeekDeload.isPending ? 'not-allowed' : 'pointer',
+                opacity: setWeekDeload.isPending ? 0.6 : 1,
+              }}
+            >
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: weekIsFullyDeload ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                {setWeekDeload.isPending
+                  ? (weekIsFullyDeload ? 'UNMARKING…' : 'MARKING…')
+                  : (weekIsFullyDeload ? 'UNMARK THIS WEEK' : 'MARK WEEK AS DELOAD')}
+              </span>
+            </button>
+            {weekDeloadNotice && (
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginBottom: 16, lineHeight: 1.5 }}>
+                {weekDeloadNotice}
+              </p>
+            )}
+          </>
         )}
 
         {/* Loading */}
@@ -511,6 +557,7 @@ export default function PlanPage() {
               onlyThisWeek={onlyThisWeek}
               isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
               sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
+              deloadRules={effectiveDeloadRules}
             />
           </>
         )}
@@ -546,9 +593,13 @@ interface PanelProps {
   // above (null when not shared), for the per-session DELOAD toggle's own
   // note ("Marks Mon, Tue, Wed, Thu, Fri — they share one plan").
   sharedWeekdays: DayOfWeek[] | null
+  // Chunk 22 — the screen-resolved effective deload rules (program
+  // override, else the global default, else none — PlanPage.tsx's own
+  // resolveEffectiveDeloadRules call, computed once for the whole page).
+  deloadRules: DeloadRules | null
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays, deloadRules }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -607,6 +658,9 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const [swapTarget, setSwapTarget] = useState<ProgramExercise | null>(null)
   const [showAddExerciseSheet, setShowAddExerciseSheet] = useState(false)
   const [confirmRemoveExercise, setConfirmRemoveExercise] = useState<{ id: string; name: string } | null>(null)
+  // Chunk 22 (reviewer's note 5) — same one-line notice as PlanPage's own
+  // week-level action, scoped to this one session's own toggle.
+  const [deloadNotice, setDeloadNotice] = useState<string | null>(null)
 
   const sets = weekPlan?.sets ?? []
 
@@ -888,10 +942,24 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
             this marks THAT ONE SESSION (this workout's own plan row for
             this week) — unchanged mechanics (still keyed by weekPlanId
             alone), now with an aria-label saying so explicitly, alongside
-            the new week-level action above. */}
+            the new week-level action above. Chunk 22: hands the
+            screen-resolved `deloadRules` prop through on every call. */}
         {weekPlan && (
           <button
-            onClick={() => !isPast && toggleDeload.mutate({ weekPlanId: weekPlan.id, isDeload: !weekPlan.isDeload })}
+            onClick={() => {
+              if (isPast) return
+              setDeloadNotice(null)
+              toggleDeload.mutate(
+                { weekPlanId: weekPlan.id, isDeload: !weekPlan.isDeload, rules: deloadRules },
+                {
+                  onSuccess: (outcome) => {
+                    if (outcome === 'alreadyStarted') {
+                      setDeloadNotice('Already started — sets left as they are')
+                    }
+                  },
+                },
+              )
+            }}
             disabled={isPast}
             aria-label={weekPlan.isDeload ? 'Unmark this session as deload' : 'Mark this session as deload'}
             style={{ height: 26, padding: '0 10px', background: weekPlan.isDeload ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${weekPlan.isDeload ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: isPast ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: weekPlan.isDeload ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}
@@ -910,6 +978,14 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       {weekPlan && sharedWeekdays && sharedWeekdays.length > 0 && (
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
           {`Marks ${sharedWeekdays.map((d) => DOW_SHORT_TITLE[d]).join(', ')} — they share one plan.`}
+        </p>
+      )}
+
+      {/* Chunk 22 (reviewer's note 5) — "say what you did": shown right
+          after a mark/unmark the started guard caught. */}
+      {deloadNotice && (
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
+          {deloadNotice}
         </p>
       )}
 

@@ -1499,21 +1499,33 @@ export async function unmarkSessionDeload(userId: string, weekPlanId: string): P
 // of the week, never a bulk statement once rules are on (each row can
 // resolve a different base occurrence). `rules` is the SAME effective
 // rules object for every row (one run, one program, one global default).
+// Returns whether ANY row hit the started guard, so the week-level action
+// can show one combined notice the same way the per-session one does.
 export async function markWeekDeload(
   userId: string,
   mesoId: string,
   weekNumber: number,
   rules: DeloadRules | null,
-): Promise<void> {
+): Promise<{ anyAlreadyStarted: boolean }> {
   const plans = await fetchWeekPlans(mesoId, weekNumber)
+  let anyAlreadyStarted = false
   for (const p of plans) {
-    await markSessionDeload(userId, p.id, rules)
+    const outcome = await markSessionDeload(userId, p.id, rules)
+    if (outcome === 'alreadyStarted') anyAlreadyStarted = true
   }
+  return { anyAlreadyStarted }
 }
 
-export async function unmarkWeekDeload(userId: string, mesoId: string, weekNumber: number): Promise<void> {
+export async function unmarkWeekDeload(
+  userId: string,
+  mesoId: string,
+  weekNumber: number,
+): Promise<{ anyAlreadyStarted: boolean }> {
   const plans = await fetchWeekPlans(mesoId, weekNumber)
+  let anyAlreadyStarted = false
   for (const p of plans) {
-    await unmarkSessionDeload(userId, p.id)
+    const outcome = await unmarkSessionDeload(userId, p.id)
+    if (outcome === 'alreadyStarted') anyAlreadyStarted = true
   }
+  return { anyAlreadyStarted }
 }

@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { format, subDays } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
+import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
+import type { DeloadRules } from '../../lib/deloadRules'
 
 // Chunk 21 (SPEC "Deload" / TASKS.md "Deload is a property of a session") —
 // the Plan screen's own marking UI: the week-level "MARK WEEK AS DELOAD" /
@@ -22,6 +24,16 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // reads a session marked here (the same is_deload) through the REAL
 // useApplyAhead/applyAhead.ts pipeline — this file mocks `./useWeekPlan`
 // entirely, which that one specifically does not.
+//
+// Chunk 22 extends every mutate-arg assertion below for the new `rules`
+// field (the screen-resolved effective rules — "Lessons": a screen-layer
+// test asserting the exact arguments the UI hands to each hook or
+// mutation, ids/week numbers/rules object included) and adds: the program
+// override winning over the global default, and the "already started"
+// notice. PlanPage.tsx reads the global default via useSettingsStore
+// directly (not useSettings' own query — no QueryClientProvider wraps this
+// render, same as every other PlanPage test file), so this file drives
+// that real Zustand singleton directly and resets it afterward.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -46,11 +58,11 @@ const EX_A: Exercise = {
 const pe1: ProgramExercise = { id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null, exercise: EX_A }
 const pe2: ProgramExercise = { id: 'pe-2', workoutDayId: 'wd-2', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null, exercise: EX_A }
 
-function makeProgram(schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday: 'wd-1' }): Program {
+function makeProgram(schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday: 'wd-1' }, deloadRules: DeloadRules | null = null): Program {
   return {
     id: 'prog-1', userId: 'user-1', name: 'Test Program', schedule,
     workoutDays: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
-    kind: 'run', planningType: 'week_dependent',
+    kind: 'run', planningType: 'week_dependent', deloadRules,
   }
 }
 
@@ -122,6 +134,14 @@ function renderPlanPage() {
   )
 }
 
+// First arg of a mutate() call — ignores the second (TanStack's own
+// per-call { onSuccess } options object, chunk 22's own addition for the
+// "already started" notice), which every assertion below is about the
+// hook/mutation's own payload, not that plumbing.
+function firstArg(mock: ReturnType<typeof vi.fn>, callIndex = 0) {
+  return mock.mock.calls[callIndex]?.[0]
+}
+
 afterEach(() => {
   setWeekDeloadMutate.mockReset()
   setDeloadMutate.mockReset()
@@ -129,6 +149,11 @@ afterEach(() => {
   mockState.program = makeProgram()
   mockState.workoutDays = [workoutDay1]
   mockState.meso = activeMeso
+  // useSettingsStore is a real, module-level Zustand singleton — reset it
+  // so no test's own global-default fixture leaks into the next (same
+  // "module-level singleton" discipline useWeekPlan.test.tsx's own
+  // queryClient.clear() already documents).
+  useSettingsStore.setState(DEFAULT_SETTINGS)
 })
 
 describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21, SPEC "Deload")', () => {
@@ -145,7 +170,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     expect(useSetWeekDeloadSpy).not.toHaveBeenCalledWith('meso-1', 2)
   })
 
-  it('shows MARK WEEK AS DELOAD when the week is not fully deload, and marks it on click', () => {
+  it('shows MARK WEEK AS DELOAD when the week is not fully deload, and marks it on click — with no rules configured, rules is null', () => {
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
@@ -153,7 +178,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     expect(screen.queryByText('UNMARK THIS WEEK')).toBeNull()
 
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
-    expect(setWeekDeloadMutate).toHaveBeenCalledWith({ isDeload: true })
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: null })
   })
 
   // Review fix — "clicking MARK then UNMARK calls mutate with
@@ -164,13 +189,13 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
-    expect(setWeekDeloadMutate).toHaveBeenNthCalledWith(1, { isDeload: true })
+    expect(firstArg(setWeekDeloadMutate, 0)).toEqual({ isDeload: true, rules: null })
     cleanup()
 
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
     renderPlanPage()
     fireEvent.click(screen.getByText('UNMARK THIS WEEK'))
-    expect(setWeekDeloadMutate).toHaveBeenNthCalledWith(2, { isDeload: false })
+    expect(firstArg(setWeekDeloadMutate, 1)).toEqual({ isDeload: false, rules: null })
 
     // Every call to the factory itself, across both renders, was for THIS
     // one week — never a neighbor.
@@ -187,7 +212,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
 
     fireEvent.click(screen.getByText('UNMARK THIS WEEK'))
-    expect(setWeekDeloadMutate).toHaveBeenCalledWith({ isDeload: false })
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: false, rules: null })
   })
 
   it('still reads MARK (not UNMARK) when only some of the week\'s planned rows are deload', () => {
@@ -199,7 +224,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     expect(screen.getByText('MARK WEEK AS DELOAD')).toBeTruthy()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     // Completing the job marks every row true, including the one already true.
-    expect(setWeekDeloadMutate).toHaveBeenCalledWith({ isDeload: true })
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: null })
   })
 
   it('is hidden once the viewed week is stepped into the past (same read-only rule as every other week action)', () => {
@@ -228,6 +253,49 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(screen.queryByText('UNMARK THIS WEEK')).toBeNull()
   })
+
+  // Chunk 22 — "the screen-layer argument assertions from Lessons":
+  // the exact rules OBJECT handed to the mutation, not just that one was
+  // passed.
+  it('passes the global default as `rules` when the program has no override', () => {
+    const globalRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, null)
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: globalRules })
+  })
+
+  // Chunk 22 — "a program override wins over the global rules" (TASKS.md
+  // verbatim). Two DIFFERENT rules objects in play; only the program's own
+  // must reach the mutation.
+  it('a program override wins over the global default rules', () => {
+    const globalRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+    const programOverride: DeloadRules = { weight: { percent: 80, rounding: 'up', step: 5, stepUnit: 'kg' } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, programOverride)
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: programOverride })
+  })
+
+  // Chunk 22, reviewer's note 5 — "Default: flag-only plus a one-line
+  // notice... say what you did." The mock's own mutate() invokes the
+  // caller's onSuccess, exactly as the real TanStack Query mutation would
+  // once the (mocked, in this file) executor resolves.
+  it('shows the "already started" notice when the week-level mark/unmark outcome says so', () => {
+    setWeekDeloadMutate.mockImplementation((_vars, opts) => opts?.onSuccess?.({ anyAlreadyStarted: true }))
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+
+    expect(screen.queryByText('Already started — sets left as they are')).toBeNull()
+    fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
+    expect(screen.getByText('Already started — sets left as they are')).toBeTruthy()
+  })
 })
 
 describe('PlanPage — the per-session toggle still marks only that session (chunk 21 keeps it unchanged)', () => {
@@ -236,7 +304,7 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     renderPlanPage()
 
     fireEvent.click(screen.getByLabelText('Mark this session as deload'))
-    expect(setDeloadMutate).toHaveBeenCalledWith({ weekPlanId: 'wp-session', isDeload: true })
+    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: null })
     expect(setWeekDeloadMutate).not.toHaveBeenCalled()
   })
 
@@ -246,7 +314,7 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
 
     expect(screen.getByLabelText('Unmark this session as deload')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Unmark this session as deload'))
-    expect(setDeloadMutate).toHaveBeenCalledWith({ weekPlanId: 'wp-session', isDeload: false })
+    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: false, rules: null })
   })
 
   // Review fix — "the per-session DELOAD toggle: its mutation receives
@@ -264,11 +332,35 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
 
     // Mounts on the first scheduled day (Monday / Push Day).
     fireEvent.click(screen.getByLabelText('Mark this session as deload'))
-    expect(setDeloadMutate).toHaveBeenLastCalledWith({ weekPlanId: 'wp-push', isDeload: true })
+    expect(firstArg(setDeloadMutate, 0)).toEqual({ weekPlanId: 'wp-push', isDeload: true, rules: null })
 
     fireEvent.click(screen.getByText('TUE'))
     fireEvent.click(screen.getByLabelText('Mark this session as deload'))
-    expect(setDeloadMutate).toHaveBeenLastCalledWith({ weekPlanId: 'wp-pull', isDeload: true })
+    expect(firstArg(setDeloadMutate, 1)).toEqual({ weekPlanId: 'wp-pull', isDeload: true, rules: null })
+  })
+
+  // Chunk 22 — the per-session toggle resolves and passes the SAME
+  // effective-rules precedence as the week-level action above.
+  it('a program override wins over the global default for the per-session toggle too', () => {
+    const globalRules: DeloadRules = { reps: { delta: -2 } }
+    const programOverride: DeloadRules = { rir: { delta: 1 } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, programOverride)
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: programOverride })
+  })
+
+  it('shows the "already started" notice when the per-session outcome says so', () => {
+    setDeloadMutate.mockImplementation((_vars, opts) => opts?.onSuccess?.('alreadyStarted'))
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
+    renderPlanPage()
+
+    expect(screen.queryByText('Already started — sets left as they are')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    expect(screen.getByText('Already started — sets left as they are')).toBeTruthy()
   })
 })
 
