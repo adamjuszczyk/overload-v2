@@ -320,3 +320,218 @@ describe('PlanPage — apply-ahead offer for the newly-wired edit types (review 
     expect(updateSetMutate).toHaveBeenCalledWith({ id: 'set-1', changes: { isWarmup: true } })
   })
 })
+
+// Review fix 2 (second review) — a wrong value inside PlanPage.tsx's own
+// ChangeRecord construction (e.g. the swap's resultingProgramExerciseId at
+// line 656) passed every PREVIOUS test here, because none of them actually
+// inspected the change record's own field values — only that a banner
+// appeared, or (for one case) a loose toMatchObject on two of its many
+// fields. Every test below performs the real edit through the real UI,
+// taps APPLY, and asserts the FULL record (or, for swap, the one field the
+// coordinator's own sabotage targeted) handed to useApplyAhead's mutate —
+// the cheaper of the two options the coordinator names, sufficient for
+// every type except swap's cross-mutation id (see
+// PlanPage.applyAhead.pipeline.test.tsx for that one, asserted all the way
+// through to the real repointWeekExercise call).
+function applyAndGetChanges(): ChangeRecord[] {
+  fireEvent.click(screen.getByText('APPLY'))
+  return applyAheadLastCall?.changes ?? []
+}
+
+describe('PlanPage — full ChangeRecord field content, built by the real UI (review fix 2)', () => {
+  it('ADD SET carries the right slot and exercise', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    const addSetButton = screen.getAllByRole('button').find((b) => !!b.querySelector('svg.lucide-plus') && b.textContent?.trim() === '')
+    fireEvent.click(addSetButton!)
+
+    expect(applyAndGetChanges()).toEqual([{ editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-a' }])
+  })
+
+  it('ADD STAGE carries the right slot, exercise, and head ordinal', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('ADD STAGE'))
+
+    expect(applyAndGetChanges()).toEqual([{ editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-a', headOrdinal: 1 }])
+  })
+
+  // The coordinator's own sabotage (PlanPage.tsx:656 — swapping
+  // `replacement.id` for a wrong literal) passed all 427 plan tests before
+  // this: nothing asserted resultingProgramExerciseId's actual value. This
+  // compares it against swapMutate's own mocked resolved value, so a wrong
+  // literal there fails this exact assertion.
+  it('SWAP carries the pre-swap exercise, the new exercise, and the real resulting row id', async () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByLabelText('Swap Bench Press'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Incline Press'))
+    })
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'swapExercise', slotId: 'pe-1', exerciseId: 'ex-a', newExerciseId: 'ex-replacement', resultingProgramExerciseId: 'ex-replacement-row' },
+    ])
+  })
+
+  it('ADD EXERCISE carries the right workout and exercise', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('ADD EXERCISE'))
+    fireEvent.click(screen.getByText('Incline Press'))
+
+    expect(applyAndGetChanges()).toEqual([{ editType: 'addExercise', workoutDayId: 'wd-1', exerciseId: 'ex-replacement' }])
+  })
+
+  it('REMOVE EXERCISE carries the right slot and exercise', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
+    fireEvent.click(screen.getByText('REMOVE'))
+
+    expect(applyAndGetChanges()).toEqual([{ editType: 'removeExercise', slotId: 'pe-1', exerciseId: 'ex-a' }])
+  })
+
+  it('REORDER carries every moved slot\'s own pre-move and post-move position', () => {
+    const pe2: ProgramExercise = {
+      id: 'pe-2', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-b', position: 1, weightUnit: null,
+      exercise: { id: 'ex-b', userId: 'user-1', name: 'Squat', muscleGroup: 'quads', isArchived: false, createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null },
+    }
+    mockState.currentPlans = [makePlan(2, [set1()], [pe1, pe2])]
+    mockState.allPlans = [makePlan(2, [set1()], [pe1, pe2]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    // Second exercise's (Squat's) own "Move up" — swaps it with the first.
+    fireEvent.click(screen.getAllByLabelText('Move up')[1])
+
+    expect(applyAndGetChanges()).toEqual([
+      {
+        editType: 'reorderExercise',
+        moves: [
+          { slotId: 'pe-1', oldPosition: 0, newPosition: 1 },
+          { slotId: 'pe-2', oldPosition: 1, newPosition: 0 },
+        ],
+      },
+    ])
+  })
+
+  it('REMOVE SET on a head (removeHeadSet) carries the right slot, exercise, and head ordinal', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('COMPACT'))
+    fireEvent.click(screen.getByLabelText('Remove last set'))
+
+    expect(applyAndGetChanges()).toEqual([{ editType: 'removeHeadSet', slotId: 'pe-1', exerciseId: 'ex-a', headOrdinal: 1 }])
+  })
+
+  it('REMOVE SET on a stage (removeStage) carries the right slot, exercise, and set position', () => {
+    const stage = set1({ id: 'set-1-stage', targetRir: 1, isDropset: true, parentWeekPlanSetId: 'set-1', stageIndex: 0 })
+    mockState.currentPlans = [makePlan(2, [set1(), stage])]
+    mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    // Non-compact mode: one icon-only (no aria-label) trash button per row —
+    // the head's own, then its one stage's own, in that DOM order.
+    const trashButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-trash2') && !b.getAttribute('aria-label'))
+    expect(trashButtons).toHaveLength(2)
+    fireEvent.click(trashButtons[1])
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: 0 } },
+    ])
+  })
+
+  it('WEIGHT TARGET carries the right slot, exercise, set position, and old/new value', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    editWeightTarget()
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'weightTarget', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: null, newValue: 100 },
+    ])
+  })
+
+  it('RIR carries the right slot, exercise, set position, and old/new value', () => {
+    mockState.currentPlans = [makePlan(2, [set1({ targetRir: 2 })])]
+    mockState.allPlans = [makePlan(2, [set1({ targetRir: 2 })]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '+' }))
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'rir', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: 2, newValue: 3 },
+    ])
+  })
+
+  it('REP TARGET carries the right slot, exercise, set position, and old/new value', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set rep target' }))
+    fireEvent.change(screen.getByLabelText('Rep target'), { target: { value: '8-12' } })
+    fireEvent.blur(screen.getByLabelText('Rep target'))
+
+    expect(applyAndGetChanges()).toEqual([
+      {
+        editType: 'repTarget',
+        slotId: 'pe-1',
+        exerciseId: 'ex-a',
+        setPosition: { headOrdinal: 1, stageIndex: null },
+        oldValue: { repMin: null, repMax: null, isAmrap: false },
+        newValue: { repMin: 8, repMax: 12, isAmrap: false },
+      },
+    ])
+  })
+
+  it('TAGS carries the right slot, exercise, set position, and old/new value', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('push here'))
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'tags', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: null, newValue: ['push here'] },
+    ])
+  })
+
+  it('STAGE KIND carries the right slot, exercise, set position, and old/new value', () => {
+    const stage = set1({ id: 'set-1-stage', targetRir: 1, isDropset: true, parentWeekPlanSetId: 'set-1', stageIndex: 0 })
+    mockState.currentPlans = [makePlan(2, [set1(), stage])]
+    mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('REST-PAUSE'))
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: null, newValue: 'rest_pause' },
+    ])
+  })
+
+  it('WARMUP carries the right slot, exercise, set position, and old/new value', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('WARMUP'))
+
+    expect(applyAndGetChanges()).toEqual([
+      { editType: 'warmup', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: false, newValue: true },
+    ])
+  })
+})

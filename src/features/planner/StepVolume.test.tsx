@@ -246,6 +246,58 @@ describe('StepVolume — per-set rep target (number / range / AMRAP)', () => {
   })
 })
 
+// Review fix 2 (second review) — ProgramTab.applyAhead.test.tsx mocks this
+// whole component away, so StepVolume.tsx's OWN construction of the
+// ChangeRecord (changeCount's addSet/removeSet, handleRepTargetCommit's
+// repTarget) was never actually exercised by any test. These render the
+// real component and assert the real onVolumeChange call.
+describe('StepVolume — onVolumeChange carries the real ChangeRecord (review fix 2)', () => {
+  const onVolumeChange = vi.fn()
+  afterEach(() => onVolumeChange.mockReset())
+
+  it('ADD SET (the + stepper) carries the right slot and exercise', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType onVolumeChange={onVolumeChange} />)
+
+    fireEvent.click(screen.getByLabelText('More sets for Bench Press'))
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [{ editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-1' }])
+  })
+
+  it('REMOVE SET (the − stepper) carries the right slot and exercise', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType onVolumeChange={onVolumeChange} />)
+
+    fireEvent.click(screen.getByLabelText('Fewer sets for Bench Press'))
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [{ editType: 'removeSet', slotId: 'pe-1', exerciseId: 'ex-1' }])
+  })
+
+  it('a per-set rep target commit carries the right slot, exercise, set position, and old/new value', () => {
+    setup()
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType onVolumeChange={onVolumeChange} />)
+
+    fireEvent.click(perSetTargetButton('—'))
+    const input = screen.getByPlaceholderText('8, 8-12, or AMRAP')
+    fireEvent.change(input, { target: { value: '8-12' } })
+    fireEvent.blur(input)
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [
+      {
+        editType: 'repTarget',
+        slotId: 'pe-1',
+        exerciseId: 'ex-1',
+        setPosition: { headOrdinal: 1, stageIndex: null },
+        oldValue: { repMin: null, repMax: null, isAmrap: false },
+        newValue: { repMin: 8, repMax: 12, isAmrap: false },
+      },
+    ])
+  })
+})
+
 describe('StepVolume — "fill all sets at once" (review fix)', () => {
   function allSetsButton(exerciseName = 'Bench Press') {
     return screen.getByRole('button', { name: `Set every set's rep target for ${exerciseName}` })
