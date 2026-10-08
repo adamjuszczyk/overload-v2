@@ -1,12 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 10:57 UTC, chunk 21 boundary — chunks 1–21 merged and live (migrations through 035); chunk 22 stopped after a second review failure (67).*
+*Rewritten at every chunk boundary. Last: 2026-10-08 10:57 UTC, chunk 21 boundary — chunks 1–21 merged and live (migrations through 035); chunk 22 on a third, test-only retry (67 answered (a)).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- **67 — BLOCKING: chunk 22 failed review twice (the second time only a missing test: nothing proves a matched exercise is calculated from the last normal week; the code is correct). (a) one more test-only retry (recommended), (b) merge as is, (c) other. Blocked: chunk 22's merge and chunks 23–26.**
+- 67 — Answered (a): chunk 22 gets one more test-only retry (discriminating executor fixtures for every data source). In progress.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
@@ -62,6 +62,7 @@ Chunk: 22
 **Ask:** Chunk 22 (deload rules) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else.
 **When:** before I build further.
 **Blocked until done:** merging chunk 22 and building chunks 23–26.
+**Answer:** (a), Adam 2026-10-08: one more retry, tests only.
 **Evidence:**
 - **First failure** (fixed in `8847fbf`/`577a87e`): a real data bug. Marking a session deload with rules on rebuilt its sets from the last normal week's exercise list. Where the two weeks' exercises differed (an exercise added, removed or swapped since), it wrote sets for exercises the session doesn't have and dropped sets for ones it does. Now each exercise is matched to the same exercise in the base week (chunk 20's slot rule); one with no match is calculated from its own sets; nothing is written outside the session's own list. Proven by unit tests, executor tests and scratch SQL (0 orphaned sets).
 - **Second failure** (the retry, `6eead92`): the fix is correct by reading, but its central rule is unproven where it runs. If `markSessionDeload` calculated a matched exercise from the marked week's **own** sets instead of the last normal week's, all 1486 tests would still pass, because the executor tests' base and marked sets are interchangeable. The same class of gap as chunks 16, 20 and 21.
