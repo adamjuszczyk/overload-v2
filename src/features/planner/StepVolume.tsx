@@ -196,7 +196,10 @@ function ExerciseSetsEditor({
     const next = Math.max(0, heads.length + delta)
     if (next === heads.length) return
     setCount.mutate({ programExerciseId: exercise.id, currentHeads: heads, count: next })
-    const change: ChangeRecord = { editType: delta > 0 ? 'addSet' : 'removeSet', slotId: slotIdOf(exercise) }
+    const change: ChangeRecord =
+      delta > 0
+        ? { editType: 'addSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
+        : { editType: 'removeSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
     onVolumeChange?.([change])
   }
 
@@ -318,6 +321,10 @@ function ExerciseTargetRow({
     // No-op guard: every head already shows exactly this target.
     if (summary !== 'mixed' && summary && formatRepTarget(target) === formatRepTarget(summary)) return
     setAll.mutate({ headIds: heads.map((h) => h.id), target })
+    // Chunk 20 scope decision (kept on review): writes every current head
+    // in one call, which doesn't fit the one-row-per-ChangeRecord model —
+    // never offered. Its batch twin is PlanPage.tsx's own "apply tag to
+    // all sets"; only the per-set rep-target editor below is wired.
   }
 
   return (
@@ -518,6 +525,7 @@ function ProgramSetGroupEditor({
     const change: ChangeRecord = {
       editType: 'repTarget',
       slotId: slotIdOf(exercise),
+      exerciseId: exercise.exerciseId,
       setPosition: { headOrdinal: displayNumber, stageIndex },
       oldValue: repTargetToColumns(oldTarget),
       newValue: repTargetToColumns(newTarget),

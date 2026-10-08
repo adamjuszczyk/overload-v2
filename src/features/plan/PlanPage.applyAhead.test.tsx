@@ -76,7 +76,7 @@ const mockState: { currentPlans: WeekPlan[]; allPlans: WeekPlan[]; program: Prog
 }
 
 const updateSetMutate = vi.fn()
-const swapMutate = vi.fn()
+const swapMutate = vi.fn().mockResolvedValue({ id: 'ex-replacement-row' })
 let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
 let applyAheadOnSuccess: ((data: unknown) => void) | undefined
 const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }, opts?: { onSuccess?: (d: unknown) => void }) => {
@@ -107,7 +107,7 @@ vi.mock('./useWeekPlan', () => ({
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: swapMutate, isPending: false }),
+  useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
@@ -179,26 +179,34 @@ describe('PlanPage — apply-ahead offer appears exactly when later planned week
 })
 
 describe('PlanPage — apply-ahead is never offered after an "only this week" swap', () => {
-  it('suppresses the offer even though later planned weeks exist', () => {
+  // handlePickReplacement is async (review fix — it awaits the swap's own
+  // mutateAsync to get the resulting row id before building the change
+  // record), so the offer/dismiss only lands after that promise resolves —
+  // flushed here with act() before asserting.
+  it('suppresses the offer even though later planned weeks exist', async () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
     fireEvent.click(screen.getByText('ONLY THIS WEEK'))
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
-    fireEvent.click(screen.getByText('Incline Press'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Incline Press'))
+    })
 
     expect(swapMutate).toHaveBeenCalledWith(expect.objectContaining({ onlyThisWeek: true }))
     expect(screen.queryByText(/PLANNED WEEK/)).toBeNull()
   })
 
-  it('a plain (not "only this week") swap DOES offer it', () => {
+  it('a plain (not "only this week") swap DOES offer it', async () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
-    fireEvent.click(screen.getByText('Incline Press'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Incline Press'))
+    })
 
     expect(swapMutate).toHaveBeenCalledWith(expect.objectContaining({ onlyThisWeek: false }))
     expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
@@ -269,5 +277,46 @@ describe('PlanPage — apply-ahead says so when the workout is shared (G14)', ()
     editWeightTarget()
 
     expect(screen.queryByText(/scheduled on more than one weekday/)).toBeNull()
+  })
+})
+
+// Review fix item 3 — SPEC names no exception for these; one jsdom offer
+// test per newly-wired edit type.
+describe('PlanPage — apply-ahead offer for the newly-wired edit types (review fix item 3)', () => {
+  it('week-level ADD SET offers it', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    // The per-exercise "+" (ADD SET) is icon-only (no text, no aria-label)
+    // — found here by its lucide-plus icon with no surrounding text, which
+    // distinguishes it from "ADD EXERCISE" (same icon, but with a label).
+    const addSetButton = screen.getAllByRole('button').find((b) => !!b.querySelector('svg.lucide-plus') && b.textContent?.trim() === '')
+    expect(addSetButton).toBeTruthy()
+    fireEvent.click(addSetButton!)
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+  })
+
+  it('week-level REMOVE SET (a head, via compact mode\'s MINUS) offers it', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('COMPACT'))
+    fireEvent.click(screen.getByLabelText('Remove last set'))
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+  })
+
+  it('the WARMUP toggle offers it', () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('WARMUP'))
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'set-1', changes: { isWarmup: true } })
   })
 })

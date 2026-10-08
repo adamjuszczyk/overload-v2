@@ -120,18 +120,33 @@ describe('ProgramTab — stable program-tab volume edit, every already-planned w
     render(<ProgramTab program={makeProgram('stable')} mesoId="meso-1" />)
 
     act(() => {
-      capturedOnVolumeChange?.('wd-1', [{ editType: 'addSet', slotId: 'pe-1' }])
+      capturedOnVolumeChange?.('wd-1', [{ editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-1' }])
     })
     fireEvent.click(screen.getByText('APPLY'))
 
     expect(applyAheadMutate).toHaveBeenCalledTimes(1)
     expect(applyAheadLastCall?.weeks.map((w) => w.weekNumber)).toEqual([1, 2])
-    expect(applyAheadLastCall?.changes).toEqual([{ editType: 'addSet', slotId: 'pe-1' }])
+    expect(applyAheadLastCall?.changes).toEqual([{ editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-1' }])
 
     act(() => {
       applyAheadOnSuccess?.({ summary: { total: 2, applied: 2, skippedDeload: 0, skippedStructural: 0 }, writtenWeekNumbers: [1, 2] })
     })
 
     expect(screen.getByText(/APPLIED TO 2 OF 2 PLANNED WEEKS/)).toBeTruthy()
+  })
+
+  // Review fix item 3 — the stable program-tab's own exercise reorder; SPEC
+  // names no exception for it.
+  it('a program-tab exercise reorder offers it too', () => {
+    mockState.allPlans = [makePlan(1), makePlan(2)]
+    render(<ProgramTab program={makeProgram('stable')} mesoId="meso-1" />)
+
+    act(() => {
+      capturedOnVolumeChange?.('wd-1', [
+        { editType: 'reorderExercise', moves: [{ slotId: 'pe-1', oldPosition: 0, newPosition: 1 }] },
+      ])
+    })
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')).toBeTruthy()
   })
 })

@@ -892,6 +892,37 @@ export async function swapWeekExercise(params: {
   return replacement
 }
 
+// Chunk 20 — "Apply this change to planned weeks ahead", review fix: a swap
+// applied ahead must repoint each matched LATER week at the SAME resulting
+// row swapWeekExercise already created for the edited week — never a
+// second createWeekOnlyProgramExercise insert (a fresh row per week would
+// give each week its own distinct id, so a follow-up edit on the edited
+// week's own id could never again find them — the executor's
+// applyAhead.ts has the full reasoning). This is exactly swapWeekExercise's
+// own second half (the two updates), minus the insert and the carry
+// computation: an applied-ahead swap is always permanent (carry always
+// null), the same way reorderWeekExercises/swapWeekExercise themselves are
+// always called with onlyThisWeek: false from the executor.
+export async function repointWeekExercise(
+  weekPlanId: string,
+  fromProgramExerciseId: string,
+  toProgramExerciseId: string,
+): Promise<void> {
+  const { error: exError } = await supabase
+    .from('v2_week_plan_exercises')
+    .update({ program_exercise_id: toProgramExerciseId, carry_program_exercise_id: null })
+    .eq('week_plan_id', weekPlanId)
+    .eq('program_exercise_id', fromProgramExerciseId)
+  if (exError) throw exError
+
+  const { error: setsError } = await supabase
+    .from('v2_week_plan_sets')
+    .update({ program_exercise_id: toProgramExerciseId })
+    .eq('week_plan_id', weekPlanId)
+    .eq('program_exercise_id', fromProgramExerciseId)
+  if (setsError) throw setsError
+}
+
 // An add: a brand-new week-only slot (never in a superset — weekEdits.ts's
 // resolveAddSlot), inserted into this week's own exercise list with no
 // carry_* override at all — week-dependent carries it forward purely

@@ -16,10 +16,27 @@ import {
 // Chunk 20 — exhaustive unit tests for applyAhead.ts's pure core (reviewer's
 // note 1: "Unit-test the pure part exhaustively"). One describe block per
 // edit type from the report's table, plus the shared matching rule (slot
-// identity, deload skip, "touch nothing else") and the two selector
-// helpers. Fixtures are minimal — only the fields each test actually reads —
-// following this codebase's existing "hand-built fixture" convention
-// (WeekPlan/ProgramExercise/WeekPlanSet's own optional-field comments).
+// identity, exercise identity, deload skip, "touch nothing else") and the
+// two selector helpers. Fixtures are minimal — only the fields each test
+// actually reads — following this codebase's existing "hand-built fixture"
+// convention (WeekPlan/ProgramExercise/WeekPlanSet's own optional-field
+// comments).
+//
+// Review fix (first review): two bugs here.
+//   1. A swap applied ahead used to create a FRESH week-only program
+//      exercise per later week, so a follow-up edit on the edited week's
+//      own (shared) id could never again find them. Fixed: the swap change
+//      record carries the edited week's own resultingProgramExerciseId;
+//      applying it ahead repoints each matched later week at that SAME
+//      row (ApplyAheadOp 'repointExercise', never a second insert).
+//   2. Slot identity (the carry mapping) alone could still match a row
+//      that has since diverged to a DIFFERENT exercise in a later week (an
+//      "only this week" swap there deliberately keeps the ORIGINAL
+//      identity in carry, for copying's sake — not because that week's
+//      CURRENT occupant still is that exercise). Fixed: every edit type
+//      but addExercise/reorderExercise also requires the matched row's
+//      current exerciseId to equal the edited row's own (pre-edit)
+//      exerciseId.
 
 // ─── Fixture factories ──────────────────────────────────────────────────────
 
@@ -158,12 +175,13 @@ describe('allPlannedWeeks', () => {
   })
 })
 
-// ─── Value edits: weightTarget / rir / repTarget / tags / stageKind ────────
+// ─── Value edits: weightTarget / rir / repTarget / tags / stageKind / warmup
 
 describe('weightTarget', () => {
   const change: ChangeRecord = {
     editType: 'weightTarget',
     slotId: 'pe-1',
+    exerciseId: 'ex-pe-1',
     setPosition: { headOrdinal: 1, stageIndex: null },
     oldValue: 60,
     newValue: 70,
@@ -180,9 +198,9 @@ describe('weightTarget', () => {
     })
   })
 
-  it('matches through a later week\'s own carry (its slot survived an earlier only-this-week swap there)', () => {
+  it('matches through a later week\'s own carry (its slot survived an earlier only-this-week swap there) when the exercise still agrees', () => {
     const w = week(2, {
-      exercises: [pe('pe-1-weekonly', { carryProgramExerciseId: 'pe-1' })],
+      exercises: [pe('pe-1-weekonly', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })],
       sets: [set('s1', 'pe-1-weekonly', { setNumber: 1 })],
     })
     const [result] = planApplyAhead(change, [w])
@@ -191,6 +209,20 @@ describe('weightTarget', () => {
 
   it('skips structurally when the slot does not exist in the later week', () => {
     const w = week(2, { exercises: [pe('pe-OTHER')], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  // Review fix (bug 2) — break-proof target: the slot matches by identity,
+  // but that week's row has since diverged to a DIFFERENT exercise (e.g. an
+  // "only this week" swap there kept the original slot in carry so copying
+  // reverts to it, but today it genuinely is something else) — the edit
+  // must not land on it.
+  it('skips structurally when the slot matches but the later week\'s row has diverged to a different exercise', () => {
+    const w = week(2, {
+      exercises: [pe('pe-1-diverged', { exerciseId: 'ex-OTHER', carryProgramExerciseId: 'pe-1' })],
+      sets: [set('s1', 'pe-1-diverged', { setNumber: 1 })],
+    })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
@@ -252,7 +284,14 @@ describe('weightTarget', () => {
 
 describe('rir', () => {
   it('applies: writes targetRir only', () => {
-    const change: ChangeRecord = { editType: 'rir', slotId: 'pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: 3, newValue: 1 }
+    const change: ChangeRecord = {
+      editType: 'rir',
+      slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
+      setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: 3,
+      newValue: 1,
+    }
     const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1')] })
     const [result] = planApplyAhead(change, [w])
     expect(result.status).toBe('applied')
@@ -260,7 +299,14 @@ describe('rir', () => {
   })
 
   it('a null newValue (RIR cleared) is written as null, not skipped', () => {
-    const change: ChangeRecord = { editType: 'rir', slotId: 'pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: 3, newValue: null }
+    const change: ChangeRecord = {
+      editType: 'rir',
+      slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
+      setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: 3,
+      newValue: null,
+    }
     const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1')] })
     const [result] = planApplyAhead(change, [w])
     if (result.status === 'applied') expect(result.ops[0]).toMatchObject({ changes: { targetRir: null } })
@@ -272,6 +318,7 @@ describe('repTarget', () => {
     const change: ChangeRecord = {
       editType: 'repTarget',
       slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
       setPosition: { headOrdinal: 1, stageIndex: null },
       oldValue: { repMin: 8, repMax: 12, isAmrap: false },
       newValue: { repMin: 6, repMax: 10, isAmrap: false },
@@ -291,6 +338,7 @@ describe('tags', () => {
     const change: ChangeRecord = {
       editType: 'tags',
       slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
       setPosition: { headOrdinal: 1, stageIndex: null },
       oldValue: null,
       newValue: ['last_set'],
@@ -306,6 +354,7 @@ describe('stageKind', () => {
     const change: ChangeRecord = {
       editType: 'stageKind',
       slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
       setPosition: { headOrdinal: 1, stageIndex: null },
       oldValue: null,
       newValue: 'rest_pause',
@@ -316,28 +365,106 @@ describe('stageKind', () => {
   })
 })
 
+// Review fix item 3 — chunk 15's WARMUP toggle, not in the brief's original
+// enumerated list; SPEC names no exception for it ("offered when a week is
+// edited and later weeks are already planned").
+describe('warmup', () => {
+  const change: ChangeRecord = {
+    editType: 'warmup',
+    slotId: 'pe-1',
+    exerciseId: 'ex-pe-1',
+    setPosition: { headOrdinal: 1, stageIndex: null },
+    oldValue: false,
+    newValue: true,
+  }
+
+  it('applies: writes isWarmup on the matched head only', () => {
+    const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1')] })
+    const [result] = planApplyAhead(change, [w])
+    if (result.status === 'applied') expect(result.ops).toEqual([{ kind: 'updateSet', weekPlanId: 'wp-2', setId: 's1', changes: { isWarmup: true } }])
+  })
+
+  it('skips structurally when the matched row has diverged to a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-OTHER' })], sets: [set('s1', 'pe-1')] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+})
+
 // ─── swapExercise (chunk 9) ─────────────────────────────────────────────────
 
 describe('swapExercise', () => {
-  const change: ChangeRecord = { editType: 'swapExercise', slotId: 'pe-1', oldExerciseId: 'pe-1', newExerciseId: 'ex-replacement' }
+  const change: ChangeRecord = {
+    editType: 'swapExercise',
+    slotId: 'pe-1',
+    exerciseId: 'ex-pe-1', // the PRE-swap real exercise — what later weeks still show
+    newExerciseId: 'ex-replacement',
+    resultingProgramExerciseId: 'pe-1-replacement', // the edited week's OWN resulting row
+  }
 
-  it('applies: swaps using the LATER week\'s own current programExerciseId, not the slotId', () => {
+  it('applies: repoints using the LATER week\'s own current programExerciseId, at the SAME resulting row for every week (review fix — never a fresh row per week)', () => {
     // This later week's own row is itself a week-only replacement from an
     // earlier only-this-week swap there — its own current id ('pe-1-local')
     // differs from the canonical slotId ('pe-1'), but its carry still
-    // traces back to the same slot.
-    const w = week(2, { exercises: [pe('pe-1-local', { carryProgramExerciseId: 'pe-1' })], sets: [] })
+    // traces back to the same slot, and its own exercise still agrees.
+    const w = week(2, { exercises: [pe('pe-1-local', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result.status).toBe('applied')
     if (result.status === 'applied') {
       expect(result.ops).toEqual([
-        { kind: 'swapExercise', weekPlanId: 'wp-2', programExerciseId: 'pe-1-local', replacementExerciseId: 'ex-replacement' },
+        { kind: 'repointExercise', weekPlanId: 'wp-2', fromProgramExerciseId: 'pe-1-local', toProgramExerciseId: 'pe-1-replacement' },
       ])
     }
   })
 
+  it('review fix (bug 1): applied to two later weeks, BOTH repoint at the identical resulting row — never two different fresh rows', () => {
+    const w2 = week(2, { exercises: [pe('pe-1')], sets: [] })
+    const w3 = week(3, { exercises: [pe('pe-1')], sets: [] })
+    const [r2, r3] = planApplyAhead(change, [w2, w3])
+    expect(r2.status).toBe('applied')
+    expect(r3.status).toBe('applied')
+    if (r2.status === 'applied' && r3.status === 'applied') {
+      // Same resulting row referenced by both weeks' own ops (only
+      // weekPlanId differs, as it must) — this is exactly what makes a
+      // FOLLOW-UP edit on that row findable in every week afterward (see
+      // the "follow-up edit" test below) — the bug this fixes was a fresh,
+      // distinct row created per week instead.
+      expect(r2.ops[0]).toMatchObject({ toProgramExerciseId: 'pe-1-replacement' })
+      expect(r3.ops[0]).toMatchObject({ toProgramExerciseId: 'pe-1-replacement' })
+      expect(r2.ops[0]).toEqual({ ...r3.ops[0], weekPlanId: 'wp-2' })
+    }
+  })
+
+  it('review fix (bug 1): a follow-up edit on the edited week\'s OWN resulting id finds a later week that already got the swap applied', () => {
+    // Simulates: week 1 swapped and applied ahead to week 2 (both now point
+    // at 'pe-1-replacement', per repointExercise, never two distinct rows).
+    // A SECOND, follow-up edit (e.g. a weight change) on 'pe-1-replacement'
+    // must still find week 2.
+    const week2AfterSwapAhead = week(2, { exercises: [pe('pe-1-replacement', { exerciseId: 'ex-replacement' })], sets: [set('s1', 'pe-1-replacement')] })
+    const followUp: ChangeRecord = {
+      editType: 'weightTarget',
+      slotId: 'pe-1-replacement', // the edited week's own row has no carry after a permanent swap
+      exerciseId: 'ex-replacement',
+      setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: null,
+      newValue: 80,
+    }
+    const [result] = planApplyAhead(followUp, [week2AfterSwapAhead])
+    expect(result.status).toBe('applied')
+  })
+
   it('skips structurally when the slot does not exist', () => {
     const w = week(2, { exercises: [pe('pe-OTHER')], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  // Review fix (bug 2) — break-proof target: week 3 did its OWN "only this
+  // week" swap at this slot (to a DIFFERENT real exercise, carry pointing
+  // back to the same slot) — a permanent swap-ahead must not overwrite that
+  // one-off; it must skip this week, not repoint it.
+  it('skips structurally when the later week\'s own row has already diverged to a different exercise (an "only this week" swap there)', () => {
+    const w = week(2, { exercises: [pe('pe-1-oneoff', { exerciseId: 'ex-SOMETHING-ELSE', carryProgramExerciseId: 'pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
@@ -350,23 +477,31 @@ describe('swapExercise', () => {
     const w = week(2, { exercises: [pe('pe-DECOY'), pe('pe-1')], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result.status).toBe('applied')
-    if (result.status === 'applied') expect(result.ops[0]).toMatchObject({ programExerciseId: 'pe-1' })
+    if (result.status === 'applied') expect(result.ops[0]).toMatchObject({ fromProgramExerciseId: 'pe-1' })
   })
 })
 
 // ─── removeExercise / addExercise (chunk 9, and stable program-tab) ────────
 
 describe('removeExercise', () => {
-  const change: ChangeRecord = { editType: 'removeExercise', slotId: 'pe-1' }
+  const change: ChangeRecord = { editType: 'removeExercise', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
 
   it('applies: removes the later week\'s own current row for the matched slot', () => {
-    const w = week(2, { exercises: [pe('pe-1-local', { carryProgramExerciseId: 'pe-1' })], sets: [] })
+    const w = week(2, { exercises: [pe('pe-1-local', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     if (result.status === 'applied') expect(result.ops).toEqual([{ kind: 'removeExercise', weekPlanId: 'wp-2', programExerciseId: 'pe-1-local' }])
   })
 
   it('skips structurally when already absent (e.g. that week already removed/swapped it)', () => {
     const w = week(2, { exercises: [], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  // Review fix (bug 2): a one-off diverged row at this slot must not be
+  // removed — it isn't the exercise this remove was ever about.
+  it('skips structurally when the later week\'s own row has diverged to a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1-oneoff', { exerciseId: 'ex-SOMETHING-ELSE', carryProgramExerciseId: 'pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
@@ -399,7 +534,7 @@ describe('addExercise', () => {
   })
 })
 
-// ─── reorderExercise (chunk 9) ──────────────────────────────────────────────
+// ─── reorderExercise (chunk 9, and stable program-tab) ─────────────────────
 
 describe('reorderExercise', () => {
   it('applies when every moved slot exists AND is at its recorded pre-move position', () => {
@@ -450,12 +585,24 @@ describe('reorderExercise', () => {
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
+
+  it('matches regardless of which exercise occupies the slot (reviewer\'s own call — no exerciseId check for reorder)', () => {
+    const change: ChangeRecord = {
+      editType: 'reorderExercise',
+      moves: [{ slotId: 'pe-1', oldPosition: 0, newPosition: 1 }],
+    }
+    // This week's pe-1 row points at a totally different real exercise —
+    // reorder doesn't care, only identity + position.
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-SOMETHING-ELSE', position: 0 })], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result.status).toBe('applied')
+  })
 })
 
 // ─── addStage / removeStage (chunk 14) ─────────────────────────────────────
 
 describe('addStage', () => {
-  const change: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', headOrdinal: 1 }
+  const change: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 1 }
 
   it('applies: appends a stage at this week\'s own fresh next stage_index, not the edited week\'s', () => {
     // This later week's head already has TWO stages (a different history
@@ -483,10 +630,16 @@ describe('addStage', () => {
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
+
+  it('skips structurally when the matched row has diverged to a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-OTHER' })], sets: [set('h1', 'pe-1', { setNumber: 1 })] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
 })
 
 describe('removeStage', () => {
-  const change: ChangeRecord = { editType: 'removeStage', slotId: 'pe-1', setPosition: { headOrdinal: 1, stageIndex: 2 } }
+  const change: ChangeRecord = { editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: 2 } }
 
   it('applies: removes exactly the matched stage', () => {
     const w = week(2, {
@@ -508,10 +661,40 @@ describe('removeStage', () => {
   })
 })
 
-// ─── addSet / removeSet (stable program-tab volume edits only) ────────────
+// ─── removeHeadSet (review fix item 3 — week-level REMOVE SET, any ordinal)
 
-describe('addSet (stable program-tab)', () => {
-  const change: ChangeRecord = { editType: 'addSet', slotId: 'pe-1' }
+describe('removeHeadSet', () => {
+  const change: ChangeRecord = { editType: 'removeHeadSet', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 2 }
+
+  it('applies: removes exactly the matched ordinal, never the trailing one by default', () => {
+    // Four heads in this later week; ordinal 2 must be removed, not the
+    // trailing (4th) one — the distinguishing behaviour from the
+    // program-tab's own removeSet (always trailing).
+    const w = week(2, { exercises: [pe('pe-1')], sets: [1, 2, 3, 4].map((n) => set(`s${n}`, 'pe-1', { setNumber: n })) })
+    const [result] = planApplyAhead(change, [w])
+    if (result.status === 'applied') expect(result.ops).toEqual([{ kind: 'removeSet', weekPlanId: 'wp-2', setId: 's2' }])
+  })
+
+  it('skips structurally when that ordinal does not exist', () => {
+    const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1', { setNumber: 1 })] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  it('skips structurally when the matched row has diverged to a different exercise', () => {
+    const w = week(2, {
+      exercises: [pe('pe-1', { exerciseId: 'ex-OTHER' })],
+      sets: [set('s1', 'pe-1', { setNumber: 1 }), set('s2', 'pe-1', { setNumber: 2 })],
+    })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+})
+
+// ─── addSet / removeSet (week-level ADD SET, and the stable program-tab) ──
+
+describe('addSet (week-level ADD SET and the stable program-tab stepper)', () => {
+  const change: ChangeRecord = { editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
 
   it('applies: appends at this week\'s own current head count, with no rep-target carried (scope decision 6)', () => {
     const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1', { setNumber: 1 }), set('s2', 'pe-1', { setNumber: 2 })] })
@@ -530,10 +713,16 @@ describe('addSet (stable program-tab)', () => {
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
+
+  it('skips structurally when the matched row has diverged to a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-OTHER' })], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
 })
 
-describe('removeSet (stable program-tab)', () => {
-  const change: ChangeRecord = { editType: 'removeSet', slotId: 'pe-1' }
+describe('removeSet (stable program-tab only — always trailing)', () => {
+  const change: ChangeRecord = { editType: 'removeSet', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
 
   it('applies: removes THIS week\'s own trailing head, not a recorded ordinal', () => {
     // This week has 4 heads (a different count than the edited exercise
@@ -585,9 +774,26 @@ describe('summarizeApplyAhead', () => {
   it('an empty candidate list summarises to all zeros', () => {
     expect(summarizeApplyAhead([])).toEqual({ total: 0, applied: 0, skippedDeload: 0, skippedStructural: 0 })
   })
-})
 
-// ─── Multi-week integration (several candidate weeks at once) ─────────────
+  // Review fix (bug 1's own scenario): "Applied to 2 of 2", end to end
+  // through planApplyAhead once a follow-up edit's own slot is shared
+  // (never two distinct fresh rows).
+  it('bug-1 scenario: a follow-up edit after a shared-row swap-ahead ends "Applied to 2 of 2"', () => {
+    const followUp: ChangeRecord = {
+      editType: 'weightTarget',
+      slotId: 'pe-1-replacement',
+      exerciseId: 'ex-replacement',
+      setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: null,
+      newValue: 80,
+    }
+    const week2 = week(2, { exercises: [pe('pe-1-replacement', { exerciseId: 'ex-replacement' })], sets: [set('s1', 'pe-1-replacement')] })
+    const week3 = week(3, { exercises: [pe('pe-1-replacement', { exerciseId: 'ex-replacement' })], sets: [set('s1', 'pe-1-replacement')] })
+    const results = planApplyAhead(followUp, [week2, week3])
+    const s = summarizeApplyAhead(results)
+    expect(`${s.applied} of ${s.total}`).toBe('2 of 2')
+  })
+})
 
 // ─── planApplyAheadBundle (a compound edit — e.g. AMRAP's RIR default) ────
 
@@ -595,11 +801,19 @@ describe('planApplyAheadBundle', () => {
   const repTargetChange: ChangeRecord = {
     editType: 'repTarget',
     slotId: 'pe-1',
+    exerciseId: 'ex-pe-1',
     setPosition: { headOrdinal: 1, stageIndex: null },
     oldValue: { repMin: 8, repMax: 12, isAmrap: false },
     newValue: { repMin: null, repMax: null, isAmrap: true },
   }
-  const rirChange: ChangeRecord = { editType: 'rir', slotId: 'pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: null, newValue: 0 }
+  const rirChange: ChangeRecord = {
+    editType: 'rir',
+    slotId: 'pe-1',
+    exerciseId: 'ex-pe-1',
+    setPosition: { headOrdinal: 1, stageIndex: null },
+    oldValue: null,
+    newValue: 0,
+  }
 
   it('applies both parts together as one week result, with both ops', () => {
     const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1')] })
@@ -631,6 +845,7 @@ describe('planApplyAhead across several weeks at once', () => {
     const change: ChangeRecord = {
       editType: 'weightTarget',
       slotId: 'pe-1',
+      exerciseId: 'ex-pe-1',
       setPosition: { headOrdinal: 1, stageIndex: null },
       oldValue: 60,
       newValue: 70,

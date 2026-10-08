@@ -272,6 +272,17 @@ function WorkoutEditor({
       next.map((ex, i) => ({ ...ex, position: i })),
     )
     reorder.mutate(next.map((ex, i) => ({ id: ex.id, position: i })))
+    // Review fix item 3 — the stable program-tab's own exercise reorder;
+    // SPEC names no exception for it. Same ReorderMove shape PlanPage.tsx's
+    // own week-level reorder already builds — only exercises that actually
+    // moved, each with its true pre-move position.
+    const newPositionById = new Map(next.map((ex, i) => [ex.id, i]))
+    const moves = exercises
+      .map((ex) => ({ slotId: slotIdOf(ex), oldPosition: ex.position, newPosition: newPositionById.get(ex.id)! }))
+      .filter((m) => m.oldPosition !== m.newPosition)
+    if (moves.length > 0) {
+      onVolumeChange?.(workoutDay.id, [{ editType: 'reorderExercise', moves }])
+    }
   }
 
   // Toggles the gap after exercises[gapIndex] — link merges the two
@@ -500,10 +511,13 @@ function WorkoutEditor({
             </button>
             <button
               onClick={() => {
+                const target = exercises.find((e) => e.id === confirmDeleteExercise.id)
                 deleteExercise.mutate(confirmDeleteExercise.id)
                 // Chunk 20 — same "both planning types, program-tab covers
                 // it for stable" reasoning as ADD above.
-                onVolumeChange?.(workoutDay.id, [{ editType: 'removeExercise', slotId: slotIdOf({ id: confirmDeleteExercise.id }) }])
+                if (target) {
+                  onVolumeChange?.(workoutDay.id, [{ editType: 'removeExercise', slotId: slotIdOf(target), exerciseId: target.exerciseId }])
+                }
                 setConfirmDeleteExercise(null)
               }}
               disabled={deleteExercise.isPending}

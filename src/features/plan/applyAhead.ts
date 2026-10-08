@@ -12,7 +12,7 @@
 // descriptions ("ops"), never executed here. useWeekPlan.ts's useApplyAhead
 // is the thin executor that actually runs each op through the SAME
 // functions weekPlanService.ts already exports and already tests
-// (swapWeekExercise, addWeekExercise, removeWeekExercise,
+// (repointWeekExercise, addWeekExercise, removeWeekExercise,
 // reorderWeekExercises, addStage, addSet, removeSet, updateSet) — this
 // chunk writes no new Supabase call of its own; it only decides WHICH of
 // the existing ones to make, and with what arguments.
@@ -32,17 +32,49 @@
 // carryProgramExerciseId collapses to the same formula (undefined ?? id ===
 // id).
 //
+// ─── Review fix: slot identity alone is not enough (first review) ─────────
+// The carry mapping finds the right SLOT, but a slot can be occupied by a
+// DIFFERENT exercise in a later week that has already diverged there (an
+// "only this week" swap deliberately keeps the ORIGINAL exercise in
+// carry_program_exercise_id so COPYING reverts to it later — it does not
+// mean that week's CURRENT occupant still is that original exercise; it
+// is, on purpose, something else right now). So every edit type except
+// addExercise and reorderExercise ALSO requires the matched row's CURRENT
+// exerciseId to equal the edited row's own (pre-edit) exerciseId —
+// findMatchingExercise, below — otherwise this week already differs
+// structurally for this slot, exactly like a missing row. addExercise has
+// no existing row to compare at all; reorderExercise's own match (slot
+// identity AND the exact pre-move position) is already strict enough on
+// its own terms (reviewer's call) and doesn't care which exercise occupies
+// the slot, only where it sits.
+//
+// ─── Review fix: a swap must repoint, never create a fresh row per week ───
+// swapWeekExercise (weekPlanService.ts) always creates a brand-new
+// week-only v2_program_exercises row — correct for the EDITED week (there
+// is no existing row for the new exercise yet), but wrong for every LATER
+// week this change applies to: creating ANOTHER fresh row per week would
+// give each of them its own distinct id, so a FOLLOW-UP edit on the edited
+// week's own (shared) id could never again find them (findMatchingExercise
+// would see a different row's id). Copying forward never does this either
+// — it reuses the SAME source row's id, v2_week_plan_exercises.program_
+// exercise_id being nothing more than a foreign key, freely shared by many
+// weeks' own rows. The swap change record below carries the edited week's
+// own resulting row id (resultingProgramExerciseId); applying it ahead
+// repoints each matched later week at that SAME row (repointWeekExercise,
+// weekPlanService.ts) — never a second insert.
+//
 // ─── Matching (reviewer's note 3) ───────────────────────────────────────────
-// A later week is changed only where the same slot (and, for a value edit,
-// the same set position within it) exists; where it doesn't — that week
-// already differs structurally — it is skipped for this change only,
-// alongside any week itself marked deload (reviewer's note 5: deload
-// sessions take their values from deload rules, chunks 21/22, so a normal
-// week's change must never silently overwrite one). See this chunk's
-// report for the full edit-type table and the judgement calls below on
-// matching an INSERT (add exercise/add stage; the program-tab's add-set),
-// which has no pre-existing row to compare — scope decisions 5, 6, 7 and 8
-// in the report explain the rule this module applies to each.
+// A later week is changed only where the same slot (occupied by the same
+// exercise — see above) and, for a value edit, the same set position
+// within it, exists; where it doesn't — that week already differs
+// structurally — it is skipped for this change only, alongside any week
+// itself marked deload (reviewer's note 5: deload sessions take their
+// values from deload rules, chunks 21/22, so a normal week's change must
+// never silently overwrite one). See this chunk's report for the full
+// edit-type table and the judgement calls below on matching an INSERT (add
+// exercise/add stage; the program-tab's add-set), which has no pre-existing
+// row to compare — scope decisions 5, 6, 7 and 8 in the report explain the
+// rule this module applies to each.
 
 import type { WeekPlan, ProgramExercise, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
@@ -92,38 +124,58 @@ export interface ReorderMove {
 // plannerVocabulary.ts's applyAmrapRirDefault — becomes more than one of
 // these, applied together as one offer: PlanPage.tsx builds the list).
 //
-// Value edits (weightTarget/repTarget/rir/tags/stageKind) carry the real
-// old/new value. Structural edits carry whatever "old/new" naturally means
-// for them (swap: the two exercise ids; reorder: each move's two
-// positions); a pure insert (addExercise/addStage, and the program-tab's
-// addSet) has no prior value to report, and a pure identity removal
-// (removeExercise/removeStage, and the program-tab's removeSet) needs only
+// `exerciseId` (every variant but addExercise/reorderExercise — review fix
+// above): the REAL exercise that must currently occupy the matched row for
+// the match to count. For swapExercise specifically this is the PRE-swap
+// exercise (what later weeks still show); every other type's own edit
+// never changes which exercise occupies the slot, so it's simply that
+// row's current one. `resultingProgramExerciseId` (swapExercise only): the
+// edited week's own v2_program_exercises row id AFTER the swap — the SAME
+// row every matched later week is repointed at (never a fresh one).
+//
+// Value edits (weightTarget/repTarget/rir/tags/stageKind/warmup) carry the
+// real old/new value. Structural edits carry whatever "old/new" naturally
+// means for them (swap: the two exercise ids; reorder: each move's two
+// positions); a pure insert (addExercise/addStage, and addSet) has no
+// prior value to report, and a pure identity removal (removeExercise/
+// removeStage/removeHeadSet, and the program-tab's removeSet) needs only
 // enough to find the row — see the report's table for the full
 // matched/written pair per type.
 export type ChangeRecord =
-  | { editType: 'weightTarget'; slotId: string; setPosition: SetPosition; oldValue: number | null; newValue: number | null }
+  | { editType: 'weightTarget'; slotId: string; exerciseId: string; setPosition: SetPosition; oldValue: number | null; newValue: number | null }
   | {
       editType: 'repTarget'
       slotId: string
+      exerciseId: string
       setPosition: SetPosition
       oldValue: { repMin: number | null; repMax: number | null; isAmrap: boolean }
       newValue: { repMin: number | null; repMax: number | null; isAmrap: boolean }
     }
-  | { editType: 'rir'; slotId: string; setPosition: SetPosition; oldValue: number | null; newValue: number | null }
-  | { editType: 'tags'; slotId: string; setPosition: SetPosition; oldValue: string[] | null; newValue: string[] | null }
-  | { editType: 'stageKind'; slotId: string; setPosition: SetPosition; oldValue: StageKind | null; newValue: StageKind | null }
-  | { editType: 'swapExercise'; slotId: string; oldExerciseId: string; newExerciseId: string }
-  | { editType: 'removeExercise'; slotId: string }
+  | { editType: 'rir'; slotId: string; exerciseId: string; setPosition: SetPosition; oldValue: number | null; newValue: number | null }
+  | { editType: 'tags'; slotId: string; exerciseId: string; setPosition: SetPosition; oldValue: string[] | null; newValue: string[] | null }
+  | { editType: 'stageKind'; slotId: string; exerciseId: string; setPosition: SetPosition; oldValue: StageKind | null; newValue: StageKind | null }
+  // Chunk 15's WARMUP toggle (review fix item 3 — SPEC "offered when a week
+  // is edited and later weeks are already planned" names no exception for
+  // it). Head-only, same posture as tags/stageKind.
+  | { editType: 'warmup'; slotId: string; exerciseId: string; setPosition: SetPosition; oldValue: boolean; newValue: boolean }
+  | { editType: 'swapExercise'; slotId: string; exerciseId: string; newExerciseId: string; resultingProgramExerciseId: string }
+  | { editType: 'removeExercise'; slotId: string; exerciseId: string }
   | { editType: 'addExercise'; workoutDayId: string; exerciseId: string }
   | { editType: 'reorderExercise'; moves: ReorderMove[] }
-  | { editType: 'addStage'; slotId: string; headOrdinal: number }
-  | { editType: 'removeStage'; slotId: string; setPosition: SetPosition }
-  // Stable program-tab volume edits only (reviewer's note 2's last group) —
-  // PlanPage.tsx's own week-level ADD SET/REMOVE SET are out of this
-  // chunk's scope (see the report's scope decisions); these two are built
-  // only by ProgramTab.tsx's wiring.
-  | { editType: 'addSet'; slotId: string }
-  | { editType: 'removeSet'; slotId: string }
+  | { editType: 'addStage'; slotId: string; exerciseId: string; headOrdinal: number }
+  | { editType: 'removeStage'; slotId: string; exerciseId: string; setPosition: SetPosition }
+  // Week-level REMOVE SET (review fix item 3 — per-row trash or compact
+  // MINUS): removes the head at a SPECIFIC ordinal, never "whichever is
+  // trailing" — distinct from the program-tab's own removeSet below, which
+  // stays trailing-only (setExerciseSetCount's own shrink behaviour).
+  | { editType: 'removeHeadSet'; slotId: string; exerciseId: string; headOrdinal: number }
+  // addSet: both the week-level ADD SET button and the stable program-tab's
+  // own stepper (+) — both always append at the matched week's own current
+  // end, so one editType serves both (scope decisions 6/7, the report).
+  | { editType: 'addSet'; slotId: string; exerciseId: string }
+  // removeSet: the stable program-tab's stepper (−) ONLY — always the
+  // matched week's own current trailing head (scope decision 7).
+  | { editType: 'removeSet'; slotId: string; exerciseId: string }
 
 export type ChangeEditType = ChangeRecord['editType']
 
@@ -137,7 +189,12 @@ export type ApplyAheadOp =
   | { kind: 'addSet'; weekPlanId: string; programExerciseId: string; setNumber: number }
   | { kind: 'removeSet'; weekPlanId: string; setId: string }
   | { kind: 'addStage'; weekPlanId: string; programExerciseId: string; parentId: string; setNumber: number; stageIndex: number }
-  | { kind: 'swapExercise'; weekPlanId: string; programExerciseId: string; replacementExerciseId: string }
+  // Review fix: repoints the matched row at the SAME resulting exercise row
+  // the edited week's own swap already created — never a second
+  // createWeekOnlyProgramExercise insert (weekPlanService.ts's
+  // repointWeekExercise does the two updates swapWeekExercise's own second
+  // half already does, minus the insert).
+  | { kind: 'repointExercise'; weekPlanId: string; fromProgramExerciseId: string; toProgramExerciseId: string }
   | { kind: 'addExercise'; weekPlanId: string; workoutDayId: string; exerciseId: string; position: number }
   | { kind: 'removeExercise'; weekPlanId: string; programExerciseId: string }
   | { kind: 'reorderExercises'; weekPlanId: string; moves: { programExerciseId: string; oldPosition: number; newPosition: number }[] }
@@ -156,6 +213,16 @@ export function slotIdOf(pe: { id: string; carryProgramExerciseId?: string | nul
 
 function findExercise(week: WeekPlan, slotId: string): ProgramExercise | undefined {
   return week.exercises.find((e) => slotIdOf(e) === slotId)
+}
+
+// Review fix: slot identity alone can still match a row that has since
+// diverged to a DIFFERENT real exercise in this week (see this file's own
+// header). Every call site but addExercise/reorderExercise goes through
+// this, never findExercise directly.
+function findMatchingExercise(week: WeekPlan, slotId: string, exerciseId: string): ProgramExercise | undefined {
+  const row = findExercise(week, slotId)
+  if (!row || row.exerciseId !== exerciseId) return undefined
+  return row
 }
 
 // Heads only, this slot's own current rows, ranked the same way PlanPage.tsx
@@ -249,8 +316,9 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     case 'rir':
     case 'tags':
     case 'stageKind':
+    case 'warmup':
     case 'repTarget': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const set = resolveSetRow(week, row, change.setPosition)
       if (!set) return { ...base, status: 'skipped', reason: 'structural' }
@@ -263,22 +331,28 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
               ? { tags: change.newValue }
               : change.editType === 'stageKind'
                 ? { stageKind: change.newValue }
-                : { repMin: change.newValue.repMin, repMax: change.newValue.repMax, isAmrap: change.newValue.isAmrap }
+                : change.editType === 'warmup'
+                  ? { isWarmup: change.newValue }
+                  : { repMin: change.newValue.repMin, repMax: change.newValue.repMax, isAmrap: change.newValue.isAmrap }
       return { ...base, status: 'applied', ops: [{ kind: 'updateSet', weekPlanId: week.id, setId: set.id, changes }] }
     }
 
+    // Review fix: repoint the matched row at the SAME resulting row the
+    // edited week's own swap produced — never a fresh insert per week (see
+    // this file's own header comment on why a fresh row per week broke a
+    // follow-up edit's own later match).
     case 'swapExercise': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       return {
         ...base,
         status: 'applied',
-        ops: [{ kind: 'swapExercise', weekPlanId: week.id, programExerciseId: row.id, replacementExerciseId: change.newExerciseId }],
+        ops: [{ kind: 'repointExercise', weekPlanId: week.id, fromProgramExerciseId: row.id, toProgramExerciseId: change.resultingProgramExerciseId }],
       }
     }
 
     case 'removeExercise': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       return { ...base, status: 'applied', ops: [{ kind: 'removeExercise', weekPlanId: week.id, programExerciseId: row.id }] }
     }
@@ -288,7 +362,8 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // itself, which, for an already-planned week, trivially exists — so
     // this never skips structurally, only for deload (handled above).
     // Appends at THIS week's own current end, not the edited week's
-    // recorded position (that week's own count may differ).
+    // recorded position (that week's own count may differ). No exerciseId
+    // check (review fix) — there is no existing row to compare it against.
     case 'addExercise': {
       const position = week.exercises.length
       return {
@@ -303,7 +378,10 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // in this week to equal the edited week's own pre-move position — not
     // just that the slot exists. All-or-nothing per week: if any one move
     // fails either check, the whole reorder is skipped for this week
-    // (a partial reorder could otherwise leave an inconsistent order).
+    // (a partial reorder could otherwise leave an inconsistent order). No
+    // exerciseId check (review fix, reviewer's own call) — reorder cares
+    // only about identity and position, never which exercise occupies the
+    // slot.
     case 'reorderExercise': {
       const resolvedMoves: { programExerciseId: string; oldPosition: number; newPosition: number }[] = []
       for (const m of change.moves) {
@@ -320,7 +398,7 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // setGroupLogic.ts — never the edited week's own new index), mirroring
     // exactly what a direct ADD STAGE tap in that week would compute.
     case 'addStage': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const head = sortedHeadsFor(week, row.id)[change.headOrdinal - 1]
       if (!head) return { ...base, status: 'skipped', reason: 'structural' }
@@ -334,20 +412,33 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     }
 
     case 'removeStage': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const set = resolveSetRow(week, row, change.setPosition)
       if (!set) return { ...base, status: 'skipped', reason: 'structural' }
       return { ...base, status: 'applied', ops: [{ kind: 'removeSet', weekPlanId: week.id, setId: set.id }] }
     }
 
-    // Scope decision 6/7 (report): program-tab only. addSet never backfills
-    // a rep target (same as the plain week-level addSet() it reuses);
-    // removeSet always removes THIS week's own current trailing head
-    // (mirrors setExerciseSetCount's own shrink behaviour), not a recorded
-    // absolute ordinal — symmetric with addSet's own "append at my own end".
+    // Review fix item 3 — week-level REMOVE SET (per-row trash or compact
+    // MINUS): removes the head at the SAME ordinal, never "whichever is
+    // trailing" there (distinct from the program-tab's own removeSet,
+    // below, which is deliberately trailing-only).
+    case 'removeHeadSet': {
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
+      const head = sortedHeadsFor(week, row.id)[change.headOrdinal - 1]
+      if (!head) return { ...base, status: 'skipped', reason: 'structural' }
+      return { ...base, status: 'applied', ops: [{ kind: 'removeSet', weekPlanId: week.id, setId: head.id }] }
+    }
+
+    // Scope decisions 6/7 (report): addSet never backfills a rep target
+    // (same as the plain week-level addSet() it reuses, for both the week
+    // button and the program-tab stepper); removeSet (program-tab only)
+    // always removes THIS week's own current trailing head (mirrors
+    // setExerciseSetCount's own shrink behaviour), not a recorded absolute
+    // ordinal — symmetric with addSet's own "append at my own end".
     case 'addSet': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const heads = sortedHeadsFor(week, row.id)
       return {
@@ -358,7 +449,7 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     }
 
     case 'removeSet': {
-      const row = findExercise(week, change.slotId)
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const heads = sortedHeadsFor(week, row.id)
       const trailing = heads[heads.length - 1]

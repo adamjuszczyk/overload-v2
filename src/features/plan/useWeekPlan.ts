@@ -16,6 +16,7 @@ import {
   copyWorkoutFromPreviousWeek,
   planWeek,
   swapWeekExercise,
+  repointWeekExercise,
   addWeekExercise,
   removeWeekExercise,
   reorderWeekExercises,
@@ -426,19 +427,16 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
     case 'addStage':
       await addStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.setNumber, op.stageIndex)
       return
-    case 'swapExercise':
-      // onlyThisWeek is always false here: this op only ever exists because
-      // the offer that produced it is never shown after an "only this week"
-      // swap (reviewer's note 4) — applying the change ahead is itself a
-      // permanent change in each later week, same as the edit that
-      // triggered the offer.
-      await swapWeekExercise({
-        userId,
-        weekPlanId: op.weekPlanId,
-        programExerciseId: op.programExerciseId,
-        replacementExerciseId: op.replacementExerciseId,
-        onlyThisWeek: false,
-      })
+    case 'repointExercise':
+      // Review fix: repoint the matched row at the SAME resulting exercise
+      // row the edited week's own swap already created (repointWeekExercise
+      // — swapWeekExercise's own second half, minus the insert) — never a
+      // fresh createWeekOnlyProgramExercise per later week. Always a
+      // permanent repoint (carry cleared), same reasoning reorderExercises'
+      // own onlyThisWeek: false below already documents: this op only ever
+      // exists because the offer that produced it is never shown after an
+      // "only this week" swap (reviewer's note 4).
+      await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
       return
     case 'addExercise':
       await addWeekExercise({
