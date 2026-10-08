@@ -171,7 +171,12 @@ export default function TodayPage() {
                 className="mt-1 text-xs font-bold tracking-widest"
                 style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
               >
-                DELOAD WEEK
+                {/* Chunk 21 (SPEC "Deload" — a deload is a property of a
+                    SESSION, not a week): was "DELOAD WEEK"; this is one
+                    upcoming session's own plan row, same condition as
+                    GymSession.tsx/SessionPreview.tsx's own "DELOAD · WEEK N"
+                    label, which already read this way. */}
+                DELOAD
               </p>
             )}
           </div>

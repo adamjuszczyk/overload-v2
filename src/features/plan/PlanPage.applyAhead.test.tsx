@@ -101,6 +101,8 @@ vi.mock('./useWeekPlan', () => ({
   useApplyAhead: () => ({ mutate: applyAheadMutate, isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
+  // Chunk 21 - the week-level mark/unmark action's own hook.
+  useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),

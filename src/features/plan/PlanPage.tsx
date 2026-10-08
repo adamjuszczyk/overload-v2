@@ -9,6 +9,7 @@ import {
   useWeekPlans,
   useAllWeekPlans,
   useSetDeload,
+  useSetWeekDeload,
   useAddSet,
   useAddStage,
   useUpdateSet,
@@ -60,6 +61,14 @@ const DAYS_ORDER: DayOfWeek[] = [
 const DOW_LABEL: Record<DayOfWeek, string> = {
   monday: 'MONDAY', tuesday: 'TUESDAY', wednesday: 'WEDNESDAY',
   thursday: 'THURSDAY', friday: 'FRIDAY', saturday: 'SATURDAY', sunday: 'SUNDAY',
+}
+
+// Chunk 21 — the shared-row note's own weekday list ("Marks Mon, Tue, Wed,
+// Thu, Fri — they share one plan"), sentence-case to match ApplyAheadBanner's
+// own G14 note (chunk 20) rather than WorkoutSwitcher.tsx's all-caps
+// DOW_SHORT (a different label context — a tab, not a sentence).
+const DOW_SHORT_TITLE: Record<DayOfWeek, string> = {
+  monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
 }
 
 // Plan screen tabs (chunk 6, SPEC.md "Plan screen" — Program tab + Weeks).
@@ -151,6 +160,12 @@ export default function PlanPage() {
 
   const copyPrev = useCopyFromPreviousWeek(activeMeso?.id ?? '', viewWeek)
   const planWeek = usePlanWeek()
+  // Chunk 21 — "Mark this week as deload" / "Unmark this week" (SPEC
+  // "Deload"), page-level like COPY WEEK above (one action per viewed
+  // week, not per workout) since it targets every planned row of the week
+  // by (mesocycle_id, week_number) alone — see useWeekPlan.ts's own header
+  // comment on useSetWeekDeload.
+  const setWeekDeload = useSetWeekDeload(activeMeso?.id ?? '', viewWeek)
 
   // Chunk 8 (TASKS.md "Weeks plan themselves... planned the first time
   // it's opened in Plan") — v2_plan_week is atomic and idempotent, so this
@@ -169,9 +184,13 @@ export default function PlanPage() {
   // text if that workout is shared, the same wording convention chunk 21
   // will use" — detectSharedWeekdayWorkouts only ever returns a group for a
   // workout actually on 2+ weekdays, so membership alone is "is shared".
-  const sharedWorkoutDayIds = new Set(
-    (program ? detectSharedWeekdayWorkouts(program.schedule) : []).map((g) => g.workoutDayId),
-  )
+  const sharedGroups = program ? detectSharedWeekdayWorkouts(program.schedule) : []
+  const sharedWorkoutDayIds = new Set(sharedGroups.map((g) => g.workoutDayId))
+  // Chunk 21 (reviewer's note 2 — "the marking UI says so where the mark is
+  // set, e.g. 'Marks Mon, Tue, Wed, Thu, Fri — they share one plan'") — the
+  // per-workout toggle needs the actual weekday list, not just the boolean
+  // sharedWorkoutDayIds already carries for the apply-ahead banner above.
+  const sharedWeekdaysByWorkoutDayId = new Map(sharedGroups.map((g) => [g.workoutDayId, g.weekdays]))
 
   const schedule = program?.schedule
   const scheduledDays = schedule
@@ -226,6 +245,20 @@ export default function PlanPage() {
     weekPlans.length > 0 &&
     weekPlans.every((wp) => wp.exercises.length === 0) &&
     scheduledDays.some((d) => hasManualSourceFor(d.workoutDay.id))
+
+  // Chunk 21 — "Mark this week as deload" / "Unmark this week" (SPEC
+  // "Deload" / "Plan screen" — "mark session or week as deload" is one of
+  // this screen's own Weeks actions, listed alongside "copy last week").
+  // Page-level, shown whenever the viewed week has anything scheduled and
+  // isn't read-only — independent of showCopyButton (that one hides once
+  // the week has real content; this one doesn't care, since marking never
+  // depends on whether anything's been planned by hand yet). weekIsFully
+  // Deload reads off weekPlans as they stand now (the same query the rest
+  // of this screen already reads) — a one-button toggle, same convention
+  // as COMPACT/ONLY THIS WEEK above, flipping between the two labels
+  // rather than two separate buttons.
+  const showWeekDeloadButton = !isPast && !plansLoading && !daysLoading && scheduledDays.length > 0
+  const weekIsFullyDeload = weekPlans.length > 0 && weekPlans.every((wp) => wp.isDeload)
 
   // ── No active meso ────────────────────────────────────────────────────────
 
@@ -381,6 +414,37 @@ export default function PlanPage() {
           </button>
         )}
 
+        {/* Mark/unmark this week as deload (chunk 21, SPEC "Deload") — same
+            dashed-button pattern as COPY WEEK above; a single toggle (same
+            convention as the per-session DELOAD pill) rather than two
+            separate buttons, label and fill flipping with weekIsFullyDeload. */}
+        {showWeekDeloadButton && (
+          <button
+            onClick={() => setWeekDeload.mutate({ isDeload: !weekIsFullyDeload })}
+            disabled={setWeekDeload.isPending}
+            style={{
+              width: '100%',
+              height: 48,
+              marginBottom: 16,
+              background: weekIsFullyDeload ? 'var(--accent-muted)' : 'var(--surface)',
+              border: `1px dashed ${weekIsFullyDeload ? 'var(--accent)' : 'var(--border-strong)'}`,
+              borderRadius: 11,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              cursor: setWeekDeload.isPending ? 'not-allowed' : 'pointer',
+              opacity: setWeekDeload.isPending ? 0.6 : 1,
+            }}
+          >
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: weekIsFullyDeload ? 'var(--accent)' : 'var(--text-secondary)' }}>
+              {setWeekDeload.isPending
+                ? (weekIsFullyDeload ? 'UNMARKING…' : 'MARKING…')
+                : (weekIsFullyDeload ? 'UNMARK THIS WEEK' : 'MARK WEEK AS DELOAD')}
+            </span>
+          </button>
+        )}
+
         {/* Loading */}
         {(plansLoading || daysLoading) && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
@@ -446,6 +510,7 @@ export default function PlanPage() {
               canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
               onlyThisWeek={onlyThisWeek}
               isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
+              sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
             />
           </>
         )}
@@ -477,9 +542,13 @@ interface PanelProps {
   // Chunk 20 (reviewer's note 7) — this workout covers more than one
   // weekday (G14); the offer banner says so when it applies.
   isShared: boolean
+  // Chunk 21 (reviewer's note 2) — the actual weekday list behind isShared
+  // above (null when not shared), for the per-session DELOAD toggle's own
+  // note ("Marks Mon, Tue, Wed, Thu, Fri — they share one plan").
+  sharedWeekdays: DayOfWeek[] | null
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared }: PanelProps) {
+function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -815,17 +884,34 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
           </div>
         </div>
 
-        {/* Deload toggle — only renders if a weekPlan row exists */}
+        {/* Deload toggle — only renders if a weekPlan row exists. Chunk 21:
+            this marks THAT ONE SESSION (this workout's own plan row for
+            this week) — unchanged mechanics (still keyed by weekPlanId
+            alone), now with an aria-label saying so explicitly, alongside
+            the new week-level action above. */}
         {weekPlan && (
           <button
             onClick={() => !isPast && toggleDeload.mutate({ weekPlanId: weekPlan.id, isDeload: !weekPlan.isDeload })}
             disabled={isPast}
+            aria-label={weekPlan.isDeload ? 'Unmark this session as deload' : 'Mark this session as deload'}
             style={{ height: 26, padding: '0 10px', background: weekPlan.isDeload ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${weekPlan.isDeload ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: isPast ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: weekPlan.isDeload ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}
           >
             DELOAD
           </button>
         )}
       </div>
+
+      {/* Shared-row note (chunk 21, reviewer's note 2 / G14) — this
+          workout's plan row covers more than one weekday, so the DELOAD
+          toggle above marks every one of them, as it already does for
+          every other edit on this row (same isShared condition the
+          apply-ahead banner below already uses). Shown next to the mark
+          itself, not just after it's tapped, so it's known beforehand. */}
+      {weekPlan && sharedWeekdays && sharedWeekdays.length > 0 && (
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
+          {`Marks ${sharedWeekdays.map((d) => DOW_SHORT_TITLE[d]).join(', ')} — they share one plan.`}
+        </p>
+      )}
 
       {/* Apply this change to planned weeks ahead (chunk 20) — dismissible,
           never blocking (reviewer's note 4): ignoring it leaves every later

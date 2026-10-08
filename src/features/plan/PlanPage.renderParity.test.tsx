@@ -52,6 +52,20 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // (a literal whole-row byte-diff against master is no longer possible once
 // weight/rep targets are genuinely editable — that test's own header
 // explains why, and what it checks instead).
+//
+// Chunk 21 re-capture: PlanPage's Weeks tab now always offers a page-level
+// "MARK WEEK AS DELOAD" / "UNMARK THIS WEEK" action (SPEC "Deload" — "mark
+// session or week as deload" is one of this screen's own week actions,
+// listed alongside "copy last week") whenever the viewed week isn't past
+// and has scheduled days — true for this fixture's own week 1, so its
+// render now includes that one new button. Same unchanged fixture data
+// (weekPlan.isDeload: false, so the button reads MARK, not UNMARK) and the
+// same re-capture convention as every visible change above. The per-session
+// DELOAD toggle itself is unaffected (still conditioned on weekPlan alone,
+// same as before) and this fixture's one program has no shared weekday
+// (monday only), so no shared-row note renders either — see
+// PlanPage.deload.test.tsx for both of those, and for the week action
+// itself.
 
 afterEach(() => cleanup())
 
@@ -218,6 +232,8 @@ vi.mock('./useWeekPlan', () => ({
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
+  // Chunk 21 - the week-level mark/unmark action's own hook.
+  useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
   useUpdateSet: () => ({ mutate: vi.fn() }),

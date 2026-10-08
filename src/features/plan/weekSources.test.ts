@@ -310,3 +310,75 @@ describe('resolveManualCopySource — "Copy last week" / "Copy this workout"', (
     expect(result).toEqual({ kind: 'week', weekNumber: 1 })
   })
 })
+
+// Chunk 21, reviewer's note 4 — "copy sources already skip deload sessions
+// (chunk 8)... add a test proving a newly marked session is skipped as a
+// source end to end, through weekSources.ts." This doesn't hand-build a
+// PlannedWeekRecord with isDeload: true (every case above already does
+// that) — it starts from the DB ROW shape v2_week_plans actually has, marks
+// one week's row the same way chunk 21's marking does (flips is_deload on
+// that one row, nothing else), maps rows into PlannedWeekRecord the SAME
+// way weekPlanService.ts's fetchPlannedWeekHistory does (the real function
+// both copyOneWorkoutFromHistory call sites feed into resolveManualCopySource),
+// and only then calls into weekSources.ts — so the thing under test is the
+// whole chain "mark a row" -> "read it back" -> "resolve a copy source",
+// not just the pure decision in isolation.
+describe('a newly marked session is skipped as a copy source, end to end through weekSources.ts (chunk 21)', () => {
+  // The exact row shape weekPlanService.ts's fetchPlannedWeekHistory selects
+  // (week_number, is_deload, v2_week_plan_sets(id)) — isEmpty is derived
+  // from the embed's length, never a stored column, same as production.
+  interface DbWeekPlanRow {
+    week_number: number
+    is_deload: boolean
+    v2_week_plan_sets: { id: string }[]
+  }
+
+  function toPlannedWeekRecords(rows: DbWeekPlanRow[]): PlannedWeekRecord[] {
+    return rows.map((r) => ({
+      weekNumber: r.week_number,
+      isDeload: r.is_deload,
+      isEmpty: (r.v2_week_plan_sets ?? []).length === 0,
+    }))
+  }
+
+  // setWeekDeload's own write shape (weekPlanService.ts): every row sharing
+  // the targeted week_number flips to the new is_deload value; every other
+  // row is untouched — exactly what the live scratch-SQL check proves
+  // against the real table, mirrored here against the in-memory rows this
+  // workout's own history query would return.
+  function markWeek(rows: DbWeekPlanRow[], weekNumber: number, isDeload: boolean): DbWeekPlanRow[] {
+    return rows.map((r) => (r.week_number === weekNumber ? { ...r, is_deload: isDeload } : r))
+  }
+
+  it('week 1 normal, week 2 freshly marked deload: week 3\'s source is week 1, not week 2', () => {
+    const rowsBeforeMarking: DbWeekPlanRow[] = [
+      { week_number: 1, is_deload: false, v2_week_plan_sets: [{ id: 'set-1' }] },
+      { week_number: 2, is_deload: false, v2_week_plan_sets: [{ id: 'set-2' }] },
+    ]
+    // Sanity: before marking, week 2 (the most recent) would win.
+    expect(resolveManualCopySource(toPlannedWeekRecords(rowsBeforeMarking), 3)).toEqual({ kind: 'week', weekNumber: 2 })
+
+    const rowsAfterMarking = markWeek(rowsBeforeMarking, 2, true)
+    // Marking touched only week 2's own row — week 1's is untouched.
+    expect(rowsAfterMarking.find((r) => r.week_number === 1)?.is_deload).toBe(false)
+    expect(rowsAfterMarking.find((r) => r.week_number === 2)?.is_deload).toBe(true)
+
+    const records = toPlannedWeekRecords(rowsAfterMarking)
+    expect(resolveManualCopySource(records, 3)).toEqual({ kind: 'week', weekNumber: 1 })
+    // The automatic path (v2_plan_week's own TS mirror) agrees.
+    expect(
+      resolveWeekSources({ planningType: 'week_dependent', weekNumber: 3, weekStart: 'copy', priorWeeks: records }).volume,
+    ).toEqual({ kind: 'week', weekNumber: 1 })
+  })
+
+  it('unmarking that same session restores it as the usable source again', () => {
+    const marked: DbWeekPlanRow[] = [
+      { week_number: 1, is_deload: false, v2_week_plan_sets: [{ id: 'set-1' }] },
+      { week_number: 2, is_deload: true, v2_week_plan_sets: [{ id: 'set-2' }] },
+    ]
+    expect(resolveManualCopySource(toPlannedWeekRecords(marked), 3)).toEqual({ kind: 'week', weekNumber: 1 })
+
+    const unmarked = markWeek(marked, 2, false)
+    expect(resolveManualCopySource(toPlannedWeekRecords(unmarked), 3)).toEqual({ kind: 'week', weekNumber: 2 })
+  })
+})
