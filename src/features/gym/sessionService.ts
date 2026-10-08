@@ -679,9 +679,26 @@ export async function fetchReferenceSessions(
 // uses — referenceLogic.ts stays untouched either way.
 //
 // No date bound, same "AUDIT P5" reasoning fetchReferenceCandidateSessions
-// documents above — now exercise-scoped rather than workout-day-scoped,
-// but still one user's history for one exercise, not expected to be large
-// at this app's scale.
+// documents above — now exercise-scoped rather than workout-day-scoped.
+//
+// Review fix: "not expected to be large at this app's scale" doesn't hold
+// against PostgREST's own hard cap — max_rows defaults to 1000
+// (supabase/config.toml), silently truncating ANY query past that many
+// rows, with no error and no signal anything was dropped. Scoped to one
+// workout day, fetchReferenceCandidateSessions/fetchReferenceSessions
+// above could reasonably stay unbounded (AUDIT P5's own call); scoped to
+// one EXERCISE across a user's entire history, several months of training
+// can exceed 1000 set_log rows on its own, and this is BATCHED across
+// every exercise id a whole screen needs (6-8+ exercises at once) — easily
+// reachable, not a hypothetical. An arbitrary (not even "oldest wins")
+// 1000-row slice could drop last week's session specifically, showing
+// LAST TIME from an older one, or even FIRST TIME. Same fix shape as
+// progressService.ts's own fetchAllExerciseSetLogRows (AUDIT H4) and
+// historyService.ts's Phase 3.4 pagination: loop `.range()` pages, ordered
+// by a stable key, until a short page proves there's nothing left — never
+// trust a single unbounded `.select()` to have returned everything.
+const REFERENCE_SESSIONS_PAGE_SIZE = 1000
+
 type DbCrossRunSetLog = DbSetLog & {
   v2_sessions: {
     id: string
@@ -694,18 +711,45 @@ type DbCrossRunSetLog = DbSetLog & {
   } | null
 }
 
+// Pagination extracted so the service test can assert the exact `.range`
+// bounds and `.order` calls each page makes, same "the lowest layer the
+// brief names" precedent this chunk's other tests already follow.
+async function fetchAllReferenceSetLogRows(
+  userId: string,
+  exerciseIds: string[],
+): Promise<DbCrossRunSetLog[]> {
+  const rows: DbCrossRunSetLog[] = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from('v2_set_logs')
+      .select('*, v2_sessions(id, date, completed_at, moved_to_date, status, mesocycle_id, v2_week_plans(is_deload))')
+      .eq('user_id', userId)
+      .in('exercise_id', exerciseIds)
+      // A stable order, same tie-break as progressService.ts's own
+      // fetchAllExerciseSetLogRows — logged_at alone can tie (an
+      // offline-queued batch), and a tie without a secondary key can
+      // duplicate or drop rows across separate `.range()` calls.
+      .order('logged_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + REFERENCE_SESSIONS_PAGE_SIZE - 1)
+    if (error) throw error
+
+    const page = data as unknown as DbCrossRunSetLog[]
+    rows.push(...page)
+    if (page.length < REFERENCE_SESSIONS_PAGE_SIZE) break
+    offset += REFERENCE_SESSIONS_PAGE_SIZE
+  }
+  return rows
+}
+
 export async function fetchReferenceSessionsByExercise(
   userId: string,
   exerciseIds: string[],
 ): Promise<Map<string, ReferenceSession[]>> {
   if (exerciseIds.length === 0) return new Map()
 
-  const { data, error } = await supabase
-    .from('v2_set_logs')
-    .select('*, v2_sessions(id, date, completed_at, moved_to_date, status, mesocycle_id, v2_week_plans(is_deload))')
-    .eq('user_id', userId)
-    .in('exercise_id', exerciseIds)
-  if (error) throw error
+  const rows = await fetchAllReferenceSetLogRows(userId, exerciseIds)
 
   type SessionMeta = {
     date: string
@@ -716,7 +760,7 @@ export async function fetchReferenceSessionsByExercise(
   const sessionMetaById = new Map<string, SessionMeta>()
   const logsByExercise = new Map<string, Map<string, SetLog[]>>()
 
-  for (const row of data as unknown as DbCrossRunSetLog[]) {
+  for (const row of rows) {
     const s = row.v2_sessions
     // Completed only (skipped/in_progress never match) and never a deload
     // session (SPEC "Deload sessions never count") — both are columns on

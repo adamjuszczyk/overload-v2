@@ -15,19 +15,36 @@ vi.mock('../../lib/supabase', () => ({
 const { fetchReferenceSessionsByExercise } = await import('./sessionService')
 
 // A chainable stand-in for supabase-js's query builder covering exactly
-// the calls fetchReferenceSessionsByExercise makes:
-// .select(...).eq('user_id', …).in('exercise_id', […]), awaited directly
-// (thenable chain, same precedent as sessionService.test.ts's own
-// makeChain).
+// the calls fetchAllReferenceSetLogRows makes (via fetchReferenceSessionsByExercise):
+// .select(...).eq('user_id', …).in('exercise_id', […]).order(...).order(...).range(from, to),
+// awaited directly (thenable chain, same precedent as sessionService.test.ts's
+// own makeChain). Review fix (paging, PostgREST's own max_rows=1000 cap) —
+// `.order`/`.range` are spies too, not just chain-returning no-ops, so a
+// test can assert the exact calls each page makes, same "assert the actual
+// .eq/.in/.lt calls" standard this chunk's other service tests already meet.
 function makeSelectChain(result: { data?: unknown; error?: unknown } = { data: [], error: null }) {
   const chain: Record<string, unknown> = {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    order: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   }
   return chain
+}
+
+// A fresh row, from `row()` below, differing only by its own (unique)
+// `id`/`logged_at` — used to build a full 1000-row first page.
+function fillerRow(index: number, sessionId: string, exerciseId: string, sessionDate: string) {
+  return row({
+    id: `log-filler-${index}`,
+    sessionId,
+    exerciseId,
+    sessionDate,
+    sessionStatus: 'completed',
+  })
 }
 
 // Minimal DbSetLog + embedded v2_sessions/v2_week_plans row — every field
@@ -105,6 +122,83 @@ describe('fetchReferenceSessionsByExercise — the candidate query itself (asser
     const result = await fetchReferenceSessionsByExercise('user-1', [])
     expect(result).toEqual(new Map())
     expect(fromMock).not.toHaveBeenCalled()
+  })
+})
+
+// Review fix (PostgREST's own max_rows cap, default 1000 — supabase/config.toml):
+// an unbounded `.select()` on v2_set_logs can silently return an ARBITRARY
+// 1000-row slice once a screen's exercises have logged more than that many
+// rows in total (reachable within months across 6-8+ exercises) — with no
+// error, nothing to catch downstream. If last week's rows are among the
+// ones dropped, the panel would show LAST TIME from an older session, or
+// even FIRST TIME, for no visible reason. Fixed by paging with `.range()`
+// in REFERENCE_SESSIONS_PAGE_SIZE (1000) chunks, ordered by a stable key,
+// until a short page proves nothing is left — same shape as
+// progressService.ts's own fetchAllExerciseSetLogRows (AUDIT H4).
+describe('fetchReferenceSessionsByExercise — paging past PostgREST\'s max_rows cap (review fix)', () => {
+  it('orders by a stable key (logged_at, then id) on every page — so paging itself cannot duplicate or drop a row at a tie', async () => {
+    const chain = makeSelectChain({ data: [], error: null })
+    fromMock.mockReturnValue(chain)
+
+    await fetchReferenceSessionsByExercise('user-1', ['ex-1'])
+
+    expect(chain.order).toHaveBeenCalledWith('logged_at', { ascending: true })
+    expect(chain.order).toHaveBeenCalledWith('id', { ascending: true })
+  })
+
+  it('a single short page (under 1000 rows) is read with exactly one call, ranged [0, 999]', async () => {
+    const chain = makeSelectChain({ data: [row({ id: 'log-1', sessionId: 'sess-1', exerciseId: 'ex-1', sessionDate: '2026-08-05', sessionStatus: 'completed' })], error: null })
+    fromMock.mockReturnValue(chain)
+
+    await fetchReferenceSessionsByExercise('user-1', ['ex-1'])
+
+    expect(fromMock).toHaveBeenCalledTimes(1)
+    expect(chain.range).toHaveBeenCalledWith(0, 999)
+  })
+
+  it('a full first page (1000 rows) is followed by a second page, ranged [1000, 1999] — and the most recent session (only on page 2) is not lost', async () => {
+    // Page 1: exactly 1000 rows, all for a single OLDER session (same
+    // exercise) — a full page, by itself indistinguishable from "there
+    // might be more". Page 2: one more row, for a DIFFERENT, MORE RECENT
+    // session. Ascending logged_at/id means the newest rows sort LAST, so
+    // this models exactly the failure the review found: without a second
+    // page, the most recent session's own row is the one that goes
+    // missing, not an arbitrary unrelated one.
+    const page1Rows = Array.from({ length: 1000 }, (_, i) => fillerRow(i, 'sess-old', 'ex-1', '2026-01-01'))
+    const page2Rows = [row({ id: 'log-recent', sessionId: 'sess-recent', exerciseId: 'ex-1', sessionDate: '2026-08-05', sessionStatus: 'completed' })]
+
+    const page1Chain = makeSelectChain({ data: page1Rows, error: null })
+    const page2Chain = makeSelectChain({ data: page2Rows, error: null })
+    fromMock.mockReturnValueOnce(page1Chain).mockReturnValueOnce(page2Chain)
+
+    const result = await fetchReferenceSessionsByExercise('user-1', ['ex-1'])
+
+    expect(fromMock).toHaveBeenCalledTimes(2)
+    expect(page1Chain.range).toHaveBeenCalledWith(0, 999)
+    expect(page2Chain.range).toHaveBeenCalledWith(1000, 1999)
+
+    const sessionIds = (result.get('ex-1') ?? []).map((s) => s.sessionId)
+    expect(new Set(sessionIds)).toEqual(new Set(['sess-old', 'sess-recent']))
+  })
+
+  it('three full pages (3000 rows total) followed by a short fourth page are all read — paging does not stop early', async () => {
+    const chains = [0, 1, 2].map((p) =>
+      makeSelectChain({
+        data: Array.from({ length: 1000 }, (_, i) => fillerRow(p * 1000 + i, `sess-page-${p}`, 'ex-1', '2026-01-01')),
+        error: null,
+      }),
+    )
+    const lastChain = makeSelectChain({ data: [row({ id: 'log-last', sessionId: 'sess-last', exerciseId: 'ex-1', sessionDate: '2026-08-05', sessionStatus: 'completed' })], error: null })
+    fromMock.mockReturnValueOnce(chains[0]).mockReturnValueOnce(chains[1]).mockReturnValueOnce(chains[2]).mockReturnValueOnce(lastChain)
+
+    const result = await fetchReferenceSessionsByExercise('user-1', ['ex-1'])
+
+    expect(fromMock).toHaveBeenCalledTimes(4)
+    expect(chains[0].range).toHaveBeenCalledWith(0, 999)
+    expect(chains[1].range).toHaveBeenCalledWith(1000, 1999)
+    expect(chains[2].range).toHaveBeenCalledWith(2000, 2999)
+    expect(lastChain.range).toHaveBeenCalledWith(3000, 3999)
+    expect((result.get('ex-1') ?? []).some((s) => s.sessionId === 'sess-last')).toBe(true)
   })
 })
 
