@@ -92,6 +92,10 @@ type RawSessionFull = {
   pump_rating: PumpRating | null
   v2_set_logs: RawLogFull[]
   v2_mesocycles: { id: string; name: string } | null
+  // Chunk 24 — read straight from v2_sessions (unlike the two views above,
+  // this already selects from the real table), so this is a guaranteed
+  // column, not an "absent until" optional one.
+  moved_to_date: string | null
 }
 
 type RawSummaryRow = {
@@ -130,6 +134,29 @@ export interface HistorySessionsPage {
   nextOffset: number | null
 }
 
+// Chunk 24 (SPEC "Weekday" — History shows "the day a session was actually
+// done" — moved_to_date when set, else date) — v2_history_session_summary
+// and v2_session_type_history (009/011) were both defined before
+// moved_to_date existed (027) and neither view's own select list carries
+// it; redefining either view needs a migration, out of scope for this
+// chunk's code-only branch (see this chunk's report). A second, bounded
+// lookup — scoped to exactly this page's own ids, never unbounded — fills
+// in the one column each view is missing, same "a small extra query beside
+// a view-based list" precedent as fetchWorkoutLineageGroup below.
+// fetchHistoryDetail (further down) doesn't need this: it already reads
+// v2_sessions directly, so moved_to_date is just one more column in its
+// own select.
+async function fetchMovedToDateByIds(ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map()
+  const { data, error } = await supabase.from('v2_sessions').select('id, moved_to_date').in('id', ids)
+  if (error) throw error
+  const map = new Map<string, string>()
+  for (const row of data as { id: string; moved_to_date: string | null }[]) {
+    if (row.moved_to_date) map.set(row.id, row.moved_to_date)
+  }
+  return map
+}
+
 export async function fetchHistorySessions(
   userId: string,
   offset = 0,
@@ -148,14 +175,21 @@ export async function fetchHistorySessions(
     // across separate page requests without a secondary key. Without this,
     // a same-day session could appear twice (or never) across "load more"
     // pages. id is arbitrary but stable, which is all a tiebreaker needs.
+    // Chunk 24: this order/page is unchanged — still driven by the stored
+    // `date` column, never the effective (moved_to_date ?? date) one below,
+    // which only changes what's DISPLAYED (see this chunk's report on why
+    // sort/paging stays keyed on the real column).
     .order('date', { ascending: false })
     .order('id', { ascending: true })
     .range(offset, offset + pageSize - 1)
   if (error) throw error
 
-  const rows: HistoryRow[] = (data as unknown as RawSummaryRow[]).map((r) => ({
+  const rawRows = data as unknown as RawSummaryRow[]
+  const movedToDateById = await fetchMovedToDateByIds(rawRows.map((r) => r.id))
+
+  const rows: HistoryRow[] = rawRows.map((r) => ({
     id: r.id,
-    date: r.date,
+    date: movedToDateById.get(r.id) ?? r.date,
     status: r.status as SessionStatus,
     note: r.note,
     startedAt: r.started_at,
@@ -183,7 +217,7 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
     .from('v2_sessions')
     .select(`
       id, date, status, note, started_at, completed_at,
-      workout_day_id, mesocycle_id, energy_rating, pump_rating,
+      workout_day_id, mesocycle_id, energy_rating, pump_rating, moved_to_date,
       v2_set_logs(
         id, exercise_id, set_number, weight, reps, rir,
         rest_seconds, is_skipped, is_dropset, parent_set_id, stage_index, logged_at, form_rating, is_warmup,
@@ -283,7 +317,12 @@ export async function fetchHistoryDetail(sessionId: string): Promise<HistoryDeta
 
   return {
     id: session.id,
-    date: session.date,
+    // Chunk 24 (SPEC — History shows the day a session was actually done):
+    // moved_to_date when set, else the plain `date` column — the exact same
+    // substitution fetchHistorySessions/fetchSessionTypeHistory apply below,
+    // here needing no second lookup since this query already reads
+    // v2_sessions directly.
+    date: session.moved_to_date ?? session.date,
     status: session.status as SessionStatus,
     note: session.note,
     startedAt: session.started_at,
@@ -426,9 +465,14 @@ export async function fetchSessionTypeHistory(
     .range(offset, offset + pageSize - 1)
   if (error) throw error
 
-  const rows: SessionTypeHistoryRow[] = (data as unknown as RawSessionTypeRow[]).map((r) => ({
+  const rawRows = data as unknown as RawSessionTypeRow[]
+  // Chunk 24 — same "the view predates moved_to_date" gap as
+  // fetchHistorySessions above, same bounded-by-this-page fix.
+  const movedToDateById = await fetchMovedToDateByIds(rawRows.map((r) => r.session_id))
+
+  const rows: SessionTypeHistoryRow[] = rawRows.map((r) => ({
     sessionId: r.session_id,
-    date: r.date,
+    date: movedToDateById.get(r.session_id) ?? r.date,
     mesocycleId: r.mesocycle_id,
     weekNumber: r.week_number,
     isDeload: r.is_deload,
