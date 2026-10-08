@@ -1,15 +1,17 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 16:58 UTC, chunk 22 boundary — chunks 1–22 merged and live (migrations through 035); chunk 23 next.*
+*Rewritten at every chunk boundary. Last: 2026-10-08 21:06 UTC, chunk 23 boundary — chunks 1–23 merged and live (migrations through 035); chunk 24 being built (its migration 036 will be yours to merge).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
+- 69 (question) — LAST WEEK by calendar week across runs (built), or only within the current run? Blocked: nothing.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 69 — Chunk 23 app steps: LAST WEEK unchanged for same-workout last week; LAST TIME + days for another workout or an earlier run; FIRST TIME only if never done; deload sessions never shown. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 68 — Chunk 22 app steps: switch deload rules on; mark a session → halved sets, 75% of last time's lifted weight; edit one, unmark → originals back; program CUSTOM override wins; a started session is flag-only; switch rules off after if wanted. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 66 — Chunk 21 app steps: mark a week deload, unmark one session, DELOAD labels on Today/preview/workout, next week copies from the last normal one; unmark afterwards. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 65 — Chunk 20 app steps: a weight change applied ahead lands only on that set; swap ahead then a follow-up weight change both land; no offer after only-this-week; ignoring leaves later weeks alone. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -55,6 +57,26 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 69 Chunk 23 live check: "last time" by exercise (Adam's steps)
+Severity: deferred
+Chunk: 23
+**Ask:** Chunk 23 live check. Do the steps below in the app and tell me the results. A failed step is blocking. Also: LAST WEEK is decided by calendar week, so a match from last week counts even if it came from your previous run. Keep that, or count LAST WEEK only within the current run?
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 23 is `394ce31`)
+1. In a session, an exercise you did last week in the same workout shows LAST WEEK exactly as before.
+2. An exercise you last did in a different workout (or only in an earlier run) shows LAST TIME with the right number of days.
+3. An exercise you've never done shows FIRST TIME.
+4. If you've marked a session deload (chunk 21/22 checks), its sets never appear as LAST WEEK or LAST TIME.
+**Answer:**
+**Evidence:**
+What happened: chunk 23 (#47 `394ce31`, Vercel 21:05 UTC) is live. No migration.
+- Reviewer's checks: 1545 tests; replay 36/36; embeds 30/30 locally and live; referenceLogic.ts and Coach unchanged; D30 untouched; a master-captured parity fixture for the plain LAST WEEK panel.
+- Failed review once (the cross-run query was unpaged under the 1000-row cap) and passed on the retry.
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md names a live check.
+Cost of deferral: if it fails, chunk 23 is fixed before chunk 24 merges.
+Provisional path taken: merged; chunk 24 is being built (its migration 036 is yours to merge).
 
 ### 68 Chunk 22 live check: deload rules (Adam's steps)
 Severity: deferred

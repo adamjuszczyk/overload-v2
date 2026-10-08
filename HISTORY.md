@@ -23230,3 +23230,10 @@ Provisional path taken: (a).
     - 10: 033 `5fe3045`, code `a0d1651`;
     - 11–19: see HISTORY.md (2026-10-07 compaction); 034 by Adam, 035 by the reviewer (D29), code by the reviewer.
     6–8 were merged by Adam (2026-10-05); 9–10 by the reviewer (D29). 9 and 10 each failed review once and passed on the retry.
+
+## 2026-10-08 (chunk 23 boundary, CONTEXT compaction) — Moved out of CONTEXT.md (stale)
+
+- "- Scratch copies: the chunk 1 cluster (`/var/lib/postgresql/chunk1-pg16`, port 54329) is not running in this container any more; a faithful replay is now `bash scripts/replay-migrations.sh --keep` (Docker; start `dockerd` first)."
+- "; 648 tests in 44 files pass (re-run 2026-10-04 on chunk 5)"
+- "- Builders run on the `sonnet` model alias (accepted for this build). From chunk 2 on they run as the `builder` agent type, which its own harness reports as Claude Sonnet 5; builder commits from chunk 3's retry on carry that model's co-author line (chunk 1's and 2's builder commits and chunk 3's first commit carry the reviewer's Opus line, by the reviewer's mistaken instruction). Builder effort can't be set from inside the session: the Agent tool has no effort parameter, and an agent definition (`~/.claude/agents/builder.md`: Sonnet 5, effort max) written mid-session wasn't loaded when chunk 1 started. It showed up as the agent type `builder` later in the same session, and whether its effort setting takes effect can't be confirmed from inside the session."
+— replaced by current one-liners.
