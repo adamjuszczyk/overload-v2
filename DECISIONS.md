@@ -60,6 +60,7 @@ Chunk: 20
 **Ask:** Chunk 20 ("Apply this change to planned weeks ahead") failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else.
 **When:** before I build further.
 **Blocked until done:** merging chunk 20 and building chunks 21–26.
+**Answer:** (a), Adam 2026-10-08: one more retry, tests only.
 **Evidence:**
 - **First failure** (fixed in `2db2ad8`): two real bugs.
   1. A swap applied ahead gave each later week its own new program-exercise row, so any later apply-ahead on that exercise found nothing ("applied to 0 of 2").
