@@ -270,17 +270,24 @@ function set(overrides: Partial<DeloadSourceSet>): DeloadSourceSet {
 
 describe('calculateDeloadSets', () => {
   it('a staged set counts as one: dropping a head drops its stages with it, and a kept staged set counts once toward "how many kept"', () => {
-    // Exercise has 2 "sets" by position: set 1 is a staged head+1 stage,
-    // set 2 is a plain head. −50% should keep exactly 1 of the 2 — set 1,
-    // staged form and all (first by position, per "removes the LAST").
+    // Exercise has 3 "sets" by position: set 1 is a staged head+1 stage,
+    // sets 2-3 are plain heads. −50% down on 3 (correct, heads-only count)
+    // keeps exactly 1 — set 1, staged form and all (first by position, per
+    // "removes the LAST"). Deliberately an ODD correct count with exactly
+    // one stage: a broken count that includes the stage row (4, not 3)
+    // rounds to a DIFFERENT kept total (2, not 1) at -50% down — floor(3/2)
+    // = 1 but floor(4/2) = 2 — so a miscount here is never masked by a
+    // coincidental equal result the way an even count could mask it (break
+    // proof: counting the stage as its own set must fail this test).
     const head1 = set({ id: 'h1', setNumber: 1, stageKind: 'dropset' })
     const stage1 = set({ id: 's1', setNumber: 1, parentId: 'h1', stageIndex: 1, isDropset: true })
     const head2 = set({ id: 'h2', setNumber: 2 })
+    const head3 = set({ id: 'h3', setNumber: 3 })
     const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
 
-    const result = calculateDeloadSets([head1, stage1, head2], rules)
+    const result = calculateDeloadSets([head1, stage1, head2, head3], rules)
 
-    expect(result.map((r) => r.sourceId)).toEqual(['h1', 's1']) // head2 (the LAST set) dropped entirely
+    expect(result.map((r) => r.sourceId)).toEqual(['h1', 's1']) // sets 2 and 3 (the LAST two) dropped entirely
   })
 
   it('warmups are never touched or counted: a 4-working-set exercise with 2 warmups still keeps 2 working sets at −50%, and every warmup is untouched', () => {
