@@ -1,16 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 10:57 UTC, chunk 21 boundary — chunks 1–21 merged and live (migrations through 035); chunk 22 on a third, test-only retry (67 answered (a)).*
+*Rewritten at every chunk boundary. Last: 2026-10-08 16:58 UTC, chunk 22 boundary — chunks 1–22 merged and live (migrations through 035); chunk 23 next.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- 67 — Answered (a): chunk 22 gets one more test-only retry (discriminating executor fixtures for every data source). In progress.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 68 — Chunk 22 app steps: switch deload rules on; mark a session → halved sets, 75% of last time's lifted weight; edit one, unmark → originals back; program CUSTOM override wins; a started session is flag-only; switch rules off after if wanted. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 66 — Chunk 21 app steps: mark a week deload, unmark one session, DELOAD labels on Today/preview/workout, next week copies from the last normal one; unmark afterwards. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 65 — Chunk 20 app steps: a weight change applied ahead lands only on that set; swap ahead then a follow-up weight change both land; no offer after only-this-week; ignoring leaves later weeks alone. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 63 — Chunk 19 app steps: weight, rep override and tags on a set; apply-to-all; AMRAP → RIR 0; shown in the session; next week carries weight and RIR, not tags; say if the busier Plan rows should collapse. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -56,20 +56,27 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 67 Chunk 22 failed review twice — one more test-only retry, or merge?
-Severity: blocking
+### 68 Chunk 22 live check: deload rules (Adam's steps)
+Severity: deferred
 Chunk: 22
-**Ask:** Chunk 22 (deload rules) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else.
-**When:** before I build further.
-**Blocked until done:** merging chunk 22 and building chunks 23–26.
-**Answer:** (a), Adam 2026-10-08: one more retry, tests only.
+**Ask:** Chunk 22 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 22 is `9bb0dde`; use a coming session whose workout you trained last week)
+1. Settings → DELOAD RULES: switch it on. Sets −50% rounding down is the default; switch the weight rule on (starts at 75%).
+2. In Plan, mark that coming session DELOAD: its sets halve (rounded down, never below 1; a staged set counts as one; warmups stay) and the weights are 75% of what you actually lifted last time, rounded down to 2.5 kg.
+3. Change one of the calculated sets by hand, then unmark the session: your original sets are back exactly as before marking.
+4. In the program tab, set this program's deload rules to CUSTOM with sets −1: marking now removes one set instead of half (the program override wins).
+5. Mark a session you've already started: it's only flagged, with an "Already started" notice; its sets don't change.
+6. Unmark everything and switch the rules back off if you don't want them yet.
+**Answer:**
 **Evidence:**
-- **First failure** (fixed in `8847fbf`/`577a87e`): a real data bug. Marking a session deload with rules on rebuilt its sets from the last normal week's exercise list. Where the two weeks' exercises differed (an exercise added, removed or swapped since), it wrote sets for exercises the session doesn't have and dropped sets for ones it does. Now each exercise is matched to the same exercise in the base week (chunk 20's slot rule); one with no match is calculated from its own sets; nothing is written outside the session's own list. Proven by unit tests, executor tests and scratch SQL (0 orphaned sets).
-- **Second failure** (the retry, `6eead92`): the fix is correct by reading, but its central rule is unproven where it runs. If `markSessionDeload` calculated a matched exercise from the marked week's **own** sets instead of the last normal week's, all 1486 tests would still pass, because the executor tests' base and marked sets are interchangeable. The same class of gap as chunks 16, 20 and 21.
-- Everything else is green on `6eead92`: typecheck, 1486 tests, build, 117 script tests, every check, replay 36/36, embeds 29/29 locally and live, no workout-screen file changed, the D30 fixture untouched. The new Settings section is proven purely additive (all nine existing sections byte-identical to master).
-A competent default would: send it back for the one missing test — doesn't apply because: your rule makes a second review failure a stop.
-Cost of deferral: building pauses (chunks 23–26).
-Provisional path taken: nothing merged; `build/chunk-22` pushed for safekeeping (no PR).
+What happened: chunk 22 (#46 `9bb0dde`, Vercel 16:57 UTC) is live. No migration.
+- Failed review twice (67): first a data bug (sets rebuilt from the base week's exercise list orphaned or dropped sets when the lists differed), then the data source was unproven; you chose a third, tests-only retry, which passed.
+- Reviewer's checks: 1492 tests; replay 36/36; embeds 29/29 locally and live; no workout-screen file changed; Settings purely additive; scratch SQL: snapshot, replace, exact restore, 0 orphans.
+A competent default would: count the executor and scratch proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 22 is fixed before chunk 23 merges.
+Provisional path taken: merged; chunk 23 is next.
 
 ### 66 Chunk 21 live check: deload per session (Adam's steps)
 Severity: deferred
@@ -472,6 +479,21 @@ Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 start
 Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
 
 ## Closed
+
+### 67 Chunk 22 failed review twice — one more test-only retry, or merge?
+Severity: blocking (closed 2026-10-08: (a); the retry passed and chunk 22 merged)
+Chunk: 22
+**Ask:** Chunk 22 (deload rules) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else.
+**When:** before I build further.
+**Blocked until done:** merging chunk 22 and building chunks 23–26.
+**Answer:** (a), Adam 2026-10-08: one more retry, tests only.
+**Evidence:**
+- **First failure** (fixed in `8847fbf`/`577a87e`): a real data bug. Marking a session deload with rules on rebuilt its sets from the last normal week's exercise list. Where the two weeks' exercises differed (an exercise added, removed or swapped since), it wrote sets for exercises the session doesn't have and dropped sets for ones it does. Now each exercise is matched to the same exercise in the base week (chunk 20's slot rule); one with no match is calculated from its own sets; nothing is written outside the session's own list. Proven by unit tests, executor tests and scratch SQL (0 orphaned sets).
+- **Second failure** (the retry, `6eead92`): the fix is correct by reading, but its central rule is unproven where it runs. If `markSessionDeload` calculated a matched exercise from the marked week's **own** sets instead of the last normal week's, all 1486 tests would still pass, because the executor tests' base and marked sets are interchangeable. The same class of gap as chunks 16, 20 and 21.
+- Everything else is green on `6eead92`: typecheck, 1486 tests, build, 117 script tests, every check, replay 36/36, embeds 29/29 locally and live, no workout-screen file changed, the D30 fixture untouched. The new Settings section is proven purely additive (all nine existing sections byte-identical to master).
+A competent default would: send it back for the one missing test — doesn't apply because: your rule makes a second review failure a stop.
+Cost of deferral: building pauses (chunks 23–26).
+Provisional path taken: nothing merged; `build/chunk-22` pushed for safekeeping (no PR).
 
 ### 64 Chunk 20 failed review twice — merge, or one more test-only retry?
 Severity: blocking (closed 2026-10-08: (a); the retry passed and chunk 20 merged)

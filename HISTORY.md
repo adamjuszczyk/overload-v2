@@ -23213,3 +23213,20 @@ Provisional path taken: (a).
 - "**Chunk 10 boundary (2026-10-06 07:45 UTC): chunks 1–10 merged and live.** Chunks 11 (`eb54190`), 12's code (`6b725da`) and **13 (supersets, #36 `90cd1e4`, Vercel 17:59 UTC)** are merged and live. 11 and 13 each failed review once and passed on the retry; 13 was also hardened (block keyed by its members' ids). Chunk 12 **migration 034** merged by Adam (#35 `a76b146`, 2026-10-06 18:27 UTC) and live: deploy success; `select=target_reps` → 42703; backup table present; embeds 27/27 live. Adam's before/after query outputs are pending (DECISIONS 54). **Chunk 14 (staged sets) merged and live** (#37 `a66e803`, Vercel 22:37 UTC; failed review once: the G14 split dropped stages). **Chunk 15 (warmup sets) merged and live**: 035 via #38 `9c0e679` (reviewer, D29), code via #39 `11beaac` (Vercel 09:39 UTC; failed review once: superset members' warmups not rendered, no warmup edit/delete). `scripts/check-warmup-consumers.mjs` now runs at every boundary. **Chunk 16 (rest chain) merged and live** (#40 c6e5120, Vercel 14:57 UTC; failed review once: no real-session proof that a legacy null-kind dropset keeps its timer). **Chunk 17 (tempo) merged and live** (#41 8ce2b3b, Vercel 15:30 UTC; passed review first time). **Chunk 18 (warmup routine) merged and live** (#42 76f7bed, Vercel 16:15 UTC; passed review first time). **Chunk 19 (week targets and tags) merged and live** (#43 da386c4, Vercel 20:24 UTC; failed review once: no proof the workout screen shows a weight target in the exercise's unit). **Chunk 20 (apply ahead) in progress.**"
 - "- Live checks:   - passed: 35, 37, 40, 41's parity query;   - waived (not passed): 36;   - open: 39 (chunk 5, step 1 rewritten), 46 (chunk 7), 47 (chunk 8), 51 (chunk 9), 53 (chunk 10)."
 — replaced by a compact status line; chunks 11–19 merged and live; open live checks now read from DECISIONS "Waiting on Adam".
+
+## 2026-10-08 (chunk 22 boundary, CONTEXT compaction) — Moved out of CONTEXT.md (superseded counts and proof history)
+
+- "Run the tests with `node --test "scripts/*.test.mjs"` (92 tests: 26 migration-rule + 5 verify-rls-tables + 31 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order + 3 probe-live-columns + 3 check-embeds; 92 of 92 pass 2026-10-04; not part of `npm test`, which is Vitest over `src/`)."
+- "Proven in this repo 2026-10-03 (planner build, before chunk 1): with `'v2_session_exercise_swaps'` deleted from `TABLES`, test 3 failed naming it and the three files that use it (4 pass, 1 fail); the file restored byte-identical (`cmp`), 5 of 5 pass. The adding-a-fake-table direction was not re-proven here."
+- "(25 tables/views found by searching `src/` and `api/` for `.from('…')`)"
+— replaced by current counts; the proofs stand as recorded here.
+- Also moved (the per-chunk merge list):
+  - Finished (details in HISTORY.md and DECISIONS):
+    - 1–5 (2026-10-04);
+    - 6: 028 `71247e7`, code `9fd4876`;
+    - 7: 029 `61b2670`, code `55bed82`, 030 `34c5887`;
+    - 8: 031 `c128d00`, code `071151b`;
+    - 9: 032 `25b2a61`, code `2340c48`;
+    - 10: 033 `5fe3045`, code `a0d1651`;
+    - 11–19: see HISTORY.md (2026-10-07 compaction); 034 by Adam, 035 by the reviewer (D29), code by the reviewer.
+    6–8 were merged by Adam (2026-10-05); 9–10 by the reviewer (D29). 9 and 10 each failed review once and passed on the retry.
