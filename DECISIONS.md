@@ -1,12 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 20:25 UTC, chunk 19 boundary — chunks 1–19 merged and live (migrations through 035); chunk 20 stopped after a second review failure (64).*
+*Rewritten at every chunk boundary. Last: 2026-10-07 20:25 UTC, chunk 19 boundary — chunks 1–19 merged and live (migrations through 035); chunk 20 on a third, test-only retry (64 answered (a)).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- **64 — BLOCKING: chunk 20 failed review twice (the second time only a missing Plan wiring test; the code is correct). (a) one more test-only retry (recommended), (b) merge as is, (c) other. Blocked: chunk 20's merge and chunks 21–26.**
+- 64 — Answered (a): chunk 20 gets one more test-only retry (screen-layer wiring tests for every wired edit). In progress.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
