@@ -13,6 +13,7 @@ import type {
   ProgramSupersetBlock,
 } from '../../types'
 import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgramExercises'
+import { validateDeloadRules, type DeloadRules } from '../../lib/deloadRules'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,10 @@ type DbProgram = {
   // Absent until migration 027 — chunk 8's own field, same fallback. Reads
   // as 'week_dependent', 027's own column default.
   planning_type?: PlanningType
+  // Absent until migration 027 — chunk 22's own field (jsonb; null = "use
+  // my default", the global v2_user_settings.deload_rules). Validated on
+  // read the same way settingsService.ts validates the user's own column.
+  deload_rules?: unknown
 }
 
 type DbWorkoutDay = {
@@ -96,6 +101,11 @@ function toProgram(row: DbProgram): Program {
     updatedAt: row.updated_at,
     kind: row.kind ?? 'saved',
     planningType: row.planning_type ?? 'week_dependent',
+    // Chunk 22 — absent/undefined (pre-027, or simply never overridden)
+    // reads as null here too, same "use my default" meaning either way;
+    // a malformed stored value degrades to null defensively, same posture
+    // as the user's own global column (settingsService.ts).
+    deloadRules: validateDeloadRules(row.deload_rules),
   }
 }
 
@@ -211,6 +221,24 @@ export async function updatePlanningType(id: string, planningType: PlanningType)
   const { error } = await supabase
     .from('v2_programs')
     .update({ planning_type: planningType, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// Chunk 22 (SPEC.md "Deload rules": "global default in settings, override
+// per program"; "Programs and runs" — design fields "exist only in the
+// run's copy... editable for both planning types"). A design field, same
+// posture as updateProgramExerciseRest/updateProgramExerciseTempo below:
+// never gated by volumeReadOnly. null writes "use my default" (clears the
+// override back to following the global setting); a validated DeloadRules
+// object writes this program's own override — the caller
+// (DeloadRulesEditor.tsx via StepVolume.tsx) is the one place that
+// constructs it, same division of labour updateProgramExerciseTempo
+// already takes with normaliseTempo (this function trusts its caller).
+export async function updateProgramDeloadRules(id: string, deloadRules: DeloadRules | null): Promise<void> {
+  const { error } = await supabase
+    .from('v2_programs')
+    .update({ deload_rules: deloadRules, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }

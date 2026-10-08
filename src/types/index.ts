@@ -2,6 +2,7 @@ import type { AnalysisInput } from '../features/coach/analysisInput'
 import type { WeekAnalysisInput } from '../features/coach/weekAnalysisInput'
 import type { QaContext } from '../features/coach/qaContext'
 import type { MesoAnalysisPromptPayload } from '../features/coach/coachMesoPrompt'
+import type { DeloadRules, DeloadRestoreEntry } from '../lib/deloadRules'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,17 @@ export interface Program {
   // real row read before migration 027. Undefined is treated as
   // 'week_dependent' (the column default) wherever this is read.
   planningType?: PlanningType
+  // v2_programs.deload_rules (migration 027; read/written starting chunk 22
+  // — SPEC.md "Deload rules": "global default in settings, override per
+  // program"). Null/undefined = "use my default" (the global
+  // v2_user_settings.deload_rules below); a (validated) DeloadRules object
+  // = this program's own override, same shape either way
+  // (deloadRules.ts's validateDeloadRules). A design field — editable in
+  // the planner's step 3 and the program tab for both planning types
+  // (StepVolume.tsx), carried forward by v2_copy_program (027/028) into
+  // every run's own copy. Optional for the same "may not exist yet"
+  // reason as planningType above.
+  deloadRules?: DeloadRules | null
 }
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────
@@ -339,6 +351,17 @@ export interface WeekPlan {
   // exactly — nothing yet reads this as capable of diverging from it.
   exercises: ProgramExercise[]
   createdAt: string
+  // v2_week_plans.deload_restore (migration 027; read/written starting
+  // chunk 22 — SPEC.md "Deload": "unmarking a session whose sets the rules
+  // calculated restores what was planned before it was marked"). Null =
+  // no snapshot (this session was never marked with rules on, or has
+  // since been restored); a (validated) array = the exact pre-mark sets
+  // (deloadRules.ts's DeloadRestoreEntry — id-free, regrouped by
+  // (programExerciseId, setNumber, stageIndex) at restore time). Optional,
+  // same "may not exist yet" convention as isDeload's own siblings above —
+  // every hand-built WeekPlan literal across the existing plan test suite
+  // predates this column.
+  deloadRestore?: DeloadRestoreEntry[] | null
 }
 
 // One WeekPlanSet per planned set per exercise.
@@ -545,6 +568,14 @@ export interface UserSettings {
   // (SetRow.tsx's isWarmup branch) — read live via useSettingsStore, same
   // convention as measureSetTime.
   warmupDisplay: 'rows' | 'tick'
+  // v2_user_settings.deload_rules (migration 027; read/written starting
+  // chunk 22 — SPEC.md "Settings": "default deload rules"; "Deload rules":
+  // "global default in settings, override per program"). Null = no rules
+  // switched on (the section's own off-by-default state) — never `{}`:
+  // DeloadRulesEditor.tsx writes null the moment every individual rule is
+  // switched off, the same canonicalisation deloadRules.ts's own
+  // validateDeloadRules applies on read.
+  deloadRules: DeloadRules | null
 }
 
 // ─── Coach (Daily Session Analysis) ────────────────────────────────────────────

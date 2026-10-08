@@ -11,11 +11,15 @@ const setCountMutateMock = vi.fn()
 const updateTargetMutateMock = vi.fn()
 const setAllTargetMutateMock = vi.fn()
 const updateRestMutateMock = vi.fn()
+const updateDeloadRulesMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
   useProgramExercises: (workoutDayId: string) => ({ data: exercisesByDay[workoutDayId] ?? [], isLoading: false }),
   useUpdatePlanningType: () => ({ mutate: updatePlanningTypeMutateMock, isPending: false }),
+  // Chunk 22 — the program-tab/planner deload-rules override, mounted
+  // unconditionally right alongside the PLANNING picker above.
+  useUpdateProgramDeloadRules: () => ({ mutate: updateDeloadRulesMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', async () => {
@@ -55,6 +59,7 @@ afterEach(() => {
   updateTargetMutateMock.mockReset()
   setAllTargetMutateMock.mockReset()
   updateRestMutateMock.mockReset()
+  updateDeloadRulesMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -408,6 +413,72 @@ describe('StepVolume — planning type picker', () => {
 
     expect((screen.getByText('STABLE') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByText('WEEK-DEPENDENT') as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+// Chunk 22 — the per-program deload-rules override (reviewer's note 7:
+// "a per-program override, either 'Use my default' (null) or its own
+// rules... a design field, editable for both planning types"). Mounted
+// unconditionally (never gated by volumeReadOnly/canChangePlanningType),
+// same posture the rest-override block below already takes.
+describe('StepVolume — deload rules override (chunk 22)', () => {
+  it('shows USE MY DEFAULT active when the program has no override (null)', () => {
+    setup()
+    render(<StepVolume program={program({ deloadRules: null })} volumeReadOnly={false} canChangePlanningType />)
+    expect(screen.queryByText('PERCENT')).toBeNull() // the editor itself is hidden under "use my default"
+  })
+
+  it('tapping CUSTOM writes an explicit empty override ({}), not null — distinct from "use my default"', () => {
+    setup()
+    render(<StepVolume program={program({ deloadRules: null })} volumeReadOnly={false} canChangePlanningType />)
+    fireEvent.click(screen.getByText('CUSTOM'))
+    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: {} })
+  })
+
+  it('once the program already has an override, the editor shows it and edits write back through the SAME program id', () => {
+    setup()
+    render(
+      <StepVolume
+        program={program({ deloadRules: { sets: { mode: 'percent', value: 50, rounding: 'down' } } })}
+        volumeReadOnly={false}
+        canChangePlanningType
+      />,
+    )
+    expect(screen.getByText('PERCENT')).toBeTruthy() // the editor is showing, not "use my default"
+
+    fireEvent.click(screen.getByText('COUNT'))
+    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({
+      id: 'prog-1',
+      deloadRules: { sets: { mode: 'count', value: 50, rounding: 'down' } },
+    })
+  })
+
+  it('tapping USE MY DEFAULT from a custom override clears it back to null', () => {
+    setup()
+    render(
+      <StepVolume
+        program={program({ deloadRules: { sets: { mode: 'percent', value: 50, rounding: 'down' } } })}
+        volumeReadOnly={false}
+        canChangePlanningType
+      />,
+    )
+    fireEvent.click(screen.getByText('USE MY DEFAULT'))
+    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: null })
+  })
+
+  // Design field — SPEC "Programs and runs": editable for BOTH planning
+  // types, never gated the way the PLANNING picker itself is.
+  it('is editable even when canChangePlanningType is false (a stable run\'s ProgramTab usage)', () => {
+    setup()
+    render(
+      <StepVolume
+        program={program({ planningType: 'stable', deloadRules: null })}
+        volumeReadOnly
+        canChangePlanningType={false}
+      />,
+    )
+    fireEvent.click(screen.getByText('CUSTOM'))
+    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: {} })
   })
 })
 

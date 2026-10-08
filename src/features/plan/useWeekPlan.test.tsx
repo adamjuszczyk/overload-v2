@@ -22,15 +22,32 @@ const planWeekMock = vi.fn()
 // Chunk 19 — useUpdateSet's own networkMode: 'always' proof below, same
 // injection seam as planWeek's.
 const updateSetMock = vi.fn()
-// Chunk 21, review fix — useSetWeekDeload's own two collaborators.
-const setWeekDeloadMock = vi.fn()
+// Chunk 22 — useSetWeekDeload/useSetDeload's own executor collaborators
+// (weekPlanService.ts), replacing chunk 21's plain setDeload/setWeekDeload
+// now that marking can calculate: markSessionDeload/unmarkSessionDeload
+// (per-session) and markWeekDeload/unmarkWeekDeload (the week shortcut,
+// "once per row" — reviewer's note 6) are each mocked as one spy per
+// direction, so a test can assert exactly which one ran and with what
+// arguments (userId, weekPlanId/mesoId+weekNumber, the resolved rules
+// object) without a real Supabase round trip.
+const markSessionDeloadMock = vi.fn()
+const unmarkSessionDeloadMock = vi.fn()
+const markWeekDeloadMock = vi.fn()
+const unmarkWeekDeloadMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
   planWeek: (...args: unknown[]) => planWeekMock(...args),
   updateSet: (...args: unknown[]) => updateSetMock(...args),
-  setWeekDeload: (...args: unknown[]) => setWeekDeloadMock(...args),
+  markSessionDeload: (...args: unknown[]) => markSessionDeloadMock(...args),
+  unmarkSessionDeload: (...args: unknown[]) => unmarkSessionDeloadMock(...args),
+  markWeekDeload: (...args: unknown[]) => markWeekDeloadMock(...args),
+  unmarkWeekDeload: (...args: unknown[]) => unmarkWeekDeloadMock(...args),
 }))
+// useSetDeload/useSetWeekDeload now read the current user (chunk 22 — the
+// executor needs it to attribute inserted rows), same fixed-user mock
+// convention every other PlanPage-adjacent test file already uses.
+vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetWeekDeload } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -38,7 +55,10 @@ afterEach(() => {
   onlineManager.setOnline(true)
   planWeekMock.mockReset()
   updateSetMock.mockReset()
-  setWeekDeloadMock.mockReset()
+  markSessionDeloadMock.mockReset()
+  unmarkSessionDeloadMock.mockReset()
+  markWeekDeloadMock.mockReset()
+  unmarkWeekDeloadMock.mockReset()
   // The imported queryClient is ALSO a module-level singleton (see the
   // cache-scope tests below) — clear it so no test's seeded cache data
   // leaks into the next.
@@ -166,30 +186,75 @@ describe('planWeekThenFindId — best-effort: never blocks or fails the start', 
 // changed to `useSetWeekDeload(mesoId, viewWeek + 1)`) passed every test
 // because nothing exercised the REAL hook at all; PlanPage's own tests mock
 // `./useWeekPlan` entirely. This closes that gap at the hook's own layer:
-// the real useSetWeekDeload, only its two Supabase-touching collaborators
-// (planWeek, setWeekDeload) mocked — same seam as usePlanWeek/useUpdateSet
-// above.
-describe('useSetWeekDeload — plans the week first, then writes it; optimistic, scoped to one week (chunk 21)', () => {
-  it('calls planWeek(mesoId, weekNumber) and THEN setWeekDeload(mesoId, weekNumber, isDeload) — never the other order, never skipping planWeek', async () => {
+// the real useSetWeekDeload, only its Supabase-touching collaborators
+// mocked — same seam as usePlanWeek/useUpdateSet above. Chunk 22 extends
+// these same tests for the new `rules` argument and the markWeekDeload/
+// unmarkWeekDeload split (replacing chunk 21's own plain setWeekDeload).
+const SOME_RULES = { sets: { mode: 'percent' as const, value: 50, rounding: 'down' as const } }
+
+describe('useSetWeekDeload — plans the week first, then writes it; optimistic, scoped to one week (chunk 21/22)', () => {
+  it('marking calls planWeek(mesoId, weekNumber) and THEN markWeekDeload(userId, mesoId, weekNumber, rules) — never the other order, never skipping planWeek', async () => {
     const calls: Array<{ fn: string; args: unknown[] }> = []
     planWeekMock.mockImplementation(async (...args: unknown[]) => {
       calls.push({ fn: 'planWeek', args })
       return 0
     })
-    setWeekDeloadMock.mockImplementation(async (...args: unknown[]) => {
-      calls.push({ fn: 'setWeekDeload', args })
+    markWeekDeloadMock.mockImplementation(async (...args: unknown[]) => {
+      calls.push({ fn: 'markWeekDeload', args })
+      return { anyAlreadyStarted: false }
     })
 
     const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
     act(() => {
-      result.current.mutate({ isDeload: true })
+      result.current.mutate({ isDeload: true, rules: SOME_RULES })
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     expect(calls).toEqual([
       { fn: 'planWeek', args: ['meso-1', 3] },
-      { fn: 'setWeekDeload', args: ['meso-1', 3, true] },
+      { fn: 'markWeekDeload', args: ['user-1', 'meso-1', 3, SOME_RULES] },
     ])
+    expect(unmarkWeekDeloadMock).not.toHaveBeenCalled()
+  })
+
+  it('unmarking calls unmarkWeekDeload(userId, mesoId, weekNumber) — never markWeekDeload', async () => {
+    planWeekMock.mockResolvedValue(0)
+    unmarkWeekDeloadMock.mockResolvedValue({ anyAlreadyStarted: false })
+
+    const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ isDeload: false, rules: SOME_RULES })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(unmarkWeekDeloadMock).toHaveBeenCalledWith('user-1', 'meso-1', 3)
+    expect(markWeekDeloadMock).not.toHaveBeenCalled()
+  })
+
+  it('a null rules object (no rules on) reaches markWeekDeload unchanged — the hook never substitutes or re-resolves it', async () => {
+    planWeekMock.mockResolvedValue(0)
+    markWeekDeloadMock.mockResolvedValue({ anyAlreadyStarted: false })
+
+    const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ isDeload: true, rules: null })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(markWeekDeloadMock).toHaveBeenCalledWith('user-1', 'meso-1', 3, null)
+  })
+
+  it('the mutation\'s own resolved value carries whether any row hit the started guard, for the caller\'s own onSuccess notice', async () => {
+    planWeekMock.mockResolvedValue(0)
+    markWeekDeloadMock.mockResolvedValue({ anyAlreadyStarted: true })
+
+    const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
+    let seen: unknown
+    act(() => {
+      result.current.mutate({ isDeload: true, rules: SOME_RULES }, { onSuccess: (r) => { seen = r } })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(seen).toEqual({ anyAlreadyStarted: true })
   })
 
   it('the optimistic patch touches only this week\'s own cache entry — a sibling week is untouched', async () => {
@@ -204,11 +269,11 @@ describe('useSetWeekDeload — plans the week first, then writes it; optimistic,
     queryClient.setQueryData(weekKey('meso-1', 3), thisWeek)
     queryClient.setQueryData(weekKey('meso-1', 4), otherWeek)
     planWeekMock.mockResolvedValue(0)
-    setWeekDeloadMock.mockResolvedValue(undefined)
+    markWeekDeloadMock.mockResolvedValue({ anyAlreadyStarted: false })
 
     const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
     act(() => {
-      result.current.mutate({ isDeload: true })
+      result.current.mutate({ isDeload: true, rules: null })
     })
 
     // The optimistic patch lands in onMutate, ahead of the (mocked) network
@@ -227,14 +292,67 @@ describe('useSetWeekDeload — plans the week first, then writes it; optimistic,
     const original = [fakePlan('wp-3', 3, false)]
     queryClient.setQueryData(weekKey('meso-1', 3), original)
     planWeekMock.mockResolvedValue(0)
-    setWeekDeloadMock.mockRejectedValue(new Error('boom'))
+    markWeekDeloadMock.mockRejectedValue(new Error('boom'))
 
     const { result } = renderHook(() => useSetWeekDeload('meso-1', 3), { wrapper })
     act(() => {
-      result.current.mutate({ isDeload: true })
+      result.current.mutate({ isDeload: true, rules: null })
     })
 
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(queryClient.getQueryData(weekKey('meso-1', 3))).toEqual(original)
+  })
+})
+
+// Chunk 22 — useSetDeload's own argument wiring, same posture as
+// useSetWeekDeload's block above: the real hook, only markSessionDeload/
+// unmarkSessionDeload mocked.
+describe('useSetDeload — marks/unmarks exactly the one session it was given (chunk 22)', () => {
+  it('marking calls markSessionDeload(userId, weekPlanId, rules) — never unmarkSessionDeload', async () => {
+    markSessionDeloadMock.mockResolvedValue('calculated')
+
+    const { result } = renderHook(() => useSetDeload('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ weekPlanId: 'wp-session', isDeload: true, rules: SOME_RULES })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(markSessionDeloadMock).toHaveBeenCalledWith('user-1', 'wp-session', SOME_RULES)
+    expect(unmarkSessionDeloadMock).not.toHaveBeenCalled()
+  })
+
+  it('unmarking calls unmarkSessionDeload(userId, weekPlanId) — never markSessionDeload, and never even reads `rules`', async () => {
+    unmarkSessionDeloadMock.mockResolvedValue('restored')
+
+    const { result } = renderHook(() => useSetDeload('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ weekPlanId: 'wp-session', isDeload: false, rules: SOME_RULES })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(unmarkSessionDeloadMock).toHaveBeenCalledWith('user-1', 'wp-session')
+    expect(markSessionDeloadMock).not.toHaveBeenCalled()
+  })
+
+  it('targets the exact weekPlanId it is given, never a different one (break proof: a wrong id must fail this test)', async () => {
+    markSessionDeloadMock.mockResolvedValue('calculated')
+    const { result } = renderHook(() => useSetDeload('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ weekPlanId: 'wp-correct', isDeload: true, rules: null })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(markSessionDeloadMock).toHaveBeenCalledWith('user-1', 'wp-correct', null)
+    expect(markSessionDeloadMock).not.toHaveBeenCalledWith('user-1', 'wp-wrong', null)
+  })
+
+  it('the mutation resolves with the executor\'s own outcome, for the caller\'s onSuccess notice', async () => {
+    markSessionDeloadMock.mockResolvedValue('alreadyStarted')
+    const { result } = renderHook(() => useSetDeload('meso-1', 3), { wrapper })
+    let seen: unknown
+    act(() => {
+      result.current.mutate({ weekPlanId: 'wp-session', isDeload: true, rules: null }, { onSuccess: (r) => { seen = r } })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(seen).toBe('alreadyStarted')
   })
 })

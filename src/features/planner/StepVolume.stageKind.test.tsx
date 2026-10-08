@@ -22,6 +22,9 @@ vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
   useProgramExercises: (workoutDayId: string) => ({ data: exercisesByDay[workoutDayId] ?? [], isLoading: false }),
   useUpdatePlanningType: () => ({ mutate: vi.fn(), isPending: false }),
+  // Chunk 22 — the program-tab/planner deload-rules override, mounted
+  // unconditionally right alongside the PLANNING picker above.
+  useUpdateProgramDeloadRules: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 vi.mock('./usePlanner', async () => {

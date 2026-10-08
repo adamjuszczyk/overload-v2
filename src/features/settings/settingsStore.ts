@@ -12,6 +12,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   measureSetTime: false,
   weekStart: 'copy',
   warmupDisplay: 'rows',
+  // Chunk 22 — SPEC.md "Deload rules"/"Settings": "default deload rules",
+  // "off by default".
+  deloadRules: null,
 }
 
 interface SettingsStoreState extends UserSettings {

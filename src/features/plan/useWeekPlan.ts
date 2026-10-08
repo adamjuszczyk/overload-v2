@@ -2,13 +2,16 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import type { WeekPlan } from '../../types'
+import type { DeloadRules } from '../../lib/deloadRules'
 import {
   fetchWeekPlans,
   fetchAllWeekPlansForMeso,
   fetchWeekPlanById,
   createWeekPlan,
-  setDeload,
-  setWeekDeload,
+  markSessionDeload,
+  unmarkSessionDeload,
+  markWeekDeload,
+  unmarkWeekDeload,
   addSet,
   addStage,
   updateSet,
@@ -106,11 +109,37 @@ export async function planWeekThenFindId(
   }
 }
 
+// Chunk 22 — extends chunk 21's flag-only toggle: `rules` is the EFFECTIVE
+// rules already resolved by the caller (PlanPage.tsx — program override,
+// else the global default, else none; see deloadRules.ts's
+// resolveEffectiveDeloadRules), handed straight to the executor
+// (weekPlanService.ts's markSessionDeload/unmarkSessionDeload), which
+// alone decides flag-only vs. calculated/restored vs. the started guard.
+// networkMode: 'always' (chunk 22 — same offline-doesn't-hang reasoning as
+// every other write mutation touched this chunk; this hook predates chunk
+// 21's own 'always' siblings and is being substantially rewritten here
+// regardless, so it now carries the same posture rather than being the one
+// write path still left on the default).
+//
+// Returns the executor's own outcome ('flagOnly' | 'calculated' |
+// 'restored' | 'alreadyStarted') so the caller can show reviewer's note 5's
+// one-line notice — read via the mutate() call's own onSuccess, not this
+// hook's return value, so a caller that doesn't care about it needn't look.
 export function useSetDeload(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
-    mutationFn: ({ weekPlanId, isDeload }: { weekPlanId: string; isDeload: boolean }) =>
-      setDeload(weekPlanId, isDeload),
+    networkMode: 'always',
+    mutationFn: ({
+      weekPlanId,
+      isDeload,
+      rules,
+    }: {
+      weekPlanId: string
+      isDeload: boolean
+      rules: DeloadRules | null
+    }) =>
+      isDeload ? markSessionDeload(user!.id, weekPlanId, rules) : unmarkSessionDeload(user!.id, weekPlanId),
     onMutate: async ({ weekPlanId, isDeload }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
@@ -146,13 +175,25 @@ export function useSetDeload(mesoId: string, weekNumber: number) {
 // safe, never a second real plan; it's the defensive guarantee that every
 // scheduled workout already has a row to mark, independent of whether
 // PlanPage's own view-triggered plan has resolved yet.
+//
+// Chunk 22 — `rules` (the same resolved effective rules useSetDeload above
+// takes) is handed to markWeekDeload/unmarkWeekDeload, which run the exact
+// per-session executor once per row of the week (reviewer's note 6: "the
+// calculation and snapshot happen once for that row") — never a single
+// bulk UPDATE once rules are on, since each row can resolve a DIFFERENT
+// base occurrence. The mutationFn's own return value carries whether ANY
+// row hit the started guard, for the same one-line notice useSetDeload's
+// own caller shows.
 export function useSetWeekDeload(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
     networkMode: 'always',
-    mutationFn: async ({ isDeload }: { isDeload: boolean }) => {
+    mutationFn: async ({ isDeload, rules }: { isDeload: boolean; rules: DeloadRules | null }) => {
       await planWeek(mesoId, weekNumber)
-      await setWeekDeload(mesoId, weekNumber, isDeload)
+      return isDeload
+        ? markWeekDeload(user!.id, mesoId, weekNumber, rules)
+        : unmarkWeekDeload(user!.id, mesoId, weekNumber)
     },
     onMutate: async ({ isDeload }) => {
       await queryClient.cancelQueries({ queryKey: qk })

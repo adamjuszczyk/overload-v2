@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import type { UserSettings } from '../../types'
+import { validateDeloadRules } from '../../lib/deloadRules'
 
 type DbSettings = {
   user_id: string
@@ -13,6 +14,7 @@ type DbSettings = {
   measure_set_time?: boolean  // absent until migration 005 has been applied
   week_start?: string  // absent until migration 027 has been applied
   warmup_display?: string  // absent until migration 027 has been applied
+  deload_rules?: unknown  // absent until migration 027 has been applied; jsonb, validated on read
 }
 
 function toUserSettings(row: DbSettings): UserSettings {
@@ -35,6 +37,11 @@ function toUserSettings(row: DbSettings): UserSettings {
     // migration 027 has been run, same "key missing" convention as the
     // others above.
     warmupDisplay: (row.warmup_display as UserSettings['warmupDisplay'] | undefined) ?? 'rows',
+    // Chunk 22 — validated defensively on every read (deloadRules.ts is the
+    // one place this shape is decided); falls back to null ("no rules on")
+    // both before migration 027 (key absent) and for a malformed stored
+    // value, same posture as every other "may not exist yet" field above.
+    deloadRules: validateDeloadRules(row.deload_rules),
   }
 }
 
@@ -69,6 +76,7 @@ export async function upsertSettings(
     measure_set_time: settings.measureSetTime,
     week_start: settings.weekStart,
     warmup_display: settings.warmupDisplay,
+    deload_rules: settings.deloadRules,
   }
 
   const { error } = await supabase
