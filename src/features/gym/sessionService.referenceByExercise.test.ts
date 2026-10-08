@@ -172,6 +172,22 @@ describe('fetchReferenceSessionsByExercise — warmups never reach a ReferenceSe
   })
 })
 
+describe('fetchReferenceSessionsByExercise — crosses run and workout boundaries (no scoping by either, at this layer)', () => {
+  it('two sessions for the same exercise, from two different mesocycles (runs), both come back in one call — no mesocycle_id restriction anywhere', async () => {
+    const rows = [
+      row({ id: 'log-run1', sessionId: 'sess-run1', exerciseId: 'ex-1', sessionDate: '2026-08-05', sessionStatus: 'completed', mesocycleId: 'meso-1' }),
+      row({ id: 'log-run2', sessionId: 'sess-run2', exerciseId: 'ex-1', sessionDate: '2026-02-01', sessionStatus: 'completed', mesocycleId: 'meso-2' }),
+    ]
+    fromMock.mockReturnValue(makeSelectChain({ data: rows, error: null }))
+
+    const result = await fetchReferenceSessionsByExercise('user-1', ['ex-1'])
+    const sessionIds = (result.get('ex-1') ?? []).map((s) => s.sessionId)
+    expect(new Set(sessionIds)).toEqual(new Set(['sess-run1', 'sess-run2']))
+    const mesoIds = (result.get('ex-1') ?? []).map((s) => s.mesocycleId)
+    expect(new Set(mesoIds)).toEqual(new Set(['meso-1', 'meso-2']))
+  })
+})
+
 describe('fetchReferenceSessionsByExercise — batched across several exercise ids in one query, each keyed by its own id', () => {
   it('a Map entry for exercise A never contains exercise B\'s session, and vice versa', async () => {
     const rows = [
