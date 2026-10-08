@@ -239,6 +239,21 @@ describe('weightTarget', () => {
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'deload' })
   })
 
+  // Chunk 22, reviewer's note 8 — "Apply-ahead keeps skipping deload
+  // sessions. A rules-calculated session is deload, so it's skipped." This
+  // module decides purely from WeekPlan.isDeload; it has no notion of
+  // whether rules produced a week's current sets or a user planned them by
+  // hand, so the SAME skip above already covers a rules-calculated week —
+  // this fixture just makes that explicit: sets/weight shaped exactly like
+  // a deload calculation's own output (fewer sets, a reduced weight) still
+  // skip, never "applies because the numbers look different now".
+  it('still skips a week whose CURRENT sets were produced by the deload-rules calculator (chunk 22), not hand-planned', () => {
+    const calculatedLikeSet = set('s1', 'pe-1', { setNumber: 1, targetWeight: 72.5 }) // e.g. 90% down-rounded
+    const w = week(2, { exercises: [pe('pe-1')], sets: [calculatedLikeSet], isDeload: true })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'deload' })
+  })
+
   it('a stage position (non-null stageIndex) resolves to the stage row, not its head', () => {
     const stageChange: ChangeRecord = { ...change, setPosition: { headOrdinal: 1, stageIndex: 1 } }
     const w = week(2, {
