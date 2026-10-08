@@ -16,6 +16,9 @@ import {
   updateSessionNote,
   skipSession,
   skipMissedSession,
+  moveSessionTo,
+  clearMovedSession,
+  startMovedSession,
   logSet,
   updateSetLog,
   deleteSetLog,
@@ -365,6 +368,12 @@ function cachedSessionToDbRow(cached: Session) {
     date: cached.date,
     started_at: cached.startedAt,
     created_at: cached.createdAt,
+    // Chunk 24 — this function's own job is a row that's correct even when
+    // the CREATE that originally set moved_to_date is itself still
+    // unsynced (this function's own header: "even when we only have an id
+    // + a status change"), so a later upsert (complete/skip) must carry it
+    // too, not just rely on an earlier queued item having already landed.
+    moved_to_date: cached.movedToDate ?? null,
   }
 }
 
@@ -380,11 +389,18 @@ export function useCreateSession() {
       weekPlanId,
       workoutDayId,
       date,
+      // Chunk 24 — the missed-session prompt's "Do it now" is now a move to
+      // today (SPEC): `date` stays the missed day, `movedToDate` carries
+      // today. Optional and additive — every pre-chunk-24 caller (today's
+      // own START SESSION, the redo flow) omits it, same "may not exist
+      // yet" convention as createSession's own service-layer signature.
+      movedToDate,
     }: {
       mesoId: string
       weekPlanId: string | null
       workoutDayId: string
       date: string
+      movedToDate?: string | null
     }) => {
       if (!isOnline) {
         const id = crypto.randomUUID()
@@ -404,6 +420,7 @@ export function useCreateSession() {
           setLogs: [],
           energyRating: null,
           pumpRating: null,
+          movedToDate: movedToDate ?? null,
         }
 
         await db.sessions.put({
@@ -419,6 +436,7 @@ export function useCreateSession() {
           completedAt: null,
           energyRating: null,
           pumpRating: null,
+          movedToDate: movedToDate ?? null,
         })
 
         await db.sync_queue.add({
@@ -433,6 +451,11 @@ export function useCreateSession() {
             date,
             status: 'in_progress',
             started_at: startedAt,
+            // Chunk 24 — same "today's DO IT NOW works offline" requirement
+            // this hook already met before this chunk; only sent when the
+            // caller actually moved something, same convention as the
+            // service layer's own insert (sessionService.ts's createSession).
+            ...(movedToDate !== undefined ? { moved_to_date: movedToDate } : {}),
           },
           createdAt: startedAt,
         })
@@ -441,7 +464,7 @@ export function useCreateSession() {
         return session
       }
 
-      return createSession(user!.id, mesoId, weekPlanId, workoutDayId, date)
+      return createSession(user!.id, mesoId, weekPlanId, workoutDayId, date, movedToDate)
     },
     onSuccess: (session) => {
       queryClient.setQueryData(['v2_session', session.id], session)
@@ -677,6 +700,69 @@ export function useSkipMissedSession() {
       existingSessionId: string | null
     }) => skipMissedSession(user!.id, mesoId, weekPlanId, workoutDayId, date, existingSessionId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_sessions'] }),
+  })
+}
+
+// ─── Move this session (chunk 24, SPEC "Weekday") ──────────────────────────────
+// Online-only — no networkMode override, no offline branch, same tier as
+// useUpdateSessionNote/useRecordExerciseSwap above ("a plain optimistic
+// update... not full offline support"). The brief's own allowance: "Writes
+// use networkMode: 'always'. Offline: say what happens (disabled, or
+// queued if the existing offline queue already supports session
+// inserts)." — a generic move is a find-THEN-upsert-or-insert, a shape the
+// existing queue (simple id-keyed upserts, useSyncQueue.ts) has no
+// precedent for; rather than extend that mechanism, the screen layer
+// disables the MOVE control while offline (TodayPage.tsx/
+// MoveSessionControl.tsx) and this hook stays paused (TanStack's own
+// default 'online' networkMode) rather than erroring. "Do it now" is a
+// different, simpler, insert-only path — see useCreateSession above, which
+// already supports it offline and is unchanged in that respect.
+
+export function useMoveSession() {
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: (params: {
+      mesoId: string
+      weekPlanId: string | null
+      workoutDayId: string
+      date: string
+      targetDate: string
+    }) => moveSessionTo({ userId: user!.id, ...params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_history'] })
+    },
+  })
+}
+
+// "Moving back to its own day" (TASKS.md's session data model table) — the
+// day-chip picker's own target-equals-original-day case.
+export function useClearMovedSession() {
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: (params: { workoutDayId: string; date: string }) =>
+      clearMovedSession({ userId: user!.id, ...params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: ['v2_history'] })
+    },
+  })
+}
+
+// Starts a `planned` (moved-here, not-yet-started) session — the `planned`
+// SchedulerResult/DueTodayEntry's own START action. Same online-only tier
+// as the two hooks above.
+export function useStartMovedSession() {
+  return useMutation({
+    mutationFn: (id: string) => startMovedSession(id),
+    onSuccess: (session) => {
+      queryClient.setQueryData(['v2_session', session.id], session)
+      queryClient.setQueriesData(
+        { queryKey: ['v2_sessions'] },
+        (old: Session[] | undefined) => (old ? old.map((s) => (s.id === session.id ? session : s)) : old),
+      )
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+    },
   })
 }
 

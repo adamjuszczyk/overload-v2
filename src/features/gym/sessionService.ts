@@ -75,6 +75,12 @@ type DbSession = {
   // Absent until migration 016 has been applied.
   energy_rating?: string | null
   pump_rating?: string | null
+  // Chunk 24 (SPEC "Weekday" — "Move this session") — v2_sessions.moved_to_
+  // date, column since migration 027 (chunk 1), always present on a real row
+  // (every select('*') below already returns it) — not an "absent until"
+  // optional like energy_rating/pump_rating above, which predate a LATER
+  // migration than this file's own baseline select.
+  moved_to_date: string | null
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -141,6 +147,9 @@ function toSession(row: DbSession): Session {
     // Same "column may not exist yet" fallback as toSetLog's formRating.
     energyRating: (row.energy_rating ?? null) as EnergyRating | null,
     pumpRating: (row.pump_rating ?? null) as PumpRating | null,
+    // Chunk 24 — see DbSession's own comment on why this isn't "?? null"
+    // against a possibly-absent column the way the two fields above are.
+    movedToDate: row.moved_to_date,
   }
 }
 
@@ -169,12 +178,21 @@ export async function fetchSession(id: string): Promise<Session> {
   return toSession(data as DbSession)
 }
 
+// Chunk 24 — `movedToDate` is optional and additive (TASKS.md's missed-
+// session Fact: "DO IT NOW creates the session with date = the missed date"
+// — now, per SPEC's own reinterpretation, also carrying moved_to_date =
+// today, so History shows the day it was actually done). Omitted entirely
+// from the insert when not given (the common, non-"do it now" case) —
+// same "don't write a key you have nothing to say about" convention as
+// skipMissedSession's own insert below, which never sets completed_at/note
+// either.
 export async function createSession(
   userId: string,
   mesoId: string,
   weekPlanId: string | null,
   workoutDayId: string,
   date: string,
+  movedToDate?: string | null,
 ): Promise<Session> {
   const { data, error } = await supabase
     .from('v2_sessions')
@@ -186,6 +204,7 @@ export async function createSession(
       date,
       status: 'in_progress',
       started_at: new Date().toISOString(),
+      ...(movedToDate !== undefined ? { moved_to_date: movedToDate } : {}),
     })
     .select('*')
     .single()
@@ -372,6 +391,116 @@ export async function skipMissedSession(
     })
     if (error) throw error
   }
+}
+
+// ─── Move this session (chunk 24, SPEC "Weekday") ──────────────────────────────
+// A move's pure decision (same week? clear vs set?) lives in moveSession.ts,
+// independent of these two mechanical writes (Lessons: "service tests
+// asserting the exact write"). Both are keyed by (user_id, workout_day_id,
+// date) — the session's own ORIGINAL day, never its current moved_to_date —
+// because a `planned` row's `date` never changes across repeated moves
+// (only moved_to_date does); the caller (useMoveSession, useSession.ts)
+// resolves the target first (resolveMove) and calls whichever of these
+// matches its 'set'/'clear' result.
+//
+// At most one 'planned' row can ever exist for a given (user, workout day,
+// date) — the only way one is created is via moveSessionTo itself, which
+// always looks for an existing one first (never a second insert for the
+// same slot — TASKS.md: "Two moves of the same session update one row,
+// never two").
+
+export async function moveSessionTo(params: {
+  userId: string
+  mesoId: string
+  weekPlanId: string | null
+  workoutDayId: string
+  date: string
+  targetDate: string
+}): Promise<Session> {
+  const { userId, mesoId, weekPlanId, workoutDayId, date, targetDate } = params
+
+  const { data: existing, error: findError } = await supabase
+    .from('v2_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('workout_day_id', workoutDayId)
+    .eq('date', date)
+    .eq('status', 'planned')
+    .maybeSingle()
+  if (findError) throw findError
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('v2_sessions')
+      .update({ moved_to_date: targetDate })
+      .eq('id', (existing as DbSession).id)
+      .select('*')
+      .single()
+    if (error) throw error
+    return toSession(data as DbSession)
+  }
+
+  const { data, error } = await supabase
+    .from('v2_sessions')
+    .insert({
+      user_id: userId,
+      mesocycle_id: mesoId,
+      week_plan_id: weekPlanId,
+      workout_day_id: workoutDayId,
+      date,
+      status: 'planned',
+      moved_to_date: targetDate,
+    })
+    .select('*')
+    .single()
+  if (error) throw error
+  return toSession(data as DbSession)
+}
+
+// "Moving back to its own day" (TASKS.md's session data model table) —
+// every `planned` row only ever exists because moveSessionTo created it
+// (the status is otherwise unused in this app today), so undoing a move
+// always deletes the row outright rather than merely clearing moved_to_date
+// on a row that would still mean something afterwards. A no-op (nothing to
+// undo — the virtual, not-yet-created suggestion was never actually moved)
+// is a silent no-op, not an error.
+export async function clearMovedSession(params: {
+  userId: string
+  workoutDayId: string
+  date: string
+}): Promise<void> {
+  const { userId, workoutDayId, date } = params
+
+  const { data: existing, error: findError } = await supabase
+    .from('v2_sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('workout_day_id', workoutDayId)
+    .eq('date', date)
+    .eq('status', 'planned')
+    .maybeSingle()
+  if (findError) throw findError
+  if (!existing) return
+
+  const { error } = await supabase.from('v2_sessions').delete().eq('id', (existing as { id: string }).id)
+  if (error) throw error
+}
+
+// Starts a session that was moved here before it started (status 'planned')
+// — the `planned` SchedulerResult/DueTodayEntry's own START action. Plain
+// status+started_at transition; unlike reopenSession there is no prior
+// started_at/completed_at span to shift forward (a `planned` row was never
+// started before), so this never needs that function's own clock-skew
+// handling.
+export async function startMovedSession(id: string): Promise<Session> {
+  const { data, error } = await supabase
+    .from('v2_sessions')
+    .update({ status: 'in_progress', started_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw error
+  return toSession(data as DbSession)
 }
 
 // ─── Set Logs ─────────────────────────────────────────────────────────────────
