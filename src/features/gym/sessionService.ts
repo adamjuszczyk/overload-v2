@@ -533,6 +533,26 @@ export interface ReferenceSession {
   // mid-session delete-and-relog left a later insertion with an earlier
   // renumbered setNumber).
   logs: SetGroup<SetLog>[]
+  // Chunk 23 (SPEC "'Last time' reference" — "Elapsed time counts from
+  // moved_to_date when set, else the session date") — v2_sessions.moved_to_date.
+  // Optional, same "may not exist yet" convention as every other
+  // migration-027 column on this app's other types (WeekPlan.deloadRestore
+  // etc.): every pre-chunk-23 construction of a ReferenceSession (this
+  // file's own fetchReferenceSessions below, useSession.ts's offline
+  // fallback, Coach's analysisInput.ts) predates this field and never sets
+  // it; absent/undefined reads as "use `date`" wherever this is read
+  // (referenceByExercise.ts), never a crash.
+  movedToDate?: string | null
+  // Chunk 23 — this session's own v2_week_plans.is_deload, through the
+  // week_plan_id embed. Optional for the same reason as movedToDate above:
+  // only fetchReferenceSessionsByExercise (below) ever sets it, and only as
+  // a defensive, independently-testable second filter — that function
+  // already excludes a deload session from the Map entirely (SPEC "Deload
+  // sessions never count"), so every object it returns has this `false`
+  // in practice; referenceByExercise.ts's own resolver re-checks it anyway
+  // (Lessons: "prove every rule at the layer that applies it"), which is
+  // what actually makes it reachable/testable rather than dead code.
+  isDeload?: boolean
 }
 
 // Candidate completed sessions for the two-slot reference resolver (v3
@@ -624,6 +644,167 @@ export async function fetchReferenceSessions(
         mesocycleId: mesocycleIdBySessionId.get(sessionId) ?? null,
         logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
       }))
+      .sort((a, b) => b.date.localeCompare(a.date))
+    result.set(exerciseId, refSessions)
+  }
+
+  return result
+}
+
+// Cross-run candidate query (chunk 23 — SPEC "'Last time' reference":
+// "Matching: by exercise_id across all completed sessions of the user,
+// every run and every workout", "Deload sessions never count", "Crosses
+// run boundaries"). Separate from fetchReferenceSessions above, which
+// stays exactly as it is (still per-workout-day — whatever else keeps
+// calling it keeps getting that scope); this one is exercise-id-scoped
+// only, no workout_day_id anywhere, so a run/workout boundary can never
+// narrow the candidate set the way it used to.
+//
+// One query (not session-first/two-step like fetchReferenceSessions —
+// there is no "candidate sessions" table to query first: v2_sessions has
+// no exercise_id column, so the only way to find "every completed session
+// where this exercise was logged" is through v2_set_logs itself, same
+// precedent as progressService.ts's fetchAllExerciseSetLogRows), batched
+// across every exercise id the screen needs (same "no query per card" the
+// per-workout version already followed). The deload flag rides along
+// through the week_plan_id embed (v2_sessions -> v2_week_plans(is_deload))
+// — exactly one FK each way today (confirmed by check-embeds-local.sh), so
+// no hint is needed; completed-only and deload-excluded are both applied
+// here in JS against the embedded v2_sessions/v2_week_plans columns, same
+// convention as progressService.ts's own `row.v2_sessions?.status ===
+// 'completed'` / `.v2_week_plans?.is_deload` (filtering an embedded
+// resource's column via `.eq()` would need `!inner` and this codebase has
+// no precedent for that — see this chunk's report). Warmups dropped here
+// too, same call-site convention fetchReferenceSessions above already
+// uses — referenceLogic.ts stays untouched either way.
+//
+// No date bound, same "AUDIT P5" reasoning fetchReferenceCandidateSessions
+// documents above — now exercise-scoped rather than workout-day-scoped.
+//
+// Review fix: "not expected to be large at this app's scale" doesn't hold
+// against PostgREST's own hard cap — max_rows defaults to 1000
+// (supabase/config.toml), silently truncating ANY query past that many
+// rows, with no error and no signal anything was dropped. Scoped to one
+// workout day, fetchReferenceCandidateSessions/fetchReferenceSessions
+// above could reasonably stay unbounded (AUDIT P5's own call); scoped to
+// one EXERCISE across a user's entire history, several months of training
+// can exceed 1000 set_log rows on its own, and this is BATCHED across
+// every exercise id a whole screen needs (6-8+ exercises at once) — easily
+// reachable, not a hypothetical. An arbitrary (not even "oldest wins")
+// 1000-row slice could drop last week's session specifically, showing
+// LAST TIME from an older one, or even FIRST TIME. Same fix shape as
+// progressService.ts's own fetchAllExerciseSetLogRows (AUDIT H4) and
+// historyService.ts's Phase 3.4 pagination: loop `.range()` pages, ordered
+// by a stable key, until a short page proves there's nothing left — never
+// trust a single unbounded `.select()` to have returned everything.
+const REFERENCE_SESSIONS_PAGE_SIZE = 1000
+
+type DbCrossRunSetLog = DbSetLog & {
+  v2_sessions: {
+    id: string
+    date: string
+    completed_at: string | null
+    moved_to_date: string | null
+    status: string
+    mesocycle_id: string | null
+    v2_week_plans: { is_deload: boolean } | null
+  } | null
+}
+
+// Pagination extracted so the service test can assert the exact `.range`
+// bounds and `.order` calls each page makes, same "the lowest layer the
+// brief names" precedent this chunk's other tests already follow.
+async function fetchAllReferenceSetLogRows(
+  userId: string,
+  exerciseIds: string[],
+): Promise<DbCrossRunSetLog[]> {
+  const rows: DbCrossRunSetLog[] = []
+  let offset = 0
+  for (;;) {
+    const { data, error } = await supabase
+      .from('v2_set_logs')
+      .select('*, v2_sessions(id, date, completed_at, moved_to_date, status, mesocycle_id, v2_week_plans(is_deload))')
+      .eq('user_id', userId)
+      .in('exercise_id', exerciseIds)
+      // A stable order, same tie-break as progressService.ts's own
+      // fetchAllExerciseSetLogRows — logged_at alone can tie (an
+      // offline-queued batch), and a tie without a secondary key can
+      // duplicate or drop rows across separate `.range()` calls.
+      .order('logged_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + REFERENCE_SESSIONS_PAGE_SIZE - 1)
+    if (error) throw error
+
+    const page = data as unknown as DbCrossRunSetLog[]
+    rows.push(...page)
+    if (page.length < REFERENCE_SESSIONS_PAGE_SIZE) break
+    offset += REFERENCE_SESSIONS_PAGE_SIZE
+  }
+  return rows
+}
+
+export async function fetchReferenceSessionsByExercise(
+  userId: string,
+  exerciseIds: string[],
+): Promise<Map<string, ReferenceSession[]>> {
+  if (exerciseIds.length === 0) return new Map()
+
+  const rows = await fetchAllReferenceSetLogRows(userId, exerciseIds)
+
+  type SessionMeta = {
+    date: string
+    completedAt: string | null
+    mesocycleId: string | null
+    movedToDate: string | null
+  }
+  const sessionMetaById = new Map<string, SessionMeta>()
+  const logsByExercise = new Map<string, Map<string, SetLog[]>>()
+
+  for (const row of rows) {
+    const s = row.v2_sessions
+    // Completed only (skipped/in_progress never match) and never a deload
+    // session (SPEC "Deload sessions never count") — both are columns on
+    // the embedded v2_sessions/v2_week_plans resources, filtered here in
+    // JS rather than via a `.eq()` on the query builder (see header above).
+    if (!s || s.status !== 'completed' || (s.v2_week_plans?.is_deload ?? false)) continue
+    // Chunk 15 (SPEC "Warmup sets" — "never counted in ... 'last time'
+    // matching"): same call-site exclusion as fetchReferenceSessions above.
+    if (row.is_warmup) continue
+
+    if (!sessionMetaById.has(s.id)) {
+      sessionMetaById.set(s.id, {
+        date: s.date,
+        completedAt: s.completed_at,
+        mesocycleId: s.mesocycle_id,
+        movedToDate: s.moved_to_date,
+      })
+    }
+
+    const log = toSetLog(row)
+    let bySession = logsByExercise.get(log.exerciseId)
+    if (!bySession) {
+      bySession = new Map()
+      logsByExercise.set(log.exerciseId, bySession)
+    }
+    const list = bySession.get(log.sessionId)
+    if (list) list.push(log)
+    else bySession.set(log.sessionId, [log])
+  }
+
+  const result = new Map<string, ReferenceSession[]>()
+  for (const [exerciseId, bySession] of logsByExercise) {
+    const refSessions: ReferenceSession[] = [...bySession.entries()]
+      .map(([sessionId, logs]) => {
+        const meta = sessionMetaById.get(sessionId)!
+        return {
+          sessionId,
+          date: meta.date,
+          completedAt: meta.completedAt,
+          mesocycleId: meta.mesocycleId,
+          movedToDate: meta.movedToDate,
+          logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
+        }
+      })
       .sort((a, b) => b.date.localeCompare(a.date))
     result.set(exerciseId, refSessions)
   }

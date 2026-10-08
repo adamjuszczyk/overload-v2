@@ -2,25 +2,43 @@ import { formatDistanceToNow, parseISO } from 'date-fns'
 import type { SetLog, WeightUnit } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import type { SetGroup } from './setGroupLogic'
-import { resolveExerciseReference, resolveSecondaryReference, hasRealLoggedSet } from './referenceLogic'
+// hasRealLoggedSet is referenceLogic.ts's own existing export (frozen,
+// unchanged — Coach imports this file too) — reused as-is, same rule
+// resolveExerciseReferenceAcrossRuns/resolveReachBackAcrossRuns below both
+// already build on. resolveExerciseReference/resolveSecondaryReference
+// themselves are NOT used here any more (chunk 23 — "ExerciseReference
+// switches to the new resolver"); they stay exported from referenceLogic.ts
+// unchanged for Coach's analysisInput.ts, which is the only remaining
+// caller.
+import { hasRealLoggedSet } from './referenceLogic'
+import { resolveExerciseReferenceAcrossRuns, resolveReachBackAcrossRuns } from './referenceByExercise'
 import { toDisplayWeight } from '../../lib/weightUnit'
 
 interface ExerciseReferenceProps {
   today: string
-  // This exercise's eligible sessions — same workout_day_id, status
-  // 'completed', excluding the current session — already fetched once per
-  // workout day by the session-first batched query (v3 §2.3) and sliced per
-  // exercise by the caller. Unsorted/unfiltered by date; resolveExerciseReference
-  // owns all of that boundary math.
+  // This exercise's eligible sessions — status 'completed', across every
+  // run and every workout (chunk 23 — SPEC "'Last time' reference":
+  // "Matching: by exercise_id across all completed sessions of the user,
+  // every run and every workout"), excluding the current session —
+  // already fetched once per screen by the batched query
+  // (fetchReferenceSessionsByExercise, sessionService.ts) and sliced per
+  // exercise by the caller (by exercise id — the same Map lookup every
+  // caller already used before this chunk). Unsorted/unfiltered by date,
+  // and not guaranteed deload-free (the resolver filters that itself too,
+  // defensively — see referenceByExercise.ts);
+  // resolveExerciseReferenceAcrossRuns owns all of the boundary math.
   sessions: ReferenceSession[]
   isLoading: boolean
-  // The live session's own mesocycle (v2_sessions.mesocycle_id, or the
-  // upcoming week plan's for a preview with no session yet) — scopes the
-  // reach-back search to the current mesocycle only, same rule as
-  // analysisInput.ts's resolveSecondaryReference call. null (no meso, or a
-  // preview with no week plan yet) means the reach-back panel never shows —
-  // resolveSecondaryReference's own defensive `none_in_meso` handles this,
-  // not a crash.
+  // Chunk 23 — no longer read. The reach-back now crosses run boundaries
+  // (SPEC "The reach-back ... crosses run boundaries too"), so there is no
+  // meso boundary left for this to scope. Kept as a required prop (rather
+  // than removed) purely so every existing caller (ExerciseCard.tsx,
+  // PreviewExerciseCard.tsx, SupersetBlock.tsx, and GymSession.tsx/
+  // SessionPreview.tsx's own threading of session?.mesocycleId down to
+  // them) keeps compiling and passing it unchanged — a scope decision
+  // (this chunk's report), not an oversight; ripping it out everywhere it's
+  // threaded is outside chunk 23's stated scope (referenceByExercise.ts,
+  // ExerciseReference and its offline fallback).
   mesocycleId: string | null
   // Real bug this closes (CONTEXT.md, 2026-08-22): a genuine online-fetch
   // failure used to be silently swallowed and indistinguishable from "no
@@ -135,11 +153,15 @@ function secondaryLabel(daysSince: number): string {
   return `LAST ACTUALLY TRAINED ${daysSince === 0 ? 'TODAY' : `${daysSince}D AGO`}`
 }
 
+// mesocycleId is accepted (ExerciseReferenceProps) but deliberately not
+// destructured here — see that prop's own doc comment above. Destructuring
+// it unused would fail this project's noUnusedLocals; not destructuring it
+// at all keeps every caller's existing mesocycleId={...} prop compiling
+// with zero change, while this component simply never reads it.
 export default function ExerciseReference({
   today,
   sessions,
   isLoading,
-  mesocycleId,
   isError,
   onRetry,
   isFromCache,
@@ -187,9 +209,20 @@ export default function ExerciseReference({
     )
   }
 
-  const { primary, thisWeek } = resolveExerciseReference(today, sessions)
+  // Chunk 23 (SPEC "'Last time' reference") — every live run today is
+  // schedule_type='weekday' (v2_programs' own column default; no program
+  // can be created as 'sequence' yet — that arrives in chunk 25,
+  // TASKS.md). resolveExerciseReferenceAcrossRuns is schedule-aware and
+  // fully tested for both branches (referenceByExercise.test.ts); this is
+  // the only value that can occur live, so it's passed as a literal rather
+  // than threaded through as a new prop on every caller (ExerciseCard,
+  // PreviewExerciseCard, SupersetBlock, GymSession, SessionPreview) for a
+  // branch nothing live can reach yet. Chunk 25 threads the run's real
+  // schedule_type through once a sequence run becomes reachable.
+  const { primary, thisWeek } = resolveExerciseReferenceAcrossRuns(today, 'weekday', sessions)
 
-  // Reach-back (2026-08-22 fix): only when a real reference session was
+  // Reach-back (2026-08-22 fix, now cross-run — SPEC "The reach-back ...
+  // crosses run boundaries too"): only when a real reference session was
   // found but it has nothing usable in it — mirrors analysisInput.ts's
   // trigger (there, `match.plain.slotCountA === 0 && ...dropsets... === 0`;
   // here, no `match` exists yet at this point in the render, so the
@@ -197,7 +230,7 @@ export default function ExerciseReference({
   // same hasRealLoggedSet rule referenceLogic.ts already uses internally).
   const secondary =
     primary.type !== 'first_time' && !hasRealLoggedSet(primary.session)
-      ? resolveSecondaryReference(today, sessions, mesocycleId)
+      ? resolveReachBackAcrossRuns(today, sessions)
       : null
 
   return (
@@ -240,14 +273,20 @@ export default function ExerciseReference({
           weightUnit={weightUnit}
         />
       )}
-      {secondary?.type === 'none_in_meso' && (
+      {/* Labels dropped "THIS MESO" (chunk 23) — the reach-back is no
+          longer meso-bounded (SPEC: "crosses run boundaries too"), so that
+          wording would now claim a narrower scope than what was actually
+          searched. Same two states as before (referenceLogic.ts's
+          resolveSecondaryReference), same styling, just renamed to match
+          resolveReachBackAcrossRuns' own variant tags. */}
+      {secondary?.type === 'none_found' && (
         <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          NOTHING THIS MESO TO COMPARE AGAINST
+          NOTHING ON RECORD TO COMPARE AGAINST
         </p>
       )}
-      {secondary?.type === 'all_skipped_in_meso' && (
+      {secondary?.type === 'all_skipped' && (
         <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          SKIPPED EVERY TIME THIS MESO
+          SKIPPED EVERY TIME ON RECORD
         </p>
       )}
 

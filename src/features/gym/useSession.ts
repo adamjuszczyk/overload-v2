@@ -20,7 +20,7 @@ import {
   updateSetLog,
   deleteSetLog,
   fetchLastSessionLogs,
-  fetchReferenceSessions,
+  fetchReferenceSessionsByExercise,
   recordExerciseSwap,
   fetchSessionSwaps,
   type ReferenceSession,
@@ -161,6 +161,25 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
 // `status` field first, then filter — cheap at this app's single-user scale.
 // Only ever called when genuinely offline (see the queryFn below) — this is
 // deliberately the last resort, not a catch-all for any online failure.
+//
+// Chunk 23 (SPEC "'Last time' reference") — deliberately UNCHANGED, per the
+// brief's own "online-only is fine" allowance: this stays scoped to one
+// workout day (same candidates as before this chunk), and its
+// ReferenceSession objects never set movedToDate/isDeload (both read as
+// undefined downstream). The result still flows through the new
+// cross-run-aware resolver (ExerciseReference.tsx), which treats an unset
+// movedToDate as "use `date`" and an unset isDeload as "not deload" — the
+// same values this function has always produced, so nothing here breaks;
+// it just means that OFFLINE, a deload session can still be matched as
+// LAST WEEK/LAST TIME (pre-existing, unchanged gap — the deload rule is
+// new, online-only, enforced by fetchReferenceSessionsByExercise's own
+// query, sessionService.ts), and offline elapsed time is still measured
+// from the plain session `date` rather than moved_to_date. Priming this
+// cache to also carry those two fields would be its own change to
+// primeOfflineCache/db.ts (a new Dexie field, a new priming read) that the
+// brief explicitly didn't ask for ("prime the offline cache only if it
+// already caches the reference data; otherwise leave it") — it doesn't
+// today, so this is left as-is.
 async function fetchReferenceSessionsFromCache(
   userId: string,
   workoutDayId: string,
@@ -236,11 +255,18 @@ async function fetchReferenceSessionsFromCache(
   return result
 }
 
-// Session-first, batched across every exercise in a workout day (v3 §2.3) —
-// one call per GymSession/SessionPreview, not one per exercise card. Feeds
-// the two-slot reference resolver (referenceLogic.ts): callers slice the
-// returned map per exerciseId and pass that exercise's ReferenceSession[]
-// straight into ExerciseReference.
+// Batched once per screen for every exercise GymSession/SessionPreview
+// needs (v3 §2.3; chunk 23 keeps the "no query per card" precedent) — one
+// call, not one per exercise card. `workoutDayId` is kept in this hook's
+// own signature/query-key/enabled-check (below) for caller compatibility
+// and cache-key stability, even though the ONLINE query it now runs
+// (fetchReferenceSessionsByExercise, chunk 23 — SPEC "'Last time'
+// reference": matches cross-run, by exercise id alone) no longer scopes by
+// it at all; the OFFLINE Dexie fallback (fetchReferenceSessionsFromCache,
+// above — deliberately unchanged this chunk) still does. Feeds
+// referenceByExercise.ts's new resolver (ExerciseReference.tsx): callers
+// slice the returned map per exerciseId and pass that exercise's
+// ReferenceSession[] straight into ExerciseReference, same as before.
 export function useExerciseReferenceSessions(
   workoutDayId: string,
   exerciseIds: string[],
@@ -271,7 +297,19 @@ export function useExerciseReferenceSessions(
     queryKey: ['v2_referenceSessions', workoutDayId, exerciseIdsKey, currentSessionId],
     queryFn: async (): Promise<{ map: Map<string, ReferenceSession[]>; fromCache: boolean }> => {
       try {
-        const map = await fetchReferenceSessions(user!.id, workoutDayId, exerciseIds, currentSessionId)
+        // Chunk 23 (SPEC "'Last time' reference" — "Matching: by
+        // exercise_id across all completed sessions of the user, every run
+        // and every workout"): online, this hook now feeds ExerciseReference
+        // the cross-run candidate query (fetchReferenceSessionsByExercise)
+        // instead of fetchReferenceSessions' per-workout-day one —
+        // `workoutDayId` stays in this hook's signature/query key/enabled
+        // check below unchanged (so GymSession.tsx/SessionPreview.tsx need
+        // no call-site change), it just isn't passed to the fetch itself any
+        // more, since matching no longer depends on it at all.
+        // fetchReferenceSessions (and the workoutDayId-scoped
+        // fetchReferenceCandidateSessions it uses) stay exactly as they are
+        // — unused by this hook now, kept for whatever else uses them.
+        const map = await fetchReferenceSessionsByExercise(user!.id, exerciseIds)
         return { map, fromCache: false }
       } catch (err) {
         // navigator.onLine is link-layer only, not real reachability — but
