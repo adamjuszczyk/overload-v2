@@ -134,4 +134,70 @@ describe('markSessionDeload — never orphans a set onto an exercise the marked 
     expect(insertedProgramExerciseIds).toContain('pe-A')
     expect(insertedProgramExerciseIds).toHaveLength(2)
   })
+
+  // The plain-add/remove fixture above happens to use the SAME row id on
+  // both sides for its one matched exercise (pe-A on base, pe-A on
+  // marked), so it can't tell "wrote the marked week's own
+  // program_exercise_id" apart from "wrote the base's" — they're equal by
+  // coincidence. A swap (chunk 20's own case: a row carried forward keeps
+  // its carry identity but gets a NEW id each week it's touched) is where
+  // those two ids genuinely diverge, so this is the fixture that actually
+  // exercises toSourceSet's markedProgramExerciseId override.
+  it("swap mirrored on both sides (same carry slot, different own row ids): writes with the MARKED week's own program_exercise_id, never the base's", async () => {
+    const markedWeekPlanRow = {
+      mesocycle_id: 'meso-1',
+      workout_day_id: 'wd-1',
+      week_number: 3,
+      deload_restore: null,
+      v2_week_plan_sets: [
+        { id: 'marked-a1', week_plan_id: 'wp-marked', user_id: 'u1', program_exercise_id: 'pe-marked-swapped', set_number: 1, target_rir: 2, is_dropset: false, parent_week_plan_set_id: null, stage_index: 0, target_weight: 100 },
+      ],
+      v2_week_plan_exercises: [
+        { program_exercise_id: 'pe-marked-swapped', carry_program_exercise_id: 'pe-carry-A', v2_program_exercises: programExerciseEmbed('ex-A') },
+      ],
+    }
+    const historyRows = [
+      {
+        week_number: 1,
+        is_deload: false,
+        v2_week_plan_sets: [
+          { id: 'base-a1', week_plan_id: 'wp-base', user_id: 'u1', program_exercise_id: 'pe-base-swapped', set_number: 1, target_rir: 2, is_dropset: false, parent_week_plan_set_id: null, stage_index: 0, target_weight: 100 },
+        ],
+        v2_week_plan_exercises: [
+          { program_exercise_id: 'pe-base-swapped', carry_program_exercise_id: 'pe-carry-A', v2_program_exercises: programExerciseEmbed('ex-A') },
+        ],
+      },
+    ]
+
+    let weekPlansCallIndex = 0
+    let insertCounter = 0
+    fromMock.mockImplementation((table: string) => {
+      if (table === 'v2_sessions') return makeChain(table, () => ({ data: [], error: null }))
+      if (table === 'v2_week_plans') {
+        weekPlansCallIndex += 1
+        if (weekPlansCallIndex === 1) return makeChain(table, () => ({ data: markedWeekPlanRow, error: null }))
+        if (weekPlansCallIndex === 2) return makeChain(table, () => ({ data: historyRows, error: null }))
+        return makeChain(table, () => ({ data: null, error: null }))
+      }
+      if (table === 'v2_set_logs') {
+        return makeChain(table, () => ({
+          data: [{ week_plan_set_id: 'base-a1', weight: 95, is_skipped: false, is_warmup: false, parent_set_id: null }],
+          error: null,
+        }))
+      }
+      if (table === 'v2_week_plan_sets') {
+        return makeChain(table, () => ({ data: { id: `new-${++insertCounter}` }, error: null }))
+      }
+      throw new Error(`unexpected table in this test: ${table}`)
+    })
+
+    const outcome = await markSessionDeload('u1', 'wp-marked', { reps: { delta: -1 } })
+    expect(outcome).toBe('calculated')
+
+    const inserts = calls.filter((c) => c.table === 'v2_week_plan_sets' && c.method === 'insert')
+    const insertedProgramExerciseIds = inserts.map((c) => (c.args[0] as Record<string, unknown>).program_exercise_id)
+
+    expect(insertedProgramExerciseIds).toEqual(['pe-marked-swapped'])
+    expect(insertedProgramExerciseIds).not.toContain('pe-base-swapped')
+  })
 })
