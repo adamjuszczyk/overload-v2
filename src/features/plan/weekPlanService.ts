@@ -8,6 +8,19 @@ import {
   fetchSwapSourceSlot,
 } from '../programs/runProgramExercises'
 import { resolveSwapSlot, resolveSwapCarry, resolveReorderCarry, resolveAddSlot } from './weekEdits'
+import {
+  resolveDeloadBaseOccurrence,
+  calculateDeloadSets,
+  buildDeloadRestoreSnapshot,
+  groupDeloadRestoreEntries,
+  occurrenceHasWorkingLog,
+  resolveLoggedWeightKg,
+  type DeloadRules,
+  type DeloadSourceSet,
+  type DeloadCalculatedSet,
+  type DeloadRestoreEntry,
+  type DeloadSetLogRecord,
+} from '../../lib/deloadRules'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +131,12 @@ type DbWeekPlan = {
   created_at: string
   v2_week_plan_sets: DbWeekPlanSet[]
   v2_week_plan_exercises: DbWeekPlanExercise[]
+  // Absent until migration 027 has been applied (chunk 22's own field) —
+  // same fallback convention as every other "may not exist yet" column in
+  // this file. jsonb; validated defensively on read (toPlan below), same
+  // posture settingsService.ts/programService.ts already take for their
+  // own deload_rules columns.
+  deload_restore?: unknown
 }
 
 // The same embed string is repeated as an inline literal at every
@@ -241,6 +260,10 @@ function toPlan(row: DbWeekPlan): WeekPlan {
       .map(toProgramExerciseFromWeekPlanExercise)
       .sort((a, b) => a.position - b.position),
     createdAt: row.created_at,
+    // Chunk 22 — same "may not exist yet" fallback as every other column
+    // this file already guards; a non-array value (absent column, or a
+    // genuinely null snapshot) reads as "no snapshot", same as null.
+    deloadRestore: Array.isArray(row.deload_restore) ? (row.deload_restore as DeloadRestoreEntry[]) : null,
   }
 }
 
@@ -1018,5 +1041,479 @@ export async function reorderWeekExercises(
       .eq('week_plan_id', weekPlanId)
       .eq('program_exercise_id', m.programExerciseId)
     if (error) throw error
+  }
+}
+
+// ─── Deload rules (chunk 22) ────────────────────────────────────────────────
+// SPEC.md "Deload": "with rules on, a deload session is pre-calculated from
+// the last normal week". The pure decisions (which occurrence is the base,
+// what the calculated sets are, the restore snapshot's own shape) all live
+// in deloadRules.ts; this section is the I/O that gathers what those
+// functions need and applies their output, same split as every other
+// feature in this file (weekSources.ts/weekEdits.ts's own pure cores,
+// copyOneWorkoutFromHistory's gather-then-copy shape above).
+//
+// Outcome of a mark/unmark attempt, reported back to the UI so it can show
+// reviewer's note 5's one-line notice ("Already started — sets left as
+// they are") when that guard fires.
+export type DeloadMarkOutcome = 'flagOnly' | 'calculated' | 'alreadyStarted'
+export type DeloadUnmarkOutcome = 'flagOnly' | 'restored' | 'alreadyStarted'
+
+// ─── Gather (thin, unbranched Supabase reads — same posture this file's
+// own fetchEmptyWorkoutPlanIds/fetchPlannedWeekHistory above already take:
+// no logic of their own to break, so left untested directly here; the
+// DECISIONS built from what they return are each pure-tested in
+// deloadRules.ts) ───────────────────────────────────────────────────────────
+
+interface DeloadWeekPlanCore {
+  mesocycleId: string
+  workoutDayId: string
+  weekNumber: number
+  deloadRestore: DeloadRestoreEntry[] | null
+  sets: DbWeekPlanSet[]
+}
+
+async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPlanCore> {
+  const { data, error } = await supabase
+    .from('v2_week_plans')
+    .select('mesocycle_id, workout_day_id, week_number, deload_restore, v2_week_plan_sets(*)')
+    .eq('id', weekPlanId)
+    .single()
+  if (error) throw error
+  const row = data as {
+    mesocycle_id: string
+    workout_day_id: string
+    week_number: number
+    deload_restore: unknown
+    v2_week_plan_sets: DbWeekPlanSet[]
+  }
+  return {
+    mesocycleId: row.mesocycle_id,
+    workoutDayId: row.workout_day_id,
+    weekNumber: row.week_number,
+    deloadRestore: Array.isArray(row.deload_restore) ? (row.deload_restore as DeloadRestoreEntry[]) : null,
+    sets: row.v2_week_plan_sets ?? [],
+  }
+}
+
+// Every earlier planned occurrence of this one workout in this run —
+// resolveDeloadBaseOccurrence's own candidate list, plus each candidate's
+// full set list (needed once a base is chosen, to build the calculator's
+// input) so this is one query, not a second round trip once the pure
+// function picks a winner.
+async function fetchDeloadOccurrenceHistory(
+  mesocycleId: string,
+  workoutDayId: string,
+  beforeWeekNumber: number,
+): Promise<{ weekNumber: number; isDeload: boolean; sets: DbWeekPlanSet[] }[]> {
+  const { data, error } = await supabase
+    .from('v2_week_plans')
+    .select('week_number, is_deload, v2_week_plan_sets(*)')
+    .eq('mesocycle_id', mesocycleId)
+    .eq('workout_day_id', workoutDayId)
+    .lt('week_number', beforeWeekNumber)
+  if (error) throw error
+  const rows = (data ?? []) as { week_number: number; is_deload: boolean; v2_week_plan_sets: DbWeekPlanSet[] }[]
+  return rows.map((r) => ({ weekNumber: r.week_number, isDeload: r.is_deload, sets: r.v2_week_plan_sets ?? [] }))
+}
+
+// Every set log pointing at any of `plannedSetIds` (via week_plan_set_id) —
+// one combined query serving BOTH "did this occurrence happen"
+// (occurrenceHasWorkingLog) and "what was actually logged against this
+// exact planned set" (resolveLoggedWeightKg), across every candidate
+// occurrence at once.
+async function fetchDeloadSetLogs(plannedSetIds: string[]): Promise<DeloadSetLogRecord[]> {
+  if (plannedSetIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('v2_set_logs')
+    .select('week_plan_set_id, weight, is_skipped, is_warmup, parent_set_id')
+    .in('week_plan_set_id', plannedSetIds)
+  if (error) throw error
+  const rows = (data ?? []) as {
+    week_plan_set_id: string | null
+    weight: number | null
+    is_skipped: boolean
+    is_warmup: boolean
+    parent_set_id: string | null
+  }[]
+  return rows.map((r) => ({
+    weekPlanSetId: r.week_plan_set_id,
+    weight: r.weight,
+    isSkipped: r.is_skipped,
+    isWarmup: r.is_warmup,
+    parentSetId: r.parent_set_id,
+  }))
+}
+
+// Reviewer's note 5 guard: "a session that has already started (any set
+// log against that week plan)". Set logs link to a SESSION, not directly
+// to a week plan, so this is the two-hop check: any session for this week
+// plan, with any set log at all (skipped, warmup or stage all count —
+// unlike occurrenceHasWorkingLog's stricter "happened" test above, this is
+// "was this touched at all").
+async function hasAnySetLogForWeekPlan(weekPlanId: string): Promise<boolean> {
+  const { data: sessions, error } = await supabase
+    .from('v2_sessions')
+    .select('id')
+    .eq('week_plan_id', weekPlanId)
+  if (error) throw error
+  const sessionIds = (sessions ?? []).map((s) => (s as { id: string }).id)
+  if (sessionIds.length === 0) return false
+  const { count, error: logErr } = await supabase
+    .from('v2_set_logs')
+    .select('id', { count: 'exact', head: true })
+    .in('session_id', sessionIds)
+  if (logErr) throw logErr
+  return (count ?? 0) > 0
+}
+
+function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null): DeloadSourceSet {
+  return {
+    id: s.id,
+    programExerciseId: s.program_exercise_id,
+    setNumber: s.set_number,
+    parentId: s.parent_week_plan_set_id ?? null,
+    stageIndex: s.stage_index ?? 0,
+    isWarmup: s.is_warmup ?? false,
+    stageKind: s.stage_kind ?? null,
+    programSetId: s.program_set_id ?? null,
+    repMin: s.rep_min ?? null,
+    repMax: s.rep_max ?? null,
+    isAmrap: s.is_amrap ?? false,
+    targetRir: s.target_rir,
+    tags: s.tags ?? null,
+    isDropset: s.is_dropset,
+    plannedWeight: s.target_weight ?? null,
+    loggedWeight,
+  }
+}
+
+// ─── Write order (injectable — same seam as copySetsWithGrouping's own
+// insertPlanSet above, so a test can assert exact call ORDER with a fake,
+// never a real Supabase round trip) ─────────────────────────────────────────
+
+export interface DeloadMarkWriteOps {
+  // Bundles the snapshot write with the is_deload flip — ONE statement,
+  // committing before anything is deleted (reviewer's note 3: "because
+  // step 1 commits before anything is deleted, a failure leaves the
+  // snapshot recoverable").
+  writeSnapshotAndMark: (weekPlanId: string, snapshot: DeloadRestoreEntry[]) => Promise<void>
+  deleteAllSets: (weekPlanId: string) => Promise<void>
+  insertCalculatedSets: (userId: string, weekPlanId: string, calculated: DeloadCalculatedSet[]) => Promise<void>
+}
+
+async function defaultWriteSnapshotAndMark(weekPlanId: string, snapshot: DeloadRestoreEntry[]): Promise<void> {
+  const { error } = await supabase
+    .from('v2_week_plans')
+    .update({ deload_restore: snapshot, is_deload: true })
+    .eq('id', weekPlanId)
+  if (error) throw error
+}
+
+async function defaultDeleteAllSets(weekPlanId: string): Promise<void> {
+  const { error } = await supabase.from('v2_week_plan_sets').delete().eq('week_plan_id', weekPlanId)
+  if (error) throw error
+}
+
+async function defaultInsertOneSet(payload: Record<string, unknown>): Promise<{ id: string }> {
+  const { data, error } = await supabase.from('v2_week_plan_sets').insert(payload).select('id').single()
+  if (error) throw error
+  return data as { id: string }
+}
+
+// Heads first (so each stage's new parent id is resolvable), same
+// insert-order/idMap pattern as copySetsWithGrouping above. `insertOneSet`
+// is this function's own injection seam (defaults to a real Supabase
+// insert) — same reason copySetsWithGrouping's own insertPlanSet is
+// injectable: the id-remap (a dropped head must take its stages with it;
+// a KEPT head's stages must land on ITS new id, never a sibling's) is the
+// part genuinely at risk of a bug, and a test can exercise it directly
+// with a fake that just records payloads and mints synthetic ids.
+export async function insertCalculatedPlanSets(
+  userId: string,
+  weekPlanId: string,
+  calculated: DeloadCalculatedSet[],
+  insertOneSet: (payload: Record<string, unknown>) => Promise<{ id: string }> = defaultInsertOneSet,
+): Promise<void> {
+  const heads = calculated.filter((s) => s.parentSourceId == null)
+  const stages = calculated.filter((s) => s.parentSourceId != null)
+  const idMap = new Map<string, string>()
+
+  for (const s of heads) {
+    const row = await insertOneSet({
+      week_plan_id: weekPlanId,
+      user_id: userId,
+      program_exercise_id: s.programExerciseId,
+      set_number: s.setNumber,
+      target_rir: s.targetRir,
+      is_dropset: s.isDropset,
+      stage_index: s.stageIndex,
+      is_warmup: s.isWarmup,
+      program_set_id: s.programSetId,
+      stage_kind: s.stageKind,
+      target_weight: s.targetWeight,
+      rep_min: s.repMin,
+      rep_max: s.repMax,
+      is_amrap: s.isAmrap,
+      tags: s.tags,
+    })
+    idMap.set(s.sourceId, row.id)
+  }
+
+  for (const s of stages) {
+    const newParentId = s.parentSourceId ? idMap.get(s.parentSourceId) : undefined
+    await insertOneSet({
+      week_plan_id: weekPlanId,
+      user_id: userId,
+      program_exercise_id: s.programExerciseId,
+      set_number: s.setNumber,
+      target_rir: s.targetRir,
+      is_dropset: s.isDropset,
+      parent_week_plan_set_id: newParentId ?? null,
+      stage_index: s.stageIndex,
+      is_warmup: s.isWarmup,
+      program_set_id: s.programSetId,
+      stage_kind: s.stageKind,
+      target_weight: s.targetWeight,
+      rep_min: s.repMin,
+      rep_max: s.repMax,
+      is_amrap: s.isAmrap,
+      tags: s.tags,
+    })
+  }
+}
+
+const defaultMarkWriteOps: DeloadMarkWriteOps = {
+  writeSnapshotAndMark: defaultWriteSnapshotAndMark,
+  deleteAllSets: defaultDeleteAllSets,
+  insertCalculatedSets: (userId, weekPlanId, calculated) => insertCalculatedPlanSets(userId, weekPlanId, calculated),
+}
+
+// Reviewer's note 3's ordering, as one exported, independently testable
+// step: (1) snapshot + flag commits; (2) delete; (3) insert the calculated
+// sets. A test supplies a fake `ops` whose three functions each record
+// their own name into one shared array, then asserts that array's order —
+// proving the snapshot is safely committed before anything destructive
+// happens, without a real Supabase round trip.
+export async function applyCalculatedDeloadMark(
+  userId: string,
+  weekPlanId: string,
+  currentSets: DbWeekPlanSet[],
+  calculated: DeloadCalculatedSet[],
+  ops: DeloadMarkWriteOps = defaultMarkWriteOps,
+): Promise<void> {
+  const snapshot = buildDeloadRestoreSnapshot(
+    currentSets.map((s) => ({
+      programExerciseId: s.program_exercise_id,
+      setNumber: s.set_number,
+      stageIndex: s.stage_index ?? 0,
+      isWarmup: s.is_warmup ?? false,
+      isDropset: s.is_dropset,
+      stageKind: s.stage_kind ?? null,
+      programSetId: s.program_set_id ?? null,
+      repMin: s.rep_min ?? null,
+      repMax: s.rep_max ?? null,
+      isAmrap: s.is_amrap ?? false,
+      targetWeight: s.target_weight ?? null,
+      targetRir: s.target_rir,
+      tags: s.tags ?? null,
+    })),
+  )
+  await ops.writeSnapshotAndMark(weekPlanId, snapshot) // (1) commits first
+  await ops.deleteAllSets(weekPlanId) // (2)
+  await ops.insertCalculatedSets(userId, weekPlanId, calculated) // (3)
+}
+
+export interface DeloadRestoreWriteOps {
+  deleteAllSets: (weekPlanId: string) => Promise<void>
+  insertRestoredSets: (userId: string, weekPlanId: string, entries: DeloadRestoreEntry[]) => Promise<void>
+  // Bundles nulling deload_restore with the is_deload flip — the final
+  // step, only once the restored sets are safely written (reviewer's note
+  // 4: "restore... then null deload_restore, in that order").
+  clearSnapshotAndUnmark: (weekPlanId: string) => Promise<void>
+}
+
+// Regroups the id-free snapshot (groupDeloadRestoreEntries — by
+// (programExerciseId, setNumber, stageIndex), see deloadRules.ts's own
+// header on why) and inserts heads first so each stage's new parent id is
+// resolvable, same shape insertCalculatedPlanSets above takes. Same
+// injectable `insertOneSet` seam, for the same reason.
+export async function insertRestoredPlanSets(
+  userId: string,
+  weekPlanId: string,
+  entries: DeloadRestoreEntry[],
+  insertOneSet: (payload: Record<string, unknown>) => Promise<{ id: string }> = defaultInsertOneSet,
+): Promise<void> {
+  const groups = groupDeloadRestoreEntries(entries)
+  for (const { head, stages } of groups) {
+    const headRow = await insertOneSet({
+      week_plan_id: weekPlanId,
+      user_id: userId,
+      program_exercise_id: head.programExerciseId,
+      set_number: head.setNumber,
+      target_rir: head.targetRir,
+      is_dropset: head.isDropset,
+      stage_index: head.stageIndex,
+      is_warmup: head.isWarmup,
+      program_set_id: head.programSetId,
+      stage_kind: head.stageKind,
+      target_weight: head.targetWeight,
+      rep_min: head.repMin,
+      rep_max: head.repMax,
+      is_amrap: head.isAmrap,
+      tags: head.tags,
+    })
+
+    for (const stage of stages) {
+      await insertOneSet({
+        week_plan_id: weekPlanId,
+        user_id: userId,
+        program_exercise_id: stage.programExerciseId,
+        set_number: stage.setNumber,
+        target_rir: stage.targetRir,
+        is_dropset: stage.isDropset,
+        parent_week_plan_set_id: headRow.id,
+        stage_index: stage.stageIndex,
+        is_warmup: stage.isWarmup,
+        program_set_id: stage.programSetId,
+        stage_kind: stage.stageKind,
+        target_weight: stage.targetWeight,
+        rep_min: stage.repMin,
+        rep_max: stage.repMax,
+        is_amrap: stage.isAmrap,
+        tags: stage.tags,
+      })
+    }
+  }
+}
+
+async function defaultClearSnapshotAndUnmark(weekPlanId: string): Promise<void> {
+  const { error } = await supabase
+    .from('v2_week_plans')
+    .update({ deload_restore: null, is_deload: false })
+    .eq('id', weekPlanId)
+  if (error) throw error
+}
+
+const defaultRestoreWriteOps: DeloadRestoreWriteOps = {
+  deleteAllSets: defaultDeleteAllSets,
+  insertRestoredSets: (userId, weekPlanId, entries) => insertRestoredPlanSets(userId, weekPlanId, entries),
+  clearSnapshotAndUnmark: defaultClearSnapshotAndUnmark,
+}
+
+// Reviewer's note 4's ordering: (1) delete the calculated sets currently
+// there; (2) insert the exact pre-mark sets from the snapshot; (3) only
+// THEN null deload_restore (and clear is_deload) — if step 2 fails, the
+// snapshot is still there for a retry. Steps 1–2 together are "restore the
+// exact pre-mark sets"; nothing about restoring reads the CURRENT
+// (possibly hand-edited) sets at all, which is also why editing a
+// calculated set by hand before unmarking can never change what restore
+// produces — restore's only input is the snapshot.
+export async function applyDeloadRestore(
+  userId: string,
+  weekPlanId: string,
+  snapshot: DeloadRestoreEntry[],
+  ops: DeloadRestoreWriteOps = defaultRestoreWriteOps,
+): Promise<void> {
+  await ops.deleteAllSets(weekPlanId) // (1)
+  await ops.insertRestoredSets(userId, weekPlanId, snapshot) // (2)
+  await ops.clearSnapshotAndUnmark(weekPlanId) // (3) — only once (2) succeeds
+}
+
+// ─── Orchestrators — the one function per direction useWeekPlan.ts's hooks
+// call, gluing the gather/decide/write pieces above together. Left thin and
+// untested directly (same posture copyOneWorkoutFromHistory above already
+// takes for its own gather-then-copy glue): every DECISION it makes is
+// pure-tested in deloadRules.ts, every destructive WRITE ORDER it relies on
+// is tested above via the injectable ops, and the whole thing is proven
+// end-to-end against real Postgres (this chunk's scratch-SQL verification).
+
+// Marks one session deload. `rules` is the EFFECTIVE rules already resolved
+// by the caller (program override, else the global default, else none —
+// PlanPage.tsx/StepVolume.tsx compute this once, the same "screen resolves
+// it, hook/executor just uses it" split this chunk's report explains) —
+// this function has no notion of settings or program rows at all.
+export async function markSessionDeload(
+  userId: string,
+  weekPlanId: string,
+  rules: DeloadRules | null,
+): Promise<DeloadMarkOutcome> {
+  if (rules === null) {
+    await setDeload(weekPlanId, true)
+    return 'flagOnly'
+  }
+
+  if (await hasAnySetLogForWeekPlan(weekPlanId)) {
+    await setDeload(weekPlanId, true)
+    return 'alreadyStarted'
+  }
+
+  const current = await fetchDeloadWeekPlanCore(weekPlanId)
+  const history = await fetchDeloadOccurrenceHistory(current.mesocycleId, current.workoutDayId, current.weekNumber)
+
+  const historySetIds = history.flatMap((h) => h.sets.map((s) => s.id))
+  const historyLogs = await fetchDeloadSetLogs(historySetIds)
+
+  const resolution = resolveDeloadBaseOccurrence(
+    history.map((h) => ({
+      weekNumber: h.weekNumber,
+      isDeload: h.isDeload,
+      happened: occurrenceHasWorkingLog(historyLogs, h.sets.map((s) => s.id)),
+    })),
+    current.weekNumber,
+  )
+
+  const baseSets = resolution.kind === 'week' ? history.find((h) => h.weekNumber === resolution.weekNumber)!.sets : current.sets
+  // The fallback base (the session's own current, not-yet-started sets)
+  // can never have anything logged against it — hasAnySetLogForWeekPlan
+  // above already guards that — so baseLogs is only ever non-empty for a
+  // genuine earlier occurrence.
+  const baseLogs = resolution.kind === 'week' ? historyLogs : []
+
+  const sourceSets = baseSets.map((s) => toSourceSet(s, resolveLoggedWeightKg(baseLogs, s.id)))
+  const calculated = calculateDeloadSets(sourceSets, rules)
+
+  await applyCalculatedDeloadMark(userId, weekPlanId, current.sets, calculated)
+  return 'calculated'
+}
+
+export async function unmarkSessionDeload(userId: string, weekPlanId: string): Promise<DeloadUnmarkOutcome> {
+  const current = await fetchDeloadWeekPlanCore(weekPlanId)
+  if (current.deloadRestore == null) {
+    await setDeload(weekPlanId, false)
+    return 'flagOnly'
+  }
+
+  if (await hasAnySetLogForWeekPlan(weekPlanId)) {
+    await setDeload(weekPlanId, false)
+    return 'alreadyStarted'
+  }
+
+  await applyDeloadRestore(userId, weekPlanId, current.deloadRestore)
+  return 'restored'
+}
+
+// Week-level shortcut (chunk 21's own week action, extended): "the
+// calculation and snapshot happen once for that row" (reviewer's note 6) —
+// this is literally markSessionDeload/unmarkSessionDeload run once per row
+// of the week, never a bulk statement once rules are on (each row can
+// resolve a different base occurrence). `rules` is the SAME effective
+// rules object for every row (one run, one program, one global default).
+export async function markWeekDeload(
+  userId: string,
+  mesoId: string,
+  weekNumber: number,
+  rules: DeloadRules | null,
+): Promise<void> {
+  const plans = await fetchWeekPlans(mesoId, weekNumber)
+  for (const p of plans) {
+    await markSessionDeload(userId, p.id, rules)
+  }
+}
+
+export async function unmarkWeekDeload(userId: string, mesoId: string, weekNumber: number): Promise<void> {
+  const plans = await fetchWeekPlans(mesoId, weekNumber)
+  for (const p of plans) {
+    await unmarkSessionDeload(userId, p.id)
   }
 }
