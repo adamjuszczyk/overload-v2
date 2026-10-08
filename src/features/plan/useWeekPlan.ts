@@ -8,6 +8,7 @@ import {
   fetchWeekPlanById,
   createWeekPlan,
   setDeload,
+  setWeekDeload,
   addSet,
   addStage,
   updateSet,
@@ -123,6 +124,48 @@ export function useSetDeload(mesoId: string, weekNumber: number) {
       queryClient.invalidateQueries({ queryKey: qk })
       // Scheduler's missed-session detection reads useAllWeekPlans — without
       // this it keeps deload/plan data stale until an unrelated refetch.
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+// Chunk 21 — "Mark this week as deload" / its counterpart "Unmark this
+// week" (SPEC "Deload": "'Mark this week as deload' marks every session in
+// that week"). Reviewer's note 1: networkMode 'always' (same offline-
+// doesn't-hang reasoning as usePlanWeek/useUpdateSet above) and optimistic
+// the same way useSetDeload above is — onMutate patches every row already
+// in this week's own cache entry to the new value; a row this week doesn't
+// have yet (shouldn't happen — PlanPage.tsx's own planWeek effect already
+// plans the week on every view before this action can even render) simply
+// isn't in the optimistic patch, and onSettled's invalidate corrects
+// whatever the optimistic patch couldn't.
+//
+// planWeek first (TASKS.md: "Before marking, plan the week first... so
+// every scheduled workout has a row") — v2_plan_week is idempotent
+// (weekPlanService.ts's own planWeek), so calling it again here is always
+// safe, never a second real plan; it's the defensive guarantee that every
+// scheduled workout already has a row to mark, independent of whether
+// PlanPage's own view-triggered plan has resolved yet.
+export function useSetWeekDeload(mesoId: string, weekNumber: number) {
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async ({ isDeload }: { isDeload: boolean }) => {
+      await planWeek(mesoId, weekNumber)
+      await setWeekDeload(mesoId, weekNumber, isDeload)
+    },
+    onMutate: async ({ isDeload }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData(qk)
+      queryClient.setQueryData(qk, (old: WeekPlan[] | undefined) => old?.map((wp) => ({ ...wp, isDeload })))
+      return { prev }
+    },
+    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      // Same reasoning as useSetDeload's own onSettled above — the
+      // scheduler's missed-session detection and Plan's own copy-history
+      // check both read useAllWeekPlans.
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
     },
   })

@@ -328,6 +328,26 @@ export async function setDeload(weekPlanId: string, isDeload: boolean): Promise<
   if (error) throw error
 }
 
+// Chunk 21 (SPEC "Deload" — "'Mark this week as deload' marks every session
+// in that week"; TASKS.md "Mark this week as deload... sets is_deload = true
+// on every planned row of that week — the rows sharing (mesocycle_id,
+// week_number)"). The whole-week counterpart to setDeload above: that one
+// targets a single row by id (one session); this one has no row id at all —
+// its own identity IS the (mesocycle_id, week_number) pair, matching every
+// row that shares it, however many scheduled workouts that is. Used for both
+// directions (mark true, unmark false — useWeekPlan.ts's useSetWeekDeload is
+// the one caller, PlanPage.tsx's own week-level action). Never filters by
+// workout_day_id — doing so would narrow this back to "mark only the
+// selected workout," exactly the bug this function exists to not have.
+export async function setWeekDeload(mesoId: string, weekNumber: number, isDeload: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('v2_week_plans')
+    .update({ is_deload: isDeload })
+    .eq('mesocycle_id', mesoId)
+    .eq('week_number', weekNumber)
+  if (error) throw error
+}
+
 // ─── Sets ─────────────────────────────────────────────────────────────────────
 
 export async function addSet(
