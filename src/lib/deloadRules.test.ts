@@ -3,6 +3,7 @@ import {
   validateDeloadRules,
   resolveEffectiveDeloadRules,
   resolveDeloadBaseOccurrence,
+  resolveDeloadExerciseMapping,
   occurrenceHasWorkingLog,
   resolveLoggedWeightKg,
   calculateDeloadSetCount,
@@ -13,6 +14,7 @@ import {
   buildDeloadRestoreSnapshot,
   groupDeloadRestoreEntries,
   type DeloadSourceSet,
+  type DeloadExerciseSlot,
   type DeloadRules,
   type DeloadSetsRule,
   type DeloadWeightRule,
@@ -126,6 +128,94 @@ describe('resolveDeloadBaseOccurrence', () => {
   it('with none at all, reports "none" (caller falls back to the current planned sets)', () => {
     expect(resolveDeloadBaseOccurrence([], 1)).toEqual({ kind: 'none' })
     expect(resolveDeloadBaseOccurrence([{ weekNumber: 1, isDeload: true, happened: true }], 2)).toEqual({ kind: 'none' })
+  })
+})
+
+// Review fix — the base occurrence's sets must never be written under the
+// base week's own program_exercise_id verbatim; this function decides,
+// per the MARKED week's own exercise, whether a base exercise matches it
+// (same slot per applyAhead.ts's own chunk-20 rule, AND the same CURRENT
+// exerciseId) or must fall back to the marked week's own current sets.
+describe('resolveDeloadExerciseMapping', () => {
+  function slot(overrides: Partial<DeloadExerciseSlot>): DeloadExerciseSlot {
+    return { programExerciseId: 'pe', exerciseId: 'ex', carryProgramExerciseId: null, ...overrides }
+  }
+
+  it('the plain case: same programExerciseId on both sides, no carry at all, matches', () => {
+    const marked = [slot({ programExerciseId: 'pe-1', exerciseId: 'ex-a' })]
+    const base = [slot({ programExerciseId: 'pe-1', exerciseId: 'ex-a' })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-1', source: { kind: 'matched', baseProgramExerciseId: 'pe-1' } },
+    ])
+  })
+
+  it('added in the marked week (base has nothing at all for it): falls back to its own current sets', () => {
+    const marked = [slot({ programExerciseId: 'pe-new', exerciseId: 'ex-new' })]
+    const base: DeloadExerciseSlot[] = [] // the stable program-tab add-after-week-1 case, or simply a different exercise list
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-new', source: { kind: 'fallback' } },
+    ])
+  })
+
+  it('removed in the marked week: a base exercise with no marked-week counterpart is simply never produced (ignored, never written)', () => {
+    const marked: DeloadExerciseSlot[] = [] // this one workout's only exercise was removed from the marked week
+    const base = [slot({ programExerciseId: 'pe-gone', exerciseId: 'ex-gone' })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([])
+  })
+
+  it('an "only this week" swap in the BASE week (base row Y carrying original A, marked week still plain A): slot matches but the CURRENT exercise diverged — falls back, never matched on slot alone', () => {
+    // Base week: swapped (this week only) from slot A to a week-only row Y
+    // — carry_program_exercise_id records the ORIGINAL (A) for copying's
+    // sake, but TODAY it really is exercise Y.
+    const base = [slot({ programExerciseId: 'pe-Y', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
+    // Marked week: never swapped — still plainly A.
+    const marked = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A', carryProgramExerciseId: null })]
+    // Slot agrees (both resolve to 'pe-A'), but exerciseId does NOT
+    // (ex-Y vs ex-A) — same "slot identity alone is not enough" case
+    // applyAhead.ts's own review fix already established.
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-A', source: { kind: 'fallback' } },
+    ])
+  })
+
+  it('a PERMANENT swap made only in the marked week: carry is cleared, so the slot itself no longer links back — falls back', () => {
+    // Marked week: permanently swapped to Z — carry_program_exercise_id is
+    // cleared (a permanent swap never keeps one, so copying forward never
+    // reverts it — weekPlanService.ts's own swapWeekExercise/
+    // repointWeekExercise). Its own slot is now simply 'pe-Z'.
+    const marked = [slot({ programExerciseId: 'pe-Z', exerciseId: 'ex-Z', carryProgramExerciseId: null })]
+    // Base week (chronologically earlier, before the swap ever happened):
+    // still plainly A.
+    const base = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A', carryProgramExerciseId: null })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-Z', source: { kind: 'fallback' } },
+    ])
+  })
+
+  it('an "only this week" swap mirrored in BOTH weeks (same original slot, same swapped-to exercise) still matches, even though the underlying rows differ', () => {
+    // Each week's own swap creates its OWN week-only program_exercise row
+    // (swapWeekExercise's own behaviour) — different ids, same slot (A)
+    // and the same CURRENT real exercise (Y) on both sides.
+    const base = [slot({ programExerciseId: 'pe-Y-base', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
+    const marked = [slot({ programExerciseId: 'pe-Y-marked', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-Y-marked', source: { kind: 'matched', baseProgramExerciseId: 'pe-Y-base' } },
+    ])
+  })
+
+  it('several exercises at once: each marked exercise is resolved independently', () => {
+    const marked = [
+      slot({ programExerciseId: 'pe-1', exerciseId: 'ex-1' }), // matches
+      slot({ programExerciseId: 'pe-new', exerciseId: 'ex-new' }), // added — fallback
+    ]
+    const base = [
+      slot({ programExerciseId: 'pe-1', exerciseId: 'ex-1' }),
+      slot({ programExerciseId: 'pe-removed', exerciseId: 'ex-removed' }), // not in marked — ignored
+    ]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-1', source: { kind: 'matched', baseProgramExerciseId: 'pe-1' } },
+      { markedProgramExerciseId: 'pe-new', source: { kind: 'fallback' } },
+    ])
   })
 })
 

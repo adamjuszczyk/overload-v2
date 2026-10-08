@@ -161,6 +161,72 @@ export function resolveEffectiveDeloadRules(
   return validateDeloadRules(chosenRaw)
 }
 
+// ─── Exercise-slot mapping, base occurrence → marked week (review fix) ─────
+// The base occurrence's own sets carry the BASE week's program_exercise_id
+// — a foreign key that is valid everywhere (program_exercise_id has no
+// per-week scope), but the MARKED week's v2_week_plan_exercises is what
+// decides which exercise cards actually render this week (chunk 7's own
+// invariant: no planned set without its exercise row in the SAME week).
+// Writing the base's sets verbatim, unmapped, either orphans them (a
+// program_exercise_id the marked week's own exercise list doesn't carry —
+// e.g. a stable program-tab add after week 1, a week-dependent add/remove
+// in the marked week, a swap made only in one of the two weeks) or silently
+// drops an exercise the marked week DOES have but the base week doesn't.
+//
+// Mirrors applyAhead.ts's own slot-identity rule (chunk 20) exactly —
+// "the slot, identified across weeks the same way copying identifies it":
+// carryProgramExerciseId ?? programExerciseId, AND the matched row's
+// CURRENT exerciseId must still agree (a slot can have diverged to a
+// different real exercise since — applyAhead.ts's own header explains
+// why slot identity alone isn't enough: an "only this week" swap
+// deliberately keeps the ORIGINAL identity in carry, for copying's sake,
+// not because that week's current occupant still is that original
+// exercise). Reimplemented locally (not imported from applyAhead.ts) to
+// keep this module standalone, per its own header.
+
+export interface DeloadExerciseSlot {
+  programExerciseId: string
+  exerciseId: string
+  carryProgramExerciseId: string | null
+}
+
+export type DeloadExerciseSource =
+  | { kind: 'matched'; baseProgramExerciseId: string }
+  // No matching base exercise (added since, or diverged by a swap on
+  // either side) — calculated from this exercise's OWN current planned
+  // sets, the same fallback "no base occurrence" already uses.
+  | { kind: 'fallback' }
+
+export interface DeloadExerciseMapping {
+  markedProgramExerciseId: string
+  source: DeloadExerciseSource
+}
+
+function deloadSlotIdOf(e: DeloadExerciseSlot): string {
+  return e.carryProgramExerciseId ?? e.programExerciseId
+}
+
+// For each of the MARKED week's own exercises, decides where its
+// calculation input comes from. A base exercise with no match in the
+// marked week is simply absent from the result — never written (an
+// exercise the marked week has already moved past, e.g. removed or
+// replaced there since the base week).
+export function resolveDeloadExerciseMapping(
+  markedExercises: readonly DeloadExerciseSlot[],
+  baseExercises: readonly DeloadExerciseSlot[],
+): DeloadExerciseMapping[] {
+  return markedExercises.map((marked) => {
+    const slot = deloadSlotIdOf(marked)
+    const match = baseExercises.find(
+      (base) => deloadSlotIdOf(base) === slot && base.exerciseId === marked.exerciseId,
+    )
+    return {
+      markedProgramExerciseId: marked.programExerciseId,
+      source: match ? { kind: 'matched', baseProgramExerciseId: match.programExerciseId } : { kind: 'fallback' },
+    }
+  })
+}
+
 // ─── Base occurrence (reviewer's note 2) ───────────────────────────────────
 
 export interface DeloadOccurrenceRecord {

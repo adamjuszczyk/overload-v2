@@ -10,6 +10,7 @@ import {
 import { resolveSwapSlot, resolveSwapCarry, resolveReorderCarry, resolveAddSlot } from './weekEdits'
 import {
   resolveDeloadBaseOccurrence,
+  resolveDeloadExerciseMapping,
   calculateDeloadSets,
   buildDeloadRestoreSnapshot,
   groupDeloadRestoreEntries,
@@ -20,6 +21,7 @@ import {
   type DeloadCalculatedSet,
   type DeloadRestoreEntry,
   type DeloadSetLogRecord,
+  type DeloadExerciseSlot,
 } from '../../lib/deloadRules'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -1065,18 +1067,53 @@ export type DeloadUnmarkOutcome = 'flagOnly' | 'restored' | 'alreadyStarted'
 // DECISIONS built from what they return are each pure-tested in
 // deloadRules.ts) ───────────────────────────────────────────────────────────
 
+// The lean embed this section's own two fetches share: which program
+// exercise (plus its carry, for slot identity) and that row's CURRENT real
+// exercise (for findMatchingExercise-style matching — see
+// resolveDeloadExerciseMapping's own header, deloadRules.ts). Hinted by FK
+// name (DECISIONS 38): v2_week_plan_exercises has two FKs to
+// v2_program_exercises (program_exercise_id, carry_program_exercise_id), so
+// an un-hinted embed here would be PGRST201-ambiguous — same hint string
+// fetchWeekPlans/fetchWeekPlanById already use elsewhere in this file.
+//
+// It is repeated as an inline literal at both call sites below, rather than
+// hoisted to a shared const and interpolated in: scripts/check-embeds.mjs's
+// scan only recognises a quoted literal passed straight to .select(), so an
+// interpolated `${...}` reads as literal unresolved text to that scanner and
+// fails PGRST100 even though the resolved query is valid — same reasoning as
+// this file's other v2_week_plans embeds (see the comment above
+// DbWeekPlanRow).
+type DbDeloadExerciseSlotRow = {
+  program_exercise_id: string
+  carry_program_exercise_id: string | null
+  v2_program_exercises: { exercise_id: string } | { exercise_id: string }[] | null
+}
+
+function toExerciseSlot(row: DbDeloadExerciseSlotRow): DeloadExerciseSlot | null {
+  const pe = Array.isArray(row.v2_program_exercises) ? row.v2_program_exercises[0] : row.v2_program_exercises
+  if (!pe) return null
+  return {
+    programExerciseId: row.program_exercise_id,
+    exerciseId: pe.exercise_id,
+    carryProgramExerciseId: row.carry_program_exercise_id,
+  }
+}
+
 interface DeloadWeekPlanCore {
   mesocycleId: string
   workoutDayId: string
   weekNumber: number
   deloadRestore: DeloadRestoreEntry[] | null
   sets: DbWeekPlanSet[]
+  exercises: DeloadExerciseSlot[]
 }
 
 async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPlanCore> {
   const { data, error } = await supabase
     .from('v2_week_plans')
-    .select('mesocycle_id, workout_day_id, week_number, deload_restore, v2_week_plan_sets(*)')
+    .select(
+      'mesocycle_id, workout_day_id, week_number, deload_restore, v2_week_plan_sets(*), v2_week_plan_exercises(program_exercise_id, carry_program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))',
+    )
     .eq('id', weekPlanId)
     .single()
   if (error) throw error
@@ -1086,6 +1123,7 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
     week_number: number
     deload_restore: unknown
     v2_week_plan_sets: DbWeekPlanSet[]
+    v2_week_plan_exercises: DbDeloadExerciseSlotRow[]
   }
   return {
     mesocycleId: row.mesocycle_id,
@@ -1093,28 +1131,41 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
     weekNumber: row.week_number,
     deloadRestore: Array.isArray(row.deload_restore) ? (row.deload_restore as DeloadRestoreEntry[]) : null,
     sets: row.v2_week_plan_sets ?? [],
+    exercises: (row.v2_week_plan_exercises ?? []).map(toExerciseSlot).filter((e): e is DeloadExerciseSlot => e != null),
   }
 }
 
 // Every earlier planned occurrence of this one workout in this run —
 // resolveDeloadBaseOccurrence's own candidate list, plus each candidate's
-// full set list (needed once a base is chosen, to build the calculator's
-// input) so this is one query, not a second round trip once the pure
-// function picks a winner.
+// full set list AND exercise list (needed once a base is chosen, to build
+// the calculator's input via resolveDeloadExerciseMapping) so this is one
+// query, not a second round trip once the pure function picks a winner.
 async function fetchDeloadOccurrenceHistory(
   mesocycleId: string,
   workoutDayId: string,
   beforeWeekNumber: number,
-): Promise<{ weekNumber: number; isDeload: boolean; sets: DbWeekPlanSet[] }[]> {
+): Promise<{ weekNumber: number; isDeload: boolean; sets: DbWeekPlanSet[]; exercises: DeloadExerciseSlot[] }[]> {
   const { data, error } = await supabase
     .from('v2_week_plans')
-    .select('week_number, is_deload, v2_week_plan_sets(*)')
+    .select(
+      'week_number, is_deload, v2_week_plan_sets(*), v2_week_plan_exercises(program_exercise_id, carry_program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))',
+    )
     .eq('mesocycle_id', mesocycleId)
     .eq('workout_day_id', workoutDayId)
     .lt('week_number', beforeWeekNumber)
   if (error) throw error
-  const rows = (data ?? []) as { week_number: number; is_deload: boolean; v2_week_plan_sets: DbWeekPlanSet[] }[]
-  return rows.map((r) => ({ weekNumber: r.week_number, isDeload: r.is_deload, sets: r.v2_week_plan_sets ?? [] }))
+  const rows = (data ?? []) as {
+    week_number: number
+    is_deload: boolean
+    v2_week_plan_sets: DbWeekPlanSet[]
+    v2_week_plan_exercises: DbDeloadExerciseSlotRow[]
+  }[]
+  return rows.map((r) => ({
+    weekNumber: r.week_number,
+    isDeload: r.is_deload,
+    sets: r.v2_week_plan_sets ?? [],
+    exercises: (r.v2_week_plan_exercises ?? []).map(toExerciseSlot).filter((e): e is DeloadExerciseSlot => e != null),
+  }))
 }
 
 // Every set log pointing at any of `plannedSetIds` (via week_plan_set_id) —
@@ -1167,10 +1218,17 @@ async function hasAnySetLogForWeekPlan(weekPlanId: string): Promise<boolean> {
   return (count ?? 0) > 0
 }
 
-function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null): DeloadSourceSet {
+// `programExerciseIdOverride` is set only for a MATCHED base-occurrence
+// set (resolveDeloadExerciseMapping's own 'matched' case): the output must
+// carry the MARKED week's own program_exercise_id, never the base week's
+// own (chunk 7's invariant — a planned set's exercise must be in the SAME
+// week's own v2_week_plan_exercises). `s.id`/the weight lookup still use
+// the set's OWN (base) identity — that's what v2_set_logs.week_plan_set_id
+// actually points at.
+function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null, programExerciseIdOverride?: string): DeloadSourceSet {
   return {
     id: s.id,
-    programExerciseId: s.program_exercise_id,
+    programExerciseId: programExerciseIdOverride ?? s.program_exercise_id,
     setNumber: s.set_number,
     parentId: s.parent_week_plan_set_id ?? null,
     stageIndex: s.stage_index ?? 0,
@@ -1463,14 +1521,38 @@ export async function markSessionDeload(
     current.weekNumber,
   )
 
-  const baseSets = resolution.kind === 'week' ? history.find((h) => h.weekNumber === resolution.weekNumber)!.sets : current.sets
+  const baseOccurrence = resolution.kind === 'week' ? history.find((h) => h.weekNumber === resolution.weekNumber)! : undefined
   // The fallback base (the session's own current, not-yet-started sets)
   // can never have anything logged against it — hasAnySetLogForWeekPlan
   // above already guards that — so baseLogs is only ever non-empty for a
   // genuine earlier occurrence.
-  const baseLogs = resolution.kind === 'week' ? historyLogs : []
+  const baseLogs = baseOccurrence ? historyLogs : []
 
-  const sourceSets = baseSets.map((s) => toSourceSet(s, resolveLoggedWeightKg(baseLogs, s.id)))
+  // Review fix — map the base occurrence's exercises onto the MARKED
+  // week's own exercise list by slot (deloadRules.ts's
+  // resolveDeloadExerciseMapping, chunk 20's own rule): a matched
+  // exercise's calculation input is the BASE's sets (remapped to the
+  // marked week's own program_exercise_id so the result can never orphan
+  // — chunk 7's invariant); an unmatched marked-week exercise (added
+  // since, or diverged by a swap on either side) falls back to ITS OWN
+  // current planned sets, same as "no base occurrence" already did; a
+  // base exercise absent from the marked week is simply never iterated
+  // (resolveDeloadExerciseMapping only ever walks the MARKED list) — never
+  // written. With no base occurrence at all (resolution.kind === 'none'),
+  // baseExercises is `[]`, so every mapping entry is 'fallback' and this
+  // reduces to exactly the old global-fallback behaviour (every current
+  // exercise, calculated from its own current sets).
+  const mapping = resolveDeloadExerciseMapping(current.exercises, baseOccurrence?.exercises ?? [])
+
+  const sourceSets: DeloadSourceSet[] = mapping.flatMap((m) => {
+    const source = m.source
+    if (source.kind === 'matched') {
+      const baseSets = (baseOccurrence?.sets ?? []).filter((s) => s.program_exercise_id === source.baseProgramExerciseId)
+      return baseSets.map((s) => toSourceSet(s, resolveLoggedWeightKg(baseLogs, s.id), m.markedProgramExerciseId))
+    }
+    const ownSets = current.sets.filter((s) => s.program_exercise_id === m.markedProgramExerciseId)
+    return ownSets.map((s) => toSourceSet(s, null))
+  })
   const calculated = calculateDeloadSets(sourceSets, rules)
 
   await applyCalculatedDeloadMark(userId, weekPlanId, current.sets, calculated)
