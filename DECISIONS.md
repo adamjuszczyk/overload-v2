@@ -1,11 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-07 20:25 UTC, chunk 19 boundary — chunks 1–19 merged and live (migrations through 035); chunk 20 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-07 20:25 UTC, chunk 19 boundary — chunks 1–19 merged and live (migrations through 035); chunk 20 stopped after a second review failure (64).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
+- **64 — BLOCKING: chunk 20 failed review twice (the second time only a missing Plan wiring test; the code is correct). (a) one more test-only retry (recommended), (b) merge as is, (c) other. Blocked: chunk 20's merge and chunks 21–26.**
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
@@ -52,6 +53,26 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 64 Chunk 20 failed review twice — merge, or one more test-only retry?
+Severity: blocking
+Chunk: 20
+**Ask:** Chunk 20 ("Apply this change to planned weeks ahead") failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else.
+**When:** before I build further.
+**Blocked until done:** merging chunk 20 and building chunks 21–26.
+**Evidence:**
+- **First failure** (fixed in `2db2ad8`): two real bugs.
+  1. A swap applied ahead gave each later week its own new program-exercise row, so any later apply-ahead on that exercise found nothing ("applied to 0 of 2").
+  2. A later week with an "only this week" swap at the same slot would have received changes meant for a different exercise.
+
+  Also wired from my brief's gap: the offer after a week's ADD SET, REMOVE SET, WARMUP toggle and program-tab reorder.
+- **Second failure** (the retry, `2db2ad8`): both bugs are fixed and proven in the pure core (my break of the exercise check fails 7 tests) and in scratch SQL. But Plan's own wiring isn't tested: changing `resultingProgramExerciseId: replacement.id` in `PlanPage.tsx` to a wrong id passes all 427 plan tests.
+  - The code is correct by reading; only the proof is missing.
+  - It's the same class of gap as chunk 16 (Checks that lied #30).
+- Everything else is green on `2db2ad8`: typecheck, 1325 tests, build, 117 script tests, every check, replay 36/36, embeds 27/27, and the D30 fixture untouched (no workout-screen file changed).
+A competent default would: send it back for the one missing test — doesn't apply because: your rule makes a second review failure a stop.
+Cost of deferral: building pauses (chunks 21–26).
+Provisional path taken: nothing merged; `build/chunk-20` is kept as is.
 
 ### 63 Chunk 19 live check: week targets and tags (Adam's steps)
 Severity: deferred
