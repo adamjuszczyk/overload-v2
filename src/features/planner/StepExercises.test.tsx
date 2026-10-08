@@ -69,10 +69,17 @@ vi.mock('../settings/settingsStore', () => ({
 }))
 
 vi.mock('../programs/ExercisePicker', () => ({
-  default: ({ onClose }: { onClose: () => void }) => (
+  // Review fix 2 (second review) — `onAdded` needs a real trigger so a
+  // test can exercise StepExercises.tsx's OWN onVolumeChange construction
+  // at line ~467, not just assert against a hand-built ChangeRecord
+  // literal (ProgramTab.applyAhead.test.tsx's own seam, which never
+  // touches this file's code at all). Additive only — no existing test
+  // looks for this button, so nothing else is affected.
+  default: ({ onClose, onAdded }: { onClose: () => void; onAdded?: (exerciseId: string) => void }) => (
     <div>
       EXERCISE PICKER
       <button onClick={onClose}>close picker</button>
+      <button onClick={() => onAdded?.('ex-new')}>pick ex-new</button>
     </div>
   ),
 }))
@@ -240,6 +247,62 @@ describe('StepExercises — reorder, 375px', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+// Review fix 2 (second review) — ProgramTab.applyAhead.test.tsx mocks this
+// whole component away and hand-builds its own ChangeRecord literal to feed
+// ProgramTab's offer logic, so StepExercises.tsx's OWN construction of that
+// record (moveExercise/onAdded/the remove confirm, below) was never
+// actually exercised by any test. These render the real component and
+// assert the real onVolumeChange call.
+describe('StepExercises — onVolumeChange carries the real ChangeRecord (review fix 2)', () => {
+  const onVolumeChange = vi.fn()
+  afterEach(() => onVolumeChange.mockReset())
+
+  it('reorder carries every moved slot\'s own pre-move and post-move position', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0 }),
+      exercise({ id: 'pe-2', position: 1, exerciseId: 'ex-2' }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} onVolumeChange={onVolumeChange} />)
+
+    const upButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-up'))
+    fireEvent.click(upButtons[1]) // the second exercise's own "up"
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [
+      {
+        editType: 'reorderExercise',
+        moves: [
+          { slotId: 'pe-1', oldPosition: 0, newPosition: 1 },
+          { slotId: 'pe-2', oldPosition: 1, newPosition: 0 },
+        ],
+      },
+    ])
+  })
+
+  it('adding an exercise carries the right workout and exercise', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} onVolumeChange={onVolumeChange} />)
+
+    fireEvent.click(screen.getByText('ADD EXERCISE'))
+    fireEvent.click(screen.getByText('pick ex-new'))
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [{ editType: 'addExercise', workoutDayId: 'wd-1', exerciseId: 'ex-new' }])
+  })
+
+  it('removing an exercise carries the right slot and exercise', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', exerciseId: 'ex-1' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} onVolumeChange={onVolumeChange} />)
+
+    const deleteButton = screen.getAllByRole('button').find((b) => b.querySelector('svg.lucide-trash2') && !b.getAttribute('aria-label'))
+    fireEvent.click(deleteButton!)
+    fireEvent.click(screen.getByText('REMOVE'))
+
+    expect(onVolumeChange).toHaveBeenCalledWith('wd-1', [{ editType: 'removeExercise', slotId: 'pe-1', exerciseId: 'ex-1' }])
   })
 })
 

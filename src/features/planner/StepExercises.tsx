@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
 import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit, WarmupRoutineItem } from '../../types'
+import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { queryClient } from '../../lib/queryClient'
 import {
   useWorkoutDays,
@@ -101,9 +102,19 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
 export default function StepExercises({
   program,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   program: Program
   volumeReadOnly: boolean
+  // Chunk 20 ("Apply this change to planned weeks ahead") — only ever
+  // passed by ProgramTab.tsx (a stable run's own program tab); the planner
+  // (PlannerPage.tsx, saved programs and week-dependent runs) never passes
+  // this, so it stays undefined there and nothing below ever calls it —
+  // zero behaviour change for every existing caller. Reported per workout
+  // day (never per saved-program edit — ProgramTab is the only caller that
+  // can ever reach a 'stable' planningType, so this is a no-op anywhere
+  // else even if it were wired).
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const createDay = useCreateWorkoutDay(program.id)
@@ -143,6 +154,7 @@ export default function StepExercises({
           workoutDay={day}
           schedule={program.schedule}
           volumeReadOnly={volumeReadOnly}
+          onVolumeChange={onVolumeChange}
         />
       ))}
 
@@ -194,11 +206,13 @@ function WorkoutEditor({
   workoutDay,
   schedule,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   programId: string
   workoutDay: WorkoutDay
   schedule: Program['schedule']
   volumeReadOnly: boolean
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: exercises = [], isLoading } = useProgramExercises(workoutDay.id)
   const [editingName, setEditingName] = useState(false)
@@ -258,6 +272,17 @@ function WorkoutEditor({
       next.map((ex, i) => ({ ...ex, position: i })),
     )
     reorder.mutate(next.map((ex, i) => ({ id: ex.id, position: i })))
+    // Review fix item 3 — the stable program-tab's own exercise reorder;
+    // SPEC names no exception for it. Same ReorderMove shape PlanPage.tsx's
+    // own week-level reorder already builds — only exercises that actually
+    // moved, each with its true pre-move position.
+    const newPositionById = new Map(next.map((ex, i) => [ex.id, i]))
+    const moves = exercises
+      .map((ex) => ({ slotId: slotIdOf(ex), oldPosition: ex.position, newPosition: newPositionById.get(ex.id)! }))
+      .filter((m) => m.oldPosition !== m.newPosition)
+    if (moves.length > 0) {
+      onVolumeChange?.(workoutDay.id, [{ editType: 'reorderExercise', moves }])
+    }
   }
 
   // Toggles the gap after exercises[gapIndex] — link merges the two
@@ -434,6 +459,12 @@ function WorkoutEditor({
           workoutDayId={workoutDay.id}
           existingExerciseIds={exercises.map((e) => e.exerciseId)}
           onClose={() => setShowPicker(false)}
+          // Chunk 20 — "Adding or removing an exercise in a week is allowed
+          // for both planning types" (SPEC); for stable, apply-ahead covers
+          // a PROGRAM-tab add the same way, since a stable week is always
+          // built fresh from the program and already-planned weeks
+          // wouldn't otherwise see it (SPEC "Programs and runs").
+          onAdded={(exerciseId) => onVolumeChange?.(workoutDay.id, [{ editType: 'addExercise', workoutDayId: workoutDay.id, exerciseId }])}
         />
       )}
 
@@ -479,7 +510,16 @@ function WorkoutEditor({
               CANCEL
             </button>
             <button
-              onClick={() => { deleteExercise.mutate(confirmDeleteExercise.id); setConfirmDeleteExercise(null) }}
+              onClick={() => {
+                const target = exercises.find((e) => e.id === confirmDeleteExercise.id)
+                deleteExercise.mutate(confirmDeleteExercise.id)
+                // Chunk 20 — same "both planning types, program-tab covers
+                // it for stable" reasoning as ADD above.
+                if (target) {
+                  onVolumeChange?.(workoutDay.id, [{ editType: 'removeExercise', slotId: slotIdOf(target), exerciseId: target.exerciseId }])
+                }
+                setConfirmDeleteExercise(null)
+              }}
               disabled={deleteExercise.isPending}
               style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: deleteExercise.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
             >

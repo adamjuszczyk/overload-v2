@@ -79,7 +79,7 @@ const mockState: { plans: WeekPlan[]; program: Program; allExercises: Exercise[]
   meso: activeMeso,
 }
 
-const swapMutate = vi.fn()
+const swapMutate = vi.fn().mockResolvedValue({ id: 'ex-replacement-row' })
 const addMutate = vi.fn()
 const removeMutate = vi.fn()
 const reorderMutate = vi.fn()
@@ -98,6 +98,7 @@ vi.mock('../library/useExercises', () => ({
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
+  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
@@ -106,7 +107,7 @@ vi.mock('./useWeekPlan', () => ({
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: swapMutate, isPending: false }),
+  useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: addMutate, isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: removeMutate, isPending: false }),
   useReorderWeekExercises: () => ({ mutate: reorderMutate, isPending: false }),
@@ -123,7 +124,10 @@ function renderPlanPage() {
 }
 
 afterEach(() => {
-  swapMutate.mockReset()
+  // swapMutate is mutateAsync now (review fix — handlePickReplacement needs
+  // the swap's own resulting row id) — mockReset() would also wipe the
+  // resolved value set at module scope, so it's re-applied right after.
+  swapMutate.mockReset().mockResolvedValue({ id: 'ex-replacement-row' })
   addMutate.mockReset()
   removeMutate.mockReset()
   reorderMutate.mockReset()

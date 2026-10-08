@@ -16,10 +16,12 @@ import {
   copyWorkoutFromPreviousWeek,
   planWeek,
   swapWeekExercise,
+  repointWeekExercise,
   addWeekExercise,
   removeWeekExercise,
   reorderWeekExercises,
 } from './weekPlanService'
+import { planApplyAheadBundle, summarizeApplyAhead, type ChangeRecord, type ApplyAheadOp, type ApplyAheadSummary } from './applyAhead'
 
 function key(mesoId: string, weekNumber: number) {
   return ['v2_weekPlans', mesoId, weekNumber] as const
@@ -376,6 +378,125 @@ export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+// ─── Apply this change to planned weeks ahead (chunk 20) ───────────────────
+// Thin executor (reviewer's note 1): applyAhead.ts's planApplyAhead (pure)
+// decides, per candidate week, whether to skip it and why, or exactly which
+// op(s) to run; this hook just runs each op through the SAME exported
+// functions above (never a new Supabase call of its own) and reports which
+// weeks were actually written. `weeks` is whatever candidate list the
+// caller already computed (PlanPage.tsx: laterPlannedWeeks off its own
+// useAllWeekPlans; ProgramTab.tsx: allPlannedWeeks) — this hook fetches
+// nothing itself, consistent with applyAhead.ts being pure.
+//
+// Reviewer's note 8 ("Execution"): networkMode: 'always' (same reasoning as
+// every other write mutation in this file); runs weeks in order and STOPS
+// at the first op that throws — ApplyAheadError carries which week numbers
+// were already written before the failure, so onError can invalidate
+// exactly those (and the UI can report exactly those) rather than
+// pretending nothing happened or silently retrying (TanStack Query
+// mutations never retry by default, and nothing here changes that).
+export class ApplyAheadError extends Error {
+  writtenWeekNumbers: number[]
+  summary: ApplyAheadSummary
+  constructor(message: string, writtenWeekNumbers: number[], summary: ApplyAheadSummary) {
+    super(message)
+    this.name = 'ApplyAheadError'
+    this.writtenWeekNumbers = writtenWeekNumbers
+    this.summary = summary
+  }
+}
+
+export interface ApplyAheadResult {
+  summary: ApplyAheadSummary
+  writtenWeekNumbers: number[]
+}
+
+async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> {
+  switch (op.kind) {
+    case 'updateSet':
+      return updateSet(op.setId, op.changes)
+    case 'addSet':
+      await addSet(userId, op.weekPlanId, op.programExerciseId, op.setNumber)
+      return
+    case 'removeSet':
+      return removeSet(op.setId)
+    case 'addStage':
+      await addStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.setNumber, op.stageIndex)
+      return
+    case 'repointExercise':
+      // Review fix: repoint the matched row at the SAME resulting exercise
+      // row the edited week's own swap already created (repointWeekExercise
+      // — swapWeekExercise's own second half, minus the insert) — never a
+      // fresh createWeekOnlyProgramExercise per later week. Always a
+      // permanent repoint (carry cleared), same reasoning reorderExercises'
+      // own onlyThisWeek: false below already documents: this op only ever
+      // exists because the offer that produced it is never shown after an
+      // "only this week" swap (reviewer's note 4).
+      await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
+      return
+    case 'addExercise':
+      await addWeekExercise({
+        userId,
+        weekPlanId: op.weekPlanId,
+        workoutDayId: op.workoutDayId,
+        exerciseId: op.exerciseId,
+        position: op.position,
+      })
+      return
+    case 'removeExercise':
+      return removeWeekExercise(op.weekPlanId, op.programExerciseId)
+    case 'reorderExercises':
+      // Same onlyThisWeek:false reasoning as swapExercise above.
+      return reorderWeekExercises(op.weekPlanId, op.moves, false)
+  }
+}
+
+export function useApplyAhead(mesoId: string) {
+  const { user } = useAuth()
+  return useMutation({
+    networkMode: 'always',
+    // `changes` is a bundle (reviewer's note 2 — a single onUpdate call can
+    // write more than one field at once, e.g. plannerVocabulary.ts's
+    // applyAmrapRirDefault also defaulting RIR); almost always length 1.
+    // planApplyAheadBundle (applyAhead.ts) applies every record in it to
+    // each candidate week as one atomic unit — never a partial write.
+    mutationFn: async ({ changes, weeks }: { changes: ChangeRecord[]; weeks: WeekPlan[] }): Promise<ApplyAheadResult> => {
+      const results = planApplyAheadBundle(changes, weeks)
+      const summary = summarizeApplyAhead(results)
+      const written: number[] = []
+      try {
+        for (const r of results) {
+          if (r.status !== 'applied') continue
+          for (const op of r.ops) {
+            await runApplyAheadOp(op, user!.id)
+          }
+          written.push(r.weekNumber)
+        }
+      } catch (err) {
+        throw new ApplyAheadError(err instanceof Error ? err.message : 'Apply failed', written, summary)
+      }
+      return { summary, writtenWeekNumbers: written }
+    },
+    onSuccess: (data) => {
+      for (const wn of data.writtenWeekNumbers) {
+        queryClient.invalidateQueries({ queryKey: key(mesoId, wn) })
+      }
+      if (data.writtenWeekNumbers.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+      }
+    },
+    onError: (err) => {
+      if (!(err instanceof ApplyAheadError)) return
+      for (const wn of err.writtenWeekNumbers) {
+        queryClient.invalidateQueries({ queryKey: key(mesoId, wn) })
+      }
+      if (err.writtenWeekNumbers.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+      }
     },
   })
 }

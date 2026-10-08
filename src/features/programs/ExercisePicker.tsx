@@ -15,9 +15,15 @@ interface Props {
   workoutDayId: string
   existingExerciseIds: string[]
   onClose: () => void
+  // Chunk 20 ("Apply this change to planned weeks ahead") — fired after a
+  // successful add, with the exercise's real id (not the week-only concept
+  // — this component only ever adds to the PROGRAM's own exercise list).
+  // Only StepExercises.tsx's program-tab usage ever passes this; the
+  // planner's own saved-program add (no run, no weeks) never does.
+  onAdded?: (exerciseId: string) => void
 }
 
-export default function ExercisePicker({ workoutDayId, existingExerciseIds, onClose }: Props) {
+export default function ExercisePicker({ workoutDayId, existingExerciseIds, onClose, onAdded }: Props) {
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | 'all'>('all')
 
   const { data: allExercises = [] } = useExercises(false)
@@ -56,6 +62,7 @@ export default function ExercisePicker({ workoutDayId, existingExerciseIds, onCl
       position: currentExercises.length,
       weightUnit: globalWeightUnit,
     })
+    onAdded?.(exerciseId)
   }
 
   return (

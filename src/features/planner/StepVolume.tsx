@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import type { Program, ProgramExercise, ProgramSet, PlanningType } from '../../types'
 import type { RepTarget } from '../../lib/plannerVocabulary.js'
+import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { useWorkoutDays, useProgramExercises, useUpdatePlanningType } from '../programs/usePrograms'
 import {
   useProgramSets,
@@ -21,6 +22,7 @@ import {
   formatRepTarget,
   parseRepTarget,
   columnsToRepTarget,
+  repTargetToColumns,
   STAGE_KINDS,
   STAGE_KIND_LABELS,
   resolveStageKind,
@@ -45,10 +47,16 @@ export default function StepVolume({
   program,
   volumeReadOnly,
   canChangePlanningType,
+  onVolumeChange,
 }: {
   program: Program
   volumeReadOnly: boolean
   canChangePlanningType: boolean
+  // Chunk 20 ("Apply this change to planned weeks ahead") — same posture as
+  // StepExercises.tsx's own onVolumeChange: only ProgramTab.tsx (a stable
+  // run) ever passes this; the planner's own saved-program/week-dependent
+  // usage never does, so it stays undefined and inert there.
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const updatePlanningType = useUpdatePlanningType()
@@ -105,7 +113,13 @@ export default function StepVolume({
       )}
 
       {!isLoading && workoutDays.map((day) => (
-        <WorkoutVolumeEditor key={day.id} workoutDayId={day.id} workoutName={day.name} volumeReadOnly={volumeReadOnly} />
+        <WorkoutVolumeEditor
+          key={day.id}
+          workoutDayId={day.id}
+          workoutName={day.name}
+          volumeReadOnly={volumeReadOnly}
+          onVolumeChange={onVolumeChange}
+        />
       ))}
     </div>
   )
@@ -117,10 +131,12 @@ function WorkoutVolumeEditor({
   workoutDayId,
   workoutName,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   workoutDayId: string
   workoutName: string
   volumeReadOnly: boolean
+  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: exercises = [], isLoading: exercisesLoading } = useProgramExercises(workoutDayId)
   const exerciseIds = exercises.map((e) => e.id)
@@ -147,6 +163,7 @@ function WorkoutVolumeEditor({
           exercise={ex}
           sets={sets.filter((s) => s.programExerciseId === ex.id)}
           volumeReadOnly={volumeReadOnly}
+          onVolumeChange={onVolumeChange ? (changes) => onVolumeChange(workoutDayId, changes) : undefined}
         />
       ))}
     </div>
@@ -159,19 +176,31 @@ function ExerciseSetsEditor({
   exercise,
   sets,
   volumeReadOnly,
+  onVolumeChange,
 }: {
   exercise: ProgramExercise
   sets: ProgramSet[]
   volumeReadOnly: boolean
+  onVolumeChange?: (changes: ChangeRecord[]) => void
 }) {
   const heads = headSets(sets).sort((a, b) => a.position - b.position)
   const setCount = useSetExerciseSetCount()
 
+  // Chunk 20 — "stable program-tab volume edits (add/remove set...)"
+  // (reviewer's note 2). Always ±1 per tap (the stepper's own change(-1)/
+  // change(1) below), so this never needs a recorded ordinal — applyAhead.ts
+  // always appends/removes THAT later week's own current trailing head
+  // (scope decisions 6/7, the report).
   function changeCount(delta: number) {
     if (volumeReadOnly) return
     const next = Math.max(0, heads.length + delta)
     if (next === heads.length) return
     setCount.mutate({ programExerciseId: exercise.id, currentHeads: heads, count: next })
+    const change: ChangeRecord =
+      delta > 0
+        ? { editType: 'addSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
+        : { editType: 'removeSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
+    onVolumeChange?.([change])
   }
 
   return (
@@ -241,6 +270,7 @@ function ExerciseSetsEditor({
                 exercise={exercise}
                 group={group}
                 readOnly={volumeReadOnly}
+                onVolumeChange={onVolumeChange}
               />
             ))}
         </div>
@@ -291,6 +321,10 @@ function ExerciseTargetRow({
     // No-op guard: every head already shows exactly this target.
     if (summary !== 'mixed' && summary && formatRepTarget(target) === formatRepTarget(summary)) return
     setAll.mutate({ headIds: heads.map((h) => h.id), target })
+    // Chunk 20 scope decision (kept on review): writes every current head
+    // in one call, which doesn't fit the one-row-per-ChangeRecord model —
+    // never offered. Its batch twin is PlanPage.tsx's own "apply tag to
+    // all sets"; only the per-set rep-target editor below is wired.
   }
 
   return (
@@ -329,6 +363,7 @@ function SetTargetRow({
   isStage = false,
   stageKindLabel,
   onRemove,
+  onCommit,
 }: {
   displayNumber: number
   set: ProgramSet
@@ -340,6 +375,12 @@ function SetTargetRow({
   stageKindLabel?: string
   // Stage rows only — the SETS stepper owns removing a whole head.
   onRemove?: () => void
+  // Chunk 20 ("Apply this change to planned weeks ahead" — stable
+  // program-tab's own "rep target"). Fired with the real old/new RepTarget
+  // right after a successful write; ProgramSetGroupEditor (the only
+  // caller) turns it into a ChangeRecord, since only it knows this row's
+  // own head ordinal and stage index.
+  onCommit?: (oldTarget: RepTarget, newTarget: RepTarget) => void
 }) {
   const updateTarget = useUpdateSetRepTarget()
   const updateRest = useUpdateProgramSetRest()
@@ -372,6 +413,7 @@ function SetTargetRow({
     if (target === null) return
     if (formatRepTarget(target) === formatRepTarget(current)) return
     updateTarget.mutate({ id: set.id, target })
+    onCommit?.(current, target)
   }
 
   return (
@@ -444,11 +486,13 @@ function ProgramSetGroupEditor({
   exercise,
   group,
   readOnly,
+  onVolumeChange,
 }: {
   displayNumber: number
   exercise: ProgramExercise
   group: Group<ProgramSet>
   readOnly: boolean
+  onVolumeChange?: (changes: ChangeRecord[]) => void
 }) {
   const { head, stages } = group
   const stageKind = resolveStageKind(head.stageKind ?? null)
@@ -472,9 +516,31 @@ function ProgramSetGroupEditor({
     })
   }
 
+  // Chunk 20 — "stable program-tab volume edits (...rep target...)"
+  // (reviewer's note 2). slotIdOf(exercise) collapses to exercise.id (no
+  // carry concept at the program level — see applyAhead.ts's own header);
+  // displayNumber IS the head ordinal applyAhead.ts matches on (the same
+  // 1-based rank ExerciseSetsEditor's own caller already assigns it).
+  function handleRepTargetCommit(stageIndex: number | null, oldTarget: RepTarget, newTarget: RepTarget) {
+    const change: ChangeRecord = {
+      editType: 'repTarget',
+      slotId: slotIdOf(exercise),
+      exerciseId: exercise.exerciseId,
+      setPosition: { headOrdinal: displayNumber, stageIndex },
+      oldValue: repTargetToColumns(oldTarget),
+      newValue: repTargetToColumns(newTarget),
+    }
+    onVolumeChange?.([change])
+  }
+
   return (
     <div>
-      <SetTargetRow displayNumber={displayNumber} set={head} readOnly={readOnly} />
+      <SetTargetRow
+        displayNumber={displayNumber}
+        set={head}
+        readOnly={readOnly}
+        onCommit={(oldT, newT) => handleRepTargetCommit(null, oldT, newT)}
+      />
 
       {stages.length > 0 && (
         <div style={{ paddingLeft: 20, borderLeft: '1px dashed var(--border-strong)', marginLeft: 10 }}>
@@ -487,6 +553,7 @@ function ProgramSetGroupEditor({
               isStage
               stageKindLabel={STAGE_KIND_LABELS[stageKind]}
               onRemove={() => removeStage.mutate(stage.id)}
+              onCommit={(oldT, newT) => handleRepTargetCommit(stage.stageIndex, oldT, newT)}
             />
           ))}
 
