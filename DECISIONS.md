@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 06:40 UTC, chunk 20 boundary — chunks 1–20 merged and live (migrations through 035); chunk 21 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-08 10:57 UTC, chunk 21 boundary — chunks 1–21 merged and live (migrations through 035); chunk 22 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -10,6 +10,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 66 — Chunk 21 app steps: mark a week deload, unmark one session, DELOAD labels on Today/preview/workout, next week copies from the last normal one; unmark afterwards. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 65 — Chunk 20 app steps: a weight change applied ahead lands only on that set; swap ahead then a follow-up weight change both land; no offer after only-this-week; ignoring leaves later weeks alone. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 63 — Chunk 19 app steps: weight, rep override and tags on a set; apply-to-all; AMRAP → RIR 0; shown in the session; next week carries weight and RIR, not tags; say if the busier Plan rows should collapse. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 61 — Chunk 18 app steps: add/edit/reorder/delete warmup routine items; the checklist at the top of the session in order; a tick survives a reload; no items = unchanged. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -53,6 +54,28 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 66 Chunk 21 live check: deload per session (Adam's steps)
+Severity: deferred
+Chunk: 21
+**Ask:** Chunk 21 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 21 is `bd6250e`)
+1. In Plan, on a coming week, tap MARK WEEK AS DELOAD: every session of that week shows as deload, and the button reads UNMARK THIS WEEK.
+2. Unmark one session with its own DELOAD toggle: only that one clears.
+3. Today shows "DELOAD" (not "DELOAD WEEK") on a marked session's card; the preview and the workout screen show DELOAD too; unmarked sessions look as before.
+4. Open the week after for the first time: it copies from the last normal week, not the deload one.
+5. Optional (second account, one workout on every weekday): the toggle says "Marks Mon, Tue, Wed, Thu, Fri — they share one plan."
+6. Unmark the week again so nothing stays deload by accident.
+**Answer:**
+**Evidence:**
+What happened: chunk 21 (#45 `bd6250e`, Vercel 10:56 UTC) is live. No migration.
+- Reviewer's checks: 1372 tests; replay 36/36; embeds 27/27; D30 untouched; Plan fixture additive; Today's non-deload render identical to master; scratch SQL for week mark, unmark one, copy source and the shared row.
+- Failed review once (the week number at the call site was unproven) and passed on the retry.
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 21 is fixed before chunk 22 merges.
+Provisional path taken: merged; chunk 22 is being built.
 
 ### 65 Chunk 20 live check: apply this change to planned weeks ahead (Adam's steps)
 Severity: deferred
