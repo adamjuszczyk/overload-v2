@@ -8,9 +8,13 @@ interface MissedSessionPromptProps {
   queue: MissedSession[]
   activeMeso: Mesocycle
   onDismiss: () => void
+  // Chunk 24 (SPEC — "Do it now" becomes a move to today): the session this
+  // prompt creates keeps `date` = the missed day and gets `moved_to_date` =
+  // today, so History shows the day it was actually done.
+  today: string
 }
 
-export default function MissedSessionPrompt({ queue, activeMeso, onDismiss }: MissedSessionPromptProps) {
+export default function MissedSessionPrompt({ queue, activeMeso, onDismiss, today }: MissedSessionPromptProps) {
   const createSession = useCreateSession()
   const skipMissed = useSkipMissedSession()
   const planWeek = usePlanWeek()
@@ -40,6 +44,9 @@ export default function MissedSessionPrompt({ queue, activeMeso, onDismiss }: Mi
       weekPlanId,
       workoutDayId: missed.workoutDay.id,
       date: missed.date,
+      // Chunk 24 — the move half of "Do it now": History shows `today`
+      // (moved_to_date), `date` stays the missed day (SPEC).
+      movedToDate: today,
     })
   }
 

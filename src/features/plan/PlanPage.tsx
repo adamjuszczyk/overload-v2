@@ -53,6 +53,8 @@ import WorkoutSwitcher from './WorkoutSwitcher'
 import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
+import MoveSessionControl from './MoveSessionControl'
+import { dateForDow } from '../gym/moveSession'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -555,6 +557,19 @@ export default function PlanPage() {
             </div>
 
             <WorkoutSwitcher days={scheduledDays} selectedDow={selected.dow} onSelect={setSelectedDow} />
+
+            {/* Chunk 24 (SPEC "Weekday" — "'Move this session' on Today and
+                in Plan") — scoped to the week containing real "today" only
+                (reviewer's own scope decision, this chunk's report): a past
+                week's days are already resolved one way or another, and
+                SPEC says nothing about pre-moving a future week. */}
+            <MoveSessionControl
+              workoutDay={selected.workoutDay}
+              weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
+              mesoId={activeMeso.id}
+              date={dateForDow(activeMeso.startDate, viewWeek, selected.dow)}
+              isCurrentWeek={viewWeek === currentWeek}
+            />
 
             <WorkoutDayPanel
               key={selected.workoutDay.id}

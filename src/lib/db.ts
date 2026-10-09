@@ -55,6 +55,11 @@ interface CachedSession {
   // treat undefined as null, same rule as those fields.
   energyRating: string | null
   pumpRating: string | null
+  // Chunk 24 — plain field, not an index, same no-version-bump precedent.
+  // Only ever set by useCreateSession's offline branch ("Do it now" —
+  // SPEC); a row cached before this shipped won't have it, same "undefined
+  // reads as null" rule as the other fields on this interface.
+  movedToDate?: string | null
 }
 
 interface CachedSetLog {

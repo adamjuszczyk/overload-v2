@@ -16,6 +16,22 @@
 // text inside the isDeload-true branch); and a label-condition proof for
 // the deload case, which master's D30 facts say has never actually been
 // exercised live (L1).
+//
+// Chunk 24 re-capture (reviewer's own D30-style gate for this chunk: "A
+// plain Today with one scheduled session and no moves renders as on
+// master; capture master's render in a scratch worktree and compare"):
+// this chunk adds a real "MOVE THIS SESSION" button (SPEC "Weekday") to
+// this exact card. Proof the only diff is that one button, not a
+// regression: this branch's base (origin/master, 394ce31) carries this same
+// fixture file byte-identical (`git diff origin/master -- <this fixture>`
+// is empty) — i.e. the OLD content already here WAS master's own render for
+// this scenario — so diffing it against this chunk's freshly captured
+// render is exactly the master-vs-branch comparison the gate asks for,
+// without needing a second checkout. The diff is exactly one line: the new
+// button appended after START SESSION, nothing else moved, changed or
+// disappeared (this chunk's report has the full diff). Re-captured the
+// same way every prior visible change to this card has been (chunk 21's
+// own header above).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, cleanup, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -59,7 +75,16 @@ vi.mock('./useSession', () => ({
   useReopenSession: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useSkipSession: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateSessionNote: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // Chunk 24 — "Move this session" 's own hooks; this fixture never
+  // exercises them (no click ever fires), so a plain stub is enough.
+  useMoveSession: () => ({ mutate: vi.fn(), isPending: false }),
+  useClearMovedSession: () => ({ mutate: vi.fn(), isPending: false }),
+  useStartMovedSession: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
+// Chunk 24 — the new MOVE THIS SESSION button is disabled while offline
+// (TodayPage.tsx's own `!isOnline` check); this fixture needs it enabled so
+// the button's presence/behaviour is unaffected by online status.
+vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 vi.mock('../plan/useWeekPlan', () => ({
   usePlanWeek: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   planWeekThenFindId: vi.fn(async () => null),

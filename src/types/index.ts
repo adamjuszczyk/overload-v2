@@ -447,6 +447,20 @@ export interface Session {
   workoutDayId: string | null
   workoutDay?: WorkoutDay    // joined for gym UI
   date: string               // ISO date — the date this session is *for*
+  // Chunk 24 (SPEC "Weekday" — "Move this session to another day, this week
+  // only") — v2_sessions.moved_to_date (column since migration 027, chunk
+  // 1). `date` keeps meaning "the date this session is for"; this is the day
+  // it was actually moved to, same week. Optional, same "may not exist yet"
+  // convention every other migration-027 field on this app's types already
+  // follows (WeekPlan.deloadRestore, ReferenceSession.movedToDate in
+  // sessionService.ts, etc.) — every Session literal built by a test file
+  // before this chunk predates the field and never sets it; absent/undefined
+  // reads as "use `date`" wherever this is consulted (scheduler.ts,
+  // historyService.ts), never a crash. The real mapper (sessionService.ts's
+  // toSession) always sets a concrete value (the column itself is
+  // guaranteed to exist — it's been live since 027 — so there this is never
+  // actually undefined, only possibly null).
+  movedToDate?: string | null
   status: SessionStatus
   note: string | null
   startedAt: string | null
@@ -527,6 +541,37 @@ export type PumpRating = 'none' | 'some' | 'good' | 'extreme'
 // ─── Scheduling ───────────────────────────────────────────────────────────────
 
 // Two 'suggest' variants: plan exists vs no plan for this week yet.
+//
+// Chunk 24 (SPEC "Weekday" — "Move this session"/"Several sessions a day are
+// listed; each opens on its own") — variant changes (Lessons: "list every
+// variant change"):
+//   - `rest_day` gains `next` (additive field — no existing construction of
+//     this literal exists anywhere in the app, checked by grep, so this is
+//     not a breaking change to any caller): the next scheduled session, for
+//     the empty-state bullet ("no session today -> the next scheduled
+//     session and when it's due"). null only when the program schedules no
+//     day at all.
+//   - NEW `planned`: a session moved here before it started — a real
+//     `v2_sessions` row (status 'planned', TASKS.md's session data model:
+//     "the status exists but is unused today" until this chunk), distinct
+//     from `suggest_from_plan`/`suggest_no_plan` (which still mean "no row
+//     exists yet" exactly as before — starting one CREATES a row; starting
+//     a `planned` one UPDATES its existing row, never a second insert).
+//   - NEW `due_today`: two or more sessions share today (G14's own "moving
+//     onto a day that already has one leaves both... shown as a list").
+//     Each entry reuses one of the four single-session shapes above/below —
+//     never a fifth shape. Emitted ONLY when 2+ sessions are due; the
+//     overwhelmingly common one-session day keeps returning the exact same
+//     singular variant (`completed_today`/`suggest_from_plan`/
+//     `suggest_no_plan`/`planned`) it always would have, unchanged shape,
+//     unchanged meaning — only the selection logic feeding it now also
+//     counts a moved-here session as "due today" and excludes a moved-away
+//     one (scheduler.ts).
+//   - `missed_sessions`: shape unchanged; the queue itself is now built from
+//     a current-calendar-week-only lookback (SPEC — "only for missed days of
+//     the current week"), not a 7-day cross-week one.
+//   - `active_session`/`no_program`/`no_active_meso`: unchanged, including
+//     the "one session in progress at a time" global short-circuit.
 export type SchedulerResult =
   | { type: 'no_program' }
   | { type: 'no_active_meso' }
@@ -534,8 +579,31 @@ export type SchedulerResult =
   | { type: 'completed_today';   session: Session }
   | { type: 'suggest_from_plan'; weekPlan: WeekPlan; date: string }
   | { type: 'suggest_no_plan';   workoutDay: WorkoutDay; date: string }
-  | { type: 'rest_day' }
+  | { type: 'planned';           session: Session; weekPlan: WeekPlan | null; workoutDay: WorkoutDay | null }
+  | { type: 'rest_day';          next: NextScheduledSession | null }
   | { type: 'missed_sessions';   queue: MissedSession[] }
+  | { type: 'due_today';         sessions: DueTodayEntry[] }
+
+// The empty state's own "next scheduled session and when it's due" (SPEC
+// "Today / workout screen" — Empty state bullet). Scans the program's own
+// weekly template forward from tomorrow — it deliberately does not account
+// for a future day's own session having itself been moved away (see
+// scheduler.ts's own comment on this simplification).
+export interface NextScheduledSession {
+  date: string
+  workoutDay: WorkoutDay
+}
+
+// One entry of a multi-session due-today list (`due_today` above) — the
+// same four shapes a single due-today session can be, minus `active_session`
+// (impossible here: any in-progress session anywhere short-circuits the
+// whole scheduler result before this list is ever built — "one session in
+// progress at a time, as today").
+export type DueTodayEntry =
+  | { type: 'completed_today';   session: Session }
+  | { type: 'suggest_from_plan'; weekPlan: WeekPlan; date: string }
+  | { type: 'suggest_no_plan';   workoutDay: WorkoutDay; date: string }
+  | { type: 'planned';           session: Session; weekPlan: WeekPlan | null; workoutDay: WorkoutDay | null }
 
 export interface MissedSession {
   date: string               // ISO date the session was originally for
