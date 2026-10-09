@@ -9,24 +9,31 @@
 // The signed-in probe does not expect zero rows — the test account turns out to
 // own some rows itself (DECISIONS.md 75: on 2026-10-09 it was confirmed to own 46
 // of 335 `exercises` rows; RLS was working, the "owns no data" assumption behind
-// the old any-row rule was wrong). It is instead classified by ownership: a
-// returned row whose user_id is not the test account's own id — including a null
-// user_id — is foreign and a LEAK; a table where every row returned belongs to
-// the test account is a PASS ("N own row(s)"). A table or view with no user_id
-// column can't be classified this way (NO_USER_ID_COLUMN below) and keeps the old
-// any-row rule instead, the same rule the anon probe always uses.
+// the old any-row rule was wrong). It is instead classified by ownership, through
+// two server-side counts rather than by fetching rows: a count of how many
+// visible rows are NOT the test account's own (a null user_id counts as not its
+// own) is the LEAK signal, and a count of every visible row gives the "N own
+// row(s)" detail when none are foreign. Counting server-side, instead of
+// fetching rows and filtering them here, matters because PostgREST caps a
+// response at max_rows (supabase/config.toml): fetching would silently miss a
+// foreign row past that cap on a table where the test account can see more rows
+// than that — a false PASS, which is worse than no check (CONTEXT.md, Checks
+// that lied #31). A table or view with no user_id column can't be classified
+// this way (NO_USER_ID_COLUMN below) and keeps the old any-row rule instead, the
+// same rule the anon probe always uses.
 //
 // Reads only: this script never inserts, updates, deletes or calls an RPC.
 //
 // Result per probe:
-//   PASS  zero rows; every row is the test account's own (signed-in, table has a
-//         user_id column); a permission-denied error (Postgres 42501); or a
+//   PASS  no foreign rows counted (signed-in, table has a user_id column —
+//         "N own row(s)"); a permission-denied error (Postgres 42501); or a
 //         PUBLIC_BY_DESIGN table
-//   LEAK  a row not owned by the test account (signed-in, table has a user_id
-//         column); or, for the anon probe and any NO_USER_ID_COLUMN table, any
-//         row at all (unless PUBLIC_BY_DESIGN)
+//   LEAK  a nonzero foreign-row count (signed-in, table has a user_id column);
+//         or, for the anon probe and any NO_USER_ID_COLUMN table, any row at all
+//         (unless PUBLIC_BY_DESIGN)
 //   FAIL  any other error — unreachable database, bad key, missing table, a
-//         sign-in that didn't return the test account's own id, anything
+//         sign-in that didn't return the test account's own id (or one that
+//         doesn't look like a UUID), a null count with no error, anything
 //         unexpected. An error that is not permission-denied is never a pass:
 //         "could not ask" and "asked and was refused" are different.
 //
@@ -104,35 +111,35 @@ const REQUIRED = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'RLS_TEST_EMAIL
 // (CONTEXT.md, Repo facts); a pasted key can carry them and 401 for no visible reason.
 const clean = (v) => (v ?? '').replace(/[^\x21-\x7e]/g, '');
 
-// Pure classification of an already-fetched probe result — no I/O, so it can be
+// Pure classification of an already-computed probe result — no I/O, so it can be
 // unit-tested directly (scripts/verify-rls.test.mjs) without a database or
 // network. probe()/probeOwnership() below do the Supabase call and error
-// handling, then hand the clean rows/count to this function.
+// handling, then hand the clean counts/rows to this function.
 //
-//   mode 'ownership' (signed-in, table has a user_id column):
-//     zero rows                             -> PASS "0 rows"
-//     every row's user_id is ownerId        -> PASS "N own row(s)"
-//     any row's user_id is not ownerId       -> LEAK (a null user_id counts as
-//                                              not ownerId, so it is foreign too)
+//   mode 'ownership' (signed-in, table has a user_id column): total and foreign
+//   are both server-side counts (probeOwnership never fetches row contents —
+//   see its own comment for why).
+//     total or foreign is null/undefined    -> FAIL (no count returned)
+//     foreign > 0                           -> LEAK "F of N row(s) not owned..."
+//     foreign === 0                         -> PASS "N own row(s)" (N may be 0)
 //
 //   mode 'any-row' (the anon probe always; the signed-in probe on a
 //   NO_USER_ID_COLUMN table, which cannot be classified by ownership):
 //     zero rows                             -> PASS "0 rows"
 //     any row, table is publicByDesign      -> PASS "N row(s), public by design"
 //     any row, otherwise                    -> LEAK "N row(s) returned"
-export function classifyProbe({ mode, rows, count, ownerId, publicByDesign }) {
+export function classifyProbe({ mode, rows, count, publicByDesign, total, foreign }) {
   if (mode === 'ownership') {
-    if (rows.length === 0) return { status: 'PASS', detail: '0 rows' };
-    const foreign = rows.filter((row) => row.user_id !== ownerId).length;
+    if (total == null || foreign == null) return { status: 'FAIL', detail: 'no count returned' };
     if (foreign > 0) {
-      return { status: 'LEAK', detail: `${foreign} of ${rows.length} row(s) not owned by the test account` };
+      return { status: 'LEAK', detail: `${foreign} of ${total} row(s) not owned by the test account` };
     }
-    return { status: 'PASS', detail: `${rows.length} own row(s)` };
+    return { status: 'PASS', detail: `${total} own row(s)` };
   }
-  const total = Math.max(count ?? 0, rows.length);
-  if (total === 0) return { status: 'PASS', detail: '0 rows' };
-  if (publicByDesign) return { status: 'PASS', detail: `${total} row(s), public by design` };
-  return { status: 'LEAK', detail: `${total} row(s) returned` };
+  const anyRowTotal = Math.max(count ?? 0, rows.length);
+  if (anyRowTotal === 0) return { status: 'PASS', detail: '0 rows' };
+  if (publicByDesign) return { status: 'PASS', detail: `${anyRowTotal} row(s), public by design` };
+  return { status: 'LEAK', detail: `${anyRowTotal} row(s) returned` };
 }
 
 // A Postgrest/Supabase error is a PASS when it is permission-denied — RLS doing
@@ -160,18 +167,37 @@ async function probe(client, table) {
   }
 }
 
-// The signed-in probe on a table that has a user_id column: classified by
-// ownership rather than by the presence of any row, so every returned row must be
-// inspected — no row limit. Selects user_id, never '*', plus an exact count. Only
-// user_id values are ever read, and only aggregate counts are ever printed — never
-// a user_id value, other row contents, or the test account's email, password or
-// any token.
-async function probeOwnership(client, table, ownerId) {
+// A UUID shape, checked before ownerId is interpolated into the `.or()` filter
+// string below — not an RFC 4122 version check, just enough to refuse anything
+// that isn't hex-and-dashes so nothing else can reach that string.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The signed-in probe on a table that has a user_id column: classified by two
+// server-side counts, never by fetching row contents. Fetching rows and
+// filtering them here would silently miss a foreign row past PostgREST's
+// max_rows cap (supabase/config.toml) on a table where the test account can see
+// more rows than that — a false PASS, worse than no check at all (CONTEXT.md,
+// Checks that lied #31). So: one head-only count of rows NOT owned by the test
+// account (a null user_id counts as not owned), and one head-only count of
+// every visible row, used only for the "N own row(s)" detail. head: true means
+// no row contents are ever requested, and only these two numbers are ever kept
+// or printed — never a user_id value, other row contents, or the test account's
+// email, password or any token.
+export async function probeOwnership(client, table, ownerId) {
+  if (typeof ownerId !== 'string' || !UUID_RE.test(ownerId)) {
+    return { status: 'FAIL', detail: 'test account id is not a UUID, refusing to query' };
+  }
   try {
-    const { data, count, error } = await client.from(table).select('user_id', { count: 'exact' });
-    if (error) return handleError(error);
-    if (!Array.isArray(data)) return { status: 'FAIL', detail: 'no error and no data array returned' };
-    return classifyProbe({ mode: 'ownership', rows: data, count, ownerId });
+    const foreignRes = await client
+      .from(table)
+      .select('user_id', { count: 'exact', head: true })
+      .or(`user_id.neq.${ownerId},user_id.is.null`);
+    if (foreignRes.error) return handleError(foreignRes.error);
+
+    const totalRes = await client.from(table).select('user_id', { count: 'exact', head: true });
+    if (totalRes.error) return handleError(totalRes.error);
+
+    return classifyProbe({ mode: 'ownership', total: totalRes.count, foreign: foreignRes.count });
   } catch (err) {
     return { status: 'FAIL', detail: `threw: ${err instanceof Error ? err.message : String(err)}` };
   }
