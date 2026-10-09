@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-09 09:00 UTC, chunk 24 boundary — chunks 1–24 merged and live (migrations through 036); chunks 25 and 26 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
@@ -11,6 +11,7 @@
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 72 — Chunk 26 app steps: no PROGRAM tab; Plan's header icon opens Programs; open in planner, priorities and delete reachable; START/END RUN present; old /program link works. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 71 — Chunk 24 app steps: the 29 Aug session shows 30 Aug in History; move a session and back; two sessions on one day; current-week-only missed prompt, DO IT NOW; no MOVE on started sessions. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 69 — Chunk 23 app steps: LAST WEEK unchanged for same-workout last week; LAST TIME + days for another workout or an earlier run; FIRST TIME only if never done; deload sessions never shown. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 68 — Chunk 22 app steps: switch deload rules on; mark a session → halved sets, 75% of last time's lifted weight; edit one, unmark → originals back; program CUSTOM override wins; a started session is flag-only; switch rules off after if wanted. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -58,6 +59,26 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 72 Chunk 26 live check: navigation (Adam's steps)
+Severity: deferred
+Chunk: 26
+**Ask:** Chunk 26 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 26 is `f0bc7c6`)
+1. The bottom bar has no PROGRAM tab; it still fits on your phone.
+2. In Plan, the new icon at the top opens Programs: your saved programs, the active run, and completed runs.
+3. On a saved program, OPEN IN PLANNER opens it; on a completed run, tapping it opens its priorities; its trash icon deletes it (only if you want to — skip otherwise).
+4. Don't start or end a run unless you mean to: just confirm START and END RUN are there.
+5. An old bookmark to /program still opens the Programs page.
+**Answer:**
+**Evidence:**
+What happened: chunk 26 (#50 `f0bc7c6`, Vercel 09:39 UTC) is live. No migration.
+- Reviewer's checks: 1649 tests; replay 37/37; embeds 30/30; no workout-screen, history or Coach file changed; Plan's only render change is the header icon; every former PROGRAM capability mapped and tested at the screen layer. Passed review first time.
+A competent default would: count the jsdom checklist — doesn't apply because: TASKS.md's verification is the running app.
+Cost of deferral: if it fails, chunk 26 is fixed before chunk 25 merges.
+Provisional path taken: merged; chunk 25 is being built.
 
 ### 71 Chunk 24 live check: move a session, several a day (Adam's steps)
 Severity: deferred
