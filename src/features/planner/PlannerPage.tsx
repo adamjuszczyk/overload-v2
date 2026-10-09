@@ -25,8 +25,9 @@ import StepVolume from './StepVolume'
 // (so "open, then save unchanged" writes nothing at all — reviewer note 1's
 // own proof); START activates it (v2_start_run, chunk 6).
 //
-// Reached only against a `kind = 'saved'` program (ProgramPage.tsx's "my
-// programs" list and its "+" create flow) — step 1 and Save/Start are
+// Reached only against a `kind = 'saved'` program (ProgramsPage.tsx's
+// "saved programs" list and its "+" create flow, since chunk 26 — formerly
+// ProgramPage.tsx's "my programs") — step 1 and Save/Start are
 // hidden for any other kind as a defensive fallback, never the intended
 // path (a stable run's own copy is edited inline in Plan's Program tab,
 // ProgramTab.tsx, with the same step 2/3 components below, not through this

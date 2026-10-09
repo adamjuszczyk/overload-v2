@@ -10,7 +10,7 @@ import ProgressPage from './features/progress/ProgressPage'
 import HistoryPage from './features/history/HistoryPage'
 import ExerciseHistoryPage from './features/history/ExerciseHistoryPage'
 import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
-import ProgramPage from './features/programs/ProgramPage'
+import ProgramsPage from './features/programs/ProgramsPage'
 import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
@@ -50,7 +50,14 @@ export default function App() {
   )
 }
 
-function AppRoutes() {
+// Exported (chunk 26) so App.test.tsx can mount the real route table under
+// its own <MemoryRouter> — the exact same <Routes>/<Route> tree App() wires
+// under <BrowserRouter> in production, just reachable from a test without
+// AuthProvider/QueryClientProvider's own Supabase-touching side effects
+// (both of App's own mounted-component dependencies are mocked at their
+// hook boundary in that test instead, same precedent every other screen
+// test in this codebase already follows).
+export function AppRoutes() {
   const { user, loading } = useAuth()
   const { data: settings } = useSettings()
 
@@ -100,7 +107,13 @@ function AppRoutes() {
           <Route path="/history"  element={<HistoryPage />}  />
           <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
           <Route path="/session-type/:workoutDayId" element={<SessionTypeHistoryPage />} />
-          <Route path="/program"                           element={<ProgramPage />}         />
+          {/* Chunk 26 — PROGRAM is gone from the bottom bar (Nav.tsx); both
+              routes below are now reached only from Plan's header
+              (PlanPage.tsx). ProgramPage.tsx (the old "my programs" +
+              active/completed mesocycle screen) is replaced by
+              ProgramsPage.tsx at the same path — every old deep link to
+              /program or /program/:id still resolves. */}
+          <Route path="/program"                           element={<ProgramsPage />}        />
           {/* Chunk 11 — the stepped program planner replaces
               ProgramBuilderPage/WorkoutDayEditorPage/WeeklyScheduleGrid
               (removed) at this same route. */}

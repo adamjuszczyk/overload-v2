@@ -7,6 +7,55 @@ import { useSavedPrograms, useCreateProgram } from './usePrograms'
 import { useMesos, useStartRun, useCompleteMeso, useDeleteMeso } from './useMesos'
 import { useToastStore } from '../notifications/toastStore'
 
+// The Programs page (chunk 26 — SPEC.md "Programs page", TASKS.md chunk 26:
+// "a Programs page reached from Plan's header holds everything else PROGRAM
+// offered"). Replaces ProgramPage.tsx at the same /program route (App.tsx),
+// now reached only from Plan's header (PlanPage.tsx's own "Programs" icon
+// button) and from Plan's no-active-run empty state — PROGRAM itself is
+// gone from the bottom bar (Nav.tsx).
+//
+// Every data hook and mutation below is reused unchanged from
+// ProgramPage.tsx (useMesos/usePrograms, chunk 6's v2_start_run via
+// useStartRun, useCompleteMeso, useDeleteMeso, useCreateProgram) — this
+// chunk is navigation/layout only, so nothing here is reimplemented.
+//
+// Capability checklist (reviewer's note 2 — every capability
+// ProgramPage.tsx had, and where it lives now):
+//   - create a program            → "+" in SAVED PROGRAMS, same sheet/flow.
+//   - edit a program               → "OPEN IN PLANNER" on a saved program's
+//                                     row → PlannerPage (/program/:id,
+//                                     unchanged).
+//   - start a run                  → "START" on a saved program's row, or
+//                                     the auto-reopened sheet right after
+//                                     ending one — both still call chunk 6's
+//                                     useStartRun.mutateAsync, unchanged.
+//                                     Starting while a run is active still
+//                                     ends the old one first — v2_start_run
+//                                     itself is atomic about that; this page
+//                                     never duplicates that logic.
+//   - end a run                    → "END RUN" on the active run's card
+//                                     (was "COMPLETE MESO" — same
+//                                     useCompleteMeso.mutateAsync call).
+//   - delete a completed run       → the trash icon on a completed run's
+//                                     row, unchanged (useDeleteMeso).
+//   - a completed run's priorities → tapping a completed run's row,
+//                                     unchanged (navigate to
+//                                     /meso/:id/priorities, MesoPrioritiesPage
+//                                     — src/features/coach, untouched).
+//
+// Scope decision: the old active-run card's second button, "NEW MESO" (a
+// shortcut into the same start sheet while a run was already active), is
+// dropped — SPEC's own description of this card is exactly one action,
+// "End run". Nothing is lost: starting a different program while one is
+// active is still one tap away, on that program's own "START" button
+// (useStartRun/v2_start_run end the old run atomically either way, so this
+// was always a shortcut to the same call, never a distinct capability).
+// Likewise the old empty-state's big "+ START MESOCYCLE" dashed button
+// (shown only when no run was active) is dropped in favour of each saved
+// program's own "START" — SPEC lists "Start" as the saved-program row's own
+// action, not a page-level one. The no-run state now shows a plain caption
+// below, same idiom as "NO PROGRAMS YET"/"NO DAYS SCHEDULED" elsewhere.
+
 function weekNumber(startDate: string): number {
   return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
 }
@@ -15,7 +64,7 @@ function fmtDate(iso: string): string {
   return format(parseISO(iso), 'MMM d, yyyy')
 }
 
-export default function ProgramPage() {
+export default function ProgramsPage() {
   const navigate = useNavigate()
 
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
@@ -39,9 +88,13 @@ export default function ProgramPage() {
   const createProgram = useCreateProgram()
   const showToast = useToastStore((s) => s.show)
 
-  function openStartMeso() {
+  // presetProgramId: which program a saved-program row's own START button
+  // was tapped on (preselected in the picker below) — omitted when reopened
+  // generically (right after ending a run), which still defaults to the
+  // first saved program, same fallback the old single entry point used.
+  function openStartMeso(presetProgramId?: string) {
     setMesoName('')
-    setSelectedProgramId(programs[0]?.id ?? '')
+    setSelectedProgramId(presetProgramId ?? programs[0]?.id ?? '')
     setShowStartMeso(true)
   }
 
@@ -54,8 +107,7 @@ export default function ProgramPage() {
     // is the one call site in the app that starts a run, so it's also the
     // one place that can surface the function's own refusals (another
     // user's program, a program that's already a run's copy) and any
-    // network/offline failure. No try/catch existed here before this chunk
-    // (CONTEXT.md's own open-items note) — errors previously failed silently.
+    // network/offline failure.
     try {
       await startRun.mutateAsync({ name, programId: selectedProgramId })
       setShowStartMeso(false)
@@ -78,7 +130,7 @@ export default function ProgramPage() {
     if (!confirmCompleteId) return
     await completeMeso.mutateAsync(confirmCompleteId)
     setConfirmCompleteId(null)
-    // Prompt to start a new meso right after completing
+    // Prompt to start a new run right after ending the current one.
     openStartMeso()
   }
 
@@ -108,16 +160,16 @@ export default function ProgramPage() {
           OVERLOAD v2
         </p>
         <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 28, letterSpacing: '-0.5px', color: 'var(--text-primary)', lineHeight: 1 }}>
-          PROGRAM
+          PROGRAMS
         </h1>
       </div>
 
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 
-        {/* ─── Active Meso Section ─── */}
+        {/* ─── Active Run Section ─── */}
         <div style={{ padding: '20px 20px 0' }}>
           <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 12 }}>
-            ACTIVE MESOCYCLE
+            ACTIVE RUN
           </p>
 
           {isLoading && (
@@ -127,28 +179,24 @@ export default function ProgramPage() {
           )}
 
           {!isLoading && !activeMeso && (
-            <button
-              onClick={openStartMeso}
-              style={{ width: '100%', height: 72, background: 'var(--accent-muted)', border: '1px dashed var(--accent)', borderRadius: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: 'var(--accent)' }}
-            >
-              + START MESOCYCLE
-            </button>
+            <p style={{ textAlign: 'center', padding: '20px 0', fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
+              NO ACTIVE RUN
+            </p>
           )}
 
           {!isLoading && activeMeso && (
             <ActiveMesoCard
               meso={activeMeso}
-              onComplete={() => setConfirmCompleteId(activeMeso.id)}
-              onNewMeso={openStartMeso}
+              onEndRun={() => setConfirmCompleteId(activeMeso.id)}
             />
           )}
         </div>
 
-        {/* ─── Completed Mesos ─── */}
+        {/* ─── Completed Runs ─── */}
         {completedMesos.length > 0 && (
           <div style={{ padding: '24px 20px 0' }}>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 12 }}>
-              COMPLETED
+              COMPLETED RUNS
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {completedMesos.map((m) => (
@@ -179,6 +227,7 @@ export default function ProgramPage() {
                   <ChevronRight size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
                   <button
                     onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(m.id) }}
+                    aria-label="Delete run"
                     style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Trash2 size={13} />
@@ -189,14 +238,15 @@ export default function ProgramPage() {
           </div>
         )}
 
-        {/* ─── My Programs ─── */}
+        {/* ─── Saved Programs ─── */}
         <div style={{ padding: '24px 20px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}>
-              MY PROGRAMS
+              SAVED PROGRAMS
             </span>
             <button
               onClick={() => { setNewProgramName(''); setShowCreateProgram(true) }}
+              aria-label="Create a program"
               style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 18, color: 'var(--base)', lineHeight: 1 }}
             >
               +
@@ -213,12 +263,11 @@ export default function ProgramPage() {
             {programs.map((program) => {
               const trainingDays = Object.values(program.schedule).filter(Boolean).length
               return (
-                <button
+                <div
                   key={program.id}
-                  onClick={() => navigate(`/program/${program.id}`)}
-                  style={{ width: '100%', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', textAlign: 'left' }}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}
                 >
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ padding: '14px 16px 12px' }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: trainingDays > 0 ? 3 : 0 }}>
                       {program.name}
                     </div>
@@ -228,20 +277,37 @@ export default function ProgramPage() {
                       </span>
                     )}
                   </div>
-                  <ChevronRight size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
-                </button>
+                  {/* Chunk 26 (SPEC.md "Programs page" — "Saved programs:
+                      each with 'Open in planner' and 'Start'"). Same
+                      footer-row pattern as ActiveMesoCard's own two buttons
+                      below. */}
+                  <div style={{ display: 'flex', borderTop: '1px solid var(--border-subtle)' }}>
+                    <button
+                      onClick={() => navigate(`/program/${program.id}`)}
+                      style={{ flex: 1, padding: '11px 0', background: 'transparent', border: 'none', borderRight: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}
+                    >
+                      OPEN IN PLANNER
+                    </button>
+                    <button
+                      onClick={() => openStartMeso(program.id)}
+                      style={{ flex: 1, padding: '11px 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--accent)' }}
+                    >
+                      START
+                    </button>
+                  </div>
+                </div>
               )
             })}
           </div>
         </div>
       </div>
 
-      {/* ─── Start Meso Sheet ─── */}
+      {/* ─── Start Run Sheet ─── */}
       {showStartMeso && (
         <BottomSheet onClose={() => setShowStartMeso(false)}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, letterSpacing: '1px', color: 'var(--text-primary)' }}>
-              {activeMeso ? 'NEW MESOCYCLE' : 'START MESOCYCLE'}
+              {activeMeso ? 'START A NEW RUN' : 'START RUN'}
             </span>
             <button onClick={() => setShowStartMeso(false)} style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer' }}>
               <X size={15} />
@@ -263,7 +329,7 @@ export default function ProgramPage() {
           ) : (
             <form onSubmit={handleStartMeso}>
               <label style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)', marginBottom: 8 }}>
-                MESO NAME <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(optional)</span>
+                RUN NAME <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>(optional)</span>
               </label>
               <input
                 type="text"
@@ -295,7 +361,7 @@ export default function ProgramPage() {
               {activeMeso && (
                 <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 9, padding: '10px 14px', marginBottom: 16 }}>
                   <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)', lineHeight: 1.5 }}>
-                    Starting a new mesocycle will automatically complete the current one.
+                    Starting a new run will automatically end the current one.
                   </p>
                 </div>
               )}
@@ -305,24 +371,24 @@ export default function ProgramPage() {
                 disabled={!selectedProgramId || startRun.isPending}
                 style={{ width: '100%', height: 54, background: (!selectedProgramId || startRun.isPending) ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: (!selectedProgramId || startRun.isPending) ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: (!selectedProgramId || startRun.isPending) ? 'var(--text-muted)' : 'var(--base)' }}
               >
-                {startRun.isPending ? '…' : 'START MESOCYCLE'}
+                {startRun.isPending ? '…' : 'START RUN'}
               </button>
             </form>
           )}
         </BottomSheet>
       )}
 
-      {/* ─── Confirm Complete Sheet ─── */}
+      {/* ─── Confirm End Run Sheet ─── */}
       {confirmCompleteId && (
         <BottomSheet onClose={() => setConfirmCompleteId(null)}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 20 }}>
             <CheckCircle size={22} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
             <div>
               <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', marginBottom: 6 }}>
-                Complete mesocycle?
+                End run?
               </p>
               <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                This mesocycle will be marked complete and you can start a new one.
+                This run will be marked complete and you can start a new one.
               </p>
             </div>
           </div>
@@ -338,7 +404,7 @@ export default function ProgramPage() {
               disabled={completeMeso.isPending}
               style={{ flex: 1, height: 50, background: 'var(--accent)', border: 'none', borderRadius: 10, cursor: completeMeso.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)' }}
             >
-              {completeMeso.isPending ? '…' : 'COMPLETE'}
+              {completeMeso.isPending ? '…' : 'END RUN'}
             </button>
           </div>
         </BottomSheet>
@@ -349,7 +415,7 @@ export default function ProgramPage() {
         <BottomSheet onClose={() => setConfirmDeleteId(null)}>
           <div style={{ marginBottom: 20 }}>
             <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', marginBottom: 8 }}>
-              Delete mesocycle?
+              Delete run?
             </p>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
               This cannot be undone. Any linked session history will remain.
@@ -405,16 +471,14 @@ export default function ProgramPage() {
   )
 }
 
-// ─── Active Meso Card ──────────────────────────────────────────────────────────
+// ─── Active Run Card ───────────────────────────────────────────────────────────
 
 function ActiveMesoCard({
   meso,
-  onComplete,
-  onNewMeso,
+  onEndRun,
 }: {
   meso: Mesocycle
-  onComplete: () => void
-  onNewMeso: () => void
+  onEndRun: () => void
 }) {
   const week = weekNumber(meso.startDate)
 
@@ -448,19 +512,15 @@ function ActiveMesoCard({
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* Chunk 26 (SPEC.md "Programs page" — "Active run: 'End run'") — one
+          action, not two: the old "NEW MESO" shortcut is gone (see this
+          file's header comment on why nothing is lost). */}
       <div style={{ display: 'flex', borderTop: '1px solid var(--border-subtle)' }}>
         <button
-          onClick={onComplete}
-          style={{ flex: 1, padding: '11px 0', background: 'transparent', border: 'none', borderRight: '1px solid var(--border-subtle)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}
+          onClick={onEndRun}
+          style={{ width: '100%', padding: '11px 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}
         >
-          COMPLETE MESO
-        </button>
-        <button
-          onClick={onNewMeso}
-          style={{ flex: 1, padding: '11px 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--accent)' }}
-        >
-          NEW MESO
+          END RUN
         </button>
       </div>
     </div>

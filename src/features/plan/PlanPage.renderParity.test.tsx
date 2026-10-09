@@ -66,6 +66,18 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // (monday only), so no shared-row note renders either — see
 // PlanPage.deload.test.tsx for both of those, and for the week action
 // itself.
+//
+// Chunk 26 re-capture: PlanPage's header now always shows one new "Programs"
+// icon button (CalendarDays, aria-label="Programs", navigate('/program')),
+// next to the week-navigation controls — SPEC.md "Programs page": "Reached
+// from the plan screen's header", now that PROGRAM is gone from the bottom
+// bar (Nav.tsx) and nothing else in this header led there before (the
+// no-active-run empty state's own "START A PROGRAM" button is a separate,
+// already-existing branch, untouched). Confirmed by diffing the old and new
+// fixture strings directly: the ONLY difference is this one <button> (14
+// lines once pretty-printed), nothing else in this render moved or changed.
+// Same unchanged fixture data and re-capture convention as every prior
+// visible change to this render above.
 
 afterEach(() => cleanup())
 

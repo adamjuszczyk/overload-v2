@@ -17,8 +17,9 @@ import MarkSelector from './MarkSelector'
 // unlike MesoPrioritiesPage.tsx (meso-scoped by a route param, for any meso
 // including a completed one) this needs no id in its URL: it looks up the
 // active meso the same way PlanPage itself does. A completed run's old-
-// style marks stay on MesoPrioritiesPage (reached from ProgramPage, per
-// TASKS.md) — not this screen, and not this table.
+// style marks stay on MesoPrioritiesPage (reached from the Programs page,
+// ProgramsPage.tsx since chunk 26, per TASKS.md) — not this screen, and not
+// this table.
 //
 // Same page shape as MesoPrioritiesPage.tsx (header, loading/error/empty
 // states, groups unfolding to subgroups) and the same chip-row idiom
