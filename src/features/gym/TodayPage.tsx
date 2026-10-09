@@ -4,10 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import { useScheduler } from './useScheduler'
 import {
   useCreateSession,
-  useActiveSession,
-  useReopenSession,
-  useSkipSession,
-  useUpdateSessionNote,
   useMoveSession,
   useClearMovedSession,
   useStartMovedSession,
@@ -19,26 +15,15 @@ import SessionPreview from './SessionPreview'
 import RestDayScreen from './RestDayScreen'
 import MissedSessionPrompt from './MissedSessionPrompt'
 import MoveSessionSheet from './MoveSessionSheet'
+import SequenceTodayPage from './SequenceTodayPage'
+import CompletedTodayScreen from './CompletedTodayScreen'
+import TodayHeader from './TodayHeader'
+import { countCompletedSets } from './countCompletedSets'
 import { useToday } from '../../hooks/useToday'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import type { Session, Mesocycle, WorkoutDay, WeekPlan, SetLog, DueTodayEntry } from '../../types'
+import type { WorkoutDay, WeekPlan, DueTodayEntry } from '../../types'
 
-// Chunk 15 (SPEC "Warmup sets" — "never counted in ... set counts").
-// Extracted (not inlined in CompletedTodayScreen below) so this one count
-// is directly testable without rendering the whole scheduler-dependent
-// screen — same "pure logic lives in testable modules" precedent as
-// setGroupLogic.ts/e1rm.ts elsewhere in this app. A warmup is never
-// skipped in practice (SetRow.tsx's isWarmup branch offers no SKIP
-// affordance), so excluding it from both counts keeps them mutually
-// exclusive and exhaustive over every non-warmup log, same as before this
-// chunk.
-export function countCompletedSets(setLogs: SetLog[]): { total: number; skipped: number } {
-  const real = setLogs.filter((l) => !l.isWarmup)
-  return {
-    total: real.filter((l) => !l.isSkipped).length,
-    skipped: real.filter((l) => l.isSkipped).length,
-  }
-}
+export { countCompletedSets }
 
 export default function TodayPage() {
   const today = useToday()
@@ -69,6 +54,25 @@ export default function TodayPage() {
           style={{ border: '2px solid var(--border-strong)', borderTopColor: 'var(--text-primary)' }}
         />
       </div>
+    )
+  }
+
+  // Chunk 25 (SPEC "Scheduling → Sequence"; reviewer's note 4 — "Today
+  // (sequence run): the next workout and when it's due..."). scheduler.program
+  // is useScheduler.ts's own additive field (already-fetched programs list,
+  // no new query) — reading it here, rather than calling useMesos/usePrograms
+  // directly, means this file introduces NO hook useScheduler.ts's own
+  // existing mocked-hook test files (TodayPage.deload.test.tsx/TodayPage.
+  // moveSession.test.tsx, both of which replace useScheduler wholesale with
+  // a canned SchedulerData) don't already account for.
+  if (scheduler.activeMeso && (scheduler.program?.scheduleType ?? 'weekday') === 'sequence') {
+    return (
+      <SequenceTodayPage
+        today={today}
+        todayLabel={todayLabel}
+        activeMeso={scheduler.activeMeso}
+        programId={scheduler.program!.id}
+      />
     )
   }
 
@@ -459,294 +463,7 @@ export default function TodayPage() {
   )
 }
 
-// ─── CompletedTodayScreen ─────────────────────────────────────────────────────
-// Extracted so hooks run unconditionally. Loads the full session (with setLogs)
-// to get an accurate set count, and offers Continue / Redo actions.
-
-function CompletedTodayScreen({
-  session: basicSession,
-  activeMeso,
-  workoutDay,
-  weekPlan,
-  weekNumber,
-  today,
-  todayLabel,
-  // Chunk 24 — only ever passed from the due_today list's "each opens on
-  // its own" view (reviewer's note 2); the common, single-session path
-  // (exactly one due today) never passes it, so that render is unchanged.
-  onBack,
-}: {
-  session: Session
-  activeMeso: Mesocycle
-  workoutDay: WorkoutDay | null
-  weekPlan: WeekPlan | null
-  weekNumber: number
-  today: string
-  todayLabel: string
-  onBack?: () => void
-}) {
-  const [confirmAction, setConfirmAction] = useState<'continue' | 'redo' | null>(null)
-  const [isEditingNote, setIsEditingNote] = useState(false)
-  const [noteInput, setNoteInput] = useState(basicSession.note ?? '')
-
-  // Fetch full session so setLogs are present (fetchSessionsInRange omits them)
-  const { data: fullSession } = useActiveSession(basicSession.id)
-  const reopenSession = useReopenSession()
-  const skipSession = useSkipSession()
-  const createSession = useCreateSession()
-  const planWeek = usePlanWeek()
-  const updateNote = useUpdateSessionNote()
-
-  const { total: totalSets, skipped: skippedSets } = countCompletedSets(fullSession?.setLogs ?? [])
-  const isPending =
-    reopenSession.isPending || createSession.isPending || skipSession.isPending || planWeek.isPending
-
-  async function handleContinue() {
-    await reopenSession.mutateAsync(basicSession.id)
-    // Scheduler will transition to active_session automatically via invalidation
-  }
-
-  async function handleRedo() {
-    if (!workoutDay) return
-    // Skip the current completed session, then start a fresh one. Chunk 8
-    // — same "plan right before starting" as TodayPage's own handleStart:
-    // redoing today's session is still "starting a session" on Today.
-    await skipSession.mutateAsync(basicSession.id)
-    const weekPlanId = await planWeekThenFindId(
-      activeMeso.id,
-      weekNumber,
-      workoutDay.id,
-      weekPlan?.id ?? null,
-      planWeek,
-    )
-    await createSession.mutateAsync({
-      mesoId: activeMeso.id,
-      weekPlanId,
-      workoutDayId: workoutDay.id,
-      date: today,
-    })
-  }
-
-  return (
-    <div className="px-4 pt-8 pb-6">
-      <TodayHeader label={todayLabel} />
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="mt-4 flex items-center gap-1.5"
-          style={{ color: 'var(--text-muted)' }}
-        >
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.08em' }}>
-            ← BACK
-          </span>
-        </button>
-      )}
-
-      {/* Session summary card */}
-      <div
-        className="mt-4 rounded-xl p-4"
-        style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderTop: '3px solid var(--accent)',
-        }}
-      >
-        <p
-          className="text-xs font-bold tracking-widest mb-1"
-          style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}
-        >
-          SESSION COMPLETE · WEEK {weekNumber}
-        </p>
-        <p
-          className="font-black text-xl mb-1"
-          style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
-        >
-          {workoutDay?.name ?? '—'}
-        </p>
-        <p
-          className="text-sm font-bold"
-          style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-        >
-          {totalSets} sets logged{skippedSets > 0 ? ` · ${skippedSets} skipped` : ''}
-        </p>
-        {isEditingNote ? (
-          <div className="mt-2">
-            <textarea
-              value={noteInput}
-              onChange={(e) => setNoteInput(e.target.value)}
-              rows={3}
-              placeholder="How did it feel?"
-              className="w-full px-3 py-2 rounded-xl text-sm resize-none"
-              style={{
-                backgroundColor: 'var(--surface-raised)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border)',
-                fontFamily: 'var(--font-sans)',
-              }}
-            />
-            <div className="flex gap-2 mt-2">
-              <button
-                onClick={async () => {
-                  await updateNote.mutateAsync({ id: basicSession.id, note: noteInput.trim() || null })
-                  setIsEditingNote(false)
-                }}
-                disabled={updateNote.isPending}
-                className="flex-1 py-2 rounded-lg text-xs font-bold tracking-wider"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'var(--base)',
-                  fontFamily: 'var(--font-mono)',
-                  opacity: updateNote.isPending ? 0.6 : 1,
-                }}
-              >
-                {updateNote.isPending ? 'SAVING…' : 'SAVE'}
-              </button>
-              <button
-                onClick={() => {
-                  setNoteInput(basicSession.note ?? '')
-                  setIsEditingNote(false)
-                }}
-                disabled={updateNote.isPending}
-                className="flex-1 py-2 rounded-lg text-xs font-bold tracking-wider"
-                style={{
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                CANCEL
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {basicSession.note && (
-              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                {basicSession.note}
-              </p>
-            )}
-            <button
-              onClick={() => {
-                setNoteInput(basicSession.note ?? '')
-                setIsEditingNote(true)
-              }}
-              className="mt-2 text-xs font-bold tracking-widest"
-              style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-            >
-              {basicSession.note ? 'EDIT NOTE' : 'ADD NOTE'}
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Confirmation prompt */}
-      {confirmAction && (
-        <div
-          className="mt-4 rounded-xl p-4"
-          style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border-strong)' }}
-        >
-          <p
-            className="text-sm font-bold mb-3"
-            style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
-          >
-            {confirmAction === 'continue'
-              ? 'Resume where you left off — all logged sets stay intact.'
-              : 'Start fresh — current session is marked skipped and all inputs clear.'}
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={confirmAction === 'continue' ? handleContinue : handleRedo}
-              disabled={isPending}
-              className="flex-1 py-3 rounded-xl font-black text-sm tracking-wider"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--base)',
-                fontFamily: 'var(--font-mono)',
-                opacity: isPending ? 0.6 : 1,
-              }}
-            >
-              {isPending ? 'WORKING…' : 'CONFIRM'}
-            </button>
-            <button
-              onClick={() => setConfirmAction(null)}
-              disabled={isPending}
-              className="flex-1 py-3 rounded-xl font-bold text-sm tracking-wider"
-              style={{
-                border: '1px solid var(--border)',
-                color: 'var(--text-muted)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              CANCEL
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Action buttons */}
-      {!confirmAction && (
-        <div className="mt-4 space-y-3">
-          <button
-            onClick={() => setConfirmAction('continue')}
-            className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
-            style={{
-              backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            CONTINUE SESSION
-          </button>
-          <p
-            className="text-center text-xs"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            Pick up right where you left off
-          </p>
-
-          <button
-            onClick={() => setConfirmAction('redo')}
-            className="w-full py-3 rounded-xl font-bold text-sm tracking-widest"
-            style={{
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            REDO SESSION
-          </button>
-          <p
-            className="text-center text-xs"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            Start fresh — current session is discarded
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Shared primitives ────────────────────────────────────────────────────────
-
-function TodayHeader({ label }: { label: string }) {
-  return (
-    <>
-      <p
-        className="text-xs font-bold tracking-widest mb-1"
-        style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-      >
-        {label}
-      </p>
-      <h1
-        className="text-3xl font-black tracking-tight"
-        style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}
-      >
-        TODAY
-      </h1>
-    </>
-  )
-}
 
 function RestDayCard({ label }: { label: string }) {
   return (
