@@ -36,6 +36,8 @@ beforeEach(() => {
   isOnline = true
   moveMutate.mockClear()
   clearMutate.mockClear()
+  // Reviewer's own UI rule (chunk 24): "Check UI at 375 px via jsdom".
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
 })
 
 function renderControl(isCurrentWeek = true) {

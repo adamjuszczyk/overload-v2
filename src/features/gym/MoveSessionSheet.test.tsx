@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
 import MoveSessionSheet from './MoveSessionSheet'
 
 afterEach(() => cleanup())
+// Reviewer's own UI rule (chunk 24): "Check UI at 375 px via jsdom" — same
+// convention as PlanPage.deload.test.tsx's own beforeEach.
+beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
+})
 
 // Week of 2026-08-24 (Monday) .. 2026-08-30 (Sunday) — same hand-verified
 // week as scheduler.test.ts/moveSession.test.ts.
