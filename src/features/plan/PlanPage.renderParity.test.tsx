@@ -250,6 +250,14 @@ vi.mock('./useWeekPlan', () => ({
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
+// Chunk 24 — this component owns its own hooks (useSessionsInRange via
+// gym/useSession.ts, which needs a real QueryClientProvider this file's
+// own render() doesn't set up — every other PlanPage hook is mocked away
+// the same way for the same reason). Stubbed to nothing: this file's own
+// job is unrelated to session-moving: MoveSessionControl.test.tsx proves
+// the real component.
+vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+
 const { default: PlanPage } = await import('./PlanPage')
 
 const FIXTURE_DIR = dirname(fileURLToPath(import.meta.url))

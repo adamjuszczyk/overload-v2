@@ -44,15 +44,26 @@ const SESSION_ROW = {
   set_count: 5,
 }
 
-function mockTables(lineageRows: { id: string; source_workout_day_id: string | null }[], sessionRows: unknown[]) {
+function mockTables(
+  lineageRows: { id: string; source_workout_day_id: string | null }[],
+  sessionRows: unknown[],
+  // Chunk 24 — fetchSessionTypeHistory now also looks up moved_to_date for
+  // this page's own session ids (v2_session_type_history predates that
+  // column). Empty by default: every pre-chunk-24 test here asserts `date`
+  // passes through unchanged, which an empty lookup (nothing moved)
+  // preserves exactly.
+  movedToDateRows: { id: string; moved_to_date: string | null }[] = [],
+) {
   const lineageChain = makeChain({ data: lineageRows, error: null })
   const historyChain = makeChain({ data: sessionRows, error: null })
+  const movedToDateChain = makeChain({ data: movedToDateRows, error: null })
   fromMock.mockImplementation((table: string) => {
     if (table === 'v2_workout_days') return lineageChain
     if (table === 'v2_session_type_history') return historyChain
+    if (table === 'v2_sessions') return movedToDateChain
     throw new Error(`unexpected table ${table}`)
   })
-  return { lineageChain, historyChain }
+  return { lineageChain, historyChain, movedToDateChain }
 }
 
 beforeEach(() => {
