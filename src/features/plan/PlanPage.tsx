@@ -147,6 +147,17 @@ export default function PlanPage() {
 
   const { data: programs = [] } = usePrograms()
   const program = programs.find((p) => p.id === activeMeso?.programId)
+  // Chunk 25 (SPEC "Scheduling → Sequence" — "the cycle replaces the week
+  // everywhere the week is used"; reviewer's note 3: "Labels 'Cycle n'
+  // everywhere a sequence run shows a week"). Scope decision (this chunk's
+  // report): the Weeks tab's own workout-selection body below this header
+  // (scheduledDays, WorkoutSwitcher, WorkoutDayPanel) stays keyed by
+  // program.schedule, which is always '{}' for a sequence program — making
+  // that body itself sequence-aware is a separate, larger UI rework this
+  // chunk does not take on (see the report). This header chip is the one
+  // place a sequence run's OWN cycle number is shown regardless, so it is
+  // fixed here.
+  const isSequence = (program?.scheduleType ?? 'weekday') === 'sequence'
 
   // Chunk 22 — the EFFECTIVE deload rules for this run: the program's own
   // override if it has one, else the global default (deloadRules.ts's
@@ -370,7 +381,7 @@ export default function PlanPage() {
             </button>
             <div style={{ minWidth: 76, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewWeek === currentWeek ? 'var(--accent)' : 'var(--surface-overlay)', border: `1px solid ${viewWeek === currentWeek ? 'transparent' : 'var(--border-strong)'}`, borderRadius: 8, padding: '0 10px' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--base)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
-                WEEK {viewWeek}
+                {isSequence ? 'CYCLE' : 'WEEK'} {viewWeek}
               </span>
             </div>
             <button
@@ -664,7 +675,11 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   const { data: allWeekPlansForApplyAhead = [] } = useAllWeekPlans(mesoId)
   const applyAheadOffer = useApplyAheadOffer(mesoId, `${workoutDay.id}:${weekNumber}`)
   function laterWeeksForThisWorkout() {
-    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber)
+    // Chunk 25 (reviewer's note 3) — slot identity, not just workoutDayId:
+    // weekPlan is THIS workout's own row for the viewed week/cycle; its
+    // sequencePosition (null for a weekday run, or absent on a pre-chunk-25
+    // fixture) is the slot every later week must also match.
+    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber, weekPlan?.sequencePosition ?? null)
   }
 
   // Which sheet (if any) is open: swapping a specific slot, or adding a new

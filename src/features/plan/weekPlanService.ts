@@ -139,6 +139,11 @@ type DbWeekPlan = {
   // posture settingsService.ts/programService.ts already take for their
   // own deload_rules columns.
   deload_restore?: unknown
+  // Absent until migration 027 has been applied — chunk 25's own field
+  // (read/written starting this chunk; 037 is what makes it load-bearing
+  // for the unique key). Same fallback convention; absent/null both read
+  // as "weekday row" (toPlan below).
+  sequence_position?: number | null
 }
 
 // The same embed string is repeated as an inline literal at every
@@ -266,6 +271,9 @@ function toPlan(row: DbWeekPlan): WeekPlan {
     // this file already guards; a non-array value (absent column, or a
     // genuinely null snapshot) reads as "no snapshot", same as null.
     deloadRestore: Array.isArray(row.deload_restore) ? (row.deload_restore as DeloadRestoreEntry[]) : null,
+    // Chunk 25 — same "may not exist yet" fallback; absent/null both read
+    // as "weekday row" everywhere this is checked (R16).
+    sequencePosition: row.sequence_position ?? null,
   }
 }
 
@@ -532,35 +540,59 @@ export async function planWeek(mesoId: string, weekNumber: number): Promise<numb
 // (possibly empty) the moment the week is opened/started, so by the time a
 // manual copy can even be offered, every workout that belongs to this week
 // already has a row — this just finds which ones are still empty.
+// Chunk 25 — also reads sequence_position: for a sequence cycle this is
+// per SLOT (R16's "one row per slot"), not per workout, so the SAME
+// workoutDayId can appear twice here with two different slots, each its
+// own independent copy target (reviewer's note "copying is per slot").
 async function fetchEmptyWorkoutPlanIds(
   mesoId: string,
   weekNumber: number,
-): Promise<{ weekPlanId: string; workoutDayId: string }[]> {
+): Promise<{ weekPlanId: string; workoutDayId: string; sequencePosition: number | null }[]> {
   const { data, error } = await supabase
     .from('v2_week_plans')
-    .select('id, workout_day_id, v2_week_plan_exercises(id)')
+    .select('id, workout_day_id, sequence_position, v2_week_plan_exercises(id)')
     .eq('mesocycle_id', mesoId)
     .eq('week_number', weekNumber)
   if (error) throw error
-  const rows = (data ?? []) as { id: string; workout_day_id: string; v2_week_plan_exercises: { id: string }[] }[]
+  const rows = (data ?? []) as {
+    id: string
+    workout_day_id: string
+    sequence_position: number | null
+    v2_week_plan_exercises: { id: string }[]
+  }[]
   return rows
     .filter((r) => (r.v2_week_plan_exercises ?? []).length === 0)
-    .map((r) => ({ weekPlanId: r.id, workoutDayId: r.workout_day_id }))
+    .map((r) => ({ weekPlanId: r.id, workoutDayId: r.workout_day_id, sequencePosition: r.sequence_position ?? null }))
 }
 
-// Every planned occurrence of one workout in this meso (any week number),
-// for resolveManualCopySource's backward search — the client-side
-// equivalent of what v2_plan_week reads straight from v2_week_plans itself.
-// isEmpty (DECISIONS 42 (b)) is computed the same way the migration's SQL
-// does — zero v2_week_plan_sets rows, never the exercise list (a week can
-// carry exercise rows with no sets under them) — via the embed below,
+// Every planned occurrence of one SLOT in this meso (any week number), for
+// resolveManualCopySource's backward search — the client-side equivalent
+// of what v2_plan_week reads straight from v2_week_plans itself. isEmpty
+// (DECISIONS 42 (b)) is computed the same way the migration's SQL does —
+// zero v2_week_plan_sets rows, never the exercise list (a week can carry
+// exercise rows with no sets under them) — via the embed below,
 // unambiguous (one FK, v2_week_plan_sets.week_plan_id → v2_week_plans.id).
-async function fetchPlannedWeekHistory(mesoId: string, workoutDayId: string): Promise<PlannedWeekRecord[]> {
-  const { data, error } = await supabase
+//
+// Chunk 25 (reviewer's note "copying is per slot: a slot's source is the
+// same slot's last normal occurrence") — `sequencePosition` scopes this to
+// the SAME slot, not just the same workout: a workout occupying two slots
+// in one cycle (R16, SPEC G8) has two independent copy histories, each
+// only ever looking at its own slot's prior occurrences. `null` (every
+// weekday row, and every call from before this chunk) matches exactly as
+// it always has — `.is()`, not `.eq()`, since Postgres (and PostgREST)
+// never match NULL with `=`.
+async function fetchPlannedWeekHistory(
+  mesoId: string,
+  workoutDayId: string,
+  sequencePosition: number | null,
+): Promise<PlannedWeekRecord[]> {
+  let query = supabase
     .from('v2_week_plans')
     .select('week_number, is_deload, v2_week_plan_sets(id)')
     .eq('mesocycle_id', mesoId)
     .eq('workout_day_id', workoutDayId)
+  query = sequencePosition === null ? query.is('sequence_position', null) : query.eq('sequence_position', sequencePosition)
+  const { data, error } = await query
   if (error) throw error
   const rows = (data ?? []) as { week_number: number; is_deload: boolean; v2_week_plan_sets: { id: string }[] }[]
   return rows.map((r) => ({
@@ -570,7 +602,7 @@ async function fetchPlannedWeekHistory(mesoId: string, workoutDayId: string): Pr
   }))
 }
 
-// Shared by both manual copy actions below: resolves this one workout's
+// Shared by both manual copy actions below: resolves this one SLOT's
 // source (weekSources.ts), fetches that source week's plan if one was
 // found, and copies it forward via copyOnePlanForward — a no-op when there
 // is nothing non-deload to copy ("missing source").
@@ -579,19 +611,21 @@ async function copyOneWorkoutFromHistory(
   mesoId: string,
   weekNumber: number,
   workoutDayId: string,
+  sequencePosition: number | null,
   existingWeekPlanId?: string,
 ): Promise<void> {
-  const history = await fetchPlannedWeekHistory(mesoId, workoutDayId)
+  const history = await fetchPlannedWeekHistory(mesoId, workoutDayId, sequencePosition)
   const source = resolveManualCopySource(history, weekNumber)
   if (source.kind === 'none') return
 
-  const { data: prevPlan, error } = await supabase
+  let query = supabase
     .from('v2_week_plans')
     .select('*, v2_week_plan_sets(*), v2_week_plan_exercises(*, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(*, exercises(*)))')
     .eq('mesocycle_id', mesoId)
     .eq('week_number', source.weekNumber)
     .eq('workout_day_id', workoutDayId)
-    .maybeSingle()
+  query = sequencePosition === null ? query.is('sequence_position', null) : query.eq('sequence_position', sequencePosition)
+  const { data: prevPlan, error } = await query.maybeSingle()
   if (error) throw error
   if (!prevPlan) return
 
@@ -604,25 +638,29 @@ export async function copyFromPreviousWeek(
   weekNumber: number,
 ): Promise<void> {
   const empties = await fetchEmptyWorkoutPlanIds(mesoId, weekNumber)
-  for (const { weekPlanId, workoutDayId } of empties) {
-    await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, weekPlanId)
+  for (const { weekPlanId, workoutDayId, sequencePosition } of empties) {
+    await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, sequencePosition, weekPlanId)
   }
 }
 
 // Phase 3.7's scoped twin of copyFromPreviousWeek (TASKS.md §4 item 31 /
-// SPEC §5) — same source rules, but filtered to one workoutDayId instead of
-// every empty workout in the week. `existingWeekPlanId` lets the caller
-// pass an already-created (possibly still-empty) week_plan row for this
-// workout/week so this doesn't create a duplicate — same optional-id pattern
-// useAddSet/addSet already uses.
+// SPEC §5) — same source rules, but filtered to one SLOT instead of every
+// empty workout in the week. `existingWeekPlanId` lets the caller pass an
+// already-created (possibly still-empty) week_plan row for this slot so
+// this doesn't create a duplicate — same optional-id pattern useAddSet/
+// addSet already uses. `sequencePosition` defaults to null (every caller
+// before chunk 25, and every weekday caller after it, reads unaffected —
+// see this file's own header on R16's slot identity); PlanPage.tsx passes
+// the viewed workout's OWN plan row's sequencePosition for a sequence run.
 export async function copyWorkoutFromPreviousWeek(
   userId: string,
   mesoId: string,
   weekNumber: number,
   workoutDayId: string,
   existingWeekPlanId?: string,
+  sequencePosition: number | null = null,
 ): Promise<void> {
-  await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, existingWeekPlanId)
+  await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, sequencePosition, existingWeekPlanId)
 }
 
 // Shared by both copy actions above — the two differ only in how they pick
@@ -1103,6 +1141,8 @@ interface DeloadWeekPlanCore {
   mesocycleId: string
   workoutDayId: string
   weekNumber: number
+  // Chunk 25 (R16) — this row's own slot; null for a weekday run.
+  sequencePosition: number | null
   deloadRestore: DeloadRestoreEntry[] | null
   sets: DbWeekPlanSet[]
   exercises: DeloadExerciseSlot[]
@@ -1112,7 +1152,7 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
   const { data, error } = await supabase
     .from('v2_week_plans')
     .select(
-      'mesocycle_id, workout_day_id, week_number, deload_restore, v2_week_plan_sets(*), v2_week_plan_exercises(program_exercise_id, carry_program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))',
+      'mesocycle_id, workout_day_id, week_number, sequence_position, deload_restore, v2_week_plan_sets(*), v2_week_plan_exercises(program_exercise_id, carry_program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))',
     )
     .eq('id', weekPlanId)
     .single()
@@ -1121,6 +1161,7 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
     mesocycle_id: string
     workout_day_id: string
     week_number: number
+    sequence_position: number | null
     deload_restore: unknown
     v2_week_plan_sets: DbWeekPlanSet[]
     v2_week_plan_exercises: DbDeloadExerciseSlotRow[]
@@ -1129,23 +1170,33 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
     mesocycleId: row.mesocycle_id,
     workoutDayId: row.workout_day_id,
     weekNumber: row.week_number,
+    sequencePosition: row.sequence_position ?? null,
     deloadRestore: Array.isArray(row.deload_restore) ? (row.deload_restore as DeloadRestoreEntry[]) : null,
     sets: row.v2_week_plan_sets ?? [],
     exercises: (row.v2_week_plan_exercises ?? []).map(toExerciseSlot).filter((e): e is DeloadExerciseSlot => e != null),
   }
 }
 
-// Every earlier planned occurrence of this one workout in this run —
+// Every earlier planned occurrence of this one SLOT in this run —
 // resolveDeloadBaseOccurrence's own candidate list, plus each candidate's
 // full set list AND exercise list (needed once a base is chosen, to build
 // the calculator's input via resolveDeloadExerciseMapping) so this is one
 // query, not a second round trip once the pure function picks a winner.
+//
+// Chunk 25 (reviewer's note 3 — "deload rules match by slot for sequence
+// runs"): `sequencePosition` scopes the search to the SAME slot a repeated
+// workout occupies (R16) — resolveDeloadBaseOccurrence itself needs no
+// change at all (it already just searches whatever `occurrences` list it's
+// handed, same posture as weekSources.ts's findLastUsableWeek); this is the
+// one gathering step that decides what counts as "this workout's history",
+// same fix shape as fetchPlannedWeekHistory above.
 async function fetchDeloadOccurrenceHistory(
   mesocycleId: string,
   workoutDayId: string,
+  sequencePosition: number | null,
   beforeWeekNumber: number,
 ): Promise<{ weekNumber: number; isDeload: boolean; sets: DbWeekPlanSet[]; exercises: DeloadExerciseSlot[] }[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('v2_week_plans')
     .select(
       'week_number, is_deload, v2_week_plan_sets(*), v2_week_plan_exercises(program_exercise_id, carry_program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))',
@@ -1153,6 +1204,8 @@ async function fetchDeloadOccurrenceHistory(
     .eq('mesocycle_id', mesocycleId)
     .eq('workout_day_id', workoutDayId)
     .lt('week_number', beforeWeekNumber)
+  query = sequencePosition === null ? query.is('sequence_position', null) : query.eq('sequence_position', sequencePosition)
+  const { data, error } = await query
   if (error) throw error
   const rows = (data ?? []) as {
     week_number: number
@@ -1507,7 +1560,7 @@ export async function markSessionDeload(
   }
 
   const current = await fetchDeloadWeekPlanCore(weekPlanId)
-  const history = await fetchDeloadOccurrenceHistory(current.mesocycleId, current.workoutDayId, current.weekNumber)
+  const history = await fetchDeloadOccurrenceHistory(current.mesocycleId, current.workoutDayId, current.sequencePosition, current.weekNumber)
 
   const historySetIds = history.flatMap((h) => h.sets.map((s) => s.id))
   const historyLogs = await fetchDeloadSetLogs(historySetIds)

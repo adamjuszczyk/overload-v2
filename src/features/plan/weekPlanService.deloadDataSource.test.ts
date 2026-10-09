@@ -62,6 +62,16 @@ function makeChain(table: string, resolve: (state: ChainState) => { data?: unkno
     state.inFilters[col] = val
     return chain
   }
+  // Chunk 25 — `.is(col, null)` is the slot-identity null-check
+  // (fetchDeloadOccurrenceHistory/fetchDeloadWeekPlanCore's own
+  // sequence_position filter); every fixture in this file is a weekday
+  // run, so recording it into the SAME eqFilters bucket as `.eq` is
+  // sufficient — none of this file's own resolvers key off it.
+  chain.is = (col: string, val: unknown) => {
+    calls.push({ table, method: 'is', args: [col, val] })
+    state.eqFilters[col] = val
+    return chain
+  }
   chain.update = (payload: unknown) => {
     calls.push({ table, method: 'update', args: [payload] })
     state.usedUpdate = true

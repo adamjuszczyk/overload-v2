@@ -374,10 +374,15 @@ export function useCopyWorkoutFromPreviousWeek(mesoId: string, weekNumber: numbe
     mutationFn: ({
       workoutDayId,
       weekPlanId,
+      sequencePosition,
     }: {
       workoutDayId: string
       weekPlanId?: string
-    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId),
+      // Chunk 25 (R16) — this slot's own identity; null (the default
+      // copyWorkoutFromPreviousWeek itself falls back to) for a weekday
+      // run, exactly as before this chunk.
+      sequencePosition?: number | null
+    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId, sequencePosition ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
