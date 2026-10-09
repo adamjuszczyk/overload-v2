@@ -1,15 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, reviewed (037 waiting on you, 76).*
+*Rewritten at every chunk boundary. Last: 2026-10-09 12:46 UTC, phase 1 complete — chunks 1–26 merged and live (migrations through 037). Nothing is being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- **76 — BLOCKING: run the pre-check, then merge #51 (037, sequence slots); tell me when deployed. Blocked: chunk 25's code, the last phase-1 chunk.**
-- Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
+- Nothing else open. Standing rules D29, D30.
 
 **To-dos**
+- 77 — Chunk 25: the throwaway sequence run on your second account (`live-checks/chunk25-sequence-run.md`); send the three count rows. When: when you have ~20 minutes. Blocked: nothing (a failure blocks the next change).
 - 72 — Chunk 26 app steps: no PROGRAM tab; Plan's header icon opens Programs; open in planner, priorities and delete reachable; START/END RUN present; old /program link works. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 71 — Chunk 24 app steps: the 29 Aug session shows 30 Aug in History; move a session and back; two sessions on one day; current-week-only missed prompt, DO IT NOW; no MOVE on started sessions. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 69 — Chunk 23 app steps: LAST WEEK unchanged for same-workout last week; LAST TIME + days for another workout or an earlier run; FIRST TIME only if never done; deload sessions never shown. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -59,31 +59,21 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 76 Merge migration 037 (#51): sequence slots
-Severity: blocking
+### 77 Chunk 25 live check: a throwaway sequence run on your second account (Adam's steps)
+Severity: deferred
 Chunk: 25
-**Ask:** Run the pre-check below; if both results match, merge PR #51 (037) and tell me when its deploy is done. Then I merge the code (#52).
-**When:** when you can.
-**Blocked until done:** chunk 25's code (#52) — the last phase-1 chunk.
-**Pre-check** (Supabase SQL editor):
-```
-select con.conname
-  from pg_constraint con
- where con.conrelid = 'public.v2_week_plans'::regclass
-   and con.contype = 'u';
--- expect exactly one row: v2_week_plans_mesocycle_id_workout_day_id_week_number_key
-select count(*) from v2_week_plans where sequence_position is not null;
--- expect 0
-```
+**Ask:** Do the walkthrough in `live-checks/chunk25-sequence-run.md` (this branch, `claude/epic-lovelace-0pvxbr`) on your **second account**, and send me the three count rows (BEFORE, AFTER, AFTER CLEANUP) plus anything that didn't match. A failed step is blocking.
+**When:** when you have ~20 minutes; one calendar day is enough.
+**Blocked until done:** nothing now; a failure blocks the next change.
+**Summary of the walkthrough:** copy the second account's id from Supabase → Authentication → Users; run the BEFORE counts; create `TEST-seq-<date>` with workouts A and B, schedule SEQUENCE, slots A, B, A, rest; start a run; in Plan, check CYCLE 1 and the slot chips (A, B, A, dimmed REST), set a target on the third chip; on Today: A ready → do it; B due tomorrow → TRAIN ANYWAY; A (the repeat, showing your target) → TRAIN ANYWAY; CYCLE 2 A due in 2 days → SKIP; B due today. AFTER counts (weekday week plans must be unchanged); cleanup SQL in the file's order; AFTER CLEANUP must equal BEFORE.
+**Answer:**
 **Evidence:**
-- 037 (md5 `152c06cf18cfb06589c0722511c55173`) swaps `v2_week_plans`' unique key for R16's 4-column one (the old constraint found by catalog lookup, raising unless exactly one matches) and replaces `v2_plan_week` with one row per sequence slot; weekday rows and planning unchanged; no row changes.
-- Reviewer: empty replay 38/38, embeds 30/30; R16 re-proven on scratch (duplicate weekday row rejected, same workout at two positions accepted, duplicate slot rejected).
-- `check-migration` exits 1 (constraint change, function replace), so the merge is yours (TASKS: chunk 25).
-- Rollback (header): drop the new key and restore the old one — only while no cycle repeats a workout.
-- Chunk 25's code passed review on the third, tests-only retry (73): 1750 tests; 14 slot-position wiring sites each break-proven; my own two breaks caught.
-A competent default would: merge it myself under D29 — doesn't apply because: it changes a constraint, and chunk 25's migration is yours by name.
-Cost of deferral: phase 1's last chunk waits.
-Provisional path taken: both PRs open; the live check (your second account) waits for the code.
+What happened: 037 merged by you (#51 `26b0595`; Supabase success; live probe: an anonymous `v2_plan_week` call answers "no authenticated user", so 037's function is live); code #52 `b737441` (Vercel 12:44 UTC); embeds 30/30 live. Phase 1 is complete.
+- Reviewer's checks: 1750 tests; replay 38/38 with 037 on an empty database; R16 re-proven on scratch; D30 untouched; weekday Plan render identical to master.
+- Failed review twice (73): Plan showed nothing for a sequence run; then slot-position wiring unproven. You chose a third, tests-only retry, which passed (14 wiring sites break-proven).
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md's done-when is a live sequence run.
+Cost of deferral: sequence runs stay unproven live.
+Provisional path taken: merged; phase 1 complete.
 
 ### 72 Chunk 26 live check: navigation (Adam's steps)
 Severity: deferred
@@ -570,6 +560,32 @@ Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 start
 Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
 
 ## Closed
+
+### 76 Merge migration 037 (#51): sequence slots
+Severity: blocking (closed 2026-10-09: merged by Adam as #51 `26b0595`; deploy success)
+Chunk: 25
+**Ask:** Run the pre-check below; if both results match, merge PR #51 (037) and tell me when its deploy is done. Then I merge the code (#52).
+**When:** when you can.
+**Blocked until done:** chunk 25's code (#52) — the last phase-1 chunk.
+**Pre-check** (Supabase SQL editor):
+```
+select con.conname
+  from pg_constraint con
+ where con.conrelid = 'public.v2_week_plans'::regclass
+   and con.contype = 'u';
+-- expect exactly one row: v2_week_plans_mesocycle_id_workout_day_id_week_number_key
+select count(*) from v2_week_plans where sequence_position is not null;
+-- expect 0
+```
+**Evidence:**
+- 037 (md5 `152c06cf18cfb06589c0722511c55173`) swaps `v2_week_plans`' unique key for R16's 4-column one (the old constraint found by catalog lookup, raising unless exactly one matches) and replaces `v2_plan_week` with one row per sequence slot; weekday rows and planning unchanged; no row changes.
+- Reviewer: empty replay 38/38, embeds 30/30; R16 re-proven on scratch (duplicate weekday row rejected, same workout at two positions accepted, duplicate slot rejected).
+- `check-migration` exits 1 (constraint change, function replace), so the merge is yours (TASKS: chunk 25).
+- Rollback (header): drop the new key and restore the old one — only while no cycle repeats a workout.
+- Chunk 25's code passed review on the third, tests-only retry (73): 1750 tests; 14 slot-position wiring sites each break-proven; my own two breaks caught.
+A competent default would: merge it myself under D29 — doesn't apply because: it changes a constraint, and chunk 25's migration is yours by name.
+Cost of deferral: phase 1's last chunk waits.
+Provisional path taken: both PRs open; the live check (your second account) waits for the code.
 
 ### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
 Severity: blocking (closed 2026-10-09: (a); the retry passed)
