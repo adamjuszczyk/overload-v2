@@ -34,6 +34,14 @@ const markSessionDeloadMock = vi.fn()
 const unmarkSessionDeloadMock = vi.fn()
 const markWeekDeloadMock = vi.fn()
 const unmarkWeekDeloadMock = vi.fn()
+// Chunk 25 review fix 2 (DECISIONS 73 option a) — useCopyWorkoutFromPreviousWeek's
+// own one-line forwarding of `sequencePosition` (useWeekPlan.ts's own
+// header: "null (the default copyWorkoutFromPreviousWeek itself falls back
+// to)...") was never exercised at the HOOK layer — weekPlanService.
+// sequenceSlotCopy.test.ts proves the SERVICE function's own query shape,
+// but nothing proved the hook's mutationFn actually passes a real,
+// non-null sequencePosition through rather than silently dropping it.
+const copyWorkoutFromPreviousWeekMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
   planWeek: (...args: unknown[]) => planWeekMock(...args),
   updateSet: (...args: unknown[]) => updateSetMock(...args),
@@ -41,13 +49,14 @@ vi.mock('./weekPlanService', () => ({
   unmarkSessionDeload: (...args: unknown[]) => unmarkSessionDeloadMock(...args),
   markWeekDeload: (...args: unknown[]) => markWeekDeloadMock(...args),
   unmarkWeekDeload: (...args: unknown[]) => unmarkWeekDeloadMock(...args),
+  copyWorkoutFromPreviousWeek: (...args: unknown[]) => copyWorkoutFromPreviousWeekMock(...args),
 }))
 // useSetDeload/useSetWeekDeload now read the current user (chunk 22 — the
 // executor needs it to attribute inserted rows), same fixed-user mock
 // convention every other PlanPage-adjacent test file already uses.
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -59,6 +68,7 @@ afterEach(() => {
   unmarkSessionDeloadMock.mockReset()
   markWeekDeloadMock.mockReset()
   unmarkWeekDeloadMock.mockReset()
+  copyWorkoutFromPreviousWeekMock.mockReset()
   // The imported queryClient is ALSO a module-level singleton (see the
   // cache-scope tests below) — clear it so no test's seeded cache data
   // leaks into the next.
@@ -179,6 +189,83 @@ describe('planWeekThenFindId — best-effort: never blocks or fails the start', 
     const planWeek = fakePlanWeek(() => Promise.reject(new Error('offline')))
     const id = await planWeekThenFindId('meso-1', 2, 'wd-target', null, planWeek, vi.fn())
     expect(id).toBeNull()
+  })
+
+  // Chunk 25 review fix 2 (DECISIONS 73 option a) — the 7th `sequencePosition`
+  // argument's own matching (the one site SequenceTodayPage.tsx's Start/
+  // Train anyway/Skip and PlanPage.tsx's "COPY THIS WORKOUT" all funnel
+  // through): every test above omits it, so none of them ever exercised
+  // `(p.sequencePosition ?? null) === sequencePosition` with a real,
+  // non-null value — closing that gap directly, at this function's own
+  // pure layer, with two rows sharing one workoutDayId at different slots.
+  describe('slot identity — sequencePosition picks the right row among several sharing one workoutDayId (chunk 25, R16)', () => {
+    it('sequencePosition = 2 finds the position-2 row, never the position-0 row', async () => {
+      const planWeek = fakePlanWeek(() => Promise.resolve(1))
+      const fetchPlans = vi.fn().mockResolvedValue([
+        { id: 'wp-slot0', workoutDayId: 'wd-a', sequencePosition: 0 },
+        { id: 'wp-slot2', workoutDayId: 'wd-a', sequencePosition: 2 },
+      ])
+
+      const id = await planWeekThenFindId('meso-1', 2, 'wd-a', 'fallback-id', planWeek, fetchPlans, 2)
+
+      expect(id).toBe('wp-slot2')
+    })
+
+    it('sequencePosition = 0 finds the position-0 row, never the position-2 row', async () => {
+      const planWeek = fakePlanWeek(() => Promise.resolve(1))
+      const fetchPlans = vi.fn().mockResolvedValue([
+        { id: 'wp-slot0', workoutDayId: 'wd-a', sequencePosition: 0 },
+        { id: 'wp-slot2', workoutDayId: 'wd-a', sequencePosition: 2 },
+      ])
+
+      const id = await planWeekThenFindId('meso-1', 2, 'wd-a', 'fallback-id', planWeek, fetchPlans, 0)
+
+      expect(id).toBe('wp-slot0')
+    })
+
+    it('omitting sequencePosition (every weekday caller) still matches a plain, position-less row — unchanged', async () => {
+      const planWeek = fakePlanWeek(() => Promise.resolve(1))
+      const fetchPlans = vi.fn().mockResolvedValue([{ id: 'wp-weekday', workoutDayId: 'wd-target' }])
+
+      const id = await planWeekThenFindId('meso-1', 2, 'wd-target', 'fallback-id', planWeek, fetchPlans)
+
+      expect(id).toBe('wp-weekday')
+    })
+  })
+})
+
+describe('useCopyWorkoutFromPreviousWeek — the sequencePosition arg actually reaches copyWorkoutFromPreviousWeek (chunk 25 review fix 2)', () => {
+  it('a real, non-null sequencePosition (slot 2) is forwarded, not dropped', async () => {
+    copyWorkoutFromPreviousWeekMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useCopyWorkoutFromPreviousWeek('meso-1', 3), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ workoutDayId: 'wd-a', weekPlanId: 'wp-marked', sequencePosition: 2 })
+    })
+
+    expect(copyWorkoutFromPreviousWeekMock).toHaveBeenCalledWith('user-1', 'meso-1', 3, 'wd-a', 'wp-marked', 2)
+  })
+
+  it('a DIFFERENT slot (position 0) forwards 0, never slot 2\'s value', async () => {
+    copyWorkoutFromPreviousWeekMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useCopyWorkoutFromPreviousWeek('meso-1', 3), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ workoutDayId: 'wd-a', weekPlanId: 'wp-marked', sequencePosition: 0 })
+    })
+
+    expect(copyWorkoutFromPreviousWeekMock).toHaveBeenCalledWith('user-1', 'meso-1', 3, 'wd-a', 'wp-marked', 0)
+  })
+
+  it('omitting sequencePosition (every weekday caller) forwards null, unchanged', async () => {
+    copyWorkoutFromPreviousWeekMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useCopyWorkoutFromPreviousWeek('meso-1', 3), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ workoutDayId: 'wd-1', weekPlanId: 'wp-weekday' })
+    })
+
+    expect(copyWorkoutFromPreviousWeekMock).toHaveBeenCalledWith('user-1', 'meso-1', 3, 'wd-1', 'wp-weekday', null)
   })
 })
 

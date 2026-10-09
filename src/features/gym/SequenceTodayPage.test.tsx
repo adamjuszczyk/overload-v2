@@ -170,17 +170,81 @@ describe('SequenceTodayPage — what START/TRAIN ANYWAY hands to its hooks (Less
     })
   })
 
-  it('SKIP plans the slot then skips it with no existing session id, never calling createSession', async () => {
-    schedulerData = nextResult({ weekNumber: 3, sequencePosition: 0, isDue: true })
+  // Chunk 25 review fix 2 (DECISIONS 73 option a — the first named gap:
+  // "changing next.sequencePosition to null in Skip's plan lookup passes
+  // all 412 gym tests"). sequencePosition: 2 (not 0) — a repeated workout's
+  // SECOND slot, so a `null` or "the other slot's" substitution reads as a
+  // visibly different, wrong number here, never coincidentally right.
+  it('SKIP plans THAT SLOT (position 2, not 0 or null) then skips it with no existing session id, never calling createSession', async () => {
+    schedulerData = nextResult({ weekNumber: 3, sequencePosition: 2, isDue: true })
     render(<SequenceTodayPage today="2026-02-10" todayLabel="TUESDAY" activeMeso={activeMeso} programId="prog-1" />)
 
     fireEvent.click(screen.getByText('SKIP'))
 
     await waitFor(() => expect(skipNextMutateAsyncMock).toHaveBeenCalled())
+    // planWeekThenFindId(mesoId, weekNumber, workoutDayId, fallback, planWeekMutation, fetchPlans, sequencePosition)
+    expect(planWeekThenFindIdMock).toHaveBeenCalledWith(
+      'meso-1', 3, 'wd-a', null, expect.anything(), expect.anything(), 2,
+    )
     expect(skipNextMutateAsyncMock).toHaveBeenCalledWith({
       mesoId: 'meso-1', weekPlanId: 'wp-resolved', workoutDayId: 'wd-a', date: '2026-02-10', existingSessionId: null,
     })
     expect(createSessionMutateAsyncMock).not.toHaveBeenCalled()
+  })
+})
+
+// Chunk 25 review fix 2 — the OTHER half of the "next" result's own slot
+// wiring (lines 113-115): the weekPlan looked up for DISPLAY (the DELOAD
+// badge) and as planWeekThenFindId's own fallback id, matched by BOTH
+// workoutDayId AND sequencePosition — never by workoutDayId alone, so a
+// repeated workout's two already-planned rows (allWeekPlans, same
+// workoutDayId, different ids and positions) are told apart correctly.
+describe('SequenceTodayPage — the next result\'s own weekPlan lookup picks the right slot\'s row among several sharing one workoutDayId', () => {
+  function withTwoSlotPlans(sequencePosition: number): SequenceSchedulerData {
+    return {
+      result: {
+        type: 'next',
+        next: { workoutDayId: 'wd-a', weekNumber: 3, sequencePosition },
+        dueDate: '2026-02-10',
+        isDue: true,
+      },
+      isLoading: false,
+      workoutDays: [workoutDayA],
+      allWeekPlans: [
+        {
+          id: 'wp-slot0', userId: 'u1', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 3,
+          sequencePosition: 0, isDeload: false, notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'wp-slot2', userId: 'u1', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 3,
+          sequencePosition: 2, isDeload: true, notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    }
+  }
+
+  it('slot 2 is marked deload in allWeekPlans, slot 0 is not — the DELOAD badge shows only when `next` names slot 2', () => {
+    schedulerData = withTwoSlotPlans(2)
+    render(<SequenceTodayPage today="2026-02-10" todayLabel="TUESDAY" activeMeso={activeMeso} programId="prog-1" />)
+    expect(screen.getByText('DELOAD')).toBeTruthy()
+  })
+
+  it('the SAME allWeekPlans, but `next` names slot 0 instead — no DELOAD badge (slot 0\'s own row isn\'t marked)', () => {
+    schedulerData = withTwoSlotPlans(0)
+    render(<SequenceTodayPage today="2026-02-10" todayLabel="TUESDAY" activeMeso={activeMeso} programId="prog-1" />)
+    expect(screen.queryByText('DELOAD')).toBeNull()
+  })
+
+  it('starting from slot 2 passes slot 2\'s OWN row id as the fallback, never slot 0\'s', async () => {
+    schedulerData = withTwoSlotPlans(2)
+    render(<SequenceTodayPage today="2026-02-10" todayLabel="TUESDAY" activeMeso={activeMeso} programId="prog-1" />)
+
+    fireEvent.click(screen.getByText('START SESSION'))
+
+    await waitFor(() => expect(createSessionMutateAsyncMock).toHaveBeenCalled())
+    expect(planWeekThenFindIdMock).toHaveBeenCalledWith(
+      'meso-1', 3, 'wd-a', 'wp-slot2', expect.anything(), expect.anything(), 2,
+    )
   })
 })
 

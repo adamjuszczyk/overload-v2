@@ -73,9 +73,18 @@ function makeSet(id: string, programExerciseId: string, weekPlanId: string): Wee
   }
 }
 
+// isDeload: true here (unlike slot 2's cycle-1 occurrence below) — the one
+// real-business-rule asymmetry a "COPY THIS WORKOUT" test needs: a deload
+// occurrence is never a valid copy source (PlanPage.copyButtons.test.tsx's
+// own "shows neither button when the only prior occurrence was deload"),
+// so cycle 2's slot A·1 has NO usable source while slot A·3 (below) does —
+// this never changes what any EXISTING test in this file asserts (deload
+// only gates markSessionDeload/the week-level mark button's own label,
+// never plain editing, and weekIsFullyDeload still reads false since B1/A2
+// aren't also deload).
 const wpCycle1SlotA0: WeekPlan = {
   id: 'wp-1-a0', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 1,
-  sequencePosition: 0, isDeload: false, notes: null, exercises: [peA0], sets: [makeSet('set-a0', 'pe-a0-row', 'wp-1-a0')],
+  sequencePosition: 0, isDeload: true, notes: null, exercises: [peA0], sets: [makeSet('set-a0', 'pe-a0-row', 'wp-1-a0')],
   createdAt: '2026-01-01T00:00:00Z',
 }
 const wpCycle1SlotB1: WeekPlan = {
@@ -101,7 +110,6 @@ const wpCycle2SlotA2: WeekPlan = {
   sequencePosition: 2, isDeload: false, notes: null, exercises: [], sets: [], createdAt: '2026-01-01T00:00:00Z',
 }
 
-const currentPlans: WeekPlan[] = [wpCycle1SlotA0, wpCycle1SlotB1, wpCycle1SlotA2]
 const allPlans: WeekPlan[] = [wpCycle1SlotA0, wpCycle1SlotB1, wpCycle1SlotA2, wpCycle2SlotA0, wpCycle2SlotA2]
 
 const updateSetMutate = vi.fn()
@@ -111,6 +119,12 @@ let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = 
 const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }) => {
   applyAheadLastCall = vars
 })
+// Chunk 25 review fix 2 — spies (not inert vi.fn()s) so a test can assert
+// COPY THIS WORKOUT's / COPY LAST CYCLE's exact mutate-call arguments, the
+// same "screen-layer test asserting what each button hands to its hook"
+// standard every other action in this file already meets.
+const copyWorkoutMutate = vi.fn()
+const copyWeekMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [activeMeso], isLoading: false }),
@@ -123,7 +137,13 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
-  useWeekPlans: () => ({ data: currentPlans, isLoading: false }),
+  // Chunk 25 review fix 2 — properly week-aware (filters allPlans by the
+  // passed weekNumber) so a test can advance to cycle 2 (NEXT WEEK) and see
+  // ITS OWN rows; mathematically identical to the old hardcoded
+  // `currentPlans` constant for every EXISTING test here (all view cycle 1
+  // by default, and allPlans.filter(w => w.weekNumber === 1) is exactly the
+  // three cycle-1 rows that constant used to be).
+  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: allPlans.filter((w) => w.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: allPlans, isLoading: false }),
   useApplyAhead: () => ({ mutate: applyAheadMutate, isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -133,8 +153,8 @@ vi.mock('./useWeekPlan', () => ({
   useAddStage: () => ({ mutate: vi.fn() }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
+  useCopyFromPreviousWeek: () => ({ mutate: copyWeekMutate, isPending: false }),
+  useCopyWorkoutFromPreviousWeek: () => ({ mutate: copyWorkoutMutate, isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -164,7 +184,13 @@ afterEach(() => {
   useSetWeekDeloadSpy.mockClear()
   applyAheadMutate.mockClear()
   applyAheadLastCall = null
+  copyWorkoutMutate.mockClear()
+  copyWeekMutate.mockClear()
 })
+
+function goToCycle2() {
+  fireEvent.click(screen.getByLabelText('Next week'))
+}
 
 describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', () => {
   it('the switcher shows 3 workout slots (A, B, A) plus the one rest slot, non-selectable', () => {
@@ -239,5 +265,78 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
     fireEvent.click(screen.getByText('APPLY'))
     expect(applyAheadLastCall).not.toBeNull()
     expect(applyAheadLastCall!.weeks.map((w) => w.id)).toEqual(['wp-2-a2'])
+  })
+
+  // Chunk 25 review fix 2 (DECISIONS 73 option a — the second named gap:
+  // "dropping the sequencePosition check from historyFor passes all 553
+  // plan tests, so COPY THIS WORKOUT's availability for a repeated workout
+  // follows the other slot"). Cycle 2 (empty, both slots) is the one
+  // viewed; cycle 1's slot A·1 is deload-only (no usable source) and slot
+  // A·3 is a real, non-deload source — a genuine per-slot asymmetry, not
+  // just a different query.
+  describe('COPY THIS WORKOUT / COPY LAST CYCLE — availability and mutate args follow the SELECTED slot, never the other one', () => {
+    it('viewing cycle 2\'s slot A·1 (position 0): no source (cycle 1\'s A·1 was deload-only) — COPY THIS WORKOUT is absent', () => {
+      renderPlanPage()
+      goToCycle2()
+
+      expect(screen.getByText('CYCLE 2')).toBeTruthy()
+      expect(screen.queryByText('COPY THIS WORKOUT')).toBeNull()
+    })
+
+    it('the SAME cycle 2, slot A·3 (position 2) instead: cycle 1\'s A·3 WAS a real source — COPY THIS WORKOUT shows, and tapping it passes sequencePosition 2', () => {
+      renderPlanPage()
+      goToCycle2()
+      fireEvent.click(screen.getByText('SLOT 3'))
+
+      expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
+      fireEvent.click(screen.getByText('COPY THIS WORKOUT'))
+
+      expect(copyWorkoutMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-a', weekPlanId: 'wp-2-a2', sequencePosition: 2 })
+    })
+
+    it('COPY LAST CYCLE (the bulk action) shows too, once AT LEAST ONE slot (A·3) has a source — the gate checks every slot, not just the selected one', () => {
+      renderPlanPage()
+      goToCycle2()
+
+      expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
+      expect(screen.queryByText('COPY WEEK')).toBeNull() // sequence wording, never the weekday label
+      fireEvent.click(screen.getByText('COPY LAST CYCLE'))
+      expect(copyWeekMutate).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  // Chunk 25 review fix 2 — the apply-ahead offer's own reset key (this
+  // file's existing two apply-ahead tests above prove it reaches the RIGHT
+  // candidate weeks per slot; this proves the OFFER STATE ITSELF doesn't
+  // leak from one slot's pending offer into a different slot never
+  // involved in that edit).
+  it('an apply-ahead offer pending on slot A·1 is cleared when switching to slot A·3 — the two slots never share one offer/outcome state', () => {
+    renderPlanPage()
+
+    editWeightTarget() // slot 0 (A·1) — produces a pending offer
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('SLOT 3')) // switch to A·3, no edit made there
+
+    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
+  })
+
+  // Chunk 25 review fix 2 — "mark-cycle": proves by construction that NO
+  // slot leaks into this call (it only ever takes mesoId/weekNumber), so
+  // marking the whole cycle deload from EITHER slot's own panel reaches
+  // the exact same hook call — never one scoped to whichever slot happened
+  // to be selected.
+  it('"Mark this cycle as deload" calls useSetWeekDeload identically regardless of which slot (A·1 or A·3) is selected', () => {
+    renderPlanPage()
+    fireEvent.click(screen.getByText('SLOT 3')) // select A·3 instead of the default A·1
+
+    // The hook call itself (page-level, re-invoked on every render — the
+    // slot switch above forces one) takes only (mesoId, weekNumber), the
+    // SAME args the default-A·1-selected render already used — no
+    // slot-shaped argument exists on this call at all, by construction.
+    expect(useSetWeekDeloadSpy).toHaveBeenCalledWith('meso-1', 1)
+
+    fireEvent.click(screen.getByText('MARK CYCLE AS DELOAD'))
+    expect(setWeekDeloadMutate).toHaveBeenCalledTimes(1)
   })
 })

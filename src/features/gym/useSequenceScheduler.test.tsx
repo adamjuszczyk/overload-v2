@@ -135,6 +135,46 @@ describe('useSequenceScheduler — resolving lastEvent from the last done-or-ski
     expect(result.next).toEqual({ workoutDayId: 'wd-a', weekNumber: 1, sequencePosition: 0 })
   })
 
+  // Chunk 25 review fix 2 (DECISIONS 73 option a) — A, B, A, rest (SPEC G8):
+  // wd-a occupies TWO slots (position 0 and 2), each its own week-plan row
+  // with its own id. lastDoneOrSkipped.weekPlanId names slot 2's row
+  // specifically — proving the hook resolves lastEvent.sequencePosition
+  // from THAT row, not slot 0's (which would walk to wd-b next, same
+  // cycle, instead of wrapping past the rest slot back to wd-a, next cycle).
+  it('wd-a occupies two slots (0 and 2); the matched week plan row\'s OWN id picks the right one\'s sequencePosition, never the other slot\'s', () => {
+    workoutDays = [
+      { id: 'wd-a', programId: 'prog-1', userId: 'u1', name: 'A', position: 0, exercises: [] },
+      { id: 'wd-b', programId: 'prog-1', userId: 'u1', name: 'B', position: 1, exercises: [] },
+    ]
+    sequenceItems = [
+      { id: 'si-0', userId: 'u1', programId: 'prog-1', position: 0, workoutDayId: 'wd-a' },
+      { id: 'si-1', userId: 'u1', programId: 'prog-1', position: 1, workoutDayId: 'wd-b' },
+      { id: 'si-2', userId: 'u1', programId: 'prog-1', position: 2, workoutDayId: 'wd-a' },
+      { id: 'si-3', userId: 'u1', programId: 'prog-1', position: 3, workoutDayId: null },
+    ]
+    allWeekPlans = [
+      weekPlan({ id: 'wp-slot0', weekNumber: 1, sequencePosition: 0, workoutDayId: 'wd-a' }),
+      weekPlan({ id: 'wp-slot2', weekNumber: 1, sequencePosition: 2, workoutDayId: 'wd-a' }),
+    ]
+    // Names slot 2's row (wp-slot2), never slot 0's (wp-slot0) — same
+    // workoutDayId, different id.
+    lastDoneOrSkipped = session({ id: 's-1', weekPlanId: 'wp-slot2', status: 'completed', date: '2026-02-01' })
+    sessions = []
+
+    render(<Probe today="2026-02-02" />)
+    const result = JSON.parse(screen.getByText(/RESULT:/).textContent!.replace('RESULT:', ''))
+    // From slot 2 (position 2): next is position 3 (rest, +1), wraps to
+    // position 0 (wd-a), cycle 2 — due 2026-02-01 + 1 rest + 1 = 2026-02-03.
+    // From slot 0 (the WRONG row) this would instead be wd-b at position 1,
+    // same cycle 1, due 2026-02-02 — a different workout, cycle and date.
+    expect(result).toEqual({
+      type: 'next',
+      next: { workoutDayId: 'wd-a', weekNumber: 2, sequencePosition: 0 },
+      dueDate: '2026-02-03',
+      isDue: false,
+    })
+  })
+
   it('an in-progress session (within the lookback window) short-circuits to active_session regardless of lastEvent', () => {
     workoutDays = [{ id: 'wd-a', programId: 'prog-1', userId: 'u1', name: 'A', position: 0, exercises: [] }]
     sequenceItems = [{ id: 'si-1', userId: 'u1', programId: 'prog-1', position: 0, workoutDayId: 'wd-a' }]
