@@ -231,6 +231,7 @@ vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   // The fallback source only — deliberately wrong, see decoyExercise above.
   useProgramExercises: () => ({ data: [decoyExercise], isLoading: false }),
+  useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: [weekPlan], isLoading: false }),

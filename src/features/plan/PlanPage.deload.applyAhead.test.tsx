@@ -77,6 +77,7 @@ vi.mock('../programs/usePrograms', () => ({
   usePrograms: () => ({ data: [program], isLoading: false }),
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
+  useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 
