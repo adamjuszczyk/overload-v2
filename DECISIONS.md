@@ -1,17 +1,17 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 21:06 UTC, chunk 23 boundary — chunks 1–23 merged and live (migrations through 035); chunk 24 reviewed (036 waiting on you, 70); chunk 26 being built.*
+*Rewritten at every chunk boundary. Last: 2026-10-09 09:00 UTC, chunk 24 boundary — chunks 1–24 merged and live (migrations through 036); chunks 25 and 26 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- **70 — BLOCKING: run the pre-check, then merge #48 (036, one-row History fix for the 29 Aug session); tell me when deployed. Blocked: chunk 24's code, chunk 25.**
 - 69 (question) — LAST WEEK by calendar week across runs (built), or only within the current run? Blocked: nothing.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
+- 71 — Chunk 24 app steps: the 29 Aug session shows 30 Aug in History; move a session and back; two sessions on one day; current-week-only missed prompt, DO IT NOW; no MOVE on started sessions. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 69 — Chunk 23 app steps: LAST WEEK unchanged for same-workout last week; LAST TIME + days for another workout or an earlier run; FIRST TIME only if never done; deload sessions never shown. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 68 — Chunk 22 app steps: switch deload rules on; mark a session → halved sets, 75% of last time's lifted weight; edit one, unmark → originals back; program CUSTOM override wins; a started session is flag-only; switch rules off after if wanted. When: next session. Blocked: nothing (a failure blocks the next merge).
 - 66 — Chunk 21 app steps: mark a week deload, unmark one session, DELOAD labels on Today/preview/workout, next week copies from the last normal one; unmark afterwards. When: next session. Blocked: nothing (a failure blocks the next merge).
@@ -59,32 +59,26 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 70 Merge migration 036 (#48): the legacy session's moved-to date
-Severity: blocking
+### 71 Chunk 24 live check: move a session, several a day (Adam's steps)
+Severity: deferred
 Chunk: 24
-**Ask:** Run the pre-check select below; if it returns exactly one row, merge PR #48 (036). Tell me when its deploy is done. Then I merge the code (#49).
-**When:** when you can.
-**Blocked until done:** chunk 24's code (#49) and chunk 25 (its migration 037 must follow 036). Chunk 26 (navigation) is being built meanwhile.
-**Pre-check** (in the Supabase SQL editor; it must return exactly one row):
-```
-select id, user_id, date, moved_to_date, status, started_at
-  from v2_sessions
- where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-   and date = '2026-08-29'
-   and moved_to_date is null
-   and status = 'completed'
-   and started_at >= '2026-08-30 00:00:00+00'
-   and started_at <  '2026-08-31 00:00:00+00';
-```
-If it returns 0 rows (e.g. you started before 02:00 local, which is 29 Aug in UTC), don't merge; tell me and I'll adjust the window.
+**Ask:** Chunk 24 live check. Do the steps below in the app and tell me the results. A failed step is blocking.
+**When:** your next session.
+**Blocked until done:** nothing now; a failure blocks the next merge.
+**Steps:** (take the update banner; chunk 24 is `b21f5e3`)
+1. History: the session dated 29 Aug now shows 30 Aug (the day you did it) in the list, its detail and its session-type history.
+2. On Today (before starting), tap MOVE THIS SESSION and pick another day this week: it leaves today and shows on that day. Move it back: it's on its own day again.
+3. Move a session onto a day that already has one: both are listed that day, each opens on its own.
+4. A missed day from last week no longer prompts; a missed day this week does, and DO IT NOW starts it today (History later shows today's date).
+5. A started or finished session has no MOVE button.
+**Answer:**
 **Evidence:**
-- 036 (md5 `5433811afc30add1dd0ae84587a4c028`) updates only that row, selected by criteria, never by id. It raises (changing nothing) unless exactly one row matches or it was already applied. It does nothing on a database where you have no sessions at all (CI's empty replay).
-- Reviewer: an empty replay gives 37/37 and embeds 30/30. Builder's scratch: 1 match changes only that row (whole-database fingerprint); a re-run is a no-op; 2 matches raise; data with 0 matches raises; each guard is break-proven.
-- `check-migration` exits 1 (an update block isn't on the safe list), so the merge is yours (TASKS: chunk 24).
-- Rollback (in the file header): set that row's `moved_to_date` back to null, using the same criteria.
-A competent default would: merge it myself under D29 — doesn't apply because: it changes an existing row, and chunk 24's migration is yours by name.
-Cost of deferral: chunk 24's code and chunk 25 wait.
-Provisional path taken: both PRs open; chunk 26 being built in parallel.
+What happened: 036 merged by you (#48 `19cf372`, deploy success 08:58 UTC); code #49 `b21f5e3` (Vercel 08:59 UTC).
+- Reviewer's checks: 1618 tests; replay 36/36 (and 37/37 with 036 on an empty database); embeds 30/30; D30 untouched; Today unchanged apart from the new button.
+- Failed review once (036 vs empty replay; networkMode; offline start of a moved session) and passed on the retry.
+A competent default would: count the jsdom and scratch proofs — doesn't apply because: TASKS.md's done-when is live.
+Cost of deferral: if it fails, chunk 24 is fixed before chunk 25 merges.
+Provisional path taken: merged; chunks 25 and 26 being built.
 
 ### 69 Chunk 23 live check: "last time" by exercise (Adam's steps)
 Severity: deferred
@@ -529,6 +523,33 @@ Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 start
 Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
 
 ## Closed
+
+### 70 Merge migration 036 (#48): the legacy session's moved-to date
+Severity: blocking (closed 2026-10-09: merged by Adam as #48 `19cf372`; deploy success 08:58 UTC)
+Chunk: 24
+**Ask:** Run the pre-check select below; if it returns exactly one row, merge PR #48 (036). Tell me when its deploy is done. Then I merge the code (#49).
+**When:** when you can.
+**Blocked until done:** chunk 24's code (#49) and chunk 25 (its migration 037 must follow 036). Chunk 26 (navigation) is being built meanwhile.
+**Pre-check** (in the Supabase SQL editor; it must return exactly one row):
+```
+select id, user_id, date, moved_to_date, status, started_at
+  from v2_sessions
+ where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   and date = '2026-08-29'
+   and moved_to_date is null
+   and status = 'completed'
+   and started_at >= '2026-08-30 00:00:00+00'
+   and started_at <  '2026-08-31 00:00:00+00';
+```
+If it returns 0 rows (e.g. you started before 02:00 local, which is 29 Aug in UTC), don't merge; tell me and I'll adjust the window.
+**Evidence:**
+- 036 (md5 `5433811afc30add1dd0ae84587a4c028`) updates only that row, selected by criteria, never by id. It raises (changing nothing) unless exactly one row matches or it was already applied. It does nothing on a database where you have no sessions at all (CI's empty replay).
+- Reviewer: an empty replay gives 37/37 and embeds 30/30. Builder's scratch: 1 match changes only that row (whole-database fingerprint); a re-run is a no-op; 2 matches raise; data with 0 matches raises; each guard is break-proven.
+- `check-migration` exits 1 (an update block isn't on the safe list), so the merge is yours (TASKS: chunk 24).
+- Rollback (in the file header): set that row's `moved_to_date` back to null, using the same criteria.
+A competent default would: merge it myself under D29 — doesn't apply because: it changes an existing row, and chunk 24's migration is yours by name.
+Cost of deferral: chunk 24's code and chunk 25 wait.
+Provisional path taken: both PRs open; chunk 26 being built in parallel.
 
 ### 67 Chunk 22 failed review twice — one more test-only retry, or merge?
 Severity: blocking (closed 2026-10-08: (a); the retry passed and chunk 22 merged)
