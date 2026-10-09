@@ -88,6 +88,48 @@
 -- (no new table, column, index, view or function; a plain UPDATE of
 -- existing data on an already-live column), so PostgREST's schema cache
 -- has nothing new to pick up.
+--
+-- Scratch-verified (supabase/postgres:17.6.1.155; 000-035 replayed, then
+-- this file applied by hand against a seeded fixture — see this chunk's
+-- own report for the full transcript):
+--   - fixture: the one matching row (shaped exactly like L4) plus five
+--     near-misses (another user; another date; already has moved_to_date;
+--     not completed — in_progress; completed but started the SAME day,
+--     never moved) — run 1 updates only the matching row's moved_to_date;
+--     a column-level dump and a whole-database table fingerprint (row
+--     count + order-independent md5 per public table) both confirm every
+--     other row, and every other table, is byte-identical before and after.
+--   - run 2 (same fixture, now already applied): no error, fingerprint
+--     unchanged — confirmed idempotent.
+--   - two independently-inserted rows that both satisfy every criterion:
+--     raises ("found 2"), fingerprint unchanged — confirmed the guard,
+--     not just its absence, is what keeps an ambiguous match from being
+--     silently misapplied (break-proofed: a deliberately unguarded version
+--     of this same UPDATE, run against that same two-row case, silently
+--     updated both — restored via cp, re-verified the real guard still
+--     raises and still changes nothing).
+--   - RLS: as Adam, inserting/updating a `planned` row under this user_id
+--     succeeds; as a second user, the same row is invisible (0 rows) and
+--     an UPDATE by its id affects 0 rows — confirms the app's own
+--     find-or-insert "move" write (sessionService.ts's moveSessionTo,
+--     chunk 24's code branch) cannot cross users even by id, independent
+--     of this migration itself.
+--   - Known, accepted consequence (not a defect): this guard's own
+--     strictness means `bash scripts/replay-migrations.sh` (and
+--     `check-embeds-local.sh`, which replays internally before probing
+--     embeds) FAILS at this file on a fresh, data-free database — there is
+--     no Adam row to match, and 0-matching-and-0-already-applied is
+--     deliberately NOT treated as success (TASKS.md's own idempotency
+--     rule names exactly one 0-match shape as success: "0 matching rows
+--     AND exactly one row already in the applied shape" — an empty
+--     database satisfies neither). The GitHub `migration-replay` check
+--     (same replay, workflow migration-replay.yml) will show the same red
+--     on this file's own PR. This migration was never going to auto-merge
+--     regardless (check-migration already flags it, independent of this),
+--     so this doesn't change who merges it — Adam, by hand, against the
+--     real database, same as every other flagged migration — but the red
+--     CI check on this specific PR is expected, not a sign anything is
+--     broken, and is called out here so it isn't mistaken for one.
 
 do $$
 declare
