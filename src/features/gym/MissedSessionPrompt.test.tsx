@@ -49,6 +49,11 @@ const activeMeso: Mesocycle = {
 }
 const MISSED_DATE = '2026-01-20'
 const EXPECTED_WEEK_NUMBER = 3
+// Chunk 24 — "Do it now" is now a move to today; any date after the missed
+// one works for these tests (they only assert the exact payload shape),
+// picked distinct from MISSED_DATE so a regression back to the old
+// single-date shape would be caught, not pass by coincidence.
+const TODAY = '2026-01-22'
 
 const workoutDay: WorkoutDay = {
   id: 'wd-1', programId: 'prog-1', userId: 'user-1', name: 'Push Day', position: 0, exercises: [],
@@ -68,7 +73,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
   it('computes the missed date\'s week (not today\'s) and passes it to planWeekThenFindId', async () => {
     planWeekThenFindIdMock.mockResolvedValue('wp-freshly-planned')
     const { getByText } = render(
-      <MissedSessionPrompt queue={[makeMissed(null)]} activeMeso={activeMeso} onDismiss={vi.fn()} />,
+      <MissedSessionPrompt queue={[makeMissed(null)]} activeMeso={activeMeso} onDismiss={vi.fn()} today={TODAY} />,
     )
 
     fireEvent.click(getByText('DO IT NOW'))
@@ -82,7 +87,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
   it('uses the freshly planned id when planning succeeds', async () => {
     planWeekThenFindIdMock.mockResolvedValue('wp-freshly-planned')
     const { getByText } = render(
-      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} />,
+      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} today={TODAY} />,
     )
 
     fireEvent.click(getByText('DO IT NOW'))
@@ -90,6 +95,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
 
     expect(createSessionMutateAsync).toHaveBeenCalledWith({
       mesoId: 'meso-1', weekPlanId: 'wp-freshly-planned', workoutDayId: 'wd-1', date: MISSED_DATE,
+      movedToDate: TODAY,
     })
   })
 
@@ -98,7 +104,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
     // plan call or re-read rejects — see useWeekPlan.test.tsx.
     planWeekThenFindIdMock.mockResolvedValue(existingPlan.id)
     const { getByText } = render(
-      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} />,
+      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} today={TODAY} />,
     )
 
     fireEvent.click(getByText('DO IT NOW'))
@@ -106,13 +112,14 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
 
     expect(createSessionMutateAsync).toHaveBeenCalledWith({
       mesoId: 'meso-1', weekPlanId: existingPlan.id, workoutDayId: 'wd-1', date: MISSED_DATE,
+      movedToDate: TODAY,
     })
   })
 
   it('falls back to null when there was no pre-existing plan and planning rejects', async () => {
     planWeekThenFindIdMock.mockResolvedValue(null)
     const { getByText } = render(
-      <MissedSessionPrompt queue={[makeMissed(null)]} activeMeso={activeMeso} onDismiss={vi.fn()} />,
+      <MissedSessionPrompt queue={[makeMissed(null)]} activeMeso={activeMeso} onDismiss={vi.fn()} today={TODAY} />,
     )
 
     fireEvent.click(getByText('DO IT NOW'))
@@ -120,6 +127,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
 
     expect(createSessionMutateAsync).toHaveBeenCalledWith({
       mesoId: 'meso-1', weekPlanId: null, workoutDayId: 'wd-1', date: MISSED_DATE,
+      movedToDate: TODAY,
     })
   })
 })
@@ -127,7 +135,7 @@ describe('MissedSessionPrompt — DO IT NOW plans the missed date\'s own week fi
 describe('MissedSessionPrompt — MARK SKIPPED stays exactly as it was', () => {
   it('skips with the pre-existing plan id directly, never calling planWeekThenFindId', async () => {
     const { getByText } = render(
-      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} />,
+      <MissedSessionPrompt queue={[makeMissed(existingPlan)]} activeMeso={activeMeso} onDismiss={vi.fn()} today={TODAY} />,
     )
 
     fireEvent.click(getByText('MARK SKIPPED'))
