@@ -48,6 +48,10 @@ export interface ExerciseCardProps {
   // See ExerciseReference.tsx's own prop docs — threaded straight through,
   // not re-derived here.
   referenceMesocycleId: string | null
+  // Chunk 25 — see ExerciseReference.tsx's own prop docs; threaded
+  // straight through, not read here (same posture referenceMesocycleId
+  // above already takes — this hook never destructures it).
+  referenceScheduleType?: import('./referenceByExercise').ScheduleType
   referenceIsError: boolean
   referenceIsFromCache: boolean
   onRetryReference: () => void

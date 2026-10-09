@@ -162,6 +162,39 @@ describe('laterPlannedWeeks', () => {
     const weeks = [week(1, { exercises: [], sets: [] }), week(2, { exercises: [], sets: [] })]
     expect(laterPlannedWeeks(weeks, 'wd-1', 2)).toHaveLength(0)
   })
+
+  // Chunk 25 (reviewer's note 3 — "Apply-ahead... match by slot for
+  // sequence runs. Say how sequence_position enters their slot identity,
+  // and test it").
+  describe('slot identity (chunk 25 — sequence_position)', () => {
+    it('a weekday run (sequence_position always null) is unaffected — omitting the new parameter still matches', () => {
+      const weeks = [week(2, { exercises: [], sets: [], workoutDayId: 'wd-1' })]
+      expect(laterPlannedWeeks(weeks, 'wd-1', 1)).toHaveLength(1)
+    })
+
+    it('workoutDayId alone is NOT enough once a cycle can repeat a workout (R16, SPEC G8) — a later week\'s row at a DIFFERENT slot is excluded', () => {
+      const weeks = [
+        week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 0 }),
+        week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 2, id: 'wp-2-slot2' }),
+      ]
+      // Editing slot 0's own occurrence in cycle 1 must only reach slot
+      // 0's own later row, never slot 2's (same workout, different slot).
+      expect(laterPlannedWeeks(weeks, 'wd-a', 1, 0).map((w) => w.id)).toEqual(['wp-2'])
+    })
+
+    it('the matching slot (same workoutDayId AND sequence_position) is found regardless of the OTHER slot\'s presence', () => {
+      const weeks = [
+        week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 0 }),
+        week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 2, id: 'wp-2-slot2' }),
+      ]
+      expect(laterPlannedWeeks(weeks, 'wd-a', 1, 2).map((w) => w.id)).toEqual(['wp-2-slot2'])
+    })
+
+    it('a pre-chunk-25 fixture with sequence_position simply absent (undefined) is treated as null, same as an explicit weekday row', () => {
+      const weeks = [week(2, { exercises: [], sets: [], workoutDayId: 'wd-1' })] // sequencePosition never set
+      expect(laterPlannedWeeks(weeks, 'wd-1', 1, null)).toHaveLength(1)
+    })
+  })
 })
 
 describe('allPlannedWeeks', () => {
@@ -172,6 +205,19 @@ describe('allPlannedWeeks', () => {
       week(1, { exercises: [], sets: [], workoutDayId: 'wd-2', id: 'wp-other' }),
     ]
     expect(allPlannedWeeks(weeks, 'wd-1').map((w) => w.weekNumber)).toEqual([1, 2])
+  })
+
+  // Chunk 25 (reviewer's note 3) — deliberately NOT scoped by slot, unlike
+  // laterPlannedWeeks above: a stable program's volume is rebuilt fresh
+  // from the program at plan time regardless of slot, so a Program-tab
+  // volume edit must reach EVERY slot's own row for that workout, not just
+  // one (see this function's own header comment for the full reasoning).
+  it('a stable sequence program: a Program-tab edit reaches BOTH slots of a repeated workout, not just one', () => {
+    const weeks = [
+      week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 0 }),
+      week(2, { exercises: [], sets: [], workoutDayId: 'wd-a', sequencePosition: 2, id: 'wp-2-slot2' }),
+    ]
+    expect(allPlannedWeeks(weeks, 'wd-a').map((w) => w.id)).toEqual(['wp-2', 'wp-2-slot2'])
   })
 })
 

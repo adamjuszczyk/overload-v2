@@ -277,23 +277,55 @@ export function setPositionOf(sortedGroups: SetGroup<WeekPlanSet>[], setId: stri
 
 // ─── Candidate-week selection ────────────────────────────────────────────────
 
+// Chunk 25 (reviewer's note 3 — "Apply-ahead... match by slot for sequence
+// runs. Say how sequence_position enters their slot identity"): a later
+// week's own row is the SAME slot as the edited one only when BOTH
+// workoutDayId and sequencePosition agree — workoutDayId alone is
+// ambiguous once a cycle can plan the same workout at two different slots
+// (R16, SPEC G8: "A, B, A, rest"). `undefined` (every hand-built WeekPlan
+// fixture across the existing, pre-chunk-25 test suite, and every weekday
+// row ever written) is normalised to `null` on both sides first, so a
+// weekday row (sequencePosition always null/undefined) still matches
+// exactly the way it always has — this is a strict WIDENING of the match
+// (narrower, never broader: a sequence row can no longer match a DIFFERENT
+// slot's history that merely happens to share its workoutDayId), so no
+// existing weekday behaviour changes.
+function sameSlot(w: WeekPlan, workoutDayId: string, sequencePosition: number | null): boolean {
+  return w.workoutDayId === workoutDayId && (w.sequencePosition ?? null) === sequencePosition
+}
+
 // Week-level edit (chunk 9/14/19 types): only weeks strictly after the one
-// just edited, for the SAME workout (reviewer's note 4 — "later planned
-// weeks"). "Planned" needs no extra filter here: allWeeks is already read
-// from v2_week_plans (useAllWeekPlans/fetchAllWeekPlansForMeso), so a
-// row's mere presence IS "planned" — an empty week (zero exercises) still
-// has a row and still counts (reviewer's note 4's own words).
-export function laterPlannedWeeks(allWeeks: WeekPlan[], workoutDayId: string, afterWeekNumber: number): WeekPlan[] {
+// just edited, for the SAME slot (reviewer's note 4 — "later planned
+// weeks"; chunk 25 — same slot, not just the same workout). "Planned"
+// needs no extra filter here: allWeeks is already read from v2_week_plans
+// (useAllWeekPlans/fetchAllWeekPlansForMeso), so a row's mere presence IS
+// "planned" — an empty week (zero exercises) still has a row and still
+// counts (reviewer's note 4's own words).
+export function laterPlannedWeeks(
+  allWeeks: WeekPlan[],
+  workoutDayId: string,
+  afterWeekNumber: number,
+  sequencePosition: number | null = null,
+): WeekPlan[] {
   return allWeeks
-    .filter((w) => w.workoutDayId === workoutDayId && w.weekNumber > afterWeekNumber)
+    .filter((w) => sameSlot(w, workoutDayId, sequencePosition) && w.weekNumber > afterWeekNumber)
     .sort((a, b) => a.weekNumber - b.weekNumber)
 }
 
 // Stable program-tab edit: there is no "edited week" to be later than (the
 // edit happened on the program, not in a week) — SPEC "Programs and runs":
 // "weeks not yet planned pick it up; apply-ahead covers planned ones" —
-// every already-planned week for this workout is a candidate, regardless of
-// number.
+// every already-planned week for this WORKOUT is a candidate, regardless
+// of number, deliberately NOT scoped by slot (chunk 25): a stable
+// program's volume is rebuilt fresh from the program's own current state
+// at plan time regardless of which slot an occurrence sits at
+// (v2_plan_week's 'program' source-kind branch reads v2_program_exercises
+// directly, with no notion of sequence_position at all — a stable
+// program's exercises/sets are the SAME at every slot a given workoutDayId
+// occupies, by construction), so a Program-tab volume edit must reach
+// EVERY slot's own row, not just one of them. (Contrast laterPlannedWeeks
+// above: a WEEK-LEVEL edit — swap/reorder/a single set's own value — is
+// slot-specific, because the week-copy source search IS slot-aware.)
 export function allPlannedWeeks(allWeeks: WeekPlan[], workoutDayId: string): WeekPlan[] {
   return allWeeks.filter((w) => w.workoutDayId === workoutDayId).sort((a, b) => a.weekNumber - b.weekNumber)
 }

@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, WarmupRoutineItem } from '../../types'
+import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
 import type { DeloadRules } from '../../lib/deloadRules'
 import {
@@ -11,6 +11,7 @@ import {
   updateProgramName,
   updateSchedule,
   updatePlanningType,
+  updateScheduleType,
   updateProgramDeloadRules,
   fetchWorkoutDays,
   createWorkoutDay,
@@ -35,6 +36,13 @@ import {
   removeWarmupItem,
   reorderWarmupItems,
 } from './warmupRoutineService'
+import {
+  fetchSequenceItems,
+  addSequenceItem,
+  updateSequenceItemWorkout,
+  removeSequenceItem,
+  reorderSequenceItems,
+} from './sequenceItemsService'
 
 // ─── Programs ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +100,18 @@ export function useUpdatePlanningType() {
     networkMode: 'always',
     mutationFn: ({ id, planningType }: { id: string; planningType: PlanningType }) =>
       updatePlanningType(id, planningType),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
+  })
+}
+
+// Chunk 25 — the planner step-2 WEEKDAY/SEQUENCE picker (StepExercises.tsx).
+// Same networkMode/invalidate shape as useUpdatePlanningType above — a new
+// mutation, so 'always' (CONTEXT.md: every write mutation does).
+export function useUpdateScheduleType() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, scheduleType }: { id: string; scheduleType: ScheduleType }) =>
+      updateScheduleType(id, scheduleType),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }
@@ -420,5 +440,76 @@ export function useReorderWarmupItems(workoutDayId: string) {
     networkMode: 'always',
     mutationFn: (updates: { id: string; position: number }[]) => reorderWarmupItems(updates),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: warmupItemsKey(workoutDayId) }),
+  })
+}
+
+// ─── Sequence items (chunk 25 — SPEC.md "Scheduling → Sequence") ───────────
+// Same shape as the warmup-item hooks above, scoped to program_id instead of
+// workout_day_id. First app use of v2_program_sequence_items (CONTEXT rule:
+// scripts/verify-rls.mjs's TABLES gains it in this same change).
+const sequenceItemsKey = (programId: string) => ['v2_programSequenceItems', programId] as const
+
+export function useSequenceItems(programId: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: sequenceItemsKey(programId),
+    queryFn: () => fetchSequenceItems(programId),
+    enabled: !!user && !!programId,
+  })
+}
+
+// Not optimistic — same posture useAddWarmupItem takes: a new slot's real
+// id is only known once the insert returns.
+export function useAddSequenceItem(programId: string) {
+  const { user } = useAuth()
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ position, workoutDayId }: { position: number; workoutDayId: string | null }) =>
+      addSequenceItem(user!.id, programId, position, workoutDayId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: sequenceItemsKey(programId) }),
+  })
+}
+
+// Optimistic-with-rollback — same shape useUpdateWarmupItemBody takes: a
+// failed/offline edit must not leave the editor showing a workout that was
+// never actually persisted.
+export function useUpdateSequenceItemWorkout(programId: string) {
+  const qk = sequenceItemsKey(programId)
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: ({ id, workoutDayId }: { id: string; workoutDayId: string | null }) =>
+      updateSequenceItemWorkout(id, workoutDayId),
+    onMutate: async ({ id, workoutDayId }) => {
+      await queryClient.cancelQueries({ queryKey: qk })
+      const prev = queryClient.getQueryData<SequenceItem[]>(qk)
+      queryClient.setQueryData(qk, (old: SequenceItem[] | undefined) =>
+        old?.map((item) => (item.id === id ? { ...item, workoutDayId } : item)),
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+  })
+}
+
+// Not optimistic — same posture useRemoveWarmupItem takes.
+export function useRemoveSequenceItem(programId: string) {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (id: string) => removeSequenceItem(id, programId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: sequenceItemsKey(programId) }),
+  })
+}
+
+// Not optimistic INSIDE the hook — same posture useReorderWarmupItems takes:
+// the CALLER (StepExercises.tsx's SequenceEditor) writes the reordered list
+// straight into this query's cache before calling mutate.
+export function useReorderSequenceItems(programId: string) {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (updates: { id: string; position: number }[]) => reorderSequenceItems(updates),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: sequenceItemsKey(programId) }),
   })
 }

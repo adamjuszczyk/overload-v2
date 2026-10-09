@@ -1,6 +1,7 @@
 import { Plus, Link2 } from 'lucide-react'
 import type { ProgramExercise, WeekPlanSet, SetLog, ProgramSet, ProgramSupersetBlock } from '../../types'
 import type { ReferenceSession } from './sessionService'
+import type { ScheduleType } from './referenceByExercise'
 import SetGroup from './SetGroup'
 import SetRow from './SetRow'
 import ExerciseReference from './ExerciseReference'
@@ -98,6 +99,11 @@ interface SupersetBlockProps {
   sessionId: string
   referenceLoading: boolean
   referenceMesocycleId: string | null
+  // Chunk 25 — see ExerciseReference.tsx's own prop docs; optional,
+  // defaults to 'weekday' below, same convention as that prop's own
+  // default (every caller that predates this chunk keeps rendering
+  // unchanged).
+  referenceScheduleType?: ScheduleType
   referenceIsError: boolean
   referenceIsFromCache: boolean
   onRetryReference: () => void
@@ -131,6 +137,7 @@ export default function SupersetBlock({
   sessionId,
   referenceLoading,
   referenceMesocycleId,
+  referenceScheduleType = 'weekday',
   referenceIsError,
   referenceIsFromCache,
   onRetryReference,
@@ -269,6 +276,7 @@ export default function SupersetBlock({
                   sessions={member.referenceSessions}
                   isLoading={referenceLoading}
                   mesocycleId={referenceMesocycleId}
+                  scheduleType={referenceScheduleType}
                   isError={referenceIsError}
                   isFromCache={referenceIsFromCache}
                   onRetry={onRetryReference}

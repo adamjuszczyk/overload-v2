@@ -24,6 +24,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     referenceSessions,
     referenceLoading,
     referenceMesocycleId,
+    referenceScheduleType,
     referenceIsError,
     referenceIsFromCache,
     onRetryReference,
@@ -104,6 +105,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
             sessions={referenceSessions}
             isLoading={referenceLoading}
             mesocycleId={referenceMesocycleId}
+            scheduleType={referenceScheduleType}
             isError={referenceIsError}
             isFromCache={referenceIsFromCache}
             onRetry={onRetryReference}

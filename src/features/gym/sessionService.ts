@@ -168,6 +168,30 @@ export async function fetchSessionsInRange(
   return (data as DbSession[]).map(toSession)
 }
 
+// Chunk 25 (sequenceSchedule.ts's own SequenceLastEvent — reviewer's note
+// 2: "next slot after the last workout done or skipped"). A sequence run
+// has no fixed cadence to bound a date-range lookback by (unlike
+// fetchSessionsInRange above, which the weekday scheduler uses) — this is
+// instead a single, tightly bounded read (Lessons: "every history read
+// pages or is bounded"; `limit(1)` bounds it trivially under max_rows), the
+// most recent completed-or-skipped session for this run, by date then
+// created_at (a tie-break for same-day multi-session, same posture
+// referenceByExercise.ts's own byMostRecent takes). null = nothing has
+// ever been done or skipped in this run yet.
+export async function fetchLastDoneOrSkippedSession(mesoId: string): Promise<Session | null> {
+  const { data, error } = await supabase
+    .from('v2_sessions')
+    .select('*')
+    .eq('mesocycle_id', mesoId)
+    .in('status', ['completed', 'skipped'])
+    .order('date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  const rows = (data ?? []) as DbSession[]
+  return rows.length > 0 ? toSession(rows[0]) : null
+}
+
 export async function fetchSession(id: string): Promise<Session> {
   const { data, error } = await supabase
     .from('v2_sessions')

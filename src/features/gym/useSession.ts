@@ -9,6 +9,7 @@ import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating,
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
   fetchSessionsInRange,
+  fetchLastDoneOrSkippedSession,
   fetchSession,
   createSession,
   completeSession,
@@ -40,6 +41,20 @@ export function useSessionsInRange(startDate: string, endDate: string) {
     queryKey: ['v2_sessions', startDate, endDate],
     queryFn: () => fetchSessionsInRange(startDate, endDate),
     enabled: !!user && !!startDate && !!endDate,
+  })
+}
+
+// Chunk 25 (sequenceSchedule.ts's own SequenceLastEvent) — useSequenceScheduler.ts's
+// one read of "the last workout done or skipped", bounded (fetchLastDoneOrSkippedSession's
+// own limit(1)). Disabled for a weekday run (useSequenceScheduler never
+// calls this hook there) — mesoId guards it defensively either way, same
+// `enabled` convention every other query hook in this file takes.
+export function useLastDoneOrSkippedSession(mesoId: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['v2_lastDoneOrSkippedSession', mesoId],
+    queryFn: () => fetchLastDoneOrSkippedSession(mesoId),
+    enabled: !!user && !!mesoId,
   })
 }
 
@@ -564,6 +579,13 @@ export function useCompleteSession() {
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
+      // Chunk 25 — a sequence run's own "last workout done or skipped"
+      // (useLastDoneOrSkippedSession, keyed ['v2_lastDoneOrSkippedSession',
+      // mesoId]) changes on every completion too; invalidating the bare
+      // prefix (no mesoId known here) matches every meso's own entry, same
+      // posture every other bare-prefix invalidate on this page already
+      // takes. A no-op for a weekday run, which never populates this key.
+      queryClient.invalidateQueries({ queryKey: ['v2_lastDoneOrSkippedSession'] })
       // Found by adversarial review (2026-08-12): the position-matched
       // headline is keyed on the *resolved* session pair
       // (['v2_positionMatchedHeadline', exerciseId, firstSessionId,
@@ -679,6 +701,8 @@ export function useSkipSession() {
           old?.map((s) => (s.id === id ? { ...s, status: 'skipped' as const } : s)),
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      // Chunk 25 — same reasoning as useCompleteSession's own invalidate above.
+      queryClient.invalidateQueries({ queryKey: ['v2_lastDoneOrSkippedSession'] })
     },
   })
 }
@@ -699,7 +723,13 @@ export function useSkipMissedSession() {
       date: string
       existingSessionId: string | null
     }) => skipMissedSession(user!.id, mesoId, weekPlanId, workoutDayId, date, existingSessionId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_sessions'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      // Chunk 25 — a sequence run's own Skip action goes through this same
+      // function (useSequenceScheduler.ts); same reasoning as
+      // useCompleteSession/useSkipSession's own invalidate.
+      queryClient.invalidateQueries({ queryKey: ['v2_lastDoneOrSkippedSession'] })
+    },
   })
 }
 

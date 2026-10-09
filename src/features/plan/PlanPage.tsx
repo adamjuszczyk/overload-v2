@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2,
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit } from '../../types'
 import { useMesos } from '../programs/useMesos'
-import { usePrograms, useWorkoutDays, useProgramExercises } from '../programs/usePrograms'
+import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
 import {
   useWeekPlans,
   useAllWeekPlans,
@@ -50,6 +50,7 @@ import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadR
 import { useSettingsStore } from '../settings/settingsStore'
 import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
+import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
@@ -124,6 +125,12 @@ export default function PlanPage() {
   // isn't scheduled (e.g. after switching meso/program).
   const [selectedDow, setSelectedDow] = useState<DayOfWeek | null>(null)
 
+  // Chunk 25 review fix — the sequence equivalent of selectedDow above: which
+  // slot (v2_program_sequence_items row id) is showing for a sequence run.
+  // Same "no effect needed to keep it valid" posture — selectedSlot below
+  // always falls back to the first workout-bearing slot.
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
+
   // Compact display mode (TASKS.md §4 item 32) — not in SPEC §11's Settings
   // list, so this is page-local UI state, not a persisted setting: it resets
   // on reload, same as isPast/viewWeek here.
@@ -147,6 +154,15 @@ export default function PlanPage() {
 
   const { data: programs = [] } = usePrograms()
   const program = programs.find((p) => p.id === activeMeso?.programId)
+  // Chunk 25 (SPEC "Scheduling → Sequence" — "the cycle replaces the week
+  // everywhere the week is used"; reviewer's note 3: "Labels 'Cycle n'
+  // everywhere a sequence run shows a week"). Review fix (first review):
+  // this page's own Weeks-tab body (scheduledDays/WorkoutSwitcher/
+  // WorkoutDayPanel below) is now ALSO sequence-aware, via the parallel
+  // sequenceSlots/selectedSlot/SequenceSlotSwitcher derived below —
+  // program.schedule (weekday-only) and scheduledDays/selected stay exactly
+  // as they were for a weekday run; a sequence run never reads them at all.
+  const isSequence = (program?.scheduleType ?? 'weekday') === 'sequence'
 
   // Chunk 22 — the EFFECTIVE deload rules for this run: the program's own
   // override if it has one, else the global default (deloadRules.ts's
@@ -231,6 +247,38 @@ export default function PlanPage() {
 
   const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
 
+  // Chunk 25 review fix — the sequence equivalent of scheduledDays/selected
+  // above. Fetched only for a sequence program (isSequence gates it; an
+  // empty programId — the hook's own `enabled` check — means a weekday
+  // run's page never issues this read at all, same "no new cost for the
+  // overwhelmingly common case" posture useWorkoutDays/useWeekPlans already
+  // take with `?? ''`). Sorted by position (TASKS.md "ordered list");
+  // workoutDay null = a rest slot (v2_program_sequence_items.workout_day_id
+  // null — StepExercises.tsx's own SequenceEditor convention).
+  const { data: sequenceItemsRaw = [] } = useSequenceItems(isSequence ? (activeMeso?.programId ?? '') : '')
+  const sequenceSlots: { id: string; position: number; workoutDay: WorkoutDay | null }[] = [...sequenceItemsRaw]
+    .sort((a, b) => a.position - b.position)
+    .map((item) => ({
+      id: item.id,
+      position: item.position,
+      workoutDay: item.workoutDayId ? workoutDays.find((d) => d.id === item.workoutDayId) ?? null : null,
+    }))
+  // Never defaults to a rest slot (review: "rest days shown as
+  // non-selectable") — the first WORKOUT-bearing slot, same "fall back to
+  // the first one" rule scheduledDays/selected already follow.
+  const selectedSlot = sequenceSlots.find((s) => s.id === selectedSlotId && s.workoutDay)
+    ?? sequenceSlots.find((s) => s.workoutDay)
+    ?? null
+  // This slot's own week-plan row for the viewed cycle — matched by BOTH
+  // workout_day_id and sequence_position (review: "never by workout
+  // alone"), so the two slots of a repeated workout (SPEC G8) open
+  // different rows.
+  const selectedSlotWeekPlan = selectedSlot?.workoutDay
+    ? weekPlans.find(
+        (wp) => wp.workoutDayId === selectedSlot.workoutDay!.id && (wp.sequencePosition ?? null) === selectedSlot.position,
+      )
+    : undefined
+
   // Chunk 8 — this one workout's own planned history (any week number),
   // the shape resolveManualCopySource needs. isEmpty (DECISIONS 42 (b)) is
   // zero v2_week_plan_sets rows — wp.sets is exactly that: useAllWeekPlans
@@ -239,9 +287,20 @@ export default function PlanPage() {
   // allWeekPlans from for the history above, so every prior week's own set
   // rows are already here — no extra fetch needed, and never derived from
   // the exercise list (a week can carry exercises with no sets under them).
-  function historyFor(workoutDayId: string): PlannedWeekRecord[] {
+  // Chunk 25 review fix — `sequencePosition` (optional, defaults to null,
+  // same "may not exist yet" convention this whole chunk already uses)
+  // scopes the history to one SLOT, not just one workout: a repeated
+  // workout (SPEC G8) occupies two slots in one cycle, each with its own
+  // independent copy history (TASKS.md "copying is per slot: a slot's
+  // source is the same slot's last normal occurrence") — exactly
+  // fetchPlannedWeekHistory's own slot-scoped search (weekPlanService.ts),
+  // mirrored here for the client-already-has-allWeekPlans case. Every
+  // weekday call site (both below) keeps passing just one arg — a weekday
+  // row's own sequencePosition is always null/undefined, so `?? null`
+  // matches exactly as before this chunk, byte for byte.
+  function historyFor(workoutDayId: string, sequencePosition: number | null = null): PlannedWeekRecord[] {
     return allWeekPlans
-      .filter((wp) => wp.workoutDayId === workoutDayId)
+      .filter((wp) => wp.workoutDayId === workoutDayId && (wp.sequencePosition ?? null) === sequencePosition)
       .map((wp) => ({ weekNumber: wp.weekNumber, isDeload: wp.isDeload, isEmpty: wp.sets.length === 0 }))
   }
 
@@ -254,9 +313,9 @@ export default function PlanPage() {
   // comes from the run's own copy (never from a prior week), so copying
   // wouldn't change its volume and this chunk doesn't offer the action for
   // one (no real stable program can exist before chunk 11 regardless).
-  function hasManualSourceFor(workoutDayId: string): boolean {
+  function hasManualSourceFor(workoutDayId: string, sequencePosition: number | null = null): boolean {
     if (program?.planningType === 'stable') return false
-    return resolveManualCopySource(historyFor(workoutDayId), viewWeek).kind === 'week'
+    return resolveManualCopySource(historyFor(workoutDayId, sequencePosition), viewWeek).kind === 'week'
   }
 
   // Empty-state "Copy last week" (SPEC "Plan screen"/"Weeks and copying") —
@@ -264,6 +323,14 @@ export default function PlanPage() {
   // v2_week_plans row by the time this renders (the effect above), so
   // "nothing planned yet" now reads as "every row exists but carries no
   // exercises" rather than "no rows at all".
+  // Chunk 25 review fix — SPEC "the cycle replaces the week everywhere the
+  // week is used (week plan, copying, ...)": this bulk action already works
+  // per slot with no service change at all (weekPlanService.ts's own
+  // fetchEmptyWorkoutPlanIds reads straight off v2_week_plans by
+  // (mesocycle_id, week_number) alone, already returning each row's own
+  // sequence_position — chunk 25's original pass built it this way on
+  // purpose) — only this gate (previously scheduledDays-only, always empty
+  // for a sequence program) needed to also check sequence slots.
   const showCopyButton =
     !isPast &&
     viewWeek > 1 &&
@@ -271,7 +338,9 @@ export default function PlanPage() {
     !daysLoading &&
     weekPlans.length > 0 &&
     weekPlans.every((wp) => wp.exercises.length === 0) &&
-    scheduledDays.some((d) => hasManualSourceFor(d.workoutDay.id))
+    (isSequence
+      ? sequenceSlots.some((s) => s.workoutDay && hasManualSourceFor(s.workoutDay.id, s.position))
+      : scheduledDays.some((d) => hasManualSourceFor(d.workoutDay.id)))
 
   // Chunk 21 — "Mark this week as deload" / "Unmark this week" (SPEC
   // "Deload" / "Plan screen" — "mark session or week as deload" is one of
@@ -284,7 +353,16 @@ export default function PlanPage() {
   // of this screen already reads) — a one-button toggle, same convention
   // as COMPACT/ONLY THIS WEEK above, flipping between the two labels
   // rather than two separate buttons.
-  const showWeekDeloadButton = !isPast && !plansLoading && !daysLoading && scheduledDays.length > 0
+  // Chunk 25 review fix — "Mark this cycle as deload" (chunk 21's week
+  // shortcut, relabelled): setWeekDeload itself already marks every row
+  // sharing (mesocycle_id, week_number) with no workout_day_id filter at
+  // all (weekPlanService.ts's own header: "Never filters by
+  // workout_day_id... exactly the bug this function exists to not have"),
+  // so it already covers every slot of a cycle unchanged — only this
+  // visibility gate (previously scheduledDays-only) needed to also
+  // recognise a sequence run's own slots.
+  const showWeekDeloadButton =
+    !isPast && !plansLoading && !daysLoading && (isSequence ? sequenceSlots.some((s) => s.workoutDay) : scheduledDays.length > 0)
   const weekIsFullyDeload = weekPlans.length > 0 && weekPlans.every((wp) => wp.isDeload)
 
   // ── No active meso ────────────────────────────────────────────────────────
@@ -382,7 +460,7 @@ export default function PlanPage() {
             </button>
             <div style={{ minWidth: 76, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewWeek === currentWeek ? 'var(--accent)' : 'var(--surface-overlay)', border: `1px solid ${viewWeek === currentWeek ? 'transparent' : 'var(--border-strong)'}`, borderRadius: 8, padding: '0 10px' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--base)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
-                WEEK {viewWeek}
+                {isSequence ? 'CYCLE' : 'WEEK'} {viewWeek}
               </span>
             </div>
             <button
@@ -448,7 +526,7 @@ export default function PlanPage() {
           >
             <Copy size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-secondary)' }}>
-              {copyPrev.isPending ? 'COPYING…' : 'COPY WEEK'}
+              {copyPrev.isPending ? 'COPYING…' : (isSequence ? 'COPY LAST CYCLE' : 'COPY WEEK')}
             </span>
           </button>
         )}
@@ -494,7 +572,9 @@ export default function PlanPage() {
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: weekIsFullyDeload ? 'var(--accent)' : 'var(--text-secondary)' }}>
                 {setWeekDeload.isPending
                   ? (weekIsFullyDeload ? 'UNMARKING…' : 'MARKING…')
-                  : (weekIsFullyDeload ? 'UNMARK THIS WEEK' : 'MARK WEEK AS DELOAD')}
+                  : (weekIsFullyDeload
+                      ? (isSequence ? 'UNMARK THIS CYCLE' : 'UNMARK THIS WEEK')
+                      : (isSequence ? 'MARK CYCLE AS DELOAD' : 'MARK WEEK AS DELOAD'))}
               </span>
             </button>
             {weekDeloadNotice && (
@@ -512,8 +592,10 @@ export default function PlanPage() {
           </div>
         )}
 
-        {/* No scheduled days */}
-        {!plansLoading && !daysLoading && scheduledDays.length === 0 && (
+        {/* No scheduled days (weekday only — isSequence has its own parallel
+            empty state below, since scheduledDays is always [] for one and
+            would otherwise show this same, wrong-for-it message). */}
+        {!isSequence && !plansLoading && !daysLoading && scheduledDays.length === 0 && (
           <div style={{ textAlign: 'center', paddingTop: 60 }}>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
               NO DAYS SCHEDULED
@@ -531,8 +613,25 @@ export default function PlanPage() {
           </div>
         )}
 
+        {/* Chunk 25 review fix — the sequence equivalent of "No scheduled
+            days" above: no workout-bearing slot exists yet (an empty
+            sequence, or every slot a rest day). */}
+        {isSequence && !plansLoading && !daysLoading && !sequenceSlots.some((s) => s.workoutDay) && (
+          <div style={{ textAlign: 'center', paddingTop: 60 }}>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
+              NO SLOTS SCHEDULED
+            </p>
+            <button
+              onClick={() => setActiveTab('program')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)' }}
+            >
+              Set up the sequence →
+            </button>
+          </div>
+        )}
+
         {/* Workout switcher + the one selected workout's panel */}
-        {!plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
+        {!isSequence && !plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
           <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
               {/* "Only this week" (SPEC "Weeks and copying") — week-dependent
@@ -573,7 +672,7 @@ export default function PlanPage() {
 
             <WorkoutDayPanel
               key={selected.workoutDay.id}
-              dow={selected.dow}
+              headerLabel={DOW_LABEL[selected.dow]}
               workoutDay={selected.workoutDay}
               weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
               isPast={isPast}
@@ -588,6 +687,58 @@ export default function PlanPage() {
             />
           </>
         )}
+
+        {/* Chunk 25 review fix — the sequence equivalent of the block above:
+            the slot switcher (ordered by position, SPEC G8's repeated-
+            workout slots each their own chip) + the SAME WorkoutDayPanel,
+            matched to this slot's own week-plan row by (workout_day_id,
+            sequence_position) — never by workout alone, so the two slots of
+            a repeated workout open different rows. No MoveSessionControl
+            here (chunk 24's own scope decision: weekday-only, keyed by a
+            calendar date a sequence slot doesn't have). */}
+        {isSequence && !plansLoading && !daysLoading && selectedSlot && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
+              {!isPast && (program?.planningType ?? 'week_dependent') !== 'stable' && (
+                <button
+                  onClick={() => setOnlyThisWeek((v) => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: onlyThisWeek ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${onlyThisWeek ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: onlyThisWeek ? 'var(--accent)' : 'var(--text-dim)' }}
+                >
+                  ONLY THIS WEEK
+                </button>
+              )}
+              <button
+                onClick={() => setCompact((c) => !c)}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
+              >
+                <Rows3 size={11} />
+                COMPACT
+              </button>
+            </div>
+
+            <SequenceSlotSwitcher
+              slots={sequenceSlots.map((s): SwitcherSlot => ({ id: s.id, position: s.position, workoutDayName: s.workoutDay?.name ?? null }))}
+              selectedId={selectedSlot.id}
+              onSelect={setSelectedSlotId}
+            />
+
+            <WorkoutDayPanel
+              key={`${selectedSlot.workoutDay!.id}:${selectedSlot.position}`}
+              headerLabel={`SLOT ${selectedSlot.position + 1}`}
+              workoutDay={selectedSlot.workoutDay!}
+              weekPlan={selectedSlotWeekPlan}
+              isPast={isPast}
+              mesoId={activeMeso.id}
+              weekNumber={viewWeek}
+              compact={compact}
+              canCopyFromHistory={hasManualSourceFor(selectedSlot.workoutDay!.id, selectedSlot.position)}
+              onlyThisWeek={onlyThisWeek}
+              isShared={false}
+              sharedWeekdays={null}
+              deloadRules={effectiveDeloadRules}
+            />
+          </>
+        )}
         </>
         )}
       </div>
@@ -598,7 +749,13 @@ export default function PlanPage() {
 // ─── Workout Day Panel ────────────────────────────────────────────────────────
 
 interface PanelProps {
-  dow: DayOfWeek
+  // Chunk 25 review fix — generalised from `dow: DayOfWeek` (a weekday
+  // run's own panel header's small top line): a sequence slot has no day of
+  // week, so the PARENT now computes whatever this line should read
+  // (DOW_LABEL[dow] for a weekday call — byte-identical to before this
+  // fix — or `SLOT n` for a sequence one) and hands it down as plain text.
+  // The only call site this value was ever used for (see below).
+  headerLabel: string
   workoutDay: WorkoutDay
   weekPlan: WeekPlan | undefined
   isPast: boolean
@@ -626,7 +783,7 @@ interface PanelProps {
   deloadRules: DeloadRules | null
 }
 
-function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays, deloadRules }: PanelProps) {
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays, deloadRules }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -674,9 +831,25 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
   // week or workout changes, so it never survives into one it wasn't
   // built for (reviewer's note 10).
   const { data: allWeekPlansForApplyAhead = [] } = useAllWeekPlans(mesoId)
-  const applyAheadOffer = useApplyAheadOffer(mesoId, `${workoutDay.id}:${weekNumber}`)
+  // Chunk 25 review fix — the reset key must also carry this slot's own
+  // position: two slots of a repeated workout (SPEC G8) in the same cycle
+  // would otherwise share one `${workoutDayId}:${weekNumber}` key and so
+  // share one offer/outcome state, exactly the staleness reviewer's note 10
+  // already guards against for a workout/week switch. Only appended when a
+  // real sequence_position exists (weekPlan?.sequencePosition, the same
+  // field laterWeeksForThisWorkout reads just below) — a weekday row's own
+  // key is never touched: `undefined`/`null` there leaves the key exactly
+  // `${workoutDayId}:${weekNumber}`, byte for byte as before this fix.
+  const applyAheadOffer = useApplyAheadOffer(
+    mesoId,
+    `${workoutDay.id}:${weekNumber}${weekPlan?.sequencePosition != null ? `:${weekPlan.sequencePosition}` : ''}`,
+  )
   function laterWeeksForThisWorkout() {
-    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber)
+    // Chunk 25 (reviewer's note 3) — slot identity, not just workoutDayId:
+    // weekPlan is THIS workout's own row for the viewed week/cycle; its
+    // sequencePosition (null for a weekday run, or absent on a pre-chunk-25
+    // fixture) is the slot every later week must also match.
+    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber, weekPlan?.sequencePosition ?? null)
   }
 
   // Which sheet (if any) is open: swapping a specific slot, or adding a new
@@ -958,7 +1131,7 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}>
-            {DOW_LABEL[dow]}
+            {headerLabel}
           </span>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', lineHeight: 1.1 }}>
             {workoutDay.name}
@@ -1034,7 +1207,7 @@ function WorkoutDayPanel({ dow, workoutDay, weekPlan, isPast, mesoId, weekNumber
       {/* Copy just this workout */}
       {showCopyWorkoutButton && (
         <button
-          onClick={() => copyWorkout.mutate({ workoutDayId: workoutDay.id, weekPlanId: weekPlan?.id })}
+          onClick={() => copyWorkout.mutate({ workoutDayId: workoutDay.id, weekPlanId: weekPlan?.id, sequencePosition: weekPlan?.sequencePosition ?? null })}
           disabled={copyWorkout.isPending}
           style={{ width: '100%', height: 36, marginBottom: 8, background: 'var(--surface)', border: '1px dashed var(--border-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: copyWorkout.isPending ? 'not-allowed' : 'pointer', opacity: copyWorkout.isPending ? 0.6 : 1 }}
         >

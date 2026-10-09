@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
+import type { ScheduleType } from './referenceByExercise'
 import {
   useActiveSession,
   useLogSet,
@@ -47,6 +48,13 @@ interface GymSessionProps {
   weekPlan: WeekPlan | null
   weekNumber: number
   today: string
+  // Chunk 25 — the run's real schedule type, for the "Last time" reference
+  // panel (ExerciseReference, threaded through ExerciseSection/ExerciseCard/
+  // SupersetBlock below) and this screen's own "WEEK"/"CYCLE" header.
+  // Optional, defaults to 'weekday': TodayPage.tsx's existing call site
+  // doesn't pass it and keeps rendering byte-identical (D30) —
+  // SequenceTodayPage.tsx is the one caller that does.
+  scheduleType?: ScheduleType
 }
 
 // Wrapper that loads per-exercise history and renders ExerciseCard.
@@ -62,6 +70,7 @@ function ExerciseSection({
   referenceSessions,
   referenceLoading,
   referenceMesocycleId,
+  referenceScheduleType,
   referenceIsError,
   referenceIsFromCache,
   onRetryReference,
@@ -91,6 +100,8 @@ function ExerciseSection({
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
   referenceMesocycleId: string | null
+  // Chunk 25 — see ExerciseReference.tsx's own prop docs.
+  referenceScheduleType: ScheduleType
   referenceIsError: boolean
   referenceIsFromCache: boolean
   onRetryReference: () => void
@@ -140,6 +151,7 @@ function ExerciseSection({
       referenceSessions={referenceSessions}
       referenceLoading={referenceLoading}
       referenceMesocycleId={referenceMesocycleId}
+      referenceScheduleType={referenceScheduleType}
       referenceIsError={referenceIsError}
       referenceIsFromCache={referenceIsFromCache}
       onRetryReference={onRetryReference}
@@ -153,7 +165,7 @@ function ExerciseSection({
   )
 }
 
-export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber, today }: GymSessionProps) {
+export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber, today, scheduleType = 'weekday' }: GymSessionProps) {
   const [showComplete, setShowComplete] = useState(false)
   const [showSidebarSheet, setShowSidebarSheet] = useState(false)
   const [cachedExercises, setCachedExercises] = useState<ProgramExercise[]>([])
@@ -478,7 +490,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             className="text-xs font-bold tracking-widest mb-1"
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
-            {weekPlan?.isDeload ? 'DELOAD · ' : ''}WEEK {weekNumber}
+            {weekPlan?.isDeload ? 'DELOAD · ' : ''}{scheduleType === 'sequence' ? 'CYCLE' : 'WEEK'} {weekNumber}
           </p>
           <h1
             className="text-3xl font-black tracking-tight"
@@ -569,6 +581,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 sessionId={sessionId}
                 referenceLoading={referenceLoading}
                 referenceMesocycleId={session?.mesocycleId ?? null}
+                referenceScheduleType={scheduleType}
                 referenceIsError={referenceIsError}
                 referenceIsFromCache={referenceIsFromCache}
                 onRetryReference={retryReference}
@@ -611,6 +624,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
                 referenceSessions={referenceSessionsByExercise.get(replacement.id) ?? []}
                 referenceLoading={referenceLoading}
                 referenceMesocycleId={session?.mesocycleId ?? null}
+                referenceScheduleType={scheduleType}
                 referenceIsError={referenceIsError}
                 referenceIsFromCache={referenceIsFromCache}
                 onRetryReference={retryReference}
@@ -634,6 +648,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               referenceSessions={referenceSessionsByExercise.get(pe.exerciseId) ?? []}
               referenceLoading={referenceLoading}
               referenceMesocycleId={session?.mesocycleId ?? null}
+              referenceScheduleType={scheduleType}
               referenceIsError={referenceIsError}
               referenceIsFromCache={referenceIsFromCache}
               onRetryReference={retryReference}
@@ -670,6 +685,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
               referenceSessions={referenceSessionsByExercise.get(ex.id) ?? []}
               referenceLoading={referenceLoading}
               referenceMesocycleId={session?.mesocycleId ?? null}
+              referenceScheduleType={scheduleType}
               referenceIsError={referenceIsError}
               referenceIsFromCache={referenceIsFromCache}
               onRetryReference={retryReference}

@@ -62,6 +62,16 @@ function makeChain(table: string, resolve: (state: ChainState) => { data?: unkno
     state.inFilters[col] = val
     return chain
   }
+  // Chunk 25 — `.is(col, null)` is the slot-identity null-check
+  // (fetchDeloadOccurrenceHistory/fetchDeloadWeekPlanCore's own
+  // sequence_position filter); every fixture in this file is a weekday
+  // run, so recording it into the SAME eqFilters bucket as `.eq` is
+  // sufficient — none of this file's own resolvers key off it.
+  chain.is = (col: string, val: unknown) => {
+    calls.push({ table, method: 'is', args: [col, val] })
+    state.eqFilters[col] = val
+    return chain
+  }
   chain.update = (payload: unknown) => {
     calls.push({ table, method: 'update', args: [payload] })
     state.usedUpdate = true
@@ -103,6 +113,13 @@ interface WorldWeekPlan {
   workoutDayId: string
   weekNumber: number
   isDeload?: boolean
+  // Chunk 25 review fix 3 — optional, defaults to null/undefined (every
+  // existing fixture in this file omits it, a weekday row, unaffected).
+  // Lets a new test give a repeated workout's two slots DISTINCT history
+  // rows, closing the one gap this file's own original header named
+  // ("every fixture in this file is a weekday run... none of this file's
+  // own resolvers key off it").
+  sequencePosition?: number | null
   sets: WorldSet[]
   exercises: WorldExerciseSlot[]
 }
@@ -134,6 +151,7 @@ function toCoreRow(w: WorldWeekPlan) {
     mesocycle_id: w.mesocycleId,
     workout_day_id: w.workoutDayId,
     week_number: w.weekNumber,
+    sequence_position: w.sequencePosition ?? null,
     deload_restore: null,
     v2_week_plan_sets: w.sets.map(toSetRow),
     v2_week_plan_exercises: w.exercises.map(toExerciseRow),
@@ -188,8 +206,20 @@ function buildFromMock(world: { weekPlans: WorldWeekPlan[]; logs: WorldLog[] }) 
         }
         if ('workout_day_id' in state.eqFilters) {
           const before = state.ltFilters.week_number as number
+          // Chunk 25 review fix 3 — `fetchDeloadOccurrenceHistory` always
+          // applies exactly one of `.is('sequence_position', null)` or
+          // `.eq('sequence_position', n)` (weekPlanService.ts's own
+          // unconditional ternary), both recorded into eqFilters by this
+          // file's own chain.is/chain.eq above — so this key is always
+          // present for a real call; `?? null` only guards a hypothetical
+          // direct call that skipped it.
+          const wantedSlot = (state.eqFilters.sequence_position ?? null) as number | null
           const rows = world.weekPlans.filter(
-            (w) => w.mesocycleId === state.eqFilters.mesocycle_id && w.workoutDayId === state.eqFilters.workout_day_id && w.weekNumber < before,
+            (w) =>
+              w.mesocycleId === state.eqFilters.mesocycle_id &&
+              w.workoutDayId === state.eqFilters.workout_day_id &&
+              w.weekNumber < before &&
+              (w.sequencePosition ?? null) === wantedSlot,
           )
           return { data: rows.map(toHistoryRow), error: null }
         }
@@ -396,6 +426,58 @@ describe('markSessionDeload — the rules argument passed in is the one actually
     expect(outcome).toBe('calculated')
     expect(insertedSets).toHaveLength(1)
     expect(insertedSets[0]).toMatchObject({ rep_min: 3, rep_max: 3 }) // 10 - 7 = 3, never the default/untouched 10
+  })
+})
+
+// Chunk 25 review fix 3 (DECISIONS 73 option a) — closes the one gap this
+// file's own original header named ("every fixture in this file is a
+// weekday run... none of this file's own resolvers key off it
+// [sequence_position]"). A, B, A, rest's own repeated workout (SPEC G8):
+// slot 0 and slot 2 are the SAME workout_day_id, each its own independent
+// deload base history (TASKS.md "deload rules match by slot for sequence
+// runs") — numerically distinct on purpose, so a slot mix-up changes the
+// asserted output, not just which query ran.
+describe('markSessionDeload — a repeated workout\'s two slots (A, B, A, rest) each use THEIR OWN base history, never the other slot\'s', () => {
+  it('marking the SECOND A (slot 2) calculates from slot 2\'s own base, not slot 0\'s', async () => {
+    fromMock.mockImplementation(
+      buildFromMock({
+        weekPlans: [
+          {
+            id: 'wp-slot0-base', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 1, sequencePosition: 0,
+            exercises: [{ programExerciseId: 'pe-slot0', exerciseId: 'ex-a' }],
+            sets: [{ id: 'slot0-base-s1', programExerciseId: 'pe-slot0', setNumber: 1, targetRir: 2, repMin: 10, repMax: 10, targetWeight: 100 }],
+          },
+          {
+            id: 'wp-slot2-base', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 1, sequencePosition: 2,
+            exercises: [{ programExerciseId: 'pe-slot2', exerciseId: 'ex-a' }],
+            sets: [{ id: 'slot2-base-s1', programExerciseId: 'pe-slot2', setNumber: 1, targetRir: 0, repMin: 4, repMax: 4, targetWeight: 20 }],
+          },
+          {
+            id: 'wp-marked-slot0', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 2, sequencePosition: 0,
+            exercises: [{ programExerciseId: 'pe-slot0', exerciseId: 'ex-a' }],
+            sets: [{ id: 'marked-slot0-s1', programExerciseId: 'pe-slot0', setNumber: 1, targetRir: 9, repMin: 1, repMax: 1, targetWeight: 1 }],
+          },
+          {
+            id: 'wp-marked-slot2', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 2, sequencePosition: 2,
+            exercises: [{ programExerciseId: 'pe-slot2', exerciseId: 'ex-a' }],
+            sets: [{ id: 'marked-slot2-s1', programExerciseId: 'pe-slot2', setNumber: 1, targetRir: 9, repMin: 1, repMax: 1, targetWeight: 1 }],
+          },
+        ],
+        // Both bases "happened" (a log each) — otherwise resolveDeloadBase
+        // Occurrence would find neither usable and this would prove nothing.
+        logs: [{ weekPlanSetId: 'slot0-base-s1', weight: 90 }, { weekPlanSetId: 'slot2-base-s1', weight: 18 }],
+      }),
+    )
+
+    const outcome = await markSessionDeload('u1', 'wp-marked-slot2', RULES_ABD)
+    expect(outcome).toBe('calculated')
+
+    expect(insertedSets).toHaveLength(1)
+    // Slot 2's own base (rir 0, reps 4/4, logged 18) — RULES_ABD (reps -3,
+    // rir +1, 90% rounded down to the nearest 2.5kg): never slot 0's base
+    // (rir 2, reps 10/10, logged 90), which would instead read rir 3,
+    // rep_min/rep_max 7, target_weight 80.
+    expect(insertedSets[0]).toMatchObject({ program_exercise_id: 'pe-slot2', rep_min: 1, rep_max: 1, target_rir: 1, target_weight: 15 })
   })
 })
 

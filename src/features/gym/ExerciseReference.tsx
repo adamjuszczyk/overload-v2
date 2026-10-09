@@ -11,7 +11,7 @@ import type { SetGroup } from './setGroupLogic'
 // unchanged for Coach's analysisInput.ts, which is the only remaining
 // caller.
 import { hasRealLoggedSet } from './referenceLogic'
-import { resolveExerciseReferenceAcrossRuns, resolveReachBackAcrossRuns } from './referenceByExercise'
+import { resolveExerciseReferenceAcrossRuns, resolveReachBackAcrossRuns, type ScheduleType } from './referenceByExercise'
 import { toDisplayWeight } from '../../lib/weightUnit'
 
 interface ExerciseReferenceProps {
@@ -54,6 +54,12 @@ interface ExerciseReferenceProps {
   // §2.4) — log.weight is always canonical kg; this panel converts for
   // display, same as the live gym-screen rows next to it.
   weightUnit: WeightUnit
+  // Chunk 25 — the run's real schedule type, threaded through from
+  // GymSession.tsx/SessionPreview.tsx (via ExerciseCard/PreviewExerciseCard/
+  // SupersetBlock). Optional, defaulting to 'weekday' below — every caller
+  // that predates this chunk, and every hand-built test fixture across the
+  // existing suite, keeps compiling and rendering exactly as before.
+  scheduleType?: ScheduleType
 }
 
 function relativeLabel(daysSince: number, date: string): string {
@@ -166,6 +172,7 @@ export default function ExerciseReference({
   onRetry,
   isFromCache,
   weightUnit,
+  scheduleType = 'weekday',
 }: ExerciseReferenceProps) {
   if (isLoading) {
     return (
@@ -209,17 +216,12 @@ export default function ExerciseReference({
     )
   }
 
-  // Chunk 23 (SPEC "'Last time' reference") — every live run today is
-  // schedule_type='weekday' (v2_programs' own column default; no program
-  // can be created as 'sequence' yet — that arrives in chunk 25,
-  // TASKS.md). resolveExerciseReferenceAcrossRuns is schedule-aware and
-  // fully tested for both branches (referenceByExercise.test.ts); this is
-  // the only value that can occur live, so it's passed as a literal rather
-  // than threaded through as a new prop on every caller (ExerciseCard,
-  // PreviewExerciseCard, SupersetBlock, GymSession, SessionPreview) for a
-  // branch nothing live can reach yet. Chunk 25 threads the run's real
-  // schedule_type through once a sequence run becomes reachable.
-  const { primary, thisWeek } = resolveExerciseReferenceAcrossRuns(today, 'weekday', sessions)
+  // Chunk 23 (SPEC "'Last time' reference") built resolveExerciseReference
+  // AcrossRuns schedule-aware and fully tested for both branches
+  // (referenceByExercise.test.ts) ahead of chunk 25, which is what threads
+  // the run's real schedule_type through (the `scheduleType` prop above,
+  // defaulting to 'weekday' for every caller that predates this chunk).
+  const { primary, thisWeek } = resolveExerciseReferenceAcrossRuns(today, scheduleType, sessions)
 
   // Reach-back (2026-08-22 fix, now cross-run — SPEC "The reach-back ...
   // crosses run boundaries too"): only when a real reference session was

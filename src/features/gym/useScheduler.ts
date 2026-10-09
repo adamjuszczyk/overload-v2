@@ -4,7 +4,7 @@ import { usePrograms, useWorkoutDays } from '../programs/usePrograms'
 import { useWeekPlans, useAllWeekPlans } from '../plan/useWeekPlan'
 import { useSessionsInRange } from './useSession'
 import { schedule } from './scheduler'
-import type { SchedulerResult, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
+import type { SchedulerResult, Mesocycle, Program, WorkoutDay, WeekPlan } from '../../types'
 
 const LOOKBACK_DAYS = 7
 
@@ -16,6 +16,14 @@ export interface SchedulerData {
   currentWeekPlans: WeekPlan[]
   allWeekPlans: WeekPlan[]
   currentWeek: number
+  // Chunk 25 — additive only: the active run's own program (already fetched
+  // below via usePrograms — no new query). Optional so every existing
+  // hand-built SchedulerData fixture (TodayPage.deload.test.tsx/TodayPage.
+  // moveSession.test.tsx, both of which mock useScheduler wholesale) keeps
+  // compiling and behaving unchanged — TodayPage.tsx reads
+  // `(scheduler.program?.scheduleType ?? 'weekday')`, so an absent field
+  // here reads exactly like a weekday run, same as today.
+  program?: Program | null
 }
 
 export function useScheduler(today: string, dismissMissed = false): SchedulerData {
@@ -24,6 +32,8 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
 
   const activeMeso = mesos?.find((m) => m.status === 'active') ?? null
   const programId = activeMeso?.programId ?? ''
+  // Chunk 25 — same programs list already fetched below; no new query.
+  const activeProgram = programs?.find((p) => p.id === programId) ?? null
 
   const currentWeek = activeMeso
     ? differenceInCalendarWeeks(parseISO(today), parseISO(activeMeso.startDate), { weekStartsOn: 1 }) + 1
@@ -60,6 +70,7 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
       currentWeekPlans: [],
       allWeekPlans: [],
       currentWeek,
+      program: activeProgram,
     }
   }
 
@@ -81,5 +92,6 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
     currentWeekPlans: currentWeekPlans ?? [],
     allWeekPlans: allWeekPlans ?? [],
     currentWeek,
+    program: activeProgram,
   }
 }

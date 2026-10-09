@@ -92,18 +92,30 @@ export function usePlanWeek() {
 // insertPlanSet/upsertPlanExercises already use. `planWeek` is typed to the
 // one method actually used (mutateAsync), so a test fake needs nothing
 // else — but a real usePlanWeek() result satisfies it too.
+// Chunk 25 — `sequencePosition` (optional, defaults to null) disambiguates
+// a repeated workout's two slots in one cycle (R16): without it, `.find`
+// would always return whichever occurrence comes first in `plans`,
+// regardless of which slot the caller actually means. Every pre-chunk-25
+// caller omits it and keeps matching exactly as before (every weekday
+// row's own sequencePosition is null/undefined — `(p.sequencePosition ??
+// null) === null` is true for all of them, same as a bare workoutDayId
+// match when there's only ever one row per workout).
 export async function planWeekThenFindId(
   mesoId: string,
   weekNumber: number,
   workoutDayId: string,
   fallback: string | null,
   planWeekMutation: { mutateAsync: (vars: { mesoId: string; weekNumber: number }) => Promise<number> },
-  fetchPlans: (mesoId: string, weekNumber: number) => Promise<{ id: string; workoutDayId: string }[]> = fetchWeekPlans,
+  fetchPlans: (mesoId: string, weekNumber: number) => Promise<{ id: string; workoutDayId: string; sequencePosition?: number | null }[]> = fetchWeekPlans,
+  sequencePosition: number | null = null,
 ): Promise<string | null> {
   try {
     await planWeekMutation.mutateAsync({ mesoId, weekNumber })
     const plans = await fetchPlans(mesoId, weekNumber)
-    return plans.find((p) => p.workoutDayId === workoutDayId)?.id ?? fallback
+    const match = plans.find(
+      (p) => p.workoutDayId === workoutDayId && (p.sequencePosition ?? null) === sequencePosition,
+    )
+    return match?.id ?? fallback
   } catch {
     return fallback
   }
@@ -374,10 +386,15 @@ export function useCopyWorkoutFromPreviousWeek(mesoId: string, weekNumber: numbe
     mutationFn: ({
       workoutDayId,
       weekPlanId,
+      sequencePosition,
     }: {
       workoutDayId: string
       weekPlanId?: string
-    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId),
+      // Chunk 25 (R16) — this slot's own identity; null (the default
+      // copyWorkoutFromPreviousWeek itself falls back to) for a weekday
+      // run, exactly as before this chunk.
+      sequencePosition?: number | null
+    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId, sequencePosition ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })

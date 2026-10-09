@@ -65,6 +65,7 @@ const TABLES = [
   'v2_mesocycles',
   'v2_program_exercises',
   'v2_program_priorities',
+  'v2_program_sequence_items',
   'v2_program_sets',
   'v2_program_superset_blocks',
   'v2_programs',

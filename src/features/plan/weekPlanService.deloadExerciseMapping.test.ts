@@ -30,6 +30,9 @@ function makeChain(table: string, resolve: () => { data?: unknown; error: unknow
   chain.eq = record('eq')
   chain.lt = record('lt')
   chain.in = record('in')
+  // Chunk 25 — `.is(col, null)` is the slot-identity null-check this
+  // file's own fixtures (every one a weekday run) now exercise.
+  chain.is = record('is')
   chain.update = record('update')
   chain.delete = record('delete')
   chain.insert = record('insert')

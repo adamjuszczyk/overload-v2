@@ -10,6 +10,7 @@ import type {
   MovementPattern,
   ProgramKind,
   PlanningType,
+  ScheduleType,
   ProgramSupersetBlock,
 } from '../../types'
 import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgramExercises'
@@ -31,6 +32,9 @@ type DbProgram = {
   // Absent until migration 027 — chunk 8's own field, same fallback. Reads
   // as 'week_dependent', 027's own column default.
   planning_type?: PlanningType
+  // Absent until migration 027 — chunk 25's own field, same fallback. Reads
+  // as 'weekday', 027's own column default.
+  schedule_type?: ScheduleType
   // Absent until migration 027 — chunk 22's own field (jsonb; null = "use
   // my default", the global v2_user_settings.deload_rules). Validated on
   // read the same way settingsService.ts validates the user's own column.
@@ -101,6 +105,7 @@ function toProgram(row: DbProgram): Program {
     updatedAt: row.updated_at,
     kind: row.kind ?? 'saved',
     planningType: row.planning_type ?? 'week_dependent',
+    scheduleType: row.schedule_type ?? 'weekday',
     // Chunk 22 — absent/undefined (pre-027, or simply never overridden)
     // reads as null here too, same "use my default" meaning either way;
     // a malformed stored value degrades to null defensively, same posture
@@ -221,6 +226,23 @@ export async function updatePlanningType(id: string, planningType: PlanningType)
   const { error } = await supabase
     .from('v2_programs')
     .update({ planning_type: planningType, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+// Chunk 25 (SPEC.md "Scheduling → Sequence" / TASKS.md "Planner step 2
+// gains the schedule type") — the planner's step-2 WEEKDAY/SEQUENCE picker.
+// "Nothing is converted automatically" (TASKS.md, chunk 20's G14 prompt,
+// DECISIONS 44 (a)): this only ever flips the column — it never touches
+// program.schedule or v2_program_sequence_items, so switching a weekday
+// program to sequence leaves its existing weekday assignments in place
+// (inert — v2_plan_week's sequence branch reads v2_program_sequence_items,
+// never `schedule`, once schedule_type = 'sequence') and switching back
+// leaves any sequence items in place (equally inert the other way).
+export async function updateScheduleType(id: string, scheduleType: ScheduleType): Promise<void> {
+  const { error } = await supabase
+    .from('v2_programs')
+    .update({ schedule_type: scheduleType, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }
