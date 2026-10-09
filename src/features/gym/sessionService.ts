@@ -491,16 +491,20 @@ export async function clearMovedSession(params: {
 // status+started_at transition; unlike reopenSession there is no prior
 // started_at/completed_at span to shift forward (a `planned` row was never
 // started before), so this never needs that function's own clock-skew
-// handling.
-export async function startMovedSession(id: string): Promise<Session> {
+// handling. Returns just the new started_at (not the full row) — same
+// shape and same reason as reopenSession's own return above: so the
+// caller's onSuccess can patch the cache immediately with the one field
+// that actually changed (useSession.ts's own offline branch constructs the
+// identical shape, so both branches feed the one onSuccess the same way).
+export async function startMovedSession(id: string): Promise<{ startedAt: string }> {
   const { data, error } = await supabase
     .from('v2_sessions')
     .update({ status: 'in_progress', started_at: new Date().toISOString() })
     .eq('id', id)
-    .select('*')
+    .select('started_at')
     .single()
   if (error) throw error
-  return toSession(data as DbSession)
+  return { startedAt: (data as { started_at: string }).started_at }
 }
 
 // ─── Set Logs ─────────────────────────────────────────────────────────────────

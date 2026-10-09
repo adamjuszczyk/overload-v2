@@ -151,16 +151,17 @@ describe('clearMovedSession — "moving back to its own day" deletes the planned
 })
 
 describe('startMovedSession — a plain status + started_at transition, no reopenSession-style clock-skew handling', () => {
-  it('writes status in_progress and a fresh started_at, by id', async () => {
-    const chain = makeChain({ data: { ...BASE_ROW, status: 'in_progress', started_at: '2026-08-24T12:00:00Z' }, error: null })
+  it('writes status in_progress and a fresh started_at, by id, returning just startedAt (reopenSession\'s own shape)', async () => {
+    const chain = makeChain({ data: { started_at: '2026-08-24T12:00:00Z' }, error: null })
     fromMock.mockReturnValue(chain)
 
-    const session = await startMovedSession('session-1')
+    const result = await startMovedSession('session-1')
 
     expect(chain.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'in_progress', started_at: expect.any(String) }),
     )
+    expect(chain.select).toHaveBeenCalledWith('started_at')
     expect(chain.eq).toHaveBeenCalledWith('id', 'session-1')
-    expect(session.status).toBe('in_progress')
+    expect(result).toEqual({ startedAt: '2026-08-24T12:00:00Z' })
   })
 })

@@ -704,23 +704,27 @@ export function useSkipMissedSession() {
 }
 
 // ─── Move this session (chunk 24, SPEC "Weekday") ──────────────────────────────
-// Online-only — no networkMode override, no offline branch, same tier as
-// useUpdateSessionNote/useRecordExerciseSwap above ("a plain optimistic
-// update... not full offline support"). The brief's own allowance: "Writes
-// use networkMode: 'always'. Offline: say what happens (disabled, or
-// queued if the existing offline queue already supports session
-// inserts)." — a generic move is a find-THEN-upsert-or-insert, a shape the
-// existing queue (simple id-keyed upserts, useSyncQueue.ts) has no
-// precedent for; rather than extend that mechanism, the screen layer
-// disables the MOVE control while offline (TodayPage.tsx/
-// MoveSessionControl.tsx) and this hook stays paused (TanStack's own
-// default 'online' networkMode) rather than erroring. "Do it now" is a
-// different, simpler, insert-only path — see useCreateSession above, which
-// already supports it offline and is unchanged in that respect.
+// Review fix: every write mutation here uses networkMode: 'always'
+// (CONTEXT.md), these three included — not to make them offline-capable (a
+// generic move/clear is a find-THEN-upsert-or-insert, a shape the existing
+// queue, simple id-keyed upserts in useSyncQueue.ts, has no precedent for;
+// useMoveSession/useClearMovedSession stay online-only, disabled in the UI
+// while offline, same as before), but because the DEFAULT 'online'
+// networkMode PAUSES a mutation whenever TanStack's own onlineManager
+// thinks the network is down — which is a different signal from this
+// app's own useOnlineStatus (navigator.onLine), so a mutation fired while
+// useOnlineStatus still reads true could still pause forever on TanStack's
+// view, hanging exactly like usePlanWeek's own chunk 8 regression (review
+// fix #1, useWeekPlan.test.tsx) and useDeleteSetLog's own comment above:
+// "'always' makes it attempt the request regardless of connectivity, so a
+// real offline attempt fails fast with a normal network error instead."
+// Proof: useSession.moveSession.test.tsx, same onlineManager.setOnline(false)
+// method as useWeekPlan.test.tsx's own proof.
 
 export function useMoveSession() {
   const { user } = useAuth()
   return useMutation({
+    networkMode: 'always',
     mutationFn: (params: {
       mesoId: string
       weekPlanId: string | null
@@ -740,6 +744,7 @@ export function useMoveSession() {
 export function useClearMovedSession() {
   const { user } = useAuth()
   return useMutation({
+    networkMode: 'always',
     mutationFn: (params: { workoutDayId: string; date: string }) =>
       clearMovedSession({ userId: user!.id, ...params }),
     onSuccess: () => {
@@ -750,16 +755,58 @@ export function useClearMovedSession() {
 }
 
 // Starts a `planned` (moved-here, not-yet-started) session — the `planned`
-// SchedulerResult/DueTodayEntry's own START action. Same online-only tier
-// as the two hooks above.
+// SchedulerResult/DueTodayEntry's own START action.
+//
+// Review fix: DOES work offline, through the existing sync queue — same
+// tier as useCreateSession/useCompleteSession/useSkipSession above, not
+// the online-only tier the two hooks just above stay in. Today, starting
+// a not-yet-created session (createSession) already works offline; a
+// session that was moved here (a `planned` row that already exists) has
+// to start through this function instead, and leaving THAT one path
+// offline-incapable would silently break "today's DO IT NOW works
+// offline" for the one case where the thing being started already has a
+// row — SPEC gives no reason to treat the two differently, and
+// cachedSessionToDbRow (below) already carries moved_to_date (this
+// chunk's own earlier fix), so the queued upsert is exactly as
+// self-sufficient as the create path's. Returns just the new startedAt —
+// reopenSession's own shape (`useSession.ts`'s own precedent, same reason:
+// "so the caller's onSuccess can patch the cache... immediately" rather
+// than needing the full row) — both branches below produce the same shape,
+// so one onSuccess handles either.
 export function useStartMovedSession() {
+  const isOnline = useOnlineStatus()
+  const addPending = useOfflineStore((s) => s.addPending)
+
   return useMutation({
-    mutationFn: (id: string) => startMovedSession(id),
-    onSuccess: (session) => {
-      queryClient.setQueryData(['v2_session', session.id], session)
+    networkMode: 'always',
+    mutationFn: async (id: string): Promise<{ startedAt: string }> => {
+      const startedAt = new Date().toISOString()
+      if (!isOnline) {
+        const cached = findCachedSession(id)
+        await db.sync_queue.add({
+          table: 'v2_sessions',
+          operation: 'upsert',
+          payload: {
+            id,
+            ...(cached ? cachedSessionToDbRow(cached) : {}),
+            status: 'in_progress',
+            started_at: startedAt,
+          },
+          createdAt: startedAt,
+        })
+        addPending(id)
+        return { startedAt }
+      }
+      return startMovedSession(id)
+    },
+    onSuccess: ({ startedAt }, id) => {
+      queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
+        old ? { ...old, status: 'in_progress' as const, startedAt } : old,
+      )
       queryClient.setQueriesData(
         { queryKey: ['v2_sessions'] },
-        (old: Session[] | undefined) => (old ? old.map((s) => (s.id === session.id ? session : s)) : old),
+        (old: Session[] | undefined) =>
+          old?.map((s) => (s.id === id ? { ...s, status: 'in_progress' as const, startedAt } : s)),
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
     },
