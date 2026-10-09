@@ -1,12 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, on a third, tests-only retry (73).*
+*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, reviewed (037 waiting on you, 76).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- 73 — Answered (a), second account: chunk 25 gets one more test-only retry; the throwaway sequence run is on your second account. In progress.
+- **76 — BLOCKING: run the pre-check, then merge #51 (037, sequence slots); tell me when deployed. Blocked: chunk 25's code, the last phase-1 chunk.**
 - 75 — Answered (b): a builder is changing verify-rls to flag only rows not owned by the test account. In progress.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
@@ -60,23 +60,31 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
+### 76 Merge migration 037 (#51): sequence slots
 Severity: blocking
 Chunk: 25
-**Ask:** Chunk 25 (sequence runs) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else. Separately: do the throwaway `TEST-…` sequence run on your **second account** (recommended — starting a run on your main account ends your current active run, and restoring it is a hand edit), or on your main account with the recovery SQL?
-**When:** before I build further.
-**Blocked until done:** chunk 25's merge (migration 037 and the code); it's the last phase-1 chunk.
-**Answer:** (a), and the throwaway run on the second account — Adam, 2026-10-09.
+**Ask:** Run the pre-check below; if both results match, merge PR #51 (037) and tell me when its deploy is done. Then I merge the code (#52).
+**When:** when you can.
+**Blocked until done:** chunk 25's code (#52) — the last phase-1 chunk.
+**Pre-check** (Supabase SQL editor):
+```
+select con.conname
+  from pg_constraint con
+ where con.conrelid = 'public.v2_week_plans'::regclass
+   and con.contype = 'u';
+-- expect exactly one row: v2_week_plans_mesocycle_id_workout_day_id_week_number_key
+select count(*) from v2_week_plans where sequence_position is not null;
+-- expect 0
+```
 **Evidence:**
-- **First failure** (fixed in `368ecad`): Plan showed nothing for a sequence run (its week view was keyed to weekdays), so a sequence program couldn't be planned. It now lists the cycle's slots (SLOT n + workout, rest days dimmed), each opening its own row (two A slots open two different rows), with "Cycle n", MARK CYCLE AS DELOAD, per-slot copy and apply-ahead; weekday Plan renders exactly as on master.
-- **Second failure** (the retry): two wiring paths that use the slot position are unproven, so a wrong value passes every test:
-  - Today's **Skip** looks up the week plan without `sequence_position` → all 412 gym tests still pass; for a repeated workout it could skip the wrong slot and advance the sequence from the wrong place.
-  - Plan's copy-history lookup ignoring `sequence_position` → all 553 plan tests pass; COPY THIS WORKOUT's availability for a repeated workout could follow the other slot.
-  The code is correct as written; only the proof is missing — the same class as chunks 16, 20, 21 and 22.
-- Everything else is green: 1731 tests with master merged in; replay 37/37 (code) and 38/38 (with 037 on an empty database); embeds 30/30; D30 untouched; weekday Plan render identical to master. I re-proved 037's R16 key on scratch myself (duplicate weekday row rejected; same workout at two positions in one cycle accepted; duplicate slot rejected).
-A competent default would: send it back for the missing tests — doesn't apply because: your rule makes a second review failure a stop.
+- 037 (md5 `152c06cf18cfb06589c0722511c55173`) swaps `v2_week_plans`' unique key for R16's 4-column one (the old constraint found by catalog lookup, raising unless exactly one matches) and replaces `v2_plan_week` with one row per sequence slot; weekday rows and planning unchanged; no row changes.
+- Reviewer: empty replay 38/38, embeds 30/30; R16 re-proven on scratch (duplicate weekday row rejected, same workout at two positions accepted, duplicate slot rejected).
+- `check-migration` exits 1 (constraint change, function replace), so the merge is yours (TASKS: chunk 25).
+- Rollback (header): drop the new key and restore the old one — only while no cycle repeats a workout.
+- Chunk 25's code passed review on the third, tests-only retry (73): 1750 tests; 14 slot-position wiring sites each break-proven; my own two breaks caught.
+A competent default would: merge it myself under D29 — doesn't apply because: it changes a constraint, and chunk 25's migration is yours by name.
 Cost of deferral: phase 1's last chunk waits.
-Provisional path taken: nothing merged; `build/chunk-25` and `build/chunk-25-migration` pushed for safekeeping (no PRs).
+Provisional path taken: both PRs open; the live check (your second account) waits for the code.
 
 ### 72 Chunk 26 live check: navigation (Adam's steps)
 Severity: deferred
@@ -563,6 +571,24 @@ Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 start
 Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
 
 ## Closed
+
+### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
+Severity: blocking (closed 2026-10-09: (a); the retry passed)
+Chunk: 25
+**Ask:** Chunk 25 (sequence runs) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else. Separately: do the throwaway `TEST-…` sequence run on your **second account** (recommended — starting a run on your main account ends your current active run, and restoring it is a hand edit), or on your main account with the recovery SQL?
+**When:** before I build further.
+**Blocked until done:** chunk 25's merge (migration 037 and the code); it's the last phase-1 chunk.
+**Answer:** (a), and the throwaway run on the second account — Adam, 2026-10-09.
+**Evidence:**
+- **First failure** (fixed in `368ecad`): Plan showed nothing for a sequence run (its week view was keyed to weekdays), so a sequence program couldn't be planned. It now lists the cycle's slots (SLOT n + workout, rest days dimmed), each opening its own row (two A slots open two different rows), with "Cycle n", MARK CYCLE AS DELOAD, per-slot copy and apply-ahead; weekday Plan renders exactly as on master.
+- **Second failure** (the retry): two wiring paths that use the slot position are unproven, so a wrong value passes every test:
+  - Today's **Skip** looks up the week plan without `sequence_position` → all 412 gym tests still pass; for a repeated workout it could skip the wrong slot and advance the sequence from the wrong place.
+  - Plan's copy-history lookup ignoring `sequence_position` → all 553 plan tests pass; COPY THIS WORKOUT's availability for a repeated workout could follow the other slot.
+  The code is correct as written; only the proof is missing — the same class as chunks 16, 20, 21 and 22.
+- Everything else is green: 1731 tests with master merged in; replay 37/37 (code) and 38/38 (with 037 on an empty database); embeds 30/30; D30 untouched; weekday Plan render identical to master. I re-proved 037's R16 key on scratch myself (duplicate weekday row rejected; same workout at two positions in one cycle accepted; duplicate slot rejected).
+A competent default would: send it back for the missing tests — doesn't apply because: your rule makes a second review failure a stop.
+Cost of deferral: phase 1's last chunk waits.
+Provisional path taken: nothing merged; `build/chunk-25` and `build/chunk-25-migration` pushed for safekeeping (no PRs).
 
 ### 74 verify-rls found 46 `exercises` rows visible to the no-data test account
 Severity: urgent (closed 2026-10-09: not a leak)
