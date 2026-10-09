@@ -1,14 +1,13 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, stopped after a second review failure (73).*
+*Rewritten at every chunk boundary. Last: 2026-10-09 09:40 UTC, chunk 26 boundary — chunks 1–24 and 26 merged and live (migrations through 036); chunk 25, the last, on a third, tests-only retry (73).*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
-- **73 — BLOCKING: chunk 25 failed review twice (second time: missing tests for two slot-position wirings; code correct). (a) one more test-only retry (recommended), (b) merge as is, (c) other. Also: throwaway sequence run on your second account (recommended) or main account? Blocked: chunk 25.**
-- 69 (question) — LAST WEEK by calendar week across runs (built), or only within the current run? Blocked: nothing.
-- 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
+- 73 — Answered (a), second account: chunk 25 gets one more test-only retry; the throwaway sequence run is on your second account. In progress.
+- **74 — urgent: verify-rls found `exercises` visible to the no-data test account (46 rows). Run the two queries in entry 74 and send me the output.**
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
@@ -61,12 +60,37 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
+### 74 verify-rls found 46 `exercises` rows visible to the no-data test account
+Severity: urgent (not blocking the build)
+Chunk: — (pre-existing; no phase-1 migration touches `exercises`)
+**Ask:** Run these two read-only queries in the Supabase SQL editor and send me the output (no row contents needed):
+```
+-- 1. the live policies on exercises
+select polname, polcmd, pg_get_expr(polqual, polrelid) as using_expr, pg_get_expr(polwithcheck, polrelid) as check_expr
+  from pg_policy where polrelid = 'public.exercises'::regclass;
+-- 2. whose rows they are (paste the test account's id from Authentication → Users)
+select count(*) filter (where user_id = '<TEST_ACCOUNT_ID>') as owned_by_test_account,
+       count(*) as total_rows
+  from public.exercises;
+```
+**When:** soon.
+**Blocked until done:** nothing in the build.
+**Evidence:**
+- `verify-rls.mjs` on master `f0bc7c6` (your go-ahead, 62): 30 tables, 60 probes — 59 pass, **1 leak**: `exercises`, signed in as the no-data test account → 46 rows; anon → 0. Everything the planner added (`v2_week_plan_exercises`, `v2_program_priorities`, `v2_program_sets`, `v2_program_superset_blocks`, `v2_workout_warmup_items`) passes. On 2026-10-03 the same check passed on `exercises`.
+- The repo's only policy on `exercises` is 000's owner-only `user_id = auth.uid()`; no migration since changes it.
+- So either (a) the test account now owns 46 exercise rows (e.g. seeded when it was signed into Overload or Northstar, which share this table) — then it's not a leak, but the test account no longer "owns no data"; or (b) the live database has a policy the repo doesn't — a real leak of exercise names across accounts. Query 1 tells (b) apart; query 2 tells (a).
+- I ran the script twice, not once: the second run only to see which table leaked (the summary line didn't name it). Disclosed here; no further live reads.
+A competent default would: probe further as the test account — doesn't apply because: that's another live read beyond your one approved run.
+Cost of deferral: if (b), exercise rows stay readable by any signed-in user of this Supabase project.
+Provisional path taken: nothing changed; building continues.
+
 ### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
 Severity: blocking
 Chunk: 25
 **Ask:** Chunk 25 (sequence runs) failed my review twice, so per your rule I've stopped. Pick one: (a) one more retry, tests only (recommended); (b) merge as it is; (c) something else. Separately: do the throwaway `TEST-…` sequence run on your **second account** (recommended — starting a run on your main account ends your current active run, and restoring it is a hand edit), or on your main account with the recovery SQL?
 **When:** before I build further.
 **Blocked until done:** chunk 25's merge (migration 037 and the code); it's the last phase-1 chunk.
+**Answer:** (a), and the throwaway run on the second account — Adam, 2026-10-09.
 **Evidence:**
 - **First failure** (fixed in `368ecad`): Plan showed nothing for a sequence run (its week view was keyed to weekdays), so a sequence program couldn't be planned. It now lists the cycle's slots (SLOT n + workout, rest days dimmed), each opening its own row (two A slots open two different rows), with "Cycle n", MARK CYCLE AS DELOAD, per-slot copy and apply-ahead; weekday Plan renders exactly as on master.
 - **Second failure** (the retry): two wiring paths that use the slot position are unproven, so a wrong value passes every test:
@@ -122,7 +146,7 @@ Provisional path taken: merged; chunks 25 and 26 being built.
 ### 69 Chunk 23 live check: "last time" by exercise (Adam's steps)
 Severity: deferred
 Chunk: 23
-**Ask:** Chunk 23 live check. Do the steps below in the app and tell me the results. A failed step is blocking. Also: LAST WEEK is decided by calendar week, so a match from last week counts even if it came from your previous run. Keep that, or count LAST WEEK only within the current run?
+**Ask:** Chunk 23 live check. Do the steps below in the app and tell me the results. A failed step is blocking. Also: LAST WEEK is decided by calendar week, so a match from last week counts even if it came from your previous run. Keep that, or count LAST WEEK only within the current run? **Answer (Adam, 2026-10-09): across runs — keep as built.**
 **When:** your next session.
 **Blocked until done:** nothing now; a failure blocks the next merge.
 **Steps:** (take the update banner; chunk 23 is `394ce31`)
@@ -229,6 +253,7 @@ Provisional path taken: merged; chunk 20 is being built.
 Severity: deferred
 Chunk: 18
 **Ask:** May I run `node scripts/verify-rls.mjs` once? Yes or no.
+**Answer:** Yes (Adam, 2026-10-09). Run on master `f0bc7c6`: 59 pass, 1 leak (`exercises`) → entry 74.
 **When:** any time.
 **Blocked until done:** nothing.
 **Evidence:** Its last run was 2026-10-03 (25 tables, 50 probes, all pass). Since then the app started using `v2_week_plan_exercises` (7), `v2_program_priorities` (10), `v2_program_sets` (11), `v2_program_superset_blocks` (13) and `v2_workout_warmup_items` (18). All five are in `TABLES` (enforced by `verify-rls-tables.test.mjs`), and each has 027's standard RLS. The builders' scratch checks proved user B can't read A's rows, but the live policies haven't been probed. The script reads only: anon and the no-data test account, so any row returned would be a leak.
