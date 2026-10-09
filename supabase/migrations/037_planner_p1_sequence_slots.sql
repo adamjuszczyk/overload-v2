@@ -91,13 +91,14 @@
 --   4. Same GRANT EXECUTE / NOTIFY PGRST as every prior v2_plan_week
 --      migration (031, 032) — the signature doesn't change.
 --
--- check-migration: flags this file (exit 1) — the `do $$ … $$` block (not
--- on the safe list), the ADD CONSTRAINT (a constraint on an existing table
--- is never on the safe list, even an additive one — R16's own safety
--- argument above is a judgement call the generic classifier correctly
--- doesn't make for us), and the CREATE OR REPLACE FUNCTION + closing
--- NOTIFY (same reason 031/032/034/035 were each flagged). Expected, not a
--- sign of anything missed.
+-- check-migration: flags this file (exit 1; run and confirmed below) — the
+-- `do $$ … $$` block (not on the safe list), the ADD CONSTRAINT (a
+-- constraint on an existing table is never on the safe list, even an
+-- additive one — R16's own safety argument above is a judgement call the
+-- generic classifier correctly doesn't make for us), and the CREATE OR
+-- REPLACE FUNCTION + its GRANT EXECUTE + closing NOTIFY (none of the three
+-- match any safe-list pattern — same reason 031/032/034/035 were each
+-- flagged). Expected, not a sign of anything missed.
 --
 -- ─── Rollback (by hand — this file does not run it) ────────────────────────
 -- Only possible while no cycle has a repeated workout (two sequence_position
