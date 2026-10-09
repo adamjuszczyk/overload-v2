@@ -1,16 +1,21 @@
 import { NavLink } from 'react-router-dom'
-import { Dumbbell, LayoutList, TrendingUp, Clock, CalendarDays, BookOpen, Settings, Sparkles } from 'lucide-react'
+import { Dumbbell, LayoutList, TrendingUp, Clock, BookOpen, Settings, Sparkles } from 'lucide-react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { useInstallPrompt } from '../features/offline/useInstallPrompt'
 import { useAuth } from '../features/auth/useAuth'
 import { isCoachUser } from '../features/coach/coachGate'
 
+// Chunk 26 (SPEC.md "Navigation and settings" — "The program screen folds
+// into the plan screen as its program tab"): PROGRAM is gone from the bar.
+// Its former destination (ProgramPage.tsx, now ProgramsPage.tsx) is reached
+// from Plan's header instead (PlanPage.tsx). This is phase 1 only — the
+// phase-2 bar (Progress/Coach folding into History tabs, SPEC's [P2] bullet
+// right below the [P1] one above) is not part of this chunk.
 const baseTabs = [
   { to: '/today',    label: 'TODAY',    Icon: Dumbbell     },
   { to: '/plan',     label: 'PLAN',     Icon: LayoutList   },
   { to: '/progress', label: 'PROGRESS', Icon: TrendingUp   },
   { to: '/history',  label: 'HISTORY',  Icon: Clock        },
-  { to: '/program',  label: 'PROGRAM',  Icon: CalendarDays },
   { to: '/library',  label: 'LIBRARY',  Icon: BookOpen     },
   { to: '/settings', label: 'SETTINGS', Icon: Settings     },
 ] as const
@@ -21,7 +26,7 @@ export default function Nav() {
   const isOnline = useOnlineStatus()
   const { canInstall, install } = useInstallPrompt()
   const { user } = useAuth()
-  // Gated: an eighth tab is tight on a narrow phone (TASKS §5.6), so it
+  // Gated: a seventh tab is tight on a narrow phone (TASKS §5.6), so it
   // only renders for the one account it's actually for — no crowding for
   // anyone else. The route still exists unconditionally (see App.tsx).
   const tabs = isCoachUser(user?.id) ? [...baseTabs, coachTab] : baseTabs
