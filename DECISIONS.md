@@ -7,7 +7,7 @@
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
 - 73 — Answered (a), second account: chunk 25 gets one more test-only retry; the throwaway sequence run is on your second account. In progress.
-- **74 — urgent: verify-rls found `exercises` visible to the no-data test account (46 rows). Run the two queries in entry 74 and send me the output.**
+- 75 (question) — verify-rls's "test account owns no data" no longer holds (it owns 46 exercises): (a) you delete them, (b) a builder makes the check flag only rows not owned by the test account (recommended), or both. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
 
 **To-dos**
@@ -59,30 +59,6 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
-
-### 74 verify-rls found 46 `exercises` rows visible to the no-data test account
-Severity: urgent (not blocking the build)
-Chunk: — (pre-existing; no phase-1 migration touches `exercises`)
-**Ask:** Run these two read-only queries in the Supabase SQL editor and send me the output (no row contents needed):
-```
--- 1. the live policies on exercises
-select polname, polcmd, pg_get_expr(polqual, polrelid) as using_expr, pg_get_expr(polwithcheck, polrelid) as check_expr
-  from pg_policy where polrelid = 'public.exercises'::regclass;
--- 2. whose rows they are (paste the test account's id from Authentication → Users)
-select count(*) filter (where user_id = '<TEST_ACCOUNT_ID>') as owned_by_test_account,
-       count(*) as total_rows
-  from public.exercises;
-```
-**When:** soon.
-**Blocked until done:** nothing in the build.
-**Evidence:**
-- `verify-rls.mjs` on master `f0bc7c6` (your go-ahead, 62): 30 tables, 60 probes — 59 pass, **1 leak**: `exercises`, signed in as the no-data test account → 46 rows; anon → 0. Everything the planner added (`v2_week_plan_exercises`, `v2_program_priorities`, `v2_program_sets`, `v2_program_superset_blocks`, `v2_workout_warmup_items`) passes. On 2026-10-03 the same check passed on `exercises`.
-- The repo's only policy on `exercises` is 000's owner-only `user_id = auth.uid()`; no migration since changes it.
-- So either (a) the test account now owns 46 exercise rows (e.g. seeded when it was signed into Overload or Northstar, which share this table) — then it's not a leak, but the test account no longer "owns no data"; or (b) the live database has a policy the repo doesn't — a real leak of exercise names across accounts. Query 1 tells (b) apart; query 2 tells (a).
-- I ran the script twice, not once: the second run only to see which table leaked (the summary line didn't name it). Disclosed here; no further live reads.
-A competent default would: probe further as the test account — doesn't apply because: that's another live read beyond your one approved run.
-Cost of deferral: if (b), exercise rows stay readable by any signed-in user of this Supabase project.
-Provisional path taken: nothing changed; building continues.
 
 ### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
 Severity: blocking
@@ -587,6 +563,31 @@ Cost of deferral: if it fails, chunk 5 is reverted or fixed before chunk 6 start
 Provisional path taken: merge once green; chunk 6 waits on its own blocking entries anyway (it has a migration that changes existing data).
 
 ## Closed
+
+### 74 verify-rls found 46 `exercises` rows visible to the no-data test account
+Severity: urgent (closed 2026-10-09: not a leak)
+Chunk: — (pre-existing; no phase-1 migration touches `exercises`)
+**Ask:** Run these two read-only queries in the Supabase SQL editor and send me the output (no row contents needed):
+```
+-- 1. the live policies on exercises
+select polname, polcmd, pg_get_expr(polqual, polrelid) as using_expr, pg_get_expr(polwithcheck, polrelid) as check_expr
+  from pg_policy where polrelid = 'public.exercises'::regclass;
+-- 2. whose rows they are (paste the test account's id from Authentication → Users)
+select count(*) filter (where user_id = '<TEST_ACCOUNT_ID>') as owned_by_test_account,
+       count(*) as total_rows
+  from public.exercises;
+```
+**When:** soon.
+**Blocked until done:** nothing in the build.
+**Answer (Adam, 2026-10-09):** query 2 → 46 owned by the test account, 335 total. **Not a leak:** the test account sees exactly its own 46 rows and none of the other 289; the policy works. The false alarm is verify-rls's assumption that the test account owns no data. Follow-up (75): empty the test account, or make the check compare `user_id`.
+**Evidence:**
+- `verify-rls.mjs` on master `f0bc7c6` (your go-ahead, 62): 30 tables, 60 probes — 59 pass, **1 leak**: `exercises`, signed in as the no-data test account → 46 rows; anon → 0. Everything the planner added (`v2_week_plan_exercises`, `v2_program_priorities`, `v2_program_sets`, `v2_program_superset_blocks`, `v2_workout_warmup_items`) passes. On 2026-10-03 the same check passed on `exercises`.
+- The repo's only policy on `exercises` is 000's owner-only `user_id = auth.uid()`; no migration since changes it.
+- So either (a) the test account now owns 46 exercise rows (e.g. seeded when it was signed into Overload or Northstar, which share this table) — then it's not a leak, but the test account no longer "owns no data"; or (b) the live database has a policy the repo doesn't — a real leak of exercise names across accounts. Query 1 tells (b) apart; query 2 tells (a).
+- I ran the script twice, not once: the second run only to see which table leaked (the summary line didn't name it). Disclosed here; no further live reads.
+A competent default would: probe further as the test account — doesn't apply because: that's another live read beyond your one approved run.
+Cost of deferral: if (b), exercise rows stay readable by any signed-in user of this Supabase project.
+Provisional path taken: nothing changed; building continues.
 
 ### 70 Merge migration 036 (#48): the legacy session's moved-to date
 Severity: blocking (closed 2026-10-09: merged by Adam as #48 `19cf372`; deploy success 08:58 UTC)
