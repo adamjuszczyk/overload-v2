@@ -91,6 +91,7 @@ export default function TodayPage() {
           queue={result.queue}
           activeMeso={activeMeso!}
           onDismiss={() => setDismissMissed(true)}
+          today={today}
         />
       </>
     )
