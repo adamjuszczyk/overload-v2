@@ -37,20 +37,38 @@
 -- row's moved_to_date is no longer null, so the same five-criteria select
 -- finds zero rows on a re-run. The do $$ … $$ block below tells that
 -- apart from a real problem:
---   - exactly one row matches the five criteria above -> update it, done.
---   - zero rows match -> this must mean "already applied" (this
---     migration's whole purpose is the one known L4 row, so "there was
---     never a row" is not an expected outcome here): a second select, same
---     five criteria but moved_to_date = '2026-08-30' instead of `is null`,
---     must then find exactly that one row, already in the applied state.
---     If it doesn't (0 or 2+), raise — something is wrong, don't guess.
---   - two or more rows match the five criteria -> raise. The criteria
---     aren't narrowing to one specific row the way L4 is understood to be.
--- Both runs are proven on scratch before this is ever run live (see this
+--   - Adam (this user_id) has NO v2_sessions rows at all -> this is an
+--     empty or foreign database (a fresh replay/CI scratch run, never
+--     Adam's real data) — `raise notice` and do nothing. Distinct from
+--     "Adam has data but none of it matches" (below), which still raises:
+--     an empty database is expected and harmless everywhere this migration
+--     runs except the one real database it targets; Adam having OTHER
+--     sessions but none matching the five criteria is not expected
+--     anywhere, and is exactly the case worth stopping for. (Review fix:
+--     without this clause, `bash scripts/replay-migrations.sh` and
+--     `check-embeds-local.sh` — which replays internally before probing
+--     embeds — would fail at this file FOREVER after it merges, since
+--     every later PR and master replay every migration on an empty
+--     database. This clause is what makes that replay clean while still
+--     refusing to guess on a database that has data but doesn't match.)
+--   - otherwise, exactly one row matches the five criteria above -> update
+--     it, done.
+--   - otherwise, zero rows match -> this must mean "already applied": a
+--     second select, same five criteria but moved_to_date = '2026-08-30'
+--     instead of `is null`, must then find exactly that one row, already
+--     in the applied state. If it doesn't (0 or 2+), raise — something is
+--     wrong, don't guess.
+--   - otherwise, two or more rows match the five criteria -> raise. The
+--     criteria aren't narrowing to one specific row the way L4 is
+--     understood to be.
+-- Every run is proven on scratch before this is ever run live (see this
 -- chunk's report): a fixture with the matching row plus five near-misses
 -- (another user, another date, already moved, not completed, started on
 -- another day) proves the select narrows to exactly one row; running this
--- file twice proves the second run changes nothing and raises nothing.
+-- file twice proves the second run changes nothing and raises nothing; an
+-- empty database (no fixture at all) proves the new empty-user clause
+-- makes the generic replay chain clean; a fixture where Adam has OTHER
+-- sessions but none matching proves that case still raises.
 --
 -- Pre-check — Adam runs this SELECT himself first, before applying, and
 -- confirms it returns exactly one row (same five criteria the block below
@@ -114,28 +132,41 @@
 --     find-or-insert "move" write (sessionService.ts's moveSessionTo,
 --     chunk 24's code branch) cannot cross users even by id, independent
 --     of this migration itself.
---   - Known, accepted consequence (not a defect): this guard's own
---     strictness means `bash scripts/replay-migrations.sh` (and
---     `check-embeds-local.sh`, which replays internally before probing
---     embeds) FAILS at this file on a fresh, data-free database — there is
---     no Adam row to match, and 0-matching-and-0-already-applied is
---     deliberately NOT treated as success (TASKS.md's own idempotency
---     rule names exactly one 0-match shape as success: "0 matching rows
---     AND exactly one row already in the applied shape" — an empty
---     database satisfies neither). The GitHub `migration-replay` check
---     (same replay, workflow migration-replay.yml) will show the same red
---     on this file's own PR. This migration was never going to auto-merge
---     regardless (check-migration already flags it, independent of this),
---     so this doesn't change who merges it — Adam, by hand, against the
---     real database, same as every other flagged migration — but the red
---     CI check on this specific PR is expected, not a sign anything is
---     broken, and is called out here so it isn't mistaken for one.
+--   - Empty database (no auth.users/v2_sessions rows for Adam at all):
+--     `bash scripts/replay-migrations.sh` and `check-embeds-local.sh` both
+--     pass clean (36/36, then every embed resolves) — the empty-user
+--     clause above raises a NOTICE, not an exception, and changes nothing.
+--     The GitHub `migration-replay` check (same replay) stays green for
+--     this PR and for every later one, exactly as it does for every other
+--     migration in this repo.
+--   - Break-proofed both ways (cp + md5, never `git checkout --`): with
+--     the empty-user clause removed, the empty replay fails again exactly
+--     as before this fix (found 0 matching, 0 already applied); with it
+--     widened from "Adam has 0 TOTAL rows" to "0 rows MATCH the five
+--     criteria", the "Adam has other sessions, none matching" fixture
+--     stops raising (a NOTICE instead of the exception it must produce) —
+--     confirming the clause has to test total rows, not matching rows.
 
 do $$
 declare
+  adam_total_count int;
   match_count int;
   already_applied_count int;
 begin
+  -- Empty or foreign database: Adam's user has no v2_sessions rows at all
+  -- (never been seeded here) — nothing to do, and nothing wrong. Checked
+  -- BEFORE the five-criteria select so it can never be confused with "Adam
+  -- has data, none of it matches" below, which still raises.
+  select count(*) into adam_total_count
+    from v2_sessions
+   where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f';
+
+  if adam_total_count = 0 then
+    raise notice
+      'v2_sessions legacy L4 backfill: no v2_sessions rows at all for this user — empty or foreign database, nothing to do.';
+    return;
+  end if;
+
   select count(*) into match_count
     from v2_sessions
    where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
