@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight, CalendarDays } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit } from '../../types'
 import { useMesos } from '../programs/useMesos'
@@ -311,10 +311,10 @@ export default function PlanPage() {
             NO ACTIVE MESOCYCLE
           </p>
           {/* Chunk 11 (SPEC.md "Plan screen" — "no active run → 'Start a
-              program', leading to the planner"): the programs page (/program,
-              unchanged this chunk) is where a program is picked or created —
-              "+" there now opens the new planner (PlannerPage, /program/:id)
-              instead of the old builder. */}
+              program', leading to the planner"): the programs page (/program
+              — ProgramsPage.tsx since chunk 26, same route, same target) is
+              where a program is picked or created — "+" there opens the
+              planner (PlannerPage, /program/:id). */}
           <button
             onClick={() => navigate('/program')}
             style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)', cursor: 'pointer' }}
@@ -360,6 +360,18 @@ export default function PlanPage() {
 
           {/* Week navigation */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            {/* Chunk 26 (SPEC.md "Programs page" — "Reached from the plan
+                screen's header"): PROGRAM is gone from the bottom bar
+                (Nav.tsx), so this is now the only persistent route there —
+                the no-active-run empty state below still has its own
+                "START A PROGRAM" CTA to the same place, unchanged. */}
+            <button
+              onClick={() => navigate('/program')}
+              aria-label="Programs"
+              style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              <CalendarDays size={14} />
+            </button>
             <button
               onClick={() => setViewWeek((w) => Math.max(1, w - 1))}
               disabled={viewWeek <= 1}
