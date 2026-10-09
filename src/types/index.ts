@@ -44,6 +44,20 @@ export type ProgramKind = 'saved' | 'run'
 // 'week_dependent' until chunk 11's planner can create a stable one.
 export type PlanningType = 'stable' | 'week_dependent'
 
+// v2_programs.schedule_type (migration 027; the planner's own schedule-type
+// picker arrives in chunk 25 — SPEC.md "Scheduling → Sequence"). 'weekday'
+// (the column default): program.schedule, one workout per weekday, as
+// today. 'sequence': an ordered cycle of workout and rest slots
+// (v2_program_sequence_items), not tied to a weekday — "the cycle replaces
+// the week everywhere the week is used" (week plan, copying, week-dependent
+// volume, deload shortcut, labels — WeekPlan.weekNumber is the cycle index
+// for one of these). Same type referenceByExercise.ts already defines
+// locally (chunk 23, built ahead of this chunk) — not re-exported from
+// there; the two are structurally identical string-literal unions, so a
+// Program.scheduleType value is assignable to that module's own parameter
+// with no cast.
+export type ScheduleType = 'weekday' | 'sequence'
+
 // ─── Exercise ─────────────────────────────────────────────────────────────────
 
 // The two stored values (exercises.status, migration 019, not null default
@@ -238,6 +252,24 @@ export interface WarmupRoutineItem {
   body: string           // free text, non-blank (v2_workout_warmup_items' own CHECK)
 }
 
+// ─── Sequence item (v2_program_sequence_items, chunk 25 — SPEC.md
+// "Scheduling → Sequence") ───────────────────────────────────────────────────
+// The ordered cycle of a `scheduleType: 'sequence'` program: one row per
+// slot, in `position` order. A null workoutDayId is a rest day — nothing to
+// plan there (v2_plan_week skips it, same treatment an unassigned weekday
+// already gets). The same workout may occupy more than one slot (SPEC, G8:
+// "A, B, A, rest") — position, not workoutDayId, is this row's own identity
+// (v2_program_sequence_items' unique index is (program_id, position)).
+// v2_copy_program (028) already copies these rows into a run's own copy,
+// remapping workoutDayId through the copy's own workout-day map.
+export interface SequenceItem {
+  id: string
+  userId: string
+  programId: string
+  position: number          // 0-based, dense and unique within one program
+  workoutDayId: string | null // null = rest day
+}
+
 // ─── Program Set (v2_program_sets, chunk 11 — SPEC.md "Objects stored:
 // Program", "sets") ─────────────────────────────────────────────────────────
 // The program's own volume: every week's for a `stable` program, week 1's
@@ -294,6 +326,10 @@ export interface Program {
   // real row read before migration 027. Undefined is treated as
   // 'week_dependent' (the column default) wherever this is read.
   planningType?: PlanningType
+  // Chunk 25 — same "may not exist yet" optional convention as planningType
+  // above; undefined reads as 'weekday' (the column default) everywhere
+  // this is checked.
+  scheduleType?: ScheduleType
   // v2_programs.deload_rules (migration 027; read/written starting chunk 22
   // — SPEC.md "Deload rules": "global default in settings, override per
   // program"). Null/undefined = "use my default" (the global
@@ -362,6 +398,18 @@ export interface WeekPlan {
   // every hand-built WeekPlan literal across the existing plan test suite
   // predates this column.
   deloadRestore?: DeloadRestoreEntry[] | null
+  // v2_week_plans.sequence_position (migration 027; chunk 25 is the first
+  // to read/write it — SPEC "Sequence": "A workout may appear more than
+  // once in a sequence"). Null for a weekday run's row, exactly as today;
+  // for a sequence run, this planned session's own slot — the position of
+  // the v2_program_sequence_items row it was planned from, R16's own slot
+  // identity (the same workout_day_id can occupy two different slots in
+  // one cycle, each tracked by its own sequence_position). Optional, same
+  // "may not exist yet" convention as the field above — every hand-built
+  // WeekPlan literal across the existing (weekday-only) test suite
+  // predates this column and is unaffected by its absence (reads as null,
+  // i.e. "weekday row", wherever this is checked).
+  sequencePosition?: number | null
 }
 
 // One WeekPlanSet per planned set per exercise.

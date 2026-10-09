@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
-import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, WeightUnit, WarmupRoutineItem } from '../../types'
+import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, ScheduleType, WeightUnit, WarmupRoutineItem } from '../../types'
 import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { queryClient } from '../../lib/queryClient'
 import {
@@ -22,8 +22,15 @@ import {
   useUpdateWarmupItemBody,
   useRemoveWarmupItem,
   useReorderWarmupItems,
+  useUpdateScheduleType,
+  useSequenceItems,
+  useAddSequenceItem,
+  useUpdateSequenceItemWorkout,
+  useRemoveSequenceItem,
+  useReorderSequenceItems,
 } from '../programs/usePrograms'
 import { moveWarmupItem } from '../programs/warmupRoutineService'
+import { moveSequenceItem } from '../programs/sequenceItemsService'
 import { useAssignWorkoutWeekday } from './usePlanner'
 import { useSettingsStore } from '../settings/settingsStore'
 import ExercisePicker from '../programs/ExercisePicker'
@@ -37,9 +44,20 @@ import { normaliseTempo } from '../../lib/plannerVocabulary.js'
 // a stable run's Program tab (ProgramTab.tsx, TASKS.md "the program tab
 // edits the run's copy... with the same step 2/step 3 components").
 //
-// Not in this step, on purpose (their own later chunks, TASKS.md): schedule
-// type stays weekday-only until chunk 25.
+// Schedule type (chunk 25 — SPEC.md "Scheduling → Sequence" / TASKS.md
+// "Planner step 2 gains the schedule type and a sequence editor"): a
+// WEEKDAY/SEQUENCE toggle (useUpdateScheduleType), never gated by
+// volumeReadOnly — same "schedule is not volume" posture the weekday
+// chip row below already takes, and "nothing is converted automatically"
+// (TASKS.md's G14 prompt, DECISIONS 44 (a)): flipping it only ever changes
+// v2_programs.schedule_type itself. WEEKDAY shows exactly the per-workout
+// weekday chip row this file has always rendered (unchanged); SEQUENCE
+// hides that row (schedule is always '{}' for a sequence program —
+// v2_plan_week's own header) and shows SequenceEditor (below) instead: one
+// program-level ordered list of workout/rest slots (v2_program_sequence_
+// items), up/down, a workout may appear more than once (SPEC, G8).
 //
+
 // Warmup routine (chunk 18 — SPEC.md "Warmup routine": "Per workout, in the
 // program: a checklist shown at the top of the session... the warmup
 // routine checklist" is explicitly step 2's own, per SPEC's "Planner step 2"
@@ -119,6 +137,11 @@ export default function StepExercises({
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const createDay = useCreateWorkoutDay(program.id)
 
+  // Chunk 25 — defaults to 'weekday' (the column default — every program
+  // predating this chunk, and any hand-built test fixture, reads this way).
+  const scheduleType: ScheduleType = program.scheduleType ?? 'weekday'
+  const updateScheduleType = useUpdateScheduleType()
+
   const [showAddDay, setShowAddDay] = useState(false)
   const [newDayName, setNewDayName] = useState('')
 
@@ -141,6 +164,24 @@ export default function StepExercises({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Schedule type (chunk 25) — never gated by volumeReadOnly, same
+          posture the weekday chip row below already takes. A single-select
+          toggle, same shape PlannerPage.tsx's own step switcher uses. */}
+      <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)' }}>
+        {(['weekday', 'sequence'] as const).map((st) => (
+          <button
+            key={st}
+            onClick={() => { if (st !== scheduleType) updateScheduleType.mutate({ id: program.id, scheduleType: st }) }}
+            disabled={updateScheduleType.isPending}
+            style={{ flex: 1, padding: '9px 0', background: scheduleType === st ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: updateScheduleType.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: scheduleType === st ? 'var(--base)' : 'var(--text-muted)' }}
+          >
+            {st.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {scheduleType === 'sequence' && <SequenceEditor programId={program.id} workoutDays={workoutDays} />}
+
       {workoutDays.length === 0 && (
         <p style={{ textAlign: 'center', padding: '24px 0', fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
           NO WORKOUTS YET
@@ -153,6 +194,7 @@ export default function StepExercises({
           programId={program.id}
           workoutDay={day}
           schedule={program.schedule}
+          scheduleType={scheduleType}
           volumeReadOnly={volumeReadOnly}
           onVolumeChange={onVolumeChange}
         />
@@ -205,12 +247,18 @@ function WorkoutEditor({
   programId,
   workoutDay,
   schedule,
+  scheduleType,
   volumeReadOnly,
   onVolumeChange,
 }: {
   programId: string
   workoutDay: WorkoutDay
   schedule: Program['schedule']
+  // Chunk 25 — optional, defaults to 'weekday' (ProgramTab.tsx's own
+  // existing caller doesn't pass it yet — see this chunk's report): gates
+  // the weekday chip row below, same "may not exist yet" fallback
+  // convention every other optional prop on this screen already takes.
+  scheduleType?: ScheduleType
   volumeReadOnly: boolean
   onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
@@ -332,7 +380,14 @@ function WorkoutEditor({
           (schedule is "when", not "volume"). Single-select: tapping the
           already-assigned day clears it (rest); tapping another day moves
           the assignment there, so this workout is never on two days at
-          once (TASKS.md "one weekday per workout"). */}
+          once (TASKS.md "one weekday per workout").
+          Chunk 25 — hidden for a sequence program: program.schedule is
+          always '{}' there (v2_plan_week's own header), so this row would
+          have nothing to show; SequenceEditor (StepExercises' own top
+          level) is that mode's equivalent, one per program rather than per
+          workout. Every existing caller that doesn't pass scheduleType
+          (ProgramTab.tsx) still sees this row exactly as before. */}
+      {(scheduleType ?? 'weekday') === 'weekday' && (
       <div className="hide-scrollbar" style={{ overflowX: 'auto', padding: '0 16px 12px' }}>
         <div style={{ display: 'flex', gap: 5 }}>
           {DAYS.map(({ key, label }) => {
@@ -363,6 +418,7 @@ function WorkoutEditor({
           })}
         </div>
       </div>
+      )}
 
       <div style={{ height: 1, background: 'var(--border-subtle)' }} />
 
@@ -1165,6 +1221,199 @@ function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () =
           </button>
         </div>
         {children}
+      </div>
+    </div>
+  )
+}
+
+// ─── Sequence editor (chunk 25 — SPEC.md "Scheduling → Sequence" /
+// TASKS.md "Planner step 2 gains the schedule type and a sequence editor
+// (workout and rest-day slots, up/down; a workout may appear more than
+// once)") ─────────────────────────────────────────────────────────────────
+// One per PROGRAM (not per workout — StepExercises' own top level renders
+// this once, beside the schedule-type toggle), mirroring
+// WarmupRoutineEditor's shape (add/reorder/remove, up/down arrows, a
+// confirm sheet before removing) with one structural difference: a slot's
+// own "body" is which workout occupies it (or REST), picked from a small
+// sheet rather than typed — SequenceItemPicker, below, reused for both
+// "add a new slot" and "change an existing slot's workout".
+function SequenceEditor({ programId, workoutDays }: { programId: string; workoutDays: WorkoutDay[] }) {
+  const { data: items = [], isLoading } = useSequenceItems(programId)
+  const addItem = useAddSequenceItem(programId)
+  const updateItem = useUpdateSequenceItemWorkout(programId)
+  const removeItem = useRemoveSequenceItem(programId)
+  const reorderItems = useReorderSequenceItems(programId)
+
+  const [confirmRemove, setConfirmRemove] = useState<{ id: string; label: string } | null>(null)
+  // Which existing slot's workout is being re-picked — null while adding a
+  // brand-new slot instead (showAddPicker), never both at once.
+  const [pickerForId, setPickerForId] = useState<string | null>(null)
+  const [showAddPicker, setShowAddPicker] = useState(false)
+
+  // Same "write the optimistic order into this query's cache, then fire the
+  // mutation" shape WorkoutEditor's own moveExercise / WarmupRoutineEditor's
+  // own moveItem both take.
+  function moveItem(index: number, direction: 'up' | 'down') {
+    const next = moveSequenceItem(items, index, direction)
+    if (next === items) return
+    const reindexed = next.map((item, i) => ({ ...item, position: i }))
+    queryClient.setQueryData(['v2_programSequenceItems', programId], reindexed)
+    reorderItems.mutate(reindexed.map((item, i) => ({ id: item.id, position: i })))
+  }
+
+  function workoutName(id: string | null): string {
+    if (id === null) return 'REST DAY'
+    return workoutDays.find((d) => d.id === id)?.name ?? '—'
+  }
+
+  async function handlePick(workoutDayId: string | null) {
+    if (pickerForId) {
+      updateItem.mutate({ id: pickerForId, workoutDayId })
+      setPickerForId(null)
+    } else if (showAddPicker) {
+      await addItem.mutateAsync({ position: items.length, workoutDayId })
+      setShowAddPicker(false)
+    }
+  }
+
+  return (
+    <div role="region" aria-label="Sequence editor" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginBottom: 8 }}>
+        SEQUENCE
+      </p>
+
+      {isLoading && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}>
+          <div className="animate-spin" style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+        </div>
+      )}
+
+      {!isLoading && items.length === 0 && (
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', marginBottom: 8 }}>
+          NO SLOTS YET
+        </p>
+      )}
+
+      {!isLoading && items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {items.map((item, index) => (
+            <SequenceItemRow
+              key={item.id}
+              index={index}
+              label={workoutName(item.workoutDayId)}
+              isRest={item.workoutDayId === null}
+              canMoveUp={index > 0}
+              canMoveDown={index < items.length - 1}
+              onMoveUp={() => moveItem(index, 'up')}
+              onMoveDown={() => moveItem(index, 'down')}
+              onChangeWorkout={() => setPickerForId(item.id)}
+              onDelete={() => setConfirmRemove({ id: item.id, label: workoutName(item.workoutDayId) })}
+            />
+          ))}
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowAddPicker(true)}
+        style={{ width: '100%', height: 36, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11 }}
+      >
+        <Plus size={12} style={{ color: 'var(--accent)' }} />
+        ADD SLOT
+      </button>
+
+      {(pickerForId !== null || showAddPicker) && (
+        <Sheet onClose={() => { setPickerForId(null); setShowAddPicker(false) }}>
+          <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, letterSpacing: '1px', marginBottom: 16, color: 'var(--text-primary)' }}>
+            {pickerForId ? 'CHANGE SLOT' : 'ADD SLOT'}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button
+              onClick={() => handlePick(null)}
+              style={{ height: 48, background: 'var(--surface)', border: '1px dashed var(--border-strong)', borderRadius: 10, color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', textAlign: 'left', padding: '0 14px' }}
+            >
+              REST DAY
+            </button>
+            {workoutDays.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => handlePick(d.id)}
+                style={{ height: 48, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-primary)', cursor: 'pointer', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, textAlign: 'left', padding: '0 14px' }}
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
+      {confirmRemove && (
+        <Sheet onClose={() => setConfirmRemove(null)}>
+          <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+            Remove this slot?
+          </p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+            "{confirmRemove.label}" — this cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => setConfirmRemove(null)}
+              style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
+            >
+              CANCEL
+            </button>
+            <button
+              onClick={() => { removeItem.mutate(confirmRemove.id); setConfirmRemove(null) }}
+              disabled={removeItem.isPending}
+              style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: removeItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
+            >
+              {removeItem.isPending ? '…' : 'REMOVE'}
+            </button>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  )
+}
+
+// One slot row — tap the label to open the workout/REST picker (never
+// inline-edited, unlike a warmup item's free text), plus the same
+// up/down/delete IconBtn cluster WarmupItemRow's own structure row uses.
+function SequenceItemRow({
+  index,
+  label,
+  isRest,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  onChangeWorkout,
+  onDelete,
+}: {
+  index: number
+  label: string
+  isRest: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onChangeWorkout: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, color: 'var(--text-dim)', flexShrink: 0, minWidth: 16 }}>
+        {String(index + 1).padStart(2, '0')}
+      </span>
+      <button
+        onClick={onChangeWorkout}
+        style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', padding: '6px 0', fontSize: 13, fontWeight: isRest ? 500 : 700, fontStyle: isRest ? 'italic' : 'normal', color: isRest ? 'var(--text-dim)' : 'var(--text-primary)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      >
+        {label}
+      </button>
+      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+        <IconBtn onClick={onMoveUp} disabled={!canMoveUp}><ChevronUp size={13} /></IconBtn>
+        <IconBtn onClick={onMoveDown} disabled={!canMoveDown}><ChevronDown size={13} /></IconBtn>
+        <IconBtn onClick={onDelete}><Trash2 size={12} /></IconBtn>
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
-import type { Program, WorkoutDay, ProgramExercise, WarmupRoutineItem } from '../../types'
+import type { Program, WorkoutDay, ProgramExercise, WarmupRoutineItem, SequenceItem } from '../../types'
 
 // Chunk 11 — step 2 (exercises, order, weekday). Heavy-mocked at the hook
 // boundary, same precedent as ProgramPage.test.tsx/PrioritiesEditor.test.tsx:
@@ -11,6 +11,11 @@ import type { Program, WorkoutDay, ProgramExercise, WarmupRoutineItem } from '..
 let workoutDays: WorkoutDay[] = []
 let exercisesByDay: Record<string, ProgramExercise[]> = {}
 let warmupItemsByDay: Record<string, WarmupRoutineItem[]> = {}
+// Chunk 25 — empty by default (every existing describe block in this file
+// is a WEEKDAY program, scheduleType omitted/'weekday', so SequenceEditor
+// never renders and this list is never read); StepExercises.sequence.test.tsx
+// is the one file that sets this.
+let sequenceItems: SequenceItem[] = []
 const createDayMutateAsyncMock = vi.fn()
 const updateNameMutateAsyncMock = vi.fn()
 const deleteDayMutateMock = vi.fn()
@@ -26,6 +31,11 @@ const addWarmupItemMutateAsyncMock = vi.fn()
 const updateWarmupItemMutateMock = vi.fn()
 const removeWarmupItemMutateMock = vi.fn()
 const reorderWarmupItemsMutateMock = vi.fn()
+const updateScheduleTypeMutateMock = vi.fn()
+const addSequenceItemMutateAsyncMock = vi.fn()
+const updateSequenceItemMutateMock = vi.fn()
+const removeSequenceItemMutateMock = vi.fn()
+const reorderSequenceItemsMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
@@ -58,6 +68,16 @@ vi.mock('../programs/usePrograms', () => ({
   useUpdateWarmupItemBody: () => ({ mutate: updateWarmupItemMutateMock, isPending: false }),
   useRemoveWarmupItem: () => ({ mutate: removeWarmupItemMutateMock, isPending: false }),
   useReorderWarmupItems: () => ({ mutate: reorderWarmupItemsMutateMock, isPending: false }),
+  // Chunk 25 (SPEC "Scheduling → Sequence") — not this test file's own
+  // concern (every fixture here is a weekday program); the schedule-type
+  // toggle and SequenceEditor's own describe block live in
+  // StepExercises.sequence.test.tsx, which overrides sequenceItems.
+  useUpdateScheduleType: () => ({ mutate: updateScheduleTypeMutateMock, isPending: false }),
+  useSequenceItems: () => ({ data: sequenceItems, isLoading: false }),
+  useAddSequenceItem: () => ({ mutateAsync: addSequenceItemMutateAsyncMock, isPending: false }),
+  useUpdateSequenceItemWorkout: () => ({ mutate: updateSequenceItemMutateMock, isPending: false }),
+  useRemoveSequenceItem: () => ({ mutate: removeSequenceItemMutateMock, isPending: false }),
+  useReorderSequenceItems: () => ({ mutate: reorderSequenceItemsMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', () => ({
@@ -101,6 +121,11 @@ afterEach(() => {
   updateWarmupItemMutateMock.mockReset()
   removeWarmupItemMutateMock.mockReset()
   reorderWarmupItemsMutateMock.mockReset()
+  updateScheduleTypeMutateMock.mockReset()
+  addSequenceItemMutateAsyncMock.mockReset()
+  updateSequenceItemMutateMock.mockReset()
+  removeSequenceItemMutateMock.mockReset()
+  reorderSequenceItemsMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -108,6 +133,7 @@ beforeEach(() => {
   workoutDays = []
   exercisesByDay = {}
   warmupItemsByDay = {}
+  sequenceItems = []
 })
 
 function program(overrides: Partial<Program> = {}): Program {
