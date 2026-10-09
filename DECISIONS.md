@@ -1,11 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-08 21:06 UTC, chunk 23 boundary — chunks 1–23 merged and live (migrations through 035); chunk 24 being built (its migration 036 will be yours to merge).*
+*Rewritten at every chunk boundary. Last: 2026-10-08 21:06 UTC, chunk 23 boundary — chunks 1–23 merged and live (migrations through 035); chunk 24 reviewed (036 waiting on you, 70); chunk 26 being built.*
 
 **Decisions**
 - 54 — 034 (#35) merged by you as `a76b146` (2026-10-06 18:27 UTC) and live: deploy success 18:28; `target_reps` → 42703; backup table present; embeds 27/27 live. Left: send me your B1–B3 (before) and A1–A4 (after) outputs, if you ran them, plus the counts files. If you merged without the before queries, say so: A1–A4 still check the conversion on their own (A2 vs the backup, A4 = 0).
 - 52 — Planner: what "number of sets is required" blocks, for programs with no per-set rows yet (your 3 existing ones). Recommendation: (a) nothing blocked, incomplete exercises flagged. Blocked: nothing (chunk 11 built with (a)).
+- **70 — BLOCKING: run the pre-check, then merge #48 (036, one-row History fix for the 29 Aug session); tell me when deployed. Blocked: chunk 24's code, chunk 25.**
 - 69 (question) — LAST WEEK by calendar week across runs (built), or only within the current run? Blocked: nothing.
 - 62 — Go-ahead to run `verify-rls.mjs` once (five tables added since 2026-10-03, none probed live). Yes/no. Blocked: nothing.
 - Nothing else open. (48, chunk 12's decision (49) and chunk 25's go-ahead (50) answered 2026-10-05; standing rules D29, D30.)
@@ -57,6 +58,33 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 70 Merge migration 036 (#48): the legacy session's moved-to date
+Severity: blocking
+Chunk: 24
+**Ask:** Run the pre-check select below; if it returns exactly one row, merge PR #48 (036). Tell me when its deploy is done. Then I merge the code (#49).
+**When:** when you can.
+**Blocked until done:** chunk 24's code (#49) and chunk 25 (its migration 037 must follow 036). Chunk 26 (navigation) is being built meanwhile.
+**Pre-check** (in the Supabase SQL editor; it must return exactly one row):
+```
+select id, user_id, date, moved_to_date, status, started_at
+  from v2_sessions
+ where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+   and date = '2026-08-29'
+   and moved_to_date is null
+   and status = 'completed'
+   and started_at >= '2026-08-30 00:00:00+00'
+   and started_at <  '2026-08-31 00:00:00+00';
+```
+If it returns 0 rows (e.g. you started before 02:00 local, which is 29 Aug in UTC), don't merge; tell me and I'll adjust the window.
+**Evidence:**
+- 036 (md5 `5433811afc30add1dd0ae84587a4c028`) updates only that row, selected by criteria, never by id. It raises (changing nothing) unless exactly one row matches or it was already applied. It does nothing on a database where you have no sessions at all (CI's empty replay).
+- Reviewer: an empty replay gives 37/37 and embeds 30/30. Builder's scratch: 1 match changes only that row (whole-database fingerprint); a re-run is a no-op; 2 matches raise; data with 0 matches raises; each guard is break-proven.
+- `check-migration` exits 1 (an update block isn't on the safe list), so the merge is yours (TASKS: chunk 24).
+- Rollback (in the file header): set that row's `moved_to_date` back to null, using the same criteria.
+A competent default would: merge it myself under D29 — doesn't apply because: it changes an existing row, and chunk 24's migration is yours by name.
+Cost of deferral: chunk 24's code and chunk 25 wait.
+Provisional path taken: both PRs open; chunk 26 being built in parallel.
 
 ### 69 Chunk 23 live check: "last time" by exercise (Adam's steps)
 Severity: deferred
