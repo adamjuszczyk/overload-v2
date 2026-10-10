@@ -78,6 +78,16 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // lines once pretty-printed), nothing else in this render moved or changed.
 // Same unchanged fixture data and re-capture convention as every prior
 // visible change to this render above.
+//
+// Chunk 27 re-capture: the ONLY THIS WEEK toggle is gone (SPEC [P1.1]
+// "'Only this week' is removed"). This fixture's program is week-dependent
+// (planningType unset reads as week-dependent), the one case that rendered
+// the toggle, so the fixture file was edited to drop exactly that <button>
+// (341 characters); COMPACT, the workout chip and everything below it are
+// untouched in the file. What THIS test checks is the whole render against
+// the whole file, byte for byte: it fails if the page renders anything the
+// file doesn't (a toggle put back, or any other stray markup) and if the file
+// holds anything the page doesn't render.
 
 afterEach(() => cleanup())
 

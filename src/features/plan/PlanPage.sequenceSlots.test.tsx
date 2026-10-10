@@ -194,6 +194,24 @@ function goToCycle2() {
 }
 
 describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', () => {
+  // Chunk 27 (SPEC [P1.1] "'Only this week' is removed") — absence test
+  // (Checks that lied #32) for the SEQUENCE branch of PlanPage, which had its
+  // own copy of the toggle (a week-dependent sequence run's current cycle
+  // showed it). The weekday twin is in PlanPage.weekActions.test.tsx. Break
+  // proof: put the sequence branch's toggle back.
+  it('the current cycle of a week-dependent sequence run shows no ONLY THIS WEEK control, in any case (chunk 27)', () => {
+    const { container } = renderPlanPage()
+
+    // A sequence panel really is showing (slot switcher + its toolbar) ...
+    expect(screen.getByRole('region', { name: 'Sequence slot switcher' })).toBeTruthy()
+    expect(screen.getByText('COMPACT')).toBeTruthy()
+    // ... and the tick is nowhere on it.
+    expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
+    expect(screen.queryByText(/only this week/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /only this week/i })).toBeNull()
+    expect((container.textContent ?? '').toLowerCase()).not.toContain('only this week')
+  })
+
   it('the switcher shows 3 workout slots (A, B, A) plus the one rest slot, non-selectable', () => {
     renderPlanPage()
     const switcher = within(screen.getByRole('region', { name: 'Sequence slot switcher' }))

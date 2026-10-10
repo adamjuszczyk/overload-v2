@@ -462,7 +462,7 @@ export function useSwapWeekExercise(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
-    mutationFn: (params: { weekPlanId: string; programExerciseId: string; replacementExerciseId: string; onlyThisWeek: boolean }) =>
+    mutationFn: (params: { weekPlanId: string; programExerciseId: string; replacementExerciseId: string }) =>
       swapWeekExercise({ userId: user!.id, ...params }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
@@ -502,12 +502,10 @@ export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
     mutationFn: ({
       weekPlanId,
       moves,
-      onlyThisWeek,
     }: {
       weekPlanId: string
       moves: { programExerciseId: string; oldPosition: number; newPosition: number }[]
-      onlyThisWeek: boolean
-    }) => reorderWeekExercises(weekPlanId, moves, onlyThisWeek),
+    }) => reorderWeekExercises(weekPlanId, moves),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
@@ -567,11 +565,8 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
       // Review fix: repoint the matched row at the SAME resulting exercise
       // row the edited week's own swap already created (repointWeekExercise
       // — swapWeekExercise's own second half, minus the insert) — never a
-      // fresh createWeekOnlyProgramExercise per later week. Always a
-      // permanent repoint (carry cleared), same reasoning reorderExercises'
-      // own onlyThisWeek: false below already documents: this op only ever
-      // exists because the offer that produced it is never shown after an
-      // "only this week" swap (reviewer's note 4).
+      // fresh createWeekOnlyProgramExercise per later week. A repoint clears
+      // the row's carry_program_exercise_id, as a swap does.
       await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
       return
     case 'addExercise':
@@ -586,8 +581,7 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
     case 'removeExercise':
       return removeWeekExercise(op.weekPlanId, op.programExerciseId)
     case 'reorderExercises':
-      // Same onlyThisWeek:false reasoning as swapExercise above.
-      return reorderWeekExercises(op.weekPlanId, op.moves, false)
+      return reorderWeekExercises(op.weekPlanId, op.moves)
   }
 }
 

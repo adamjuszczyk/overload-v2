@@ -49,8 +49,8 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
 
   // Reviewer's note 4: offered only right after a qualifying edit, and only
   // when later planned weeks exist. A caller passes an empty `weeks` (or
-  // never calls this at all) for a non-qualifying edit (e.g. an "only this
-  // week" swap/reorder) — setOffer itself also clears any stale PRIOR
+  // never calls this at all) for a non-qualifying edit (e.g. one with no
+  // later planned week) — setOffer itself also clears any stale PRIOR
   // offer/outcome in that case, so the banner never shows a change that no
   // longer matches what was just done.
   function setOffer(changes: ChangeRecord[], weeks: WeekPlan[], isShared: boolean) {
