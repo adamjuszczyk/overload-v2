@@ -180,11 +180,11 @@ export default function TodayPage() {
 
     function handleMovePick(targetDate: string) {
       if (!activeMeso) return
-      const decision = resolveMove(originalDate, targetDate)
-      // The sheet only ever offers datesForWeekOf(originalDate), so
-      // 'invalid_cross_week' can't actually be reached here — handled
-      // defensively anyway (a silent no-op) rather than assumed away.
-      if (decision.kind === 'invalid_cross_week') return
+      const decision = resolveMove(originalDate, targetDate, today)
+      // The sheet only ever offers movableDatesForWeekOf(originalDate,
+      // today), so neither invalid kind can actually be reached here —
+      // handled defensively anyway (a silent no-op) rather than assumed away.
+      if (decision.kind === 'invalid_cross_week' || decision.kind === 'invalid_past') return
       if (decision.kind === 'clear') {
         clearMovedSession.mutate({ workoutDayId: workoutDay.id, date: originalDate })
       } else {
@@ -321,6 +321,7 @@ export default function TodayPage() {
             workoutDayName={workoutDay.name}
             originalDate={originalDate}
             currentDate={effectiveDate}
+            today={today}
             isPending={isMovePending}
             onPick={handleMovePick}
             onClose={() => setShowMoveSheet(false)}

@@ -24,6 +24,9 @@ interface MoveSessionControlProps {
   // house week-number formula's inverse), since Plan, unlike Today, has no
   // "today" of its own to anchor on.
   date: string
+  // Real "today" (PlanPage.tsx's useToday) — the sheet offers today and
+  // later days only (B2).
+  today: string
   // Only the week containing real "today" offers this (reviewer's own
   // scope decision — see this chunk's report: a past week's days are
   // already resolved one way or another, and SPEC says nothing about
@@ -31,7 +34,7 @@ interface MoveSessionControlProps {
   isCurrentWeek: boolean
 }
 
-export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date, isCurrentWeek }: MoveSessionControlProps) {
+export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date, today, isCurrentWeek }: MoveSessionControlProps) {
   const [showSheet, setShowSheet] = useState(false)
   const isOnline = useOnlineStatus()
   // A single-day range — reuses the existing hook/query exactly as Today's
@@ -59,8 +62,8 @@ export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date,
   }
 
   function handlePick(targetDate: string) {
-    const decision = resolveMove(date, targetDate)
-    if (decision.kind === 'invalid_cross_week') return
+    const decision = resolveMove(date, targetDate, today)
+    if (decision.kind === 'invalid_cross_week' || decision.kind === 'invalid_past') return
     if (decision.kind === 'clear') {
       clearMovedSession.mutate({ workoutDayId: workoutDay.id, date })
     } else {
@@ -110,6 +113,7 @@ export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date,
           workoutDayName={workoutDay.name}
           originalDate={date}
           currentDate={effectiveDate}
+          today={today}
           isPending={isMovePending}
           onPick={handlePick}
           onClose={() => setShowSheet(false)}

@@ -40,13 +40,14 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
 })
 
-function renderControl(isCurrentWeek = true) {
+function renderControl(isCurrentWeek = true, today = MON, date = MON) {
   return render(
     <MoveSessionControl
       workoutDay={workoutDay}
       weekPlan={weekPlan}
       mesoId="meso-1"
-      date={MON}
+      date={date}
+      today={today}
       isCurrentWeek={isCurrentWeek}
     />,
   )
@@ -56,6 +57,21 @@ describe('MoveSessionControl — scope: current week only', () => {
   it('renders nothing when the viewed week is not the current one', () => {
     const { container } = renderControl(false)
     expect(container.innerHTML).toBe('')
+  })
+})
+
+describe('MoveSessionControl — B2: only today and later days are offered', () => {
+  it('viewing Thursday of this week on Saturday: only SAT and SUN are offered', () => {
+    // 2026-10-08 Thursday, 2026-10-10 Saturday (hand-verified with `date -d`).
+    renderControl(true, '2026-10-10', '2026-10-08')
+
+    fireEvent.click(screen.getByText('MOVE THIS SESSION'))
+
+    for (const label of ['MON', 'TUE', 'WED', 'THU', 'FRI']) {
+      expect(screen.queryByText(label)).toBeNull()
+    }
+    expect(screen.getByText('SAT')).toBeTruthy()
+    expect(screen.getByText('SUN')).toBeTruthy()
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSameCalendarWeek, datesForWeekOf, dateForDow, resolveMove } from './moveSession'
+import { isSameCalendarWeek, datesForWeekOf, movableDatesForWeekOf, dateForDow, resolveMove } from './moveSession'
 
 // Week of 2026-08-24 (Monday) .. 2026-08-30 (Sunday) — hand-verified via
 // `date -d 2026-08-24 +%A` etc. (same convention as MissedSessionPrompt.
@@ -61,22 +61,63 @@ describe('dateForDow — the inverse of the house week-number formula', () => {
 
 describe('resolveMove', () => {
   it('move Mon -> Fri: a same-week move resolves to "set"', () => {
-    expect(resolveMove(MON, FRI)).toEqual({ kind: 'set', movedToDate: FRI })
+    expect(resolveMove(MON, FRI, MON)).toEqual({ kind: 'set', movedToDate: FRI })
   })
 
   it('swapping two days is two independent moves, each its own "set"', () => {
     // Monday's session -> Friday
-    expect(resolveMove(MON, FRI)).toEqual({ kind: 'set', movedToDate: FRI })
+    expect(resolveMove(MON, FRI, MON)).toEqual({ kind: 'set', movedToDate: FRI })
     // Friday's session -> Monday (a different session, same calendar week)
-    expect(resolveMove(FRI, MON)).toEqual({ kind: 'set', movedToDate: MON })
+    expect(resolveMove(FRI, MON, MON)).toEqual({ kind: 'set', movedToDate: MON })
   })
 
   it('a target in a different calendar week is invalid', () => {
-    expect(resolveMove(MON, NEXT_MON)).toEqual({ kind: 'invalid_cross_week' })
-    expect(resolveMove(SUN, NEXT_MON)).toEqual({ kind: 'invalid_cross_week' })
+    expect(resolveMove(MON, NEXT_MON, MON)).toEqual({ kind: 'invalid_cross_week' })
+    expect(resolveMove(SUN, NEXT_MON, MON)).toEqual({ kind: 'invalid_cross_week' })
   })
 
   it('moving back to its own original day clears it (same result whether or not it was ever moved first)', () => {
-    expect(resolveMove(MON, MON)).toEqual({ kind: 'clear' })
+    expect(resolveMove(MON, MON, MON)).toEqual({ kind: 'clear' })
+  })
+})
+
+// B2 (2026-10-10): "Move this session" offered days that had already passed
+// (today, Saturday, could be moved to Thursday). Week of 2026-10-05 (Monday)
+// .. 2026-10-11 (Sunday) — hand-verified with `date -d`, as above.
+describe('moving never targets a day that has already passed', () => {
+  const W_MON = '2026-10-05'
+  const W_THU = '2026-10-08'
+  const W_FRI = '2026-10-09'
+  const W_SAT = '2026-10-10'
+  const W_SUN = '2026-10-11'
+
+  it('movableDatesForWeekOf on Saturday offers only Saturday and Sunday', () => {
+    expect(movableDatesForWeekOf(W_SAT, W_SAT)).toEqual([W_SAT, W_SUN])
+  })
+
+  it('movableDatesForWeekOf on Monday offers the whole week', () => {
+    expect(movableDatesForWeekOf(W_MON, W_MON)).toEqual(datesForWeekOf(W_MON))
+  })
+
+  it('anchors on the session\'s own week, not on today: a past week offers nothing', () => {
+    expect(movableDatesForWeekOf('2026-09-28', W_SAT)).toEqual([])
+  })
+
+  it('resolveMove: today\'s session (Saturday) -> Thursday is refused as in the past', () => {
+    expect(resolveMove(W_SAT, W_THU, W_SAT)).toEqual({ kind: 'invalid_past' })
+  })
+
+  it('resolveMove: yesterday is refused too; today and tomorrow are fine', () => {
+    expect(resolveMove(W_SAT, W_FRI, W_SAT)).toEqual({ kind: 'invalid_past' })
+    expect(resolveMove(W_SAT, W_SUN, W_SAT)).toEqual({ kind: 'set', movedToDate: W_SUN })
+    expect(resolveMove(W_FRI, W_SAT, W_SAT)).toEqual({ kind: 'set', movedToDate: W_SAT })
+  })
+
+  it('resolveMove: "moving back" to a past original day is refused (nothing to go back to)', () => {
+    expect(resolveMove(W_THU, W_THU, W_SAT)).toEqual({ kind: 'invalid_past' })
+  })
+
+  it('resolveMove: a cross-week target is still reported as cross-week, not past', () => {
+    expect(resolveMove(W_SAT, '2026-10-12', W_SAT)).toEqual({ kind: 'invalid_cross_week' })
   })
 })
