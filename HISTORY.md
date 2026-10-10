@@ -24049,3 +24049,13 @@ Previous wording, verbatim:
 
 - Week targets and tags (chunk 19): Plan set rows edit weight target (exercise's unit in, kg stored; heads and stages), the week's rep-target override (`parseRepTarget`; writes only the week-plan set), and tags on heads (`PRESET_TAGS` + custom; `addTag`/`removeTag`/`applyTagToAllHeads` in `plannerVocabulary.ts` — dedupe exact, last removed → null; apply-to-all skips warmups and stages). AMRAP with a null RIR gets RIR 0 in the same update (`applyAmrapRirDefault`), never overwriting one. `SetRow` shows `TARGET WEIGHT` (exercise's unit) and tags; `PlanTargetsPanel` shows weight beside RIR; absent = nothing rendered. Tags are never copied (`copySetsWithGrouping`, `v2_plan_week`) and never logged. The shared `useUpdateSet` is `networkMode: 'always'`.
 - `PlanPage`: `WorkoutSwitcher` chip row (one workout day at a time), per-set RIR targets and dropset stages (ADD STAGE authoring), deload flag (one `v2_week_plans.is_deload` per workout per week, toggled per workout panel once that workout has a plan row; no whole-week action; copying carries the flag into the new week), whole-week COPY WEEK and single-workout copy (shared `copyOnePlanForward` → `copySetsWithGrouping`; COPY offered only when the destination is empty and the source has rows), page-local COMPACT view (`compactPlanLogic.toRuns`, read-only).
+
+---
+
+## 2026-10-10 (SPEC change 1.1 planning session) — Moved out of CONTEXT.md (no longer true)
+
+SPEC change 1.1 was applied to SPEC.md (`ac48b66`, rules tagged [P1.1]) and planned in TASKS-1.1.md (chunks 27–37, spec gaps G16–G31), so phase 1's "no new chunks" no longer holds, and the open question about rest in the week plan is answered by the change (rest is per week, in the week's Structure view). Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). Phase 2 and SPEC's "Later" list are not being done; no new chunks.
+- (Where the build is, end of the 2026-10-10 UI cleanup bullet) Not done, by design: rest override in the week plan (see that bullet) — raise with Adam if he wants it there.
+- (Tooling and tests) 1782 tests in 141 files on this branch (2026-10-10; master `a94e838` had 1766 in 139).
