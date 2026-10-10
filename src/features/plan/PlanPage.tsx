@@ -56,6 +56,19 @@ import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE } from './planMenu'
+import {
+  StructureFieldsProvider,
+  StructureRoutine,
+  ExerciseDesignMenu,
+  SetRestMenu,
+  ExerciseMarkers,
+  MarkerChip,
+  type StructureExerciseFields,
+  type StructureFieldsFor,
+  type StructureSetFields,
+} from './StructureFields'
+import { setRestMarkers, stageRestDefaultText } from './structureFields'
+import { SupersetLinkToggle, BlockRestEditor, EveryWeekLabel } from '../planner/designFieldEditors'
 import { useSequenceCurrentCycle } from './useSequenceCurrentCycle'
 import { dateForDow } from '../gym/moveSession'
 import { useToday } from '../../hooks/useToday'
@@ -1168,6 +1181,68 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
     applyAheadOffer.setOffer(records, laterWeeksForThisWorkout(), isShared)
   }
 
+  // The week's exercises, one section each — the same in both views. In the
+  // STRUCTURE view `fieldsFor` carries each exercise's run-wide fields (chunk 30:
+  // StructureFields.tsx); in SETS it is null and a section draws exactly what it
+  // did before.
+  function renderExercises(fieldsFor: StructureFieldsFor | null) {
+    return programExercises.map((pe, idx) => {
+      const exerciseSets = sets.filter((s) => s.programExerciseId === pe.id)
+      const groups = groupWeekPlanSets(exerciseSets).sort(
+        (a, b) => a.head.setNumber - b.head.setNumber,
+      )
+      const unitIndex = unitIndexByProgramExerciseId.get(pe.id) ?? idx
+      const unit = exerciseUnits[unitIndex]
+      const isFirstInUnit = unit?.[0]?.id === pe.id
+
+      return (
+        <ExerciseSection
+          // The view is in the key: switching views remounts the
+          // section, so no ⋯ menu or half-typed cell from the other
+          // view is carried over into this one.
+          key={`${pe.id}:${view}`}
+          view={view}
+          pe={pe}
+          groups={groups}
+          isPast={isPast}
+          isLast={idx === programExercises.length - 1}
+          // A marker on every member of a 2+ block (a plain week shows it on
+          // nobody). Linking and unlinking is the STRUCTURE view's toggle
+          // between two neighbours (`structure.link`), run-wide (SPEC Supersets
+          // [P1.1]).
+          inSuperset={(unit?.length ?? 0) > 1}
+          showMoveControls={isFirstInUnit}
+          structure={fieldsFor ? fieldsFor(pe, idx) : null}
+          // Disables ADD SET and ADD WARMUP SETS while either mutation
+          // (or a set removal) is in flight for this workout day (found
+          // by adversarial review): useAddSet has no optimistic update,
+          // so `groups` doesn't reflect a just-added set until the
+          // insert round-trips and the query refetches. addSet/removeSet
+          // are shared per workout day, not per exercise, so this
+          // briefly disables both buttons across every exercise in the
+          // day during any single add/remove — a deliberately
+          // conservative trade against the more invasive alternative
+          // of adding optimistic-update logic to useAddSet itself.
+          // (The compact view's minus, whose stale closure first
+          // needed this, went with COMPACT in chunk 29.)
+          addOrRemovePending={addSet.isPending || removeSet.isPending || addWarmup.isPending}
+          onAddSet={() => handleAddSet(pe)}
+          onAddWarmup={() => handleAddWarmup(pe)}
+          onAddStage={(group) => handleAddStage(pe, group, groups)}
+          onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
+          onUpdateSet={(id, changes) => handleUpdateSet(id, changes, pe, groups)}
+          onApplyTagToAll={(tag) => handleApplyTagToAll(groups, tag)}
+          onSwap={() => setSwapTarget(pe)}
+          onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
+          canMoveUp={unitIndex > 0}
+          canMoveDown={unitIndex < exerciseUnits.length - 1}
+          onMoveUp={() => handleMoveExercise(idx, 'up')}
+          onMoveDown={() => handleMoveExercise(idx, 'down')}
+        />
+      )
+    })
+  }
+
   return (
     <div style={{ marginBottom: 16 }}>
       {/* Panel header */}
@@ -1267,9 +1342,15 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
           both. Built from the WEEKS/PROGRAM bar (SegmentBar). */}
       <SegmentBar segments={PLAN_VIEWS} active={view} onSelect={onViewChange} marginBottom={8} />
 
+      {/* The workout's warmup routine (chunk 30; SPEC Warmup routine [P1.1]) —
+          at the top of the STRUCTURE view, above the exercises, labelled
+          "every week": the routine belongs to the workout, not to a week. */}
+      {view === 'structure' && <StructureRoutine workoutDayId={workoutDay.id} isPast={isPast} />}
+
       {/* Exercise card — the same exercises in either view (SETS: each
           exercise's `+` ADD SET and its set rows' numbers; STRUCTURE: each
-          exercise's ⋯ and its set rows' kinds). */}
+          exercise's ⋯ and its set rows' kinds, and — chunk 30 — the run-wide
+          fields: rest, tempo, unit, grouping, a set's own rest). */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         {programExercises.length === 0 ? (
           <div style={{ padding: '20px 16px', textAlign: 'center' }}>
@@ -1277,59 +1358,14 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
               NO EXERCISES IN THIS DAY
             </p>
           </div>
+        ) : view === 'structure' ? (
+          // Every hook the run-wide fields add lives in this one component, so
+          // the SETS view calls none of them.
+          <StructureFieldsProvider workoutDayId={workoutDay.id} programExercises={programExercises} isPast={isPast}>
+            {(fieldsFor) => renderExercises(fieldsFor)}
+          </StructureFieldsProvider>
         ) : (
-          programExercises.map((pe, idx) => {
-            const exerciseSets = sets.filter((s) => s.programExerciseId === pe.id)
-            const groups = groupWeekPlanSets(exerciseSets).sort(
-              (a, b) => a.head.setNumber - b.head.setNumber,
-            )
-            const unitIndex = unitIndexByProgramExerciseId.get(pe.id) ?? idx
-            const unit = exerciseUnits[unitIndex]
-            const isFirstInUnit = unit?.[0]?.id === pe.id
-
-            return (
-              <ExerciseSection
-                // The view is in the key: switching views remounts the
-                // section, so no ⋯ menu or half-typed cell from the other
-                // view is carried over into this one.
-                key={`${pe.id}:${view}`}
-                view={view}
-                pe={pe}
-                groups={groups}
-                isPast={isPast}
-                isLast={idx === programExercises.length - 1}
-                // Read-only indicator only — grouping itself is edited in
-                // the program tab, never here (SPEC "Supersets").
-                inSuperset={(unit?.length ?? 0) > 1}
-                showMoveControls={isFirstInUnit}
-                // Disables ADD SET and ADD WARMUP SETS while either mutation
-                // (or a set removal) is in flight for this workout day (found
-                // by adversarial review): useAddSet has no optimistic update,
-                // so `groups` doesn't reflect a just-added set until the
-                // insert round-trips and the query refetches. addSet/removeSet
-                // are shared per workout day, not per exercise, so this
-                // briefly disables both buttons across every exercise in the
-                // day during any single add/remove — a deliberately
-                // conservative trade against the more invasive alternative
-                // of adding optimistic-update logic to useAddSet itself.
-                // (The compact view's minus, whose stale closure first
-                // needed this, went with COMPACT in chunk 29.)
-                addOrRemovePending={addSet.isPending || removeSet.isPending || addWarmup.isPending}
-                onAddSet={() => handleAddSet(pe)}
-                onAddWarmup={() => handleAddWarmup(pe)}
-                onAddStage={(group) => handleAddStage(pe, group, groups)}
-                onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
-                onUpdateSet={(id, changes) => handleUpdateSet(id, changes, pe, groups)}
-                onApplyTagToAll={(tag) => handleApplyTagToAll(groups, tag)}
-                onSwap={() => setSwapTarget(pe)}
-                onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
-                canMoveUp={unitIndex > 0}
-                canMoveDown={unitIndex < exerciseUnits.length - 1}
-                onMoveUp={() => handleMoveExercise(idx, 'up')}
-                onMoveDown={() => handleMoveExercise(idx, 'down')}
-              />
-            )
-          })
+          renderExercises(null)
         )}
       </div>
 
@@ -1477,13 +1513,17 @@ interface ExerciseSectionProps {
   canMoveDown: boolean
   onMoveUp: () => void
   onMoveDown: () => void
-  // Chunk 13 — read-only here: grouping itself is only ever edited in the
-  // program tab (SPEC "Supersets"). inSuperset marks every member of a 2+
-  // block (a plain week shows it on nobody, unchanged); showMoveControls
-  // hides Move up/down on every member but the block's first, since a
-  // reorder here moves the whole unit (PlanPage's own handleMoveExercise).
+  // Chunk 13 — inSuperset marks every member of a 2+ block (a plain week
+  // shows it on nobody, unchanged); showMoveControls hides Move up/down on
+  // every member but the block's first, since a reorder here moves the whole
+  // unit (PlanPage's own handleMoveExercise). Chunk 30: grouping is edited in
+  // the STRUCTURE view (`structure.link`), run-wide.
   inSuperset: boolean
   showMoveControls: boolean
+  // Chunk 30 — the run-wide fields (rest, tempo, unit, grouping, a set's own
+  // rest), STRUCTURE view only: null in SETS, where the section draws exactly
+  // what it did before (StructureFields.tsx).
+  structure: StructureExerciseFields | null
 }
 
 function ExerciseSection({
@@ -1507,6 +1547,7 @@ function ExerciseSection({
   onMoveDown,
   inSuperset,
   showMoveControls,
+  structure,
 }: ExerciseSectionProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const name = pe.exercise?.name ?? 'this exercise'
@@ -1529,6 +1570,9 @@ function ExerciseSection({
               <span style={{ marginLeft: 8, color: 'var(--accent)' }}>· SUPERSET</span>
             )}
           </div>
+          {/* The run-wide fields that are set (chunk 30): STRUCTURE only, and
+              nothing at all on an exercise that has none. */}
+          {structure && <ExerciseMarkers markers={structure.markers} />}
         </div>
         {!isPast && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -1553,7 +1597,9 @@ function ExerciseSection({
 
       {/* Exercise ⋯ menu (chunk 9's week actions, moved here by the UI rule,
           and into the STRUCTURE view by chunk 29): swap, move up/down, add
-          warmup sets, remove from this week. */}
+          warmup sets, remove from this week. Chunk 30 puts the exercise's
+          run-wide fields between the first four and the remove: REST, REST
+          AFTER and TEMPO under "EVERY WEEK", then the unit. */}
       {view === 'structure' && !isPast && menuOpen && (
         <div style={MENU_PANEL_STYLE}>
           <MenuAction onClick={act(onSwap)} ariaLabel={`Swap ${name}`}>
@@ -1576,6 +1622,7 @@ function ExerciseSection({
             <Plus size={13} />
             ADD WARMUP SETS
           </MenuAction>
+          {structure && <ExerciseDesignMenu pe={pe} fields={structure} />}
           <MenuAction onClick={act(onRemoveExercise)} danger ariaLabel={`Remove ${name} from this week`}>
             <Trash2 size={13} />
             REMOVE FROM THIS WEEK
@@ -1606,7 +1653,9 @@ function ExerciseSection({
                 key={group.head.id}
                 group={group}
                 displayNumber={idx + 1}
+                exerciseName={name}
                 isPast={isPast}
+                setFields={structure?.setFields}
                 onRemoveHead={() => onRemoveSet(group.head.id)}
                 onRemoveStage={(id) => onRemoveSet(id)}
                 onUpdate={(id, changes) => onUpdateSet(id, changes)}
@@ -1614,6 +1663,32 @@ function ExerciseSection({
               />
             ),
           )}
+        </div>
+      )}
+
+      {/* Superset grouping, run-wide (chunk 30; SPEC Supersets [P1.1]): a linked
+          unit's round rests after its last member, and the toggle between this
+          exercise and the next — any two neighbours in THIS week's order. Both
+          are the program tab's own controls, labelled "every week"; neither
+          is on a past week. */}
+      {structure?.blockRest && (
+        <div style={{ padding: '0 16px 6px' }}>
+          <BlockRestEditor
+            blockId={structure.blockRest.blockId}
+            rest={structure.blockRest.rest}
+            onChange={structure.blockRest.onChange}
+            everyWeek
+          />
+        </div>
+      )}
+      {structure?.link && (
+        <div style={{ padding: '0 16px 10px' }}>
+          <SupersetLinkToggle
+            linked={structure.link.linked}
+            disabled={structure.link.disabled}
+            onToggle={structure.link.onToggle}
+            suffix={<EveryWeekLabel />}
+          />
         </div>
       )}
     </div>
@@ -1737,7 +1812,9 @@ function PlanSetGroup({
 function StructureSetGroup({
   group,
   displayNumber,
+  exerciseName,
   isPast,
+  setFields,
   onRemoveHead,
   onRemoveStage,
   onUpdate,
@@ -1745,7 +1822,13 @@ function StructureSetGroup({
 }: {
   group: Group<WeekPlanSet>
   displayNumber: number
+  exerciseName: string
   isPast: boolean
+  // Chunk 30 — the run-wide fields of a set (its own REST, a staged head's STAGE
+  // REST): present in the STRUCTURE view, where WorkoutDayPanel's provider hands
+  // them over. A set that names no program set of its own exercise row gets none
+  // (G45), whatever this is.
+  setFields?: (set: WeekPlanSet) => StructureSetFields
   onRemoveHead: () => void
   onRemoveStage: (id: string) => void
   onUpdate: (id: string, changes: SetChanges) => void
@@ -1753,74 +1836,97 @@ function StructureSetGroup({
 }) {
   const { head, stages } = group
   const stageKind = resolveStageKind(head.stageKind ?? null)
+  const headFields = setFields ? setFields(head) : null
+  const isStaged = stages.length > 0
+  const headOf = `set ${displayNumber} for ${exerciseName}`
   return (
     <div>
       <StructureSetRow
         displayNumber={displayNumber}
         isPast={isPast}
-        kindLabel={head.isWarmup ? 'WARMUP' : stages.length > 0 ? STAGE_KIND_LABELS[stageKind] : undefined}
+        kindLabel={head.isWarmup ? 'WARMUP' : isStaged ? STAGE_KIND_LABELS[stageKind] : undefined}
+        restMarkers={setRestMarkers(headFields?.programSet ?? null, isStaged)}
         menu={(close) =>
           head.isWarmup ? (
-            <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
-              <Trash2 size={13} />
-              DELETE SET
-            </MenuAction>
-          ) : (
-            <div>
-              {stages.length > 0 && (
-                <div style={{ paddingBottom: 4 }}>
-                  <RatingChips
-                    scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
-                    value={stageKind}
-                    onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
-                    label="STAGE KIND"
-                  />
-                </div>
-              )}
-              <MenuAction onClick={onAddStage} ariaLabel="Add stage">
-                <Plus size={13} />
-                ADD STAGE
+            <>
+              {headFields && <SetRestMenu fields={headFields} of={headOf} />}
+              <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
+                <Trash2 size={13} />
+                DELETE SET
               </MenuAction>
-            </div>
+            </>
+          ) : (
+            <>
+              {/* The set's own REST, and on a staged head its STAGE REST: the
+                  program tab's steppers on the set's program set (chunk 30). */}
+              {headFields && (
+                <SetRestMenu fields={headFields} of={headOf} stageRestDefaultText={isStaged ? stageRestDefaultText(stageKind) : undefined} />
+              )}
+              <div>
+                {isStaged && (
+                  <div style={{ paddingBottom: 4 }}>
+                    <RatingChips
+                      scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
+                      value={stageKind}
+                      onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
+                      label="STAGE KIND"
+                    />
+                  </div>
+                )}
+                <MenuAction onClick={onAddStage} ariaLabel="Add stage">
+                  <Plus size={13} />
+                  ADD STAGE
+                </MenuAction>
+              </div>
+            </>
           )
         }
       />
 
-      {stages.length > 0 && (
+      {isStaged && (
         <div style={STAGE_NEST_STYLE}>
-          {stages.map((stage) => (
-            <StructureSetRow
-              key={stage.id}
-              isStage
-              isPast={isPast}
-              menu={(close) => (
-                <MenuAction onClick={() => { close(); onRemoveStage(stage.id) }} danger ariaLabel="Delete stage">
-                  <Trash2 size={13} />
-                  DELETE STAGE
-                </MenuAction>
-              )}
-            />
-          ))}
+          {stages.map((stage, stageIdx) => {
+            const stageFieldsOf = setFields ? setFields(stage) : null
+            return (
+              <StructureSetRow
+                key={stage.id}
+                isStage
+                isPast={isPast}
+                restMarkers={setRestMarkers(stageFieldsOf?.programSet ?? null, false)}
+                menu={(close) => (
+                  <>
+                    {stageFieldsOf && <SetRestMenu fields={stageFieldsOf} of={`stage ${stageIdx + 1} of ${headOf}`} />}
+                    <MenuAction onClick={() => { close(); onRemoveStage(stage.id) }} danger ariaLabel="Delete stage">
+                      <Trash2 size={13} />
+                      DELETE STAGE
+                    </MenuAction>
+                  </>
+                )}
+              />
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
 
-// A set's row in the STRUCTURE view: the number (↳ on a stage), then the kind
-// marker under it where the set has a kind, and the ⋯. A past week has no ⋯
-// (read-only, like the SETS view's rows); the spacer keeps the columns where
-// they are.
+// A set's row in the STRUCTURE view: the number (↳ on a stage), then the markers
+// under it where the set has any — its kind, and (chunk 30) its own REST or its
+// STAGE REST where set — and the ⋯. A past week has no ⋯ (read-only, like the SETS
+// view's rows); the spacer keeps the columns where they are.
 function StructureSetRow({
   displayNumber,
   isStage = false,
   kindLabel,
+  restMarkers,
   isPast,
   menu,
 }: {
   displayNumber?: number
   isStage?: boolean
   kindLabel?: string
+  restMarkers?: string[]
   isPast: boolean
   menu: (close: () => void) => React.ReactNode
 }) {
@@ -1841,7 +1947,7 @@ function StructureSetRow({
         )}
       </div>
 
-      <SetMarkers kindLabel={kindLabel} tags={null} />
+      <SetMarkers kindLabel={kindLabel} tags={null} extra={restMarkers} />
 
       {!isPast && menuOpen && (
         <div style={MENU_PANEL_STYLE}>
@@ -1854,9 +1960,10 @@ function StructureSetRow({
 
 // The small marker line under a set's row: its kind, and its tags, only where
 // it has them (standing UI rule: an unset feature shows nothing). Both views
-// draw it the same way.
-function SetMarkers({ kindLabel, tags }: { kindLabel?: string; tags: string[] | null }) {
-  if (!kindLabel && tags === null) return null
+// draw it the same way. `extra` (chunk 30) is the STRUCTURE view's run-wide
+// fields where set, as the same compact chips the tags are.
+function SetMarkers({ kindLabel, tags, extra }: { kindLabel?: string; tags: string[] | null; extra?: string[] }) {
+  if (!kindLabel && tags === null && !(extra && extra.length > 0)) return null
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '0 16px 4px', paddingLeft: 44 }}>
       {kindLabel && (
@@ -1865,12 +1972,10 @@ function SetMarkers({ kindLabel, tags }: { kindLabel?: string; tags: string[] | 
         </span>
       )}
       {tags?.map((tag) => (
-        <span
-          key={tag}
-          style={{ padding: '0 6px', height: 16, display: 'inline-flex', alignItems: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}
-        >
-          {tag}
-        </span>
+        <MarkerChip key={tag}>{tag}</MarkerChip>
+      ))}
+      {extra?.map((marker) => (
+        <MarkerChip key={marker}>{marker}</MarkerChip>
       ))}
     </div>
   )
