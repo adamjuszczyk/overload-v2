@@ -79,7 +79,7 @@ export function usePlanWeek() {
   })
 }
 
-// Shared by TodayPage.tsx (starting/redoing today's session) and
+// Shared by TodayPage.tsx (starting today's session) and
 // MissedSessionPrompt.tsx (DO IT NOW on a missed session) — "or when it
 // starts, whichever comes first" (TASKS.md), made best-effort: planning is
 // never allowed to block or fail the start itself. If the plan call or the

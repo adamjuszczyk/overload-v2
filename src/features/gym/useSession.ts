@@ -407,7 +407,7 @@ export function useCreateSession() {
       // Chunk 24 — the missed-session prompt's "Do it now" is now a move to
       // today (SPEC): `date` stays the missed day, `movedToDate` carries
       // today. Optional and additive — every pre-chunk-24 caller (today's
-      // own START SESSION, the redo flow) omits it, same "may not exist
+      // own START SESSION) omits it, same "may not exist
       // yet" convention as createSession's own service-layer signature.
       movedToDate,
     }: {

@@ -70,11 +70,8 @@ export default function SequenceTodayPage({
     return (
       <CompletedTodayScreen
         session={result.session}
-        activeMeso={activeMeso}
         workoutDay={workoutDay}
-        weekPlan={weekPlan}
         weekNumber={weekPlan?.weekNumber ?? 1}
-        today={today}
         todayLabel={todayLabel}
         scheduleType="sequence"
       />

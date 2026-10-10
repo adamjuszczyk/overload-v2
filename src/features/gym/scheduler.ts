@@ -134,8 +134,9 @@ export function schedule(
   // though its own `date` is some earlier day). Skipped sessions are
   // excluded the same way the pre-chunk-24 scheduler always ignored them
   // (it only ever checked for `status === 'completed'`) — see this chunk's
-  // report for the one case this preserves (the existing REDO flow's
-  // skip-then-recreate, same day).
+  // report for the one case this preserves (skip-then-recreate, same day —
+  // REDO SESSION did this until B1, 2026-10-10, removed it; the rule itself
+  // is unchanged).
   const dueTodayRows = sessions.filter((s) => s.status !== 'skipped' && effectiveDate(s) === today)
 
   const todayDow = format(todayDate, 'EEEE').toLowerCase() as DayOfWeek
