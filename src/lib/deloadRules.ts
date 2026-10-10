@@ -175,19 +175,18 @@ export function resolveEffectiveDeloadRules(
 //
 // Mirrors applyAhead.ts's own slot-identity rule (chunk 20) exactly —
 // "the slot, identified across weeks the same way copying identifies it":
-// carryProgramExerciseId ?? programExerciseId, AND the matched row's
-// CURRENT exerciseId must still agree (a slot can have diverged to a
-// different real exercise since — applyAhead.ts's own header explains
-// why slot identity alone isn't enough: an "only this week" swap
-// deliberately keeps the ORIGINAL identity in carry, for copying's sake,
-// not because that week's current occupant still is that original
-// exercise). Reimplemented locally (not imported from applyAhead.ts) to
-// keep this module standalone, per its own header.
+// the row's OWN programExerciseId (chunk 27, SPEC [P1.1] "'Only this week' is
+// removed": copying uses each week's actual content, and the stored
+// carry_program_exercise_id values an "only this week" tick used to fill are
+// ignored — so a base row whose carry names another slot still matches the
+// marked week's row with the same own id, and two different rows are never
+// paired because their carry agrees), AND the matched row's CURRENT
+// exerciseId must still agree. Reimplemented locally (not imported from
+// applyAhead.ts) to keep this module standalone, per its own header.
 
 export interface DeloadExerciseSlot {
   programExerciseId: string
   exerciseId: string
-  carryProgramExerciseId: string | null
 }
 
 export type DeloadExerciseSource =
@@ -203,7 +202,7 @@ export interface DeloadExerciseMapping {
 }
 
 function deloadSlotIdOf(e: DeloadExerciseSlot): string {
-  return e.carryProgramExerciseId ?? e.programExerciseId
+  return e.programExerciseId
 }
 
 // For each of the MARKED week's own exercises, decides where its

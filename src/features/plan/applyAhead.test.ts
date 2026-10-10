@@ -29,14 +29,18 @@ import {
 //      record carries the edited week's own resultingProgramExerciseId;
 //      applying it ahead repoints each matched later week at that SAME
 //      row (ApplyAheadOp 'repointExercise', never a second insert).
-//   2. Slot identity (the carry mapping) alone could still match a row
-//      that has since diverged to a DIFFERENT exercise in a later week (an
-//      "only this week" swap there deliberately keeps the ORIGINAL
-//      identity in carry, for copying's sake — not because that week's
-//      CURRENT occupant still is that exercise). Fixed: every edit type
-//      but addExercise/reorderExercise also requires the matched row's
-//      current exerciseId to equal the edited row's own (pre-edit)
+//   2. Slot identity alone could still match a row that has since
+//      diverged to a DIFFERENT exercise in a later week. Fixed: every edit
+//      type but addExercise/reorderExercise also requires the matched
+//      row's current exerciseId to equal the edited row's own (pre-edit)
 //      exerciseId.
+//
+// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): slot identity is a
+// row's OWN program_exercise_id. The carry_program_exercise_id /
+// carry_position values an old "only this week" tick stored are ignored —
+// the tests that used to match through them now assert the opposite (a later
+// row whose carry names the edited slot but whose own id differs is NOT a
+// match; a later row with the same own id is).
 
 // ─── Fixture factories ──────────────────────────────────────────────────────
 
@@ -50,6 +54,14 @@ function pe(id: string, overrides: Partial<ProgramExercise> = {}): ProgramExerci
     weightUnit: null,
     ...overrides,
   }
+}
+
+// A week row as the database can still hand it back: with the carry_* value an
+// old "only this week" tick stored on it. Chunk 27 ignores that value and
+// removed the field from ProgramExercise, so it is added through a cast —
+// the point of every test using this is that it changes nothing.
+function peWithStoredCarry(id: string, carryProgramExerciseId: string, overrides: Partial<ProgramExercise> = {}): ProgramExercise {
+  return { ...pe(id, overrides), carryProgramExerciseId } as ProgramExercise
 }
 
 function set(id: string, programExerciseId: string, overrides: Partial<WeekPlanSet> = {}): WeekPlanSet {
@@ -88,20 +100,21 @@ function week(
 // ─── slotIdOf ────────────────────────────────────────────────────────────────
 
 describe('slotIdOf', () => {
-  it('falls back to the row id when there is no carry override', () => {
+  it('is the row\'s own id', () => {
     expect(slotIdOf(pe('pe-1'))).toBe('pe-1')
   })
 
-  it('uses carryProgramExerciseId when set (an only-this-week swap/reorder\'s pre-edit slot)', () => {
-    expect(slotIdOf(pe('pe-1-swapped', { carryProgramExerciseId: 'pe-1-original' }))).toBe('pe-1-original')
-  })
-
-  it('a program-tab row (no carry concept) collapses to its own id — undefined ?? id === id', () => {
+  it('a program-tab row (no week row behind it) is its own id too', () => {
     expect(slotIdOf({ id: 'pe-program-1' })).toBe('pe-program-1')
   })
 
-  it('null carry (explicit, not undefined) also falls back to the row id', () => {
-    expect(slotIdOf(pe('pe-1', { carryProgramExerciseId: null }))).toBe('pe-1')
+  // Chunk 27: a stored carry value is ignored. The row below is what a week
+  // plan row read from the database could still carry as extra data (an old
+  // "only this week" swap's pre-swap slot); the slot is still its own id.
+  // Break proof: restore `carryProgramExerciseId ?? id` in slotIdOf.
+  it('ignores a stored carryProgramExerciseId — an old "only this week" swap\'s pre-swap slot is not the slot', () => {
+    const rowWithStoredCarry = { id: 'pe-1-swapped', carryProgramExerciseId: 'pe-1-original' }
+    expect(slotIdOf(rowWithStoredCarry)).toBe('pe-1-swapped')
   })
 })
 
@@ -244,13 +257,30 @@ describe('weightTarget', () => {
     })
   })
 
-  it('matches through a later week\'s own carry (its slot survived an earlier only-this-week swap there) when the exercise still agrees', () => {
+  // Chunk 27 — matches ignore stored values. This later week's row stores
+  // carry_program_exercise_id = the edited row's id (an old "only this week"
+  // swap there), but its OWN id is different, so it is a different slot: the
+  // week is skipped. Before chunk 27 this exact row matched through its
+  // carry. Break proof: restore `carryProgramExerciseId ?? id` in slotIdOf.
+  it('does NOT match a later row that only stores the edited slot in carry_* — its own id differs, so the week is skipped', () => {
     const w = week(2, {
-      exercises: [pe('pe-1-weekonly', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })],
+      exercises: [peWithStoredCarry('pe-1-weekonly', 'pe-1', { exerciseId: 'ex-pe-1' })],
       sets: [set('s1', 'pe-1-weekonly', { setNumber: 1 })],
     })
     const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  it('matches a later row with the SAME own id even when that row also stores a carry naming some other slot', () => {
+    const w = week(2, {
+      exercises: [peWithStoredCarry('pe-1', 'pe-SOMETHING-ELSE', { exerciseId: 'ex-pe-1' })],
+      sets: [set('s1', 'pe-1', { setNumber: 1 })],
+    })
+    const [result] = planApplyAhead(change, [w])
     expect(result.status).toBe('applied')
+    if (result.status === 'applied') {
+      expect(result.ops).toEqual([{ kind: 'updateSet', weekPlanId: 'wp-2', setId: 's1', changes: { targetWeight: 70 } }])
+    }
   })
 
   it('skips structurally when the slot does not exist in the later week', () => {
@@ -260,14 +290,15 @@ describe('weightTarget', () => {
   })
 
   // Review fix (bug 2) — break-proof target: the slot matches by identity,
-  // but that week's row has since diverged to a DIFFERENT exercise (e.g. an
-  // "only this week" swap there kept the original slot in carry so copying
-  // reverts to it, but today it genuinely is something else) — the edit
-  // must not land on it.
+  // but that week's row is occupied by a DIFFERENT exercise — the edit must
+  // not land on it. (Chunk 27: identity is the row's own id; same-id rows
+  // only disagree on the exercise if the program exercise itself changed, so
+  // this is the guard's own test, with a stored carry on top that changes
+  // nothing.)
   it('skips structurally when the slot matches but the later week\'s row has diverged to a different exercise', () => {
     const w = week(2, {
-      exercises: [pe('pe-1-diverged', { exerciseId: 'ex-OTHER', carryProgramExerciseId: 'pe-1' })],
-      sets: [set('s1', 'pe-1-diverged', { setNumber: 1 })],
+      exercises: [peWithStoredCarry('pe-1', 'pe-1', { exerciseId: 'ex-OTHER' })],
+      sets: [set('s1', 'pe-1', { setNumber: 1 })],
     })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
@@ -463,17 +494,16 @@ describe('swapExercise', () => {
     resultingProgramExerciseId: 'pe-1-replacement', // the edited week's OWN resulting row
   }
 
-  it('applies: repoints using the LATER week\'s own current programExerciseId, at the SAME resulting row for every week (review fix — never a fresh row per week)', () => {
-    // This later week's own row is itself a week-only replacement from an
-    // earlier only-this-week swap there — its own current id ('pe-1-local')
-    // differs from the canonical slotId ('pe-1'), but its carry still
-    // traces back to the same slot, and its own exercise still agrees.
-    const w = week(2, { exercises: [pe('pe-1-local', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })], sets: [] })
+  it('applies: repoints the LATER week\'s own matched row (same own id) at the SAME resulting row for every week (review fix — never a fresh row per week)', () => {
+    // Copying forward reuses the source row's own program_exercise_id, so the
+    // later week's row for this slot has the same id; a carry it happens to
+    // store (an old "only this week" swap) changes nothing.
+    const w = week(2, { exercises: [peWithStoredCarry('pe-1', 'pe-SOMETHING-ELSE', { exerciseId: 'ex-pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result.status).toBe('applied')
     if (result.status === 'applied') {
       expect(result.ops).toEqual([
-        { kind: 'repointExercise', weekPlanId: 'wp-2', fromProgramExerciseId: 'pe-1-local', toProgramExerciseId: 'pe-1-replacement' },
+        { kind: 'repointExercise', weekPlanId: 'wp-2', fromProgramExerciseId: 'pe-1', toProgramExerciseId: 'pe-1-replacement' },
       ])
     }
   })
@@ -504,7 +534,7 @@ describe('swapExercise', () => {
     const week2AfterSwapAhead = week(2, { exercises: [pe('pe-1-replacement', { exerciseId: 'ex-replacement' })], sets: [set('s1', 'pe-1-replacement')] })
     const followUp: ChangeRecord = {
       editType: 'weightTarget',
-      slotId: 'pe-1-replacement', // the edited week's own row has no carry after a permanent swap
+      slotId: 'pe-1-replacement', // the edited week's own row, now the resulting row
       exerciseId: 'ex-replacement',
       setPosition: { headOrdinal: 1, stageIndex: null },
       oldValue: null,
@@ -520,12 +550,20 @@ describe('swapExercise', () => {
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
 
-  // Review fix (bug 2) — break-proof target: week 3 did its OWN "only this
-  // week" swap at this slot (to a DIFFERENT real exercise, carry pointing
-  // back to the same slot) — a permanent swap-ahead must not overwrite that
-  // one-off; it must skip this week, not repoint it.
-  it('skips structurally when the later week\'s own row has already diverged to a different exercise (an "only this week" swap there)', () => {
-    const w = week(2, { exercises: [pe('pe-1-oneoff', { exerciseId: 'ex-SOMETHING-ELSE', carryProgramExerciseId: 'pe-1' })], sets: [] })
+  // Review fix (bug 2) — break-proof target: the matched row is occupied by a
+  // DIFFERENT real exercise — a swap-ahead must not repoint it.
+  it('skips structurally when the later week\'s matched row is occupied by a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-SOMETHING-ELSE' })], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  // Chunk 27: an old "only this week" swap at this slot in a later week
+  // stored the original slot in carry_* on a row with a DIFFERENT own id. That
+  // value is ignored, so the row is not this slot — the week is skipped, not
+  // repointed. Break proof: restore `carryProgramExerciseId ?? id` in slotIdOf.
+  it('skips structurally a later row that only stores this slot in carry_* (its own id differs) — never repointed', () => {
+    const w = week(2, { exercises: [peWithStoredCarry('pe-1-oneoff', 'pe-1', { exerciseId: 'ex-pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
@@ -547,10 +585,11 @@ describe('swapExercise', () => {
 describe('removeExercise', () => {
   const change: ChangeRecord = { editType: 'removeExercise', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
 
-  it('applies: removes the later week\'s own current row for the matched slot', () => {
-    const w = week(2, { exercises: [pe('pe-1-local', { exerciseId: 'ex-pe-1', carryProgramExerciseId: 'pe-1' })], sets: [] })
+  it('applies: removes the later week\'s own row for the matched slot', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
-    if (result.status === 'applied') expect(result.ops).toEqual([{ kind: 'removeExercise', weekPlanId: 'wp-2', programExerciseId: 'pe-1-local' }])
+    expect(result.status).toBe('applied')
+    if (result.status === 'applied') expect(result.ops).toEqual([{ kind: 'removeExercise', weekPlanId: 'wp-2', programExerciseId: 'pe-1' }])
   })
 
   it('skips structurally when already absent (e.g. that week already removed/swapped it)', () => {
@@ -559,10 +598,16 @@ describe('removeExercise', () => {
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })
 
-  // Review fix (bug 2): a one-off diverged row at this slot must not be
-  // removed — it isn't the exercise this remove was ever about.
-  it('skips structurally when the later week\'s own row has diverged to a different exercise', () => {
-    const w = week(2, { exercises: [pe('pe-1-oneoff', { exerciseId: 'ex-SOMETHING-ELSE', carryProgramExerciseId: 'pe-1' })], sets: [] })
+  // Review fix (bug 2): a matched row occupied by a different exercise must
+  // not be removed — it isn't the exercise this remove was ever about.
+  it('skips structurally when the later week\'s matched row is occupied by a different exercise', () => {
+    const w = week(2, { exercises: [pe('pe-1', { exerciseId: 'ex-SOMETHING-ELSE' })], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
+  })
+
+  it('skips structurally a later row that only stores this slot in carry_* (its own id differs) — never removed', () => {
+    const w = week(2, { exercises: [peWithStoredCarry('pe-1-local', 'pe-1', { exerciseId: 'ex-pe-1' })], sets: [] })
     const [result] = planApplyAhead(change, [w])
     expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'structural' })
   })

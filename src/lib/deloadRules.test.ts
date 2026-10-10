@@ -136,9 +136,19 @@ describe('resolveDeloadBaseOccurrence', () => {
 // per the MARKED week's own exercise, whether a base exercise matches it
 // (same slot per applyAhead.ts's own chunk-20 rule, AND the same CURRENT
 // exerciseId) or must fall back to the marked week's own current sets.
+// Chunk 27: a slot is a row's OWN programExerciseId; stored carry_* values
+// are ignored.
 describe('resolveDeloadExerciseMapping', () => {
   function slot(overrides: Partial<DeloadExerciseSlot>): DeloadExerciseSlot {
-    return { programExerciseId: 'pe', exerciseId: 'ex', carryProgramExerciseId: null, ...overrides }
+    return { programExerciseId: 'pe', exerciseId: 'ex', ...overrides }
+  }
+
+  // A slot as a caller reading the database could still hand it over, with the
+  // carry value an old "only this week" tick stored. DeloadExerciseSlot no
+  // longer has the field (chunk 27), so it is added through a cast: every test
+  // using this asserts that the value changes nothing.
+  function slotWithStoredCarry(carryProgramExerciseId: string, overrides: Partial<DeloadExerciseSlot>): DeloadExerciseSlot {
+    return { ...slot(overrides), carryProgramExerciseId } as DeloadExerciseSlot
   }
 
   it('the plain case: same programExerciseId on both sides, no carry at all, matches', () => {
@@ -163,43 +173,58 @@ describe('resolveDeloadExerciseMapping', () => {
     expect(resolveDeloadExerciseMapping(marked, base)).toEqual([])
   })
 
-  it('an "only this week" swap in the BASE week (base row Y carrying original A, marked week still plain A): slot matches but the CURRENT exercise diverged — falls back, never matched on slot alone', () => {
-    // Base week: swapped (this week only) from slot A to a week-only row Y
-    // — carry_program_exercise_id records the ORIGINAL (A) for copying's
-    // sake, but TODAY it really is exercise Y.
-    const base = [slot({ programExerciseId: 'pe-Y', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
-    // Marked week: never swapped — still plainly A.
-    const marked = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A', carryProgramExerciseId: null })]
-    // Slot agrees (both resolve to 'pe-A'), but exerciseId does NOT
-    // (ex-Y vs ex-A) — same "slot identity alone is not enough" case
-    // applyAhead.ts's own review fix already established.
+  it('a swap in the BASE week (base row Y, marked week still plain A): the rows differ, so it falls back — never matched on a stored carry', () => {
+    // Base week: A was swapped to a week-only row Y (an old tick also stored
+    // carry_program_exercise_id = 'pe-A' on it). Marked week: never swapped —
+    // still plainly A. The rows are different slots; the stored carry that
+    // names A on the base row is ignored.
+    const base = [slotWithStoredCarry('pe-A', { programExerciseId: 'pe-Y', exerciseId: 'ex-Y' })]
+    const marked = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A' })]
     expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
       { markedProgramExerciseId: 'pe-A', source: { kind: 'fallback' } },
     ])
   })
 
-  it('a PERMANENT swap made only in the marked week: carry is cleared, so the slot itself no longer links back — falls back', () => {
-    // Marked week: permanently swapped to Z — carry_program_exercise_id is
-    // cleared (a permanent swap never keeps one, so copying forward never
-    // reverts it — weekPlanService.ts's own swapWeekExercise/
-    // repointWeekExercise). Its own slot is now simply 'pe-Z'.
-    const marked = [slot({ programExerciseId: 'pe-Z', exerciseId: 'ex-Z', carryProgramExerciseId: null })]
+  it('a PERMANENT swap made only in the marked week: its own slot is now \'pe-Z\', which the base week never had — falls back', () => {
+    const marked = [slot({ programExerciseId: 'pe-Z', exerciseId: 'ex-Z' })]
     // Base week (chronologically earlier, before the swap ever happened):
     // still plainly A.
-    const base = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A', carryProgramExerciseId: null })]
+    const base = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A' })]
     expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
       { markedProgramExerciseId: 'pe-Z', source: { kind: 'fallback' } },
     ])
   })
 
-  it('an "only this week" swap mirrored in BOTH weeks (same original slot, same swapped-to exercise) still matches, even though the underlying rows differ', () => {
-    // Each week's own swap creates its OWN week-only program_exercise row
-    // (swapWeekExercise's own behaviour) — different ids, same slot (A)
-    // and the same CURRENT real exercise (Y) on both sides.
-    const base = [slot({ programExerciseId: 'pe-Y-base', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
-    const marked = [slot({ programExerciseId: 'pe-Y-marked', exerciseId: 'ex-Y', carryProgramExerciseId: 'pe-A' })]
+  // Chunk 27 — matches ignore stored values. The base row stores a carry that
+  // names ANOTHER slot ('pe-OTHER'), but it is the same row as the marked
+  // week's (same own id, same exercise): it matches. Before chunk 27 its
+  // slot read 'pe-OTHER' against the marked week's 'pe-A' and it fell back.
+  // Break proof: restore `carryProgramExerciseId ?? programExerciseId` in
+  // deloadSlotIdOf (with the field back on DeloadExerciseSlot).
+  it('a base row whose stored carry names another slot still matches the marked row with the same own id', () => {
+    const base = [slotWithStoredCarry('pe-OTHER', { programExerciseId: 'pe-A', exerciseId: 'ex-A' })]
+    const marked = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A' })]
     expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
-      { markedProgramExerciseId: 'pe-Y-marked', source: { kind: 'matched', baseProgramExerciseId: 'pe-Y-base' } },
+      { markedProgramExerciseId: 'pe-A', source: { kind: 'matched', baseProgramExerciseId: 'pe-A' } },
+    ])
+  })
+
+  it('two DIFFERENT rows that store the same carry are not paired: own ids differ, so the marked exercise falls back (an old tick mirrored in both weeks)', () => {
+    // Each week's old "only this week" swap created its OWN week-only row,
+    // both storing carry 'pe-A'. Pairing them used to rest on that shared
+    // carry; with carry ignored they are two different rows.
+    const base = [slotWithStoredCarry('pe-A', { programExerciseId: 'pe-Y-base', exerciseId: 'ex-Y' })]
+    const marked = [slotWithStoredCarry('pe-A', { programExerciseId: 'pe-Y-marked', exerciseId: 'ex-Y' })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-Y-marked', source: { kind: 'fallback' } },
+    ])
+  })
+
+  it('same own id but a different CURRENT exercise: still falls back (the exercise must agree)', () => {
+    const base = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-Y' })]
+    const marked = [slot({ programExerciseId: 'pe-A', exerciseId: 'ex-A' })]
+    expect(resolveDeloadExerciseMapping(marked, base)).toEqual([
+      { markedProgramExerciseId: 'pe-A', source: { kind: 'fallback' } },
     ])
   })
 

@@ -46,6 +46,12 @@ const pe1: ProgramExercise = {
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null, exercise: EX_A,
 }
 
+// A second exercise (below Bench Press) for the tests that MOVE UP.
+const squat: ProgramExercise = {
+  id: 'pe-2', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-b', position: 1, weightUnit: null,
+  exercise: { id: 'ex-b', userId: 'user-1', name: 'Squat', muscleGroup: 'quads', isArchived: false, createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null },
+}
+
 function set1(overrides: Partial<WeekPlanSet> = {}): WeekPlanSet {
   return {
     id: 'set-1', weekPlanId: 'wp-2', userId: 'user-1', programExerciseId: 'pe-1', setNumber: 1,
@@ -78,6 +84,7 @@ const mockState: { currentPlans: WeekPlan[]; allPlans: WeekPlan[]; program: Prog
 const updateSetMutate = vi.fn()
 const addWarmupMutate = vi.fn()
 const swapMutate = vi.fn().mockResolvedValue({ id: 'ex-replacement-row' })
+const reorderMutate = vi.fn()
 let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
 let applyAheadOnSuccess: ((data: unknown) => void) | undefined
 const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }, opts?: { onSuccess?: (d: unknown) => void }) => {
@@ -115,7 +122,7 @@ vi.mock('./useWeekPlan', () => ({
   useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useReorderWeekExercises: () => ({ mutate: reorderMutate, isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -141,6 +148,7 @@ afterEach(() => {
   updateSetMutate.mockClear()
   addWarmupMutate.mockClear()
   swapMutate.mockClear()
+  reorderMutate.mockClear()
   applyAheadMutate.mockClear()
   applyAheadLastCall = null
   applyAheadOnSuccess = undefined
@@ -193,40 +201,84 @@ describe('PlanPage — apply-ahead offer appears exactly when later planned week
   })
 })
 
-describe('PlanPage — apply-ahead is never offered after an "only this week" swap', () => {
+// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): a swap or reorder in a
+// week is a normal week edit, so it is ALWAYS offered ahead when a later week
+// is planned (the offer used to be suppressed after a ticked one). The mocked
+// hook's call carries no "only this week" argument. Break proof: put the
+// `if (onlyThisWeek) { applyAheadOffer.dismiss(); return }` branch back
+// (with the tick state) — or have the handler skip setOffer — and the banner
+// assertions below fail.
+describe('PlanPage — a swap or move carries forward: the apply-ahead offer appears, and the call has no "only this week" (chunk 27)', () => {
   // handlePickReplacement is async (review fix — it awaits the swap's own
   // mutateAsync to get the resulting row id before building the change
-  // record), so the offer/dismiss only lands after that promise resolves —
-  // flushed here with act() before asserting.
-  it('suppresses the offer even though later planned weeks exist', async () => {
+  // record), so the offer only lands after that promise resolves — flushed
+  // here with act() before asserting.
+  it('a swap through the exercise ⋯ offers the later planned week, and swapWeekExercise gets no onlyThisWeek', async () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByText('ONLY THIS WEEK'))
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
       fireEvent.click(screen.getByText('Incline Press'))
     })
 
-    expect(swapMutate).toHaveBeenCalledWith(expect.objectContaining({ onlyThisWeek: true }))
+    expect(swapMutate).toHaveBeenCalledWith({
+      weekPlanId: 'wp-2',
+      programExerciseId: 'pe-1',
+      replacementExerciseId: 'ex-replacement',
+    })
+    expect(Object.keys(swapMutate.mock.calls[0][0]).sort()).toEqual(['programExerciseId', 'replacementExerciseId', 'weekPlanId'])
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+  })
+
+  it('MOVE UP through the exercise ⋯ offers the later planned week, and reorderWeekExercises gets no onlyThisWeek', () => {
+    mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
+    mockState.allPlans = [makePlan(2, [set1()], [pe1, squat]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    openExerciseMenu('Squat')
+    fireEvent.click(screen.getByLabelText('Move up'))
+
+    expect(reorderMutate).toHaveBeenCalledWith({
+      weekPlanId: 'wp-2',
+      moves: [
+        { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
+        { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
+      ],
+    })
+    expect(Object.keys(reorderMutate.mock.calls[0][0]).sort()).toEqual(['moves', 'weekPlanId'])
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+  })
+
+  // The offer still needs a week to apply to: the swap and the move happen
+  // (the mutations fire) but nothing is offered when no later week is planned.
+  it('with no later planned week, a swap offers nothing', async () => {
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2)] // nothing later
+    renderPlanPage()
+
+    openExerciseMenu()
+    fireEvent.click(screen.getByLabelText('Swap Bench Press'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Incline Press'))
+    })
+
+    expect(swapMutate).toHaveBeenCalledTimes(1)
     expect(screen.queryByText(/PLANNED WEEK/)).toBeNull()
   })
 
-  it('a plain (not "only this week") swap DOES offer it', async () => {
-    mockState.currentPlans = [makePlan(2)]
-    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+  it('with no later planned week, MOVE UP offers nothing', () => {
+    mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
+    mockState.allPlans = [makePlan(2, [set1()], [pe1, squat])] // nothing later
     renderPlanPage()
 
-    openExerciseMenu()
-    fireEvent.click(screen.getByLabelText('Swap Bench Press'))
-    await act(async () => {
-      fireEvent.click(screen.getByText('Incline Press'))
-    })
+    openExerciseMenu('Squat')
+    fireEvent.click(screen.getByLabelText('Move up'))
 
-    expect(swapMutate).toHaveBeenCalledWith(expect.objectContaining({ onlyThisWeek: false }))
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+    expect(reorderMutate).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/PLANNED WEEK/)).toBeNull()
   })
 })
 
@@ -294,6 +346,39 @@ describe('PlanPage — apply-ahead says so when the workout is shared (G14)', ()
     editWeightTarget()
 
     expect(screen.queryByText(/scheduled on more than one weekday/)).toBeNull()
+  })
+
+  // The swap and MOVE handlers pass the workout's shared flag into the offer
+  // like every other week edit does (they used to pass it only on the
+  // un-ticked path). Break proof: pass `false` instead of `isShared` in
+  // either handler's setOffer call.
+  it('a swap on a shared workout names the shared-weekday wording too', async () => {
+    mockState.program = makeProgram('week_dependent', { ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-1' })
+    mockState.currentPlans = [makePlan(2)]
+    mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
+    renderPlanPage()
+
+    openExerciseMenu()
+    fireEvent.click(screen.getByLabelText('Swap Bench Press'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('Incline Press'))
+    })
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+    expect(screen.getByText(/scheduled on more than one weekday/)).toBeTruthy()
+  })
+
+  it('MOVE UP on a shared workout names the shared-weekday wording too', () => {
+    mockState.program = makeProgram('week_dependent', { ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-1' })
+    mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
+    mockState.allPlans = [makePlan(2, [set1()], [pe1, squat]), makePlan(3, [], [])]
+    renderPlanPage()
+
+    openExerciseMenu('Squat')
+    fireEvent.click(screen.getByLabelText('Move up'))
+
+    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+    expect(screen.getByText(/scheduled on more than one weekday/)).toBeTruthy()
   })
 })
 

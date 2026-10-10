@@ -205,20 +205,6 @@ export interface ProgramExercise {
   // fixture/test predating this chunk, including GymSession.d30.test.tsx's
   // own frozen fixture.
   tempo?: string | null
-  // v2_week_plan_exercises.carry_program_exercise_id / carry_position
-  // (migration 027/029; chunk 9 — CONTEXT.md "Week edits and carry fields").
-  // WEEK-JOINED READS ONLY: set only when this ProgramExercise came from a
-  // week's own v2_week_plan_exercises row (weekPlanService.ts's
-  // toProgramExerciseFromWeekPlanExercise) — a program-tab/planner read
-  // (runProgramExercises.ts's toProgramExercise) never sets either, since
-  // there is no week row to carry them from. Chunk 20 — applyAhead.ts's
-  // slotIdOf is the one place these are read: "the slot, identified across
-  // weeks the same way copying identifies it" (carryProgramExerciseId ??
-  // id). Optional, same "may not exist yet" convention as supersetBlockId
-  // above; absent/undefined is read exactly like null everywhere, including
-  // slotIdOf itself (undefined ?? id === id, the program-tab/planner case).
-  carryProgramExerciseId?: string | null
-  carryPosition?: number | null
 }
 
 // ─── Program superset block (v2_program_superset_blocks, chunk 13's table;

@@ -43,7 +43,6 @@ const workoutDay: WorkoutDay = { id: 'wd-1', programId: 'prog-1', userId: 'user-
 
 const pe2: ProgramExercise = {
   id: 'pe-2-a', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null,
-  carryProgramExerciseId: null,
   exercise: { id: 'ex-a', userId: 'user-1', name: 'Bench Press', muscleGroup: 'chest', isArchived: false, createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null },
 }
 const set2: WeekPlanSet = {

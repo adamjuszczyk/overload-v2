@@ -48,19 +48,28 @@ const EX_X: Exercise = {
   createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null,
 }
 
-// Week 2 (the edited week) owns the slot's own canonical id (no carry of
-// its own); week 3 (the later planned week) was copied forward from it, so
-// its OWN row carries a DIFFERENT real id but the SAME carry marker —
-// exactly how copyExercisesForward actually propagates identity (applyAhead
-// .ts's own header comment), never a same-id shortcut.
+// Week 2 is the edited week. Week 3 (a later planned week) was copied
+// forward from it, so its row for the slot has the SAME own id (copying
+// reuses a source row's program_exercise_id — chunk 27: "copying uses each
+// week's actual content"). Week 4 is the stored-values case (SPEC [P1.1]
+// "'only this week' values already stored are ignored"): its row for this
+// workout has a DIFFERENT own id ('pe-4-a') and STORES the edited slot
+// ('pe-2-a') in carry_program_exercise_id, as an old "only this week" tick
+// would have left it. Matching ignores that value, so week 4 is skipped.
+// (The stored value is added through a cast: ProgramExercise no longer has
+// the field, but a row read from the database can still carry it.)
 const peWeek2: ProgramExercise = {
   id: 'pe-2-a', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null,
-  carryProgramExerciseId: null, exercise: EX_A,
+  exercise: EX_A,
 }
 const peWeek3: ProgramExercise = {
-  id: 'pe-3-a', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null,
-  carryProgramExerciseId: 'pe-2-a', exercise: EX_A,
+  id: 'pe-2-a', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null,
+  exercise: EX_A,
 }
+const peWeek4: ProgramExercise = {
+  id: 'pe-4-a', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null,
+  carryProgramExerciseId: 'pe-2-a', exercise: EX_A,
+} as ProgramExercise
 const set2: WeekPlanSet = {
   id: 'set-2', weekPlanId: 'wp-2', userId: 'user-1', programExerciseId: 'pe-2-a', setNumber: 1,
   targetRir: 2, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, targetWeight: null,
@@ -73,6 +82,10 @@ const week3Plan: WeekPlan = {
   id: 'wp-3', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 3,
   isDeload: false, notes: null, sets: [], exercises: [peWeek3], createdAt: '2026-01-01T00:00:00Z',
 }
+const week4Plan: WeekPlan = {
+  id: 'wp-4', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 4,
+  isDeload: false, notes: null, sets: [], exercises: [peWeek4], createdAt: '2026-01-01T00:00:00Z',
+}
 
 // The swap's own resulting row — swapWeekExercise's real return shape is
 // the new week-only ProgramExercise (weekPlanService.ts), never just an id.
@@ -81,7 +94,7 @@ const swapResultRow: ProgramExercise = {
 }
 
 const fetchWeekPlansMock = vi.fn(async (_mesoId: string, weekNumber: number) => (weekNumber === 2 ? [week2Plan] : []))
-const fetchAllWeekPlansForMesoMock = vi.fn(async () => [week2Plan, week3Plan])
+const fetchAllWeekPlansForMesoMock = vi.fn(async () => [week2Plan, week3Plan, week4Plan])
 const swapWeekExerciseMock = vi.fn(async () => swapResultRow)
 const repointWeekExerciseMock = vi.fn(async (_weekPlanId: string, _fromId: string, _toId: string) => undefined)
 const planWeekMock = vi.fn(async () => 0)
@@ -143,7 +156,13 @@ function renderPlanPage() {
 }
 
 describe('PlanPage — applying a swap ahead, through the REAL pure core and executor (review fix 2)', () => {
-  it('repoints the later week\'s OWN matched row at the edited week\'s real resulting row — never a hand-built id on either side', async () => {
+  // Chunk 27 — "Rule: matches ignore stored values", at the screen: week 3's
+  // row has the same own id as the edited row and matches; week 4's row only
+  // STORES the edited slot in carry_program_exercise_id (its own id differs)
+  // and is skipped. Break proof: restore `carryProgramExerciseId ?? id` in
+  // applyAhead.ts's slotIdOf — week 4 then matches too, a second repoint
+  // fires, and the count and summary assertions below fail.
+  it('repoints the later week whose row has the SAME own id at the edited week\'s real resulting row, and skips the week that only stores the slot in carry_* — never a hand-built id on either side', async () => {
     renderPlanPage()
 
     fireEvent.click(await screen.findByLabelText('Bench Press options'))
@@ -152,14 +171,20 @@ describe('PlanPage — applying a swap ahead, through the REAL pure core and exe
       fireEvent.click(await screen.findByText('Incline Press'))
     })
 
-    await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
+    // Two later weeks are planned; whether each is touched is decided at APPLY.
+    await screen.findByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')
     fireEvent.click(screen.getByText('APPLY'))
 
     await waitFor(() => expect(repointWeekExerciseMock).toHaveBeenCalledTimes(1))
-    // week 3's own plan id; week 3's own row for this slot (pe-3-a, found
-    // by carry — NOT week 2's pe-2-a); the real row swapWeekExercise's own
-    // mock resolved, for THIS run (pe-2-x-new) — never a literal standing
-    // in for either id.
-    expect(repointWeekExerciseMock).toHaveBeenCalledWith('wp-3', 'pe-3-a', swapResultRow.id)
+    // week 3's own plan id; week 3's own row for this slot (found by its own
+    // id, 'pe-2-a'); the real row swapWeekExercise's own mock resolved, for
+    // THIS run (pe-2-x-new) — never a literal standing in for either id.
+    expect(repointWeekExerciseMock).toHaveBeenCalledWith('wp-3', 'pe-2-a', swapResultRow.id)
+    // Week 4 (its row stores carry = 'pe-2-a' but has its own id 'pe-4-a') is
+    // never written.
+    expect(repointWeekExerciseMock.mock.calls.some((c) => c[0] === 'wp-4')).toBe(false)
+    expect(repointWeekExerciseMock).toHaveBeenCalledTimes(1)
+    await screen.findByText(/APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(screen.getByText(/1 SKIPPED \(ALREADY DIFFERENT\)/)).toBeTruthy()
   })
 })

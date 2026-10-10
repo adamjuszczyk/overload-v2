@@ -144,7 +144,7 @@ function toSetRow(s: WorldSet) {
   }
 }
 function toExerciseRow(e: WorldExerciseSlot) {
-  return { program_exercise_id: e.programExerciseId, carry_program_exercise_id: null, v2_program_exercises: { exercise_id: e.exerciseId } }
+  return { program_exercise_id: e.programExerciseId, v2_program_exercises: { exercise_id: e.exerciseId } }
 }
 function toCoreRow(w: WorldWeekPlan) {
   return {

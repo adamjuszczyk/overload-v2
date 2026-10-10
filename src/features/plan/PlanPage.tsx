@@ -139,12 +139,6 @@ export default function PlanPage() {
   // on reload, same as isPast/viewWeek here.
   const [compact, setCompact] = useState(false)
 
-  // "Only this week" (chunk 9, SPEC.md "Weeks and copying" — "a tick on
-  // swap and reorder actions... off by default"). Page-local, resets on
-  // reload like compact/isPast/viewWeek above; nothing says it should
-  // persist, and it only ever governs the NEXT swap/reorder tap.
-  const [onlyThisWeek, setOnlyThisWeek] = useState(false)
-
   // Program/Weeks tab (chunk 6) — page-local, resets on reload like compact
   // above; nothing in SPEC says it should persist across visits.
   const [activeTab, setActiveTab] = useState<PlanTab>('weeks')
@@ -354,8 +348,8 @@ export default function PlanPage() {
   // depends on whether anything's been planned by hand yet). weekIsFully
   // Deload reads off weekPlans as they stand now (the same query the rest
   // of this screen already reads) — a one-button toggle, same convention
-  // as COMPACT/ONLY THIS WEEK above, flipping between the two labels
-  // rather than two separate buttons.
+  // as COMPACT above, flipping between the two labels rather than two
+  // separate buttons.
   // Chunk 25 review fix — "Mark this cycle as deload" (chunk 21's week
   // shortcut, relabelled): setWeekDeload itself already marks every row
   // sharing (mesocycle_id, week_number) with no workout_day_id filter at
@@ -637,18 +631,6 @@ export default function PlanPage() {
         {!isSequence && !plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
           <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
-              {/* "Only this week" (SPEC "Weeks and copying") — week-dependent
-                  only (DECISIONS 48 (a): stable's every edit is already a
-                  one-off, no tick needed); governs the NEXT swap/reorder tap
-                  below. Same toggle-pill pattern as COMPACT, to its left. */}
-              {!isPast && (program?.planningType ?? 'week_dependent') !== 'stable' && (
-                <button
-                  onClick={() => setOnlyThisWeek((v) => !v)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: onlyThisWeek ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${onlyThisWeek ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: onlyThisWeek ? 'var(--accent)' : 'var(--text-dim)' }}
-                >
-                  ONLY THIS WEEK
-                </button>
-              )}
               <button
                 onClick={() => setCompact((c) => !c)}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
@@ -684,7 +666,6 @@ export default function PlanPage() {
               weekNumber={viewWeek}
               compact={compact}
               canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
-              onlyThisWeek={onlyThisWeek}
               isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
               sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
               deloadRules={effectiveDeloadRules}
@@ -703,14 +684,6 @@ export default function PlanPage() {
         {isSequence && !plansLoading && !daysLoading && selectedSlot && (
           <>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
-              {!isPast && (program?.planningType ?? 'week_dependent') !== 'stable' && (
-                <button
-                  onClick={() => setOnlyThisWeek((v) => !v)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: onlyThisWeek ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${onlyThisWeek ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: onlyThisWeek ? 'var(--accent)' : 'var(--text-dim)' }}
-                >
-                  ONLY THIS WEEK
-                </button>
-              )}
               <button
                 onClick={() => setCompact((c) => !c)}
                 style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
@@ -736,7 +709,6 @@ export default function PlanPage() {
               weekNumber={viewWeek}
               compact={compact}
               canCopyFromHistory={hasManualSourceFor(selectedSlot.workoutDay!.id, selectedSlot.position)}
-              onlyThisWeek={onlyThisWeek}
               isShared={false}
               sharedWeekdays={null}
               deloadRules={effectiveDeloadRules}
@@ -770,10 +742,6 @@ interface PanelProps {
   // same per-workout backward search PlanPage's own showCopyButton uses),
   // computed once by the parent (it alone holds the meso-wide history).
   canCopyFromHistory: boolean
-  // Chunk 9 — SPEC "Weeks and copying": a tick on swap/reorder, off by
-  // default, governing the NEXT one of either action (computed once by the
-  // parent, which alone owns the toggle's state).
-  onlyThisWeek: boolean
   // Chunk 20 (reviewer's note 7) — this workout covers more than one
   // weekday (G14); the offer banner says so when it applies.
   isShared: boolean
@@ -787,7 +755,7 @@ interface PanelProps {
   deloadRules: DeloadRules | null
 }
 
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, onlyThisWeek, isShared, sharedWeekdays, deloadRules }: PanelProps) {
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, isShared, sharedWeekdays, deloadRules }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -959,8 +927,10 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
     // PER-SET editors are wired.
   }
 
-  // Chunk 9 — Week actions: swap, reorder, add, remove (weekEdits.ts's
-  // carry semantics, applied by weekPlanService.ts).
+  // Chunk 9 — Week actions: swap, reorder, add, remove (weekEdits.ts's slot
+  // decisions, applied by weekPlanService.ts). Chunk 27: a swap or reorder is
+  // a normal week edit — there is no "only this week" tick, so each one
+  // always records the apply-ahead change.
   //
   // Review fix (bug 1): async + mutateAsync, not the fire-and-forget
   // .mutate() every other handler in this file uses — applying this swap
@@ -979,16 +949,9 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
       weekPlanId: weekPlan.id,
       programExerciseId: target.id,
       replacementExerciseId: exercise.id,
-      onlyThisWeek,
     })
-    // Chunk 20, reviewer's note 4 — "never offered after an 'only this
-    // week' swap... the user said not to carry it". exerciseId: the
-    // PRE-swap real exercise (what later weeks still show), captured from
-    // `target` rather than re-read after the swap.
-    if (onlyThisWeek) {
-      applyAheadOffer.dismiss()
-      return
-    }
+    // exerciseId: the PRE-swap real exercise (what later weeks still show),
+    // captured from `target` rather than re-read after the swap.
     const change: ChangeRecord = {
       editType: 'swapExercise',
       slotId: slotIdOf(target),
@@ -1031,10 +994,9 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   // grouping at all (every unit size 1 — every week before this chunk),
   // moveUnit degrades to exactly the old adjacent-swap behaviour, so this
   // still sends exactly the two affected rows' own pre-move positions (in
-  // their ORIGINAL order) to weekEdits.ts's resolveReorderCarry (inside
-  // reorderWeekExercises), byte-identical to before for that case. A
-  // block's every member gets its own move in the same call, each carrying
-  // its own true oldPosition.
+  // their ORIGINAL order) to reorderWeekExercises, byte-identical to before
+  // for that case. A block's every member gets its own move in the same
+  // call, each carrying its own true oldPosition.
   function handleMoveExercise(index: number, direction: 'up' | 'down') {
     if (!weekPlan) return
     const ordered = [...programExercises].sort((a, b) => a.position - b.position)
@@ -1045,23 +1007,18 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
       .map((pe) => ({ programExerciseId: pe.id, oldPosition: pe.position, newPosition: newPositionById.get(pe.id)! }))
       .filter((m) => m.oldPosition !== m.newPosition)
     if (moves.length === 0) return
-    reorderExercises.mutate({ weekPlanId: weekPlan.id, moves, onlyThisWeek })
-    // Chunk 20, reviewer's note 4 — same "never after only this week" rule
-    // as swap above. Each move's slotId is `ordered`'s own pre-move row
-    // (captured here, before the mutation changes any position), matching
-    // copying's own identity rule.
-    if (onlyThisWeek) {
-      applyAheadOffer.dismiss()
-    } else {
-      const change: ChangeRecord = {
-        editType: 'reorderExercise',
-        moves: moves.map((m) => {
-          const row = ordered.find((p) => p.id === m.programExerciseId)!
-          return { slotId: slotIdOf(row), oldPosition: m.oldPosition, newPosition: m.newPosition }
-        }),
-      }
-      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    reorderExercises.mutate({ weekPlanId: weekPlan.id, moves })
+    // Each move's slotId is `ordered`'s own pre-move row (captured here,
+    // before the mutation changes any position), matching copying's own
+    // identity rule.
+    const change: ChangeRecord = {
+      editType: 'reorderExercise',
+      moves: moves.map((m) => {
+        const row = ordered.find((p) => p.id === m.programExerciseId)!
+        return { slotId: slotIdOf(row), oldPosition: m.oldPosition, newPosition: m.newPosition }
+      }),
     }
+    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
   }
 
   // Chunk 20 — "remove stage" (chunk 14) and, since the first review (item

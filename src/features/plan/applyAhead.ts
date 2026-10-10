@@ -19,34 +19,33 @@
 //
 // ─── Slot identity across weeks (reviewer's note 2) ────────────────────────
 // "The slot, identified across weeks the same way copying identifies it" —
-// copyExercisesForward/copySetsWithGrouping (weekPlanService.ts) map a row's
-// identity forward as `carry_program_exercise_id ?? program_exercise_id`
-// (CONTEXT.md "Week edits and carry fields"; weekEdits.ts's own header).
-// The exact same formula, applied here to COMPARE two different weeks' own
-// rows instead of to copy one forward: two weeks' own v2_week_plan_exercises
-// rows denote "the same slot" iff this value agrees between them — exactly
-// what a chain of copies (undisturbed by any further "only this week" edit)
-// would have propagated unchanged. A plain program-tab edit has no week row
-// and no carry concept at all — its own v2_program_exercises.id already IS
-// the slot's canonical identity, so passing a bare id with no
-// carryProgramExerciseId collapses to the same formula (undefined ?? id ===
-// id).
+// copyExercisesForward/copySetsWithGrouping (weekPlanService.ts) and the
+// server's v2_plan_week (migration 038) carry a row's OWN program_exercise_id
+// and position forward unchanged: "copying uses each week's actual content"
+// (SPEC [P1.1], chunk 27). The same identity is used here to COMPARE two
+// different weeks' own rows instead of to copy one forward: two weeks' own
+// v2_week_plan_exercises rows denote "the same slot" iff their
+// program_exercise_id agrees — exactly what a chain of copies would have
+// propagated. The carry_program_exercise_id / carry_position values an "only
+// this week" tick used to fill are stored but IGNORED, here as in copying: a
+// later row whose carry names the edited row but whose own id differs is not
+// a match. A plain program-tab edit has no week row — its own
+// v2_program_exercises.id already IS the slot's identity.
 //
-// ─── Review fix: slot identity alone is not enough (first review) ─────────
-// The carry mapping finds the right SLOT, but a slot can be occupied by a
-// DIFFERENT exercise in a later week that has already diverged there (an
-// "only this week" swap deliberately keeps the ORIGINAL exercise in
-// carry_program_exercise_id so COPYING reverts to it later — it does not
-// mean that week's CURRENT occupant still is that original exercise; it
-// is, on purpose, something else right now). So every edit type except
-// addExercise and reorderExercise ALSO requires the matched row's CURRENT
-// exerciseId to equal the edited row's own (pre-edit) exerciseId —
-// findMatchingExercise, below — otherwise this week already differs
-// structurally for this slot, exactly like a missing row. addExercise has
-// no existing row to compare at all; reorderExercise's own match (slot
-// identity AND the exact pre-move position) is already strict enough on
-// its own terms (reviewer's call) and doesn't care which exercise occupies
-// the slot, only where it sits.
+// ─── The matched row's exercise must still agree (first review) ───────────
+// Every edit type except addExercise and reorderExercise ALSO requires the
+// matched row's CURRENT exerciseId to equal the edited row's own (pre-edit)
+// exerciseId — findMatchingExercise, below — otherwise this week already
+// differs structurally for this slot, exactly like a missing row. (Before
+// chunk 27 this mattered because an "only this week" swap kept the ORIGINAL
+// id in carry, so a slot match could land on a row now occupied by a
+// different exercise. With identity = the row's own id, a same-id row names
+// the same real exercise unless the program exercise itself was changed in
+// place; the check stays as that guard.) addExercise has no existing row to
+// compare at all; reorderExercise's own match (slot identity AND the exact
+// pre-move position) is already strict enough on its own terms (reviewer's
+// call) and doesn't care which exercise occupies the slot, only where it
+// sits.
 //
 // ─── Review fix: a swap must repoint, never create a fresh row per week ───
 // swapWeekExercise (weekPlanService.ts) always creates a brand-new
@@ -185,9 +184,8 @@ export type ChangeEditType = ChangeRecord['editType']
 
 // ─── Row operations — exactly what the executor hands to weekPlanService.ts
 // (reviewer's note 1: "it returns the exact row operations"). Every op maps
-// 1:1 onto one existing exported function there; userId and the
-// onlyThisWeek flag (always false for an applied-ahead swap/reorder — see
-// the report) are the executor's job to supply, not this module's.
+// 1:1 onto one existing exported function there; userId is the executor's
+// job to supply, not this module's.
 export type ApplyAheadOp =
   | { kind: 'updateSet'; weekPlanId: string; setId: string; changes: WeekPlanSetChanges }
   | { kind: 'addSet'; weekPlanId: string; programExerciseId: string; setNumber: number }
@@ -212,8 +210,10 @@ export type WeekApplyResult =
 
 // ─── Slot identity + lookups ─────────────────────────────────────────────────
 
-export function slotIdOf(pe: { id: string; carryProgramExerciseId?: string | null }): string {
-  return pe.carryProgramExerciseId ?? pe.id
+// Chunk 27: a row's slot is its OWN program_exercise_id. Stored
+// carry_program_exercise_id / carry_position values are ignored.
+export function slotIdOf(pe: { id: string }): string {
+  return pe.id
 }
 
 function findExercise(week: WeekPlan, slotId: string): ProgramExercise | undefined {
