@@ -509,6 +509,17 @@ function expectEditable(cycle: number, slot = 0) {
   expect(screen.queryByText('COMPACT')).toBeNull()
   expect(allLabelled('Remove last set')).toHaveLength(0)
 
+  // — the run-wide fields (chunk 30): an exercise's ⋯ holds REST, REST AFTER and TEMPO under EVERY WEEK
+  //   and the unit, all live; the two exercises have a link toggle between them; the routine can be added to
+  fireEvent.click(labelled(`${EX1} options`))
+  expect(within(screen.getByRole('group', { name: 'Every week' })).getByText('EVERY WEEK')).toBeTruthy()
+  expect(asButton(labelled(`More rest for ${EX1}`)).disabled).toBe(false)
+  expect(asButton(labelled(`More rest after for ${EX1}`)).disabled).toBe(false)
+  expect(asButton(within(screen.getByRole('group', { name: 'Weight unit' })).getByRole('button', { name: 'LBS' })).disabled).toBe(false)
+  fireEvent.click(labelled(`${EX1} options`))
+  expect(asButton(screen.getByRole('button', { name: /LINK AS SUPERSET/ })).disabled).toBe(false)
+  expect(screen.getByText('ADD ITEM')).toBeTruthy()
+
   // The edits above offered "apply ahead" where later cycles are planned; leave none showing.
   const dismiss = maybeLabelled('Dismiss')
   if (dismiss) fireEvent.click(dismiss)
@@ -552,6 +563,15 @@ function expectReadOnly() {
     // The set rows themselves are still drawn in either view.
     expect(screen.getAllByText('01')).toHaveLength(2)
     expect(screen.getByText('↳')).toBeTruthy()
+    // The run-wide fields (chunk 30) have no control here either: no REST / TEMPO / unit group, no link toggle
+    // between the exercises, no way to add to the routine.
+    expect(screen.queryByRole('group', { name: 'Every week' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Weight unit' })).toBeNull()
+    expect(allLabelled(/^(More|Less) /)).toHaveLength(0)
+    expect(screen.queryByText('LINK AS SUPERSET')).toBeNull()
+    expect(screen.queryByText('SUPERSET — TAP TO UNLINK')).toBeNull()
+    expect(screen.queryByText('ADD ITEM')).toBeNull()
+    expect(allLabelled(/^Options for warmup item/)).toHaveLength(0)
   }
 
   // — SETS view: every set row's cells are on screen but dead, and open nothing

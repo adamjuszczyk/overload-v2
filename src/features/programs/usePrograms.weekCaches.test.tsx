@@ -191,6 +191,28 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
   })
 
+  // A refetch of the week that was already in flight when the stepper was tapped would land AFTER the patch and
+  // put the old value back (the control would jump back, and the next tap would compute from it).
+  it('a fetch of a week already in flight is cancelled, so its old answer cannot land on top of the new value', async () => {
+    seed()
+    const stale = deferred()
+    const staleWeek = week('wp-2', 2, [exercise('pe-1', { restSeconds: 90 }), exercise('pe-s', { position: 1 })])
+    // The fetch starts before the tap and answers (with what the server held before it) after it.
+    const inFlight = queryClient.fetchQuery({ queryKey: WEEK_KEY, staleTime: 0, queryFn: async () => { await stale.promise; return [staleWeek] } }).catch(() => undefined)
+    const write = deferred()
+    updateRestMock.mockReturnValue(write.promise)
+    const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
+
+    act(() => { result.current.mutate({ id: 'pe-s', changes: { restSeconds: 15 } }) })
+    await waitFor(() => expect(rowOf(WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15))
+    stale.resolve()
+    await inFlight
+    expect(rowOf(WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15)
+
+    write.resolve()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
   it('a week cache that is not loaded is left alone: nothing is created, nothing throws', async () => {
     queryClient.setQueryData(RUN_COPY_KEY, [exercise('pe-1')])
     updateRestMock.mockResolvedValue(undefined)
