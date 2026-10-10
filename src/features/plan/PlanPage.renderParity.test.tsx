@@ -88,6 +88,16 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // the whole file, byte for byte: it fails if the page renders anything the
 // file doesn't (a toggle put back, or any other stray markup) and if the file
 // holds anything the page doesn't render.
+//
+// Chunk 29 re-capture (SPEC Plan screen [P1.1]: two views; no COMPACT): the
+// fixture is the page's default view, SETS. Against the chunk 27 file, the only
+// differences are controls: the COMPACT toolbar is gone; the SETS / STRUCTURE
+// switch (the WEEKS/PROGRAM bar's own markup, so that bar's lines don't differ)
+// sits above the exercise card; each exercise's ⋯ and the ADD EXERCISE button
+// moved to the STRUCTURE view; the stage row's ⋯ is a same-width spacer (its
+// only action, DELETE STAGE, is STRUCTURE's). No value differs: the page's text,
+// in order, is identical once COMPACT and ADD EXERCISE are set against SETS and
+// STRUCTURE, and the only aria-labels missing are those three ⋯ buttons'.
 
 afterEach(() => cleanup())
 

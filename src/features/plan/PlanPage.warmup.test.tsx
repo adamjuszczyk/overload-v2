@@ -99,7 +99,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openExerciseMenu, openSetMenu } = await import('./planMenus.testutil')
+const { openExerciseMenu, openSetMenu, openStructureView } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -120,6 +120,12 @@ describe('PlanPage — warmup sets (chunk 15; per-row chip replaced by the exerc
     openSetMenu(1)
     expect(screen.queryByRole('button', { name: 'WARMUP' })).toBeNull()
     expect(screen.queryByText('SET KIND')).toBeNull()
+
+    // ... and neither does the STRUCTURE view's set ⋯ (chunk 29).
+    openStructureView()
+    openSetMenu(1)
+    expect(screen.queryByRole('button', { name: 'WARMUP' })).toBeNull()
+    expect(screen.queryByText('SET KIND')).toBeNull()
   })
 
   it('"Add warmup sets" is in the exercise\'s ⋯ and calls useAddWarmupSet for that exercise', () => {
@@ -128,6 +134,7 @@ describe('PlanPage — warmup sets (chunk 15; per-row chip replaced by the exerc
     renderPlanPage()
     expect(screen.queryByLabelText('Add warmup sets')).toBeNull() // not on the page by default
 
+    openStructureView()
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Add warmup sets'))
 
@@ -151,6 +158,15 @@ describe('PlanPage — warmup sets (chunk 15; per-row chip replaced by the exerc
     openSetMenu(1) // the warmup, shown above the working set
     expect(screen.queryByRole('button', { name: /ADD STAGE/i })).toBeNull()
     expect(screen.queryByText('STAGE KIND')).toBeNull()
+
+    // The kind controls are the STRUCTURE view's (chunk 29): there, the
+    // warmup's ⋯ still has no ADD STAGE (a warmup is never staged) ...
+    openStructureView()
+    openSetMenu(1)
+    expect(screen.queryByRole('button', { name: /ADD STAGE/i })).toBeNull()
+    expect(screen.queryByText('STAGE KIND')).toBeNull()
+    // ... and it is what holds the warmup's DELETE.
+    expect(screen.getByLabelText('Delete set')).toBeTruthy()
   })
 
   it('warmups render above the first working set (ordered by set number)', () => {

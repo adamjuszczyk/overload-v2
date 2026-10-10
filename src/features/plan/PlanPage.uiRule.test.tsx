@@ -168,13 +168,16 @@ describe('PlanPage — a plain week shows only set rows with three numbers each 
     expect(updateSetMutate).toHaveBeenCalledWith({ id: 's1', changes: { repMin: 6, repMax: 8, isAmrap: false } })
   })
 
-  it('a set\'s ⋯ holds set kind (add stage), tags and delete — and delete removes that set', () => {
+  // Chunk 29: set kind (ADD STAGE) left this ⋯ for the STRUCTURE view's (the
+  // presence assertion that stood here is now an absence, and its twin is in
+  // PlanPage.views.test.tsx); tags and delete stayed.
+  it('a working set\'s ⋯ holds tags and delete, not set kind (add stage) — and delete removes that set', () => {
     removeSetMutate.mockClear()
     mockState.plans = [plainWeek()]
     renderPlanPage()
 
     openSetMenu(2)
-    expect(screen.getByLabelText('Add stage')).toBeTruthy()
+    expect(screen.queryByLabelText('Add stage')).toBeNull()
     expect(screen.getByText('TAGS')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Delete set'))
 

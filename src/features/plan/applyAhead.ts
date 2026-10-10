@@ -163,8 +163,8 @@ export type ChangeRecord =
   | { editType: 'reorderExercise'; moves: ReorderMove[] }
   | { editType: 'addStage'; slotId: string; exerciseId: string; headOrdinal: number }
   | { editType: 'removeStage'; slotId: string; exerciseId: string; setPosition: SetPosition }
-  // Week-level REMOVE SET (review fix item 3 — per-row trash or compact
-  // MINUS): removes the head at a SPECIFIC ordinal, never "whichever is
+  // Week-level REMOVE SET (review fix item 3 — a set's own ⋯ DELETE SET):
+  // removes the head at a SPECIFIC ordinal, never "whichever is
   // trailing" — distinct from the program-tab's own removeSet below, which
   // stays trailing-only (setExerciseSetCount's own shrink behaviour).
   | { editType: 'removeHeadSet'; slotId: string; exerciseId: string; headOrdinal: number }
@@ -456,8 +456,8 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
       return { ...base, status: 'applied', ops: [{ kind: 'removeSet', weekPlanId: week.id, setId: set.id }] }
     }
 
-    // Review fix item 3 — week-level REMOVE SET (per-row trash or compact
-    // MINUS): removes the head at the SAME ordinal, never "whichever is
+    // Review fix item 3 — week-level REMOVE SET (a set's own ⋯ DELETE SET):
+    // removes the head at the SAME ordinal, never "whichever is
     // trailing" there (distinct from the program-tab's own removeSet,
     // below, which is deliberately trailing-only).
     case 'removeHeadSet': {

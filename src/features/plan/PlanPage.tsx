@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight, CalendarDays, Ellipsis } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, CalendarDays, Ellipsis } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit } from '../../types'
 import { useMesos } from '../programs/useMesos'
@@ -52,7 +52,6 @@ import { useSettingsStore } from '../settings/settingsStore'
 import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
-import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
@@ -89,6 +88,19 @@ type PlanTab = 'weeks' | 'program'
 const PLAN_TABS: { id: PlanTab; label: string }[] = [
   { id: 'weeks', label: 'WEEKS' },
   { id: 'program', label: 'PROGRAM' },
+]
+
+// Plan's week panel shows one week in two views (chunk 29, SPEC Plan screen
+// [P1.1], G16): SETS (how many sets, and each set's weight, reps and RIR, tags
+// included, stage rows' and warmup sets' numbers too) and STRUCTURE (the
+// shape: exercise order, swap, add and remove an exercise, set kinds with
+// warmup sets and stages added and removed). The switch is the WEEKS/PROGRAM
+// bar itself (SegmentBar below), not a lookalike.
+type PlanView = 'sets' | 'structure'
+
+const PLAN_VIEWS: { id: PlanView; label: string }[] = [
+  { id: 'sets', label: 'SETS' },
+  { id: 'structure', label: 'STRUCTURE' },
 ]
 
 function computeWeekNumber(startDate: string): number {
@@ -212,12 +224,16 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // always falls back to the first workout-bearing slot.
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
-  // Compact display mode (TASKS.md §4 item 32) — not in SPEC §11's Settings
-  // list, so this is page-local UI state, not a persisted setting: it resets
-  // on reload, same as isPast/viewWeek here.
-  const [compact, setCompact] = useState(false)
+  // Which of the week panel's two views is showing (chunk 29, SPEC Plan screen
+  // [P1.1]) — SETS or STRUCTURE. Display-only choices (D31), provisional: it
+  // opens on SETS (what's used on every visit), and it is page-local UI state,
+  // not a persisted setting (it resets on reload, like viewWeek here). It lives
+  // up here, not in the panel, so the view you chose stays when you step to
+  // another week or switch to another workout. COMPACT (the page-local view
+  // this replaces) is gone — "There's no compact view" (G17).
+  const [planView, setPlanView] = useState<PlanView>('sets')
 
-  // Program/Weeks tab (chunk 6) — page-local, resets on reload like compact
+  // Program/Weeks tab (chunk 6) — page-local, resets on reload like planView
   // above; nothing in SPEC says it should persist across visits.
   const [activeTab, setActiveTab] = useState<PlanTab>('weeks')
 
@@ -427,8 +443,8 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // depends on whether anything's been planned by hand yet). weekIsFully
   // Deload reads off weekPlans as they stand now (the same query the rest
   // of this screen already reads) — a one-button toggle, same convention
-  // as COMPACT above, flipping between the two labels rather than two
-  // separate buttons.
+  // as the per-session DELOAD pill, flipping between the two labels rather
+  // than two separate buttons.
   // Chunk 25 review fix — "Mark this cycle as deload" (chunk 21's week
   // shortcut, relabelled): setWeekDeload itself already marks every row
   // sharing (mesocycle_id, week_number) with no workout_day_id filter at
@@ -544,17 +560,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
         </div>
 
         {/* Program / Weeks tab bar */}
-        <div style={{ display: 'flex', marginTop: 12, borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)' }}>
-          {PLAN_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{ flex: 1, padding: '10px 0', background: activeTab === tab.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: activeTab === tab.id ? 'var(--base)' : 'var(--text-muted)' }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+        <SegmentBar segments={PLAN_TABS} active={activeTab} onSelect={setActiveTab} marginTop={12} />
       </div>
 
       {/* Content */}
@@ -703,16 +709,6 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
         {/* Workout switcher + the one selected workout's panel */}
         {!isSequence && !plansLoading && !daysLoading && scheduledDays.length > 0 && selected && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
-              <button
-                onClick={() => setCompact((c) => !c)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
-              >
-                <Rows3 size={11} />
-                COMPACT
-              </button>
-            </div>
-
             <WorkoutSwitcher days={scheduledDays} selectedDow={selected.dow} onSelect={setSelectedDow} />
 
             {/* Chunk 24 (SPEC "Weekday" — "'Move this session' on Today and
@@ -737,7 +733,8 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               isPast={isPast}
               mesoId={activeMeso.id}
               weekNumber={viewWeek}
-              compact={compact}
+              view={planView}
+              onViewChange={setPlanView}
               canCopyFromHistory={hasManualSourceFor(selected.workoutDay.id)}
               isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
               sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
@@ -756,16 +753,6 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
             calendar date a sequence slot doesn't have). */}
         {isSequence && !plansLoading && !daysLoading && selectedSlot && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8 }}>
-              <button
-                onClick={() => setCompact((c) => !c)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px', background: compact ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${compact ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: compact ? 'var(--accent)' : 'var(--text-dim)' }}
-              >
-                <Rows3 size={11} />
-                COMPACT
-              </button>
-            </div>
-
             <SequenceSlotSwitcher
               slots={sequenceSlots.map((s): SwitcherSlot => ({ id: s.id, position: s.position, workoutDayName: s.workoutDay?.name ?? null }))}
               selectedId={selectedSlot.id}
@@ -780,7 +767,8 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               isPast={isPast}
               mesoId={activeMeso.id}
               weekNumber={viewWeek}
-              compact={compact}
+              view={planView}
+              onViewChange={setPlanView}
               canCopyFromHistory={hasManualSourceFor(selectedSlot.workoutDay!.id, selectedSlot.position)}
               isShared={false}
               sharedWeekdays={null}
@@ -810,7 +798,11 @@ interface PanelProps {
   isPast: boolean
   mesoId: string
   weekNumber: number
-  compact: boolean
+  // Chunk 29 — which of the panel's two views shows (SETS or STRUCTURE), and
+  // how the switch under the page-level actions changes it. PlanScreen owns
+  // the choice so it survives a week or workout switch; the panel renders it.
+  view: PlanView
+  onViewChange: (view: PlanView) => void
   // Chunk 8 — whether COPY THIS WORKOUT has a real source to copy (the
   // same per-workout backward search PlanPage's own showCopyButton uses),
   // computed once by the parent (it alone holds the meso-wide history).
@@ -828,7 +820,7 @@ interface PanelProps {
   deloadRules: DeloadRules | null
 }
 
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, compact, canCopyFromHistory, isShared, sharedWeekdays, deloadRules }: PanelProps) {
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, view, onViewChange, canCopyFromHistory, isShared, sharedWeekdays, deloadRules }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -1095,9 +1087,11 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   }
 
   // Chunk 20 — "remove stage" (chunk 14) and, since the first review (item
-  // 3), week-level REMOVE SET on a head too (the trash icon on a whole
-  // set, or compact mode's MINUS) — SPEC names no exception for it either
-  // ("offered when a week is edited and later weeks are already planned").
+  // 3), week-level REMOVE SET on a head too (a working set's ⋯ DELETE SET
+  // in the Sets view, a warmup set's in the Structure view; chunk 29 took
+  // compact mode's MINUS away with COMPACT) — SPEC names no exception for it
+  // either ("offered when a week is edited and later weeks are already
+  // planned").
   // setPositionOf tells head from stage by itself (stageIndex null = head),
   // so one function now covers both, each with its own editType:
   // removeHeadSet matches by ordinal (removing THAT ordinal, never
@@ -1266,7 +1260,15 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
         </button>
       )}
 
-      {/* Exercise card */}
+      {/* SETS / STRUCTURE (chunk 29) — the switch between the panel's two
+          views, directly under the page-level actions above (the DELOAD
+          toggle, the apply-ahead banner, COPY THIS WORKOUT), which sit over
+          both. Built from the WEEKS/PROGRAM bar (SegmentBar). */}
+      <SegmentBar segments={PLAN_VIEWS} active={view} onSelect={onViewChange} marginBottom={8} />
+
+      {/* Exercise card — the same exercises in either view (SETS: each
+          exercise's `+` ADD SET and its set rows' numbers; STRUCTURE: each
+          exercise's ⋯ and its set rows' kinds). */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         {programExercises.length === 0 ? (
           <div style={{ padding: '20px 16px', textAlign: 'center' }}>
@@ -1286,7 +1288,11 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
 
             return (
               <ExerciseSection
-                key={pe.id}
+                // The view is in the key: switching views remounts the
+                // section, so no ⋯ menu or half-typed cell from the other
+                // view is carried over into this one.
+                key={`${pe.id}:${view}`}
+                view={view}
                 pe={pe}
                 groups={groups}
                 isPast={isPast}
@@ -1295,27 +1301,23 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
                 // the program tab, never here (SPEC "Supersets").
                 inSuperset={(unit?.length ?? 0) > 1}
                 showMoveControls={isFirstInUnit}
-                compact={compact}
-                // Disables ADD SET/minus while either mutation is in flight
-                // for this workout day (found by adversarial review):
-                // useAddSet has no optimistic update, so `groups` — and
-                // therefore the minus button's own onRemoveLastSet closure
-                // below — doesn't reflect a just-added set until the insert
-                // round-trips and the query refetches. A rapid ADD SET then
-                // MINUS before that happens targeted groups[groups.length-1]
-                // from the stale pre-add render, silently deleting the
-                // previous last set instead of the new one. addSet/removeSet
+                // Disables ADD SET and ADD WARMUP SETS while either mutation
+                // (or a set removal) is in flight for this workout day (found
+                // by adversarial review): useAddSet has no optimistic update,
+                // so `groups` doesn't reflect a just-added set until the
+                // insert round-trips and the query refetches. addSet/removeSet
                 // are shared per workout day, not per exercise, so this
                 // briefly disables both buttons across every exercise in the
                 // day during any single add/remove — a deliberately
                 // conservative trade against the more invasive alternative
                 // of adding optimistic-update logic to useAddSet itself.
+                // (The compact view's minus, whose stale closure first
+                // needed this, went with COMPACT in chunk 29.)
                 addOrRemovePending={addSet.isPending || removeSet.isPending || addWarmup.isPending}
                 onAddSet={() => handleAddSet(pe)}
                 onAddWarmup={() => handleAddWarmup(pe)}
                 onAddStage={(group) => handleAddStage(pe, group, groups)}
                 onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
-                onRemoveLastSet={() => handleRemoveSet(groups[groups.length - 1].head.id, pe, groups)}
                 onUpdateSet={(id, changes) => handleUpdateSet(id, changes, pe, groups)}
                 onApplyTagToAll={(tag) => handleApplyTagToAll(groups, tag)}
                 onSwap={() => setSwapTarget(pe)}
@@ -1335,8 +1337,10 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
           types"). Hidden once a week plan is past (read-only, same as every
           other edit on this screen) or missing (v2_plan_week always creates
           one the moment the week is shown — chunk 8 — so this is only
-          absent during that first instant of loading). */}
-      {!isPast && weekPlan && (
+          absent during that first instant of loading). Chunk 29: adding and
+          removing exercises are Structure (SPEC Plan screen [P1.1]), so this
+          is only in the Structure view. */}
+      {view === 'structure' && !isPast && weekPlan && (
         <button
           onClick={() => setShowAddExerciseSheet(true)}
           style={{ width: '100%', height: 44, marginTop: 8, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 10, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px' }}
@@ -1401,6 +1405,41 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   )
 }
 
+// ─── Segment bar ──────────────────────────────────────────────────────────────
+// The WEEKS / PROGRAM bar's own pattern (chunk 6): a flex row, rounded, with an
+// overflow-hidden border; each segment a mono label filled with the accent when
+// active and with the surface otherwise. Chunk 29 shares it, so the SETS /
+// STRUCTURE switch is that bar rather than a lookalike. The WEEKS / PROGRAM bar
+// renders exactly what it did (it is this with marginTop 12); an undefined
+// margin is left out of the style, so neither bar carries the other's.
+function SegmentBar<T extends string>({
+  segments,
+  active,
+  onSelect,
+  marginTop,
+  marginBottom,
+}: {
+  segments: { id: T; label: string }[]
+  active: T
+  onSelect: (id: T) => void
+  marginTop?: number
+  marginBottom?: number
+}) {
+  return (
+    <div style={{ display: 'flex', marginTop, borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)', marginBottom }}>
+      {segments.map((segment) => (
+        <button
+          key={segment.id}
+          onClick={() => onSelect(segment.id)}
+          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--base)' : 'var(--text-muted)' }}
+        >
+          {segment.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Row menu (⋯) ─────────────────────────────────────────────────────────────
 // Adam's standing UI rule (CONTEXT.md, 2026-10-10): a plan row shows only
 // what's used on every visit; everything else lives behind a ⋯ on the row or
@@ -1461,15 +1500,20 @@ function MenuAction({
 
 interface ExerciseSectionProps {
   pe: ProgramExercise
+  // Chunk 29 — which view the section is drawn for. SETS: the exercise's `+`
+  // ADD SET and each set row's numbers (weight, reps, RIR), tags, DELETE SET.
+  // STRUCTURE: the exercise's ⋯ (swap, move, add warmup sets, remove) and each
+  // set row's kind (a warmup's DELETE, a working set's ADD STAGE / STAGE KIND,
+  // a stage's DELETE STAGE). The exercise's name, muscle group and SUPERSET
+  // marker head both.
+  view: PlanView
   groups: Group<WeekPlanSet>[]
   isPast: boolean
   isLast: boolean
-  compact: boolean
   addOrRemovePending: boolean
   onAddSet: () => void
   onAddStage: (group: Group<WeekPlanSet>) => void
   onRemoveSet: (id: string) => void
-  onRemoveLastSet: () => void
   onUpdateSet: (id: string, changes: SetChanges) => void
   // Chunk 19 (SPEC "Tags") — one tag, broadcast to every working head set of
   // THIS exercise in this week (plannerVocabulary.ts's applyTagToAllHeads
@@ -1478,8 +1522,8 @@ interface ExerciseSectionProps {
   onApplyTagToAll: (tag: string) => void
   // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
   // from this week (SPEC "Weeks and copying"). All of them live in the
-  // exercise's ⋯ menu, which is hidden whenever isPast is (a past week is
-  // read-only).
+  // exercise's ⋯ menu (the STRUCTURE view's, since chunk 29), which is hidden
+  // whenever isPast is (a past week is read-only).
   onSwap: () => void
   onRemoveExercise: () => void
   // "Add warmup sets" (⋯ menu) — one warmup above the first working set.
@@ -1499,15 +1543,14 @@ interface ExerciseSectionProps {
 
 function ExerciseSection({
   pe,
+  view,
   groups,
   isPast,
   isLast,
-  compact,
   addOrRemovePending,
   onAddSet,
   onAddStage,
   onRemoveSet,
-  onRemoveLastSet,
   onUpdateSet,
   onApplyTagToAll,
   onSwap,
@@ -1544,38 +1587,29 @@ function ExerciseSection({
         </div>
         {!isPast && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {/* Compact mode has no per-row delete (it's a read-only glance
-                view), so ADD SET's plus had no symmetric way to reduce the
-                count without switching to expanded mode (post-launch fix,
-                2026-08-10). Expanded mode already offers precise per-row
-                delete via the set's ⋯ menu, so this stays compact-only
-                rather than duplicating that control. */}
-            {compact && groups.length > 0 && (
+            {/* SETS: the number of sets is this view's, so ADD SET's `+` is
+                here (a set is removed from its own row's ⋯). STRUCTURE: the
+                exercise's ⋯ (swap, order, warmups, remove) is that view's. */}
+            {view === 'sets' ? (
               <button
-                onClick={onRemoveLastSet}
+                onClick={onAddSet}
                 disabled={addOrRemovePending}
-                aria-label="Remove last set"
-                style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--text-dim)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
+                aria-label={`Add set to ${name}`}
+                style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--accent)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
               >
-                <Minus size={13} />
+                <Plus size={13} />
               </button>
+            ) : (
+              <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`${name} options`} />
             )}
-            <button
-              onClick={onAddSet}
-              disabled={addOrRemovePending}
-              aria-label={`Add set to ${name}`}
-              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--accent)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
-            >
-              <Plus size={13} />
-            </button>
-            <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`${name} options`} />
           </div>
         )}
       </div>
 
-      {/* Exercise ⋯ menu (chunk 9's week actions, moved here by the UI rule):
-          swap, move up/down, add warmup sets, remove from this week. */}
-      {!isPast && menuOpen && (
+      {/* Exercise ⋯ menu (chunk 9's week actions, moved here by the UI rule,
+          and into the STRUCTURE view by chunk 29): swap, move up/down, add
+          warmup sets, remove from this week. */}
+      {view === 'structure' && !isPast && menuOpen && (
         <div style={MENU_PANEL_STYLE}>
           <MenuAction onClick={act(onSwap)} ariaLabel={`Swap ${name}`}>
             <ArrowLeftRight size={13} />
@@ -1604,15 +1638,14 @@ function ExerciseSection({
         </div>
       )}
 
-      {/* Set groups — one row per head, its stages nested beneath it.
-          Compact mode swaps this for CompactPlanRows' collapsed summary;
-          it's a read-only glance view, so editing needs expanded mode. */}
+      {/* Set groups — one row per head, its stages nested beneath it. The
+          SETS view's rows carry the numbers; the STRUCTURE view's carry the
+          kind (and the ⋯ that changes it). Both number the heads the same
+          way, so "set 2" is the same set in either. */}
       {groups.length > 0 && (
-        compact ? (
-          <CompactPlanRows groups={groups} />
-        ) : (
-          <div style={{ paddingBottom: 10 }}>
-            {groups.map((group, idx) => (
+        <div style={{ paddingBottom: 10 }}>
+          {groups.map((group, idx) =>
+            view === 'sets' ? (
               <PlanSetGroup
                 key={group.head.id}
                 group={group}
@@ -1620,24 +1653,39 @@ function ExerciseSection({
                 isPast={isPast}
                 weightUnit={pe.weightUnit}
                 onRemoveHead={() => onRemoveSet(group.head.id)}
+                onUpdate={(id, changes) => onUpdateSet(id, changes)}
+                onApplyTagToAll={onApplyTagToAll}
+              />
+            ) : (
+              <StructureSetGroup
+                key={group.head.id}
+                group={group}
+                displayNumber={idx + 1}
+                isPast={isPast}
+                onRemoveHead={() => onRemoveSet(group.head.id)}
                 onRemoveStage={(id) => onRemoveSet(id)}
                 onUpdate={(id, changes) => onUpdateSet(id, changes)}
                 onAddStage={() => onAddStage(group)}
-                onApplyTagToAll={onApplyTagToAll}
               />
-            ))}
-          </div>
-        )
+            ),
+          )}
+        </div>
       )}
     </div>
   )
 }
 
-// ─── Set Group ────────────────────────────────────────────────────────────────
+// ─── Set Group (SETS view) ────────────────────────────────────────────────────
 // One planned set: a head row and its ordered stages nested beneath it
-// (TASKS.md §4 item 10). Everything beyond weight/reps/RIR — set kind and its
-// stages, tags, delete — is in the set's own ⋯ menu (SetRow renders it);
-// see weekPlanService.ts's addStage() for the write path ADD STAGE feeds.
+// (TASKS.md §4 item 10). The SETS view's rows carry the numbers: weight, reps
+// and RIR, on a head and on each stage (a warmup's have no RIR). What else
+// there is to do to a working set — its tags, DELETE SET — is in the set's own
+// ⋯ menu (SetRow renders it); a stage row has nothing behind a ⋯ here, since
+// its only action (DELETE STAGE) is the STRUCTURE view's. Set kinds — ADD
+// STAGE, STAGE KIND, a warmup's DELETE — are StructureSetGroup's, below.
+
+// The nest a head's stages sit in, in either view.
+const STAGE_NEST_STYLE: React.CSSProperties = { paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }
 
 function PlanSetGroup({
   group,
@@ -1645,9 +1693,7 @@ function PlanSetGroup({
   isPast,
   weightUnit,
   onRemoveHead,
-  onRemoveStage,
   onUpdate,
-  onAddStage,
   onApplyTagToAll,
 }: {
   group: Group<WeekPlanSet>
@@ -1659,15 +1705,13 @@ function PlanSetGroup({
   // SetRow.tsx).
   weightUnit: WeightUnit | null | undefined
   onRemoveHead: () => void
-  onRemoveStage: (id: string) => void
   onUpdate: (id: string, changes: SetChanges) => void
-  onAddStage: () => void
   onApplyTagToAll: (tag: string) => void
 }) {
   const { head, stages } = group
   // Chunk 14 — resolved once per group, same rule the workout screen's own
   // SetGroup.tsx uses (a legacy/null kind reads as a dropset): the head's
-  // kind marker, and the STAGE KIND chips' selected value in its menu.
+  // kind marker.
   const stageKind = resolveStageKind(head.stageKind ?? null)
   return (
     <div>
@@ -1690,47 +1734,27 @@ function PlanSetGroup({
         onUpdate={(changes) => onUpdate(head.id, changes)}
         menu={(close) => (
           <>
-            {/* Set kind. Staged = a head with stages (chunk 14, SPEC "Staged
-                sets": dropset, rest-pause, myo-reps, cluster). ADD STAGE just
-                adds a stage row, leaving the head's own stage_kind null
-                (reads as a dropset) until a different chip is tapped. A
-                warmup is never staged (v2_program_sets_warmup_check's rule),
-                so it gets no stage controls; warmups are added from the
-                exercise's own ⋯ menu, not per row. */}
-            {!head.isWarmup && (
-              <div>
-                {stages.length > 0 && (
-                  <div style={{ paddingBottom: 4 }}>
-                    <RatingChips
-                      scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
-                      value={stageKind}
-                      onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
-                      label="STAGE KIND"
-                    />
-                  </div>
-                )}
-                <MenuAction onClick={onAddStage} ariaLabel="Add stage">
-                  <Plus size={13} />
-                  ADD STAGE
-                </MenuAction>
-              </div>
-            )}
             <TagsEditor
               tags={head.tags ?? null}
               disabled={isPast}
               onChange={(next) => onUpdate(head.id, { tags: next })}
               onApplyToAll={onApplyTagToAll}
             />
-            <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
-              <Trash2 size={13} />
-              DELETE SET
-            </MenuAction>
+            {/* A warmup set is deleted in the STRUCTURE view (it is a set kind,
+                and warmups are added there too); DELETE SET here is a working
+                set's. */}
+            {!head.isWarmup && (
+              <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
+                <Trash2 size={13} />
+                DELETE SET
+              </MenuAction>
+            )}
           </>
         )}
       />
 
       {stages.length > 0 && (
-        <div style={{ paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }}>
+        <div style={STAGE_NEST_STYLE}>
           {stages.map((stage) => (
             <SetRow
               key={stage.id}
@@ -1741,6 +1765,89 @@ function PlanSetGroup({
               weightUnit={weightUnit}
               isPast={isPast}
               onUpdate={(changes) => onUpdate(stage.id, changes)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Set Group (STRUCTURE view) ───────────────────────────────────────────────
+// The same set, drawn for its kind rather than its numbers (chunk 29, SPEC Plan
+// screen [P1.1]: "set kinds (warmup, staged sets and their stages), including
+// adding and removing warmup sets and stages"). A row is the set's number, its
+// kind marker where it has a kind, and a ⋯ holding the kind controls:
+//   - a working head: ADD STAGE and, once it has stages, the STAGE KIND chips
+//     (a staged set; chunk 14, SPEC "Staged sets": dropset, rest-pause,
+//     myo-reps, cluster). ADD STAGE just adds a stage row, leaving the head's
+//     own stage_kind null (reads as a dropset) until a different chip is
+//     tapped;
+//   - a warmup head: DELETE SET (a warmup is never staged —
+//     v2_program_sets_warmup_check's rule — so it gets no stage controls;
+//     warmups are added from the exercise's own ⋯ menu, not per row);
+//   - a stage row: DELETE STAGE.
+// No numbers here: weight, reps, RIR and tags are the SETS view's.
+
+function StructureSetGroup({
+  group,
+  displayNumber,
+  isPast,
+  onRemoveHead,
+  onRemoveStage,
+  onUpdate,
+  onAddStage,
+}: {
+  group: Group<WeekPlanSet>
+  displayNumber: number
+  isPast: boolean
+  onRemoveHead: () => void
+  onRemoveStage: (id: string) => void
+  onUpdate: (id: string, changes: SetChanges) => void
+  onAddStage: () => void
+}) {
+  const { head, stages } = group
+  const stageKind = resolveStageKind(head.stageKind ?? null)
+  return (
+    <div>
+      <StructureSetRow
+        displayNumber={displayNumber}
+        isPast={isPast}
+        kindLabel={head.isWarmup ? 'WARMUP' : stages.length > 0 ? STAGE_KIND_LABELS[stageKind] : undefined}
+        menu={(close) =>
+          head.isWarmup ? (
+            <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
+              <Trash2 size={13} />
+              DELETE SET
+            </MenuAction>
+          ) : (
+            <div>
+              {stages.length > 0 && (
+                <div style={{ paddingBottom: 4 }}>
+                  <RatingChips
+                    scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
+                    value={stageKind}
+                    onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
+                    label="STAGE KIND"
+                  />
+                </div>
+              )}
+              <MenuAction onClick={onAddStage} ariaLabel="Add stage">
+                <Plus size={13} />
+                ADD STAGE
+              </MenuAction>
+            </div>
+          )
+        }
+      />
+
+      {stages.length > 0 && (
+        <div style={STAGE_NEST_STYLE}>
+          {stages.map((stage) => (
+            <StructureSetRow
+              key={stage.id}
+              isStage
+              isPast={isPast}
               menu={(close) => (
                 <MenuAction onClick={() => { close(); onRemoveStage(stage.id) }} danger ariaLabel="Delete stage">
                   <Trash2 size={13} />
@@ -1755,13 +1862,83 @@ function PlanSetGroup({
   )
 }
 
-// ─── Set Row ──────────────────────────────────────────────────────────────────
+// A set's row in the STRUCTURE view: the number (↳ on a stage), then the kind
+// marker under it where the set has a kind, and the ⋯. A past week has no ⋯
+// (read-only, like the SETS view's rows); the spacer keeps the columns where
+// they are.
+function StructureSetRow({
+  displayNumber,
+  isStage = false,
+  kindLabel,
+  isPast,
+  menu,
+}: {
+  displayNumber?: number
+  isStage?: boolean
+  kindLabel?: string
+  isPast: boolean
+  menu: (close: () => void) => React.ReactNode
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
+        {/* Set number */}
+        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
+          {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }} />
+        {isPast ? (
+          <div style={{ width: 28, flexShrink: 0 }} />
+        ) : (
+          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} />
+        )}
+      </div>
+
+      <SetMarkers kindLabel={kindLabel} tags={null} />
+
+      {!isPast && menuOpen && (
+        <div style={MENU_PANEL_STYLE}>
+          {menu(() => setMenuOpen(false))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// The small marker line under a set's row: its kind, and its tags, only where
+// it has them (standing UI rule: an unset feature shows nothing). Both views
+// draw it the same way.
+function SetMarkers({ kindLabel, tags }: { kindLabel?: string; tags: string[] | null }) {
+  if (!kindLabel && tags === null) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '0 16px 4px', paddingLeft: 44 }}>
+      {kindLabel && (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--accent)' }}>
+          {kindLabel}
+        </span>
+      )}
+      {tags?.map((tag) => (
+        <span
+          key={tag}
+          style={{ padding: '0 6px', height: 16, display: 'inline-flex', alignItems: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}
+        >
+          {tag}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// ─── Set Row (SETS view) ──────────────────────────────────────────────────────
 // A single row: either a head (numbered) or a stage (↳ marker, no number of
 // its own — it shares its head's set_number by convention, TASKS.md §2.1).
 // By default it shows set number, weight, reps and RIR — nothing else
 // (Adam's standing UI rule). A set that has a kind or tags shows them as a
 // small marker line under the row; a set without them shows nothing extra.
-// The ⋯ opens `menu`, which holds everything else for this set.
+// The ⋯ opens `menu`, which holds everything else for this set; a row with no
+// `menu` (a stage row, in the SETS view) has no ⋯ — a spacer holds its place.
 
 function SetRow({
   displayNumber,
@@ -1802,9 +1979,10 @@ function SetRow({
   // RIR stepper out: "Mandatory fields never apply to warmup sets" [P2], and
   // RIR is never logged on one in the first place.
   isWarmup?: boolean
-  // The ⋯ menu's contents; `close` collapses the panel. Omitted/ignored on a
-  // past (read-only) week, which gets no ⋯ at all.
-  menu: (close: () => void) => React.ReactNode
+  // The ⋯ menu's contents; `close` collapses the panel. Omitted on a row with
+  // nothing to put behind a ⋯ (an empty ⋯ would be a placeholder), and ignored
+  // on a past (read-only) week, which gets no ⋯ at all.
+  menu?: (close: () => void) => React.ReactNode
   onUpdate: (changes: SetChanges) => void
 }) {
   // Chunk 19 — this exercise's resolved unit (its own override, else the
@@ -1813,7 +1991,6 @@ function SetRow({
   const { unit: resolvedUnit } = useWeightDisplay(weightUnit)
   const [menuOpen, setMenuOpen] = useState(false)
   const activeTags = tags != null && tags.length > 0 ? tags : null
-  const hasMarkers = Boolean(kindLabel) || activeTags !== null
   const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
 
   return (
@@ -1859,7 +2036,7 @@ function SetRow({
             edge; on every other row the weight and reps cells take the room. */}
         {isWarmup && <div style={{ flex: 1, minWidth: 0 }} />}
 
-        {isPast ? (
+        {isPast || !menu ? (
           <div style={{ width: 28, flexShrink: 0 }} />
         ) : (
           <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} />
@@ -1867,26 +2044,10 @@ function SetRow({
       </div>
 
       {/* Markers — only on a set that has a kind or tags. */}
-      {hasMarkers && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '0 16px 4px', paddingLeft: 44 }}>
-          {kindLabel && (
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--accent)' }}>
-              {kindLabel}
-            </span>
-          )}
-          {activeTags?.map((tag) => (
-            <span
-              key={tag}
-              style={{ padding: '0 6px', height: 16, display: 'inline-flex', alignItems: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
+      <SetMarkers kindLabel={kindLabel} tags={activeTags} />
 
       {/* ⋯ menu panel */}
-      {!isPast && menuOpen && (
+      {!isPast && menu && menuOpen && (
         <div style={MENU_PANEL_STYLE}>
           {menu(() => setMenuOpen(false))}
         </div>

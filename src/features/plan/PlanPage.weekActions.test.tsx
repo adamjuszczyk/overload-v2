@@ -12,6 +12,9 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): the "only this week"
 // tick is gone — a swap or reorder is a normal week edit, so its call carries
 // no such argument, and no ONLY THIS WEEK control exists on the screen.
+// Chunk 29 (SPEC Plan screen [P1.1]): swap, reorder, remove, add and the
+// exercise ⋯ are the STRUCTURE view's, so each test opens that view first
+// (openStructureView); nothing else about them changed.
 // Renders the real PlanPage/WorkoutDayPanel/ExerciseSection tree; only the
 // data hooks are mocked (same seam as PlanPage.copyButtons.test.tsx).
 //
@@ -128,7 +131,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openExerciseMenu } = await import('./planMenus.testutil')
+const { openExerciseMenu, openStructureView } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -155,6 +158,7 @@ describe('PlanPage — week actions are visible on the current (non-past) week',
     mockState.plans = [makePlan(1, [pe1, pe2])]
 
     renderPlanPage()
+    openStructureView()
 
     // UI rule (2026-10-10): per-exercise actions are behind each exercise's
     // ⋯; the page shows only the two ⋯ buttons and ADD EXERCISE.
@@ -176,6 +180,7 @@ describe('PlanPage — swap', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
@@ -204,7 +209,7 @@ describe('PlanPage — no "ONLY THIS WEEK" tick anywhere (chunk 27)', () => {
     mockState.plans = [makePlan(1, [pe1, pe2])]
     const { container } = renderPlanPage()
 
-    expect(screen.getByText('COMPACT')).toBeTruthy() // the toolbar the tick used to sit in is still there
+    expect(screen.queryByText('COMPACT')).toBeNull() // the toolbar the tick used to sit in went with COMPACT (chunk 29)
     expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
     expect(screen.queryByText(/only this week/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /only this week/i })).toBeNull()
@@ -224,6 +229,7 @@ describe('PlanPage — no "ONLY THIS WEEK" tick anywhere (chunk 27)', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     const { container } = renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Bench Press')
     expect(screen.getByLabelText('Swap Bench Press')).toBeTruthy() // the menu is open
@@ -236,6 +242,7 @@ describe('PlanPage — reorder', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Bench Press')
     fireEvent.click(screen.getByLabelText('Move down'))
@@ -255,6 +262,7 @@ describe('PlanPage — reorder', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     // No jest-dom in this suite — plain DOM property check (same
     // convention as ReassignSheet.test.tsx).
@@ -279,6 +287,7 @@ describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPE
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
     renderPlanPage()
+    openStructureView()
 
     // 2 units total (the block, and pe3) → 2 move-down buttons, not 3.
     openExerciseMenu('Bench Press')
@@ -299,6 +308,7 @@ describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPE
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Bench Press')
     fireEvent.click(screen.getByLabelText('Move down')) // the block's own (only) down button
@@ -320,6 +330,7 @@ describe('PlanPage — add', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     fireEvent.click(screen.getByText('ADD EXERCISE'))
     fireEvent.click(screen.getByText('Incline Press'))
@@ -338,6 +349,7 @@ describe('PlanPage — remove', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
@@ -352,6 +364,7 @@ describe('PlanPage — remove', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
@@ -377,6 +390,7 @@ describe('PlanPage — G14: a workout on two weekdays shares one plan row', () =
     expect(screen.getByText('MON')).toBeTruthy()
     expect(screen.getByText('THU')).toBeTruthy()
 
+    openStructureView()
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     fireEvent.click(screen.getByText('Incline Press'))
@@ -406,6 +420,7 @@ describe('PlanPage — a past week is read-only for week actions too', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2]), makePlan(4, [pe1, pe2])]
     renderPlanPage()
+    openStructureView()
 
     expect(screen.getByText('WEEK 4')).toBeTruthy() // sanity: mounted on the current week
     expect(screen.getByLabelText('Bench Press options')).toBeTruthy() // visible on the (non-past) current week

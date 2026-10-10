@@ -18,13 +18,15 @@ import { scheduleSequence } from '../gym/sequenceSchedule'
 //   - the opening view, the current-cycle marker, the read-only banner and EVERY
 //     control that depends on a week being past follow the sequence's cycle, not
 //     the calendar week or the cycle before it. expectEditable / expectReadOnly
-//     walk the whole control matrix of the viewed cycle: the page's COPY LAST
-//     CYCLE (empty cycles) and MARK CYCLE AS DELOAD; the panel's per-session
-//     DELOAD toggle, apply-ahead offer, COPY THIS WORKOUT and ADD EXERCISE; each
-//     exercise's ADD SET, ⋯ button and ⋯ menu (swap, move, warmup, remove); each
-//     set row's weight, reps and RIR cells, ⋯ button and ⋯ menu (stage, stage
-//     kind, tags, delete); a stage row's cells, ⋯ and menu; the compact view's
-//     REMOVE LAST SET;
+//     walk the whole control matrix of the viewed cycle, in BOTH of the panel's
+//     views (chunk 29): the page's COPY LAST CYCLE (empty cycles) and MARK CYCLE
+//     AS DELOAD; the panel's per-session DELOAD toggle, apply-ahead offer and
+//     COPY THIS WORKOUT (above both views). SETS view: each exercise's ADD SET;
+//     each set row's weight, reps and RIR cells, ⋯ button and ⋯ menu (tags,
+//     delete); a stage row's cells (it has no ⋯ here). STRUCTURE view: ADD
+//     EXERCISE; each exercise's ⋯ button and ⋯ menu (swap, move, warmup,
+//     remove); each set row's ⋯ button and ⋯ menu (stage, stage kind), a stage
+//     row's ⋯ and menu (delete). COMPACT, and its REMOVE LAST SET, are gone;
 //   - the cycle moving on while the page is open turns the viewed cycle read-only
 //     on the spot, and its apply-ahead offer and open menus go with it;
 //   - a skipped workout moves the current cycle exactly as a done one does;
@@ -129,6 +131,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openSetsView, openStructureView } = await import('./planMenus.testutil')
 
 afterEach(() => {
   readOverrides = {}
@@ -378,13 +381,14 @@ function lastUpdate() {
 }
 
 // The viewed (populated) cycle can be edited: every control the screen has for
-// it is there and live, and each edit reaches the hook with THIS cycle's own row.
+// it is there and live, in both views, and each edit reaches the hook with THIS
+// cycle's own row. Leaves the STRUCTURE view open; each call starts from SETS.
 function expectEditable(cycle: number, slot = 0) {
   // — the page
   expect(banner()).toBeNull()
   expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
 
-  // — the session's own DELOAD toggle
+  // — the session's own DELOAD toggle (above both views)
   const sessionDeload = asButton(labelled('Mark this session as deload'))
   expect(sessionDeload.disabled).toBe(false)
   setDeloadMutate.mockClear()
@@ -393,25 +397,20 @@ function expectEditable(cycle: number, slot = 0) {
   expect((setDeloadMutate.mock.calls[0][0] as { weekPlanId: string }).weekPlanId).toBe(planId(cycle, slot))
   setDeloadMutate.mockClear()
 
-  // — ADD EXERCISE
-  expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
+  // ═══ the SETS view ═══════════════════════════════════════════════════════
+  openSetsView()
 
-  // — each exercise: ADD SET, the ⋯ button, and its ⋯ menu (swap, move, warmup, remove)
-  for (const [name, canMoveUp, canMoveDown] of [[EX1, false, true], [EX2, true, false]] as const) {
+  // — each exercise: ADD SET is live; the exercise ⋯ and ADD EXERCISE are the other view's
+  for (const name of [EX1, EX2]) {
     expect(asButton(labelled(`Add set to ${name}`)).disabled).toBe(false)
-    fireEvent.click(labelled(`${name} options`))
-    expect(labelled(`Swap ${name}`)).toBeTruthy()
-    expect(asButton(labelled('Move up')).disabled).toBe(!canMoveUp)
-    expect(asButton(labelled('Move down')).disabled).toBe(!canMoveDown)
-    expect(labelled('Add warmup sets')).toBeTruthy()
-    expect(labelled(`Remove ${name} from this week`)).toBeTruthy()
-    fireEvent.click(labelled(`${name} options`))
-    expect(maybeLabelled(`Swap ${name}`)).toBeNull()
+    expect(maybeLabelled(`${name} options`)).toBeNull()
   }
+  expect(screen.queryByText('ADD EXERCISE')).toBeNull()
 
-  // — every set row (heads, the stage, the other exercise's): all four cells live, a ⋯ button
+  // — every set row (heads, the other exercise's): all four cells live, a ⋯ button;
+  //   the stage row's cells are live too, and it has no ⋯ (its only action is the other view's)
   const rows = setRows()
-  for (const row of [rows.benchSet1, rows.stage, rows.benchSet2, rows.rowSet1]) {
+  for (const row of [rows.benchSet1, rows.benchSet2, rows.rowSet1]) {
     const c = controlsOf(row)
     expect(c.weight.disabled).toBe(false)
     expect(c.reps.disabled).toBe(false)
@@ -419,6 +418,12 @@ function expectEditable(cycle: number, slot = 0) {
     expect(c.rirUp.disabled).toBe(false)
     expect(c.options).not.toBeNull()
   }
+  const stageCells = controlsOf(rows.stage)
+  expect(stageCells.weight.disabled).toBe(false)
+  expect(stageCells.reps.disabled).toBe(false)
+  expect(stageCells.rirDown.disabled).toBe(false)
+  expect(stageCells.rirUp.disabled).toBe(false)
+  expect(stageCells.options).toBeNull()
 
   // — the first set's cells each write THIS cycle's own set
   updateSetMutate.mockClear()
@@ -440,26 +445,62 @@ function expectEditable(cycle: number, slot = 0) {
   expect(lastUpdate()).toEqual({ id: `stage-c${cycle}-s${slot}`, changes: { targetRir: 1 } })
   updateSetMutate.mockClear()
 
-  // — a head's ⋯ menu: ADD STAGE, STAGE KIND (it has a stage), the tags editor, DELETE SET
+  // — a head's ⋯ menu: the tags editor and DELETE SET; its set kind (ADD STAGE,
+  //   STAGE KIND) is the other view's
   fireEvent.click(controlsOf(rows.benchSet1).options!)
-  expect(labelled('Add stage')).toBeTruthy()
-  expect(screen.getByText('STAGE KIND')).toBeTruthy()
   expect(screen.getByText('TAGS')).toBeTruthy()
   expect(asButton(screen.getByText('+ CUSTOM')).disabled).toBe(false)
   expect(labelled('Delete set')).toBeTruthy()
+  expect(maybeLabelled('Add stage')).toBeNull()
+  expect(screen.queryByText('STAGE KIND')).toBeNull()
   fireEvent.click(controlsOf(rows.benchSet1).options!)
   expect(maybeLabelled('Delete set')).toBeNull()
 
+  // ═══ the STRUCTURE view ══════════════════════════════════════════════════
+  openStructureView()
+
+  // — ADD EXERCISE
+  expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
+
+  // — each exercise: the ⋯ button, and its ⋯ menu (swap, move, warmup, remove); ADD SET is the other view's
+  for (const [name, canMoveUp, canMoveDown] of [[EX1, false, true], [EX2, true, false]] as const) {
+    expect(maybeLabelled(`Add set to ${name}`)).toBeNull()
+    fireEvent.click(labelled(`${name} options`))
+    expect(labelled(`Swap ${name}`)).toBeTruthy()
+    expect(asButton(labelled('Move up')).disabled).toBe(!canMoveUp)
+    expect(asButton(labelled('Move down')).disabled).toBe(!canMoveDown)
+    expect(labelled('Add warmup sets')).toBeTruthy()
+    expect(labelled(`Remove ${name} from this week`)).toBeTruthy()
+    fireEvent.click(labelled(`${name} options`))
+    expect(maybeLabelled(`Swap ${name}`)).toBeNull()
+  }
+
+  // — every set row, the stage's included, has a ⋯ button and none of the numbers' cells
+  const structureRows = setRows()
+  for (const row of [structureRows.benchSet1, structureRows.stage, structureRows.benchSet2, structureRows.rowSet1]) {
+    expect(within(row).queryByRole('button', { name: /^Options for / })).not.toBeNull()
+    expect(within(row).queryByRole('button', { name: MINUS })).toBeNull()
+  }
+  expect(screen.queryByLabelText('Weight target')).toBeNull()
+
+  // — a head's ⋯ menu: ADD STAGE and STAGE KIND (it has a stage); its tags and DELETE SET are the other view's
+  fireEvent.click(within(structureRows.benchSet1).getByRole('button', { name: /^Options for / }))
+  expect(labelled('Add stage')).toBeTruthy()
+  expect(screen.getByText('STAGE KIND')).toBeTruthy()
+  expect(screen.queryByText('TAGS')).toBeNull()
+  expect(maybeLabelled('Delete set')).toBeNull()
+  fireEvent.click(within(structureRows.benchSet1).getByRole('button', { name: /^Options for / }))
+  expect(maybeLabelled('Add stage')).toBeNull()
+
   // — a stage's ⋯ menu: DELETE STAGE
-  fireEvent.click(controlsOf(rows.stage).options!)
+  fireEvent.click(within(structureRows.stage).getByRole('button', { name: /^Options for / }))
   expect(labelled('Delete stage')).toBeTruthy()
-  fireEvent.click(controlsOf(rows.stage).options!)
+  fireEvent.click(within(structureRows.stage).getByRole('button', { name: /^Options for / }))
   expect(maybeLabelled('Delete stage')).toBeNull()
 
-  // — the compact view: REMOVE LAST SET on each exercise
-  fireEvent.click(screen.getByText('COMPACT'))
-  expect(allLabelled('Remove last set')).toHaveLength(2)
-  fireEvent.click(screen.getByText('COMPACT'))
+  // — COMPACT is gone: no toggle, no REMOVE LAST SET
+  expect(screen.queryByText('COMPACT')).toBeNull()
+  expect(allLabelled('Remove last set')).toHaveLength(0)
 
   // The edits above offered "apply ahead" where later cycles are planned; leave none showing.
   const dismiss = maybeLabelled('Dismiss')
@@ -467,7 +508,8 @@ function expectEditable(cycle: number, slot = 0) {
 }
 
 // The viewed (populated) cycle is past: the banner shows, and every control that
-// would change it is gone or dead — nothing opens, nothing reaches a hook.
+// would change it is gone or dead, in both views — nothing opens, nothing reaches
+// a hook. Leaves the STRUCTURE view open.
 function expectReadOnly() {
   // — the page
   expect(banner()).not.toBeNull()
@@ -481,25 +523,32 @@ function expectReadOnly() {
   fireEvent.click(sessionDeload)
   expect(setDeloadMutate).not.toHaveBeenCalled()
 
-  // — no ADD EXERCISE, no exercise header controls, no ⋯ buttons or menus anywhere
-  expect(screen.queryByText('ADD EXERCISE')).toBeNull()
-  for (const name of [EX1, EX2]) {
-    expect(maybeLabelled(`Add set to ${name}`)).toBeNull()
-    expect(maybeLabelled(`${name} options`)).toBeNull()
-    expect(maybeLabelled(`Swap ${name}`)).toBeNull()
+  // — in either view: no ADD EXERCISE, no exercise header controls, no ⋯ buttons or menus anywhere
+  for (const openView of [openSetsView, openStructureView]) {
+    openView()
+    expect(screen.queryByText('ADD EXERCISE')).toBeNull()
+    for (const name of [EX1, EX2]) {
+      expect(maybeLabelled(`Add set to ${name}`)).toBeNull()
+      expect(maybeLabelled(`${name} options`)).toBeNull()
+      expect(maybeLabelled(`Swap ${name}`)).toBeNull()
+    }
+    expect(allLabelled(/^Options for /)).toHaveLength(0)
+    for (const label of ['Move up', 'Move down', 'Add warmup sets', 'Add stage', 'Delete set', 'Delete stage']) {
+      expect(maybeLabelled(label)).toBeNull()
+    }
+    // The tags editor and the stage-kind chips live in a set's ⋯ menu, which a past
+    // cycle doesn't have (that is what these absences pin). The tags editor's own
+    // `disabled` flag is a second lock behind that door: no screen state reaches it.
+    expect(screen.queryByText('STAGE KIND')).toBeNull()
+    expect(screen.queryByText('TAGS')).toBeNull()
+    expect(screen.queryByText('+ CUSTOM')).toBeNull()
+    // The set rows themselves are still drawn in either view.
+    expect(screen.getAllByText('01')).toHaveLength(2)
+    expect(screen.getByText('↳')).toBeTruthy()
   }
-  expect(allLabelled(/^Options for /)).toHaveLength(0)
-  for (const label of ['Move up', 'Move down', 'Add warmup sets', 'Add stage', 'Delete set', 'Delete stage']) {
-    expect(maybeLabelled(label)).toBeNull()
-  }
-  // The tags editor and the stage-kind chips live in a set's ⋯ menu, which a past
-  // cycle doesn't have (that is what these absences pin). The tags editor's own
-  // `disabled` flag is a second lock behind that door: no screen state reaches it.
-  expect(screen.queryByText('STAGE KIND')).toBeNull()
-  expect(screen.queryByText('TAGS')).toBeNull()
-  expect(screen.queryByText('+ CUSTOM')).toBeNull()
 
-  // — every set row's cells are on screen but dead, and open nothing
+  // — SETS view: every set row's cells are on screen but dead, and open nothing
+  openSetsView()
   updateSetMutate.mockClear()
   for (const row of Object.values(setRows())) {
     const c = controlsOf(row)
@@ -514,29 +563,39 @@ function expectReadOnly() {
   expect(screen.queryByLabelText('Rep target')).toBeNull()
   expect(updateSetMutate).not.toHaveBeenCalled()
 
-  // — the compact view has no REMOVE LAST SET
-  fireEvent.click(screen.getByText('COMPACT'))
+  // — STRUCTURE view: the set rows carry no cells, and no ⋯ to open a menu from
+  openStructureView()
+  for (const row of Object.values(setRows())) {
+    expect(within(row).queryByRole('button')).toBeNull()
+  }
+
+  // — COMPACT is gone, so there is no REMOVE LAST SET to be dead either
+  expect(screen.queryByText('COMPACT')).toBeNull()
   expect(allLabelled('Remove last set')).toHaveLength(0)
-  fireEvent.click(screen.getByText('COMPACT'))
 }
 
 // An EMPTY cycle (plan rows, no exercises) that is current or later: copying is
 // offered — the whole cycle, and this workout — and each acts on THIS cycle; the
-// cycle can otherwise be edited (its cycle action, its session toggle, ADD EXERCISE).
+// cycle can otherwise be edited (its cycle action, its session toggle, ADD
+// EXERCISE in the STRUCTURE view). The copy buttons are above both views.
 function expectEmptyCycleEditable(cycle: number, slot = 0) {
   expect(banner()).toBeNull()
   expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
   expect(asButton(labelled('Mark this session as deload')).disabled).toBe(false)
+  openStructureView()
   expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
 
-  expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
+  for (const openView of [openSetsView, openStructureView]) {
+    openView()
+    expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
+    expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
+  }
   copyWeekMutate.mockClear()
   fireEvent.click(screen.getByText('COPY LAST CYCLE'))
   expect(copyWeekMutate).toHaveBeenCalledTimes(1)
   expect(copyWeekHook).toHaveBeenLastCalledWith('meso-1', cycle)
   copyWeekMutate.mockClear()
 
-  expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
   copyWorkoutMutate.mockClear()
   fireEvent.click(screen.getByText('COPY THIS WORKOUT'))
   expect(copyWorkoutMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-a', weekPlanId: planId(cycle, slot), sequencePosition: slot })
@@ -544,14 +603,17 @@ function expectEmptyCycleEditable(cycle: number, slot = 0) {
 }
 
 // An EMPTY past cycle: nothing to copy into — neither button — and nothing else
-// to change it with either.
+// to change it with either, in either view.
 function expectEmptyCycleReadOnly() {
   expect(banner()).not.toBeNull()
-  expect(screen.queryByText('COPY LAST CYCLE')).toBeNull()
-  expect(screen.queryByText('COPY THIS WORKOUT')).toBeNull()
-  expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
   expect(asButton(labelled('Mark this session as deload')).disabled).toBe(true)
-  expect(screen.queryByText('ADD EXERCISE')).toBeNull()
+  for (const openView of [openSetsView, openStructureView]) {
+    openView()
+    expect(screen.queryByText('COPY LAST CYCLE')).toBeNull()
+    expect(screen.queryByText('COPY THIS WORKOUT')).toBeNull()
+    expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
+    expect(screen.queryByText('ADD EXERCISE')).toBeNull()
+  }
 }
 
 // ─── The scenarios ───────────────────────────────────────────────────────────
@@ -726,21 +788,19 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
   })
 
   describe('the cycle moves on while the page is open', () => {
-    it('the last workout of cycle 3 gets done: the viewed cycle 3 turns read-only on the spot, and its apply-ahead offer and open ⋯ menus go with it', () => {
+    it('SETS view: the last workout of cycle 3 gets done: the viewed cycle 3 turns read-only on the spot, and its apply-ahead offer and open set ⋯ menu go with it', () => {
       setUpSequenceRun(THREE_DAY)
       const view = renderPlan()
       expect(isMarkedCurrent('CYCLE 3')).toBe(true)
 
-      // On the current cycle: open an exercise's ⋯ menu and a set's ⋯ menu, and
-      // make an edit, so the apply-ahead offer shows (cycle 4 is planned).
-      fireEvent.click(labelled(`${EX1} options`))
+      // On the current cycle: open a set's ⋯ menu and make an edit, so the
+      // apply-ahead offer shows (cycle 4 is planned).
       const rows = setRows()
       fireEvent.click(controlsOf(rows.benchSet1).options!)
       fireEvent.click(controlsOf(rows.benchSet2).weight)
       fireEvent.change(screen.getByLabelText('Weight target'), { target: { value: '100' } })
       fireEvent.blur(screen.getByLabelText('Weight target'))
       expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-      expect(labelled(`Swap ${EX1}`)).toBeTruthy()
       expect(labelled('Delete set')).toBeTruthy()
 
       // The last workout of cycle 3 (C, on the Sunday) is done; Plan's reads refresh.
@@ -751,9 +811,37 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(screen.getByText('CYCLE 3')).toBeTruthy()
       expect(isMarkedCurrent('CYCLE 3')).toBe(false)
       expectReadOnly() // banner, no cycle action, no offer, dead cells, no ⋯ buttons
-      expect(maybeLabelled(`Swap ${EX1}`)).toBeNull() // the exercise menu that was open
       expect(maybeLabelled('Delete set')).toBeNull() // the set menu that was open
       // ... and the next cycle is the current one now.
+      goTo(4)
+      expect(isMarkedCurrent('CYCLE 4')).toBe(true)
+      expectEditable(4)
+    })
+
+    it('STRUCTURE view: the same, with an exercise\'s ⋯ menu open — the offer (above both views) was still showing, and goes with it', () => {
+      setUpSequenceRun(THREE_DAY)
+      const view = renderPlan()
+      expect(isMarkedCurrent('CYCLE 3')).toBe(true)
+
+      // An edit in the SETS view offers "apply ahead"; the offer sits above both
+      // views, so it is still there in the STRUCTURE view, where an exercise's ⋯ is opened.
+      const rows = setRows()
+      fireEvent.click(controlsOf(rows.benchSet2).weight)
+      fireEvent.change(screen.getByLabelText('Weight target'), { target: { value: '100' } })
+      fireEvent.blur(screen.getByLabelText('Weight target'))
+      expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+      openStructureView()
+      expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
+      fireEvent.click(labelled(`${EX1} options`))
+      expect(labelled(`Swap ${EX1}`)).toBeTruthy()
+
+      lastDoneOrSkipped = sessionFor(THREE_DAY.layout, { status: 'completed', cycle: 3, position: 2, on: dayOf(1, 'Sunday') })
+      view.rerender(ui())
+
+      expect(screen.getByText('CYCLE 3')).toBeTruthy()
+      expect(isMarkedCurrent('CYCLE 3')).toBe(false)
+      expectReadOnly()
+      expect(maybeLabelled(`Swap ${EX1}`)).toBeNull() // the exercise menu that was open
       goTo(4)
       expect(isMarkedCurrent('CYCLE 4')).toBe(true)
       expectEditable(4)

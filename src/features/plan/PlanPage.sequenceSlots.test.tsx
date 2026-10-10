@@ -208,9 +208,12 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
   it('the current cycle of a week-dependent sequence run shows no ONLY THIS WEEK control, in any case (chunk 27)', () => {
     const { container } = renderPlanPage()
 
-    // A sequence panel really is showing (slot switcher + its toolbar) ...
+    // A sequence panel really is showing (slot switcher + the SETS / STRUCTURE
+    // switch; COMPACT is gone, chunk 29) ...
     expect(screen.getByRole('region', { name: 'Sequence slot switcher' })).toBeTruthy()
-    expect(screen.getByText('COMPACT')).toBeTruthy()
+    expect(screen.queryByText('COMPACT')).toBeNull()
+    expect(screen.getByText('SETS')).toBeTruthy()
+    expect(screen.getByText('STRUCTURE')).toBeTruthy()
     // ... and the tick is nowhere on it.
     expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
     expect(screen.queryByText(/only this week/i)).toBeNull()
