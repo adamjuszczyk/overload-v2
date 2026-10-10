@@ -124,12 +124,23 @@ type SetChanges = {
 // makes). Hooks can't be conditional, so a sequence run is wrapped here and a
 // weekday run never mounts the wrapper: it makes no such read and renders
 // exactly what it always did.
+//
+// Which of the two a run is, is known only once the programs have answered. Until
+// then there is no screen at all: a PlanScreen mounted on a guess would show a
+// WEEK n header and plan the calendar week (as a cycle, for a sequence run)
+// before the cycle is known. The existing spinner shows instead; a programs
+// read that failed with nothing to show gets the load error. Display-only
+// choices (D31), provisional.
 export default function PlanPage() {
   const { data: mesos = [] } = useMesos()
-  const { data: programs = [] } = usePrograms()
+  const programsRead = usePrograms()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
-  const program = programs.find((p) => p.id === activeMeso?.programId)
 
+  if (activeMeso && programsRead.data === undefined) {
+    return programsRead.isError ? <PlanLoadError /> : <PlanSpinner />
+  }
+
+  const program = programsRead.data?.find((p) => p.id === activeMeso?.programId)
   if (activeMeso && (program?.scheduleType ?? 'weekday') === 'sequence') {
     return <SequencePlanPage mesoId={activeMeso.id} programId={activeMeso.programId} />
   }
@@ -140,10 +151,13 @@ export default function PlanPage() {
 // screen with it. Until the three reads behind it have answered the cycle is
 // unknown, and the loading spinner shows instead of any cycle: marking cycle 1
 // current (and editable) on a run that is in cycle 4, until the answer lands,
-// would be a wrong cycle on screen. Display-only choice (D31), provisional.
+// would be a wrong cycle on screen. If one of the reads failed and has nothing
+// to show, the spinner would never end: the load error shows instead, and
+// nothing is planned (a fallback to the calendar week or cycle 1 would plan
+// the wrong cycle). Display-only choices (D31), provisional.
 function SequencePlanPage({ mesoId, programId }: { mesoId: string; programId: string }) {
-  const cycle = useSequenceCurrentCycle(mesoId, programId)
-  if (cycle === null) return <PlanSpinner />
+  const { cycle, failed } = useSequenceCurrentCycle(mesoId, programId)
+  if (cycle === null) return failed ? <PlanLoadError /> : <PlanSpinner />
   return <PlanScreen sequenceCycle={cycle} />
 }
 
@@ -151,6 +165,24 @@ function PlanSpinner() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--base)' }}>
       <div className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+    </div>
+  )
+}
+
+// The app's existing page-level load error, as PrioritiesEditor (this feature),
+// StepPriorities and MesoPrioritiesPage show it: the same markup and tokens,
+// worded for this page. Plan and Today had none of their own.
+function PlanLoadError() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--base)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--error)' }}>
+          COULDN'T LOAD PLAN
+        </p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)', marginTop: 8 }}>
+          Check your connection and try again.
+        </p>
+      </div>
     </div>
   )
 }

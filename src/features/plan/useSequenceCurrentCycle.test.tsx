@@ -2,12 +2,15 @@
 //
 // Chunk 35 — useSequenceCurrentCycle.ts, Plan's reading of a sequence run's
 // current cycle (SPEC Scheduling → Sequence [P1.1], G40: "the one containing
-// the next due workout"). Two things are proven here, at the hook layer that
+// the next due workout"). Three things are proven here, at the hook layer that
 // applies them:
 //   1. while any of its three reads (the run's sequence, every week plan, the
 //      last workout done or skipped) hasn't answered, it names no cycle (null);
 //      "nothing done yet" is an answer, not a wait;
-//   2. it agrees with Today: for the same query results, the cycle it returns is
+//   2. a read that FAILED with nothing to show is reported as failed (so the
+//      screen can say so instead of spinning forever), and a read that failed on
+//      a refetch but still has its earlier data is not a failure;
+//   3. it agrees with Today: for the same query results, the cycle it returns is
 //      the cycle useSequenceScheduler (Today) puts its next workout in — the
 //      two run the same last-event rule (sequenceLastEvent.ts) over the same
 //      data, so a scenario table is enough to catch them drifting apart.
@@ -20,16 +23,19 @@ let sequenceItems: SequenceItem[] | undefined = []
 let allWeekPlans: WeekPlan[] | undefined = []
 let lastDoneOrSkipped: Session | null | undefined = null
 let sessions: Session[] = []
+// Which of the three reads has errored (TanStack: status 'error'; its data, if
+// it ever had any, is kept).
+let errored = { items: false, plans: false, lastEvent: false }
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays }),
-  useSequenceItems: () => ({ data: sequenceItems }),
+  useSequenceItems: () => ({ data: sequenceItems, isError: errored.items }),
 }))
 vi.mock('./useWeekPlan', () => ({
-  useAllWeekPlans: () => ({ data: allWeekPlans }),
+  useAllWeekPlans: () => ({ data: allWeekPlans, isError: errored.plans }),
 }))
 vi.mock('../gym/useSession', () => ({
-  useLastDoneOrSkippedSession: () => ({ data: lastDoneOrSkipped }),
+  useLastDoneOrSkippedSession: () => ({ data: lastDoneOrSkipped, isError: errored.lastEvent }),
   useSessionsInRange: () => ({ data: sessions }),
 }))
 
@@ -43,6 +49,7 @@ afterEach(() => {
   allWeekPlans = []
   lastDoneOrSkipped = null
   sessions = []
+  errored = { items: false, plans: false, lastEvent: false }
 })
 
 const activeMeso: Mesocycle = {
@@ -54,10 +61,15 @@ const activeMeso: Mesocycle = {
 function Probe() {
   const plan = useSequenceCurrentCycle('meso-1', 'prog-1')
   const today = useSequenceScheduler('2026-03-01', activeMeso, 'prog-1')
-  return <div data-testid="out">{JSON.stringify({ plan, today: today.result, todayLoading: today.isLoading })}</div>
+  return <div data-testid="out">{JSON.stringify({ plan: plan.cycle, failed: plan.failed, today: today.result, todayLoading: today.isLoading })}</div>
 }
 
-function read(): { plan: number | null; today: { type: string; next?: { weekNumber: number }; session?: Session } | null; todayLoading: boolean } {
+function read(): {
+  plan: number | null
+  failed: boolean
+  today: { type: string; next?: { weekNumber: number }; session?: Session } | null
+  todayLoading: boolean
+} {
   render(<Probe />)
   return JSON.parse(screen.getByTestId('out').textContent!)
 }
@@ -86,32 +98,92 @@ const ABC = [item(0, 'wd-a'), item(1, 'wd-b'), item(2, 'wd-c')]
 const ABAR = [item(0, 'wd-a'), item(1, 'wd-b'), item(2, 'wd-a'), item(3, null)]
 
 describe('useSequenceCurrentCycle — no cycle until its three reads have answered', () => {
-  it('the sequence not loaded → null', () => {
+  it('the sequence not loaded → null (still loading, not failed)', () => {
     sequenceItems = undefined
     allWeekPlans = []
     lastDoneOrSkipped = null
-    expect(read().plan).toBeNull()
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(false)
   })
 
-  it('the meso\'s week plans not loaded → null (the last event can\'t be placed without them)', () => {
+  it('the meso\'s week plans not loaded → null (the last event can\'t be placed without them; still loading, not failed)', () => {
     sequenceItems = ABC
     allWeekPlans = undefined
     lastDoneOrSkipped = session({ id: 's-1', weekPlanId: 'wp-1' })
-    expect(read().plan).toBeNull()
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(false)
   })
 
-  it('the last-event read not answered (undefined) → null', () => {
+  it('the last-event read not answered (undefined) → null (still loading, not failed)', () => {
     sequenceItems = ABC
     allWeekPlans = [weekPlan('wp-1', 2, 1)]
     lastDoneOrSkipped = undefined
-    expect(read().plan).toBeNull()
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(false)
   })
 
   it('the last-event read answered "none" (null) is an answer: cycle 1', () => {
     sequenceItems = ABC
     allWeekPlans = []
     lastDoneOrSkipped = null
-    expect(read().plan).toBe(1)
+    const out = read()
+    expect(out.plan).toBe(1)
+    expect(out.failed).toBe(false)
+  })
+})
+
+describe('useSequenceCurrentCycle — a read that failed with nothing to show', () => {
+  it('the sequence read errored, no data → no cycle, failed', () => {
+    sequenceItems = undefined
+    allWeekPlans = []
+    lastDoneOrSkipped = null
+    errored.items = true
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(true)
+  })
+
+  it('the week plans read errored, no data → no cycle, failed', () => {
+    sequenceItems = ABC
+    allWeekPlans = undefined
+    lastDoneOrSkipped = null
+    errored.plans = true
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(true)
+  })
+
+  it('the last-event read errored, no data → no cycle, failed (never "cycle 1")', () => {
+    sequenceItems = ABC
+    allWeekPlans = [weekPlan('wp-c2-s2', 2, 2, 'wd-c')]
+    lastDoneOrSkipped = undefined
+    errored.lastEvent = true
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(true)
+  })
+
+  it('one read errored while another is still loading → failed at once (waiting for the other would show a spinner that can never end)', () => {
+    sequenceItems = ABC
+    allWeekPlans = undefined // still loading
+    lastDoneOrSkipped = undefined
+    errored.lastEvent = true
+    const out = read()
+    expect(out.plan).toBeNull()
+    expect(out.failed).toBe(true)
+  })
+
+  it('a read that failed on a REFETCH keeps its earlier data: the cycle is named from it and nothing is failed', () => {
+    sequenceItems = ABC
+    allWeekPlans = [weekPlan('wp-c2-s2', 2, 2, 'wd-c')]
+    lastDoneOrSkipped = session({ id: 's-1', weekPlanId: 'wp-c2-s2', workoutDayId: 'wd-c' })
+    errored = { items: true, plans: true, lastEvent: true }
+    const out = read()
+    expect(out.plan).toBe(3)
+    expect(out.failed).toBe(false)
   })
 })
 
