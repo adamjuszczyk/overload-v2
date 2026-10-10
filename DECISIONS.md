@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 34 (039 #63, merged and live; chunks 27 and 28 before it). The 1.1 build is under way (29–33 and 35 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 35 (#64, merged and live; 27, 28 and 34 before it). The 1.1 build is under way (29–33 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -12,6 +12,8 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **87** — the deload rules in Plan. Provisional: one read-only line under MARK WEEK AS DELOAD. Blocks: nothing.
 - **90** — after START on the Programs page, the app still opens the run's priorities, now read-only. Provisional: leave it (it shows what the run copied); alternative: open Plan. Blocks: nothing.
 - **91** — how marks show in Plan's priorities. Provisional: a small accent label on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing. Blocks: nothing.
+- **94** — Plan while its reads are out. Provisional: the existing spinner until the programs read (and, on a sequence run, the sequence, week plans and last event) answer; weekday runs also wait for programs now. Blocks: nothing.
+- **95** — Plan when a read fails with nothing to show. Provisional: "COULDN'T LOAD PLAN" / "Check your connection and try again." (the priorities screen's error markup); nothing is planned. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -44,6 +46,11 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 96 TASKS-1.1 chunk 35 merged: a sequence run's current cycle (#64)
+- What: chunk 35, code only. First review failed (a cold load could auto-plan the calendar week on a sequence run before programs loaded; COPY LAST CYCLE and per-control past-cycle gates were unproven; a failed read spun forever). The builder's one retry fixed all three; the reviewer's breaks (cold-load wait removed: 4 fail; copy gate at cycle−1: 2 fail) confirm.
+- Answer: merged by the reviewer, `f5fe217`. Provisional 94, 95 (D31). Not changed (pre-existing class): an open weight editor still commits after a refetch moves the cycle past it.
+- Date: 2026-10-10
 
 ### 93 TASKS-1.1 chunk 34 merged: stable weeks pair weights by set kind (039, #63)
 - What: chunk 34, migration 039 only (`v2_plan_week` replaced). Passed review first time: the builder's scratch proof re-run by the reviewer, plus an independent fixture of 7 adversarial cases; 039 changed no existing row.
