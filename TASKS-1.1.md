@@ -5,7 +5,7 @@
 - Adam answered G16–G34 and P1, then G35–G37, G39–G44 and P4, on 2026-10-10 ("Answered gaps"). G38 became a reading.
 - Rest, tempo, the warmup routine and superset grouping stay run-wide in this revision. Making them per week moved to the appendix ("Later: per-week structure").
 - **Standing rule (Adam, 2026-10-10; DECISIONS D31):** a display-only edge case (what's highlighted, a label, an empty state, where a control sits) gets the simplest option consistent with SPEC. It's recorded as a provisional decision in DECISIONS.md's "Waiting on Adam", and the work continues. Only something that changes data or behaviour stops a chunk.
-- One gap is open: G45, which changes data. It stops only the part of chunk 30 it names. Six provisional decisions are listed below.
+- No gap is open. Adam answered G45 "no" on 2026-10-10 (option (c) below). Six provisional decisions are listed below.
 **Numbering** continues from TASKS.md: chunks 27–35, migrations 038–040, spec gaps from G16.
 - This version's 31, 32 and 33 were the first draft's 35, 36 and 37. Chunk 30 is new. Chunks 34 (stable weight pairing, G44) and 35 (a sequence run's current cycle, G40) came with the second answers.
 - The appendix keeps the first draft's chunks 30–34 as L1–L5.
@@ -16,9 +16,9 @@
 
 ---
 
-## Open spec gap
+## Answered last: G45
 
-Line numbers are SPEC.md as of this version. It isn't answered here.
+**Answer (Adam, 2026-10-10): no, option (c).** "A set with no program set of its own exercise has no own rest; it uses its exercise's rest, then the global rest, as today." Applied to SPEC Rest [P1.1] and to chunk 30. The write-up below is kept as asked.
 
 ### G45 — A set's own rest, on a set with no program set of its own exercise
 - **SPEC:** a set's own rest and stage rest are run-wide and edited in Structure (Rest [P1.1], L322). "Every week" means every week that exercise slot appears in, and an exercise added or swapped in during a week carries its own values (Programs and runs [P1.1], L159–164; your G35 answer).
@@ -31,7 +31,7 @@ Line numbers are SPEC.md as of this version. It isn't answered here.
   - (a) created when the set is first given a rest. The rest then reaches that week and weeks copied from it afterwards (copies carry `program_set_id`), but not weeks already planned;
   - (b) created with the set (every ADD SET, added exercise and swap), so every copy shares it from the start;
   - (c) no: they keep following their exercise's rest, and Structure shows no set REST or STAGE REST on them.
-- **Stops:** chunk 30, for these sets only. Until you answer, chunk 30 ships them as today, which is (c).
+- **Stopped:** chunk 30, for these sets only. Answered (c): they ship as today.
 
 ---
 
@@ -91,6 +91,7 @@ Applied to SPEC.md as [P1.1] and to the chunks below. The gaps' write-ups are in
 | G43 | A run on "use my default" following Settings is intended. Show the rules in effect read-only next to the deload action. | SPEC Deload; chunk 33 (provisional 87) |
 | G44 | Fix it as its own small chunk: pair warmups with warmups and working sets with working sets, by position. | SPEC Weeks and copying; chunk 34 |
 | P4 | Yes, D29 covers 039 (chunk 32's migration, now 040). | chunk 32 |
+| G45 | No (c): a set with no program set of its own exercise has no own rest; it uses its exercise's rest, then the global rest, as today. | SPEC Rest; chunk 30 |
 
 **Readings** (the six marked ✓ confirmed by Adam, 2026-10-10):
 - ✓ **G26 "only where they still match the old default"** is per part: each exercise, its place in the order, each set and each rep target or kind. It isn't whole weeks.
@@ -187,7 +188,7 @@ No new tables. One new column, `v2_program_sets.removed_at` (040, chunk 32); eve
 ## Chunks in build order
 
 **Order:**
-- **No open gap blocks any chunk.** G45 stops only chunk 30's set-level rest on the sets it names, which ship as today until it's answered.
+- **No open gap blocks any chunk.** G45 is answered (c): chunk 30's sets with no program set of their own exercise ship as today.
 - **27** and **28** can start now; 28 can go at any time.
 - **34** follows 27: its 039 replaces 038's `v2_plan_week` (P5).
 - **35** can go at any time, before 32.
@@ -330,7 +331,7 @@ No new tables. One new column, `v2_program_sets.removed_at` (040, chunk 32); eve
   - the run's own exercises (rows of the run's copy), including ones "Make this week the new default" later soft-removed, in the weeks that still show them;
   - exercises added or swapped in a week: their own `week_only` rows. A swapped-in row starts with the replaced row's grouping and no rest, tempo or unit of its own, as today (see "Readings");
   - a set's own REST and STAGE REST where the week's set names a program set of its own exercise row. That's the workout screen's own lookup (`useExerciseCardState.ts` L257–262, L304–306).
-  - **Stops at G45** for sets with no such program set: sets added in a week, and the sets of added or swapped-in exercises. Until it's answered they show no set REST or STAGE REST and follow their exercise's rest, as today.
+  - **G45, answered (c):** sets with no such program set (sets added in a week, and the sets of added or swapped-in exercises) have no own rest. They show no set REST or STAGE REST and follow their exercise's rest, then the global rest, as today.
 - **Grouping (G35):** any two neighbours in this week can be linked or unlinked; `planLinkToggle` runs over this week's order, not the run copy's. Linked exercises show as a superset only in weeks where they're next to each other. Plan and the workout screen already group consecutive members only (`groupIntoUnits`, `supersetGroups.ts` L38; `GymSession.tsx` L329), so neither display changes.
 - **No apply-ahead offer:** a run-wide change already reaches every week its slot appears in.
 - **The program tab keeps its editors until chunk 33.** Both edit the same rows, so they never disagree.
@@ -349,9 +350,9 @@ No new tables. One new column, `v2_program_sets.removed_at` (040, chunk 32); eve
 - **Past week:** the controls are read-only.
 - **The workout screen reads them:** `GymSession.restChain`, `.tempo`, `.superset` and `.warmupRoutine` already prove it reads these fields from the run's copy at session load, and pass unmodified. Chunk 30 changes only where the edit is made.
 - **Width:** 375 px, Structure view with every marker set, no overflow.
-**Would not catch:** G45's sets, until it's answered.
+**Would not catch:** nothing G45 adds: its sets have no own rest by design (c).
 **Live app after it:** rest, tempo, grouping, the routine and units can be changed from the week as well as the program tab, on every exercise in the week; a week-dependent run's units can be changed for the first time. Every value and timer stays as it was.
-**Done when:** live, with every design-field edit the program tab offers also working from Structure, on every exercise in the week; set-level rest on G45's sets once it's answered.
+**Done when:** live, with every design-field edit the program tab offers also working from Structure, on every exercise in the week; G45's sets show no set REST or STAGE REST.
 
 ### Chunk 31 — Differences from the week's source are highlighted
 **Goal:** In both views, anything that differs from the week's source is highlighted: numbers, sets, exercises, order and set kinds. Tags never are, deload sessions show none, and run-wide fields aren't compared.
@@ -609,7 +610,7 @@ Every chunk merges to master on its own, with no stacking. Chunk 32's 040 goes l
 ## At every chunk boundary
 
 TASKS.md's "At every chunk boundary" list holds unchanged, plus:
-- **Test what must be absent.** For each removed or "only X" rule (no tick, no COMPACT, no apply-ahead offer after a run-wide edit, no "EVERY WEEK" on the unit, no set REST on G45's sets until it's answered, no highlighting on a week that started empty, no action on week-dependent, past or all-deload weeks, no program tab, no planner on a run's copy, no START without a schedule), assert the absence (Checks that lied #32).
+- **Test what must be absent.** For each removed or "only X" rule (no tick, no COMPACT, no apply-ahead offer after a run-wide edit, no "EVERY WEEK" on the unit, no set REST on G45's sets (answered (c)), no highlighting on a week that started empty, no action on week-dependent, past or all-deload weeks, no program tab, no planner on a run's copy, no START without a schedule), assert the absence (Checks that lied #32).
 - **No chunk here changes the workout screen or the rest timer.** If one turns out to, D30's proof applies.
 
 ---
