@@ -24075,3 +24075,15 @@ Adam answered TASKS-1.1's gaps G16–G34 and P1 the same day. Rest, tempo, the w
     - **A step 5 checklist generated from SPEC.md now would include the unbuilt [P1.1] rules:** generate it from SPEC at `d345f5c`, or skip [P1.1].
 - (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–040).
 - (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–37; gaps G16–G34 open).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, review of the answers) — Moved out of CONTEXT.md (no longer true)
+
+A review of TASKS-1.1 after Adam's answers found more gaps (G40–G44), turned G38 into a reading, and changed chunk 32's 039: it now also adds `v2_program_sets.removed_at` and replaces `v2_plan_week`, so who merges it is a new question (P4). Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited, and Adam answered the gaps it raised the same day. Its rules, answers included, are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–33). Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage is a later revision, kept in TASKS-1.1's appendix. None is built, and chunks 30, 31 and 33 wait on gaps G35–G39. Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is) SPEC.md: the change in `ac48b66`; Adam's answers to G16–G34 and the stale-line fixes the same day. Everything is tagged [P1.1], plus a one-line legend under "What this is".
+- (Where the build is) `TASKS-1.1.md` plans chunks 27–33: migrations 038 (chunk 27) and 039 (chunk 32, `v2_make_week_default`), and no new tables or columns.
+- (Where the build is) No open gap blocks chunks 27, 28, 29 and 32. Open: G35 (chunk 30), G36–G38 (31), G39 (33). P1 answered: D29 covers 038 and 039.
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G39 open; appendix: later per-week structure).
