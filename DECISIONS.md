@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–35, not started). Adam answered G16–G34 and P1 (entry 80), then G35–G44 and P4 (entry 81). One gap, G45, waits on Adam in TASKS-1.1 and isn't repeated here. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 27 (code #60, migration 038 #61; both merged and live). The 1.1 build is under way (chunks 28–35 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -42,6 +42,16 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 89 TASKS-1.1 chunk 27 merged: "only this week" removed (code #60, migration 038 #61)
+- What: chunk 27, code first then 038 (P3). The first review failed (a stage-copy write no test pinned; a swap/reorder on a row the week no longer has stopped failing before writing); the builder's one retry fixed both.
+- Answer: merged by the reviewer. Code `1f6816f`; 038 `70399ca` under D29 (check-migration exit 1, function only; replay, embeds and the scratch row check green). 038's deploy succeeded (Supabase Preview); live check-embeds 30/30. No live-app check: this container can't reach the app (31); it's in Adam's step 5 review.
+- Date: 2026-10-10
+
+### 88 G45: a set's own rest on a set with no program set of its own exercise
+- What: TASKS-1.1 G45: can a set added in a week, or a set of an added or swapped-in exercise, have its own rest?
+- Answer (Adam): no. "A set with no program set of its own exercise has no own rest; it uses its exercise's rest, then the global rest, as today" (option (c)). In SPEC Rest [P1.1] and TASKS-1.1 chunk 30.
+- Date: 2026-10-10
 
 ### 87 Deload rules in Plan: where and how they show (provisional, D31)
 Severity: deferred

@@ -24101,3 +24101,19 @@ Adam answered G35–G44 and P4 and set a standing rule for display-only edge cas
 - (Where the build is) No open gap blocks chunks 27, 28 and 29. Open: G35 (chunk 30), G36, G37 and G42 (31), G40 and G41 (32, sequence runs), G39 and G43 (33), G44 (no chunk as written). G38 became a reading. P1: D29 covers 038; P4 (who merges 039, which now also adds a function) is open.
 - (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–039).
 - (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G37 and G39–G44 and P4 open; appendix: later per-week structure).
+
+## 2026-10-10 (TASKS-1.1 chunk 27 boundary) — Moved out of CONTEXT.md (no longer true, or duplicated to stay under the 75 KB ceiling)
+- (What this is) None is built. One gap is open (G45, which changes data and holds back only part of chunk 30), and display-only choices are provisional under DECISIONS D31.
+- (Where the build is) **SPEC change 1.1 (2026-10-10, planning only; no code, no migration):**
+  - SPEC.md: the change in `ac48b66`; Adam's answers to G16–G34 and then G35–G44, the stale-line fixes and the review clarifications, all the same day. Everything is tagged [P1.1], plus a one-line legend under "What this is".
+  - Open: G45 (it changes data): a set's own rest on sets with no program set of their own exercise. Chunk 30 ships those sets as today until it's answered; no other chunk waits. Display-only choices are provisional (DECISIONS 82–87, under D31). D29 covers 038–040 (P1, P4).
+- (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–040).
+- (What exists, Apply ahead) a later row matches only if its slot (`carry_program_exercise_id ?? id`) **and** current `exerciseId` equal the edited one's;
+- (What exists, Apply ahead) offer: only when later weeks of that workout are planned; never after an only-this-week swap/reorder; not for the two batch shortcuts.
+- (Tooling) 1782 tests in 141 files pass on master `d345f5c` (re-run 2026-10-10, SPEC 1.1 session).
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–35; gap G45 open; …
+- (Rules discovered) **Week edits and carry fields (chunk 9):** an "only this week" swap or reorder keeps the row's *existing* carry (`carry ?? pre-edit value`), so repeated edits revert to the true original. A permanent edit clears the carry. A swap never touches `carry_position`. Copying a week (`v2_plan_week` and the client copy) maps each set's `program_exercise_id` through the source week's carry mapping, so the sets follow their exercise row.
+- (Where the build is) **2026-10-10 UI cleanup of the Plan week plan (code-only, no migration; the first fix under the standing UI rule above):** set rows are number/weight/reps/RIR + ⋯; set kind, stages, tags and delete are in the set's ⋯; swap, move, add warmup sets and remove are in the exercise's ⋯. Details under "Plan row layout" in What exists. The workout screen needed no change (it already showed tags only on sets that have them). Rest override was left out of the week plan by design; SPEC 1.1 now puts all rest in the week's Structure view, run-wide (TASKS-1.1 chunk 30).
+- (Where the build is) Finished chunks' merge commits: HISTORY.md (2026-10-08 compaction) and each chunk's DECISIONS entry.
+- (Where the build is; Repo facts keeps the deploy-reading rule) Every merge commit shows one `Supabase Preview` success plus two runs left `in_progress`, code-only commits included. It's a quirk of the integration: count the success run plus a live probe as the deploy. For a function replaced with the same signature, the success run is the only evidence.
+  - **A step 5 checklist generated from SPEC.md now would include the unbuilt [P1.1] rules:** generate it from SPEC at `d345f5c`, or skip [P1.1].

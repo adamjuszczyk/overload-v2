@@ -1,7 +1,7 @@
 # TASKS-1.1.md — Overload Planner Extension, revision 1.1
 
 **Spec:** SPEC.md, the rules tagged **[P1.1]**: SPEC change 1.1 (`ac48b66`) and Adam's two rounds of answers to the gaps it raised, all 2026-10-10. This file plans those rules only; everything else stays as phase 1 built it (TASKS.md).
-**Status:** draft, planning only; no application code written.
+**Status:** being built (from 2026-10-10). Chunk 27 merged and live (code #60, migration 038 #61); chunks 28–35 not started.
 - Adam answered G16–G34 and P1, then G35–G37, G39–G44 and P4, on 2026-10-10 ("Answered gaps"). G38 became a reading.
 - Rest, tempo, the warmup routine and superset grouping stay run-wide in this revision. Making them per week moved to the appendix ("Later: per-week structure").
 - **Standing rule (Adam, 2026-10-10; DECISIONS D31):** a display-only edge case (what's highlighted, a label, an empty state, where a control sits) gets the simplest option consistent with SPEC. It's recorded as a provisional decision in DECISIONS.md's "Waiting on Adam", and the work continues. Only something that changes data or behaviour stops a chunk.
