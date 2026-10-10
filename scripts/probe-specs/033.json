@@ -1,0 +1,7 @@
+{
+ "migration": "033_planner_p1_priority_marks.sql",
+ "new": ["v2_program_priorities_mapping_manifest"],
+ "columns": {
+  "v2_program_priorities_mapping_manifest": ["id", "user_id", "priority_id", "created_at"]
+ }
+}

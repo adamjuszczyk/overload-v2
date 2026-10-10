@@ -1,0 +1,7 @@
+{
+ "migration": "029_planner_p1_week_exercises_backfill.sql",
+ "new": ["v2_week_plan_exercises_backfill_manifest"],
+ "columns": {
+  "v2_week_plan_exercises_backfill_manifest": ["id", "user_id", "week_plan_exercise_id", "created_at"]
+ }
+}

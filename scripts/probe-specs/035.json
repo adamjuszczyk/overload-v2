@@ -1,0 +1,8 @@
+{
+ "migration": "035_planner_p1_warmup_sets.sql",
+ "new": [],
+ "columns": {
+  "v2_history_session_summary": ["id", "set_count"],
+  "v2_session_type_history": ["session_id", "set_count", "total_volume"]
+ }
+}
