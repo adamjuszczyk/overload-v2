@@ -24059,3 +24059,19 @@ SPEC change 1.1 was applied to SPEC.md (`ac48b66`, rules tagged [P1.1]) and plan
 - (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). Phase 2 and SPEC's "Later" list are not being done; no new chunks.
 - (Where the build is, end of the 2026-10-10 UI cleanup bullet) Not done, by design: rest override in the week plan (see that bullet) — raise with Adam if he wants it there.
 - (Tooling and tests) 1782 tests in 141 files on this branch (2026-10-10; master `a94e838` had 1766 in 139).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, Adam's answers) — Moved out of CONTEXT.md (no longer true)
+
+Adam answered TASKS-1.1's gaps G16–G34 and P1 the same day. Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage moved to TASKS-1.1's appendix; the plan is now chunks 27–33 with migrations 038–039, and the open gaps are G35–G39. Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited: its rules are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–37). None is built; the plan waits on Adam's answers to spec gaps G16–G34. Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is, end of the UI cleanup bullet) Rest override was left out of the week plan by design; SPEC 1.1 now puts all rest in the week's Structure view (TASKS-1.1 chunks 31–33).
+- (Where the build is) **SPEC change 1.1 (2026-10-10, planning only; no code, no migration):**
+    - SPEC.md edited in `ac48b66`: only the sections the change names, rules tagged [P1.1], plus a one-line legend under "What this is".
+    - `TASKS-1.1.md` plans chunks 27–37: migrations 038 (chunk 27), 039 (30) and 040 (33, the data move). Spec gaps G16–G34 sit at its top, each naming the chunks that stop there. Also process notes P1–P3, and live-data facts F1–F6 for Adam before chunk 31. Chunks 27, 28 (active run) and 30 need no answer.
+    - Design: rest, tempo and the warmup routine move per week behind a per-session switch (`v2_week_plans.structure_per_week`; false = read the run copy, as today). Inert code first (31–32), every device updated, then the data move (33). No existing week changes before 33.
+    - **A step 5 checklist generated from SPEC.md now would include the unbuilt [P1.1] rules:** generate it from SPEC at `d345f5c`, or skip [P1.1].
+- (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–040).
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–37; gaps G16–G34 open).

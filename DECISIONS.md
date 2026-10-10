@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–37, not started): its spec gaps G16–G34 and process notes P1–P3 wait on Adam there, and aren't repeated here. The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–33, not started). Adam answered G16–G34 and P1 (entry 80); the open gaps G35–G39 wait on Adam there, and aren't repeated here. The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -34,6 +34,15 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 80 SPEC change 1.1: Adam's answers to TASKS-1.1's gaps G16–G34 and P1
+- What: The spec gaps TASKS-1.1 raised against SPEC change 1.1 (G16–G34), and P1: does D29 cover 1.1's function-only migrations?
+- Answer (Adam):
+  - Rest, tempo, the warmup routine and superset grouping stay run-wide, edited in the week's Structure view and labelled "every week". Per-week storage is a later revision (TASKS-1.1's appendix).
+  - G16, G17, G21–G31, G34 and P1 (yes) are answered in TASKS-1.1 "Answered gaps" and SPEC.md [P1.1]. G18–G20, G32 and G33 fell away.
+  - COMPACT is removed, which supersedes D6's compact view once TASKS-1.1 chunk 29 ships.
+  - The answers raised G35–G39, open in TASKS-1.1.
+- Date: 2026-10-10
 
 ### 79 After B1/B2: live check of REDO's removal
 Severity: deferred
