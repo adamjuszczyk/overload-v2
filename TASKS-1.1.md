@@ -1,7 +1,7 @@
 # TASKS-1.1.md — Overload Planner Extension, revision 1.1
 
 **Spec:** SPEC.md, the rules tagged **[P1.1]** (SPEC change 1.1, decided 2026-10-10 during the phase 1 review, applied to SPEC.md in `ac48b66`). This file plans those rules only; everything else stays as phase 1 built it (TASKS.md).
-**Status:** draft, written 2026-10-10 in a planning-only session. No application code was written. Sixteen spec gaps (G16–G31) are open; every chunk that needs one stops there and picks no answer.
+**Status:** draft, written 2026-10-10 in a planning-only session. No application code was written. Nineteen spec gaps (G16–G34) are open; every chunk that needs one stops there and picks no answer.
 **Numbering** continues from TASKS.md so references never collide: chunks 27–37, migrations from 038, spec gaps from G16 (phase 1 used G1–G15).
 **Baseline:** master `d345f5c`; migrations 001–037 live (next number 038); `npx vitest run` passes 1782 tests in 141 files there (run in this session).
 **Two things the brief adds to TASKS.md's format:**
@@ -16,32 +16,36 @@ I read all of SPEC.md after the [P1.1] edit for statements the change contradict
 
 | Gap | In short | Chunks that stop there |
 |---|---|---|
-| G16 | Stage rows and warmup sets: Sets view or Structure view? | 29 |
+| G16 | Stage rows' numbers and warmup sets: Sets view or Structure view? | 29 |
 | G17 | COMPACT and the page-level actions in a two-view Plan | 29 (36 for its action's place) |
 | G18 | Sessions with no week plan: whose rest, tempo and routine? | 31 |
 | G19 | A week swap: does the slot keep its rest and tempo? | 31 |
 | G20 | Weeks that start empty: routine and highlighting | 33, 35 |
 | G21 | Superset grouping: per week or per run? | 34 (35, 37 in part) |
 | G22 | Highlighting compares with the source as it is now, or as it was? | 35 |
-| G23 | How removals, order changes and hidden values show | 35 |
+| G23 | How removals, order changes and hidden values show, and how a row finds its source row | 35 |
 | G24 | Stable runs: weights and RIR from the default or from last week? | 36 (35 in part) |
 | G25 | Is "the run's default" the run's copy? | 36 (35 in part) |
 | G26 | After "Make this week the new default": what does apply-ahead apply? | 36 |
 | G27 | Making a week with deload sessions the default | 36 |
 | G28 | Making a cycle the default when a workout appears twice | 36 |
-| G29 | "Make this week the new default" on a past week | 36 |
+| G29 | How "Make this week the new default" is offered: past weeks, a confirm step, an undo | 36 |
 | G30 | Program-tab edits the change gives no home (schedule, workouts, units, deload override) | 37 |
 | G31 | Do completed runs' priorities pages become read-only? | 28 (its completed-runs part) |
+| G32 | Stable runs between the data move and "Make this week the new default": how is a permanent rest, tempo or routine change made? | 32, 33 |
+| G33 | Applying a routine edit ahead: how is "the same item" found in later weeks? | 32 |
+| G34 | Numbers with nothing to compare against: week 1's weights and RIR (and stable weeks', per G24) | 35 |
 
-### G16 — Stage rows and warmup sets: which view holds their numbers?
+### G16 — Stage rows' numbers and warmup sets: which view?
 - **SPEC (Plan screen, L543–555):** Sets = "the number of sets, weight, reps and RIR per set, and tags"; Structure = "set kinds (warmup, staged sets and their stages)".
 - **Also SPEC:** a stage row has its own weight and reps ("each as a row with weight and reps", Planned staged sets render). A warmup set has weight and reps targets and no RIR.
+- **Settled by rule 1:** adding, removing and kinding stages belongs to Structure ("staged sets and their stages").
 - **Unsaid:**
   - Are a stage's numbers edited in Sets (with the other numbers) or in Structure (with its stages)?
   - Do warmup sets appear in Sets with their numbers?
-  - Does "the number of sets" cover adding and deleting warmup sets and stages, or only working sets?
+  - Does "the number of sets" (Sets) cover adding and deleting warmup sets, or is that Structure's "set kinds (warmup …)"?
 - **Today:** one row layout holds all of it. The set's ⋯ has ADD STAGE, STAGE KIND, tags and DELETE SET; the exercise's ⋯ has ADD WARMUP SETS.
-- **Stops:** chunk 29.
+- **Stops:** chunk 29 (where a stage's numbers, warmup sets, ADD WARMUP SETS and a warmup set's DELETE go).
 
 ### G17 — COMPACT and the page-level actions in a two-view Plan
 - **SPEC:** rule 1 says what each view holds and nothing about Plan's other controls.
@@ -101,6 +105,7 @@ I read all of SPEC.md after the [P1.1] edit for statements the change contradict
   - **(a) Removals.** How is something the source has and this week doesn't shown? A removed exercise, set, stage or routine item has no row to highlight.
   - **(b) Order.** Which rows count as moved when one moves? An insert shifts every row after it.
   - **(c) "In both views".** Does each view mark only differences in what it shows, or also ones that live in the other view? When a differing value sits behind ⋯ (the standing UI rule), is the ⋯ marked?
+  - **(d) Which source row a row is compared with.** Matching exercises by their row (`program_exercise_id`, as copying and apply-ahead do) would show a week swap as one exercise removed and another added, because a swap makes a new row (G19). Matching sets by position would show every set after an added warmup set as changed.
 - **Stops:** chunk 35.
 
 ### G24 — Stable runs: where weights and RIR come from
@@ -146,10 +151,12 @@ I read all of SPEC.md after the [P1.1] edit for statements the change contradict
 - **Unsaid:** when the cycle's two A's differ, which becomes A's default? Or is the default per slot?
 - **Stops:** chunk 36 (stable sequence runs only).
 
-### G29 — "Make this week the new default" on a past week
+### G29 — How "Make this week the new default" is offered
 - **SPEC:** rule 4: "One action per week".
 - **Today:** Plan shows past weeks read-only ("PAST WEEK — READ ONLY").
-- **Unsaid:** is the action offered on a past week (e.g. making last week, as trained, the default), or only on the current and later weeks?
+- **Unsaid:**
+  - Is the action offered on a past week (e.g. making last week, as trained, the default), or only on the current and later weeks?
+  - It replaces the run's default, and nothing keeps the previous one. Is there a confirm step, or an undo?
 - **Stops:** chunk 36.
 
 ### G30 — What the program tab edits that the change gives no home
@@ -172,6 +179,31 @@ I read all of SPEC.md after the [P1.1] edit for statements the change contradict
 - **Unsaid:** does "read-only" cover these pages, or only the active run's marks in Plan (rule 8: "They can't be changed during a run")?
 - **Stops:** chunk 28 does the active run and stops here for completed runs.
 
+### G32 — Stable runs between the data move and "Make this week the new default"
+- **SPEC:** Programs and runs [P1.1] (L152–156): design fields are edited in the week's Structure view, and stable volume changes through "Make this week the new default" (L231–238).
+- **The problem:** once chunk 33 moves rest, tempo and the routine into the weeks, the program tab no longer reaches planned weeks. Chunk 36, the stable route for a permanent change, waits on G24–G29. Something has to hold for stable runs in between, or stable runs have to wait.
+- **Options I see (not choosing):**
+  - (a) the program tab keeps editing the run's copy for stable runs, offering "Apply this change to planned weeks ahead" for planned weeks (SPEC's route before [P1.1]), until chunk 36;
+  - (b) the program tab hides them for stable runs too: per-week changes only, with no permanent route until chunk 36;
+  - (c) chunk 33 moves only week-dependent runs, and stable runs keep today's run-wide values until chunk 36 ships.
+- **Live relevance:** F1 (is any active run stable?).
+- **Stops:** chunk 32 (the program tab on a stable run) and chunk 33 (whether stable runs move now).
+
+### G33 — Applying a routine edit ahead: which item is "the same"?
+- **SPEC:** "Apply this change to planned weeks ahead … Applies only the change just made; leaves everything else in those weeks alone" (L228–230).
+- **Today (chunk 20):** a set's value edit is applied to the matching set (same slot, same exercise, same set position) whatever that set's current value. A routine item has no slot or exercise, only a position and its text.
+- **Unsaid:** when an item is edited, added, removed or moved, how is a later week's "same item" found?
+  - (a) by position;
+  - (b) by its text;
+  - (c) only when the later week's whole routine equals this week's before the edit.
+- **Stops:** chunk 32 (the routine's apply-ahead).
+
+### G34 — Numbers with nothing to compare against
+- **SPEC:** rule 3 highlights "numbers" that differ from the week's source (L556–558). Week 1 "starts from the program" (L219), and weight and RIR targets are "in the week plan only. Never in the program" (L247, L250).
+- **The problem:** week 1's weights and RIR have no source value, for both planning types. A stable week's don't either, if the default holds no numbers (G24).
+- **Unsaid:** are those numbers highlighted, left unmarked, or compared with something else? (Rep targets are in the program, so week 1's reps do have a source.)
+- **Stops:** chunk 35 (numbers).
+
 ### Stale wording outside the named sections (no chunk needs an answer; left as is)
 The change doesn't name these sections, so I didn't edit them. Each now reads wrong or incomplete; say if they should be edited.
 - Objects stored → Run (L96): "(what the program tab shows and edits)".
@@ -179,7 +211,14 @@ The change doesn't name these sections, so I didn't edit them. Each now reads wr
 - Navigation and settings (L521): "[P1] The program screen folds into the plan screen as its program tab." (also G30)
 - Supersets (L303–305): see G21.
 - Stepped program planner, step 3 (L186–187): "the sets planned here are the volume for every week". A stable run's volume can now change mid-run through "Make this week the new default". The planner shows the same sentence (`StepVolume.tsx`); rule 9 keeps the planner unchanged.
-- What this is (L16): "Every item below is tagged [P1] or [P2]". I added a one-line [P1.1] legend right after it. It's the only edit outside the named sections.
+- Objects stored → Program set (L85–86): "for `stable` this is the volume". It's the same issue as step 3 above.
+- What this is (L16): "Every item below is tagged [P1] or [P2]". I added a one-line [P1.1] legend right after it.
+
+**Where I placed rules (so the SPEC edit can be checked against the change).**
+- The legend is the only edit outside the sections the change names.
+- I read "Rest, tempo and warmup routine: 'design fields' set per run" as naming SPEC's Rest, Tempo and Warmup routine sections, so each gained one [P1.1] bullet.
+- The change names "Screens: Plan screen → Program tab". Rules 1 and 3 and the edited Actions line went into that section's "Weeks (cycles)" bullet, since Plan has no other place for them.
+- SPEC L210–213 (stable source "the run's copy"; weights and RIR "from the last planned week") sit unchanged right above rule 2. They're the open G24 and G25, not edits.
 
 ---
 
@@ -197,7 +236,7 @@ All are read-only, Adam-scoped, and run by Adam (this container can't sign in). 
 
 | # | Fact | Used by |
 |---|---|---|
-| F1 | Active run(s) per account, and each run copy's `planning_type` and `schedule_type` | 32's stable interim, 33's fixtures |
+| F1 | Active run(s) per account, and each run copy's `planning_type` and `schedule_type` | G32's live relevance, 33's fixtures |
 | F2 | `v2_user_settings.week_start` (copy or empty) | G20's live relevance |
 | F3 | What the data move touches: planned rows of active runs; their week exercises and sets; non-null rest, rest after, tempo, set rest and stage rest on the run copies; warmup items per workout | 33's expected counts |
 | F4 | Planned sets whose `program_set_id` names a program set of a different program exercise (the swap case, which the move leaves null) | 33's parity |
@@ -261,7 +300,7 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 
 **Order:**
 - Three small chunks need no answer and can go first, in any order: 27 (no "only this week"), 28 (priorities view-only) and 30 (additive schema).
-- Then the two-view Plan (29).
+- Then the two-view Plan (29). It stops at G16 and G17; those are layout questions, but through 32 they also hold up the data move (33).
 - Then rest, tempo and the routine per week, in the expand–move pattern: code that's inert until data says otherwise (31, 32), then the data move that switches it on (33).
 - Supersets (34), highlighting (35) and "Make this week the new default" (36) build on that.
 - The program tab goes last (37), once everything it does has a home.
@@ -306,7 +345,7 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
   - Server: scratch replay of 001–038, with a fixture where week 2's row is an old only-this-week swap (`carry_program_exercise_id` = the original slot) and has `carry_position` ≠ `position` → `v2_plan_week(meso, 3)`, called as the fixture user, copies the swapped-in slot at week 2's position with its sets. Break: 037's body → the result differs. Executed, not read (Checks that lied #28).
 - **Rule: matches ignore stored values.**
   - Apply ahead: `PlanPage.applyAhead` screen test where a later week's row has carry = the edited row's id but a different own id → that week is skipped; a later row with the same own id matches.
-  - Deload: `markSessionDeload` with a base row carrying carry → exercises map by own id (`weekPlanService.deloadExerciseMapping` test made to discriminate).
+  - Deload: wired at `markSessionDeload` (`weekPlanService.ts` L1593), the only caller of the mapping. Its test (`weekPlanService.deloadExerciseMapping`) gives a base row whose carry names another slot, and asserts the inserted sets take the marked week's exercise matched by own id. Break: restore `carryProgramExerciseId ?? programExerciseId` (`deloadRules.ts` L206) → the test fails. The Plan screen tests mock `useWeekPlan`, so the proof sits at this call site.
 - **Boundary checks:** typecheck, test, build; `check-program-exercise-reads.mjs`; `check-embeds-local.sh`. The `!v2_week_plan_exercises_program_exercise_id_fkey` hint stays, because the carry FK column still exists.
 **Would not catch:**
 - An old bundle still showing the tick until it updates; its ticks write values nothing reads once 038 is live.
@@ -343,22 +382,23 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 **SPEC:** Plan screen [P1.1] two views; the standing UI rule.
 **Scope:**
 - A SETS / STRUCTURE switch, built from the WEEKS/PROGRAM bar's own pattern (no new visual language; Escalation 19).
-- **Sets view:** set rows (number, weight, reps, RIR) with ⋯ for tags and DELETE SET; the `+` ADD SET; tag markers.
+- **Sets view:** working set rows (number, weight, reps, RIR) with ⋯ for tags and DELETE SET; the `+` ADD SET; tag markers.
 - **Structure view:**
-  - the exercise ⋯: SWAP EXERCISE, MOVE UP/DOWN, REMOVE FROM THIS WEEK, ADD WARMUP SETS;
+  - the exercise ⋯: SWAP EXERCISE, MOVE UP/DOWN, REMOVE FROM THIS WEEK;
   - ADD EXERCISE;
-  - each set's kind controls: ADD STAGE, STAGE KIND, DELETE STAGE.
+  - each staged set's controls: ADD STAGE, STAGE KIND, DELETE STAGE (rule 1: "staged sets and their stages").
+- **Pending G16:** where a stage's numbers go, where warmup sets show, and where ADD WARMUP SETS and a warmup set's DELETE go.
 - Later chunks add rest, tempo and the routine (32) and grouping (34) to Structure.
 - **Handlers move, not rewritten:** `handlePickReplacement`, `handleMoveExercise`, `handlePickAdd`, `handleConfirmRemove`, `useAddSet`, `useRemoveSet`, `useAddStage`, `useAddWarmupSet` and `useUpdateSet`, with their apply-ahead records.
 - Past weeks: both views read-only, as today.
 - The WEEKS/PROGRAM bar stays until chunk 37; both views live inside WEEKS.
-**Stops at:** G16 (where stage rows' and warmup sets' numbers go) and G17 (COMPACT and the page-level actions).
+**Stops at:** G16 (a stage's numbers and warmup sets) and G17 (COMPACT and the page-level actions).
 **Depends on:** 27 (no tick to place).
 **Migration:** none.
 **Verification** (screen level, menus opened through `planMenus.testutil.ts`):
 - **Sets view:** a set row shows number, weight, reps and RIR; its ⋯ offers tags and DELETE SET and no ADD STAGE / STAGE KIND (absence asserted); `+` calls `useAddSet` with the same arguments as before.
 - **Structure view:** each exercise-⋯ action and each kind control calls the same mutation with the same arguments as on master.
-- **The existing tests prove it:** `PlanPage.weekActions`, `.applyAhead`, `.stageKind`, `.warmup`, `.tags` and `.uiRule` pass with only "open the view" steps added; no expected argument changes, and the reviewer reads the test diff for that.
+- **The existing tests prove it:** every `PlanPage.*` screen test and `MoveSessionControl.test.tsx` passes with only "open the view" steps added; no expected argument changes, and the reviewer reads the test diff for that.
 - **Moved controls keep their actions** (Checks that lied #29): every apply-ahead offer still fires after each edit type.
 - **Render fixture:** `__fixtures__/planpage-chunk6-render.html` is re-captured, and the diff is reviewed as layout only (no value differs).
 - **Width:** 375 px in a real browser with fixtures, both views, no horizontal overflow (as the UI-rule session did).
@@ -424,14 +464,17 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 - **Tempo:** in `GymSession.tempo`, `ExerciseHeader` shows the week's `2-0-2-0`, not the run copy's `3-1-1-0`; unmarked → `3-1-1-0`.
 - **Routine:** in `GymSession.warmupRoutine`, the checklist lists the week's items in order; unmarked → the workout's.
 - **Copies:**
-  - COPY WEEK from a per-week source on `PlanPage` → the inserted exercise and set payloads carry the source's values, the new row is per-week, and the items are copied in order.
+  - COPY WEEK from a per-week source on `PlanPage` → the inserted exercise and set payloads carry the source's values, the destination row is per-week, and the items are copied in order.
   - From an unmarked source into an unmarked destination (everything before chunk 33) → nothing written, and the copy reads the run copy.
   - From an unmarked (straggler) source into a per-week destination → the run-copy values by the read rule, including null for a swapped set.
   - Break: drop the values → the test fails.
 - **Deload:**
-  - Marking with rules on a per-week session → the calculated sets carry the base's set rest and stage rest.
+  - Call sites: `markSessionDeload` → `applyCalculatedDeloadMark` → `insertCalculatedPlanSets`, and `unmarkSessionDeload` → `applyDeloadRestore` → `insertRestoredPlanSets` (service tests that record payloads).
+  - Marking with rules on a per-week session → the calculated sets carry the base's set rest and stage rest. SPEC L350–351: a deload session is "pre-calculated from the last normal week: its planned sets".
   - Unmarking restores the pre-mark values.
-  - Restoring a pre-1.1 snapshot into a per-week row takes values from the run copy. Break: write null → the test fails.
+  - Restoring a pre-1.1 snapshot into a per-week row takes values by the read rule. Break: write null → the test fails.
+  - Screen: in `GymSession.deload`, logging a calculated set of a per-week deload session starts the base set's rest.
+- **Offline:** in `GymSession.offline`, a per-week session rendered offline from the Dexie-cached week plan times set 2 with the week's 75, not the run copy's 120. Break: drop the fields from the cached plan → the test fails.
 - **Boundary checks:** `verify-rls-tables.test.mjs` passes with the new table in `TABLES`; `check-program-exercise-reads.mjs` exits 0; `check-frozen-code.mjs`; typecheck, test, build.
 **Would not catch:** real data; nothing here runs live until 33 marks rows. Superset rest (34).
 **Live app after it:** unchanged; no session is per-week yet.
@@ -447,29 +490,29 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
   - In Structure, per workout: the warmup routine (add, edit text, remove, reorder).
   - New `weekPlanService` / `weekWarmupRoutineService` mutations, all `networkMode: 'always'`. Past weeks are read-only as today.
 - **Apply ahead for each new edit type** (CONTEXT rule: extend `applyAhead.ts`, its tests and a screen-layer record test):
-  - Exercise rest, rest after, tempo: match by slot + exercise (chunk 20's rule).
-  - Set rest, stage rest: also by set position.
-  - The routine: a later session matches only if its routine equals the edited session's routine before the edit; otherwise it's skipped, and the outcome says so.
+  - Exercise rest, rest after, tempo: match by slot + exercise and apply whatever the later value is — chunk 20's existing rule for value edits (`applyAhead.ts` L352–374).
+  - Set rest, stage rest: the same, plus the set position.
+  - The routine: **stop at G33** (how a later week's "same item" is found).
   - Deload sessions are skipped, as today.
 - **The program tab while the active run's sessions are per-week** (until chunk 37 removes it). One prop to `StepExercises` / `StepVolume`; the planner's own use is unchanged.
   - **Week-dependent run:** the exercise REST / REST AFTER / TEMPO, set REST, STAGE REST and routine editors are hidden behind the existing note pattern ("EDIT IT IN A WEEK").
-  - **Stable run, interim until chunk 36:** they stay and edit the run's copy, so new weeks start from it, and each edit offers "Apply this change to planned weeks ahead" with the new change records through `ProgramTab`'s existing `allPlannedWeeks` wiring. This is the stable permanent-change route SPEC had before [P1.1]. It's kept only so stable runs don't lose it before chunk 36 exists (F1 says whether any active run is stable).
+  - **Stable run:** **stop at G32** (how a permanent rest, tempo or routine change is made until chunk 36; F1 says whether any active run is stable).
   - Superset grouping and block rests stay where they are (G21).
+**Stops at:** G32 (the program tab on a stable run) and G33 (the routine's apply-ahead).
 **Depends on:** 29 (Structure view), 31.
 **Migration:** none.
 **Verification:**
 - **Editors (screen):**
   - `PlanPage` Structure view on a per-week week 5: REST on exercise X → the service receives week 5's week-exercise row id and `rest_seconds`, and no other week's.
   - The apply-ahead banner offers it when week 6 is planned; applying it writes week 6's matching row only, and a non-matching week is skipped.
-  - Same for REST AFTER, TEMPO, set REST, STAGE REST, and the routine's add, edit, remove and reorder.
+  - Same for REST AFTER, TEMPO, set REST, STAGE REST, and the routine's add, edit, remove and reorder (its apply-ahead per G33's answer).
   - On an unmarked week the editors are absent (absence asserted).
   - Break: write to the run copy → the test fails.
 - **Apply ahead:** `applyAhead.test.ts` covers each new record type, including its skip cases. One `PlanPage` record test per type checks the record the screen builds (CONTEXT rule).
 - **Program tab:**
-  - `ProgramTab.test.tsx`: on a week-dependent run with per-week sessions, the moved editors are absent.
-  - On a stable run they're present, and an edit offers apply-ahead with the new record type.
+  - `ProgramTab.test.tsx`: on a week-dependent run with per-week sessions, the moved editors are absent (break: show them → the test fails).
+  - A stable run per G32's answer.
   - The planner (`PlannerPage` and `StepExercises` tests) is unchanged.
-  - Break: show them on week-dependent → the test fails.
 - **Width:** 375 px in a real browser, Structure view with every marker set, no overflow.
 **Would not catch:** real data, as in 31.
 **Live app after it:** unchanged.
@@ -494,9 +537,11 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 3. **Grant and notify.**
 - **"They also become the run's default":** nothing to write. The run's copy already holds them, and it's the stable source today (G25 asks whether it's also "the default").
 - **Superset rest and grouping:** chunk 34 (G21).
-**Stops at:** G20 (an empty-started week's routine).
-**Depends on:** 32 on every device (P2); 038 (the function body it starts from).
-**Precondition:** every device on chunk 32's bundle. An older bundle still edits the run copy's rest in the program tab, and marked rows no longer read that.
+**Stops at:** G20 (an empty-started week's routine) and G32 (whether stable runs move now).
+**Depends on:** 32 on every device (P2); 038 (the function body it starts from). Through 29 and 32, the data move also waits on G16 and G17, though both are layout questions.
+**Preconditions:**
+- Every device on chunk 32's bundle. An older bundle still edits the run copy's rest in the program tab, and marked rows no longer read that.
+- No session in progress when 040 merges. Warmup ticks are kept per session and keyed by item id (`WarmupRoutineChecklist.tsx` L69), and the moved items get new ids, so an open session would lose its ticks.
 **Migration:** 040. **Not destructive:** it fills new, null columns on existing rows, inserts week warmup items and sets a flag; it overwrites and deletes nothing.
 - It changes existing rows, so it's Adam's merge (D29 covers only migrations that change no row).
 - Adam records before/after counts with `scripts/live-counts.sql` (standing rule for data-changing migrations).
@@ -529,6 +574,7 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
   - At his next session: the rest timer targets, tempo and warmup checklist are what they were.
 **Would not catch:**
 - A device still on a pre-32 bundle (hence P2).
+- Ticks lost in a session open during the merge. Parity compares items' text and position, not tick state, so the precondition covers it.
 - Completed runs: not moved, and nothing shows their rest, tempo or routine.
 - Sessions with no week plan (G18).
 **Live app after it:** it looks the same. From now on rest, tempo and the routine are changed per week in the Structure view and carried forward by copying.
@@ -542,32 +588,38 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 - **The workout screen's block source switched at its call sites:** `GymSession.tsx`'s `renderUnits` (L329) and `supersetBlockRestById` (L283–284), with fixtures where week and run copy differ.
 - **The Structure view:** link/unlink and WITHIN ROUND / AFTER ROUND.
 - **Apply ahead** for each new record type.
-- **The program tab:** its grouping and block-rest editors hidden for per-week runs.
+- **The program tab:** its grouping and block-rest editors follow G21's answer, and G32's for stable runs.
 - **D30.**
-- **Migration:** additive schema, not destructive; the data move fills new columns or rows only, Adam's merge with counts. Rollback by the switch, as in 33.
+**Migration:** additive schema, not destructive. Then a data move that fills new columns or rows only: Adam's merge, with counts and its own parity query. Rollback by the switch, as in 33.
 **Depends on:** 33.
+**Would not catch:** what G21 leaves open; written once it's answered.
+**Live app after it:** superset blocks and their rests look the same on the day the move ships (parity 0); from then on they're edited as G21 decides.
+**Done when:** G21 is answered, the chunk is written out in full, and its move is live with parity 0.
 
-### Chunk 35 — Differences from the week's source are highlighted — stops at G22 and G23
+### Chunk 35 — Differences from the week's source are highlighted — stops at G22, G23 and G34
 **Goal:** In both views, anything that differs from the week's source is highlighted. Tags never are. Deload sessions show none (SPEC's default).
 **SPEC:** Plan screen [P1.1] highlighting.
 **Fixed parts:**
-- **A pure `weekDiff.ts`.** Source resolution:
-  - week-dependent: `weekSources.ts`'s existing last-normal-non-empty search;
-  - stable and week 1: the run's copy (G25).
-- **What it compares:** exercises (by slot = `program_exercise_id`), order, sets (head ordinal + stage index, chunk 20's set position), set kinds, weight, reps, RIR, rest, tempo and routine items. It returns flags per row and field.
+- **A pure `weekDiff.ts`** that takes a week and its source's content and returns flags per row and field: exercises, order, sets, set kinds, weight, reps, RIR, rest, tempo and routine items (groupings per G21).
+- **The week-dependent source:** `weekSources.ts`'s existing last-normal-non-empty search, which is SPEC's rule 2 ("the last planned normal occurrence").
 - **Rendering:** with existing tokens only (`--accent` / `--accent-muted`, as the selected chips use). A new visual is Escalation 19.
 - **No flags:** deload sessions and tags.
 **Stops at:**
-- G22 (what the week is compared against).
-- G23 (removals, order, cross-view and ⋯ markers).
-- Parts: G24 (numbers in stable weeks), G20 (empty weeks), G21 (groupings).
+- G22 (what the week is compared against: its source now or as planned, and week 1's program).
+- G23 (removals, order, cross-view and ⋯ markers, and how a row finds its source row).
+- G34 (numbers with nothing to compare against).
+- Parts: G24 and G25 (what stable weeks are compared with), G20 (empty weeks), G21 (groupings).
 **Verification (fixed parts):**
 - **Pure:** `weekDiff` tests per field.
 - **Screen, Sets view:** week 5's set 2 weight differs from week 4's → set 2's weight is highlighted, set 1's isn't.
 - **Screen, Structure view:** rest, tempo and routine differences are highlighted.
 - **Never highlighted:** an added tag; any deload session.
 - **Break proofs:** compare against the wrong week → the test fails.
+**Migration:** none expected. G22's answer may add one, if the source is kept as it was when planned.
+**Would not catch:** finalised once G22, G23 and G34 are answered.
+**Live app after it:** highlights appear, including on weeks planned before it ships (whatever G22 decides for them); no value changes.
 **Depends on:** 29, 33 (34 for groupings).
+**Done when:** the gaps are answered, the chunk is written out in full, and its screen tests pass live.
 
 ### Chunk 36 — Stable: "Make this week the new default" — stops at G24–G29
 **Goal:** On a stable run, one action makes the week's content (everything except tags) the run's default, so every week planned after it starts from it. The saved program never changes. Then apply-ahead is offered for planned weeks.
@@ -576,13 +628,17 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 - **Where it shows:** offered only on stable runs (absence asserted on a week-dependent run); its place per G17.
 - **Atomic:** a Postgres function, like `v2_plan_week`, in a new migration. A new function, not destructive.
 - **Writes only the run's rows.** The saved program stays byte-identical (md5 of its rows before and after, as chunk 11 checked).
-- **Never changes `exercise_id` on a program exercise row that planned sets point at.** A swapped or added slot joins the default as its own row; a removed one is soft-removed (`removed_at`). Coach reads past planned exercises through those rows.
+- **Never changes `exercise_id` on a program exercise row that planned sets point at, whatever G25 decides.** Coach reads past planned exercises through those rows.
 - **Wired:** the next `v2_plan_week` for a stable week starts from it (scratch, plus a screen test on the action).
-- **Retires** chunk 32's stable interim in the program tab.
+- **Ends** whatever G32 put in place for stable runs.
 **Stops at:**
-- G24 (weights and RIR), G25 (default = run copy?), G26 (what apply-ahead applies).
-- G27 (deload sessions), G28 (a repeated workout in a cycle), G29 (past weeks).
+- G24 (weights and RIR), G25 (where the default is written, and so how swapped, added and removed exercises become part of it), G26 (what apply-ahead applies).
+- G27 (deload sessions), G28 (a repeated workout in a cycle), G29 (past weeks, confirm, undo).
+**Migration:** a new function, not destructive. Rollback: drop it, which removes the action. A default it already wrote stays as written; whether one can be undone is G29.
+**Would not catch:** finalised with the answers. At least: a default made from a week that was then edited (the default is what was there when the action ran).
+**Live app after it:** a new action on stable runs; weeks change only when it's used.
 **Depends on:** 33 (34).
+**Done when:** the gaps are answered, the chunk is written out in full, and a week made the default is what the next week starts from, live.
 
 ### Chunk 37 — The program tab is removed — stops at G30
 **Goal:** Plan has no program tab, and nothing it did is lost.
@@ -595,7 +651,11 @@ SPEC's [P1.1] objects mapped onto the schema. Conventions as in TASKS.md: `v2_` 
 **Verification (fixed parts):**
 - An absence test for the tab.
 - A capability checklist like chunk 26's: each control the tab had (G30's list, plus grouping) is reachable where the answers put it, or is gone on purpose. Each has a screen-level test.
+**Migration:** none expected; G30's answers may add one (e.g. if the schedule becomes editable somewhere new).
+**Would not catch:** a capability nobody listed. The checklist starts from the tab's code (`ProgramTab.tsx` → `StepExercises` / `StepVolume`), not from SPEC.
+**Live app after it:** no program tab. Everything it did is where G30's answers put it, or is fixed for the run.
 **Depends on:** 33, 34, 36.
+**Done when:** live, with every item on the checklist accounted for.
 
 ---
 
