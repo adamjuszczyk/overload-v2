@@ -15,6 +15,7 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **94** — Plan while its reads are out. Provisional: the existing spinner until the programs read (and, on a sequence run, the sequence, week plans and last event) answer; weekday runs also wait for programs now. Blocks: nothing.
 - **95** — Plan when a read fails with nothing to show. Provisional: "COULDN'T LOAD PLAN" / "Check your connection and try again." (the priorities screen's error markup); nothing is planned. Blocks: nothing.
 - **98** — Plan's SETS / STRUCTURE details. Provisional: opens on SETS; the choice is kept across week/workout switches, not across reloads; a STRUCTURE set row shows number, kind marker and ⋯ only; a stage row has no ⋯ in SETS; an empty workout's SETS view says "NO EXERCISES IN THIS DAY" (add from STRUCTURE). Blocks: nothing.
+- **99** — "Make this week the new default": does an empty (non-deload) session count as the week's content? Provisional: no — skipped like a deload, so that workout keeps its current default (matches how copying skips empty weeks). Changes data, so say if you want the other reading; nothing has used the action yet. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -47,6 +48,19 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 99 Make-default: an empty normal session is skipped like a deload (deferred)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 32 (migration 040)
+**Ask:** When a stable week is made the new default and one of its workouts' sessions is normal but has no exercises, should that empty session become the workout's default (emptying it), or be skipped so the workout keeps its current default?
+**Options:** (a) skip it, like a deload; in a sequence cycle take the first non-deload, non-empty occurrence; a week where every workout is skipped is refused. (b) Use it: the workout's default becomes empty (its rows soft-removed).
+**Recommendation:** (a): `v2_plan_week` already skips empty occurrences as a copy source (DECISIONS 42), and (a) can't wipe a workout's default by accident.
+**Blocked until answered/done:** nothing; 040 is built with (a). Flipping it is one predicate in `v2_make_week_default`, and nothing has used the action yet.
+**Answer:** provisional (a), until you change it.
+**Evidence:**
+What happened: SPEC says "Deload sessions are excluded: their workouts keep the current default" and "this week's content becomes the run's default"; it's silent on an empty normal session. The 040 builder first read "normal" as "not deload" only, so an empty session would empty the default.
+A competent default would: match the copy rule (skip empty) — doesn't apply as a silent default because it changes what's written to the run's copy.
+Cost of deferral: if you choose (b), one predicate in a new migration (function replace), before or after the action is first used; defaults already made under (a) stay.
 
 ### 97 TASKS-1.1 chunk 29 merged: Plan's week in SETS / STRUCTURE views; COMPACT removed (#65)
 - What: chunk 29, code only. Handlers unchanged (builder's 30-flow master/branch replay byte-identical). Independent review: scope and capabilities clean; 54 of 60 reviewer breaks caught on the first push; the tests-only retry (interrupted once by a container restart, resumed) pinned the other 6, two re-checked by the reviewer.
