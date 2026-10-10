@@ -216,9 +216,9 @@ rule independent and optional:
 
 ### Weeks and copying [P1]
 
-- A week (cycle) gets planned the first time it's opened in the planner, or when
-  it starts, whichever is first. At that moment it's filled from its source, and
-  from then on it's its own week.
+- A week (cycle) gets planned the first time it's opened in Plan [P1.1: "in the
+  planner" here meant Plan], or when it starts, whichever is first. At that
+  moment it's filled from its source, and from then on it's its own week.
 - **Source of a new week's volume:** `stable` → the run's copy, always.
   `week-dependent` → the last planned week ("copy last week" is the default;
   a setting lets weeks start empty instead — default for new and existing users: copy).
@@ -265,7 +265,8 @@ rule independent and optional:
 - "Copy last week" stays as a manual action.
 - [P1.1] **Adding or removing an exercise in a week** is allowed for both
   planning types. Week-dependent: it always carries forward through copying.
-  Stable: it's a one-off for that week.
+  Stable: it's a one-off for that week, unless that week is then made the new
+  default.
 
 ### Targets [P1]
 
@@ -593,7 +594,8 @@ rule independent and optional:
     the warmup routine are run-wide, so they're never compared.
     - A week is compared with its source as it is now.
     - Numbers are highlighted against last week. Week 1's weights and RIR aren't
-      highlighted.
+      highlighted. (Open: which numbers that covers for a stable week's reps
+      and for week 1's reps, TASKS-1.1 G37.)
     - Exercises are matched by exercise identity (a swap shows as changed); sets
       by position.
     - Something removed shows as a dim struck-through line in its place. When
