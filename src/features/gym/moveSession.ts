@@ -53,13 +53,28 @@ export function dateForDow(mesoStartDate: string, weekNumber: number, dow: DayOf
   return format(addDays(weekMonday, DAYS_ORDER.indexOf(dow)), 'yyyy-MM-dd')
 }
 
+// The days of `anchorDate`'s calendar week that a session can still be moved
+// to: `today` and later (ISO 'yyyy-MM-dd' strings compare like dates). A day
+// that has already passed is never offered — moving a session onto it would
+// file training under a day nobody can still train on (B2, 2026-10-10: the
+// sheet offered Thursday for Saturday's session). The week is anchored on
+// the session's own ORIGINAL date, never on today, so a session from a
+// week that is entirely behind us gets an empty list rather than next
+// week's days.
+export function movableDatesForWeekOf(anchorDate: string, today: string): string[] {
+  return datesForWeekOf(anchorDate).filter((d) => d >= today)
+}
+
 // What moving `originalDate` (a session's own, unchanging `date` column) to
-// `targetDate` (the candidate new moved_to_date) resolves to:
+// `targetDate` (the candidate new moved_to_date) resolves to, given `today`:
 //   - 'invalid_cross_week': SPEC's own hard limit — moving across a week
 //     boundary is never offered via the UI (the day-chip picker only ever
-//     offers datesForWeekOf(originalDate)), but the pure rule is proven
-//     independently here (Lessons: "prove every rule at the layer that
-//     applies it") rather than trusted to the UI alone.
+//     offers movableDatesForWeekOf(originalDate, today)), but the pure rule
+//     is proven independently here (Lessons: "prove every rule at the layer
+//     that applies it") rather than trusted to the UI alone.
+//   - 'invalid_past': `targetDate` is before `today` (B2). Checked after the
+//     cross-week rule, and before 'clear': "moving back" to an original day
+//     that has already passed is a move onto a past day like any other.
 //   - 'clear': targetDate is the session's own original day — "moving back
 //     to its own day" (TASKS.md's session data model table). The caller
 //     (sessionService.ts's moveSession) deletes the row if it only ever
@@ -70,11 +85,15 @@ export function dateForDow(mesoStartDate: string, weekNumber: number, dow: DayOf
 //   - 'set': the real move — moved_to_date becomes targetDate.
 export type MoveResolution =
   | { kind: 'invalid_cross_week' }
+  | { kind: 'invalid_past' }
   | { kind: 'clear' }
   | { kind: 'set'; movedToDate: string }
 
-export function resolveMove(originalDate: string, targetDate: string): MoveResolution {
+export function resolveMove(originalDate: string, targetDate: string, today: string): MoveResolution {
+  if (targetDate !== originalDate && !isSameCalendarWeek(originalDate, targetDate)) {
+    return { kind: 'invalid_cross_week' }
+  }
+  if (targetDate < today) return { kind: 'invalid_past' }
   if (targetDate === originalDate) return { kind: 'clear' }
-  if (!isSameCalendarWeek(originalDate, targetDate)) return { kind: 'invalid_cross_week' }
   return { kind: 'set', movedToDate: targetDate }
 }

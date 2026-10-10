@@ -123,6 +123,19 @@ describe('TodayPage — MOVE THIS SESSION on the virtual (not-yet-created) sugge
     expect(clearMutate).not.toHaveBeenCalled()
   })
 
+  it('B2: offers today and later days of the week only — never a day that has already passed', () => {
+    mockState.result = { type: 'suggest_from_plan', weekPlan: makeWeekPlan(), date: TODAY }
+    renderToday()
+
+    fireEvent.click(screen.getByText('MOVE THIS SESSION'))
+
+    // TODAY is Tuesday: Monday has passed.
+    expect(screen.queryByText('MON')).toBeNull()
+    for (const label of ['TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']) {
+      expect(screen.getByText(label)).toBeTruthy()
+    }
+  })
+
   it('offline: the control is disabled and says so', () => {
     isOnline = false
     mockState.result = { type: 'suggest_from_plan', weekPlan: makeWeekPlan(), date: TODAY }
@@ -148,15 +161,29 @@ describe('TodayPage — the `planned` entry (a session moved here, not yet start
   })
 
   it('moving it back to its own original day calls useClearMovedSession, not useMoveSession', () => {
-    const session = makePlannedSession()
+    // Original day FRI, moved EARLIER to today (Tue): FRI is still ahead,
+    // so MOVE BACK is offered. (An original day that has already passed is
+    // not — covered below.)
+    const session = makePlannedSession({ date: FRI })
     mockState.result = { type: 'planned', session, weekPlan: makeWeekPlan(), workoutDay }
     renderToday()
 
     fireEvent.click(screen.getByText('MOVE THIS SESSION'))
     fireEvent.click(screen.getByText('MOVE BACK').closest('button')!)
 
-    expect(clearMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-1', date: MON })
+    expect(clearMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-1', date: FRI })
     expect(moveMutate).not.toHaveBeenCalled()
+  })
+
+  it('a session whose original day has passed is not offered MOVE BACK to it', () => {
+    const session = makePlannedSession() // original MON, moved to TODAY (Tue)
+    mockState.result = { type: 'planned', session, weekPlan: makeWeekPlan(), workoutDay }
+    renderToday()
+
+    fireEvent.click(screen.getByText('MOVE THIS SESSION'))
+
+    expect(screen.queryByText('MOVE BACK')).toBeNull()
+    expect(screen.queryByText('MON')).toBeNull()
   })
 
   it('moving it again (to a third day) calls useMoveSession with the ORIGINAL date, not the current moved-to one', () => {

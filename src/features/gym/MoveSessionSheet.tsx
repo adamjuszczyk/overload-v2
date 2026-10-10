@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import { DAYS_ORDER, datesForWeekOf } from './moveSession'
+import { DAYS_ORDER, datesForWeekOf, movableDatesForWeekOf } from './moveSession'
 import type { DayOfWeek } from '../../types'
 
 // Chunk 24 (SPEC "Weekday" — "Move this session to another day, this week
@@ -26,6 +26,9 @@ interface MoveSessionSheetProps {
   // Where it effectively is right now (moved_to_date ?? originalDate) —
   // excluded as a pickable target (you're already there).
   currentDate: string
+  // Real "today" — days before it are never offered (B2): a session can only
+  // be moved to today or a later day of its week.
+  today: string
   isPending: boolean
   onPick: (targetDate: string) => void
   onClose: () => void
@@ -35,11 +38,15 @@ export default function MoveSessionSheet({
   workoutDayName,
   originalDate,
   currentDate,
+  today,
   isPending,
   onPick,
   onClose,
 }: MoveSessionSheetProps) {
+  // All 7 dates give each weekday its index into DAYS_ORDER; only the ones
+  // from today on are rendered.
   const days = datesForWeekOf(originalDate)
+  const movable = new Set(movableDatesForWeekOf(originalDate, today))
 
   return (
     <div
@@ -90,12 +97,22 @@ export default function MoveSessionSheet({
           className="mb-4 text-xs"
           style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
         >
-          PICK ANOTHER DAY, SAME WEEK
+          PICK TODAY OR A LATER DAY THIS WEEK
         </p>
+
+        {movable.size === 0 && (
+          <p
+            className="text-xs"
+            style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
+          >
+            NO DAYS LEFT THIS WEEK
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {DAYS_ORDER.map((dow, i) => {
             const date = days[i]
+            if (!movable.has(date)) return null
             const isCurrent = date === currentDate
             const isOriginal = date === originalDate && !isCurrent
             return (

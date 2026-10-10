@@ -56,6 +56,7 @@ import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import { dateForDow } from '../gym/moveSession'
+import { useToday } from '../../hooks/useToday'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,7 @@ type SetChanges = {
 
 export default function PlanPage() {
   const navigate = useNavigate()
+  const today = useToday()
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
 
@@ -667,6 +669,7 @@ export default function PlanPage() {
               weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
               mesoId={activeMeso.id}
               date={dateForDow(activeMeso.startDate, viewWeek, selected.dow)}
+              today={today}
               isCurrentWeek={viewWeek === currentWeek}
             />
 

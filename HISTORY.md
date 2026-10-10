@@ -22719,3 +22719,14 @@ Previous wording, verbatim:
 Previous wording, verbatim:
 
 - "89 tests: 26 migration-rule + 5 verify-rls-tables + 30 transport-collapse + 5 check-frozen-code + 9 compare-schema + 10 check-migration-order + 3 probe-live-columns; 89 of 89 pass 2026-10-04 (86 with 027 present, before the probe test was added);" — check-embeds added (3 tests); transport-collapse now round-trips 28 migrations.
+
+---
+
+## 2026-10-10 (B1/B2 bug session) — Moved out of CONTEXT.md (no longer true)
+
+Previous wording, verbatim:
+
+- "Missed sessions (run under Vitest 2026-10-03): 7-day look-back, never before the meso start, crossing week boundaries; a scheduled day counts as handled by any completed/in-progress/skipped session dated that day; DO IT NOW creates the session under the *missed* date (works offline), after which today's own workout is offered again; MARK SKIPPED writes a skipped row (online only); dismiss lasts one screen mount." — replaced by the chunk 24 behaviour (current week only; DO IT NOW sets `moved_to_date` = today).
+- "631 tests in 41 files pass (re-run 2026-10-04 on chunk 4)" — replaced by the 2026-10-10 run (1763 in 139 files).
+- Move-sheet wording shipped in chunk 24 and removed by B2: the sheet subtitle "PICK ANOTHER DAY, SAME WEEK" (now "PICK TODAY OR A LATER DAY THIS WEEK"), and `resolveMove(originalDate, targetDate)` with two arguments (now takes `today`).
+
