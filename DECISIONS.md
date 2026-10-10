@@ -4,7 +4,7 @@
 *Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built, no new chunks. The step 5 review is Adam's, against a checklist generated from SPEC.md.*
 
 To-dos:
-- **79** — after the update banner, check REDO is gone and Move offers only today and later days, and say whether you removed Saturday's Legs row (your cleanup counted 7 sessions, I expected 8). When: next time you open the app. Blocks: nothing.
+- **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
 
 ## Format for all new entries
 
@@ -35,20 +35,17 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 79 After B1/B2: live check, and one session the cleanup count doesn't explain
+### 79 After B1/B2: live check of REDO's removal
 Severity: deferred
 Chunk: none (bug fixes, 2026-10-10)
-**Ask:** (1) After the update banner: a finished session's Today screen shows only CONTINUE SESSION (no REDO SESSION), and MOVE THIS SESSION on a Saturday session offers only SAT and SUN, from both Today and Plan. (2) Tell me what happened to the 2026-10-10 LEGS row (`5eb82bfe-5099-42d0-b4d4-d9fdbffea39f`, `planned`, moved to 2026-10-08, the B2 repro): did you move it back or delete it? The cleanup block you ran left 7 sessions since 2026-10-01, and the 9 rows in the earlier output minus the empty twin is 8.
-**When:** next time you open the app. If it helps, rerun `scripts/b1-session-forensics.sql` in the SQL Editor and send the table.
+**Ask:** After the update banner, on a finished session's Today screen, check there is no REDO SESSION (only CONTINUE SESSION and the note editor). The Move check and the Legs-row question are answered (below).
+**When:** after today's session, when you see the finished screen.
 **Blocked until answered/done:** nothing.
-**Answer:**
+**Answer:** (Adam, 2026-10-10) Move this session on a Saturday session offers only SAT and SUN, **confirmed live**. The 2026-10-10 LEGS row (`5eb82bfe-5099-42d0-b4d4-d9fdbffea39f`, `planned`, moved to 2026-10-08, the B2 repro) was removed by Adam moving it back to Saturday in the app *before* he ran the cleanup block, and Today shows Legs today. That accounts for the count: 9 sessions in the earlier output, minus the Legs row the move-back deleted, minus the empty twin the cleanup deleted, is the 7 it returned. REDO: **to be confirmed** after today's session.
 **Evidence:**
-What happened: the B1 cleanup (entry 78) returned `friday_status` completed, `friday_sets` 11, `twin_rows_left` 0, `sessions_since_oct1` 7. The block deleted exactly one row (the twin), and the earlier forensics output listed 9 sessions on or after 2026-10-01. One more row is gone, or a date moved out of the window. The Legs row is the likeliest, since B2 now offers MOVE BACK on it (Plan → Legs → MOVE THIS SESSION → SAT deletes it), but that is not confirmed: the block's own guards cannot have deleted anything else, so something else touched the table between the two reads.
-A competent default would: assume the Legs row was removed in the app — doesn't apply because: it is deleted data, and "probably" is not a record.
+What happened: the B1 cleanup (entry 78) returned `friday_status` completed, `friday_sets` 11, `twin_rows_left` 0, `sessions_since_oct1` 7, where I expected 8. The block itself could only delete the twin; Adam's account of the earlier move-back explains the other row (his statement, matching the arithmetic; I did not see the Legs row's deletion).
+A competent default would: close the entry once Move was confirmed — doesn't apply because: the REDO check is the one that matters for B1 and cannot be done until a session is finished.
 Cost of deferral: none.
-
-
-## Closed
 
 ### 78 B1: a finished session read SKIPPED with its numbers, plus an empty in-progress twin
 - What: Friday 2026-10-09's PULL 2 (11 numbered sets) was `skipped` and an empty second PULL 2 started 34 minutes after its last set. Adam's query output ruled out a classifying finish, the missed-session prompt, a retried start and offline replay; what remains is REDO SESSION → CONFIRM (read from code, not observed; who tapped is unknown). Full text, query results and the guarded cleanup: HISTORY.md, 2026-10-10.
