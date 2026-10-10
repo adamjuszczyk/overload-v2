@@ -18,6 +18,10 @@ Every item below is tagged **[P1]** or **[P2]**. Each phase gets its own
 been used in real training; anything that use reveals gets written back here
 first.
 
+**[P1.1]** marks the rules changed by SPEC change 1.1 (decided 2026-10-10,
+during the phase 1 review: every edit to a running program happens in the week).
+`TASKS-1.1.md` plans them.
+
 - **Phase 1 — what a workout is:** planning, scheduling, set structures, and how
   they render on the workout screen.
 - **Phase 2 — how logging feels, plus the platform:** tracked fields, logging
@@ -144,23 +148,25 @@ rule independent and optional:
 
 - A program stays exactly as it was saved. Running it never changes it, and
   starting it again later always starts from how it was saved.
-- Activating a program creates a run with its own copy of the plan. The program
-  tab inside the plan screen shows and edits that copy — never the saved
-  program.
-- What the program tab can edit mid-run:
-  - **Design fields** — rest, rest after, tempo, warmup routine, priorities,
-    superset rest, stage rest. They exist only in the run's copy. Editable for
-    both planning types; apply to this run from the next session on.
-  - **Volume** — the exercise list and the sets.
-    - `stable`: editable; weeks not yet planned pick it up, and "Apply this
-      change to planned weeks ahead" covers planned ones.
-    - `week-dependent`: read-only, shown as week 1's reference. Permanent volume
-      changes are made in a week and carry forward through copying.
-- Priorities live on the program and can be changed per run in the plan screen
-  (as today).
+- Activating a program creates a run with its own copy of the plan.
+- [P1.1] **The program tab is removed from Plan.** Everything it did now happens
+  in the week:
+  - design fields (rest, tempo, warmup routine): in the week's Structure view
+    (Rest, Tempo and Warmup routine below);
+  - stable volume: through "Make this week the new default" (Weeks and copying).
+- [P1.1] **Priorities are a property of the program.**
+  - They're set in the planner when the program is built, and copied to a run
+    when it starts.
+  - They can't be changed during a run. Plan shows them view-only.
 - **Existing programs and runs:** every program a run already points at becomes
   that run's copy (no existing ids change), and a saved program is cloned from it
   to be the reusable template.
+- [P1.1] **Existing data (default):**
+  - Today's run-wide rest, tempo and warmup routine values are written into every
+    week already planned in each active run, so nothing visible changes on the
+    day this ships. They also become the run's default.
+  - Existing run priorities stay as they are and become read-only.
+  - Stored "only this week" values: see Weeks and copying.
 
 ### Stepped program planner [P1]
 
@@ -205,25 +211,36 @@ rule independent and optional:
   `week-dependent` → the last planned week ("copy last week" is the default;
   a setting lets weeks start empty instead — default for new and existing users: copy).
 - **Source of weight and RIR targets:** the last planned week, for both types.
+- [P1.1] **A new week starts from its source, and copies everything from it
+  except tags and the deload flag.**
+  - Stable program: the source is the run's **default**.
+  - Week-dependent program: the source is the last planned normal occurrence.
+    The existing rules for skipping deload and empty occurrences stay.
+  - Week 1 of any run starts from the program.
 - **Tags are never copied.**
 - **Deload sessions are never a copy source.** A week that's partly deload still
   copies its normal sessions; its deload sessions copy from the last normal
   occurrence.
-- **"Only this week"** — a tick on swap and reorder actions in the week plan, off
-  by default, `week-dependent` only. When ticked, that change is not copied
-  forward. (For `stable`, every week edit is a one-off already, because new
-  weeks come from the run's copy.)
+- [P1.1] **"Only this week" is removed.** A one-off change is made in the session
+  itself (the mid-workout swap), or changed back the following week.
+  - *Existing data (default):* "only this week" values already stored are ignored
+    from now on. Copying uses each week's actual content.
 - **"Apply this change to planned weeks ahead"** — offered when a week is edited
   and later weeks are already planned. Applies only the change just made; leaves
   everything else in those weeks alone. Both planning types.
-- **Stable, permanent mid-run change:** edit the program tab. Weeks not yet
-  planned pick it up; "Apply this change to planned weeks ahead" covers planned
-  ones.
+- [P1.1] **Stable programs: "Make this week the new default".**
+  - One action per week: this week's content (everything except tags) becomes the
+    run's default, and every week planned from now on starts from it.
+  - The saved program is never changed.
+  - If later weeks are already planned, it then offers the existing "Apply this
+    change to planned weeks ahead".
+  - Week-dependent programs don't have this action; their next week copies this
+    one anyway.
 - The number of weeks stays open-ended, as today.
 - "Copy last week" stays as a manual action.
-- **Adding or removing an exercise in a week** is allowed for both planning
-  types. Week-dependent: it always carries forward through copying ("only this
-  week" applies to swap and reorder only). Stable: it's a one-off for that week.
+- [P1.1] **Adding or removing an exercise in a week** is allowed for both
+  planning types. Week-dependent: it always carries forward through copying.
+  Stable: it's a one-off for that week.
 
 ### Targets [P1]
 
@@ -248,6 +265,10 @@ rule independent and optional:
 
 - Per exercise, in the program. Shown next to the exercise during the workout.
   Not tracked.
+- [P1.1] **In a run, tempo is per week.** It starts from the program, is copied
+  by the source rule, is highlighted when changed, and is included in "Make this
+  week the new default". Example: a faster tempo as a block progresses towards a
+  peak.
 
 ### Rest [P1]
 
@@ -266,6 +287,10 @@ rule independent and optional:
 - Staged sets: the staged set's own rest between stages (dropset: no timer;
   rest-pause, myo-reps, cluster: 15 s by default).
 - Warmup sets follow the same chain.
+- [P1.1] **In a run, rest is per week:** the exercise's rest and rest after, a
+  set's own rest, superset rest and stage rest. Each starts from the program, is
+  copied by the source rule, is highlighted when changed, and is included in
+  "Make this week the new default".
 
 ### Supersets [P1]
 
@@ -294,6 +319,9 @@ rule independent and optional:
 
 - Per workout, in the program: a checklist shown at the top of the session.
 - Items are ticked off; nothing else is logged.
+- [P1.1] **In a run, the warmup routine is per week.** It starts from the
+  program, is copied by the source rule, is highlighted when changed, and is
+  included in "Make this week the new default".
 
 ### Staged sets [P1]
 
@@ -508,15 +536,32 @@ rule independent and optional:
 
 ### Plan screen [P1]
 
-- **Program tab:** the run's copy of the plan — priorities, workouts, exercises,
-  order, sets, targets, rest, tempo, warmup routine. Edits change this run only,
-  as limited in Rules → Programs and runs (volume read-only for week-dependent).
+- [P1.1] **No program tab.** It's removed; everything it did happens in the week
+  (Rules → Programs and runs). Priorities are shown view-only.
 - **Weeks (cycles):** week switcher, open-ended. Each session shows its exercises
   and sets with weight, rep and RIR targets and tags.
-  - Actions: edit any value; swap or reorder exercises (with "only this week"
-    for week-dependent); mark session or week as deload; copy last week; "Apply
-    this change to planned weeks ahead" after an edit when later weeks are
-    planned.
+  - [P1.1] **Plan shows one week (one cycle for sequence runs) in two views:**
+    - **Sets:** the number of sets, weight, reps and RIR per set, and tags.
+    - **Structure:**
+      - exercise order, swap, adding and removing exercises
+      - set kinds (warmup, staged sets and their stages)
+      - superset grouping
+      - rest (exercise rest, rest after, a set's own rest, superset and stage
+        rest)
+      - tempo
+      - the workout's warmup routine
+    - Both views follow the standing UI rule: what's used on every set is
+      visible, and the rest sits behind ⋯, with markers only where something is
+      set.
+  - [P1.1] **Anything different from the week's source is highlighted**, in both
+    views: numbers, sets, exercises, order, set kinds, groupings, rest, tempo and
+    warmup routine items. Tags are never highlighted, since they're never copied.
+    *Default:* deload sessions show no highlighting, because they're already
+    marked as deload and differ by design.
+  - Actions: edit any value; swap or reorder exercises; mark session or week as
+    deload; copy last week; "Apply this change to planned weeks ahead" after an
+    edit when later weeks are planned; [P1.1] stable runs: "Make this week the
+    new default". [P1.1] No "only this week".
   - Deload sessions are visibly marked.
 - **Empty states:** no active run → "Start a program", leading to the planner.
   A week-dependent run whose weeks start empty → "Copy last week" on the empty
