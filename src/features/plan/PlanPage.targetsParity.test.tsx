@@ -114,6 +114,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -133,6 +134,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -180,6 +182,10 @@ describe('PlanPage — chunk 19 is additive: an existing RIR + rep target render
 
     // And now the two new fields genuinely show something.
     expect(screen.getByRole('button', { name: '102.06kg' })).toBeTruthy()
+    // The tag shows as a compact marker on the set; its "apply to all"
+    // control is in the set's ⋯ menu.
+    expect(screen.getByText('push here')).toBeTruthy()
+    openSetMenu(1)
     expect(screen.getByLabelText('Apply "push here" to all sets')).toBeTruthy()
   })
 })

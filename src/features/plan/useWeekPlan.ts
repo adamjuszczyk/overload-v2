@@ -13,6 +13,7 @@ import {
   markWeekDeload,
   unmarkWeekDeload,
   addSet,
+  addWarmupSet,
   addStage,
   updateSet,
   removeSet,
@@ -245,6 +246,37 @@ export function useAddSet(mesoId: string, weekNumber: number) {
         planId = plan.id
       }
       return addSet(user!.id, planId, programExerciseId, setNumber)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
+  })
+}
+
+// "Add warmup sets" (Plan's exercise ⋯ menu) — one warmup above the first
+// working set. Same optional-weekPlanId pattern as useAddSet; networkMode
+// 'always' per the house rule (offline fails fast instead of pausing).
+export function useAddWarmupSet(mesoId: string, weekNumber: number) {
+  const { user } = useAuth()
+  const qk = key(mesoId, weekNumber)
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: async ({
+      workoutDayId,
+      weekPlanId,
+      programExerciseId,
+    }: {
+      workoutDayId: string
+      weekPlanId?: string
+      programExerciseId: string
+    }) => {
+      let planId = weekPlanId
+      if (!planId) {
+        const plan = await createWeekPlan(user!.id, mesoId, workoutDayId, weekNumber)
+        planId = plan.id
+      }
+      return addWarmupSet(user!.id, planId, programExerciseId)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
@@ -522,6 +554,9 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
       return updateSet(op.setId, op.changes)
     case 'addSet':
       await addSet(userId, op.weekPlanId, op.programExerciseId, op.setNumber)
+      return
+    case 'addWarmupSet':
+      await addWarmupSet(userId, op.weekPlanId, op.programExerciseId)
       return
     case 'removeSet':
       return removeSet(op.setId)

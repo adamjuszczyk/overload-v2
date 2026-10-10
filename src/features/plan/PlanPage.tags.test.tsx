@@ -78,6 +78,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -97,6 +98,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -111,6 +113,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({})])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'push here' }))
 
@@ -121,6 +124,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({ tags: ['push here', 'push back'] })])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'push here' }))
 
@@ -131,6 +135,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({ tags: ['push here'] })])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByRole('button', { name: 'push here' }))
 
@@ -141,6 +146,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({})])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByText('+ CUSTOM'))
     const input = screen.getByLabelText('Custom tag')
@@ -154,6 +160,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({})])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByText('+ CUSTOM'))
     const input = screen.getByLabelText('Custom tag')
@@ -167,6 +174,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({ tags: ['focus on execution'] })])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByText('+ CUSTOM'))
     const input = screen.getByLabelText('Custom tag')
@@ -179,6 +187,7 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
   it('a custom tag already on the set shows as its own removable chip, alongside the four presets', () => {
     mockState.plans = [makePlan([makeSet({ tags: ['triceps feel off today'] })])]
     renderPlanPage()
+    openSetMenu(1)
 
     expect(screen.getByRole('button', { name: 'triceps feel off today' })).toBeTruthy()
   })
@@ -190,10 +199,32 @@ describe('PlanPage — tags editor, heads only (chunk 19)', () => {
     ])]
     renderPlanPage()
 
+    // Shown as a compact marker on the head only; no chip row until its ⋯ is
+    // opened.
+    expect(screen.queryByText('TAGS')).toBeNull()
+    expect(screen.getAllByText('push here')).toHaveLength(1)
+    openSetMenu(1)
     expect(screen.queryByText('TAGS')).toBeTruthy() // the head's own
     // Exactly one preset-chip row exists (the head's) — if the stage also
     // rendered one, there would be two "push here" buttons instead of one.
     expect(screen.getAllByRole('button', { name: 'push here' })).toHaveLength(1)
+  })
+
+  // UI rule (2026-10-10): tags show only on sets that have them, compactly;
+  // a set without tags shows no empty field, chip row or placeholder.
+  it('a set with no tags shows nothing tag-related; a set with tags shows only its own, compactly', () => {
+    mockState.plans = [makePlan([
+      makeSet({ id: 'head-1', setNumber: 1 }),
+      makeSet({ id: 'head-2', setNumber: 2, tags: ['push here', 'focus on execution'] }),
+    ])]
+    renderPlanPage()
+
+    expect(screen.queryByText('TAGS')).toBeNull()
+    expect(screen.queryByText('+ CUSTOM')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'push here' })).toBeNull()
+    // The two tags appear once each (set 2's marker); set 1 shows none.
+    expect(screen.getAllByText('push here')).toHaveLength(1)
+    expect(screen.getAllByText('focus on execution')).toHaveLength(1)
   })
 })
 
@@ -207,6 +238,7 @@ describe('PlanPage — "Apply to all sets" (chunk 19)', () => {
       makeSet({ id: 'head-3-warmup', setNumber: 3, isWarmup: true }),
     ])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByLabelText('Apply "push here" to all sets'))
 
@@ -223,6 +255,7 @@ describe('PlanPage — "Apply to all sets" (chunk 19)', () => {
       makeSet({ id: 'head-2', setNumber: 2, tags: ['maintain strength'] }),
     ])]
     renderPlanPage()
+    openSetMenu(1)
 
     fireEvent.click(screen.getByLabelText('Apply "push here" to all sets'))
 
@@ -235,6 +268,7 @@ describe('PlanPage — "Apply to all sets" (chunk 19)', () => {
       makeSet({ id: 'head-2', setNumber: 2, tags: ['push here'] }),
     ])]
     renderPlanPage()
+    openSetMenu(1)
     updateSetMutate.mockClear() // clear any mount-time noise before the tap we're testing
 
     // Both heads already carry the tag, so both show their own "apply to
@@ -247,6 +281,7 @@ describe('PlanPage — "Apply to all sets" (chunk 19)', () => {
   it('the "apply to all" control only exists on an ACTIVE tag — never on an inactive preset', () => {
     mockState.plans = [makePlan([makeSet({ tags: ['push here'] })])]
     renderPlanPage()
+    openSetMenu(1)
 
     expect(screen.getByLabelText('Apply "push here" to all sets')).toBeTruthy()
     expect(screen.queryByLabelText('Apply "push back" to all sets')).toBeNull()

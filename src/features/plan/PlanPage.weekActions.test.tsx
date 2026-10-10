@@ -106,6 +106,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -125,6 +126,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openExerciseMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -152,9 +154,18 @@ describe('PlanPage — week actions are visible on the current (non-past) week',
 
     renderPlanPage()
 
-    expect(screen.getAllByLabelText(/^Swap /).length).toBe(2)
-    expect(screen.getAllByLabelText(/from this week$/).length).toBe(2)
+    // UI rule (2026-10-10): per-exercise actions are behind each exercise's
+    // ⋯; the page shows only the two ⋯ buttons and ADD EXERCISE.
+    expect(screen.queryByLabelText(/^Swap /)).toBeNull()
+    expect(screen.queryByLabelText(/from this week$/)).toBeNull()
+    expect(screen.queryByLabelText('Move down')).toBeNull()
+    expect(screen.getAllByLabelText(/ options$/).length).toBe(2)
     expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
+
+    openExerciseMenu('Bench Press')
+    expect(screen.getAllByLabelText(/^Swap /).length).toBe(1)
+    expect(screen.getAllByLabelText(/from this week$/).length).toBe(1)
+    expect(screen.getByLabelText('Add warmup sets')).toBeTruthy()
   })
 })
 
@@ -164,6 +175,7 @@ describe('PlanPage — swap', () => {
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     expect(screen.getByText('SWAP Bench Press')).toBeTruthy()
     fireEvent.click(screen.getByText('Incline Press'))
@@ -182,6 +194,7 @@ describe('PlanPage — swap', () => {
     renderPlanPage()
 
     fireEvent.click(screen.getByText('ONLY THIS WEEK'))
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     fireEvent.click(screen.getByText('Incline Press'))
 
@@ -203,7 +216,8 @@ describe('PlanPage — reorder', () => {
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
 
-    fireEvent.click(screen.getAllByLabelText('Move down')[0])
+    openExerciseMenu('Bench Press')
+    fireEvent.click(screen.getByLabelText('Move down'))
 
     expect(reorderMutate).toHaveBeenCalledWith({
       weekPlanId: 'wp-1',
@@ -222,6 +236,8 @@ describe('PlanPage — reorder', () => {
 
     // No jest-dom in this suite — plain DOM property check (same
     // convention as ReassignSheet.test.tsx).
+    openExerciseMenu('Bench Press')
+    openExerciseMenu(EX_B.name)
     const ups = screen.getAllByLabelText('Move up') as HTMLButtonElement[]
     const downs = screen.getAllByLabelText('Move down') as HTMLButtonElement[]
     expect(ups[0].disabled).toBe(true)
@@ -243,6 +259,9 @@ describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPE
     renderPlanPage()
 
     // 2 units total (the block, and pe3) → 2 move-down buttons, not 3.
+    openExerciseMenu('Bench Press')
+    openExerciseMenu(EX_B.name)
+    openExerciseMenu('Dips')
     expect(screen.getAllByLabelText('Move down')).toHaveLength(2)
   })
 
@@ -259,7 +278,8 @@ describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPE
     mockState.plans = [makePlan(1, [pe1Blocked, pe2Blocked, pe3])]
     renderPlanPage()
 
-    fireEvent.click(screen.getAllByLabelText('Move down')[0]) // the block's own (only) down button
+    openExerciseMenu('Bench Press')
+    fireEvent.click(screen.getByLabelText('Move down')) // the block's own (only) down button
 
     expect(reorderMutate).toHaveBeenCalledWith({
       weekPlanId: 'wp-1',
@@ -297,6 +317,7 @@ describe('PlanPage — remove', () => {
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
     expect(screen.getByText('Remove "Bench Press" from week 1?')).toBeTruthy()
     expect(removeMutate).not.toHaveBeenCalled()
@@ -310,6 +331,7 @@ describe('PlanPage — remove', () => {
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
     fireEvent.click(screen.getByText('CANCEL'))
 
@@ -333,6 +355,7 @@ describe('PlanPage — G14: a workout on two weekdays shares one plan row', () =
     expect(screen.getByText('MON')).toBeTruthy()
     expect(screen.getByText('THU')).toBeTruthy()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     fireEvent.click(screen.getByText('Incline Press'))
 
@@ -363,7 +386,9 @@ describe('PlanPage — a past week is read-only for week actions too', () => {
     renderPlanPage()
 
     expect(screen.getByText('WEEK 4')).toBeTruthy() // sanity: mounted on the current week
-    expect(screen.getByLabelText('Swap Bench Press')).toBeTruthy() // visible on the (non-past) current week
+    expect(screen.getByLabelText('Bench Press options')).toBeTruthy() // visible on the (non-past) current week
+    openExerciseMenu()
+    expect(screen.getByLabelText('Swap Bench Press')).toBeTruthy()
 
     fireEvent.click(screen.getByLabelText('Previous week')) // week 3
     fireEvent.click(screen.getByLabelText('Previous week')) // week 2
@@ -371,6 +396,7 @@ describe('PlanPage — a past week is read-only for week actions too', () => {
 
     expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
     expect(screen.queryByLabelText(/^Swap /)).toBeNull()
+    expect(screen.queryByLabelText(/ options$/)).toBeNull()
     expect(screen.queryByText('ADD EXERCISE')).toBeNull()
     expect(screen.queryByLabelText('Move down')).toBeNull()
     expect(screen.queryByText(/from this week$/)).toBeNull()

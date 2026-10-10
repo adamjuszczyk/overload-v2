@@ -151,6 +151,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: (mesoId: string, weekNumber: number) => useSetWeekDeloadSpy(mesoId, weekNumber),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: copyWeekMutate, isPending: false }),

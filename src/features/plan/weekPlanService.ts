@@ -7,6 +7,7 @@ import {
   createWeekOnlyProgramExercise,
   fetchSwapSourceSlot,
 } from '../programs/runProgramExercises'
+import { planWarmupInsert } from './warmupInsert'
 import { resolveSwapSlot, resolveSwapCarry, resolveReorderCarry, resolveAddSlot } from './weekEdits'
 import {
   resolveDeloadBaseOccurrence,
@@ -398,6 +399,51 @@ export async function addSet(
       set_number: setNumber,
       target_rir: null,
       is_dropset: false,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return toSet(data as DbWeekPlanSet)
+}
+
+// "Add warmup sets" (Plan's exercise ⋯ menu): one warmup head above this
+// exercise's first working set. warmupInsert.ts decides the number and which
+// rows move down one; this reads the rows, writes the shifts (highest first),
+// then inserts the warmup. Not atomic — a failure part-way leaves the sets in
+// order with a gap at the insert point, never a duplicated or reordered set.
+export async function addWarmupSet(
+  userId: string,
+  weekPlanId: string,
+  programExerciseId: string,
+): Promise<WeekPlanSet> {
+  const { data: existing, error: readError } = await supabase
+    .from('v2_week_plan_sets')
+    .select('id, set_number, is_warmup, parent_week_plan_set_id')
+    .eq('week_plan_id', weekPlanId)
+    .eq('program_exercise_id', programExerciseId)
+  if (readError) throw readError
+  const plan = planWarmupInsert(
+    (existing ?? []).map((r) => ({
+      id: r.id as string,
+      setNumber: r.set_number as number,
+      isWarmup: (r.is_warmup as boolean | null) ?? false,
+      isStage: r.parent_week_plan_set_id != null,
+    })),
+  )
+  for (const shift of plan.shifts) {
+    const { error } = await supabase.from('v2_week_plan_sets').update({ set_number: shift.setNumber }).eq('id', shift.id)
+    if (error) throw error
+  }
+  const { data, error } = await supabase
+    .from('v2_week_plan_sets')
+    .insert({
+      week_plan_id: weekPlanId,
+      user_id: userId,
+      program_exercise_id: programExerciseId,
+      set_number: plan.insertAt,
+      target_rir: null,
+      is_dropset: false,
+      is_warmup: true,
     })
     .select()
     .single()

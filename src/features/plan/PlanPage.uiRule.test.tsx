@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 
-// Chunk 11 (SPEC.md "Removals" — "Suggested reps per program exercise are
-// replaced by per-set rep targets... Planned rep targets... show instead,
-// in Plan"). Same mocking recipe as PlanPage.weekActions.test.tsx, trimmed
-// to this file's own concern: the per-set target display, never the old
-// exercise-level "· N REPS" (PlanPage.renderParity.test.tsx's own
-// re-captured fixture already proves that line is gone).
+// Chunk 15 (SPEC "Warmup sets" — "the week plan offer[s] warmup sets"):
+// PlanSetGroup's WARMUP chip, head-only and mutually exclusive with
+// staging (same posture as StepVolume.tsx's own, one layer up — the
+// program's own sets). Same mocking recipe as PlanPage.stageKind.test.tsx.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -60,6 +58,9 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
 }
 
 const mockState: { plans: WeekPlan[] } = { plans: [] }
+const updateSetMutate = vi.fn()
+const addWarmupMutate = vi.fn()
+const removeSetMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', () => ({
@@ -79,9 +80,9 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateSet: () => ({ mutate: vi.fn() }),
-  useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
+  useUpdateSet: () => ({ mutate: updateSetMutate }),
+  useRemoveSet: () => ({ mutate: removeSetMutate, isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -99,6 +100,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -108,41 +110,76 @@ function renderPlanPage() {
   )
 }
 
-describe('PlanPage — exercise header no longer shows the old suggested-reps line', () => {
-  it('does not render "· 8 REPS" (chunk 12: the field itself is gone, nothing can set it anymore)', () => {
-    mockState.plans = [makePlan([makeSet({ repMin: null, repMax: null, isAmrap: false })])]
-    renderPlanPage()
-    expect(screen.queryByText(/8 REPS/)).toBeNull()
-  })
-})
+describe('PlanPage — a plain week shows only set rows with three numbers each (standing UI rule, 2026-10-10)', () => {
+  function plainWeek() {
+    return makePlan([
+      makeSet({ id: 's1', setNumber: 1, targetRir: 2, targetWeight: 100, repMin: 8, repMax: 12 }),
+      makeSet({ id: 's2', setNumber: 2, targetRir: 2, targetWeight: 100, repMin: 8, repMax: 12 }),
+      makeSet({ id: 's3', setNumber: 3, targetRir: 1 }),
+    ])
+  }
 
-describe('PlanPage — per-set planned rep target (chunk 11)', () => {
-  it('a set with no target renders no target text', () => {
-    mockState.plans = [makePlan([makeSet({ repMin: null, repMax: null, isAmrap: false })])]
+  it('each set row is: number, weight, reps, RIR, and one ⋯ — nothing else', () => {
+    mockState.plans = [plainWeek()]
     renderPlanPage()
-    expect(screen.queryByText('8–12')).toBeNull()
-    expect(screen.queryByText('AMRAP')).toBeNull()
+
+    const menuButtons = screen.getAllByLabelText(/^Options for set /)
+    expect(menuButtons).toHaveLength(3)
+    menuButtons.forEach((menuBtn, i) => {
+      const row = menuBtn.parentElement as HTMLElement
+      // Buttons in a row: weight, reps, RIR minus, RIR plus, ⋯.
+      expect(row.querySelectorAll('button')).toHaveLength(5)
+      expect(row.querySelector('input')).toBeNull()
+      // The row's whole text: number, weight, ×, reps, RIR value — and no
+      // label, chip, placeholder or marker.
+      const text = (row.textContent ?? '').replace(/\s+/g, ' ').trim()
+      const expected = [
+        '01100kg × 8–12 − RIR 2 +'.replace(/\s/g, ''),
+        '02100kg × 8–12 − RIR 2 +'.replace(/\s/g, ''),
+        '03— × — − RIR 1 +'.replace(/\s/g, ''),
+      ][i]
+      expect(text.replace(/\s/g, '')).toBe(expected)
+    })
   })
 
-  it('a ranged target shows the en-dash range next to its set', () => {
-    mockState.plans = [makePlan([makeSet({ repMin: 8, repMax: 12 })])]
+  it('no kind, tag, warmup, stage, rest, swap, reorder, remove or delete control is on the page until a ⋯ is opened', () => {
+    mockState.plans = [plainWeek()]
     renderPlanPage()
-    expect(screen.getByText('8–12')).toBeTruthy()
+    const text = document.body.textContent ?? ''
+    for (const word of ['WARMUP', 'DROPSET', 'REST-PAUSE', 'MYO', 'CLUSTER', 'STAGE', 'TAGS', 'CUSTOM', 'SET KIND', 'REST', 'SWAP', 'MOVE', 'DELETE', 'REMOVE FROM']) {
+      expect(text).not.toContain(word)
+    }
+    expect(screen.queryByLabelText(/^Swap /)).toBeNull()
+    expect(screen.queryByLabelText('Move up')).toBeNull()
+    expect(screen.queryByLabelText('Add warmup sets')).toBeNull()
+    expect(document.body.querySelectorAll('svg.lucide-trash2')).toHaveLength(0)
   })
 
-  it('AMRAP shows "AMRAP" next to its set', () => {
-    mockState.plans = [makePlan([makeSet({ isAmrap: true })])]
+  it('reps are editable per set, right on the row', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [plainWeek()]
     renderPlanPage()
-    expect(screen.getByText('AMRAP')).toBeTruthy()
+
+    fireEvent.click(screen.getAllByText('8–12')[0])
+    const input = screen.getByLabelText('Rep target')
+    fireEvent.change(input, { target: { value: '6-8' } })
+    fireEvent.blur(input)
+
+    expect(updateSetMutate).toHaveBeenCalledWith({ id: 's1', changes: { repMin: 6, repMax: 8, isAmrap: false } })
   })
 
-  it('a dropset stage carries its own, independent target', () => {
-    mockState.plans = [makePlan([
-      makeSet({ id: 'head', setNumber: 1, repMin: 8, repMax: 12 }),
-      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1, isAmrap: true }),
-    ])]
+  it('a set\'s ⋯ holds set kind (add stage), tags and delete — and delete removes that set', () => {
+    removeSetMutate.mockClear()
+    mockState.plans = [plainWeek()]
     renderPlanPage()
-    expect(screen.getByText('8–12')).toBeTruthy()
-    expect(screen.getByText('AMRAP')).toBeTruthy()
+
+    openSetMenu(2)
+    expect(screen.getByLabelText('Add stage')).toBeTruthy()
+    expect(screen.getByText('TAGS')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Delete set'))
+
+    expect(removeSetMutate).toHaveBeenCalledWith('s2')
+    // Closed again after the action.
+    expect(screen.queryByText('TAGS')).toBeNull()
   })
 })

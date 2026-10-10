@@ -146,7 +146,7 @@ describe('PlanPage — applying a swap ahead, through the REAL pure core and exe
   it('repoints the later week\'s OWN matched row at the edited week\'s real resulting row — never a hand-built id on either side', async () => {
     renderPlanPage()
 
-    await screen.findByLabelText('Swap Bench Press')
+    fireEvent.click(await screen.findByLabelText('Bench Press options'))
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
       fireEvent.click(await screen.findByText('Incline Press'))
