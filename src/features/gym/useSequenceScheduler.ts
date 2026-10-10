@@ -3,8 +3,8 @@ import { useWorkoutDays } from '../programs/usePrograms'
 import { useSequenceItems } from '../programs/usePrograms'
 import { useAllWeekPlans } from '../plan/useWeekPlan'
 import { useSessionsInRange, useLastDoneOrSkippedSession } from './useSession'
-import { effectiveDate } from './effectiveDate'
-import { scheduleSequence, type SequenceScheduleResult, type SequenceLastEvent, type SequenceCycleItem } from './sequenceSchedule'
+import { resolveLastEvent } from './sequenceLastEvent'
+import { scheduleSequence, type SequenceScheduleResult, type SequenceCycleItem } from './sequenceSchedule'
 import type { Mesocycle, WorkoutDay, WeekPlan } from '../../types'
 
 // Chunk 25 — the sequence-run counterpart to useScheduler.ts (weekday).
@@ -59,28 +59,12 @@ export function useSequenceScheduler(today: string, activeMeso: Mesocycle | null
 
   const items: SequenceCycleItem[] = sequenceItemsRaw.map((i) => ({ position: i.position, workoutDayId: i.workoutDayId }))
 
-  // Resolve the last done-or-skipped session's own SLOT (reviewer's note 2:
-  // "read from that session's week plan sequence_position and week_number")
-  // — via its OWN week plan row, not re-derived from the sequence items
-  // list (an item's position can change if the cycle is edited; the
-  // PLANNED row's own sequence_position is what was actually trained).
-  // Defensive fallback to null (treated as "nothing ever trained") when the
-  // row can't be resolved — a null weekPlanId (pre-chunk-8 data, if any
-  // ever reaches a sequence run) or a weekday-shaped row with no
-  // sequencePosition, neither of which a real sequence session should ever
-  // produce.
-  let lastEvent: SequenceLastEvent | null = null
-  if (lastDoneOrSkipped?.weekPlanId) {
-    const wp = allWeekPlans.find((w) => w.id === lastDoneOrSkipped.weekPlanId)
-    if (wp && wp.sequencePosition != null) {
-      lastEvent = {
-        weekNumber: wp.weekNumber,
-        sequencePosition: wp.sequencePosition,
-        status: lastDoneOrSkipped.status === 'skipped' ? 'skipped' : 'completed',
-        date: effectiveDate(lastDoneOrSkipped),
-      }
-    }
-  }
+  // The last done-or-skipped session's own SLOT, resolved via its own week
+  // plan row (chunk 25, reviewer's note 2). Chunk 35: that step is now
+  // sequenceLastEvent.ts's resolveLastEvent, shared with Plan (its current
+  // cycle is the cycle of the slot after this one) so both screens read the
+  // run the same way.
+  const lastEvent = resolveLastEvent(lastDoneOrSkipped, allWeekPlans)
 
   const result = scheduleSequence(today, { items, sessions, lastEvent })
   return { result, isLoading: false, workoutDays, allWeekPlans }

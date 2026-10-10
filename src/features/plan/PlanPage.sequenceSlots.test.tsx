@@ -136,6 +136,12 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: sequenceItems, isLoading: false }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+// Chunk 35 — a sequence run's Plan now reads the last workout done or skipped
+// (its current cycle is the cycle of the next due workout). Nothing is done in
+// this file's fixture, so the current cycle is cycle 1: the one every test here
+// views. This is the only change to this file; PlanPage.sequenceCycle.test.tsx
+// covers the current cycle itself.
+vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
 vi.mock('./useWeekPlan', () => ({
   // Chunk 25 review fix 2 — properly week-aware (filters allPlans by the
   // passed weekNumber) so a test can advance to cycle 2 (NEXT WEEK) and see

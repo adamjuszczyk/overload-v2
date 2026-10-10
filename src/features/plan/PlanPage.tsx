@@ -56,6 +56,7 @@ import CompactPlanRows from './CompactPlanRows'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
+import { useSequenceCurrentCycle } from './useSequenceCurrentCycle'
 import { dateForDow } from '../gym/moveSession'
 import { useToday } from '../../hooks/useToday'
 
@@ -113,14 +114,59 @@ type SetChanges = {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// Chunk 35 (SPEC Scheduling → Sequence [P1.1], G40: "The current cycle is the
+// one containing the next due workout. Cycles before it are past.") — what
+// "current" means for the week this screen opens on, marks and keeps editable.
+// A weekday run's is the calendar week (PlanScreen's computeWeekNumber, as
+// ever). A sequence run's is the cycle of its next due workout, the one Today
+// shows next, whether that workout is due yet or not — and finding it takes a
+// read of its own (the last workout done or skipped, the same query Today
+// makes). Hooks can't be conditional, so a sequence run is wrapped here and a
+// weekday run never mounts the wrapper: it makes no such read and renders
+// exactly what it always did.
 export default function PlanPage() {
+  const { data: mesos = [] } = useMesos()
+  const { data: programs = [] } = usePrograms()
+  const activeMeso = mesos.find((m) => m.status === 'active') ?? null
+  const program = programs.find((p) => p.id === activeMeso?.programId)
+
+  if (activeMeso && (program?.scheduleType ?? 'weekday') === 'sequence') {
+    return <SequencePlanPage mesoId={activeMeso.id} programId={activeMeso.programId} />
+  }
+  return <PlanScreen />
+}
+
+// The sequence run's wrapper: finds the current cycle, then renders the same
+// screen with it. Until the three reads behind it have answered the cycle is
+// unknown, and the loading spinner shows instead of any cycle: marking cycle 1
+// current (and editable) on a run that is in cycle 4, until the answer lands,
+// would be a wrong cycle on screen. Display-only choice (D31), provisional.
+function SequencePlanPage({ mesoId, programId }: { mesoId: string; programId: string }) {
+  const cycle = useSequenceCurrentCycle(mesoId, programId)
+  if (cycle === null) return <PlanSpinner />
+  return <PlanScreen sequenceCycle={cycle} />
+}
+
+function PlanSpinner() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--base)' }}>
+      <div className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+    </div>
+  )
+}
+
+// `sequenceCycle`: the current cycle of a sequence run (SequencePlanPage), null
+// for a weekday run, whose current week is the calendar week.
+function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null }) {
   const navigate = useNavigate()
   const today = useToday()
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
 
-  const currentWeek = activeMeso ? computeWeekNumber(activeMeso.startDate) : 1
-  const [viewWeek, setViewWeek] = useState(1)
+  const currentWeek = sequenceCycle ?? (activeMeso ? computeWeekNumber(activeMeso.startDate) : 1)
+  // A sequence run opens on its current cycle from the first render, not
+  // after an effect, so no other cycle is shown (or flagged read-only) first.
+  const [viewWeek, setViewWeek] = useState(sequenceCycle ?? 1)
 
   // Workout switcher (TASKS.md §4 item 30) — which single workout day is
   // showing. No effect needed to keep it valid: `selected` below always
@@ -143,8 +189,9 @@ export default function PlanPage() {
   // above; nothing in SPEC says it should persist across visits.
   const [activeTab, setActiveTab] = useState<PlanTab>('weeks')
 
+  // The opening view is the current week (the current cycle on a sequence run).
   useEffect(() => {
-    if (activeMeso) setViewWeek(computeWeekNumber(activeMeso.startDate))
+    if (activeMeso) setViewWeek(currentWeek)
   }, [activeMeso?.id])
 
   const isPast = viewWeek < currentWeek
@@ -364,13 +411,7 @@ export default function PlanPage() {
 
   // ── No active meso ────────────────────────────────────────────────────────
 
-  if (mesosLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: 'var(--base)' }}>
-        <div className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
-      </div>
-    )
-  }
+  if (mesosLoading) return <PlanSpinner />
 
   if (!activeMeso) {
     return (
