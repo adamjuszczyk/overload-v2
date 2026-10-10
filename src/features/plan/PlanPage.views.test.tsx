@@ -145,7 +145,21 @@ vi.mock('./useWeekPlan', () => ({
   useRemoveWeekExercise: () => ({ mutate: removeExerciseMutate, isPending: false }),
   useReorderWeekExercises: () => ({ mutate: reorderMutate, isPending: false }),
 }))
-vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+// MoveSessionControl owns its own session reads (every PlanPage test stubs it), so it is stubbed here too, but
+// with a stand-in that RENDERS: an empty element (no text, so no text assertion sees it) carrying its props as
+// attributes. A test can then see whether Plan renders it, where, and what it hands it.
+vi.mock('./MoveSessionControl', () => ({
+  default: (props: { workoutDay: { id: string }; weekPlan?: { id: string }; mesoId: string; date: string; isCurrentWeek: boolean }) => (
+    <div
+      data-testid="move-session-stub"
+      data-workout={props.workoutDay.id}
+      data-plan={props.weekPlan?.id ?? ''}
+      data-meso={props.mesoId}
+      data-date={props.date}
+      data-current={String(props.isCurrentWeek)}
+    />
+  ),
+}))
 
 const { default: PlanPage } = await import('./PlanPage')
 const { openSetsView, openStructureView, openExerciseMenu, openStageMenu } = await import('./planMenus.testutil')
@@ -386,6 +400,36 @@ describe('PlanPage — SETS view', () => {
     expect(screen.queryByText('DELETE SET')).toBeNull()
   })
 
+  // A head that has stages is still ONE set: its tags are its own. (Independent-review break T2: the tags editor
+  // writing to `stages[0]?.id ?? head.id` passed every test, because every tagged fixture head had no stages.)
+  it('a tag written on a head that HAS stages is that head\'s own, never a stage\'s: preset and custom, each offered ahead as the head\'s tags', async () => {
+    arrange() // set 2 ('work') has two stages and no tags
+
+    openSetMenu(2)
+    fireEvent.click(screen.getByRole('button', { name: 'push here' }))
+    expect(updateSetMutate).toHaveBeenLastCalledWith({ id: 'work', changes: { tags: ['push here'] } })
+    fireEvent.click(screen.getByText('+ CUSTOM'))
+    fireEvent.change(screen.getByLabelText('Custom tag'), { target: { value: 'heavy day' } })
+    fireEvent.blur(screen.getByLabelText('Custom tag'))
+    expect(updateSetMutate).toHaveBeenLastCalledWith({ id: 'work', changes: { tags: ['heavy day'] } })
+    // Two writes, both to the head: neither stage was touched.
+    expect(updateSetMutate.mock.calls.map((c) => (c[0] as { id: string }).id)).toEqual(['work', 'work'])
+    // The offer ahead is the head's tags record (a stage has no tags record at all).
+    expect(await applyAheadChanges()).toEqual([
+      { editType: 'tags', slotId: 'pe-1', exerciseId: 'ex-bench', setPosition: { headOrdinal: 2, stageIndex: null }, oldValue: null, newValue: ['heavy day'] },
+    ])
+  })
+
+  it('removing the last tag from a head that has stages writes the head, collapsing to null', () => {
+    mockState.all = [plan(2, SETS.map((row) => (row.id === 'work' ? { ...row, tags: ['push here'] } : row)), [pe1, pe2]), plan(3, [], [])]
+    renderPlanPage()
+
+    openSetMenu(2)
+    fireEvent.click(screen.getByRole('button', { name: 'push here' }))
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'work', changes: { tags: null } })
+  })
+
   it('has none of the STRUCTURE view\'s controls: no exercise ⋯, no ADD EXERCISE, no ADD WARMUP SETS, no stage or kind controls', () => {
     arrange()
 
@@ -623,6 +667,59 @@ describe('PlanPage — page-level actions render above the switch\'s content, in
   })
 })
 
+// ─── MOVE THIS SESSION ────────────────────────────────────────────────────────
+
+// G17: MOVE THIS SESSION sits above the panel, "as today": it is the page's, not a view's. (Independent-review break
+// V9: rendering it in the SETS view only passed every test, because this file stubbed it to nothing.)
+describe('PlanPage — MOVE THIS SESSION sits above the panel, in both views (G17)', () => {
+  it('is on the page in SETS and in STRUCTURE, after the workout chips and before the panel (its header, the switch, the card)', () => {
+    arrange() // week 2 is this meso's current week
+
+    for (const open of [openSetsView, openStructureView, openSetsView]) {
+      open()
+      const stubs = screen.getAllByTestId('move-session-stub')
+      expect(stubs).toHaveLength(1)
+      const stub = stubs[0]
+      expectBefore(screen.getByText('MON'), stub)
+      expectBefore(stub, screen.getByLabelText('Mark this session as deload'))
+      expectBefore(stub, screen.getByText('SETS').parentElement as HTMLElement)
+      expect(stub.getAttribute('data-workout')).toBe('wd-1')
+      expect(stub.getAttribute('data-plan')).toBe('wp-2')
+      expect(stub.getAttribute('data-meso')).toBe('meso-1')
+      expect(stub.getAttribute('data-current')).toBe('true')
+    }
+  })
+
+  it('is handed the selected workout and the viewed week, in both views', () => {
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-2' })
+    mockState.days = [workoutDay, workoutDay2]
+    const lunge = pe('pe-l', EX_LUNGE, 0, 'wd-2')
+    mockState.all = [
+      plan(2, SETS, [pe1, pe2]), plan(2, [], [lunge], 'wd-2'),
+      plan(3, SETS, [pe1, pe2]), plan(3, [], [lunge], 'wd-2'),
+    ]
+    renderPlanPage()
+    const stub = () => screen.getByTestId('move-session-stub')
+
+    for (const open of [openSetsView, openStructureView]) {
+      open()
+      fireEvent.click(screen.getByText('MON'))
+      expect(stub().getAttribute('data-workout')).toBe('wd-1')
+      expect(stub().getAttribute('data-plan')).toBe('wp-2')
+      fireEvent.click(screen.getByText('THU'))
+      expect(stub().getAttribute('data-workout')).toBe('wd-2')
+      expect(stub().getAttribute('data-plan')).toBe('wp-2-wd-2')
+      // A later week is not the current one (the real control then renders nothing).
+      fireEvent.click(screen.getByLabelText('Next week'))
+      expect(screen.getByText('WEEK 3')).toBeTruthy()
+      expect(stub().getAttribute('data-plan')).toBe('wp-3-wd-2')
+      expect(stub().getAttribute('data-current')).toBe('false')
+      fireEvent.click(screen.getByLabelText('Previous week'))
+      expect(stub().getAttribute('data-current')).toBe('true')
+    }
+  })
+})
+
 // ─── Supersets ────────────────────────────────────────────────────────────────
 
 // Checks that lied #29: a grouping/layout change must keep every per-item action
@@ -692,6 +789,107 @@ describe('PlanPage — supersets keep every per-item action in both views', () =
         { programExerciseId: 'pe-3', oldPosition: 2, newPosition: 0 },
       ],
     })
+  })
+
+  // Independent-review breaks S1/S3: SWAP on the block's second member targeted the unit's first member (or the other
+  // one), and no test tapped "Swap Squat". The picker is titled for the member tapped; the swap writes ITS row.
+  it('STRUCTURE: SWAP on each member, the second included, opens the picker for THAT member and swaps its own row', async () => {
+    arrangeSuperset()
+    openStructureView()
+
+    for (const [name, rowId] of [['Bench Press', 'pe-1'], ['Squat', 'pe-2'], ['Dips', 'pe-3']] as const) {
+      swapMutate.mockClear()
+      openExerciseMenu(name)
+      fireEvent.click(screen.getByLabelText(`Swap ${name}`))
+      expect(screen.getByText(`SWAP ${name}`)).toBeTruthy()
+      await act(async () => {
+        fireEvent.click(screen.getByText('Incline Press'))
+      })
+      expect(swapMutate).toHaveBeenCalledTimes(1)
+      expect(swapMutate).toHaveBeenCalledWith({ weekPlanId: 'wp-2', programExerciseId: rowId, replacementExerciseId: 'ex-new' })
+      if (name === 'Squat') {
+        // ... and it is offered ahead as the second member's own edit (its slot, its exercise).
+        expect(await applyAheadChanges()).toEqual([
+          { editType: 'swapExercise', slotId: 'pe-2', exerciseId: 'ex-squat', newExerciseId: 'ex-new', resultingProgramExerciseId: 'swap-result-row' },
+        ])
+      }
+    }
+  })
+
+  // Independent-review break SS4: `isPast={isPast || !showMoveControls}` on the STRUCTURE set rows took the second
+  // member's set ⋯ away, and passed every test (they only opened a plain exercise's).
+  it('STRUCTURE: every member\'s set ⋯ works: the second member\'s ADD STAGE writes that member\'s own head as the parent', () => {
+    arrangeSuperset()
+    openStructureView()
+
+    // One set each (Bench Press, Squat, Dips): three set ⋯ buttons, the block's second member's among them.
+    expect(screen.getAllByLabelText('Options for set 1')).toHaveLength(3)
+    for (const [i, rowId, parentId] of [[0, 'pe-1', 'a1'], [1, 'pe-2', 'b1'], [2, 'pe-3', 'c1']] as const) {
+      addStageMutate.mockClear()
+      fireEvent.click(screen.getAllByLabelText('Options for set 1')[i])
+      fireEvent.click(screen.getByLabelText('Add stage'))
+      expect(addStageMutate).toHaveBeenCalledTimes(1)
+      expect(addStageMutate).toHaveBeenCalledWith({ weekPlanId: 'wp-2', programExerciseId: rowId, parentId, setNumber: 1, stageIndex: 1 })
+      fireEvent.click(screen.getAllByLabelText('Options for set 1')[i]) // ADD STAGE leaves its menu open: close it
+    }
+  })
+
+  it('SETS: the second member\'s own cells and set ⋯ write that member\'s own set', () => {
+    arrangeSuperset()
+
+    const squatRow = rowOf('01', 1) // the three "01" rows are Bench Press's, Squat's and Dips's
+    fireEvent.click(within(squatRow).getByRole('button', { name: '50kg' }))
+    fireEvent.change(screen.getByLabelText('Weight target'), { target: { value: '55' } })
+    fireEvent.blur(screen.getByLabelText('Weight target'))
+    expect(updateSetMutate).toHaveBeenLastCalledWith({ id: 'b1', changes: { targetWeight: 55 } })
+    fireEvent.click(within(squatRow).getByLabelText('Options for set 1'))
+    fireEvent.click(screen.getByLabelText('Delete set'))
+    expect(removeSetMutate).toHaveBeenLastCalledWith('b1')
+  })
+})
+
+// ─── "Apply to all sets" stays inside its own exercise ────────────────────────
+
+// Independent-review break T8: handing the tags handler the FIRST exercise's sets, whichever exercise applied the tag,
+// passed every test, because every apply-to-all fixture had one exercise.
+describe('PlanPage — "apply to all sets" stays inside its own exercise', () => {
+  const mk = (id: string, programExerciseId: string, setNumber: number, over: Partial<WeekPlanSet> = {}) =>
+    setRow({ id, programExerciseId, setNumber, targetWeight: 50, repMin: 8, repMax: 8, ...over })
+  // Bench Press: two working sets, the first tagged. Squat: a warmup, then three working sets (the first tagged, the
+  // second staged). Set numbers repeat across the two exercises, so a set ⋯ is picked by its place on the page.
+  const twoExercises = [
+    mk('a1', 'pe-1', 1, { tags: ['push here'] }),
+    mk('a2', 'pe-1', 2),
+    mk('bw', 'pe-2', 1, { isWarmup: true, targetRir: null }),
+    mk('b1', 'pe-2', 2, { tags: ['push here'] }),
+    mk('b2', 'pe-2', 3),
+    mk('b2s', 'pe-2', 3, { isDropset: true, parentWeekPlanSetId: 'b2', stageIndex: 1 }),
+    mk('b3', 'pe-2', 4),
+  ]
+  const written = () => updateSetMutate.mock.calls.map((c) => c[0] as { id: string; changes: unknown })
+
+  it('applying a tag from the second exercise writes only ITS other working sets: not the warmup, not a stage, none of the first exercise\'s', () => {
+    mockState.all = [plan(2, twoExercises, [pe1, pe2]), plan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getAllByLabelText('Options for set 2')[1]) // Squat's tagged set (Bench Press's is the first "set 2")
+    fireEvent.click(screen.getByLabelText('Apply "push here" to all sets'))
+
+    expect(written().map((w) => w.id)).toEqual(['b2', 'b3'])
+    for (const w of written()) expect(w.changes).toEqual({ tags: ['push here'] })
+    // Never offered ahead (it writes several sets in one action).
+    expect(screen.queryByText(/PLANNED WEEK/)).toBeNull()
+  })
+
+  it('and from the first exercise writes only ITS other working sets, none of the second\'s', () => {
+    mockState.all = [plan(2, twoExercises, [pe1, pe2]), plan(3, [], [])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getAllByLabelText('Options for set 1')[0]) // Bench Press's tagged set
+    fireEvent.click(screen.getByLabelText('Apply "push here" to all sets'))
+
+    expect(written().map((w) => w.id)).toEqual(['a2'])
+    expect(written()[0].changes).toEqual({ tags: ['push here'] })
   })
 })
 
