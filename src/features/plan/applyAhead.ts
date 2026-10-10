@@ -173,6 +173,10 @@ export type ChangeRecord =
   // own stepper (+) — both always append at the matched week's own current
   // end, so one editType serves both (scope decisions 6/7, the report).
   | { editType: 'addSet'; slotId: string; exerciseId: string }
+  // "Add warmup sets" (Plan's exercise ⋯ menu, 2026-10-10): one warmup head
+  // inserted above the matched week's own first working set (warmupInsert.ts
+  // decides where, from THAT week's rows — never the edited week's number).
+  | { editType: 'addWarmupSet'; slotId: string; exerciseId: string }
   // removeSet: the stable program-tab's stepper (−) ONLY — always the
   // matched week's own current trailing head (scope decision 7).
   | { editType: 'removeSet'; slotId: string; exerciseId: string }
@@ -187,6 +191,7 @@ export type ChangeEditType = ChangeRecord['editType']
 export type ApplyAheadOp =
   | { kind: 'updateSet'; weekPlanId: string; setId: string; changes: WeekPlanSetChanges }
   | { kind: 'addSet'; weekPlanId: string; programExerciseId: string; setNumber: number }
+  | { kind: 'addWarmupSet'; weekPlanId: string; programExerciseId: string }
   | { kind: 'removeSet'; weekPlanId: string; setId: string }
   | { kind: 'addStage'; weekPlanId: string; programExerciseId: string; parentId: string; setNumber: number; stageIndex: number }
   // Review fix: repoints the matched row at the SAME resulting exercise row
@@ -478,6 +483,12 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
         status: 'applied',
         ops: [{ kind: 'addSet', weekPlanId: week.id, programExerciseId: row.id, setNumber: heads.length + 1 }],
       }
+    }
+
+    case 'addWarmupSet': {
+      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
+      return { ...base, status: 'applied', ops: [{ kind: 'addWarmupSet', weekPlanId: week.id, programExerciseId: row.id }] }
     }
 
     case 'removeSet': {

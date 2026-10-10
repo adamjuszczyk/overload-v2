@@ -76,6 +76,7 @@ const mockState: { currentPlans: WeekPlan[]; allPlans: WeekPlan[]; program: Prog
 }
 
 const updateSetMutate = vi.fn()
+const addWarmupMutate = vi.fn()
 const swapMutate = vi.fn().mockResolvedValue({ id: 'ex-replacement-row' })
 let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
 let applyAheadOnSuccess: ((data: unknown) => void) | undefined
@@ -106,6 +107,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -125,6 +127,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openExerciseMenu, openSetMenu, openStageMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -136,6 +139,7 @@ function renderPlanPage() {
 
 afterEach(() => {
   updateSetMutate.mockClear()
+  addWarmupMutate.mockClear()
   swapMutate.mockClear()
   applyAheadMutate.mockClear()
   applyAheadLastCall = null
@@ -200,6 +204,7 @@ describe('PlanPage — apply-ahead is never offered after an "only this week" sw
     renderPlanPage()
 
     fireEvent.click(screen.getByText('ONLY THIS WEEK'))
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
       fireEvent.click(screen.getByText('Incline Press'))
@@ -214,6 +219,7 @@ describe('PlanPage — apply-ahead is never offered after an "only this week" sw
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
       fireEvent.click(screen.getByText('Incline Press'))
@@ -320,15 +326,16 @@ describe('PlanPage — apply-ahead offer for the newly-wired edit types (review 
     expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
   })
 
-  it('the WARMUP toggle offers it', () => {
+  it('ADD WARMUP SETS (the exercise ⋯ menu) offers it', () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByText('WARMUP'))
+    openExerciseMenu()
+    fireEvent.click(screen.getByLabelText('Add warmup sets'))
 
     expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'set-1', changes: { isWarmup: true } })
+    expect(addWarmupMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-1', weekPlanId: 'wp-2', programExerciseId: 'pe-1' })
   })
 })
 
@@ -366,6 +373,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
+    openSetMenu(1)
     fireEvent.click(screen.getByText('ADD STAGE'))
 
     expect(applyAndGetChanges()).toEqual([{ editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-a', headOrdinal: 1 }])
@@ -381,6 +389,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
       fireEvent.click(screen.getByText('Incline Press'))
@@ -407,6 +416,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
+    openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
     fireEvent.click(screen.getByText('REMOVE'))
 
@@ -423,7 +433,8 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     renderPlanPage()
 
     // Second exercise's (Squat's) own "Move up" — swaps it with the first.
-    fireEvent.click(screen.getAllByLabelText('Move up')[1])
+    openExerciseMenu('Squat')
+    fireEvent.click(screen.getByLabelText('Move up'))
 
     expect(applyAndGetChanges()).toEqual([
       {
@@ -453,11 +464,9 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
     renderPlanPage()
 
-    // Non-compact mode: one icon-only (no aria-label) trash button per row —
-    // the head's own, then its one stage's own, in that DOM order.
-    const trashButtons = screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-trash2') && !b.getAttribute('aria-label'))
-    expect(trashButtons).toHaveLength(2)
-    fireEvent.click(trashButtons[1])
+    // The stage row's own ⋯ menu holds its DELETE STAGE.
+    openStageMenu(0)
+    fireEvent.click(screen.getByLabelText('Delete stage'))
 
     expect(applyAndGetChanges()).toEqual([
       { editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: 0 } },
@@ -514,6 +523,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
+    openSetMenu(1)
     fireEvent.click(screen.getByText('push here'))
 
     expect(applyAndGetChanges()).toEqual([
@@ -527,6 +537,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
     renderPlanPage()
 
+    openSetMenu(1)
     fireEvent.click(screen.getByText('REST-PAUSE'))
 
     expect(applyAndGetChanges()).toEqual([
@@ -534,15 +545,14 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     ])
   })
 
-  it('WARMUP carries the right slot, exercise, set position, and old/new value', () => {
+  it('ADD WARMUP SETS carries the right slot and exercise', () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByText('WARMUP'))
+    openExerciseMenu()
+    fireEvent.click(screen.getByLabelText('Add warmup sets'))
 
-    expect(applyAndGetChanges()).toEqual([
-      { editType: 'warmup', slotId: 'pe-1', exerciseId: 'ex-a', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: false, newValue: true },
-    ])
+    expect(applyAndGetChanges()).toEqual([{ editType: 'addWarmupSet', slotId: 'pe-1', exerciseId: 'ex-a' }])
   })
 })

@@ -81,6 +81,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -100,6 +101,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -115,29 +117,39 @@ describe('PlanPage — a head with no stages shows no STAGE KIND chip row yet', 
     renderPlanPage()
     expect(screen.queryByText('STAGE KIND')).toBeNull()
     expect(screen.queryByText('DROPSET')).toBeNull()
+    // UI rule (2026-10-10): ADD STAGE is not on the row, it's in the set's ⋯.
+    expect(screen.queryByText('ADD STAGE')).toBeNull()
+    openSetMenu(1)
+    expect(screen.getByText('ADD STAGE')).toBeTruthy()
+    expect(screen.queryByText('STAGE KIND')).toBeNull()
   })
 })
 
-describe('PlanPage — stage rows are labelled by the head\'s resolved kind (chunk 14)', () => {
-  it('a legacy/null stage_kind head (today\'s only case) labels its stage DROPSET and shows the chip row', () => {
+describe('PlanPage — a staged head is marked by its resolved kind (chunk 14; marker on the head since the 2026-10-10 UI rule)', () => {
+  it('a legacy/null stage_kind head (today\'s only case) is marked DROPSET; the chip row is in its ⋯', () => {
     mockState.plans = [makePlan([
       makeSet({ id: 'head', setNumber: 1 }),
       makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
     ])]
     renderPlanPage()
+    // By default: one compact marker on the head, no chip row.
+    expect(screen.queryByText('STAGE KIND')).toBeNull()
+    expect(screen.getAllByText('DROPSET')).toHaveLength(1)
+    openSetMenu(1)
     expect(screen.getByText('STAGE KIND')).toBeTruthy()
-    // Appears twice: the stage row's own label, and the (active) DROPSET
-    // chip in the picker below it.
+    // The marker plus the (active) DROPSET chip in the menu.
     expect(screen.getAllByText('DROPSET')).toHaveLength(2)
   })
 
-  it('a head planned with stageKind "rest_pause" labels its stage REST-PAUSE', () => {
+  it('a head planned with stageKind "rest_pause" is marked REST-PAUSE', () => {
     mockState.plans = [makePlan([
       makeSet({ id: 'head', setNumber: 1, stageKind: 'rest_pause' }),
       makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
     ])]
     renderPlanPage()
-    // Same reasoning — the stage row's own label, and the active chip.
+    expect(screen.getAllByText('REST-PAUSE')).toHaveLength(1)
+    openSetMenu(1)
+    // Same reasoning — the head's marker, and the active chip.
     expect(screen.getAllByText('REST-PAUSE')).toHaveLength(2)
   })
 })
@@ -151,6 +163,7 @@ describe('PlanPage — the STAGE KIND chip row writes the head\'s own stage_kind
     ])]
     renderPlanPage()
 
+    openSetMenu(1)
     fireEvent.click(screen.getByRole('button', { name: 'CLUSTER' }))
 
     expect(updateSetMutate).toHaveBeenCalledTimes(1)

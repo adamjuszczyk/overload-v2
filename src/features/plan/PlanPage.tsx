@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight, CalendarDays } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, Trash2, Copy, Rows3, ArrowLeftRight, CalendarDays, Ellipsis } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit } from '../../types'
 import { useMesos } from '../programs/useMesos'
@@ -12,6 +12,7 @@ import {
   useSetWeekDeload,
   useAddSet,
   useAddStage,
+  useAddWarmupSet,
   useUpdateSet,
   useRemoveSet,
   useCopyFromPreviousWeek,
@@ -812,6 +813,7 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
 
   const addSet = useAddSet(mesoId, weekNumber)
   const addStage = useAddStage(mesoId, weekNumber)
+  const addWarmup = useAddWarmupSet(mesoId, weekNumber)
   const removeSet = useRemoveSet(mesoId, weekNumber)
   const updateSet = useUpdateSet(mesoId, weekNumber)
   const toggleDeload = useSetDeload(mesoId, weekNumber)
@@ -898,6 +900,19 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
     // planned"). Same shape as the stable program-tab's own stepper (+) —
     // both always append at the matched later week's own current end.
     const change: ChangeRecord = { editType: 'addSet', slotId: slotIdOf(pe), exerciseId: pe.exerciseId }
+    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+  }
+
+  // "Add warmup sets" (the exercise ⋯ menu): one warmup head above this
+  // exercise's first working set (weekPlanService.ts's addWarmupSet picks the
+  // number and shifts the rest down). Offered ahead like ADD SET is.
+  function handleAddWarmup(pe: ProgramExercise) {
+    addWarmup.mutate({
+      workoutDayId: workoutDay.id,
+      weekPlanId: weekPlan?.id,
+      programExerciseId: pe.id,
+    })
+    const change: ChangeRecord = { editType: 'addWarmupSet', slotId: slotIdOf(pe), exerciseId: pe.exerciseId }
     applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
   }
 
@@ -1265,8 +1280,9 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
                 // day during any single add/remove — a deliberately
                 // conservative trade against the more invasive alternative
                 // of adding optimistic-update logic to useAddSet itself.
-                addOrRemovePending={addSet.isPending || removeSet.isPending}
+                addOrRemovePending={addSet.isPending || removeSet.isPending || addWarmup.isPending}
                 onAddSet={() => handleAddSet(pe)}
+                onAddWarmup={() => handleAddWarmup(pe)}
                 onAddStage={(group) => handleAddStage(pe, group, groups)}
                 onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
                 onRemoveLastSet={() => handleRemoveSet(groups[groups.length - 1].head.id, pe, groups)}
@@ -1355,6 +1371,62 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   )
 }
 
+// ─── Row menu (⋯) ─────────────────────────────────────────────────────────────
+// Adam's standing UI rule (CONTEXT.md, 2026-10-10): a plan row shows only
+// what's used on every visit; everything else lives behind a ⋯ on the row or
+// exercise it belongs to. The panel opens inline under its row (the exercise
+// card clips overflow, so a floating popover would be cut off at 375px).
+function MenuButton({ open, onClick, ariaLabel }: { open: boolean; onClick: () => void; ariaLabel: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-expanded={open}
+      style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: open ? 'var(--accent-muted)' : 'transparent', border: 'none', borderRadius: 7, color: open ? 'var(--accent)' : 'var(--text-dim)', cursor: 'pointer', flexShrink: 0 }}
+    >
+      <Ellipsis size={15} />
+    </button>
+  )
+}
+
+const MENU_PANEL_STYLE: React.CSSProperties = {
+  margin: '2px 16px 8px',
+  padding: '8px 10px',
+  background: 'var(--surface-overlay)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: 9,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+}
+
+function MenuAction({
+  onClick,
+  disabled = false,
+  ariaLabel,
+  danger = false,
+  children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  ariaLabel?: string
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32, padding: 0, background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: danger ? 'var(--error)' : disabled ? 'var(--text-dim)' : 'var(--text-secondary)', opacity: disabled ? 0.5 : 1, textAlign: 'left' }}
+    >
+      {children}
+    </button>
+  )
+}
+
 // ─── Exercise Section ─────────────────────────────────────────────────────────
 
 interface ExerciseSectionProps {
@@ -1375,10 +1447,13 @@ interface ExerciseSectionProps {
   // handleApplyTagToAll does the actual writes).
   onApplyTagToAll: (tag: string) => void
   // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
-  // from this week (SPEC "Weeks and copying"). Hidden whenever the other
-  // per-row controls above are (isPast — a past week is read-only).
+  // from this week (SPEC "Weeks and copying"). All of them live in the
+  // exercise's ⋯ menu, which is hidden whenever isPast is (a past week is
+  // read-only).
   onSwap: () => void
   onRemoveExercise: () => void
+  // "Add warmup sets" (⋯ menu) — one warmup above the first working set.
+  onAddWarmup: () => void
   canMoveUp: boolean
   canMoveDown: boolean
   onMoveUp: () => void
@@ -1407,6 +1482,7 @@ function ExerciseSection({
   onApplyTagToAll,
   onSwap,
   onRemoveExercise,
+  onAddWarmup,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -1414,6 +1490,13 @@ function ExerciseSection({
   inSuperset,
   showMoveControls,
 }: ExerciseSectionProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const name = pe.exercise?.name ?? 'this exercise'
+  // Every menu action closes the menu: it was opened for one action.
+  const act = (fn: () => void) => () => {
+    setMenuOpen(false)
+    fn()
+  }
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
@@ -1430,13 +1513,13 @@ function ExerciseSection({
           </div>
         </div>
         {!isPast && (
-          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             {/* Compact mode has no per-row delete (it's a read-only glance
                 view), so ADD SET's plus had no symmetric way to reduce the
                 count without switching to expanded mode (post-launch fix,
                 2026-08-10). Expanded mode already offers precise per-row
-                delete via PlanSetGroup's trash icon, so this stays
-                compact-only rather than duplicating that control. */}
+                delete via the set's ⋯ menu, so this stays compact-only
+                rather than duplicating that control. */}
             {compact && groups.length > 0 && (
               <button
                 onClick={onRemoveLastSet}
@@ -1450,35 +1533,44 @@ function ExerciseSection({
             <button
               onClick={onAddSet}
               disabled={addOrRemovePending}
+              aria-label={`Add set to ${name}`}
               style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--accent)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
             >
               <Plus size={13} />
             </button>
+            <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`${name} options`} />
           </div>
         )}
       </div>
 
-      {/* Week actions row (chunk 9) — swap, reorder, remove. Its own row,
-          below the header: cramming four more icon buttons beside ADD
-          SET/MINUS at 375px would overflow, and these are exercise-level
-          actions (not per-set), so a visually separate row reads clearer. */}
-      {!isPast && (
-        <div style={{ padding: '0 16px 8px', display: 'flex', gap: 6 }}>
-          <button
-            onClick={onSwap}
-            aria-label={`Swap ${pe.exercise?.name ?? 'this exercise'}`}
-            style={{ height: 26, padding: '0 9px', display: 'flex', alignItems: 'center', gap: 5, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px' }}
-          >
-            <ArrowLeftRight size={11} />
-            SWAP
-          </button>
+      {/* Exercise ⋯ menu (chunk 9's week actions, moved here by the UI rule):
+          swap, move up/down, add warmup sets, remove from this week. */}
+      {!isPast && menuOpen && (
+        <div style={MENU_PANEL_STYLE}>
+          <MenuAction onClick={act(onSwap)} ariaLabel={`Swap ${name}`}>
+            <ArrowLeftRight size={13} />
+            SWAP EXERCISE
+          </MenuAction>
           {showMoveControls && (
             <>
-              <IconBtn onClick={onMoveUp} disabled={!canMoveUp} ariaLabel="Move up"><ChevronUp size={13} /></IconBtn>
-              <IconBtn onClick={onMoveDown} disabled={!canMoveDown} ariaLabel="Move down"><ChevronDown size={13} /></IconBtn>
+              <MenuAction onClick={act(onMoveUp)} disabled={!canMoveUp} ariaLabel="Move up">
+                <ChevronUp size={13} />
+                MOVE UP
+              </MenuAction>
+              <MenuAction onClick={act(onMoveDown)} disabled={!canMoveDown} ariaLabel="Move down">
+                <ChevronDown size={13} />
+                MOVE DOWN
+              </MenuAction>
             </>
           )}
-          <IconBtn onClick={onRemoveExercise} ariaLabel={`Remove ${pe.exercise?.name ?? 'this exercise'} from this week`}><Trash2 size={12} /></IconBtn>
+          <MenuAction onClick={act(onAddWarmup)} disabled={addOrRemovePending} ariaLabel="Add warmup sets">
+            <Plus size={13} />
+            ADD WARMUP SETS
+          </MenuAction>
+          <MenuAction onClick={act(onRemoveExercise)} danger ariaLabel={`Remove ${name} from this week`}>
+            <Trash2 size={13} />
+            REMOVE FROM THIS WEEK
+          </MenuAction>
         </div>
       )}
 
@@ -1512,10 +1604,10 @@ function ExerciseSection({
 }
 
 // ─── Set Group ────────────────────────────────────────────────────────────────
-// One planned set: a head row, its ordered stages nested beneath it, and an
-// ADD STAGE affordance tied directly to that head (TASKS.md §4 item 10) —
-// replaces the old DROP toggle, which could only ever flag the row being
-// edited. See weekPlanService.ts's addStage() for the write path this feeds.
+// One planned set: a head row and its ordered stages nested beneath it
+// (TASKS.md §4 item 10). Everything beyond weight/reps/RIR — set kind and its
+// stages, tags, delete — is in the set's own ⋯ menu (SetRow renders it);
+// see weekPlanService.ts's addStage() for the write path ADD STAGE feeds.
 
 function PlanSetGroup({
   group,
@@ -1544,8 +1636,8 @@ function PlanSetGroup({
 }) {
   const { head, stages } = group
   // Chunk 14 — resolved once per group, same rule the workout screen's own
-  // SetGroup.tsx uses (a legacy/null kind reads as a dropset): labels each
-  // stage row, and is the chip row's own selected value below.
+  // SetGroup.tsx uses (a legacy/null kind reads as a dropset): the head's
+  // kind marker, and the STAGE KIND chips' selected value in its menu.
   const stageKind = resolveStageKind(head.stageKind ?? null)
   return (
     <div>
@@ -1557,79 +1649,76 @@ function PlanSetGroup({
         weightUnit={weightUnit}
         // Heads only (SPEC "Tags" — reviewer's note) — a stage's own SetRow
         // call below never receives this prop at all, which is what SetRow
-        // reads to decide "is this a head" for the tags row (`tags !==
-        // undefined`), rather than a second isStage-shaped boolean.
+        // reads to decide "is this a head" for the tags marker and menu
+        // (`tags !== undefined`), rather than a second isStage-shaped boolean.
         tags={head.tags ?? null}
         isPast={isPast}
         isWarmup={head.isWarmup}
-        onRemove={onRemoveHead}
+        // Kind marker: only on a set that HAS a kind — a warmup, or a head
+        // with stages (resolved kind). A plain working set shows nothing.
+        kindLabel={head.isWarmup ? 'WARMUP' : stages.length > 0 ? STAGE_KIND_LABELS[stageKind] : undefined}
         onUpdate={(changes) => onUpdate(head.id, changes)}
-        onApplyTagToAll={onApplyTagToAll}
+        menu={(close) => (
+          <>
+            {/* Set kind. Staged = a head with stages (chunk 14, SPEC "Staged
+                sets": dropset, rest-pause, myo-reps, cluster). ADD STAGE just
+                adds a stage row, leaving the head's own stage_kind null
+                (reads as a dropset) until a different chip is tapped. A
+                warmup is never staged (v2_program_sets_warmup_check's rule),
+                so it gets no stage controls; warmups are added from the
+                exercise's own ⋯ menu, not per row. */}
+            {!head.isWarmup && (
+              <div>
+                {stages.length > 0 && (
+                  <div style={{ paddingBottom: 4 }}>
+                    <RatingChips
+                      scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
+                      value={stageKind}
+                      onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
+                      label="STAGE KIND"
+                    />
+                  </div>
+                )}
+                <MenuAction onClick={onAddStage} ariaLabel="Add stage">
+                  <Plus size={13} />
+                  ADD STAGE
+                </MenuAction>
+              </div>
+            )}
+            <TagsEditor
+              tags={head.tags ?? null}
+              disabled={isPast}
+              onChange={(next) => onUpdate(head.id, { tags: next })}
+              onApplyToAll={onApplyTagToAll}
+            />
+            <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
+              <Trash2 size={13} />
+              DELETE SET
+            </MenuAction>
+          </>
+        )}
       />
 
-      {/* Chunk 15 (SPEC "Warmup sets" — "the week plan offer[s] warmup
-          sets"). Head-only, same mutual-exclusion-with-staging posture as
-          StepVolume.tsx's own WARMUP chip: hidden once this head has a real
-          stage (a warmup is never staged — v2_program_sets_warmup_check's
-          same rule, enforced on v2_week_plan_sets by the app since there is
-          no equivalent column-level check there yet); ADD STAGE below is
-          hidden the same way once the head IS a warmup. */}
-      {!isPast && stages.length === 0 && (
-        <div style={{ padding: '2px 16px 4px' }}>
-          <RatingChips
-            scale={{ values: ['warmup'] as const, labels: { warmup: 'WARMUP' } }}
-            value={head.isWarmup ? 'warmup' : null}
-            onChange={(kind) => onUpdate(head.id, { isWarmup: kind === 'warmup' })}
-            label="SET KIND"
-          />
-        </div>
-      )}
-
-      {!head.isWarmup && (stages.length > 0 || !isPast) && (
+      {stages.length > 0 && (
         <div style={{ paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }}>
           {stages.map((stage) => (
             <SetRow
               key={stage.id}
               isStage
-              stageKindLabel={STAGE_KIND_LABELS[stageKind]}
               targetRir={stage.targetRir}
               repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
               targetWeight={stage.targetWeight ?? null}
               weightUnit={weightUnit}
               isPast={isPast}
-              onRemove={() => onRemoveStage(stage.id)}
               onUpdate={(changes) => onUpdate(stage.id, changes)}
+              menu={(close) => (
+                <MenuAction onClick={() => { close(); onRemoveStage(stage.id) }} danger ariaLabel="Delete stage">
+                  <Trash2 size={13} />
+                  DELETE STAGE
+                </MenuAction>
+              )}
             />
           ))}
-
-          {/* Stage kind (chunk 14, SPEC "Staged sets" — "Stage kinds:
-              dropset, rest-pause, myo-reps, cluster"): once this head has
-              at least one real stage, pick which of the four this set is.
-              ADD STAGE itself is unchanged (still just adds a stage row,
-              defaulting the head's own stage_kind to null/dropset until a
-              different chip is tapped — "a head with stages and no
-              stage_kind reads as a dropset"). Existing "chip" look
-              (RatingChips, same component the FORM rating uses). */}
-          {stages.length > 0 && !isPast && (
-            <div style={{ padding: '2px 0 6px' }}>
-              <RatingChips
-                scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
-                value={stageKind}
-                onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
-                label="STAGE KIND"
-              />
-            </div>
-          )}
-
-          {!isPast && (
-            <button
-              onClick={onAddStage}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px 0 0', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)' }}
-            >
-              <Plus size={11} />
-              ADD STAGE
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -1639,11 +1728,15 @@ function PlanSetGroup({
 // ─── Set Row ──────────────────────────────────────────────────────────────────
 // A single row: either a head (numbered) or a stage (↳ marker, no number of
 // its own — it shares its head's set_number by convention, TASKS.md §2.1).
+// By default it shows set number, weight, reps and RIR — nothing else
+// (Adam's standing UI rule). A set that has a kind or tags shows them as a
+// small marker line under the row; a set without them shows nothing extra.
+// The ⋯ opens `menu`, which holds everything else for this set.
 
 function SetRow({
   displayNumber,
   isStage = false,
-  stageKindLabel,
+  kindLabel,
   targetRir,
   repTarget,
   targetWeight,
@@ -1651,79 +1744,69 @@ function SetRow({
   tags,
   isPast,
   isWarmup = false,
-  onRemove,
+  menu,
   onUpdate,
-  onApplyTagToAll,
 }: {
   displayNumber?: number
   isStage?: boolean
-  // Chunk 14 (SPEC "Staged sets" — "labels stages by kind") — a stage
-  // row's own group, resolved once by PlanSetGroup (today's legacy/null ->
-  // dropset rule); undefined for a head row, which never shows this.
-  stageKindLabel?: string
+  // Kind marker text (WARMUP, DROPSET, REST-PAUSE, …), resolved by
+  // PlanSetGroup; undefined for a plain working set and for stage rows.
+  kindLabel?: string
   targetRir: number | null
   // Chunk 11 (SPEC.md "Removals"; chunk 19 — SPEC.md "Targets": "The week
   // plan can override a set's rep target for that week"). Editable here via
-  // RepTargetEditor below; 'none' shows a small placeholder instead of
-  // nothing, so there's a way to type a first target (see RepTargetEditor's
-  // own header comment on why this can't stay a no-op like before).
+  // RepTargetEditor below, on every row, in its own cell beside the weight.
   repTarget: RepTarget
   // Chunk 19 (SPEC "Targets" — "Weight targets: per set, in the week plan
   // only"). Kg; displayed/entered in `weightUnit`'s resolved unit via
-  // WeightTargetEditor below. Heads and stages both (reviewer's note:
-  // stages already edit RIR-style fields here, so weight/reps follow).
+  // WeightTargetEditor below. Heads and stages both.
   targetWeight: number | null
   weightUnit: WeightUnit | null | undefined
   // Chunk 19 (SPEC "Tags") — heads only: PlanSetGroup never passes this (or
-  // onApplyTagToAll below) on a stage row's own SetRow call, so `undefined`
-  // here means "this is a stage, don't render a tags row at all" — not "a
-  // head with zero tags" (that reads as `[]`/`null`, same "may not exist
-  // yet" convention as targetWeight above, just one level further: absent
-  // vs. present-but-empty are different things for this one prop only).
+  // the tags menu) on a stage row's own SetRow call, so `undefined`
+  // here means "this is a stage, no tags marker" — not "a head with zero
+  // tags" (that reads as `[]`/`null`).
   tags?: string[] | null
   isPast: boolean
-  // Chunk 15 (SPEC "Warmup sets") — a head only (PlanSetGroup never passes
-  // this on a stage row). Swaps the RIR stepper for a plain WARMUP label:
-  // "Mandatory fields never apply to warmup sets" [P2], and RIR is never
-  // logged on one in the first place (nothing else, per SPEC).
+  // A warmup head (PlanSetGroup never passes this on a stage row). Swaps the
+  // RIR stepper out: "Mandatory fields never apply to warmup sets" [P2], and
+  // RIR is never logged on one in the first place.
   isWarmup?: boolean
-  onRemove: () => void
+  // The ⋯ menu's contents; `close` collapses the panel. Omitted/ignored on a
+  // past (read-only) week, which gets no ⋯ at all.
+  menu: (close: () => void) => React.ReactNode
   onUpdate: (changes: SetChanges) => void
-  // Chunk 19 — heads only, same gating as `tags` above.
-  onApplyTagToAll?: (tag: string) => void
 }) {
   // Chunk 19 — this exercise's resolved unit (its own override, else the
   // global Settings default), same resolution WeightTargetEditor's gym-
   // screen counterpart (SetRow.tsx) already uses.
   const { unit: resolvedUnit } = useWeightDisplay(weightUnit)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const activeTags = tags != null && tags.length > 0 ? tags : null
+  const hasMarkers = Boolean(kindLabel) || activeTags !== null
+  const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
         {/* Set number */}
         <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
           {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
         </span>
 
-        {/* Stage kind (chunk 14) — same slot/style as the rep-target span
-            right below, so a stage row reads "↳ REST-PAUSE 8–12" in one
-            line. */}
-        {isStage && stageKindLabel && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
-            {stageKindLabel}
-          </span>
-        )}
+        {/* Weight target — entered/shown in the exercise's resolved unit,
+            stored kg (chunk 19, SPEC "Targets"). */}
+        <WeightTargetEditor
+          valueKg={targetWeight}
+          unit={resolvedUnit}
+          disabled={isPast}
+          onChange={(kg) => onUpdate({ targetWeight: kg })}
+        />
 
-        {/* Warmup (chunk 15) — same slot/style as stageKindLabel above; the
-            two never both apply (a warmup is never a stage). */}
-        {isWarmup && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}>
-            WARMUP
-          </span>
-        )}
+        <span style={{ color: 'var(--text-dim)', fontSize: 11, flexShrink: 0 }}>×</span>
 
-        {/* Planned rep target — the week's own override (chunk 19), parsed
-            only by parseRepTarget. */}
+        {/* Rep target — this week's own override (chunk 19), parsed only by
+            parseRepTarget. */}
         <RepTargetEditor
           value={repTarget}
           currentTargetRir={targetRir}
@@ -1742,47 +1825,40 @@ function SetRow({
           />
         )}
 
-        {/* Spacer */}
-        <div style={{ flex: 1 }} />
+        {/* A warmup has no RIR stepper, so a spacer keeps its ⋯ at the right
+            edge; on every other row the weight and reps cells take the room. */}
+        {isWarmup && <div style={{ flex: 1, minWidth: 0 }} />}
 
-        {/* Remove */}
         {isPast ? (
-          <div style={{ width: 28 }} />
+          <div style={{ width: 28, flexShrink: 0 }} />
         ) : (
-          <button
-            onClick={onRemove}
-            style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', flexShrink: 0 }}
-          >
-            <Trash2 size={12} />
-          </button>
+          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} />
         )}
       </div>
 
-      {/* Weight target (chunk 19, SPEC "Targets") — entered/shown in the
-          exercise's resolved unit, stored kg. Its own row: at 375px there's
-          no room left on the main row above once a stage-kind/warmup label
-          and a longer rep target are both present. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px 4px', paddingLeft: 38 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
-          WEIGHT
-        </span>
-        <WeightTargetEditor
-          valueKg={targetWeight}
-          unit={resolvedUnit}
-          disabled={isPast}
-          onChange={(kg) => onUpdate({ targetWeight: kg })}
-        />
-      </div>
+      {/* Markers — only on a set that has a kind or tags. */}
+      {hasMarkers && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '0 16px 4px', paddingLeft: 44 }}>
+          {kindLabel && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--accent)' }}>
+              {kindLabel}
+            </span>
+          )}
+          {activeTags?.map((tag) => (
+            <span
+              key={tag}
+              style={{ padding: '0 6px', height: 16, display: 'inline-flex', alignItems: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 5, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
-      {/* Tags (chunk 19, SPEC "Tags") — heads only. */}
-      {tags !== undefined && onApplyTagToAll && (
-        <div style={{ padding: '0 16px 6px', paddingLeft: 38 }}>
-          <TagsEditor
-            tags={tags}
-            disabled={isPast}
-            onChange={(next) => onUpdate({ tags: next })}
-            onApplyToAll={onApplyTagToAll}
-          />
+      {/* ⋯ menu panel */}
+      {!isPast && menuOpen && (
+        <div style={MENU_PANEL_STYLE}>
+          {menu(() => setMenuOpen(false))}
         </div>
       )}
     </div>
@@ -1794,15 +1870,30 @@ function SetRow({
 // for that week"). Same tap-to-edit/commit-on-blur-or-Enter pattern as
 // StepExercises.tsx's own TempoEditor (chunk 17): parsed only by
 // parseRepTarget, refused inline with nothing written on invalid input, a
-// no-op commit (same value) writes nothing. At rest (not editing) with an
-// EXISTING target, this renders the exact span PlanPage rendered before this
-// chunk (same tag, same style object, same text) — onClick is a React prop
-// and never shows up in rendered HTML, so that case stays byte-identical;
-// only the 'none' case (which rendered nothing at all before this chunk)
-// gains a small "—" placeholder button, the one new element, and the only
-// way to ever type a first target (nothing else in the app can set this
-// field — unlike targetRir, which the program side can seed, a WEEK's own
-// rep-target OVERRIDE only ever comes from here).
+// no-op commit (same value) writes nothing. UI rule (2026-10-10): reps is
+// one of the three numbers every set row shows, so it is a visible cell
+// like the weight's — not bare text — and a set with no target shows a
+// dash in that cell, the one way to type a first target (nothing else in
+// the app sets a WEEK's own rep-target override).
+// The look shared by the weight and reps cells of a set row (the RIR
+// stepper beside them is the same height). They share the row's free width
+// equally and shrink before anything wraps, so three numbers always fit one
+// line at 375px.
+const NUMBER_CELL_STYLE: React.CSSProperties = {
+  flex: '1 1 0',
+  minWidth: 0,
+  maxWidth: 84,
+  height: 28,
+  padding: '0 6px',
+  background: 'var(--surface)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: 6,
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+}
+
 function RepTargetEditor({
   value,
   currentTargetRir,
@@ -1853,16 +1944,16 @@ function RepTargetEditor({
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 0', minWidth: 0, maxWidth: 96 }}>
         <input
           ref={inputRef}
           value={text}
           onChange={(e) => { setText(e.target.value); if (error) setError('') }}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
-          placeholder="8, 8-12, or AMRAP"
+          placeholder="8, 8-12, AMRAP"
           aria-label="Rep target"
-          style={{ width: 128, height: 26, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 8px', fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
+          style={{ width: '100%', height: 28, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 6px', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
         />
         {error && (
           <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--error)', letterSpacing: '0.5px' }}>
@@ -1873,28 +1964,16 @@ function RepTargetEditor({
     )
   }
 
-  if (value.type === 'none') {
-    return (
-      <button
-        onClick={startEditing}
-        disabled={disabled}
-        aria-label="Set rep target"
-        style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0, background: 'transparent', border: 'none', padding: 0, cursor: disabled ? 'default' : 'pointer' }}
-      >
-        —
-      </button>
-    )
-  }
-
-  // Byte-identical to the pre-chunk-19 read-only span for this exact case —
-  // see this component's own header comment.
   return (
-    <span
+    <button
+      type="button"
       onClick={startEditing}
-      style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', flexShrink: 0 }}
+      disabled={disabled}
+      aria-label={value.type === 'none' ? 'Set rep target' : undefined}
+      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: value.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)' }}
     >
-      {formatRepTarget(value)}
-    </span>
+      {value.type === 'none' ? '—' : formatRepTarget(value)}
+    </button>
   )
 }
 
@@ -1956,7 +2035,7 @@ function WeightTargetEditor({
 
   if (editing) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 0', minWidth: 0, maxWidth: 96 }}>
         <div style={{ position: 'relative' }}>
           <input
             ref={inputRef}
@@ -1968,9 +2047,9 @@ function WeightTargetEditor({
             onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
             placeholder="0"
             aria-label="Weight target"
-            style={{ width: 88, height: 26, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 28px 0 8px', fontSize: 11, fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
+            style={{ width: '100%', height: 28, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 26px 0 6px', fontSize: 12, fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
           />
-          <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
             {unit}
           </span>
         </div>
@@ -1985,9 +2064,10 @@ function WeightTargetEditor({
 
   return (
     <button
+      type="button"
       onClick={startEditing}
       disabled={disabled}
-      style={{ height: 26, padding: '0 8px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: valueKg === null ? 'var(--text-dim)' : 'var(--text-primary)' }}
+      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontSize: 12, color: valueKg === null ? 'var(--text-dim)' : 'var(--text-primary)' }}
     >
       {valueKg != null ? `${toDisplayWeight(valueKg, unit)}${unit}` : '—'}
     </button>
@@ -2128,17 +2208,17 @@ function RirStepper({
           if (value === null) return
           onChange(value === 0 ? null : value - 1)
         }}
-        style={{ width: 24, height: 28, background: 'transparent', border: 'none', color: (disabled || value === null) ? 'var(--text-dim)' : 'var(--text-muted)', cursor: (disabled || value === null) ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        style={{ width: 22, height: 28, background: 'transparent', border: 'none', color: (disabled || value === null) ? 'var(--text-dim)' : 'var(--text-muted)', cursor: (disabled || value === null) ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
         −
       </button>
-      <div style={{ minWidth: 56, textAlign: 'center' }}>
+      <div style={{ minWidth: 46, textAlign: 'center', whiteSpace: 'nowrap' }}>
         {value === null ? (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, color: 'var(--text-dim)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: 'var(--text-dim)' }}>
             NO RIR
           </span>
         ) : (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, color: 'var(--text-primary)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: 'var(--text-primary)' }}>
             RIR {value}
           </span>
         )}
@@ -2146,39 +2226,10 @@ function RirStepper({
       <button
         disabled={disabled}
         onClick={() => onChange(value === null ? 3 : Math.min(value + 1, 9))}
-        style={{ width: 24, height: 28, background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        style={{ width: 22, height: 28, background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
         +
       </button>
     </div>
-  )
-}
-
-// ─── Icon Button ──────────────────────────────────────────────────────────────
-// Chunk 9's week-actions row (ExerciseSection, above) — same small
-// square-icon-button tokens as WorkoutDayEditorPage.tsx's own local IconBtn
-// (the planner's equivalent reorder/delete row), reimplemented here rather
-// than imported so this file stays self-contained like every other
-// plan/*.tsx component already is.
-function IconBtn({
-  onClick,
-  disabled = false,
-  ariaLabel,
-  children,
-}: {
-  onClick: () => void
-  disabled?: boolean
-  ariaLabel: string
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', flexShrink: 0, opacity: disabled ? 0.5 : 1 }}
-    >
-      {children}
-    </button>
   )
 }

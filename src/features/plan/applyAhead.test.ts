@@ -782,6 +782,33 @@ describe('addSet (week-level ADD SET and the stable program-tab stepper)', () =>
   })
 })
 
+describe('addWarmupSet (the exercise ⋯ menu\'s "Add warmup sets")', () => {
+  const change: ChangeRecord = { editType: 'addWarmupSet', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
+
+  it('applies: one op naming the matched row — the insert point is decided per week at write time', () => {
+    const w = week(2, { exercises: [pe('pe-1')], sets: [set('s1', 'pe-1', { setNumber: 1 })] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({
+      weekPlanId: 'wp-2',
+      weekNumber: 2,
+      status: 'applied',
+      ops: [{ kind: 'addWarmupSet', weekPlanId: 'wp-2', programExerciseId: 'pe-1' }],
+    })
+  })
+
+  it('skips structurally when the slot is missing or holds a different exercise', () => {
+    const missing = week(2, { exercises: [], sets: [] })
+    const diverged = week(3, { exercises: [pe('pe-1', { exerciseId: 'ex-OTHER' })], sets: [] })
+    expect(planApplyAhead(change, [missing, diverged]).map((r) => r.status === 'skipped' && r.reason)).toEqual(['structural', 'structural'])
+  })
+
+  it('skips a deload week', () => {
+    const w = week(2, { isDeload: true, exercises: [pe('pe-1')], sets: [] })
+    const [result] = planApplyAhead(change, [w])
+    expect(result).toEqual({ weekPlanId: 'wp-2', weekNumber: 2, status: 'skipped', reason: 'deload' })
+  })
+})
+
 describe('removeSet (stable program-tab only — always trailing)', () => {
   const change: ChangeRecord = { editType: 'removeSet', slotId: 'pe-1', exerciseId: 'ex-pe-1' }
 

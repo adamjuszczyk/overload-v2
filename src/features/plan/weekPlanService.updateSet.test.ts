@@ -131,3 +131,51 @@ describe('updateSet — weight target, rep target, tags (chunk 19)', () => {
     expect(payload).toEqual({ tags: null })
   })
 })
+
+// "Add warmup sets" (Plan's exercise ⋯ menu, 2026-10-10). addWarmupSet reads
+// the exercise's rows, shifts the working sets down (highest first), then
+// inserts the warmup at the freed number with is_warmup set.
+describe('addWarmupSet — a warmup above the first working set', () => {
+  it('shifts the working sets down one, then inserts a warmup head at the top', async () => {
+    const { addWarmupSet } = await import('./weekPlanService')
+    const calls: { op: string; payload?: unknown; id?: unknown }[] = []
+    const rows = [
+      { id: 'a', set_number: 1, is_warmup: false, parent_week_plan_set_id: null },
+      { id: 'b', set_number: 2, is_warmup: false, parent_week_plan_set_id: null },
+    ]
+    fromMock.mockImplementation(() => {
+      const chain: Record<string, unknown> = {
+        select: vi.fn(() => chain),
+        eq: vi.fn((_col: string, val: unknown) => {
+          if (calls.length && calls[calls.length - 1].op === 'update') calls[calls.length - 1].id = val
+          return chain
+        }),
+        update: vi.fn((payload: unknown) => {
+          calls.push({ op: 'update', payload })
+          return chain
+        }),
+        insert: vi.fn((payload: unknown) => {
+          calls.push({ op: 'insert', payload })
+          return chain
+        }),
+        single: vi.fn(() => Promise.resolve({ data: { id: 'new', week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 1, is_warmup: true, is_dropset: false, stage_index: 0 }, error: null })),
+        then: (resolve: (v: unknown) => unknown) => {
+          const isRead = calls.length === 0
+          return Promise.resolve(isRead ? { data: rows, error: null } : { error: null }).then(resolve)
+        },
+      }
+      return chain
+    })
+
+    await addWarmupSet('u', 'wp-1', 'pe-1')
+
+    expect(calls).toEqual([
+      { op: 'update', payload: { set_number: 3 }, id: 'b' },
+      { op: 'update', payload: { set_number: 2 }, id: 'a' },
+      {
+        op: 'insert',
+        payload: { week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 1, target_rir: null, is_dropset: false, is_warmup: true },
+      },
+    ])
+  })
+})

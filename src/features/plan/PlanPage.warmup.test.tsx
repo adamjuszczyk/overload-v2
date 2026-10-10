@@ -59,6 +59,7 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
 
 const mockState: { plans: WeekPlan[] } = { plans: [] }
 const updateSetMutate = vi.fn()
+const addWarmupMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', () => ({
@@ -78,6 +79,7 @@ vi.mock('./useWeekPlan', () => ({
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
   useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -97,6 +99,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openExerciseMenu, openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -106,42 +109,61 @@ function renderPlanPage() {
   )
 }
 
-describe('PlanPage — WARMUP chip (chunk 15, head-only)', () => {
-  it('a plain head (no stages) offers the WARMUP chip, unselected, and the RIR stepper still shows', () => {
+describe('PlanPage — warmup sets (chunk 15; per-row chip replaced by the exercise ⋯ "Add warmup sets", 2026-10-10)', () => {
+  it('a plain week shows no warmup control anywhere by default, and no per-row WARMUP option in the set\'s ⋯', () => {
     mockState.plans = [makePlan([makeSet({ id: 'head', isWarmup: false })])]
     renderPlanPage()
-    expect(screen.getByText('SET KIND')).toBeTruthy()
+    expect(screen.queryByText('SET KIND')).toBeNull()
+    expect(screen.queryByText(/WARMUP/)).toBeNull()
     expect(screen.getByText('NO RIR')).toBeTruthy()
-    const chip = screen.getByRole('button', { name: 'WARMUP' })
-    expect(chip.style.backgroundColor).toBe('var(--surface)')
+
+    openSetMenu(1)
+    expect(screen.queryByRole('button', { name: 'WARMUP' })).toBeNull()
+    expect(screen.queryByText('SET KIND')).toBeNull()
   })
 
-  it('tapping WARMUP calls useUpdateSet with {id: head.id, changes: {isWarmup: true}}', () => {
-    updateSetMutate.mockClear()
+  it('"Add warmup sets" is in the exercise\'s ⋯ and calls useAddWarmupSet for that exercise', () => {
+    addWarmupMutate.mockClear()
     mockState.plans = [makePlan([makeSet({ id: 'head' })])]
     renderPlanPage()
+    expect(screen.queryByLabelText('Add warmup sets')).toBeNull() // not on the page by default
 
-    fireEvent.click(screen.getByRole('button', { name: 'WARMUP' }))
+    openExerciseMenu()
+    fireEvent.click(screen.getByLabelText('Add warmup sets'))
 
-    expect(updateSetMutate).toHaveBeenCalledTimes(1)
-    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'head', changes: { isWarmup: true } })
+    expect(addWarmupMutate).toHaveBeenCalledTimes(1)
+    expect(addWarmupMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-1', weekPlanId: 'wp-1', programExerciseId: 'pe-1' })
+    // The menu closes after the action.
+    expect(screen.queryByLabelText('Add warmup sets')).toBeNull()
   })
 
-  it('a warmup head shows no RIR stepper and no ADD STAGE (a warmup is never staged)', () => {
-    mockState.plans = [makePlan([makeSet({ id: 'head', isWarmup: true })])]
-    renderPlanPage()
-    expect(screen.queryByText('NO RIR')).toBeNull()
-    expect(screen.queryByRole('button', { name: /ADD STAGE/i })).toBeNull()
-    // WARMUP shown twice: the row's own label, and the (active) chip.
-    expect(screen.getAllByText('WARMUP')).toHaveLength(2)
-  })
-
-  it('a head with a real stage shows no WARMUP chip at all (mutually exclusive with staging)', () => {
+  it('a warmup head shows a WARMUP marker, no RIR stepper, and no ADD STAGE (a warmup is never staged)', () => {
     mockState.plans = [makePlan([
-      makeSet({ id: 'head', setNumber: 1, isWarmup: false }),
-      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
+      makeSet({ id: 'warm', setNumber: 1, isWarmup: true }),
+      makeSet({ id: 'work', setNumber: 2 }),
     ])]
     renderPlanPage()
-    expect(screen.queryByText('SET KIND')).toBeNull()
+    // Only the working set has an RIR stepper.
+    expect(screen.getAllByText('NO RIR')).toHaveLength(1)
+    // One marker — on the warmup row only.
+    expect(screen.getAllByText('WARMUP')).toHaveLength(1)
+
+    openSetMenu(1) // the warmup, shown above the working set
+    expect(screen.queryByRole('button', { name: /ADD STAGE/i })).toBeNull()
+    expect(screen.queryByText('STAGE KIND')).toBeNull()
+  })
+
+  it('warmups render above the first working set (ordered by set number)', () => {
+    mockState.plans = [makePlan([
+      makeSet({ id: 'work', setNumber: 2 }),
+      makeSet({ id: 'warm', setNumber: 1, isWarmup: true }),
+    ])]
+    renderPlanPage()
+    const rows = screen.getAllByLabelText(/^Options for set /)
+    expect(rows).toHaveLength(2)
+    // Row 1 carries the marker, row 2 does not.
+    const marker = screen.getByText('WARMUP')
+    expect(rows[0].compareDocumentPosition(marker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(marker.compareDocumentPosition(rows[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
