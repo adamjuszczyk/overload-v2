@@ -42,7 +42,13 @@ const unmarkWeekDeloadMock = vi.fn()
 // but nothing proved the hook's mutationFn actually passes a real,
 // non-null sequencePosition through rather than silently dropping it.
 const copyWorkoutFromPreviousWeekMock = vi.fn()
+// Chunk 27 — useSwapWeekExercise / useReorderWeekExercises forward exactly
+// what the screen gives them (no "only this week" argument any more).
+const swapWeekExerciseMock = vi.fn()
+const reorderWeekExercisesMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
+  swapWeekExercise: (...args: unknown[]) => swapWeekExerciseMock(...args),
+  reorderWeekExercises: (...args: unknown[]) => reorderWeekExercisesMock(...args),
   planWeek: (...args: unknown[]) => planWeekMock(...args),
   updateSet: (...args: unknown[]) => updateSetMock(...args),
   markSessionDeload: (...args: unknown[]) => markSessionDeloadMock(...args),
@@ -56,7 +62,7 @@ vi.mock('./weekPlanService', () => ({
 // convention every other PlanPage-adjacent test file already uses.
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek, useSwapWeekExercise, useReorderWeekExercises } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -69,6 +75,8 @@ afterEach(() => {
   markWeekDeloadMock.mockReset()
   unmarkWeekDeloadMock.mockReset()
   copyWorkoutFromPreviousWeekMock.mockReset()
+  swapWeekExerciseMock.mockReset()
+  reorderWeekExercisesMock.mockReset()
   // The imported queryClient is ALSO a module-level singleton (see the
   // cache-scope tests below) — clear it so no test's seeded cache data
   // leaks into the next.
@@ -441,5 +449,40 @@ describe('useSetDeload — marks/unmarks exactly the one session it was given (c
     })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(seen).toBe('alreadyStarted')
+  })
+})
+
+// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): a swap or reorder is a
+// normal week edit. The hooks forward exactly what the screen gives them to
+// the service — nothing about "only this week" is added on the way. Checked
+// on the call's KEYS / argument count at the real hook layer.
+describe('useSwapWeekExercise / useReorderWeekExercises — no "only this week" argument (chunk 27)', () => {
+  it('useSwapWeekExercise calls swapWeekExercise with {userId, weekPlanId, programExerciseId, replacementExerciseId} and nothing else', async () => {
+    swapWeekExerciseMock.mockResolvedValue({ id: 'pe-new' })
+    const { result } = renderHook(() => useSwapWeekExercise('meso-1', 3), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ weekPlanId: 'wp-1', programExerciseId: 'pe-1', replacementExerciseId: 'ex-2' })
+    })
+
+    expect(swapWeekExerciseMock).toHaveBeenCalledTimes(1)
+    const arg = swapWeekExerciseMock.mock.calls[0][0] as Record<string, unknown>
+    expect(arg).toEqual({ userId: 'user-1', weekPlanId: 'wp-1', programExerciseId: 'pe-1', replacementExerciseId: 'ex-2' })
+    expect(Object.keys(arg).sort()).toEqual(['programExerciseId', 'replacementExerciseId', 'userId', 'weekPlanId'])
+  })
+
+  it('useReorderWeekExercises calls reorderWeekExercises(weekPlanId, moves) — two arguments, no third', async () => {
+    reorderWeekExercisesMock.mockResolvedValue(undefined)
+    const moves = [
+      { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
+      { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
+    ]
+    const { result } = renderHook(() => useReorderWeekExercises('meso-1', 3), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ weekPlanId: 'wp-1', moves })
+    })
+
+    expect(reorderWeekExercisesMock).toHaveBeenCalledTimes(1)
+    expect(reorderWeekExercisesMock.mock.calls[0]).toEqual(['wp-1', moves])
+    expect(reorderWeekExercisesMock.mock.calls[0]).toHaveLength(2)
   })
 })

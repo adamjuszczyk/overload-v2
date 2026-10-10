@@ -8,10 +8,12 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 
 // Chunk 9 (TASKS.md "Edit a week's exercises" / SPEC.md "Weeks and
 // copying", "Plan screen", "Supersets") — swap/reorder/add/remove in a
-// week, the "only this week" toggle, and G14 (one workout on several
-// weekdays shares one plan row). Renders the real PlanPage/WorkoutDayPanel/
-// ExerciseSection tree; only the data hooks are mocked (same seam as
-// PlanPage.copyButtons.test.tsx).
+// week, and G14 (one workout on several weekdays shares one plan row).
+// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): the "only this week"
+// tick is gone — a swap or reorder is a normal week edit, so its call carries
+// no such argument, and no ONLY THIS WEEK control exists on the screen.
+// Renders the real PlanPage/WorkoutDayPanel/ExerciseSection tree; only the
+// data hooks are mocked (same seam as PlanPage.copyButtons.test.tsx).
 //
 // Checked at 375px: window.innerWidth is set before every render. Every
 // element this screen adds uses the same percentage/flex/fixed-under-40px
@@ -170,7 +172,7 @@ describe('PlanPage — week actions are visible on the current (non-past) week',
 })
 
 describe('PlanPage — swap', () => {
-  it('opens the picker and confirms with onlyThisWeek: false by default', () => {
+  it('opens the picker and confirms: the swap gets {weekPlanId, programExerciseId, replacementExerciseId} and nothing else (no onlyThisWeek)', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
     renderPlanPage()
@@ -184,29 +186,48 @@ describe('PlanPage — swap', () => {
       weekPlanId: 'wp-1',
       programExerciseId: 'pe-1',
       replacementExerciseId: 'ex-replacement',
-      onlyThisWeek: false,
     })
+    // toHaveBeenCalledWith ignores an undefined-valued key; check the keys.
+    expect(Object.keys(swapMutate.mock.calls[0][0]).sort()).toEqual(['programExerciseId', 'replacementExerciseId', 'weekPlanId'])
   })
+})
 
-  it('"ONLY THIS WEEK" ticked passes onlyThisWeek: true through to the swap', () => {
+// Chunk 27 — absence test (Checks that lied #32): the tick is gone from the
+// screen, on the current (non-past) week, for a week-dependent weekday run
+// (where it used to show) and for a stable one (where it never did). The
+// sequence run's twin is in PlanPage.sequenceSlots.test.tsx. Any case variant
+// counts: a control called "Only this week" or "only this week" would be the
+// same tick under another spelling. Break proof: put either toggle back.
+describe('PlanPage — no "ONLY THIS WEEK" tick anywhere (chunk 27)', () => {
+  it('a week-dependent weekday run\'s current week shows no ONLY THIS WEEK control, in any case', () => {
     mockState.program = makeProgram('week_dependent')
     mockState.plans = [makePlan(1, [pe1, pe2])]
-    renderPlanPage()
+    const { container } = renderPlanPage()
 
-    fireEvent.click(screen.getByText('ONLY THIS WEEK'))
-    openExerciseMenu()
-    fireEvent.click(screen.getByLabelText('Swap Bench Press'))
-    fireEvent.click(screen.getByText('Incline Press'))
-
-    expect(swapMutate).toHaveBeenCalledWith(expect.objectContaining({ onlyThisWeek: true }))
+    expect(screen.getByText('COMPACT')).toBeTruthy() // the toolbar the tick used to sit in is still there
+    expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
+    expect(screen.queryByText(/only this week/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /only this week/i })).toBeNull()
+    expect((container.textContent ?? '').toLowerCase()).not.toContain('only this week')
   })
 
-  it('the "only this week" toggle does not render for a stable program (DECISIONS 48 (a) — stable needs no tick)', () => {
+  it('a stable run\'s current week shows none either', () => {
     mockState.program = makeProgram('stable')
     mockState.plans = [makePlan(1, [pe1, pe2])]
-    renderPlanPage()
+    const { container } = renderPlanPage()
 
-    expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
+    expect(screen.queryByText(/only this week/i)).toBeNull()
+    expect((container.textContent ?? '').toLowerCase()).not.toContain('only this week')
+  })
+
+  it('the exercise ⋯ menu\'s swap and move actions offer no such choice either', () => {
+    mockState.program = makeProgram('week_dependent')
+    mockState.plans = [makePlan(1, [pe1, pe2])]
+    const { container } = renderPlanPage()
+
+    openExerciseMenu('Bench Press')
+    expect(screen.getByLabelText('Swap Bench Press')).toBeTruthy() // the menu is open
+    expect((container.textContent ?? '').toLowerCase()).not.toContain('only this week')
   })
 })
 
@@ -225,8 +246,9 @@ describe('PlanPage — reorder', () => {
         { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
         { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
       ],
-      onlyThisWeek: false,
     })
+    // toHaveBeenCalledWith ignores an undefined-valued key; check the keys.
+    expect(Object.keys(reorderMutate.mock.calls[0][0]).sort()).toEqual(['moves', 'weekPlanId'])
   })
 
   it('the first row\'s move-up and the last row\'s move-down are disabled', () => {
@@ -288,8 +310,8 @@ describe('PlanPage — reorder moves a superset block as one unit (chunk 13, SPE
         { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 2 },
         { programExerciseId: 'pe-3', oldPosition: 2, newPosition: 0 },
       ],
-      onlyThisWeek: false,
     })
+    expect(Object.keys(reorderMutate.mock.calls[0][0]).sort()).toEqual(['moves', 'weekPlanId'])
   })
 })
 

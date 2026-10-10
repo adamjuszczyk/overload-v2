@@ -446,11 +446,19 @@ describe('copyExercisesForward — carries program_exercise_id/position forward 
   })
 })
 
-describe('copyExercisesForward — "what copying forward uses" (TASKS.md\'s own words for carry_*)', () => {
-  it('uses carry_program_exercise_id instead of program_exercise_id when it is set (an "only this week" swap\'s pre-swap slot)', async () => {
+// Chunk 27 (SPEC [P1.1] "'Only this week' is removed … Existing data: 'only
+// this week' values already stored are ignored from now on. Copying uses each
+// week's actual content."). carry_program_exercise_id / carry_position are
+// STORED columns on the source row that nothing reads any more, so a source
+// row that still has them copies as its own program_exercise_id and
+// position. The old tests here asserted the opposite (the carry value won);
+// they are replaced by these. weekPlanService.copyForward.test.ts proves the
+// same through the real copy path (copyFromPreviousWeek / copyOnePlanForward).
+describe('copyExercisesForward — stored carry_* values are ignored (chunk 27)', () => {
+  it('a row with carry_program_exercise_id set copies its OWN program_exercise_id (an old "only this week" swap)', async () => {
     const ex = makeDbWeekPlanExercise({
       program_exercise_id: 'peSwappedIn', // this week's own (post-swap) slot
-      carry_program_exercise_id: 'peOriginal', // what copying forward should use instead
+      carry_program_exercise_id: 'peOriginal', // stored by an old tick; no longer read
       position: 2,
     })
     const { upsert, calls } = makeFakeUpsert()
@@ -458,26 +466,44 @@ describe('copyExercisesForward — "what copying forward uses" (TASKS.md\'s own 
     await copyExercisesForward('u1', 'new-wp', [ex], upsert)
 
     expect(calls[0]).toEqual([
-      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peOriginal', position: 2 },
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peSwappedIn', position: 2 },
     ])
   })
 
-  it('uses carry_position instead of position when it is set (an "only this week" reorder\'s pre-reorder order)', async () => {
+  it('a row with carry_position set copies its OWN position (an old "only this week" reorder)', async () => {
     const ex = makeDbWeekPlanExercise({
       program_exercise_id: 'pe1',
       position: 5, // this week's own (post-reorder) order
-      carry_position: 1, // what copying forward should use instead
+      carry_position: 1, // stored by an old tick; no longer read
     })
     const { upsert, calls } = makeFakeUpsert()
 
     await copyExercisesForward('u1', 'new-wp', [ex], upsert)
 
     expect(calls[0]).toEqual([
-      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'pe1', position: 1 },
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'pe1', position: 5 },
     ])
   })
 
-  it('every copied row starts with no carry_* of its own, regardless of the source row\'s', async () => {
+  it('both stored at once on one row, and a second row with neither: each copies as its own content', async () => {
+    const withBoth = makeDbWeekPlanExercise({
+      program_exercise_id: 'peA',
+      position: 3,
+      carry_program_exercise_id: 'peOther',
+      carry_position: 0,
+    })
+    const plain = makeDbWeekPlanExercise({ program_exercise_id: 'peB', position: 0 })
+    const { upsert, calls } = makeFakeUpsert()
+
+    await copyExercisesForward('u1', 'new-wp', [withBoth, plain], upsert)
+
+    expect(calls[0]).toEqual([
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peA', position: 3 },
+      { week_plan_id: 'new-wp', user_id: 'u1', program_exercise_id: 'peB', position: 0 },
+    ])
+  })
+
+  it('every copied row starts with no carry_* of its own, whatever the source row stored', async () => {
     const ex = makeDbWeekPlanExercise({ carry_program_exercise_id: 'peOriginal', carry_position: 1 })
     const { upsert, calls } = makeFakeUpsert()
 
@@ -489,47 +515,8 @@ describe('copyExercisesForward — "what copying forward uses" (TASKS.md\'s own 
   })
 })
 
-// Chunk 9 (TASKS.md "the client-side copies... must apply the same mapping"
-// as migration 032's own fix) — copySetsWithGrouping's optional fifth
-// argument, prevExercises: the source week's own v2_week_plan_exercises
-// rows, used to map each copied SET's program_exercise_id the same way
-// copyExercisesForward already maps the exercise row itself. Every test
-// above this block omits the argument entirely and still passes
-// (prevExercises defaults to `[]`, an empty map, so every id falls back to
-// itself) — proof this is additive, not a behaviour change for any
-// existing caller/test.
-describe('copySetsWithGrouping — chunk 9: maps program_exercise_id through the source week\'s carry mapping', () => {
-  it('an only-this-week swap: a set that "moved with" the swap (points at the week-only slot) follows its exercise row back to the original, pre-swap slot', async () => {
-    const sourceExercise = makeDbWeekPlanExercise({
-      program_exercise_id: 'pe-week-only-replacement', // this week's own (post-swap) slot
-      carry_program_exercise_id: 'pe-original', // "only this week": copying forward reverts to this
-    })
-    const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe-week-only-replacement' })
-    const { insert, calls } = makeFakeInsert()
-
-    await copySetsWithGrouping('u1', 'new-wp', [head], insert, [sourceExercise])
-
-    expect(calls[0].program_exercise_id).toBe('pe-original')
-  })
-
-  it('a permanent swap (no carry override): the set carries the week-only replacement forward, same as its exercise row', async () => {
-    const sourceExercise = makeDbWeekPlanExercise({
-      program_exercise_id: 'pe-week-only-replacement',
-      carry_program_exercise_id: null, // permanent — no override
-    })
-    const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe-week-only-replacement' })
-    const { insert, calls } = makeFakeInsert()
-
-    await copySetsWithGrouping('u1', 'new-wp', [head], insert, [sourceExercise])
-
-    expect(calls[0].program_exercise_id).toBe('pe-week-only-replacement')
-  })
-
-  it('a stage maps through the same rule as its head (both point at the same exercise slot)', async () => {
-    const sourceExercise = makeDbWeekPlanExercise({
-      program_exercise_id: 'pe-week-only-replacement',
-      carry_program_exercise_id: 'pe-original',
-    })
+describe('copySetsWithGrouping — every set keeps its own program_exercise_id (chunk 27)', () => {
+  it('a set that "moved with" a swap stays on the exercise row it points at — heads and stages alike', async () => {
     const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe-week-only-replacement' })
     const stage = makeDbSet({
       id: 'stage-1',
@@ -540,40 +527,9 @@ describe('copySetsWithGrouping — chunk 9: maps program_exercise_id through the
     })
     const { insert, calls } = makeFakeInsert()
 
-    await copySetsWithGrouping('u1', 'new-wp', [head, stage], insert, [sourceExercise])
+    await copySetsWithGrouping('u1', 'new-wp', [head, stage], insert)
 
-    expect(calls.map((c) => c.program_exercise_id)).toEqual(['pe-original', 'pe-original'])
-  })
-
-  it('no matching exercise row (defensive fallback): the set\'s own program_exercise_id is carried through unmapped', async () => {
-    // Every real set's program_exercise_id has a matching v2_week_plan_exercises
-    // row in the same week (027's own unique-key invariant) — this only
-    // exercises the fallback branch, never actually reachable on a
-    // well-formed week.
-    const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe-orphan' })
-    const { insert, calls } = makeFakeInsert()
-
-    await copySetsWithGrouping('u1', 'new-wp', [head], insert, [])
-
-    expect(calls[0].program_exercise_id).toBe('pe-orphan')
-  })
-
-  it('an ordinary exercise untouched by any swap (carry_* both null) maps to itself — a no-op, matching every pre-chunk-9 week', async () => {
-    const sourceExercise = makeDbWeekPlanExercise({ program_exercise_id: 'pe1' })
-    const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe1' })
-    const { insert, calls } = makeFakeInsert()
-
-    await copySetsWithGrouping('u1', 'new-wp', [head], insert, [sourceExercise])
-
-    expect(calls[0].program_exercise_id).toBe('pe1')
-  })
-
-  it('omitting prevExercises entirely (every pre-chunk-9 call site) carries program_exercise_id through verbatim, unchanged', async () => {
-    const head = makeDbSet({ id: 'head-1', program_exercise_id: 'pe1' })
-    const { insert, calls } = makeFakeInsert()
-
-    await copySetsWithGrouping('u1', 'new-wp', [head], insert)
-
-    expect(calls[0].program_exercise_id).toBe('pe1')
+    expect(calls.map((c) => c.program_exercise_id)).toEqual(['pe-week-only-replacement', 'pe-week-only-replacement'])
   })
 })
+
