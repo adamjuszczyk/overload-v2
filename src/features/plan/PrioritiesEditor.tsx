@@ -4,33 +4,48 @@ import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
 import type { MuscleGroup } from '../../types'
 import { MUSCLE_GROUPS, MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags.js'
 import { buildGroupMarkEntries, MARK_LABELS } from '../../lib/priorityMarks.js'
+import type { PriorityMark } from '../../lib/priorityMarks.js'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms } from '../programs/usePrograms'
-import { useProgramPriorities, useSetPriorityMark } from './useProgramPriorities'
-import { useToastStore } from '../notifications/toastStore'
-import MarkSelector from './MarkSelector'
+import { useProgramPriorities } from './useProgramPriorities'
 
-// The new priority-marks screen (chunk 10: TASKS.md "Priorities: focus /
-// don't care"), routed at /plan/priorities — always the ACTIVE run's own
-// program copy (SPEC "Plan screen": the Program tab's own priorities),
-// reached only from the Plan header's PRIORITIES link (PlanPage.tsx), so
-// unlike MesoPrioritiesPage.tsx (meso-scoped by a route param, for any meso
-// including a completed one) this needs no id in its URL: it looks up the
-// active meso the same way PlanPage itself does. A completed run's old-
-// style marks stay on MesoPrioritiesPage (reached from the Programs page,
-// ProgramsPage.tsx since chunk 26, per TASKS.md) — not this screen, and not
-// this table.
+// The active run's priorities, VIEW-ONLY (chunk 28; SPEC.md Programs and runs
+// [P1.1]: "Priorities are a property of the program. They're set in the
+// planner when the program is built, and copied to a run when it starts.
+// They can't be changed during a run. Plan shows them view-only."). Routed at
+// /plan/priorities and reached from the Plan header's PRIORITIES link
+// (PlanPage.tsx) — always the ACTIVE run's own program copy, so unlike
+// MesoPrioritiesPage.tsx (meso-scoped by a route param, for any meso
+// including a completed one) it needs no id in its URL: it looks up the
+// active meso the way PlanPage itself does. A completed run's old-style
+// marks stay on MesoPrioritiesPage (reached from the Programs page) — not
+// this screen, and not this table.
 //
-// Same page shape as MesoPrioritiesPage.tsx (header, loading/error/empty
-// states, groups unfolding to subgroups) and the same chip-row idiom
-// (MarkSelector, PrioritySelector's own sibling) — "use the app's existing
-// components" read as "the same design language", not a literal re-import,
-// since the value contract (nullable, 2-way, toggle-off) differs (see
-// MarkSelector.tsx's own header).
+// Nothing here writes: no mark chips and no write hook. A run's marks are set
+// on the saved program in the planner (StepPriorities, now the only screen
+// that writes marks) and copied onto the run's copy by v2_start_run →
+// v2_copy_program (live definition: migration 034), so they have no write
+// path from Plan.
+//
+// Standing UI rule (CONTEXT.md, Adam 2026-10-10): "A feature that's set shows
+// a small marker on its row... An unset feature shows nothing: no empty
+// fields, chips or placeholders." So a group or subgroup shows its mark as a
+// compact read-only label only where a mark is stored, and a group or
+// subgroup without one shows just its name. Groups still unfold to their
+// subgroups, as before.
+
+// A mark, as text on its row: the compact accent label the Plan rows already
+// use for a set's kind (WARMUP, DROPSET, …). Not a control.
+function MarkLabel({ mark }: { mark: PriorityMark }) {
+  return (
+    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--accent)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+      {MARK_LABELS[mark]}
+    </span>
+  )
+}
 
 export default function PrioritiesEditor() {
   const navigate = useNavigate()
-  const showToast = useToastStore((s) => s.show)
 
   const { data: mesos = [], isLoading: mesosLoading, isError: mesosError } = useMesos()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
@@ -43,7 +58,6 @@ export default function PrioritiesEditor() {
     isLoading: rowsLoading,
     isError: rowsError,
   } = useProgramPriorities(activeMeso?.programId ?? null)
-  const setMark = useSetPriorityMark(activeMeso?.programId ?? '')
 
   // Which groups are expanded — page-local view state, same precedent as
   // MesoPrioritiesPage.tsx's own `expanded` (and PlanPage.tsx's
@@ -68,13 +82,6 @@ export default function PrioritiesEditor() {
     } else {
       navigate('/plan')
     }
-  }
-
-  function handleSetMark(tagType: 'muscle_group' | 'muscle_subgroup', tagValue: string, mark: 'focus' | 'dont_care' | null) {
-    setMark.mutate(
-      { tagType, tagValue, mark },
-      { onError: () => showToast('Could not update priorities') },
-    )
   }
 
   const loading = mesosLoading || rowsLoading
@@ -150,11 +157,16 @@ export default function PrioritiesEditor() {
                   key={group}
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' }}
                 >
+                  {/* The group's row: its name (and the "without …" summary
+                      when a subgroup differs), its mark where one is set —
+                      visible whether expanded or not, SPEC §3 makes the
+                      group the ceiling, so it's the thing read first — and
+                      the chevron. The whole row is the unfold toggle. */}
                   <button
                     onClick={() => toggleExpanded(group)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: 'none', padding: 0, marginBottom: 10, cursor: 'pointer' }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
                   >
-                    <div style={{ textAlign: 'left' }}>
+                    <div style={{ textAlign: 'left', minWidth: 0 }}>
                       <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>
                         {MUSCLE_GROUP_LABELS[group]}
                       </span>
@@ -164,50 +176,35 @@ export default function PrioritiesEditor() {
                         </div>
                       )}
                     </div>
-                    {isExpanded ? (
-                      <ChevronUp size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
-                    ) : (
-                      <ChevronDown size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {entry.ownMark && <MarkLabel mark={entry.ownMark} />}
+                      {isExpanded ? (
+                        <ChevronUp size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
+                      ) : (
+                        <ChevronDown size={16} style={{ color: 'var(--text-dim)', flexShrink: 0 }} />
+                      )}
+                    </div>
                   </button>
-
-                  {/* The group's own selector stays visible whether expanded
-                      or not — SPEC §3 makes the group the ceiling, so it's
-                      the thing read first. */}
-                  <MarkSelector
-                    value={entry.ownMark}
-                    disabled={setMark.isPending}
-                    onChange={(mark) => handleSetMark('muscle_group', group, mark)}
-                  />
 
                   {isExpanded && (
                     <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {entry.subgroups.map((sub) => {
-                        // A subgroup that merely inherits (no row of its
-                        // own) still shows what applies to it — SPEC's own
-                        // "Chest marked focus covers upper chest unless
-                        // upper chest is marked otherwise" example is
-                        // exactly this: nothing stored on upper_chest, but
-                        // FOCUS still applies.
-                        const inherited = sub.ownMark === null && sub.effectiveMark !== null
-                        return (
-                          <div key={sub.tagValue} style={{ paddingLeft: 14, borderLeft: '1px dashed var(--border-strong)' }}>
-                            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginBottom: 8 }}>
-                              {MUSCLE_SUBGROUP_LABELS[sub.tagValue]}
-                            </span>
-                            <MarkSelector
-                              value={sub.ownMark}
-                              disabled={setMark.isPending}
-                              onChange={(mark) => handleSetMark('muscle_subgroup', sub.tagValue, mark)}
-                            />
-                            {inherited && (
-                              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', marginTop: 6 }}>
-                                INHERITED: {MARK_LABELS[sub.effectiveMark!]}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                      {entry.subgroups.map((sub) => (
+                        // A subgroup shows a label only for a mark of its own.
+                        // One that merely inherits its group's mark (SPEC:
+                        // "A subgroup with no mark of its own takes its
+                        // group's mark") has nothing stored, so it shows
+                        // nothing here — the group's own label and its
+                        // "… without …" summary carry that.
+                        <div
+                          key={sub.tagValue}
+                          style={{ paddingLeft: 14, borderLeft: '1px dashed var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+                        >
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)' }}>
+                            {MUSCLE_SUBGROUP_LABELS[sub.tagValue]}
+                          </span>
+                          {sub.ownMark && <MarkLabel mark={sub.ownMark} />}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
