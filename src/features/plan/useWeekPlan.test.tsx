@@ -4,6 +4,8 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queryClient } from '../../lib/queryClient'
+import type { WeekPlan, ProgramExercise } from '../../types'
+import type { ChangeRecord } from './applyAhead'
 
 // Chunk 8, review fix #1 ("Offline start regression") — usePlanWeek had no
 // networkMode, so it used TanStack's default 'online': offline, the
@@ -62,7 +64,7 @@ vi.mock('./weekPlanService', () => ({
 // convention every other PlanPage-adjacent test file already uses.
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek, useSwapWeekExercise, useReorderWeekExercises } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek, useSwapWeekExercise, useReorderWeekExercises, useApplyAhead } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -483,6 +485,45 @@ describe('useSwapWeekExercise / useReorderWeekExercises — no "only this week" 
 
     expect(reorderWeekExercisesMock).toHaveBeenCalledTimes(1)
     expect(reorderWeekExercisesMock.mock.calls[0]).toEqual(['wp-1', moves])
+    expect(reorderWeekExercisesMock.mock.calls[0]).toHaveLength(2)
+  })
+
+  // The apply-ahead executor's own reorder case (runApplyAheadOp) — the line
+  // that used to pass `false` ("never only this week") as a third argument.
+  // The offer's reorder change goes through the REAL pure core
+  // (planApplyAheadBundle) and the real useApplyAhead executor; only the
+  // service is mocked. Break proof: pass [] (or a third argument) from that
+  // case in runApplyAheadOp.
+  it('useApplyAhead runs a reorder offer as reorderWeekExercises(laterWeekPlanId, moves) — two arguments', async () => {
+    reorderWeekExercisesMock.mockResolvedValue(undefined)
+    const row = (id: string, position: number): ProgramExercise => ({
+      id, workoutDayId: 'wd-1', userId: 'user-1', exerciseId: `ex-${id}`, position, weightUnit: null,
+    })
+    const laterWeek: WeekPlan = {
+      id: 'wp-later', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 4,
+      isDeload: false, notes: null, sets: [], exercises: [row('pe-1', 0), row('pe-2', 1)],
+      createdAt: '2026-01-01T00:00:00Z',
+    }
+    const change: ChangeRecord = {
+      editType: 'reorderExercise',
+      moves: [
+        { slotId: 'pe-1', oldPosition: 0, newPosition: 1 },
+        { slotId: 'pe-2', oldPosition: 1, newPosition: 0 },
+      ],
+    }
+    const { result } = renderHook(() => useApplyAhead('meso-1'), { wrapper })
+    await act(async () => {
+      await result.current.mutateAsync({ changes: [change], weeks: [laterWeek] })
+    })
+
+    expect(reorderWeekExercisesMock).toHaveBeenCalledTimes(1)
+    expect(reorderWeekExercisesMock.mock.calls[0]).toEqual([
+      'wp-later',
+      [
+        { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
+        { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
+      ],
+    ])
     expect(reorderWeekExercisesMock.mock.calls[0]).toHaveLength(2)
   })
 })

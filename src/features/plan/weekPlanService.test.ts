@@ -129,6 +129,9 @@ describe('copySetsWithGrouping — single-workout scope', () => {
     expect(calls[1].program_exercise_id).toBe('peB')
     expect(calls[1].parent_week_plan_set_id).toBeUndefined()
     expect(calls[2].parent_week_plan_set_id).toBe('new-2') // headB's new id — never 'new-1' (headA)
+    // The stage keeps its OWN exercise (peB), not the first set's (peA) —
+    // prevSets[0] is headA here, so this pins the stage insert's own value.
+    expect(calls[2].program_exercise_id).toBe('peB')
   })
 
   it('reattaches a legacy-shape dropset to its own head, not a same-numbered head from a different exercise', async () => {
@@ -150,6 +153,7 @@ describe('copySetsWithGrouping — single-workout scope', () => {
     expect(calls[0].program_exercise_id).toBe('peA') // new-1
     expect(calls[1].program_exercise_id).toBe('peB') // new-2
     expect(calls[2].parent_week_plan_set_id).toBe('new-2') // headB's new id — never headA's ('new-1')
+    expect(calls[2].program_exercise_id).toBe('peB') // the stage's own exercise, not prevSets[0]'s (peA)
   })
 
   it('reattaches every stage of a multi-stage dropset to the same head', async () => {
@@ -530,6 +534,43 @@ describe('copySetsWithGrouping — every set keeps its own program_exercise_id (
     await copySetsWithGrouping('u1', 'new-wp', [head, stage], insert)
 
     expect(calls.map((c) => c.program_exercise_id)).toEqual(['pe-week-only-replacement', 'pe-week-only-replacement'])
+  })
+
+  // Heads AND stages each keep their OWN exercise, pinned where it can't be
+  // satisfied by accident: the first set in the list ('peFirst') belongs to a
+  // third exercise, so a head or stage insert that took its exercise from
+  // prevSets[0] (or from any other row but its own) gets a wrong value.
+  // Break proof: set `program_exercise_id: prevSets[0].program_exercise_id` in
+  // the stages loop (and, separately, the heads loop) of copySetsWithGrouping.
+  it('every head and every stage inserts its OWN program_exercise_id — also when the first set in the list is another exercise\'s', async () => {
+    const first = makeDbSet({ id: 'first', program_exercise_id: 'peFirst', set_number: 1 })
+    const headA = makeDbSet({ id: 'headA', program_exercise_id: 'peA', set_number: 1 })
+    const stageA = makeDbSet({
+      id: 'stageA',
+      program_exercise_id: 'peA',
+      set_number: 1,
+      parent_week_plan_set_id: 'headA',
+      stage_index: 1,
+      is_dropset: true,
+    })
+    const headB = makeDbSet({ id: 'headB', program_exercise_id: 'peB', set_number: 1 })
+    const stageB = makeDbSet({
+      id: 'stageB',
+      program_exercise_id: 'peB',
+      set_number: 1,
+      parent_week_plan_set_id: 'headB',
+      stage_index: 1,
+      is_dropset: true,
+    })
+    const { insert, calls } = makeFakeInsert()
+
+    await copySetsWithGrouping('u1', 'new-wp', [first, headA, stageA, headB, stageB], insert)
+
+    // Heads in list order (peFirst, peA, peB), then the stages in list order (peA, peB).
+    expect(calls.map((c) => c.program_exercise_id)).toEqual(['peFirst', 'peA', 'peB', 'peA', 'peB'])
+    // Each stage still reattaches to its own head's new id (new-2 = headA, new-3 = headB).
+    expect(calls[3].parent_week_plan_set_id).toBe('new-2')
+    expect(calls[4].parent_week_plan_set_id).toBe('new-3')
   })
 })
 

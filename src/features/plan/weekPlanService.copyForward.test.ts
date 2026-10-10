@@ -42,10 +42,14 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
-const { copyFromPreviousWeek, copyWorkoutFromPreviousWeek } = await import('./weekPlanService')
+const { copyFromPreviousWeek, copyWorkoutFromPreviousWeek, fetchWeekPlans, fetchAllWeekPlansForMeso } = await import('./weekPlanService')
 
 function buildWorld() {
+  // The FIRST set in the list is pe-b's head, not pe-swapped-in's: the stage
+  // below belongs to pe-swapped-in, so a stage (or head) insert that took its
+  // exercise from prevSets[0] instead of from its own row is caught here.
   const sourceSets = [
+    fakeWeekPlanSet('wp-1', 's-b-1', 'pe-b', { set_number: 1 }),
     fakeWeekPlanSet('wp-1', 's-swapped-1', 'pe-swapped-in', { set_number: 1 }),
     fakeWeekPlanSet('wp-1', 's-swapped-1-drop', 'pe-swapped-in', {
       set_number: 1,
@@ -55,7 +59,6 @@ function buildWorld() {
       target_rir: 0,
     }),
     fakeWeekPlanSet('wp-1', 's-swapped-2', 'pe-swapped-in', { set_number: 2 }),
-    fakeWeekPlanSet('wp-1', 's-b-1', 'pe-b', { set_number: 1 }),
   ]
   const source = fakeWeekPlan('wp-1', 1, {
     sets: sourceSets,
@@ -102,19 +105,55 @@ describe('COPY WEEK (copyFromPreviousWeek -> copyOnePlanForward) — a source ro
     await copyFromPreviousWeek('user-1', 'meso-1', 2)
 
     const inserts = byCall('v2_week_plan_sets', 'insert').map((c) => c.args[0] as Record<string, unknown>)
-    // Heads first (source order), then the stage.
-    expect(inserts.map((p) => p.program_exercise_id)).toEqual(['pe-swapped-in', 'pe-swapped-in', 'pe-b', 'pe-swapped-in'])
+    // Heads first (source order: pe-b's, then the two pe-swapped-in heads), then the stage.
+    expect(inserts.map((p) => p.program_exercise_id)).toEqual(['pe-b', 'pe-swapped-in', 'pe-swapped-in', 'pe-swapped-in'])
     expect(inserts.map((p) => p.program_exercise_id)).not.toContain('pe-original')
     for (const p of inserts) expect(p.week_plan_id).toBe('wp-2')
-    // The stage still reattaches to its head's NEW id (the grouping the copy exists to preserve).
+    // The stage keeps its OWN exercise (pe-swapped-in) although the first set
+    // in the list is pe-b's, and still reattaches to its head's NEW id
+    // (new-2: pe-swapped-in's first head) — the grouping the copy exists to preserve.
     const stage = inserts[3]
-    expect(stage.parent_week_plan_set_id).toBe('new-1')
+    expect(stage.program_exercise_id).toBe('pe-swapped-in')
+    expect(stage.parent_week_plan_set_id).toBe('new-2')
     expect(stage.stage_index).toBe(1)
   })
 
   it('copies into the existing empty row — no second v2_week_plans row is created', async () => {
     await copyFromPreviousWeek('user-1', 'meso-1', 2)
     expect(byCall('v2_week_plans', 'insert')).toHaveLength(0)
+  })
+})
+
+// Chunk 27: "carryProgramExerciseId / carryPosition leave src/types/index.ts and the
+// mappers". The mapper behind every Plan read (toPlan -> the week's
+// ProgramExercise rows) must not hand the stored values to the screen: the
+// type has no such field, and a screen consumer that could read one would
+// bring the old identity back. The source row below stores both. Break proof:
+// put `carryProgramExerciseId: row.carry_program_exercise_id` and
+// `carryPosition: row.carry_position` back into
+// toProgramExerciseFromWeekPlanExercise.
+describe('reading a week whose rows store carry values — the mapped exercises carry none', () => {
+  it('fetchWeekPlans: each exercise keeps its own id and position, with no carryProgramExerciseId / carryPosition', async () => {
+    const [plan] = await fetchWeekPlans('meso-1', 1)
+
+    expect(plan.exercises.map((e) => [e.id, e.position])).toEqual([['pe-b', 0], ['pe-swapped-in', 1]])
+    for (const e of plan.exercises) {
+      expect('carryProgramExerciseId' in e).toBe(false)
+      expect('carryPosition' in e).toBe(false)
+    }
+  })
+
+  it('fetchAllWeekPlansForMeso: the same, for the meso-wide read the offer and the copy buttons use', async () => {
+    const plans = await fetchAllWeekPlansForMeso('meso-1')
+
+    const weekOne = plans.find((p) => p.weekNumber === 1)!
+    expect(weekOne.exercises.map((e) => [e.id, e.position])).toEqual([['pe-b', 0], ['pe-swapped-in', 1]])
+    for (const p of plans) {
+      for (const e of p.exercises) {
+        expect('carryProgramExerciseId' in e).toBe(false)
+        expect('carryPosition' in e).toBe(false)
+      }
+    }
   })
 })
 
@@ -128,6 +167,6 @@ describe('COPY THIS WORKOUT (copyWorkoutFromPreviousWeek -> the same copyOnePlan
       { week_plan_id: 'wp-2', user_id: 'user-1', program_exercise_id: 'pe-b', position: 0 },
     ])
     const setIds = byCall('v2_week_plan_sets', 'insert').map((c) => (c.args[0] as Record<string, unknown>).program_exercise_id)
-    expect(setIds).toEqual(['pe-swapped-in', 'pe-swapped-in', 'pe-b', 'pe-swapped-in'])
+    expect(setIds).toEqual(['pe-b', 'pe-swapped-in', 'pe-swapped-in', 'pe-swapped-in'])
   })
 })

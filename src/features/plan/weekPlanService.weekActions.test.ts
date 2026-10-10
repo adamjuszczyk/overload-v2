@@ -17,22 +17,48 @@ vi.mock('../programs/runProgramExercises', () => ({
   createWeekOnlyProgramExercise: (...args: unknown[]) => createWeekOnlyProgramExerciseMock(...args),
 }))
 
-const { swapWeekExercise, addWeekExercise, removeWeekExercise, reorderWeekExercises } = await import(
+const { swapWeekExercise, repointWeekExercise, addWeekExercise, removeWeekExercise, reorderWeekExercises } = await import(
   './weekPlanService'
 )
 
-function makeChain(result: { data?: unknown; error?: unknown } = { data: null, error: null }) {
+// `result` is what awaiting the chain gives (an update / delete / insert);
+// `singleResult` (default: the same) is what `.single()` gives. They differ
+// for a missing row, as in PostgREST: `.single()` errors (PGRST116) while an
+// update that matches zero rows succeeds with nothing changed.
+function makeChain(
+  result: { data?: unknown; error?: unknown } = { data: null, error: null },
+  singleResult: { data?: unknown; error?: unknown } = result,
+) {
   const chain: Record<string, unknown> = {
     select: vi.fn(() => chain),
     update: vi.fn(() => chain),
     insert: vi.fn(() => chain),
     delete: vi.fn(() => chain),
     eq: vi.fn(() => chain),
-    single: vi.fn(() => Promise.resolve(result)),
+    single: vi.fn(() => Promise.resolve(singleResult)),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   }
   return chain
+}
+
+// The week-row existence check swap and reorder make before they write
+// (requireWeekExerciseRow): `.select('id')…single()`. Present = one row; the
+// error is what PostgREST returns from .single() when the week has no such
+// row (PGRST116) — the failure these actions have always had on a stale
+// screen, from the carry lookup they used to make first.
+function makeRowPresent() {
+  return makeChain({ data: { id: 'wpe-1' }, error: null })
+}
+const NO_SUCH_ROW = {
+  code: 'PGRST116',
+  message: 'JSON object requested, multiple (or no) rows returned',
+}
+// Only `.single()` errors. If the check were missing and this chain were used
+// for an update instead, it would resolve successfully with nothing changed —
+// the real database's behaviour, and the silent "success" this guards against.
+function makeRowMissing() {
+  return makeChain({ data: null, error: null }, { data: null, error: NO_SUCH_ROW })
 }
 
 beforeEach(() => {
@@ -45,9 +71,10 @@ describe('swapWeekExercise', () => {
   it('creates the replacement from the replaced slot\'s own position/superset block, points this week at it, and moves this week\'s own sets with it', async () => {
     fetchSwapSourceSlotMock.mockResolvedValue({ workoutDayId: 'wd-1', position: 2, supersetBlockId: 'block-1' })
     createWeekOnlyProgramExerciseMock.mockResolvedValue({ id: 'pe-new', exerciseId: 'ex-new' })
+    const checkChain = makeRowPresent()
     const exChain = makeChain()
     const setsChain = makeChain()
-    fromMock.mockReturnValueOnce(exChain).mockReturnValueOnce(setsChain)
+    fromMock.mockReturnValueOnce(checkChain).mockReturnValueOnce(exChain).mockReturnValueOnce(setsChain)
 
     const result = await swapWeekExercise({
       userId: 'u1',
@@ -64,8 +91,15 @@ describe('swapWeekExercise', () => {
       supersetBlockId: 'block-1',
     })
 
-    // Call 1: the exercise row's own update.
+    // Call 1: the existence check for the row about to change — id only.
     expect(fromMock).toHaveBeenNthCalledWith(1, 'v2_week_plan_exercises')
+    expect(checkChain.select).toHaveBeenCalledWith('id')
+    expect(checkChain.eq).toHaveBeenCalledWith('week_plan_id', 'wp-1')
+    expect(checkChain.eq).toHaveBeenCalledWith('program_exercise_id', 'pe-old')
+    expect(checkChain.single).toHaveBeenCalledTimes(1)
+
+    // Call 2: the exercise row's own update.
+    expect(fromMock).toHaveBeenNthCalledWith(2, 'v2_week_plan_exercises')
     expect(exChain.update).toHaveBeenCalledWith({
       program_exercise_id: 'pe-new',
       carry_program_exercise_id: null,
@@ -73,8 +107,8 @@ describe('swapWeekExercise', () => {
     expect(exChain.eq).toHaveBeenCalledWith('week_plan_id', 'wp-1')
     expect(exChain.eq).toHaveBeenCalledWith('program_exercise_id', 'pe-old')
 
-    // Call 2: this week's own sets follow the replacement.
-    expect(fromMock).toHaveBeenNthCalledWith(2, 'v2_week_plan_sets')
+    // Call 3: this week's own sets follow the replacement.
+    expect(fromMock).toHaveBeenNthCalledWith(3, 'v2_week_plan_sets')
     expect(setsChain.update).toHaveBeenCalledWith({ program_exercise_id: 'pe-new' })
     expect(setsChain.eq).toHaveBeenCalledWith('week_plan_id', 'wp-1')
     expect(setsChain.eq).toHaveBeenCalledWith('program_exercise_id', 'pe-old')
@@ -93,7 +127,7 @@ describe('swapWeekExercise', () => {
     fetchSwapSourceSlotMock.mockResolvedValue({ workoutDayId: 'wd-1', position: 0, supersetBlockId: null })
     createWeekOnlyProgramExerciseMock.mockResolvedValue({ id: 'pe-new' })
     const exChain = makeChain()
-    fromMock.mockReturnValueOnce(exChain).mockReturnValueOnce(makeChain())
+    fromMock.mockReturnValueOnce(makeRowPresent()).mockReturnValueOnce(exChain).mockReturnValueOnce(makeChain())
 
     await swapWeekExercise({
       userId: 'u1',
@@ -108,16 +142,16 @@ describe('swapWeekExercise', () => {
     expect('carry_position' in payload).toBe(false)
   })
 
-  // No pre-read of the row's carry any more: nothing in a swap depends on a
-  // stored value (the old "existing carry wins" lookup went with the tick).
-  // Exactly two table calls go out — the exercise-row update and the sets
-  // update — and neither is a select.
-  it('reads nothing first: exactly two table calls, the exercise update then the sets update', async () => {
+  // The only read a swap makes is the id-only existence check: the carry
+  // lookup it used to make (and the "existing carry wins" rule that needed
+  // it) went with the tick, and no carry column is selected by anything.
+  it('makes exactly three table calls — the id-only existence check, the exercise update, the sets update — and selects no carry column', async () => {
     fetchSwapSourceSlotMock.mockResolvedValue({ workoutDayId: 'wd-1', position: 0, supersetBlockId: null })
     createWeekOnlyProgramExerciseMock.mockResolvedValue({ id: 'pe-new' })
+    const checkChain = makeRowPresent()
     const exChain = makeChain()
     const setsChain = makeChain()
-    fromMock.mockReturnValueOnce(exChain).mockReturnValueOnce(setsChain)
+    fromMock.mockReturnValueOnce(checkChain).mockReturnValueOnce(exChain).mockReturnValueOnce(setsChain)
 
     await swapWeekExercise({
       userId: 'u1',
@@ -126,9 +160,69 @@ describe('swapWeekExercise', () => {
       replacementExerciseId: 'ex-new',
     })
 
-    expect(fromMock).toHaveBeenCalledTimes(2)
+    expect(fromMock).toHaveBeenCalledTimes(3)
+    expect((checkChain.select as ReturnType<typeof vi.fn>).mock.calls).toEqual([['id']])
     expect(exChain.select).not.toHaveBeenCalled()
     expect(setsChain.select).not.toHaveBeenCalled()
+  })
+
+  // Master's failure behaviour kept (chunk 27 retry): the swap of a row the
+  // week no longer has (a stale screen — another tab removed the exercise)
+  // throws BEFORE anything is written. Without the check it would insert a
+  // week-only v2_program_exercises row, update zero rows twice and resolve
+  // with a "success" whose resulting id no week row points at. Break proof:
+  // remove requireWeekExerciseRow from swapWeekExercise.
+  it('a row the week no longer has: throws the lookup error and writes nothing — no replacement row created, no update', async () => {
+    fetchSwapSourceSlotMock.mockResolvedValue({ workoutDayId: 'wd-1', position: 0, supersetBlockId: null })
+    createWeekOnlyProgramExerciseMock.mockResolvedValue({ id: 'pe-new' })
+    const checkChain = makeRowMissing()
+    // Ordinary chains queued behind the check: if the check were removed the
+    // swap would run to the end and RESOLVE (the regression), not crash.
+    fromMock.mockReturnValueOnce(checkChain).mockReturnValueOnce(makeChain()).mockReturnValueOnce(makeChain())
+
+    await expect(
+      swapWeekExercise({
+        userId: 'u1',
+        weekPlanId: 'wp-1',
+        programExerciseId: 'pe-gone',
+        replacementExerciseId: 'ex-new',
+      }),
+    ).rejects.toBe(NO_SUCH_ROW)
+
+    expect(createWeekOnlyProgramExerciseMock).not.toHaveBeenCalled() // no orphan week-only exercise
+    expect(fromMock).toHaveBeenCalledTimes(1) // the check, then nothing
+    expect(checkChain.update).not.toHaveBeenCalled()
+    expect(checkChain.insert).not.toHaveBeenCalled()
+  })
+})
+
+describe('repointWeekExercise (the apply-ahead swap)', () => {
+  // Chunk 27 retry: this is the write an applied-ahead swap makes on each
+  // later week. It clears carry_program_exercise_id like a swap does — which
+  // matters until 037 is replaced by 038, since 037 still honours a stored
+  // carry — and sends no carry_position. Break proof: write the old slot
+  // into carry_program_exercise_id, or add a carry_position key.
+  it('updates the row to the resulting exercise with carry_program_exercise_id cleared (no carry_position key), then moves the week\'s sets', async () => {
+    const exChain = makeChain()
+    const setsChain = makeChain()
+    fromMock.mockReturnValueOnce(exChain).mockReturnValueOnce(setsChain)
+
+    await repointWeekExercise('wp-3', 'pe-from', 'pe-to')
+
+    expect(fromMock).toHaveBeenCalledTimes(2) // no read first
+    expect(fromMock).toHaveBeenNthCalledWith(1, 'v2_week_plan_exercises')
+    const payload = (exChain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ program_exercise_id: 'pe-to', carry_program_exercise_id: null })
+    expect(Object.keys(payload).sort()).toEqual(['carry_program_exercise_id', 'program_exercise_id'])
+    expect(payload.carry_program_exercise_id).toBeNull()
+    expect('carry_position' in payload).toBe(false)
+    expect(exChain.eq).toHaveBeenCalledWith('week_plan_id', 'wp-3')
+    expect(exChain.eq).toHaveBeenCalledWith('program_exercise_id', 'pe-from')
+
+    expect(fromMock).toHaveBeenNthCalledWith(2, 'v2_week_plan_sets')
+    expect(setsChain.update).toHaveBeenCalledWith({ program_exercise_id: 'pe-to' })
+    expect(setsChain.eq).toHaveBeenCalledWith('week_plan_id', 'wp-3')
+    expect(setsChain.eq).toHaveBeenCalledWith('program_exercise_id', 'pe-from')
   })
 })
 
@@ -184,19 +278,33 @@ describe('removeWeekExercise', () => {
 })
 
 describe('reorderWeekExercises', () => {
-  it('writes each moved row\'s new position and clears carry_position, one update per row', async () => {
+  it('confirms every moved row, then writes each one\'s new position and clears carry_position, one update per row', async () => {
+    const checkA = makeRowPresent()
+    const checkB = makeRowPresent()
     const chainA = makeChain()
     const chainB = makeChain()
-    fromMock.mockReturnValueOnce(chainA).mockReturnValueOnce(chainB)
+    fromMock
+      .mockReturnValueOnce(checkA)
+      .mockReturnValueOnce(checkB)
+      .mockReturnValueOnce(chainA)
+      .mockReturnValueOnce(chainB)
 
     await reorderWeekExercises('wp-1', [
       { programExerciseId: 'peA', oldPosition: 0, newPosition: 1 },
       { programExerciseId: 'peB', oldPosition: 1, newPosition: 0 },
     ])
 
-    expect(fromMock).toHaveBeenCalledTimes(2) // no carry lookup before either write
-    expect(fromMock).toHaveBeenNthCalledWith(1, 'v2_week_plan_exercises')
-    expect(fromMock).toHaveBeenNthCalledWith(2, 'v2_week_plan_exercises')
+    // Calls 1-2: the id-only existence checks, both before any update.
+    expect(fromMock).toHaveBeenCalledTimes(4)
+    for (const n of [1, 2, 3, 4]) expect(fromMock).toHaveBeenNthCalledWith(n, 'v2_week_plan_exercises')
+    expect(checkA.select).toHaveBeenCalledWith('id')
+    expect(checkA.eq).toHaveBeenCalledWith('week_plan_id', 'wp-1')
+    expect(checkA.eq).toHaveBeenCalledWith('program_exercise_id', 'peA')
+    expect(checkB.select).toHaveBeenCalledWith('id')
+    expect(checkB.eq).toHaveBeenCalledWith('program_exercise_id', 'peB')
+    expect(checkA.update).not.toHaveBeenCalled()
+    expect(checkB.update).not.toHaveBeenCalled()
+    // Calls 3-4: the updates.
     expect(chainA.update).toHaveBeenCalledWith({ position: 1, carry_position: null })
     expect(chainA.eq).toHaveBeenCalledWith('week_plan_id', 'wp-1')
     expect(chainA.eq).toHaveBeenCalledWith('program_exercise_id', 'peA')
@@ -213,7 +321,7 @@ describe('reorderWeekExercises', () => {
   // write oldPosition into carry_position, or add carry_program_exercise_id.
   it('the payload is {position, carry_position: null} only: no carry_program_exercise_id key, and oldPosition is never written', async () => {
     const chainA = makeChain()
-    fromMock.mockReturnValueOnce(chainA)
+    fromMock.mockReturnValueOnce(makeRowPresent()).mockReturnValueOnce(chainA)
 
     await reorderWeekExercises('wp-1', [{ programExerciseId: 'peA', oldPosition: 7, newPosition: 2 }])
 
@@ -222,5 +330,41 @@ describe('reorderWeekExercises', () => {
     expect(payload.position).toBe(2)
     expect(payload.carry_position).toBeNull() // not 7, the pre-reorder position
     expect('carry_program_exercise_id' in payload).toBe(false)
+  })
+
+  // Master's failure behaviour kept, and tightened (chunk 27 retry): a moved
+  // row the week no longer has makes the reorder throw BEFORE the first
+  // update, so a stale screen leaves the week exactly as it was. The first
+  // row exists here and the SECOND does not — the case in which writing as it
+  // went would already have moved the first. Break proof: remove the
+  // existence checks from reorderWeekExercises.
+  it('a moved row the week no longer has: throws the lookup error before the first update — nothing is written', async () => {
+    const checkA = makeRowPresent()
+    const checkB = makeRowMissing()
+    const chainA = makeChain()
+    const chainB = makeChain()
+    fromMock
+      .mockReturnValueOnce(checkA)
+      .mockReturnValueOnce(checkB)
+      .mockReturnValueOnce(chainA)
+      .mockReturnValueOnce(chainB)
+
+    await expect(
+      reorderWeekExercises('wp-1', [
+        { programExerciseId: 'peA', oldPosition: 0, newPosition: 1 },
+        { programExerciseId: 'peGone', oldPosition: 1, newPosition: 0 },
+      ]),
+    ).rejects.toBe(NO_SUCH_ROW)
+
+    expect(fromMock).toHaveBeenCalledTimes(2) // the two checks, nothing after them
+    expect(checkA.update).not.toHaveBeenCalled()
+    expect(checkB.update).not.toHaveBeenCalled()
+    expect(chainA.update).not.toHaveBeenCalled()
+    expect(chainB.update).not.toHaveBeenCalled()
+  })
+
+  it('no moves: nothing is read or written', async () => {
+    await reorderWeekExercises('wp-1', [])
+    expect(fromMock).not.toHaveBeenCalled()
   })
 })

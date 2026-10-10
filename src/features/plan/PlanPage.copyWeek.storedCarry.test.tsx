@@ -73,13 +73,15 @@ vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 const { default: PlanPage } = await import('./PlanPage')
 
 function buildWorld() {
+  // The first set in the list is pe-b's head, so the stage (pe-swapped-in's)
+  // can't pass by taking its exercise from prevSets[0].
   const source = fakeWeekPlan('wp-1', 1, {
     sets: [
+      fakeWeekPlanSet('wp-1', 's-b-1', 'pe-b', { set_number: 1 }),
       fakeWeekPlanSet('wp-1', 's-swapped-1', 'pe-swapped-in', { set_number: 1 }),
       fakeWeekPlanSet('wp-1', 's-swapped-1-drop', 'pe-swapped-in', {
         set_number: 1, is_dropset: true, parent_week_plan_set_id: 's-swapped-1', stage_index: 1, target_rir: 0,
       }),
-      fakeWeekPlanSet('wp-1', 's-b-1', 'pe-b', { set_number: 1 }),
     ],
     exercises: [
       fakeWeekPlanExercise('wp-1', 'pe-swapped-in', 1, { programExerciseId: 'pe-original', position: 0 }),
@@ -120,8 +122,9 @@ describe('PlanPage — COPY WEEK copies a source row with stored carry values as
     const setInserts = fake.writes
       .filter((w) => w.table === 'v2_week_plan_sets' && w.method === 'insert')
       .map((w) => w.args[0] as Record<string, unknown>)
-    // Heads first (source order), then the stage — all under their OWN exercise rows.
-    expect(setInserts.map((p) => p.program_exercise_id)).toEqual(['pe-swapped-in', 'pe-b', 'pe-swapped-in'])
+    // Heads first (source order), then the stage — all under their OWN exercise
+    // rows (the stage's is pe-swapped-in, not the first set's pe-b).
+    expect(setInserts.map((p) => p.program_exercise_id)).toEqual(['pe-b', 'pe-swapped-in', 'pe-swapped-in'])
     expect(setInserts.every((p) => p.week_plan_id === 'wp-2')).toBe(true)
   })
 })

@@ -930,8 +930,25 @@ export async function copySetsWithGrouping(
 // carry_program_exercise_id / carry_position when it plans a week (037), so
 // the clear keeps a stale value from outliving the edit it would contradict
 // (after 038 it is harmless). A value of the other kind stays in the row,
-// untouched. Neither action reads the row first any more: there is no
-// existing carry to preserve.
+// untouched. Neither action needs the row's carry any more (there is no
+// existing carry to preserve), but each still confirms the week HAS the row
+// it is about to change before writing anything (requireWeekExerciseRow).
+
+// A stale screen (another tab removed the exercise from this week) must fail
+// before anything is written, not "succeed" after updating zero rows. Until
+// chunk 27 this fell out of the carry lookup these actions made first
+// (.single() raises PGRST116 when the week has no such row); the lookup is
+// gone, so this keeps that failure on purpose. It reads only `id` — no carry
+// column is read by anything any more.
+async function requireWeekExerciseRow(weekPlanId: string, programExerciseId: string): Promise<void> {
+  const { error } = await supabase
+    .from('v2_week_plan_exercises')
+    .select('id')
+    .eq('week_plan_id', weekPlanId)
+    .eq('program_exercise_id', programExerciseId)
+    .single()
+  if (error) throw error
+}
 
 // A swap: creates a week-only program exercise for the replacement
 // (runProgramExercises.ts — takes the replaced slot's superset block, never
@@ -940,7 +957,9 @@ export async function copySetsWithGrouping(
 // for that exercise onto it too (so the exercise card and its sets agree on
 // what's actually planned this week). The swap is a permanent, carried-
 // forward change: it clears carry_program_exercise_id (whatever an earlier
-// edit left there) and does not touch carry_position.
+// edit left there) and does not touch carry_position. The week's row is
+// confirmed first (alongside the source-slot read, as before), so a swap of
+// a row the week no longer has throws before the replacement is created.
 export async function swapWeekExercise(params: {
   userId: string
   weekPlanId: string
@@ -949,7 +968,10 @@ export async function swapWeekExercise(params: {
 }): Promise<ProgramExercise> {
   const { userId, weekPlanId, programExerciseId, replacementExerciseId } = params
 
-  const source = await fetchSwapSourceSlot(programExerciseId)
+  const [source] = await Promise.all([
+    fetchSwapSourceSlot(programExerciseId),
+    requireWeekExerciseRow(weekPlanId, programExerciseId),
+  ])
   const slot = resolveSwapSlot(source, replacementExerciseId)
   const replacement = await createWeekOnlyProgramExercise(userId, slot)
 
@@ -1063,10 +1085,14 @@ export async function removeWeekExercise(weekPlanId: string, programExerciseId: 
 // edit left there) and does not touch carry_program_exercise_id. `oldPosition`
 // is part of the move shape the screen and apply-ahead build (applyAhead.ts
 // matches a later week on it), but the write itself no longer needs it.
+// Every moved row is confirmed to exist in the week BEFORE the first update,
+// so a stale screen fails with nothing written (before chunk 27 the per-move
+// carry lookup threw too, but only as it reached that move).
 export async function reorderWeekExercises(
   weekPlanId: string,
   moves: { programExerciseId: string; oldPosition: number; newPosition: number }[],
 ): Promise<void> {
+  await Promise.all(moves.map((m) => requireWeekExerciseRow(weekPlanId, m.programExerciseId)))
   for (const m of moves) {
     const { error } = await supabase
       .from('v2_week_plan_exercises')

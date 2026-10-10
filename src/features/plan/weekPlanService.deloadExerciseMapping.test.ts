@@ -229,6 +229,29 @@ describe('markSessionDeload — never orphans a set onto an exercise the marked 
     expect(sets[0].rep_max).toBe(7)
   })
 
+  // The two gathers (the marked week, then the earlier occurrences) no longer
+  // ask for carry_program_exercise_id, and still hint the embed by FK name —
+  // v2_week_plan_exercises keeps two FKs to v2_program_exercises, so an
+  // un-hinted embed is PGRST201-ambiguous. Break proof: put the carry column
+  // back into either select string, or drop the hint from it.
+  it('both gathers select no carry column and keep the program_exercise_id FK hint on the embed', async () => {
+    buildWorld({
+      markedExercise: { program_exercise_id: 'pe-A', carry_program_exercise_id: null, exercise: 'ex-A' },
+      baseExercise: { program_exercise_id: 'pe-A', carry_program_exercise_id: null, exercise: 'ex-A' },
+    })
+
+    await markSessionDeload('u1', 'wp-marked', { reps: { delta: -1 } })
+
+    const selects = calls
+      .filter((c) => c.table === 'v2_week_plans' && c.method === 'select')
+      .map((c) => String(c.args[0]))
+    expect(selects).toHaveLength(2)
+    for (const s of selects) {
+      expect(s).not.toContain('carry')
+      expect(s).toContain('v2_week_plan_exercises(program_exercise_id, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(exercise_id))')
+    }
+  })
+
   it('two DIFFERENT rows that store the same carry are not paired: the marked exercise is calculated from its OWN current sets (the fallback)', async () => {
     buildWorld({
       // Each week's old "only this week" swap created its own week-only row

@@ -325,8 +325,9 @@ export async function fetchProgramExercises(workoutDayId: string): Promise<Progr
 // that already has week plans — adding to a saved program's own workout day
 // never had any (a saved program has no mesocycle, so no v2_week_plans row
 // ever names its workout_day_id). A week-dependent week's own add goes
-// through weekPlanService.ts's addWeekExercise instead, with its own carry
-// semantics (weekEdits.ts).
+// through weekPlanService.ts's addWeekExercise instead: a normal week edit,
+// which carries forward when that week is copied (weekEdits.ts's
+// resolveAddSlot decides the new slot).
 export async function addProgramExercise(
   userId: string,
   workoutDayId: string,
@@ -388,8 +389,9 @@ export async function deleteProgramExercise(id: string): Promise<void> {
 // read-only for volume on a week-dependent run, and a saved program's
 // workout_day_id is never named by any v2_week_plans row in the first
 // place. A week-dependent week's own reorder goes through
-// weekPlanService.ts's reorderWeekExercises instead, with its own carry
-// semantics (weekEdits.ts).
+// weekPlanService.ts's reorderWeekExercises instead: a normal week edit
+// (there is no "only this week" option since chunk 27), which carries
+// forward when that week is copied.
 export async function reorderProgramExercises(updates: { id: string; position: number }[]): Promise<void> {
   for (const { id, position } of updates) {
     const { error } = await supabase
