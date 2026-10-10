@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 27 (code #60, migration 038 #61; both merged and live). The 1.1 build is under way (chunks 28–35 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 28 (#62, merged and live; chunk 27 before it). The 1.1 build is under way (chunks 29–35 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -10,6 +10,8 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **85** — START when the program has no schedule. Provisional: disabled, with a one-line reason. Blocks: nothing.
 - **86** — Plan for a run with no schedule. Provisional: "NO WORKOUTS SCHEDULED" and "Programs →". Blocks: nothing.
 - **87** — the deload rules in Plan. Provisional: one read-only line under MARK WEEK AS DELOAD. Blocks: nothing.
+- **90** — after START on the Programs page, the app still opens the run's priorities, now read-only. Provisional: leave it (it shows what the run copied); alternative: open Plan. Blocks: nothing.
+- **91** — how marks show in Plan's priorities. Provisional: a small accent label on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -42,6 +44,37 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 92 TASKS-1.1 chunk 28 merged: priorities view-only in Plan (#62)
+- What: chunk 28, code only. Passed review first time (reviewer re-ran every check and one break: a mark-named button beside a label fails 7 tests).
+- Answer: merged by the reviewer, `0304a23`. Provisional display choices 90 and 91 (D31).
+- Date: 2026-10-10
+
+### 91 Plan's priorities: how a mark shows (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 28
+**Ask:** How does a run's mark show on Plan's view-only priorities screen?
+**Options:** (a) the accent mono label Plan rows use for a set's kind, on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing (the group's label and the "X without Y" summary carry it). (b) The same, plus an "INHERITED: FOCUS" caption on inheriting subgroups.
+**Recommendation:** (a): the standing UI rule says an unset feature shows nothing.
+**Blocked until answered/done:** nothing; chunk 28 built (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: SPEC says "Plan shows them view-only" and nothing about inherited marks; the old editor showed an INHERITED caption.
+A competent default would: pick (a) and continue, which D31 says to do.
+Cost of deferral: one line and its absence test.
+
+### 90 After START, the Programs page opens the run's priorities, now read-only (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 28
+**Ask:** After START on the Programs page, should the app still open `/plan/priorities` (now read-only), or open Plan?
+**Options:** (a) leave it: it shows the marks the run copied. (b) Open `/plan`.
+**Recommendation:** (a): it's not wrong, and changing it is outside chunk 28's scope and changes an existing test.
+**Blocked until answered/done:** nothing.
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: `ProgramsPage.handleStartMeso` navigates to `/plan/priorities` after START (pinned by `ProgramsPage.test.tsx`); that screen used to be where a new run's marks were set. Found by chunk 28's builder.
+A competent default would: leave it and continue (D31).
+Cost of deferral: one navigate call and its test.
 
 ### 89 TASKS-1.1 chunk 27 merged: "only this week" removed (code #60, migration 038 #61)
 - What: chunk 27, code first then 038 (P3). The first review failed (a stage-copy write no test pinned; a swap/reorder on a row the week no longer has stopped failing before writing); the builder's one retry fixed both.
