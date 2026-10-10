@@ -49,7 +49,7 @@
 -- signed in; p_week_number < 1; the meso is not the caller's (RLS hides it,
 -- the explicit filter says so too); its program is not a run copy
 -- (kind <> 'run'); the run is not stable; the week has no planned session;
--- every session of the week is deload; or (corrupt data, not reachable from the
+-- every session of the week is deload or empty; or (corrupt data, not reachable from the
 -- app) a planned stage whose head is not a planned head of its own exercise row in
 -- the same session.
 --
@@ -58,14 +58,27 @@
 -- devices) run one after the other instead of both reading the old default.
 --
 -- What it reads. For each workout of the run that has a planned session in the
--- week: that workout's SOURCE session, which is
---   - a weekday run: its one session, unless it is deload (then the workout is
---     skipped: "their workouts keep the current default");
---   - a sequence cycle where a workout appears more than once: its first
---     NORMAL (not deload) occurrence, the lowest sequence_position among its
---     non-deload sessions (G28), also when its first occurrence is deload
---     (G41). A workout whose every session this week is deload is skipped.
--- Skipped workouts are listed in the result and not touched.
+-- week: that workout's SOURCE session, the first USABLE one. A session is usable
+-- when it is neither deload nor empty:
+--   - deload sessions are excluded ("their workouts keep the current default");
+--   - a session is empty when it has no planned set under any of its exercises:
+--     no exercises at all, or exercises whose sets were all deleted. SPEC is
+--     silent about it. This is v2_plan_week's own copy-source rule (skip deload
+--     AND empty occurrences, DECISIONS 42(b)), and it keeps one emptied session
+--     from wiping its workout's default. DEFERRED DECISION FOR ADAM: if an
+--     emptied session should be able to empty its workout's default, make the one
+--     `is_empty` expression in the function constant false ("deload only");
+--     nothing else reads emptiness.
+-- Then:
+--   - a weekday run: its one session, if usable;
+--   - a sequence cycle where a workout appears more than once: its first usable
+--     occurrence, the lowest sequence_position among its usable sessions (G28),
+--     also when its first occurrence is deload (G41) or empty.
+-- A workout with no usable session this week is skipped: its default is not
+-- touched, and it is listed in `skipped` with reason 'deload' when every one of
+-- its sessions this week is deload, and 'empty' otherwise (all of them empty, or a
+-- mix of deload and empty). Skipped workouts are not in `workouts`. A week in
+-- which every workout is skipped is refused.
 --
 -- Exercises. The workout's default list becomes the source session's list
 -- (v2_week_plan_exercises):
@@ -116,7 +129,7 @@
 --                   "stage_kind": text | null,               -- heads only; null on a stage
 --                   "rep_min": integer | null, "rep_max": integer | null, "is_amrap": boolean } ] } ] } }
 --     ],
---     "skipped": [ { "workout_day_id": uuid, "reason": "deload" } ]   -- workouts whose every session this week is deload
+--     "skipped": [ { "workout_day_id": uuid, "reason": "deload" | "empty" } ]   -- workouts with no usable session this week (their defaults were not touched); by workout position, then id
 --   }
 -- A default belongs to a workout, not to a slot, so a workout that appears in
 -- several slots of a cycle is listed once, with the slot it was taken from in
@@ -126,9 +139,10 @@
 -- sets), or a re-read of the run copy.
 --
 -- ─── Points SPEC leaves implicit, and what this file does with them ────────
---   - "Normal" means not deload. An empty normal session is a normal session:
---     it makes its workout's default empty. Nothing here reads emptiness.
---   - A workout all of whose sessions this week are deload keeps its default.
+--   - A session is a source only if it is neither deload nor empty (see "What it
+--     reads"; a deferred decision for Adam). A workout with no such session keeps
+--     its default; a workout whose sessions are only deload and empty ones is
+--     listed with reason 'empty', and only an all-deload workout with 'deload'.
 --   - Positions are copied as the session has them (gaps and duplicates
 --     included — "Add set" and "Add exercise" number by count + 1, so a
 --     duplicate is reachable); a stage's position is its head's (027).
@@ -520,9 +534,9 @@ declare
   v_planning_type  text;
 
   v_sessions       integer;       -- sessions planned in this week
-  v_normal         integer;       -- ... of which are not deload
+  v_usable         integer;       -- ... of which can be a source: neither deload nor empty
 
-  v_src            record;        -- one workout's source session (its first normal occurrence)
+  v_src            record;        -- one workout's source session (its first usable occurrence)
   v_w              record;        -- one planned set of that session
   v_ps_id          uuid;          -- the program set a planned set ends up on
   v_parent_ps_id   uuid;          -- ... for a stage: its head's program set
@@ -562,55 +576,78 @@ begin
     raise exception 'v2_make_week_default: mesocycle % is not a stable run (planning type %)', p_mesocycle_id, v_planning_type;
   end if;
 
-  select count(*), count(*) filter (where not wp.is_deload)
-    into v_sessions, v_normal
-    from v2_week_plans wp
-    join v2_workout_days wd on wd.id = wp.workout_day_id and wd.program_id = v_program_id
-   where wp.mesocycle_id = p_mesocycle_id and wp.week_number = p_week_number and wp.user_id = v_user_id;
-  if v_sessions = 0 then
-    raise exception 'v2_make_week_default: week % of mesocycle % is not planned', p_week_number, p_mesocycle_id;
-  end if;
-  if v_normal = 0 then
-    raise exception 'v2_make_week_default: every session of week % of mesocycle % is deload; there is nothing to make the default', p_week_number, p_mesocycle_id;
-  end if;
-
-  -- Scratch map for this function, session-scoped (ON COMMIT DROP), cleared at
-  -- the start of each workout: planned set -> the program set it ends up on.
-  -- Both columns unique: a program set is claimed by at most one planned set.
+  -- Scratch tables for this function, session-scoped (ON COMMIT DROP):
+  --   tmp_v2_make_week_default_sessions — this week's planned sessions of the run, classified once (below)
+  --   tmp_v2_make_week_default_map      — planned set -> the program set it ends up on, cleared at the start
+  --                                       of each workout; both columns unique: a program set is claimed by
+  --                                       at most one planned set
+  create temp table if not exists tmp_v2_make_week_default_sessions
+    (week_plan_id uuid primary key, workout_day_id uuid not null, sequence_position integer,
+     wd_position integer not null, is_deload boolean not null, is_empty boolean not null, usable boolean not null)
+    on commit drop;
   create temp table if not exists tmp_v2_make_week_default_map
     (week_set_id uuid primary key, program_set_id uuid not null unique) on commit drop;
+  delete from tmp_v2_make_week_default_sessions;
 
-  -- Workouts whose every session this week is deload keep their default
-  -- (SPEC: "Deload sessions are excluded: their workouts keep the current
-  -- default"). Listed in the result so the caller knows they were not touched.
-  select coalesce(jsonb_agg(jsonb_build_object('workout_day_id', t.workout_day_id, 'reason', 'deload')
-                            order by t.wd_position, t.workout_day_id), '[]'::jsonb)
-    into v_skipped
+  -- WHICH SESSIONS CAN BE A SOURCE — decided here and nowhere else. A session is usable when it is neither
+  -- deload nor empty:
+  --   - deload: SPEC, "Deload sessions are excluded: their workouts keep the current default";
+  --   - empty (`is_empty`): no planned set under any of the session's exercises — no exercises at all, or
+  --     exercises whose sets were all deleted. SPEC is silent; this is v2_plan_week's own copy-source rule
+  --     (DECISIONS 42(b): skip deload AND empty occurrences), and it keeps one emptied session from wiping
+  --     its workout's default. To make "deload only" the rule, make `is_empty` constant false (replace its
+  --     `not exists (...)` with `false`); nothing else reads emptiness.
+  insert into tmp_v2_make_week_default_sessions
+    (week_plan_id, workout_day_id, sequence_position, wd_position, is_deload, is_empty, usable)
+  select c.id, c.workout_day_id, c.sequence_position, c.wd_position, c.is_deload, c.is_empty,
+         (not c.is_deload and not c.is_empty)
     from (
-      select wp.workout_day_id, min(wd.position) as wd_position
+      select wp.id, wp.workout_day_id, wp.sequence_position, wd.position as wd_position, wp.is_deload,
+             not exists (select 1 from v2_week_plan_sets s
+                           join v2_week_plan_exercises e
+                             on e.week_plan_id = s.week_plan_id and e.program_exercise_id = s.program_exercise_id
+                          where s.week_plan_id = wp.id and s.user_id = v_user_id) as is_empty
         from v2_week_plans wp
         join v2_workout_days wd on wd.id = wp.workout_day_id and wd.program_id = v_program_id
        where wp.mesocycle_id = p_mesocycle_id and wp.week_number = p_week_number and wp.user_id = v_user_id
-       group by wp.workout_day_id
-      having bool_and(wp.is_deload)
+    ) c;
+
+  select count(*), count(*) filter (where usable)
+    into v_sessions, v_usable
+    from tmp_v2_make_week_default_sessions;
+  if v_sessions = 0 then
+    raise exception 'v2_make_week_default: week % of mesocycle % is not planned', p_week_number, p_mesocycle_id;
+  end if;
+  if v_usable = 0 then
+    raise exception 'v2_make_week_default: every session of week % of mesocycle % is deload or empty; there is nothing to make the default', p_week_number, p_mesocycle_id;
+  end if;
+
+  -- Workouts with no usable session this week keep their default (SPEC: "Deload sessions are excluded: their
+  -- workouts keep the current default"; an empty session is not a source either). They are listed in the
+  -- result so the caller knows they were not touched. Reason 'deload' when every session of the workout this
+  -- week is deload, otherwise 'empty' (all its sessions empty, or a mix of deload and empty).
+  select coalesce(jsonb_agg(jsonb_build_object('workout_day_id', t.workout_day_id,
+                                               'reason', case when t.all_deload then 'deload' else 'empty' end)
+                            order by t.wd_position, t.workout_day_id), '[]'::jsonb)
+    into v_skipped
+    from (
+      select u.workout_day_id, min(u.wd_position) as wd_position, bool_and(u.is_deload) as all_deload
+        from tmp_v2_make_week_default_sessions u
+       group by u.workout_day_id
+      having not bool_or(u.usable)
     ) t;
 
-  -- The source of each remaining workout: its first NORMAL occurrence in the
-  -- week. A weekday run has one session per workout, so this is that session.
-  -- A sequence cycle can hold a workout in several slots: the lowest
-  -- sequence_position among its non-deload sessions wins (SPEC: "its first
-  -- normal occurrence becomes the default" — also when its first occurrence
-  -- is deload, then the next normal one).
+  -- The source of each remaining workout: its first USABLE occurrence in the week. A weekday run has one
+  -- session per workout, so this is that session. A sequence cycle can hold a workout in several slots: the
+  -- lowest sequence_position among its usable sessions wins (SPEC: "its first normal occurrence becomes the
+  -- default" — also when its first occurrence is deload (G41), and when it is empty).
   for v_src in
     select s.workout_day_id, s.week_plan_id, s.sequence_position
       from (
-        select distinct on (wp.workout_day_id)
-               wp.workout_day_id, wp.id as week_plan_id, wp.sequence_position, wd.position as wd_position
-          from v2_week_plans wp
-          join v2_workout_days wd on wd.id = wp.workout_day_id and wd.program_id = v_program_id
-         where wp.mesocycle_id = p_mesocycle_id and wp.week_number = p_week_number
-           and wp.user_id = v_user_id and wp.is_deload = false
-         order by wp.workout_day_id, wp.sequence_position nulls first, wp.id
+        select distinct on (u.workout_day_id) u.workout_day_id, u.week_plan_id, u.sequence_position, u.wd_position
+          from tmp_v2_make_week_default_sessions u
+         where u.usable
+         order by u.workout_day_id, u.sequence_position nulls first, u.week_plan_id
       ) s
      order by s.wd_position, s.workout_day_id
   loop
