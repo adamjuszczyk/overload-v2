@@ -166,6 +166,9 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     expect(rowOf(WEEK_KEY, 0, 'pe-s').tempo).toBe('3-1-X-0')
     expect(rowOf(WEEK_KEY, 0, 'pe-1').tempo).toBeNull()
     expect(updateTempoMock).toHaveBeenCalledWith('pe-s', '3-1-X-0')
+    // Settled: the TEMPO write marks every week cache stale too (this hook's own call, not the REST one's).
+    expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan'], [...RUN_COPY_KEY]]))
+    invalidated.length = 0
 
     await act(async () => { unit.result.current.mutate({ id: 'pe-1', weightUnit: 'lbs' }) })
     await waitFor(() => expect(unit.result.current.isSuccess).toBe(true))
@@ -173,6 +176,8 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     expect(rowOf(ALL_KEY, 1, 'pe-1').weightUnit).toBe('lbs')
     expect(rowOf(WEEK_KEY, 0, 'pe-s').weightUnit).toBeNull()
     expect(updateUnitMock).toHaveBeenCalledWith('pe-1', 'lbs')
+    // ... and so does the UNIT write.
+    expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan'], [...RUN_COPY_KEY]]))
   })
 
   it('a failed TEMPO or UNIT write restores the week caches too', async () => {
@@ -184,11 +189,17 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
 
     await act(async () => { tempo.result.current.mutate({ id: 'pe-1', tempo: '2-0-2-0' }) })
     await waitFor(() => expect(tempo.result.current.isError).toBe(true))
-    await act(async () => { unit.result.current.mutate({ id: 'pe-1', weightUnit: 'kg' }) })
-    await waitFor(() => expect(unit.result.current.isError).toBe(true))
-
     expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
     expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
+    // ... and the week caches are marked stale, so the next read is the server's (a failed write settles too).
+    expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan']]))
+    invalidated.length = 0
+
+    await act(async () => { unit.result.current.mutate({ id: 'pe-1', weightUnit: 'kg' }) })
+    await waitFor(() => expect(unit.result.current.isError).toBe(true))
+    expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
+    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
+    expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan']]))
   })
 
   // A refetch of the week that was already in flight when the stepper was tapped would land AFTER the patch and

@@ -26,7 +26,11 @@ import { scheduleSequence } from '../gym/sequenceSchedule'
 //     delete); a stage row's cells (it has no ⋯ here). STRUCTURE view: ADD
 //     EXERCISE; each exercise's ⋯ button and ⋯ menu (swap, move, warmup,
 //     remove); each set row's ⋯ button and ⋯ menu (stage, stage kind), a stage
-//     row's ⋯ and menu (delete). COMPACT, and its REMOVE LAST SET, are gone;
+//     row's ⋯ and menu (delete); the run-wide fields (chunk 30): each exercise's
+//     REST / REST AFTER / TEMPO / unit in its ⋯, the link toggle between the two
+//     exercises, the warmup routine's ADD ITEM and each item's ⋯ (the mocked
+//     routine holds one item, so a past cycle HAS a routine card and the controls
+//     it lacks are real absences). COMPACT, and its REMOVE LAST SET, are gone;
 //   - the cycle moving on while the page is open turns the viewed cycle read-only
 //     on the spot, and its apply-ahead offer and open menus go with it;
 //   - a skipped workout moves the current cycle exactly as a done one does;
@@ -73,6 +77,9 @@ const EX_X: Exercise = {
 const EX_Y: Exercise = { ...EX_X, id: 'ex-y', name: 'Barbell Row', muscleGroup: 'back' }
 const EX1 = EX_X.name
 const EX2 = EX_Y.name
+// The one item of every workout's warmup routine (read lazily by the mock above).
+const ROUTINE_TEXT = 'Foam roll 2 min'
+const ROUTINE_ITEM = { id: 'wi-1', userId: 'user-1', workoutDayId: 'wd-x', position: 0, body: ROUTINE_TEXT }
 
 let activeMeso: Mesocycle
 let program: Program
@@ -100,6 +107,9 @@ vi.mock('../programs/useMesos', () => ({
 }))
 vi.mock('../programs/usePrograms', async () => ({
   ...(await import('./structureHooks.testutil')).quietProgramsHooks,
+  // Chunk 30: every workout's routine holds one item. An empty routine draws no card at all on a past
+  // cycle, which would leave the routine's read-only controls with nothing to be absent from.
+  useWarmupRoutineItems: () => ({ data: [ROUTINE_ITEM], isLoading: false }),
   usePrograms: () => readOverrides.programs ?? { data: [program], isLoading: false },
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -359,10 +369,14 @@ function goTo(cycle: number) {
   expect(screen.getByText(`CYCLE ${cycle}`)).toBeTruthy()
 }
 
+// The numbers "01" of the set rows. (The routine item in the STRUCTURE view is numbered
+// 01 as well, so the ones inside the routine's card don't count.)
+const setNumberOnes = () => screen.getAllByText('01').filter((el) => el.closest('[aria-label="Warmup routine"]') === null)
+
 // The set rows of a populated cycle's selected slot, in the order the screen
 // draws them: Bench Press set 1, its stage, set 2, then Barbell Row set 1.
 function setRows() {
-  const ones = screen.getAllByText('01')
+  const ones = setNumberOnes()
   return {
     benchSet1: ones[0].parentElement as HTMLElement,
     stage: screen.getByText('↳').parentElement as HTMLElement,
@@ -519,6 +533,8 @@ function expectEditable(cycle: number, slot = 0) {
   fireEvent.click(labelled(`${EX1} options`))
   expect(asButton(screen.getByRole('button', { name: /LINK AS SUPERSET/ })).disabled).toBe(false)
   expect(screen.getByText('ADD ITEM')).toBeTruthy()
+  expect(screen.getByText(ROUTINE_TEXT)).toBeTruthy()
+  expect(asButton(labelled('Options for warmup item 1')).disabled).toBe(false)
 
   // The edits above offered "apply ahead" where later cycles are planned; leave none showing.
   const dismiss = maybeLabelled('Dismiss')
@@ -561,7 +577,7 @@ function expectReadOnly() {
     expect(screen.queryByText('TAGS')).toBeNull()
     expect(screen.queryByText('+ CUSTOM')).toBeNull()
     // The set rows themselves are still drawn in either view.
-    expect(screen.getAllByText('01')).toHaveLength(2)
+    expect(setNumberOnes()).toHaveLength(2)
     expect(screen.getByText('↳')).toBeTruthy()
     // The run-wide fields (chunk 30) have no control here either: no REST / TEMPO / unit group, no link toggle
     // between the exercises, no way to add to the routine.
@@ -595,6 +611,11 @@ function expectReadOnly() {
   for (const row of Object.values(setRows())) {
     expect(within(row).queryByRole('button')).toBeNull()
   }
+  // — ... and the warmup routine is there to read (its card exists, so the loop above found no ADD
+  //   ITEM and no item ⋯ on a card that is on screen, not on one that is missing)
+  expect(screen.getByText(ROUTINE_TEXT)).toBeTruthy()
+  expect(screen.queryByText('ADD ITEM')).toBeNull()
+  expect(allLabelled(/^Options for warmup item/)).toHaveLength(0)
 
   // — COMPACT is gone, so there is no REMOVE LAST SET to be dead either
   expect(screen.queryByText('COMPACT')).toBeNull()
