@@ -24049,3 +24049,55 @@ Previous wording, verbatim:
 
 - Week targets and tags (chunk 19): Plan set rows edit weight target (exercise's unit in, kg stored; heads and stages), the week's rep-target override (`parseRepTarget`; writes only the week-plan set), and tags on heads (`PRESET_TAGS` + custom; `addTag`/`removeTag`/`applyTagToAllHeads` in `plannerVocabulary.ts` — dedupe exact, last removed → null; apply-to-all skips warmups and stages). AMRAP with a null RIR gets RIR 0 in the same update (`applyAmrapRirDefault`), never overwriting one. `SetRow` shows `TARGET WEIGHT` (exercise's unit) and tags; `PlanTargetsPanel` shows weight beside RIR; absent = nothing rendered. Tags are never copied (`copySetsWithGrouping`, `v2_plan_week`) and never logged. The shared `useUpdateSet` is `networkMode: 'always'`.
 - `PlanPage`: `WorkoutSwitcher` chip row (one workout day at a time), per-set RIR targets and dropset stages (ADD STAGE authoring), deload flag (one `v2_week_plans.is_deload` per workout per week, toggled per workout panel once that workout has a plan row; no whole-week action; copying carries the flag into the new week), whole-week COPY WEEK and single-workout copy (shared `copyOnePlanForward` → `copySetsWithGrouping`; COPY offered only when the destination is empty and the source has rows), page-local COMPACT view (`compactPlanLogic.toRuns`, read-only).
+
+---
+
+## 2026-10-10 (SPEC change 1.1 planning session) — Moved out of CONTEXT.md (no longer true)
+
+SPEC change 1.1 was applied to SPEC.md (`ac48b66`, rules tagged [P1.1]) and planned in TASKS-1.1.md (chunks 27–37, spec gaps G16–G31), so phase 1's "no new chunks" no longer holds, and the open question about rest in the week plan is answered by the change (rest is per week, in the week's Structure view). Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). Phase 2 and SPEC's "Later" list are not being done; no new chunks.
+- (Where the build is, end of the 2026-10-10 UI cleanup bullet) Not done, by design: rest override in the week plan (see that bullet) — raise with Adam if he wants it there.
+- (Tooling and tests) 1782 tests in 141 files on this branch (2026-10-10; master `a94e838` had 1766 in 139).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, Adam's answers) — Moved out of CONTEXT.md (no longer true)
+
+Adam answered TASKS-1.1's gaps G16–G34 and P1 the same day. Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage moved to TASKS-1.1's appendix; the plan is now chunks 27–33 with migrations 038–039, and the open gaps are G35–G39. Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited: its rules are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–37). None is built; the plan waits on Adam's answers to spec gaps G16–G34. Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is, end of the UI cleanup bullet) Rest override was left out of the week plan by design; SPEC 1.1 now puts all rest in the week's Structure view (TASKS-1.1 chunks 31–33).
+- (Where the build is) **SPEC change 1.1 (2026-10-10, planning only; no code, no migration):**
+    - SPEC.md edited in `ac48b66`: only the sections the change names, rules tagged [P1.1], plus a one-line legend under "What this is".
+    - `TASKS-1.1.md` plans chunks 27–37: migrations 038 (chunk 27), 039 (30) and 040 (33, the data move). Spec gaps G16–G34 sit at its top, each naming the chunks that stop there. Also process notes P1–P3, and live-data facts F1–F6 for Adam before chunk 31. Chunks 27, 28 (active run) and 30 need no answer.
+    - Design: rest, tempo and the warmup routine move per week behind a per-session switch (`v2_week_plans.structure_per_week`; false = read the run copy, as today). Inert code first (31–32), every device updated, then the data move (33). No existing week changes before 33.
+    - **A step 5 checklist generated from SPEC.md now would include the unbuilt [P1.1] rules:** generate it from SPEC at `d345f5c`, or skip [P1.1].
+- (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–040).
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–37; gaps G16–G34 open).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, review of the answers) — Moved out of CONTEXT.md (no longer true)
+
+A review of TASKS-1.1 after Adam's answers found more gaps (G40–G44), turned G38 into a reading, and changed chunk 32's 039: it now also adds `v2_program_sets.removed_at` and replaces `v2_plan_week`, so who merges it is a new question (P4). Previous wording, verbatim:
+
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited, and Adam answered the gaps it raised the same day. Its rules, answers included, are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–33). Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage is a later revision, kept in TASKS-1.1's appendix. None is built, and chunks 30, 31 and 33 wait on gaps G35–G39. Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is) SPEC.md: the change in `ac48b66`; Adam's answers to G16–G34 and the stale-line fixes the same day. Everything is tagged [P1.1], plus a one-line legend under "What this is".
+- (Where the build is) `TASKS-1.1.md` plans chunks 27–33: migrations 038 (chunk 27) and 039 (chunk 32, `v2_make_week_default`), and no new tables or columns.
+- (Where the build is) No open gap blocks chunks 27, 28, 29 and 32. Open: G35 (chunk 30), G36–G38 (31), G39 (33). P1 answered: D29 covers 038 and 039.
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G39 open; appendix: later per-week structure).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, Adam's second answers) — Moved out of CONTEXT.md and DECISIONS.md (no longer true)
+
+Adam answered G35–G44 and P4 and set a standing rule for display-only edge cases (DECISIONS D31). TASKS-1.1 gained chunks 34 and 35, and migrations became 038 (27), 039 (34) and 040 (32). One gap (G45) is open. Previous wording, verbatim:
+
+- (DECISIONS 80) Open in TASKS-1.1 after the answers: G35–G37, G39–G44, and P4 (who merges 039, which now also adds a function). G38 became a reading.
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited, and Adam answered the gaps it raised the same day. Its rules, answers included, are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–33). Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage is a later revision, kept in TASKS-1.1's appendix. None is built; chunks 30–33 each stop at open gaps for the cases they name (TASKS-1.1 "Open spec gaps"). Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is) SPEC.md: the change in `ac48b66`; Adam's answers to G16–G34, the stale-line fixes and three clarifications from a review of them, the same day. Everything is tagged [P1.1], plus a one-line legend under "What this is".
+- (Where the build is) `TASKS-1.1.md` plans chunks 27–33: migrations 038 (chunk 27, `v2_plan_week` stops reading carry values) and 039 (chunk 32: `v2_program_sets.removed_at`, so the default soft-removes sets; `v2_plan_week` skipping them; `v2_make_week_default`). No new tables.
+- (Where the build is) No open gap blocks chunks 27, 28 and 29. Open: G35 (chunk 30), G36, G37 and G42 (31), G40 and G41 (32, sequence runs), G39 and G43 (33), G44 (no chunk as written). G38 became a reading. P1: D29 covers 038; P4 (who merges 039, which now also adds a function) is open.
+- (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–039).
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G37 and G39–G44 and P4 open; appendix: later per-week structure).
