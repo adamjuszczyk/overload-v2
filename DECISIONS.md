@@ -1,21 +1,306 @@
 # Overload — Decisions
 
+## Waiting on Adam
+*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built, no new chunks. The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+
+To-dos:
+- **79** — after the update banner, check REDO is gone and Move offers only today and later days, and say whether you removed Saturday's Legs row (your cleanup counted 7 sessions, I expected 8). When: next time you open the app. Blocks: nothing.
+
 ## Format for all new entries
 
+An open entry starts with the ask; the reasoning comes after it, under "Evidence".
+
 ```
-## [n] [One-line summary]
+### [n] [One-line summary]
 Severity: blocking | deferred
 Chunk: [n]
+**Ask:** [the question or task, in plain words]
+**Options:** [each option, one line] — decisions only
+**Recommendation:** [mine, and why in one line] — decisions only
+**When:** [e.g. next session] — to-dos only
+**Blocked until answered/done:** [what stops]
+**Answer:** [Adam's]
+**Evidence:**
 What happened: [the situation, with full reasoning]
 A competent default would: [what anything competent would have
   just done here] — doesn't apply because: [why this is a real
   decision and not a default]
 Cost of deferral: [what gets redone if the answer goes against
   the provisional path] — blocking entries: n/a
-Answer: [mine]
 ```
 
 Deferred is only allowed when the work can continue without committing to the answer. If continuing means guessing at something expensive to undo, it's blocking.
+
+When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
+
+## Open
+
+### 79 After B1/B2: live check, and one session the cleanup count doesn't explain
+Severity: deferred
+Chunk: none (bug fixes, 2026-10-10)
+**Ask:** (1) After the update banner: a finished session's Today screen shows only CONTINUE SESSION (no REDO SESSION), and MOVE THIS SESSION on a Saturday session offers only SAT and SUN, from both Today and Plan. (2) Tell me what happened to the 2026-10-10 LEGS row (`5eb82bfe-5099-42d0-b4d4-d9fdbffea39f`, `planned`, moved to 2026-10-08, the B2 repro): did you move it back or delete it? The cleanup block you ran left 7 sessions since 2026-10-01, and the 9 rows in the earlier output minus the empty twin is 8.
+**When:** next time you open the app. If it helps, rerun `scripts/b1-session-forensics.sql` in the SQL Editor and send the table.
+**Blocked until answered/done:** nothing.
+**Answer:**
+**Evidence:**
+What happened: the B1 cleanup (entry 78) returned `friday_status` completed, `friday_sets` 11, `twin_rows_left` 0, `sessions_since_oct1` 7. The block deleted exactly one row (the twin), and the earlier forensics output listed 9 sessions on or after 2026-10-01. One more row is gone, or a date moved out of the window. The Legs row is the likeliest, since B2 now offers MOVE BACK on it (Plan → Legs → MOVE THIS SESSION → SAT deletes it), but that is not confirmed: the block's own guards cannot have deleted anything else, so something else touched the table between the two reads.
+A competent default would: assume the Legs row was removed in the app — doesn't apply because: it is deleted data, and "probably" is not a record.
+Cost of deferral: none.
+
+
+## Closed
+
+### 78 B1: a finished session read SKIPPED with its numbers, plus an empty in-progress twin
+- What: Friday 2026-10-09's PULL 2 (11 numbered sets) was `skipped` and an empty second PULL 2 started 34 minutes after its last set. Adam's query output ruled out a classifying finish, the missed-session prompt, a retried start and offline replay; what remains is REDO SESSION → CONFIRM (read from code, not observed; who tapped is unknown). Full text, query results and the guarded cleanup: HISTORY.md, 2026-10-10.
+- Answer: Remove REDO SESSION (Adam, 2026-10-10): merged as #55 `a94e838`, test first. Cleanup run by Adam the same day: Friday's session back to `completed` with its 11 sets, the empty twin deleted. The offline gaps found on the way (no client id on an online start, an offline finish judged from Dexie's partial copy, a finish before queued sets sync, unguarded overlapping queue flushes) are read from code, not shown to have happened, and not fixed.
+- Date: 2026-10-10
+
+### 77 Chunk 25 live check: a throwaway sequence run on your second account (Adam's steps)
+- What: Chunk 25: the throwaway sequence run on your second account (`live-checks/chunk25-sequence-run.md`); send the three count rows.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 76 Merge migration 037 (#51): sequence slots
+- What: Merge migration 037 (#51): sequence slots (R16's unique key; `v2_plan_week` per slot), after the pre-check.
+- Answer: Merged by Adam as #51 `26b0595`; deploy success; the code (#52) followed.
+- Date: 2026-10-09
+
+### 75 verify-rls: how to stop the false alarm from 74
+- What: Fix the verify-rls false alarm from 74: empty the test account (a), or flag only rows the test account doesn't own (b).
+- Answer: (b). Done: #53 `e8e0d00` (server-side head counts, total and foreign).
+- Date: 2026-10-09
+
+### 74 verify-rls found 46 `exercises` rows visible to the no-data test account
+- What: verify-rls found 46 `exercises` rows visible to the no-data test account.
+- Answer: Not a leak: the test account owns exactly those 46 of 335 rows; the owner-only policy works. Follow-up 75.
+- Date: 2026-10-09
+
+### 73 Chunk 25 failed review twice — one more test-only retry, or merge?
+- What: Chunk 25 failed review twice: one more tests-only retry, or merge; and where the throwaway sequence run happens.
+- Answer: (a), on the second account. The retry passed and chunk 25 merged.
+- Date: 2026-10-09
+
+### 72 Chunk 26 live check: navigation (Adam's steps)
+- What: Chunk 26 app steps: no PROGRAM tab; Plan's header icon opens Programs; open in planner, priorities and delete reachable; START/END RUN present; old /program link works.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 71 Chunk 24 live check: move a session, several a day (Adam's steps)
+- What: Chunk 24 app steps: the 29 Aug session shows 30 Aug in History; move a session and back; two sessions on one day; current-week-only missed prompt, DO IT NOW; no MOVE on started sessions.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 70 Merge migration 036 (#48): the legacy session's moved-to date
+- What: Merge migration 036 (#48): the legacy session's moved-to date, after the pre-check.
+- Answer: Merged by Adam as #48 `19cf372`; deploy success 08:58 UTC.
+- Date: 2026-10-09
+
+### 69 Chunk 23 live check: "last time" by exercise (Adam's steps)
+- What: Chunk 23 app steps: LAST WEEK unchanged for same-workout last week; LAST TIME + days for another workout or an earlier run; FIRST TIME only if never done; deload sessions never shown.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 68 Chunk 22 live check: deload rules (Adam's steps)
+- What: Chunk 22 app steps: switch deload rules on; mark a session → halved sets, 75% of last time's lifted weight; edit one, unmark → originals back; program CUSTOM override wins; a started session is flag-only; switch rules off after if wanted.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 67 Chunk 22 failed review twice — one more test-only retry, or merge?
+- What: Chunk 22 failed review twice: one more tests-only retry, or merge?
+- Answer: (a); the retry passed and chunk 22 merged.
+- Date: 2026-10-08
+
+### 66 Chunk 21 live check: deload per session (Adam's steps)
+- What: Chunk 21 app steps: mark a week deload, unmark one session, DELOAD labels on Today/preview/workout, next week copies from the last normal one; unmark afterwards.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 65 Chunk 20 live check: apply this change to planned weeks ahead (Adam's steps)
+- What: Chunk 20 app steps: a weight change applied ahead lands only on that set; swap ahead then a follow-up weight change both land; no offer after only-this-week; ignoring leaves later weeks alone.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 64 Chunk 20 failed review twice — merge, or one more test-only retry?
+- What: Chunk 20 failed review twice: merge, or one more tests-only retry?
+- Answer: (a); the retry passed and chunk 20 merged.
+- Date: 2026-10-08
+
+### 63 Chunk 19 live check: week targets and tags (Adam's steps)
+- What: Chunk 19 app steps: weight, rep override and tags on a set; apply-to-all; AMRAP → RIR 0; shown in the session; next week carries weight and RIR, not tags; say if the busier Plan rows should collapse.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 62 Go-ahead to run verify-rls.mjs (five tables added since its last run)
+- What: Go-ahead to run `verify-rls.mjs` once (five tables added since its last run).
+- Answer: Yes (Adam). Run on master `f0bc7c6`: 59 pass, 1 flagged (`exercises`) → 74, not a leak; the check made owner-aware (75, #53). Done.
+- Date: 2026-10-09
+
+### 61 Chunk 18 live check: warmup routine (Adam's steps)
+- What: Chunk 18 app steps: add/edit/reorder/delete warmup routine items; the checklist at the top of the session in order; a tick survives a reload; no items = unchanged.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 60 Chunk 17 live check: tempo (Adam's steps)
+- What: Chunk 17 app steps: enter a tempo (x → X), invalid refused, blank clears; it shows beside the exercise name in the session; exercises without one unchanged.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 59 Chunk 16 live check: the rest chain (Adam's steps)
+- What: Chunk 16 app steps: exercise REST / REST AFTER and one set's own REST show as the timer targets; nothing set = your Settings rest; a never-kinded dropset keeps its timer, an explicitly picked DROPSET has none; superset: no timer inside a round.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 58 Chunk 15 live check: warmup sets (Adam's steps)
+- What: Chunk 15 app steps: plan a warmup; log, edit, delete; TICK mode; not counted in History, volume or Progress.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 57 Chunk 14 live check: staged sets in all four kinds (Adam's steps)
+- What: Chunk 14 app steps: plan a rest-pause with 2 stages; all rows visible and locked in turn; carried weight; counts as 1 set; dropsets unchanged.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 56 Chunk 13 live check: supersets (Adam's steps)
+- What: Chunk 13 app steps: link two exercises; rounds A1, B1, A2…; per-member prefill, swap, skip, ADD SET; block moves as one.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 55 Chunk 11 live check: the stepped planner (Adam's steps)
+- What: Chunk 11 app steps: the planner opens and saves unchanged; a test program with 8–12 entered once per exercise; NO SETS YET on existing programs; G14 prompt; program tab read-only volume.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 54 Merge migration 034 (drop suggested reps: backup, convert into rep targets, drop the column)
+- What: Merge migration 034 (#35): back up suggested reps, convert them into rep targets on the active run's unlogged planned sets, drop the column; Adam's before (B1–B3) and after (A1–A4) queries and counts files.
+- Answer: Merged by Adam as `a76b146` (2026-10-06 18:27 UTC) without the before queries; the after queries won't be run. **Before/after checks not run.** The reviewer's deploy and probe evidence stands: deploy success 18:28 UTC; `select=target_reps` → 42703; backup table present; embeds 27/27 live.
+- Date: 2026-10-09
+
+### 53 Chunk 10 live check: priorities in the new form (Adam's steps)
+- What: Chunk 10 app steps: Plan → PRIORITIES shows your mapped marks (1+2 focus, 4+5 don't care); summary wording; set/clear persists; completed runs keep the old page.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 52 Planner: what does "number of sets is required" block, for programs that have none yet?
+- What: What "number of sets is required" blocks, for programs with no per-set rows yet (Adam's 3 existing ones).
+- Answer: (a) nothing is blocked; exercises without a set count are flagged — as built in chunk 11.
+- Date: 2026-10-09
+
+### 51 Chunk 9 live check: editing a week's exercises (Adam's steps)
+- What: Chunk 9 app steps: only-this-week swap reverts next week; permanent swap and add carry; remove stays removed; only-this-week reorder reverts; program tab read-only for volume.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 47 Chunk 8 live check: weeks plan themselves (Adam's steps)
+- What: Chunk 8 app steps: a new week plans itself once; first session plans its week; NEW WEEK STARTS = EMPTY; deload and empty weeks aren't copy sources.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 46 Chunk 7 live check: each week's exercise list shows as before (Adam's steps)
+- What: Chunk 7 app check: Plan and the workout screen show the same exercises in the same order, online and offline.
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 39 Chunk 5 live check: "Session type, all time" unchanged on today's data (Adam's steps)
+- What: Chunk 5 live check: one SQL query (step 1 rewritten for chunk 6: run workouts all linked, saved ones none), then two or three workouts' all-time history pages unchanged (sessions are logged on run workouts, so each page still lists exactly what it did).
+- Answer: Superseded by the step 5 review (Adam's, against a checklist generated from SPEC.md). **Folded into the review, not passed.**
+- Date: 2026-10-09
+
+### 29 The two exercise-library tables are readable by everyone, anon included
+- What: The two exercise-library tables (`v2_exercise_libraries`, `_items`) are readable by everyone, anon included — stay in `verify-rls.mjs` `PUBLIC_BY_DESIGN`?
+- Answer: Yes: intentional, they hold shared curated content; writes stay closed; any other table returning rows is a LEAK.
+- Date: 2026-10-01
+
+### 30 Migration 027 (planner phase-1 schema): how it goes live
+- What: How migration 027 (planner phase-1 schema) goes live.
+- Answer: Amended to bar `stage_kind` on stage rows; then, after the switch to automatic migrations, live by merging PR #17 (Adam, `7f4405d`). Add-only, so no live counts (Adam's standing rule).
+- Date: 2026-10-03 / 2026-10-04
+
+### 31 Live browser verification is unavailable in this environment
+- What: Live browser verification is unavailable from the build container.
+- Answer: Adam does the live checks; the reviewer writes exact steps (migration chunks: once the migration is live; others: merge, then a deferred to-do). A failed live check is blocking. Standing (CONTEXT.md Repo facts).
+- Date: 2026-10-03
+
+### 32 Go-ahead to run scripts/verify-rls.mjs at the chunk 1 boundary
+- What: Go-ahead to run `scripts/verify-rls.mjs` at the chunk 1 boundary.
+- Answer: Yes, run then (25 tables, 50 probes, all pass); ask again before every run.
+- Date: 2026-10-03
+
+### 33 The weight deload rule's starting percentage is not specified
+- What: Starting percentage of the weight deload rule (SPEC silent).
+- Answer: 75%. Done: PR #21 (`0628f28`).
+- Date: 2026-10-04
+
+### 34 Input casing for tempo "X" and rep target "AMRAP"
+- What: Lowercase tempo `x` / rep target `amrap` input.
+- Answer: Accept lowercase and normalise to `X` / `AMRAP`. Done: PR #21 (`0628f28`).
+- Date: 2026-10-04
+
+### 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
+- What: Incident: 027's second `v2_mesocycles → v2_programs` FK made the mesocycle embed ambiguous (fixed by PR #18); run `check-embeds-local.sh` in the `migration-replay` workflow?
+- Answer: Yes, add it to the workflow. Done: PR #20 (`b427dc0`); first GitHub run resolved 25/25.
+- Date: 2026-10-04
+
+### 35 Chunk 3 live check: planned dropset stages in a real session
+- What: Planned dropset stages show LOCKED rows and unlock one by one in a real session.
+- Answer: Checked by Adam in a real gym session: works. No screenshots or SQL, by his choice. **Passed.**
+- Date: 2026-10-05
+
+### 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes
+- What: Live check of the logged-set edit form (no note field; stored notes unchanged).
+- Answer: Not checked. **Waived by Adam, not passed.**
+- Date: 2026-10-05
+
+### 37 Chunk 1 live check after 027 deployed
+- What: 027's deploy log and the app's main screens on the new schema.
+- Answer: Today, Plan, Program and History load normally, and logging worked through a whole session (Adam's gym session). Deploy-log step dropped by Adam; the two stuck `Supabase Preview` runs stay unexplained, and the live probe (36/36) stands as 027's deploy evidence. **Passed** (app steps).
+- Date: 2026-10-05
+
+### 42 Does an empty week count as "the last planned week" when a new week copies forward?
+- What: Should a workout's empty (non-deload) last occurrence be a copy source for a new week?
+- Answer: (b) skip an empty last occurrence, the same as deload. Done on `2d26e90` (031, md5 `214fd870…`) and `95651e3`; reviewer-verified; merge is entry 45.
+- Date: 2026-10-05
+
+### 43 G14 reappeared: one workout on several weekdays (Adam's second account)
+- What: L6 only checked Adam's main account; his second account has a program with one workout on every weekday, and planning one day's volume shows on all of them (one shared plan row).
+- Answer: Existing such programs keep today's behaviour until edited. Opening one in the planner asks to give each weekday its own workout or switch to a sequence; nothing is converted automatically. Deload on a shared row marks every day it covers, as today, and the UI says so. Added to TASKS.md chunks 11 and 21. Chunks 6–8 checked on scratch: no change (entry 40 Evidence). Follow-up question: 44.
+- Date: 2026-10-05
+
+### 44 What does the planner's "switch to a sequence" choice do before sequence runs exist?
+- What: The G14 prompt offers "switch to a sequence", but sequence runs arrive in chunk 25, after the planner (chunk 11).
+- Answer: (a) chunk 11 offers per-weekday workouts or keep-as-is; chunk 25 adds the sequence choice to the same prompt.
+- Date: 2026-10-05
+
+### 40 Merge migration 028 (runs own a copy of their program; transition of existing programs)
+- What: Merge 028 (#22) and the chunk 6 code (#23); existing programs become their runs' copies with saved clones.
+- Answer: Merged by Adam without backup or counts (028's manifest is the rollback). 028 live `71247e7` (probe 3/3, `v2_start_run` refuses anon), #23 live `9fd4876` (Vercel success). Adam's app checks passed. G14 checked: no change.
+- Date: 2026-10-05
+
+### 41 Merge migration 029, the chunk 7 code, and follow-up 030
+- What: Merge 029 (#24), the chunk 7 code (#25) and 030 (#26), in order.
+- Answer: (a), merged by Adam 2026-10-05, each after the reviewer confirmed the previous deploy: 029 `61b2670` (probe 3/3), #25 `55bed82` (Vercel success), 030 `34c5887`. Parity query 0 rows. App check → entry 46.
+- Date: 2026-10-05
+
+### 45 Merge migration 031 (weeks plan themselves) and the chunk 8 code
+- What: Merge 031 (#27) and the chunk 8 code (#28).
+- Answer: (a), merged by Adam 2026-10-05: 031 `c128d00` (anon RPC refused by the function), #28 `071151b` (Vercel success 18:57 UTC). App steps → entry 47.
+- Date: 2026-10-05
+
+### 48 Should adding or removing an exercise in a week also offer "only this week"?
+- What: SPEC line 212 (tick on swap and reorder) vs line 224 (add/remove "unless only this week").
+- Answer: (a) swap and reorder only; week-dependent adds and removes always carry forward. SPEC line 224 fixed to match.
+- Date: 2026-10-05
+
+### 49 Chunk 12: what happens to existing suggested-reps values
+- What: SPEC's blocking decision for chunk 12 (drop `target_reps`), asked early.
+- Answer: (b) convert into rep targets on the active run's unlogged planned working sets that have none, with the backup table as planned. Recorded in TASKS.md chunk 12. The merge and live counts stay Adam's.
+- Date: 2026-10-05
+
+### 50 Chunk 25: throwaway sequence test run
+- What: Go-ahead for chunk 25's live check, which writes a throwaway run.
+- Answer: Yes. Label it `TEST-…`, and prove the cleanup by counts against the baseline.
+- Date: 2026-10-05
+
+## Settled decisions
 
 The entries D1–D28 further down predate this format and stay as they are; they use "Decided / Answer / Constrains".
 
@@ -129,231 +414,14 @@ Format of D1–D28: **Decided** — the question. **Answer** — what was chosen
 **D28 · Docs-only pushes don't deploy.** *(2026-08-15)*
 **Answer:** `vercel.json` `ignoreCommand` skips the production build when a push changes only `.md` files. Currently `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'` (set 2026-09-29; the longer per-file, last-deployed-SHA version exceeded Vercel's 256-character limit).
 
-## 29 The two exercise-library tables are readable by everyone, anon included
-Severity: deferred
-Chunk: verify-rls (2026-10-01)
-What happened: `scripts/verify-rls.mjs` expects zero rows from every table for both the anon key and a signed-in account that owns no data. `v2_exercise_libraries` and `v2_exercise_library_items` break that expectation by design: migration 019 gives each a `for select using (true)` policy with no `user_id` column and no `to` clause, so any role, anon included, can read them, and once the catalogs hold content a strict zero-rows rule would fail on every run. The first real run on 2026-10-01 confirmed it: anon read 1 row from `v2_exercise_libraries`. PR #5 asked whether anon being able to read them is intended, and whether they should stay in `PUBLIC_BY_DESIGN` (rows pass, any other error still fails, both probes still run) or be made strict or dropped from the list.
-A competent default would: keep the strict zero-rows rule for every table and treat world-readable rows as a leak — doesn't apply because: this is a deliberate exposure of shared curated content, and whether anon may read it is a product decision, not something the script can infer.
-Cost of deferral: n/a (answered)
-Answer: given in-session on 2026-10-01 by the person running the build: both tables stay in `PUBLIC_BY_DESIGN`. They are intentionally readable by everyone, including anon, because they hold shared content (curated exercise libraries, no per-user data). Writes stay closed: there is no write policy. Any other table returning rows to anon or to the signed-in test account is still a LEAK.
+**D29 · Flagged migrations the reviewer may merge (phase 1).** *(Adam, 2026-10-05)*
+**Answer:** For the rest of phase 1 the reviewer may merge a migration `check-migration` flags if it changes no existing row and all three checks pass: `migration-replay`, `check-embeds-local.sh`, and the reviewer's scratch-copy check (existing rows' counts and fingerprints unchanged).
+- Allowed: it only adds tables, columns, indexes or rows, replaces a function or view, or relaxes a constraint. That covers 032, chunk 10's and chunk 15's.
+- Still Adam's: 12, 24 and 25.
+- Order unchanged: migration first, then the code after a green deploy.
 
-## 30 Migration 027 (planner phase-1 schema) needs applying by hand before chunk 1 can close
-Severity: blocking
-Chunk: 1
-What happened: The chunk 1 builder wrote `supabase/migrations/027_planner_p1_schema.sql` and nothing else. Repo facts say migrations are applied by hand in the SQL Editor, and Escalations 8 and 12 apply, so the chunk is not merged.
-**The version to apply is the amended one** (your answer below): branch `build/chunk-1` at commit `3dbeebb` (pushed): https://github.com/adamjuszczyk/overload-v2/blob/build/chunk-1/supabase/migrations/027_planner_p1_schema.sql
-- **16494 characters** (what the SQL Editor counts) = 18450 bytes. They differ because the section banners use box-drawing characters, house style since 020.
-- md5 `3a0ead06021e6131fa0177dab6bda220`; SHA-256 `bcee20f8ca476b079261175345d0528a3e8564a7cefd5c0151351bf28d5226c2` (the file ends in one newline; without it the SHA-256 is `85e7be6195bc337e42dcdd196cfd5dedbffa37ea5d1a22089c8392e06af192d0`).
-- The first version (`273b07d`: md5 `6828eea0…`, 18232 bytes) is superseded and must not be applied.
-`node scripts/check-migration.mjs origin/master` exits **1** on the final file, flagging the same 8 statements as before. The two new constraints sit in ALTERs that were already flagged:
-- 3× "new column carries a constraint or generated value": the ALTERs on `v2_programs` (`kind`/`schedule_type`/`planning_type`), `v2_set_logs` (`stage_kind` vocabulary + `v2_set_logs_stage_row_check`) and `v2_user_settings` (`warmup_display`/`week_start`).
-- 4× "foreign key action can change existing rows later": `on delete set null` on new columns `v2_workout_days.source_workout_day_id`, `v2_mesocycles.source_program_id`, `v2_program_exercises.superset_block_id` and `v2_week_plan_sets.program_set_id` (the last ALTER also carries `v2_week_plan_sets_stage_row_check`).
-- 1× "not on the safe list": `notify pgrst, 'reload schema'`.
-None can alter existing data. Every existing row takes a default or NULL that satisfies the new CHECKs (the new stage-row checks hold because `stage_kind` is NULL on every existing row), and the new FK columns are NULL on every existing row.
-What I verified myself, on the final file, on a fresh copy of the scratch baseline (PostgreSQL 16.14, 001–026 plus fixtures with 2 planned stage rows and 1 logged stage row):
-- Catalog diff before/after: +72 columns (exactly the data model), +61 constraints, +21 indexes, +6 policies, RLS on for the 6 new tables. Nothing removed or changed.
-- Row count and md5 fingerprint over the pre-027 columns are identical on all nine altered tables, and defaults read `saved/weekday/week_dependent` and `rows/copy`.
-- The old client's settings upsert after non-default `warmup_display`/`week_start`/`deload_rules` leaves all three untouched.
-- RLS on two new tables: A sees 1; B sees 0 and updates 0; B inserting A's row is refused by policy; anon sees 0.
-- Probes, each rejected with its named CHECK: 10–8 range, AMRAP with reps, staged warmup, `'top'` mark, bad `week_start`, a planned stage row given a `stage_kind` (`v2_week_plan_sets_stage_row_check`), and a logged stage row given one (`v2_set_logs_stage_row_check`). Accepted: an 8–12 range, a stage row with null kind, and a head with a kind, on both tables.
-The builder's clean rebuild agrees: R1 with 81 probes and 0 unexpected, R2 old-client shapes incl. `addStage` and stage set-log rows, R3 on all six tables, and R4 the same 8 flags.
-Also on `build/chunk-1`: `npm run typecheck`, `npm test` (548/548), `npm run build`, `node --test "scripts/*.test.mjs"` (31/31), `check-context-size` and `gen-icons` (byte-identical icons) pass. `verify-rls.mjs` (your go-ahead, 32): 25 tables, 50 probes, all pass.
-**Your steps, in order** (per your answer to 31):
-1. Before applying, in the SQL Editor, record the result of:
-   `select 'programs', count(*) from v2_programs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'workout_days', count(*) from v2_workout_days where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'mesocycles', count(*) from v2_mesocycles where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'program_exercises', count(*) from v2_program_exercises where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'week_plans', count(*) from v2_week_plans where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'week_plan_sets', count(*) from v2_week_plan_sets where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'sessions', count(*) from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'set_logs', count(*) from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' union all select 'user_settings', count(*) from v2_user_settings where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f';`
-2. **Transport (placeholder-collapse — CONTEXT.md's migration-transport rule; the first version of this entry broke it by telling you to paste the raw file).** Don't paste the migration itself. Paste the transport file instead, in which every run of 4+ identical characters (the `═══`/`───` banners and long space runs) is replaced by a marker `@@R<hex codepoint>x<count>@@`; no run longer than 3 survives in it: https://github.com/adamjuszczyk/overload-v2/blob/claude/epic-lovelace-0pvxbr/transport/027_planner_p1_schema.transport.sql (raw view, select all, copy). Paste it into a fresh SQL Editor tab. Do **not** run it.
-   Then, in the browser console on that tab, paste and run exactly this (from `scripts/transport-collapse.mjs`):
-   ```
-   (async () => {
-     const m = window.monaco.editor.getModels()[0];
-     const h = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(x => x.toString(16).padStart(2, '0')).join('');
-     const t = m.getValue();
-     console.log('transport', t.length, await h(t));
-     m.setValue((t => t.replace(/@@R([0-9a-f]+)x([0-9]+)@@/g, (_, c, n) => String.fromCodePoint(parseInt(c, 16)).repeat(Number(n))))(t));
-     const y = m.getValue();
-     console.log('expanded', y.length, await h(y));
-   })()
-   ```
-   It prints two lines. Both must match one of these pairs (the pair depends only on whether your copy kept the file's final newline):
-   - `transport 15780 98b0c38f345d53c78e1e4f8a4a4e91035f8d9775078744f7eb3a353057538678` and `expanded 16494 bcee20f8ca476b079261175345d0528a3e8564a7cefd5c0151351bf28d5226c2`
-   - `transport 15779 77d48c600f3bfa998b49e33909f187d4ed77a3cf02423e9ef35212f04f4685fc` and `expanded 16493 85e7be6195bc337e42dcdd196cfd5dedbffa37ea5d1a22089c8392e06af192d0`
-   A wrong `transport` line means the paste was damaged. A right `transport` line with a wrong `expanded` line means the expansion failed. Either way, don't run it: close the tab and start again. The editor now holds the expanded migration, banners included, and it should contain no `@@R` text.
-   How this was checked: `node scripts/transport-collapse.mjs` expands the transport back to 027 exactly (md5 `3a0ead06…`). The same snippet run in headless Chromium, on a secure-context page with a stand-in editor model, printed exactly the first pair, and its result equalled 027 byte for byte. `scripts/transport-collapse.test.mjs` round-trips all 26 existing migrations, and was proven by injecting a short-by-one expander (22 tests fail) and disabling the collapse (21 fail). Not checked: the real Monaco editor, which this container can't reach (HISTORY records its `setValue`/`getValue` round trip as exact).
-3. Run it. If a "Potential issue detected" dialog opens, use the dialog's own "Run query" (the toolbar Run only opens it). No statement drops or updates anything.
-4. Don't trust the Success banner; check the result by query. Re-run step 1: every count must equal the before value. Then run:
-   `select count(*) from information_schema.columns where table_schema = 'public' and table_name in ('v2_program_priorities','v2_program_sequence_items','v2_program_sets','v2_program_superset_blocks','v2_week_plan_exercises','v2_workout_warmup_items');` → **46**
-   `select count(*) from information_schema.columns where table_schema = 'public' and (table_name, column_name) in (('v2_mesocycles','source_program_id'),('v2_program_exercises','removed_at'),('v2_program_exercises','rest_after_seconds'),('v2_program_exercises','rest_seconds'),('v2_program_exercises','superset_block_id'),('v2_program_exercises','tempo'),('v2_program_exercises','week_only'),('v2_programs','deload_rules'),('v2_programs','kind'),('v2_programs','planning_type'),('v2_programs','schedule_type'),('v2_sessions','moved_to_date'),('v2_set_logs','stage_kind'),('v2_user_settings','deload_rules'),('v2_user_settings','warmup_display'),('v2_user_settings','week_start'),('v2_week_plan_sets','is_amrap'),('v2_week_plan_sets','program_set_id'),('v2_week_plan_sets','rep_max'),('v2_week_plan_sets','rep_min'),('v2_week_plan_sets','stage_kind'),('v2_week_plan_sets','tags'),('v2_week_plan_sets','target_weight'),('v2_week_plans','deload_restore'),('v2_week_plans','sequence_position'),('v2_workout_days','source_workout_day_id'));` → **26**
-   `select relname, relrowsecurity from pg_class where relname in ('v2_program_priorities','v2_program_sequence_items','v2_program_sets','v2_program_superset_blocks','v2_week_plan_exercises','v2_workout_warmup_items');` → 6 rows, all `true`
-   `select conname from pg_constraint where conname in ('v2_week_plan_sets_stage_row_check','v2_set_logs_stage_row_check');` → 2 rows
-5. Live app at https://overload-v2-sage.vercel.app (no code changed, so no new deploy). If a RELOAD/update banner shows, take it first. Open Today, Plan, Program and History. Each should load your data as before, with no error toast and nothing missing.
-6. In your next real session, log one set. It should save the same as always: it stays after a page reload, and no pending-sync marker remains.
-7. Tell me the step 1 and 4 results and steps 5–6. I then run the read-only API probes: each new column answers `200 []` (Adam-filtered, `limit=0`), a made-up column answers `400`, and each new table answers 0 rows to the anon key (Adam-filtered). Then I open the chunk 1 PR to master.
-A competent default would: merge the chunk once its checks pass — doesn't apply because: the migration is applied by hand, check-migration exits 1, and the reviewer's rules say the migration goes live before any code and the merge is yours.
-Cost of deferral: n/a
-Answer: (Adam, 2026-10-03) Schema choice: yes — add the check that a stage row can't carry a stage kind, on both planned sets and set logs, matching `v2_program_sets`; amend 027, re-run every scratch check on the final file, give the new character count and md5; "I apply only that version." Push: yes, push `build/chunk-1`. Standing for this build: the reviewer may push any `build/chunk-N` branch and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. Done: amended in `3dbeebb`, re-verified as above, pushed. Still waiting on: the apply and steps 1–6.
-(Adam, 2026-10-04) **Change of plan: 027 is not applied by hand.** Adam is switching this repo to automatic Supabase migrations in a separate session, and 027 will go live by merging the chunk 1 PR. The entry stays blocking until he says the switch is done. Until then: chunk 1 is not merged, and neither 027 nor the transport files change. The hand-apply procedure above (steps 1–4, transport included) is superseded and kept only as a record. The live-app steps (5–6) still apply after 027 is live; the before/after checks get rewritten against the new migration rules once CONTEXT.md is updated by that session. Meanwhile chunks 2, 3 and 4 continue (no migration, none needs 027), and the build stops at the chunk 4 boundary because chunk 5 needs 027's columns.
-(Adam, 2026-10-04, after the switch) **027 goes live by merging the chunk 1 PR under the new flow.** `check-migration` flags 027's 8 statements, so the merge is Adam's once the PR's `migration-replay` check is green. After his merge, the reviewer checks the production database deploy on master (a failed deploy is blocking), runs the read-only probes, and writes Adam's live steps (open Today, Plan, Program and History; log one set in his next session) as a deferred entry. The pause at chunk 4 is lifted.
-**State (2026-10-04, reviewer):** `build/chunk-1` now has master merged in (`a05b134`). Its diff against master is exactly `027_planner_p1_schema.sql`, md5 `3a0ead06…`, unchanged. PR [#17](https://github.com/adamjuszczyk/overload-v2/pull/17) is open.
-- `migration-replay` is **green** on GitHub (run 37226926354).
-- My local `scripts/replay-migrations.sh` on `supabase/postgres:17.6.1.155` agrees: 28 of 28 applied, `public` has 35 tables.
-- `check-migration` still flags the 8 statements above, so the merge is yours. `check-migration-order` OK; `node --test "scripts/*.test.mjs"` 86/86.
-**Your steps:**
-1. **Before merging**, record the before counts: `npx --yes supabase@2.119.0 db query --linked -f scripts\live-counts.sql -o json > counts-before.json`.
-2. Merge PR #17.
-3. Tell me it's merged. I check `Supabase Preview` on master's merge commit; anything but success, or no check within a few minutes, is a failed deploy and blocking. Then I run the read-only API probes and write your live steps as a deferred entry.
-4. After the deploy succeeds, run the same command again into `counts-after.json` and send me both files, or the two outputs. Every count must be equal.
-**Closed (2026-10-04):** Adam merged PR #17 (`7f4405d`). He did not run counts; under his new standing rule (CONTEXT.md, Migration flow) an add-only migration like 027 needs none. 027 is live: see entry 37 for the deploy evidence and his live steps.
-
-## 31 Live browser verification is unavailable in this environment
-Severity: blocking
-Chunk: 1
-What happened: Escalation 1 says to probe the browser tooling before the build. Headless Chromium (Playwright) launches here, but navigation to `https://overload-v2-sage.vercel.app/` fails with `ERR_TUNNEL_CONNECTION_FAILED`, and `curl` gets a 403 on CONNECT: the cloud environment's network policy denies that host. The Supabase host is reachable. You also can't sign in to a browser inside this container (Escalation 3).
-A competent default would: skip the browser step and rely on the scratch and API checks — doesn't apply because: Escalation 1 gives this the weight of a failing test, and only you can say plainly what won't be verified.
-Cost of deferral: n/a
-Answer: (Adam, 2026-10-03) Live checks in this build are done by Adam; the reviewer can't reach or sign in to the app from here. For each chunk whose verification needs the live app, the reviewer writes the exact steps and what Adam should see. A chunk with a migration: the steps go in its blocking entry, and Adam does them right after applying. A chunk without a migration: merge once every check the reviewer can run passes, write the live steps as a deferred entry, and continue with the next chunk that doesn't depend on it. A failed live check from Adam is blocking. For chunk 1: after applying 027, Adam opens Today, Plan, Program and History, logs a set in his next real session, and reports back (steps in 30).
-
-## 32 Go-ahead to run scripts/verify-rls.mjs at the chunk 1 boundary
-Severity: blocking
-Chunk: 1
-What happened: The boundary rule is to run every script in `scripts/`, but Escalation 18 makes any run of `verify-rls.mjs` an escalation, because its selects are unfiltered by design (anon plus the no-data test account).
-A competent default would: run it, since it is read-only — doesn't apply because: the rule asks for a go-ahead before each run.
-Cost of deferral: n/a
-Answer: (Adam, 2026-10-03) Yes, run it now; ask again next time — the per-run rule stays. Run 2026-10-03: 25 tables, 50 probes — 50 pass, 0 leak, 0 fail.
-
-## 33 The weight deload rule's starting percentage is not specified
-Severity: deferred
-Chunk: 2
-What happened: Chunk 2 (`src/lib/plannerVocabulary.ts`) holds the deload-rules starting values. TASKS.md gives the sets rule's starting value (`{ "mode": "percent", "value": 50, "rounding": "down" }`, from SPEC's "sets −50%, everything else unchanged") and says a weight rule, "when switched on, starts at rounding down to 2.5 kg". SPEC says the weight rule is a "percentage of base" with rounding and a precision step, but gives no starting percentage. The only number in either document is the `"percent": 90` in TASKS.md's JSON *shape* example, which illustrates the fields and isn't stated as a default. The builder didn't guess: `DEFAULT_DELOAD_WEIGHT_RULE` is `{ rounding: 'down', step: 2.5, stepUnit: 'kg' }` with no `percent`, and a test pins that omission so it can't be filled in silently. I checked the exported values directly.
-A competent default would: take the 90 from the shape example — doesn't apply because: it's an example of the shape, not a stated default, and the starting weight cut of a deload is a training decision that SPEC leaves silent (Escalation 14).
-Cost of deferral: one constant and its test in `plannerVocabulary.ts`, changed before chunk 22 (deload rules editor and calculator) uses it. Nothing before chunk 22 reads it.
-Provisional path taken: no starting percentage; chunk 22 can't pre-fill the weight rule's percent until you answer.
-Answer:
-
-## 34 Input casing for tempo "X" and rep target "AMRAP"
-Severity: deferred
-Chunk: 2
-What happened: SPEC writes tempo as "3-1-1-0, `X` allowed" and the rep target as "`AMRAP`". It is silent on whether lowercase input (`3-1-x-0`, `amrap`) is accepted. The builder took the strict reading: `normaliseTempo('3-1-x-0')` and `parseRepTarget('amrap')` both return null (invalid). Outer whitespace is trimmed, and internal whitespace is rejected. Also strict and consistent with SPEC's "range = min < max": a range written `8-8` is rejected, so the same number twice must be entered as `8`. I checked all of this directly. On a phone keyboard, typing lowercase is the easy path.
-A competent default would: accept lowercase and normalise to `X` / `AMRAP` — doesn't apply because: SPEC is silent, and accepting versus rejecting is visible behaviour in the planner (Escalation 14). Either way it's a two-line change.
-Cost of deferral: two small parse changes and their tests in `plannerVocabulary.ts`, before the first planner UI that takes typed input (chunk 11 for rep targets, chunk 17 for tempo).
-Provisional path taken: exact case only; lowercase is rejected as invalid input.
-Answer:
-
-## 35 Chunk 3 live check: planned dropset stages in a real session (Adam's steps)
-Severity: deferred
-Chunk: 3
-What happened: Chunk 3 is merged into master (PR #11, `1e77e94`). Every check I can run passed: jsdom tests over SetRow, SetGroup and the real ExerciseCard write path, with each test proven by an injected break; typecheck, build, every script; and my own DOM dump of two planned dropsets. SPEC requires the fix to be seen in a real session ("checking stored data alone doesn't catch this regression"), and TASKS.md's done-when is the real-session check at 375 px, recorded with a screenshot. I can't reach or sign in to the app (entry 31), so per the standing rule these are your steps.
-**Your steps** (phone, or a 375 px-wide window):
-1. Open https://overload-v2-sage.vercel.app. If an update/RELOAD banner shows, take it, so you're on the new bundle. Check that the deploy landed: the chunk 3 merge is `1e77e94`. If the Vercel dashboard is handy, confirm that commit's production deploy is Ready. (Chunk 2's production deploy wasn't confirmed from here either; it changed nothing at runtime.)
-2. In Plan, on a workout you'll train next, give one exercise a planned dropset: a set with two stages (ADD STAGE twice in the plan). This is your own planning edit, so do it only if you want a dropset in that session; otherwise wait for a session that already has one.
-3. Start that session. Before logging anything, that exercise should show:
-   - The head row, enabled: weight and reps fields and LOG.
-   - Two stage rows under it, each marked `↳`, dimmed, with weight and reps fields you can't tap into and a button reading **LOCKED** in the LOG position.
-   Screenshot it.
-4. Log the head. Stage 1 becomes the normal row with LOG, in the same place and shape, now usable. Stage 2 stays LOCKED. Screenshot.
-5. Log stage 1. Stage 2 unlocks. Log it. Nothing on that set is LOCKED any more.
-6. Also, on any set with **no** planned stages: after logging it, the small "mark as dropset" link appears exactly as before, and no LOCKED rows appear anywhere else.
-7. In the SQL Editor (your user only):
-   `select set_number, stage_index, parent_set_id, is_dropset, id, week_plan_set_id from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and session_id = (select id from v2_sessions where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by created_at desc limit 1) order by set_number, stage_index;`
-   The two stage rows must carry `parent_set_id` = the head row's `id`, `stage_index` 1 and 2, and `is_dropset` true.
-8. Tell me the result and attach the screenshots. A failure is blocking.
-A competent default would: count the jsdom tests as the verification — doesn't apply because: SPEC names a real session as the only check that catches this regression.
-Cost of deferral: if it fails, chunk 3 is fixed and re-merged. Chunk 4 doesn't depend on it (it touches the logged-set edit form, not stage rendering).
-Provisional path taken: merged; continuing with chunk 4.
-Answer:
-
-## 36 Chunk 4 live check: editing a logged set has no note field and keeps stored notes (Adam's steps)
-Severity: deferred
-Chunk: 4
-What happened: Chunk 4 is merged into master (PR #12, `89719b1`). Every check I can run passed: jsdom and service tests, proven by injected breaks; typecheck, build, every script. I also called `updateSetLog` directly with a stray `note`, and the Supabase payload was `{weight, reps, rir}`. TASKS.md's verification and done-when need the deployed app and an Adam-scoped query, which I can't reach (entry 31).
-**Your steps:**
-1. Before your next session, record your stored set notes in the SQL Editor:
-   `select id, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and note is not null order by id;`
-   It may return nothing. Set-note editing was the only way to write one, so that's possible.
-2. Open https://overload-v2-sage.vercel.app. If the update/RELOAD banner shows, take it. The chunk 4 merge is `89719b1`; if the Vercel dashboard is handy, confirm its production deploy is Ready.
-3. In your next real session, log a set, then tap it to edit. The edit form should show weight, reps and the RIR chips with its save/cancel controls, and **no Note field**, laid out cleanly at phone width. Change the reps by one and save, then change it back and save.
-4. Re-run the step 1 query. The result must be identical: same ids, same notes. Then check the edited set:
-   `select id, reps, note from v2_set_logs where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' order by logged_at desc limit 3;`
-   That set should show its original reps, and `note` should be `null`.
-5. Tell me the result. A failure is blocking.
-A competent default would: count the payload tests as proof — doesn't apply because: TASKS.md's done-when is the deployed form and the stored note, checked live.
-Cost of deferral: if it fails, chunk 4 is fixed and re-merged. Nothing later depends on it.
-Provisional path taken: merged; the build stops at the chunk 4 boundary as instructed (chunk 5 needs 027).
-Answer:
-
-## 37 Chunk 1 live check after 027 deployed (Adam's steps), and two stuck deploy checks
-Severity: deferred
-Chunk: 1
-What happened: Adam merged PR #17 (`7f4405d`, 2026-10-04 19:11 UTC). Under his standing counts rule, 027 is add-only, so no live counts are needed; its proof is the green `migration-replay` plus my scratch-copy check (row counts and per-row fingerprints unchanged on all nine altered tables). On master's merge commit GitHub shows **three** `Supabase Preview` runs:
-- `111509721064`: success (19:12:16→19:12:22);
-- `111509705063` and `111509600539`: still `in_progress` more than 8 minutes later.
-That hasn't been seen before; the first automatic run had a single check. I tested the real outcome instead. `node scripts/probe-live-columns.mjs scripts/probe-specs/027.json` (anon key, every request filtered to Adam's user_id, `limit=0`, so no data can return) answered 36 of 36 probes as expected:
-- every one of 027's 72 columns on the 15 tables answers `200 []`;
-- each table's made-up control column answers `400 / 42703`;
-- the six new tables show anon 0 rows.
-The probe itself was proven: a spec with one non-existent column fails (`400 42703`, exit 1). So 027 is live; the deploy is not treated as failed.
-**Your steps:**
-1. Supabase Dashboard → Branches: open the production deploy log for `7f4405d` and check that it applied `027_planner_p1_schema` without error. Tell me if the two stuck runs show anything, e.g. a duplicate trigger.
-2. Optionally, in the SQL Editor: `select version from supabase_migrations.schema_migrations order by version desc limit 3;` The top row should be `027`.
-3. Open https://overload-v2-sage.vercel.app (take the update banner if shown). Today, Plan, Program and History each load your data as before, with no error toast. 027 changed no app code; this checks the old client against the new schema.
-4. In your next real session, log one set. It saves normally: still there after a reload, and no pending-sync marker.
-5. Tell me the results. A failed step is blocking.
-A competent default would: treat the one successful run as the deploy result — doesn't apply because: CONTEXT.md says anything other than success counts as failed until you've read the Dashboard log, and two runs aren't success. The live probe is why I'm not treating it as failed; the log is yours to read.
-Cost of deferral: if the log shows a problem, chunk 5+ work that reads 027's columns pauses. Nothing is merged on top of 027 until chunk 5's own checks pass.
-Provisional path taken: 027 counts as live (probe evidence); continuing with chunk 5.
-Answer:
-
-## 38 Incident: 027 made the mesocycle query ambiguous; no mesocycles showed (fixed by PR #18)
-Severity: deferred
-Chunk: 1
-What happened: After 027 deployed (2026-10-04 ~19:12 UTC), Adam reported no active and no completed mesocycles in the app. **Cause:** 027 added `v2_mesocycles.source_program_id → v2_programs`, a second FK next to `program_id`. PostgREST then refuses the un-hinted embed `v2_programs(id, name)` with `PGRST201` ("more than one relationship was found"). It's used by `fetchMesos` (the list, so it showed empty) and by `createMeso`'s `insert().select()`. START MESOCYCLE would have completed the active meso and inserted the new one before throwing. **Data was untouched:** 027 only adds, and Adam confirmed by query (MESO rows intact) and that he pressed nothing on the Program page. **Fix:** PR #18 (`c63808e`, merged by Adam 19:35, Vercel production deploy success 19:36:43) names the relationship, `v2_programs!v2_mesocycles_program_id_fkey(id, name)`, in both selects. The cause was confirmed live before fixing: the old select gave `PGRST201`, the hinted one gave `200`.
-**Why every check missed it:** `migration-replay`, my scratch-copy checks and `probe-live-columns.mjs` all test SQL and columns. Embed resolution happens in PostgREST, which none of them ran.
-**New check, proven:**
-- `scripts/check-embeds.mjs` finds every embedding select in `src/` and `api/` (25 today) and resolves each through PostgREST with `limit=0`, either live (anon, Adam-filtered) or local.
-- `scripts/check-embeds-local.sh` replays every migration (`replay-migrations.sh --keep`), starts `postgrest/postgrest:v12.2.3` against the result, and runs it.
-- On the pre-fix code with 027 it fails exactly the two mesocycle selects (`PGRST201`, exit 1). On the fixed code it passes 25/25 locally and live.
-- Its finder had its own swallowing bug: a select-less query swallowed the next one, `sessionService.ts:466`. It was fixed and a test was added, which is proven against both broken patterns.
-A competent default would: rely on the replay check for migrations — doesn't apply because: it can't see API-level breakage, and this shipped to production.
-Cost of deferral: none for the fix (it's live). The open question is only where the new check runs.
-Provisional path taken: from now on I run `bash scripts/check-embeds-local.sh` on every migration PR before it merges (yours or mine), and `node scripts/check-embeds.mjs` live after its deploy. A migration that adds an FK between two tables that already have one must also hint every existing embed between them.
-**Question for you:** should `check-embeds-local.sh` also run in the `migration-replay` GitHub workflow, so the ruleset enforces it? That changes `.github/workflows/migration-replay.yml`, which your switch session owns, so it's your call.
-Answer:
-
-## 39 B1: a finished session reads SKIPPED with its numbers, plus a second empty in-progress one (cause not yet confirmed)
-Severity: deferred (code fixed, Adam's data cleanup pending)
-Chunk: none (live bug report, 2026-10-10)
-What happened: Adam finished Friday 2026-10-09's pull workout with every set logged. History shows that session as SKIPPED with all its numbers. Saturday morning the app opened on a second session of the same workout, already started, with no numbers and an absurd session time; he finished it, so it's now logged a second time, empty. **I could not read the data.** The dev environment has only the anon key and a test account that owns no data; a select filtered to Adam's user_id returns `[]` (probed 2026-10-10), which is exactly what RLS gives anyone who isn't Adam, so it says nothing about whether the rows exist. Signing in as Adam is Escalation 3, so the cause below is from the code only.
-**What the code says (read 2026-10-10, not run against his data).** Every write that sets `v2_sessions.status = 'skipped'`:
-- `skipSession(id)` (`sessionService.ts`), a bare `update({ status: 'skipped' })` that touches nothing else, so the set logs stay. Callers: **REDO SESSION → CONFIRM** (`CompletedTodayScreen.tsx` `handleRedo`, which then immediately calls `createSession` for the same workout, dated today, `in_progress`, `started_at` = now), and MARK SKIPPED on the missed-session prompt (`skipMissedSession` with `existingSessionId`).
-- `completeSession` (all logged sets are `is_skipped`; not this case, the sets here have numbers).
-- `useSkipSession` offline (queue form of the first).
-The scheduler only hands MARK SKIPPED an `existingSessionId` for a `planned` row (anything completed/in-progress/skipped counts as handled), and a `planned` row never has set logs. So the one path that leaves a *logged* session `skipped` and creates a fresh `in_progress` one for the same workout is **REDO SESSION → CONFIRM on Friday after finishing**; the new row's `started_at` would be Friday evening, which is the absurd Saturday-morning session time. That fits both symptoms, but it needs a deliberate two-step tap (REDO SESSION, then CONFIRM), and Adam hasn't said he did that. I am not treating it as the cause until the rows say so.
-**Findings that stand regardless of the cause:** REDO's confirm text says "current session is marked skipped and all inputs clear" and the button caption says "discarded", but the old session's set logs are kept, so a REDO leaves exactly the shape in this report in History: a SKIPPED session full of numbers. The two sessions also can't be told apart in History except by status.
-**Update 2026-10-10 (Adam): Friday's gym connection was bad, and he doesn't remember tapping REDO.** So REDO is one candidate among several, and the offline paths are the likelier ones. From the code (read, not run, not reproduced):
-- **Retried start.** The online `createSession` inserts with no client-side id (the offline branch uses a client uuid), and mutations have no retry. A start whose response is lost on a bad connection errors, the START button comes back, and the next tap inserts a second `in_progress` row for the same workout and date.
-- **Offline finish judged from a partial copy.** `useCompleteSession` offline decides `skipped` from Dexie's copy of this session's logs, which only holds sets logged *while offline*. If that subset is all skip rows (say, skipped sets at the end after the signal dropped), the session is written `skipped` with `completed_at` taken from that subset, though the numbered sets are on the server. The code comment says this "never" gives a false skipped, true only when the copy is empty. A `skipped` row of its own doesn't block a new virtual START for the same workout today (`scheduler.ts` `needsVirtualSuggestion`), so Today would then offer START again.
-- **Finish before the sets synced.** The online finish reads only server-side logs, so sets still in the offline queue are missed: `completed_at` comes out null or early.
-- **Queue replay.** `flushSyncQueue` is not guarded against overlapping runs (the connection flipping online/offline can start several, each reading the same queue snapshot), replays in `createdAt` order, and keeps an item that failed fewer than 3 times while later items go ahead. An old start payload (`status: in_progress`) written after a finish leaves `completed_at` set, so the row reads in-progress but finished.
-**Run this in the Supabase SQL Editor (one SELECT, read-only, filtered to your user_id, writes nothing) and send me the result table** (export as CSV or copy the grid): the contents of `scripts/b1-session-forensics.sql`. It returns one row per session since 2026-10-01 with status, dates, `created_at` (server clock) vs `started_at` (phone clock), set-log counts, and a plain-words `reading` column. How to read it (times UTC):
-- **REDO:** the empty `in_progress` row has the same date and was started minutes after the other row finished (`s_since_prev_completed` small and positive), `server_lag_s` about 0, the other row `SKIPPED_BUT_HAS_NUMBERS`.
-- **Retried start:** two `in_progress`-then-one-finished rows for the same workout, `s_since_prev_start` in seconds, `server_lag_s` about 0.
-- **Offline finish from a partial copy:** the skipped row has both numbered and skip sets (`logs_skipped` > 0), `completed_minus_last_log_s` is not 0 or `INSERTED_LONG_AFTER_START` is set, and no REDO-style second row minutes after it. The extra START then came later from Today's fresh offer.
-- **Queue replay:** `IN_PROGRESS_BUT_HAS_COMPLETED_AT`, `SETS_NEWER_THAN_COMPLETED_AT` or `FINISHED_WITHOUT_COMPLETED_AT`; `row_txid` / `logs_txid_*` give the order of the last writes.
-- Any other `SKIPPED_BUT_HAS_NUMBERS` rows in the output: the corruption is broader than this one session (Escalation 4). Stop and tell me.
-Checked 2026-10-10 on an in-memory Postgres (pglite) against hand-built fixtures for each shape above, plus another user's row that must not appear. That proves the query runs and flags those shapes, not that any of them happened.
-**Result (Adam ran the query, 2026-10-10). What it shows, and what it rules out:**
-- Friday 2026-10-09 PULL 2 has two rows. S1 `17c85d85-1845-4e21-be83-e9e28d405424`: started 16:49:27 (online), 11 sets, all with numbers, none skipped, last set 18:32:06.916, `completed_at` = that same instant, status `skipped`. S2 `415f8566-4f78-445a-a7c6-c68196e35ce2`: same date, same week plan, no `moved_to_date`, started 19:06:33 (inserted 2.5 s later, the same lag as every online start in the table), 0 sets, status `completed`, `completed_at` null (finished Saturday with nothing logged).
-- **Ruled out:** a finish that classified S1 as skipped (`completeSession`/its offline copy need every logged set to be a skip row, and S1 has none); the missed-session prompt (S2 has no `moved_to_date`, and MARK SKIPPED is only handed a `planned` row, never one with sets); a retried or double start (S2 began 2 h 17 min after S1, not seconds); offline replay (S2's insert lag is ordinary, no row is in-progress-with-`completed_at`, no sets newer than a finish, no duplicate sets).
-- **What remains:** S1 was finished at 18:32 (that is what wrote `completed_at`), and then a write that changed only `status` set it `skipped`. The only code that does that to a session with sets is `skipSession` called from **REDO SESSION → CONFIRM** (`CompletedTodayScreen.handleRedo`), which then immediately creates a new in-progress session for the same workout, date and week plan: S2, 34 minutes after S1's last set (19:06 UTC = 20:06 BST). Everything in the table fits that. I read this path from the code and eliminated the others from the data; I did not watch it happen, and I cannot see who tapped. The row's last-write transaction id (9320) is only 3 write-transactions after S1's last set (9317), which is consistent with finish-then-skip but does not prove it.
-- Not B1 but found in the same output: the 2026-10-10 LEGS row `5eb82bfe-5099-42d0-b4d4-d9fdbffea39f` is a `planned` row, `moved_to_date` 2026-10-08 (the B2 repro, a move onto a day that had passed). It hides today's Legs: Today treats the slot as already handled and shows a rest day. B2 stops new ones but doesn't remove this one.
-**Cleanup, not run (yours to decide).** Pre-check (expect all zeros for S2; S2's swaps and any Coach analysis row are deleted with it, `on delete cascade`):
-`select (select count(*) from public.v2_set_logs where session_id = '415f8566-4f78-445a-a7c6-c68196e35ce2') as set_logs, (select count(*) from public.v2_session_exercise_swaps where session_id = '415f8566-4f78-445a-a7c6-c68196e35ce2') as swaps, (select count(*) from public.v2_coach_session_analyses where session_id = '415f8566-4f78-445a-a7c6-c68196e35ce2') as analyses`
-Then, each guarded so a mismatch changes nothing (expect 1 row each):
-1. `update public.v2_sessions set status = 'completed' where id = '17c85d85-1845-4e21-be83-e9e28d405424' and user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and status = 'skipped' and completed_at is not null`
-2. `delete from public.v2_sessions where id = '415f8566-4f78-445a-a7c6-c68196e35ce2' and user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and status = 'completed' and completed_at is null and not exists (select 1 from public.v2_set_logs where session_id = '415f8566-4f78-445a-a7c6-c68196e35ce2')`
-3. (optional, the B2 leftover) `delete from public.v2_sessions where id = '5eb82bfe-5099-42d0-b4d4-d9fdbffea39f' and user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and status = 'planned' and moved_to_date = '2026-10-08'`. Alternative once B2 is live: Plan → Legs → MOVE THIS SESSION → SAT ("MOVE BACK") does the same through the app.
-After: your sessions since 2026-10-01 go from 9 rows to 7 (or 8 without step 3), `v2_set_logs` unchanged. S1 then reads completed again with its 11 sets, so it counts in Progress, History and the "last time" reference again.
-A competent default would: change the code that most likely did it and ship — doesn't apply because: the likeliest path (REDO) is a deliberate feature, so "fixing" it is a product decision (keep the logs and show the session as redone? delete the old session and its logs? stop marking it skipped?), and a fix to the wrong path would leave the real one live while the training data keeps getting corrupted.
-Cost of deferral: nothing is merged for B1. Another REDO, or the real cause, can corrupt another session in the meantime; until this is answered, avoid REDO SESSION and double-check History after a session.
-**Provisional path taken:** B2 (Move offers only today and later days) shipped separately. B1 waits on the query output, then I write a failing test for the confirmed path, fix it, and merge.
-**Questions for you:** (1) the query's result table; (2) once the cause is known, what should REDO / the offline finish do: what should REDO do with the old session: delete it and its logs, keep it as completed, or keep it as skipped but visibly redone?
-Answer: Remove REDO SESSION (Adam, 2026-10-10). Done: the button, its confirm text and `handleRedo` are gone from `CompletedTodayScreen` (tests first). The cleanup above is still Adam's.
+**D30 · Workout screen unchanged for plain sessions.** *(Adam, 2026-10-05)*
+**Answer:** Every chunk that touches the workout screen or the rest timer (13–16 and any other) proves before merging that a session with none of the new features behaves exactly as before: plain sets, an existing dropset, no supersets, warmups, tags, tempo or rest overrides. It must render, log and time rests the same.
+- Proof 1: a jsdom snapshot of the full session screen, taken on master before the chunk and compared with the chunk's branch.
+- Proof 2: a test that logs a set and checks the row written.
+- Any difference that isn't a new feature blocks the merge.
