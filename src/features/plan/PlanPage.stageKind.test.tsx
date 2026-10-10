@@ -13,6 +13,9 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // already uses) to set it. Same mocking recipe as
 // PlanPage.repTargets.test.tsx, extended with a capturable useUpdateSet
 // mock so the chip tap's own write can be asserted.
+// Chunk 29: the kind marker shows in both views (SETS is the default), and the
+// kind controls (ADD STAGE, the STAGE KIND chips) are in the STRUCTURE view's
+// set ⋯, so a test that opens one opens that view first.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -101,7 +104,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openSetMenu } = await import('./planMenus.testutil')
+const { openSetMenu, openStructureView } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -119,6 +122,8 @@ describe('PlanPage — a head with no stages shows no STAGE KIND chip row yet', 
     expect(screen.queryByText('DROPSET')).toBeNull()
     // UI rule (2026-10-10): ADD STAGE is not on the row, it's in the set's ⋯.
     expect(screen.queryByText('ADD STAGE')).toBeNull()
+    openStructureView()
+    expect(screen.queryByText('ADD STAGE')).toBeNull()
     openSetMenu(1)
     expect(screen.getByText('ADD STAGE')).toBeTruthy()
     expect(screen.queryByText('STAGE KIND')).toBeNull()
@@ -135,6 +140,7 @@ describe('PlanPage — a staged head is marked by its resolved kind (chunk 14; m
     // By default: one compact marker on the head, no chip row.
     expect(screen.queryByText('STAGE KIND')).toBeNull()
     expect(screen.getAllByText('DROPSET')).toHaveLength(1)
+    openStructureView()
     openSetMenu(1)
     expect(screen.getByText('STAGE KIND')).toBeTruthy()
     // The marker plus the (active) DROPSET chip in the menu.
@@ -148,6 +154,7 @@ describe('PlanPage — a staged head is marked by its resolved kind (chunk 14; m
     ])]
     renderPlanPage()
     expect(screen.getAllByText('REST-PAUSE')).toHaveLength(1)
+    openStructureView()
     openSetMenu(1)
     // Same reasoning — the head's marker, and the active chip.
     expect(screen.getAllByText('REST-PAUSE')).toHaveLength(2)
@@ -163,6 +170,7 @@ describe('PlanPage — the STAGE KIND chip row writes the head\'s own stage_kind
     ])]
     renderPlanPage()
 
+    openStructureView()
     openSetMenu(1)
     fireEvent.click(screen.getByRole('button', { name: 'CLUSTER' }))
 

@@ -13,6 +13,13 @@ import type { ChangeRecord } from './applyAhead'
 // PlanPage.weekActions.test.tsx/PlanPage.copyButtons.test.tsx). Checked at
 // 375px (this file's own beforeEach, same convention as every other
 // PlanPage test file).
+// Chunk 29 (SPEC Plan screen [P1.1]): the exercise ⋯ (swap, move, add warmup
+// sets, remove), ADD EXERCISE, ADD STAGE, STAGE KIND and a stage's DELETE are
+// the STRUCTURE view's; the offer banner sits above both views. Each test that
+// drives one of them opens that view first (openStructureView) and expects the
+// same record as before. COMPACT's REMOVE LAST SET went with COMPACT: a head
+// is removed from the set's own ⋯ (DELETE SET, in the SETS view), the one path
+// left to the same record.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -134,7 +141,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openExerciseMenu, openSetMenu, openStageMenu } = await import('./planMenus.testutil')
+const { openExerciseMenu, openSetMenu, openStageMenu, openStructureView } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -217,6 +224,7 @@ describe('PlanPage — a swap or move carries forward: the apply-ahead offer app
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
@@ -237,6 +245,7 @@ describe('PlanPage — a swap or move carries forward: the apply-ahead offer app
     mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
     mockState.allPlans = [makePlan(2, [set1()], [pe1, squat]), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Squat')
     fireEvent.click(screen.getByLabelText('Move up'))
@@ -258,6 +267,7 @@ describe('PlanPage — a swap or move carries forward: the apply-ahead offer app
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2)] // nothing later
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
@@ -273,6 +283,7 @@ describe('PlanPage — a swap or move carries forward: the apply-ahead offer app
     mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
     mockState.allPlans = [makePlan(2, [set1()], [pe1, squat])] // nothing later
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Squat')
     fireEvent.click(screen.getByLabelText('Move up'))
@@ -357,6 +368,7 @@ describe('PlanPage — apply-ahead says so when the workout is shared (G14)', ()
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
@@ -373,6 +385,7 @@ describe('PlanPage — apply-ahead says so when the workout is shared (G14)', ()
     mockState.currentPlans = [makePlan(2, [set1()], [pe1, squat])]
     mockState.allPlans = [makePlan(2, [set1()], [pe1, squat]), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu('Squat')
     fireEvent.click(screen.getByLabelText('Move up'))
@@ -400,13 +413,13 @@ describe('PlanPage — apply-ahead offer for the newly-wired edit types (review 
     expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
   })
 
-  it('week-level REMOVE SET (a head, via compact mode\'s MINUS) offers it', () => {
+  it('week-level REMOVE SET (a head, via the set\'s own ⋯ DELETE SET) offers it', () => {
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByText('COMPACT'))
-    fireEvent.click(screen.getByLabelText('Remove last set'))
+    openSetMenu(1)
+    fireEvent.click(screen.getByLabelText('Delete set'))
 
     expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
   })
@@ -415,6 +428,7 @@ describe('PlanPage — apply-ahead offer for the newly-wired edit types (review 
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Add warmup sets'))
@@ -457,6 +471,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openSetMenu(1)
     fireEvent.click(screen.getByText('ADD STAGE'))
@@ -473,6 +488,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
@@ -489,6 +505,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     fireEvent.click(screen.getByText('ADD EXERCISE'))
     fireEvent.click(screen.getByText('Incline Press'))
@@ -500,6 +517,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Remove Bench Press from this week'))
@@ -518,6 +536,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     renderPlanPage()
 
     // Second exercise's (Squat's) own "Move up" — swaps it with the first.
+    openStructureView()
     openExerciseMenu('Squat')
     fireEvent.click(screen.getByLabelText('Move up'))
 
@@ -537,8 +556,8 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByText('COMPACT'))
-    fireEvent.click(screen.getByLabelText('Remove last set'))
+    openSetMenu(1)
+    fireEvent.click(screen.getByLabelText('Delete set'))
 
     expect(applyAndGetChanges()).toEqual([{ editType: 'removeHeadSet', slotId: 'pe-1', exerciseId: 'ex-a', headOrdinal: 1 }])
   })
@@ -549,7 +568,8 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
     renderPlanPage()
 
-    // The stage row's own ⋯ menu holds its DELETE STAGE.
+    // The stage row's own ⋯ menu (in the STRUCTURE view) holds its DELETE STAGE.
+    openStructureView()
     openStageMenu(0)
     fireEvent.click(screen.getByLabelText('Delete stage'))
 
@@ -621,6 +641,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2, [set1(), stage])]
     mockState.allPlans = [makePlan(2, [set1(), stage]), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openSetMenu(1)
     fireEvent.click(screen.getByText('REST-PAUSE'))
@@ -634,6 +655,7 @@ describe('PlanPage — full ChangeRecord field content, built by the real UI (re
     mockState.currentPlans = [makePlan(2)]
     mockState.allPlans = [makePlan(2), makePlan(3, [], [])]
     renderPlanPage()
+    openStructureView()
 
     openExerciseMenu()
     fireEvent.click(screen.getByLabelText('Add warmup sets'))
