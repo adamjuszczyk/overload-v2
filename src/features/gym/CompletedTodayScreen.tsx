@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import type { Session, Mesocycle, WorkoutDay, WeekPlan } from '../../types'
+import type { Session, WorkoutDay } from '../../types'
 import type { ScheduleType } from './referenceByExercise'
-import { useActiveSession, useReopenSession, useSkipSession, useCreateSession, useUpdateSessionNote } from './useSession'
-import { usePlanWeek, planWeekThenFindId } from '../plan/useWeekPlan'
+import { useActiveSession, useReopenSession, useUpdateSessionNote } from './useSession'
 import { countCompletedSets } from './countCompletedSets'
 import TodayHeader from './TodayHeader'
 
@@ -17,14 +16,17 @@ import TodayHeader from './TodayHeader'
 // omitted) is unchanged byte-for-byte (D30: weekday behaviour identical).
 //
 // Loads the full session (with setLogs) to get an accurate set count, and
-// offers Continue / Redo actions.
+// offers Continue (reopen) and the note editor.
+//
+// B1 (2026-10-10, DECISIONS 39): there is deliberately no REDO here any more.
+// It skipped the finished session (status -> 'skipped', sets kept) and
+// started a fresh one, which left Friday 2026-10-09's PULL 2 as a SKIPPED
+// session full of numbers beside an empty in-progress twin. Nothing on this
+// screen skips or creates a session.
 export default function CompletedTodayScreen({
   session: basicSession,
-  activeMeso,
   workoutDay,
-  weekPlan,
   weekNumber,
-  today,
   todayLabel,
   // Chunk 24 — only ever passed from the due_today list's "each opens on
   // its own" view (reviewer's note 2); the common, single-session path
@@ -36,62 +38,27 @@ export default function CompletedTodayScreen({
   scheduleType = 'weekday',
 }: {
   session: Session
-  activeMeso: Mesocycle
   workoutDay: WorkoutDay | null
-  weekPlan: WeekPlan | null
   weekNumber: number
-  today: string
   todayLabel: string
   onBack?: () => void
   scheduleType?: ScheduleType
 }) {
-  const [confirmAction, setConfirmAction] = useState<'continue' | 'redo' | null>(null)
+  const [confirmContinue, setConfirmContinue] = useState(false)
   const [isEditingNote, setIsEditingNote] = useState(false)
   const [noteInput, setNoteInput] = useState(basicSession.note ?? '')
 
   // Fetch full session so setLogs are present (fetchSessionsInRange omits them)
   const { data: fullSession } = useActiveSession(basicSession.id)
   const reopenSession = useReopenSession()
-  const skipSession = useSkipSession()
-  const createSession = useCreateSession()
-  const planWeek = usePlanWeek()
   const updateNote = useUpdateSessionNote()
 
   const { total: totalSets, skipped: skippedSets } = countCompletedSets(fullSession?.setLogs ?? [])
-  const isPending =
-    reopenSession.isPending || createSession.isPending || skipSession.isPending || planWeek.isPending
+  const isPending = reopenSession.isPending
 
   async function handleContinue() {
     await reopenSession.mutateAsync(basicSession.id)
     // Scheduler will transition to active_session automatically via invalidation
-  }
-
-  async function handleRedo() {
-    if (!workoutDay) return
-    // Skip the current completed session, then start a fresh one. Chunk 8
-    // — same "plan right before starting" as TodayPage's own handleStart:
-    // redoing today's session is still "starting a session" on Today.
-    await skipSession.mutateAsync(basicSession.id)
-    const weekPlanId = await planWeekThenFindId(
-      activeMeso.id,
-      weekNumber,
-      workoutDay.id,
-      weekPlan?.id ?? null,
-      planWeek,
-      undefined,
-      // Chunk 25 (R16) — this slot's own identity, so redoing the SECOND
-      // occurrence of a repeated workout in a sequence cycle finds that
-      // same slot's own plan, never the first occurrence's. null for a
-      // weekday run (weekPlan?.sequencePosition is undefined there),
-      // unchanged behaviour.
-      weekPlan?.sequencePosition ?? null,
-    )
-    await createSession.mutateAsync({
-      mesoId: activeMeso.id,
-      weekPlanId,
-      workoutDayId: workoutDay.id,
-      date: today,
-    })
   }
 
   return (
@@ -207,7 +174,7 @@ export default function CompletedTodayScreen({
       </div>
 
       {/* Confirmation prompt */}
-      {confirmAction && (
+      {confirmContinue && (
         <div
           className="mt-4 rounded-xl p-4"
           style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border-strong)' }}
@@ -216,13 +183,11 @@ export default function CompletedTodayScreen({
             className="text-sm font-bold mb-3"
             style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
           >
-            {confirmAction === 'continue'
-              ? 'Resume where you left off — all logged sets stay intact.'
-              : 'Start fresh — current session is marked skipped and all inputs clear.'}
+            Resume where you left off — all logged sets stay intact.
           </p>
           <div className="flex gap-2">
             <button
-              onClick={confirmAction === 'continue' ? handleContinue : handleRedo}
+              onClick={handleContinue}
               disabled={isPending}
               className="flex-1 py-3 rounded-xl font-black text-sm tracking-wider"
               style={{
@@ -235,7 +200,7 @@ export default function CompletedTodayScreen({
               {isPending ? 'WORKING…' : 'CONFIRM'}
             </button>
             <button
-              onClick={() => setConfirmAction(null)}
+              onClick={() => setConfirmContinue(false)}
               disabled={isPending}
               className="flex-1 py-3 rounded-xl font-bold text-sm tracking-wider"
               style={{
@@ -251,10 +216,10 @@ export default function CompletedTodayScreen({
       )}
 
       {/* Action buttons */}
-      {!confirmAction && (
+      {!confirmContinue && (
         <div className="mt-4 space-y-3">
           <button
-            onClick={() => setConfirmAction('continue')}
+            onClick={() => setConfirmContinue(true)}
             className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
             style={{
               backgroundColor: 'var(--accent)',
@@ -269,24 +234,6 @@ export default function CompletedTodayScreen({
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
             Pick up right where you left off
-          </p>
-
-          <button
-            onClick={() => setConfirmAction('redo')}
-            className="w-full py-3 rounded-xl font-bold text-sm tracking-widest"
-            style={{
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            REDO SESSION
-          </button>
-          <p
-            className="text-center text-xs"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            Start fresh — current session is discarded
           </p>
         </div>
       )}

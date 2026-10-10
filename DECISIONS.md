@@ -319,7 +319,7 @@ Provisional path taken: from now on I run `bash scripts/check-embeds-local.sh` o
 Answer:
 
 ## 39 B1: a finished session reads SKIPPED with its numbers, plus a second empty in-progress one (cause not yet confirmed)
-Severity: blocking
+Severity: deferred (code fixed, Adam's data cleanup pending)
 Chunk: none (live bug report, 2026-10-10)
 What happened: Adam finished Friday 2026-10-09's pull workout with every set logged. History shows that session as SKIPPED with all its numbers. Saturday morning the app opened on a second session of the same workout, already started, with no numbers and an absurd session time; he finished it, so it's now logged a second time, empty. **I could not read the data.** The dev environment has only the anon key and a test account that owns no data; a select filtered to Adam's user_id returns `[]` (probed 2026-10-10), which is exactly what RLS gives anyone who isn't Adam, so it says nothing about whether the rows exist. Signing in as Adam is Escalation 3, so the cause below is from the code only.
 **What the code says (read 2026-10-10, not run against his data).** Every write that sets `v2_sessions.status = 'skipped'`:
@@ -356,5 +356,4 @@ A competent default would: change the code that most likely did it and ship — 
 Cost of deferral: nothing is merged for B1. Another REDO, or the real cause, can corrupt another session in the meantime; until this is answered, avoid REDO SESSION and double-check History after a session.
 **Provisional path taken:** B2 (Move offers only today and later days) shipped separately. B1 waits on the query output, then I write a failing test for the confirmed path, fix it, and merge.
 **Questions for you:** (1) the query's result table; (2) once the cause is known, what should REDO / the offline finish do: what should REDO do with the old session: delete it and its logs, keep it as completed, or keep it as skipped but visibly redone?
-Answer:
-
+Answer: Remove REDO SESSION (Adam, 2026-10-10). Done: the button, its confirm text and `handleRedo` are gone from `CompletedTodayScreen` (tests first). The cleanup above is still Adam's.

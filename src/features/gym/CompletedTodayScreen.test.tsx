@@ -1,34 +1,37 @@
 // @vitest-environment jsdom
 //
-// Chunk 25 review fix 2 (DECISIONS 73 option a) — this component's own
-// "plan-then-create" wiring (handleRedo: skip the completed session, plan
-// the slot, create a fresh one) had no screen-layer test of its own at
-// all — not even for the weekday case. This closes that gap directly, with
-// the exact focus the review names: the sequencePosition argument handed
-// to planWeekThenFindId is the SELECTED slot's own (weekPlan.sequencePosition),
-// never null and never the other slot's, for a repeated workout's second
-// occurrence.
+// B1 (2026-10-10, DECISIONS 39): the screen a finished session lands on used
+// to carry REDO SESSION, whose CONFIRM marked the finished session `skipped`
+// (keeping its sets) and started a fresh one. That left Friday 2026-10-09's
+// PULL 2 as a SKIPPED session full of numbers plus an empty in-progress twin.
+// REDO is removed (Adam's decision): this screen can only CONTINUE (reopen) a
+// finished session or edit its note. These tests pin that nothing on it can
+// skip or create a session, and that CONTINUE still reopens.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
-import type { Mesocycle, WorkoutDay, WeekPlan, Session } from '../../types'
+import type { WorkoutDay, Session } from '../../types'
 
 const activeSessionMock = vi.fn()
 const reopenSessionMutateAsyncMock = vi.fn().mockResolvedValue(undefined)
 const skipSessionMutateAsyncMock = vi.fn().mockResolvedValue(undefined)
 const createSessionMutateAsyncMock = vi.fn().mockResolvedValue(undefined)
 const updateNoteMutateAsyncMock = vi.fn().mockResolvedValue(undefined)
-const planWeekThenFindIdMock = vi.fn().mockResolvedValue('wp-resolved')
 
 vi.mock('./useSession', () => ({
   useActiveSession: (id: string) => activeSessionMock(id),
   useReopenSession: () => ({ mutateAsync: reopenSessionMutateAsyncMock, isPending: false }),
+  // Still provided so the test would catch the screen calling them again.
   useSkipSession: () => ({ mutateAsync: skipSessionMutateAsyncMock, isPending: false }),
   useCreateSession: () => ({ mutateAsync: createSessionMutateAsyncMock, isPending: false }),
   useUpdateSessionNote: () => ({ mutateAsync: updateNoteMutateAsyncMock, isPending: false }),
 }))
+
+// The screen no longer plans or starts anything; kept mocked so a regression
+// that brought REDO back would run against the same harness and fail on the
+// assertions below, not on a missing QueryClient.
 vi.mock('../plan/useWeekPlan', () => ({
   usePlanWeek: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  planWeekThenFindId: (...args: unknown[]) => planWeekThenFindIdMock(...args),
+  planWeekThenFindId: vi.fn().mockResolvedValue('wp-resolved'),
 }))
 
 const { default: CompletedTodayScreen } = await import('./CompletedTodayScreen')
@@ -40,97 +43,54 @@ beforeEach(() => {
   skipSessionMutateAsyncMock.mockClear()
   createSessionMutateAsyncMock.mockClear()
   updateNoteMutateAsyncMock.mockClear()
-  planWeekThenFindIdMock.mockClear()
 })
 
-const activeMeso: Mesocycle = {
-  id: 'meso-1', userId: 'user-1', name: 'Seq Meso', programId: 'prog-1', status: 'active',
-  startDate: '2026-01-01', endDate: null, createdAt: '2026-01-01T00:00:00Z',
-}
-const workoutDayA: WorkoutDay = { id: 'wd-a', programId: 'prog-1', userId: 'user-1', name: 'A', position: 0, exercises: [] }
-const basicSession: Session = {
-  id: 's-1', userId: 'user-1', mesocycleId: 'meso-1', weekPlanId: 'wp-slot2', workoutDayId: 'wd-a',
+const workoutDay: WorkoutDay = { id: 'wd-a', programId: 'prog-1', userId: 'user-1', name: 'PULL 2', position: 0, exercises: [] }
+const session: Session = {
+  id: 's-1', userId: 'user-1', mesocycleId: 'meso-1', weekPlanId: 'wp-1', workoutDayId: 'wd-a',
   date: '2026-02-10', status: 'completed', note: null, startedAt: '2026-02-10T09:00:00Z',
   completedAt: '2026-02-10T10:00:00Z', createdAt: '2026-02-10T09:00:00Z', setLogs: [], energyRating: null, pumpRating: null,
 }
-
-function weekPlan(overrides: Partial<WeekPlan> & { id: string }): WeekPlan {
-  return {
-    userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-a', weekNumber: 3, isDeload: false,
-    notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
-    ...overrides,
-  }
+function renderScreen(scheduleType?: 'weekday' | 'sequence') {
+  return render(
+    <CompletedTodayScreen
+      session={session}
+      workoutDay={workoutDay}
+      weekNumber={3}
+      todayLabel="TUESDAY"
+      scheduleType={scheduleType}
+    />,
+  )
 }
 
-function clickRedo() {
-  fireEvent.click(screen.getByText('REDO SESSION'))
-  fireEvent.click(screen.getByText('CONFIRM'))
-}
+describe.each([['weekday', undefined], ['sequence', 'sequence' as const]])(
+  'CompletedTodayScreen (%s run) — a finished session cannot be redone',
+  (_name, scheduleType) => {
+    it('offers no REDO control and no text promising the session is discarded or marked skipped', () => {
+      renderScreen(scheduleType)
 
-describe('CompletedTodayScreen — REDO\'s own plan-then-create wiring (chunk 25 review fix 2)', () => {
-  it('a repeated workout\'s SECOND slot (sequencePosition 2): planWeekThenFindId is called with 2, never null and never 0', async () => {
-    render(
-      <CompletedTodayScreen
-        session={basicSession}
-        activeMeso={activeMeso}
-        workoutDay={workoutDayA}
-        weekPlan={weekPlan({ id: 'wp-slot2', sequencePosition: 2 })}
-        weekNumber={3}
-        today="2026-02-10"
-        todayLabel="TUESDAY"
-        scheduleType="sequence"
-      />,
-    )
+      expect(screen.queryByText(/redo/i)).toBeNull()
+      expect(screen.queryByText(/discard/i)).toBeNull()
+      expect(screen.queryByText(/marked skipped/i)).toBeNull()
+    })
 
-    clickRedo()
+    it('CONTINUE SESSION then CONFIRM reopens this very session, and nothing is skipped or created', async () => {
+      renderScreen(scheduleType)
 
-    await waitFor(() => expect(createSessionMutateAsyncMock).toHaveBeenCalled())
-    // planWeekThenFindId(mesoId, weekNumber, workoutDayId, fallback, planWeekMutation, fetchPlans, sequencePosition)
-    expect(planWeekThenFindIdMock).toHaveBeenCalledWith(
-      'meso-1', 3, 'wd-a', 'wp-slot2', expect.anything(), undefined, 2,
-    )
-  })
+      fireEvent.click(screen.getByText('CONTINUE SESSION'))
+      fireEvent.click(screen.getByText('CONFIRM'))
 
-  it('the FIRST slot (sequencePosition 0) of the same repeated workout: planWeekThenFindId is called with 0, never 2', async () => {
-    render(
-      <CompletedTodayScreen
-        session={basicSession}
-        activeMeso={activeMeso}
-        workoutDay={workoutDayA}
-        weekPlan={weekPlan({ id: 'wp-slot0', sequencePosition: 0 })}
-        weekNumber={3}
-        today="2026-02-10"
-        todayLabel="TUESDAY"
-        scheduleType="sequence"
-      />,
-    )
+      await waitFor(() => expect(reopenSessionMutateAsyncMock).toHaveBeenCalledWith('s-1'))
+      expect(skipSessionMutateAsyncMock).not.toHaveBeenCalled()
+      expect(createSessionMutateAsyncMock).not.toHaveBeenCalled()
+    })
 
-    clickRedo()
+    it('tapping CONFIRM with no CONTINUE chosen is impossible (no confirm card until a choice is made)', () => {
+      renderScreen(scheduleType)
 
-    await waitFor(() => expect(createSessionMutateAsyncMock).toHaveBeenCalled())
-    expect(planWeekThenFindIdMock).toHaveBeenCalledWith(
-      'meso-1', 3, 'wd-a', 'wp-slot0', expect.anything(), undefined, 0,
-    )
-  })
-
-  it('a weekday run (sequencePosition undefined on the weekPlan): planWeekThenFindId is called with null, unchanged', async () => {
-    render(
-      <CompletedTodayScreen
-        session={basicSession}
-        activeMeso={activeMeso}
-        workoutDay={workoutDayA}
-        weekPlan={weekPlan({ id: 'wp-weekday' })}
-        weekNumber={3}
-        today="2026-02-10"
-        todayLabel="TUESDAY"
-      />,
-    )
-
-    clickRedo()
-
-    await waitFor(() => expect(createSessionMutateAsyncMock).toHaveBeenCalled())
-    expect(planWeekThenFindIdMock).toHaveBeenCalledWith(
-      'meso-1', 3, 'wd-a', 'wp-weekday', expect.anything(), undefined, null,
-    )
-  })
-})
+      expect(screen.queryByText('CONFIRM')).toBeNull()
+      expect(reopenSessionMutateAsyncMock).not.toHaveBeenCalled()
+      expect(skipSessionMutateAsyncMock).not.toHaveBeenCalled()
+    })
+  },
+)

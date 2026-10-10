@@ -339,18 +339,11 @@ export default function TodayPage() {
 
   if (result.type === 'completed_today') {
     const workoutDay = workoutDays.find((wd) => wd.id === result.session.workoutDayId) ?? null
-    const weekPlan =
-      currentWeekPlans.find((wp) => wp.workoutDayId === result.session.workoutDayId) ??
-      allWeekPlans.find((wp) => wp.id === result.session.weekPlanId) ??
-      null
     return (
       <CompletedTodayScreen
         session={result.session}
-        activeMeso={activeMeso!}
         workoutDay={workoutDay}
-        weekPlan={weekPlan}
         weekNumber={currentWeek}
-        today={today}
         todayLabel={todayLabel}
       />
     )
@@ -365,18 +358,11 @@ export default function TodayPage() {
       const onBack = () => setSelectedEntryIndex(null)
       if (entry.type === 'completed_today') {
         const workoutDay = workoutDays.find((wd) => wd.id === entry.session.workoutDayId) ?? null
-        const weekPlan =
-          currentWeekPlans.find((wp) => wp.workoutDayId === entry.session.workoutDayId) ??
-          allWeekPlans.find((wp) => wp.id === entry.session.weekPlanId) ??
-          null
         return (
           <CompletedTodayScreen
             session={entry.session}
-            activeMeso={activeMeso!}
             workoutDay={workoutDay}
-            weekPlan={weekPlan}
             weekNumber={currentWeek}
-            today={today}
             todayLabel={todayLabel}
             onBack={onBack}
           />
