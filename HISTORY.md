@@ -24087,3 +24087,17 @@ A review of TASKS-1.1 after Adam's answers found more gaps (G40–G44), turned G
 - (Where the build is) `TASKS-1.1.md` plans chunks 27–33: migrations 038 (chunk 27) and 039 (chunk 32, `v2_make_week_default`), and no new tables or columns.
 - (Where the build is) No open gap blocks chunks 27, 28, 29 and 32. Open: G35 (chunk 30), G36–G38 (31), G39 (33). P1 answered: D29 covers 038 and 039.
 - (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G39 open; appendix: later per-week structure).
+
+---
+
+## 2026-10-10 (SPEC change 1.1, Adam's second answers) — Moved out of CONTEXT.md and DECISIONS.md (no longer true)
+
+Adam answered G35–G44 and P4 and set a standing rule for display-only edge cases (DECISIONS D31). TASKS-1.1 gained chunks 34 and 35, and migrations became 038 (27), 039 (34) and 040 (32). One gap (G45) is open. Previous wording, verbatim:
+
+- (DECISIONS 80) Open in TASKS-1.1 after the answers: G35–G37, G39–G44, and P4 (who merges 039, which now also adds a function). G38 became a reading.
+- (What this is) Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review) revised how a running program is edited, and Adam answered the gaps it raised the same day. Its rules, answers included, are tagged [P1.1] in SPEC.md and planned in TASKS-1.1.md (chunks 27–33). Rest, tempo, the warmup routine and grouping stay run-wide; per-week storage is a later revision, kept in TASKS-1.1's appendix. None is built; chunks 30–33 each stop at open gaps for the cases they name (TASKS-1.1 "Open spec gaps"). Phase 2 and SPEC's "Later" list are not being done.
+- (Where the build is) SPEC.md: the change in `ac48b66`; Adam's answers to G16–G34, the stale-line fixes and three clarifications from a review of them, the same day. Everything is tagged [P1.1], plus a one-line legend under "What this is".
+- (Where the build is) `TASKS-1.1.md` plans chunks 27–33: migrations 038 (chunk 27, `v2_plan_week` stops reading carry values) and 039 (chunk 32: `v2_program_sets.removed_at`, so the default soft-removes sets; `v2_plan_week` skipping them; `v2_make_week_default`). No new tables.
+- (Where the build is) No open gap blocks chunks 27, 28 and 29. Open: G35 (chunk 30), G36, G37 and G42 (31), G40 and G41 (32, sequence runs), G39 and G43 (33), G44 (no chunk as written). G38 became a reading. P1: D29 covers 038; P4 (who merges 039, which now also adds a function) is open.
+- (Where the build is) **Next migration number: 038** (028–037 merged and live; TASKS-1.1 plans 038–039).
+- (Repo facts, Docs) TASKS-1.1.md = the [P1.1] plan (chunks 27–33; gaps G35–G37 and G39–G44 and P4 open; appendix: later per-week structure).

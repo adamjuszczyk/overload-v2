@@ -1,7 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–33, not started). Adam answered G16–G34 and P1 (entry 80); the open gaps (G35–G37, G39–G44) and P4 wait on Adam there, and aren't repeated here. The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–35, not started). Adam answered G16–G34 and P1 (entry 80), then G35–G44 and P4 (entry 81). One gap, G45, waits on Adam in TASKS-1.1 and isn't repeated here. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
+
+Decisions (provisional under D31: each is built as written unless you change it):
+- **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
+- **83** — the same exercise twice in one workout, for highlighting. Provisional: matched in order of position. Blocks: nothing.
+- **84** — how Plan knows a week started empty. Provisional: Settings → NEW WEEK STARTS is "empty" (week-dependent runs); exact would need a new column, which is yours to choose. Blocks: nothing.
+- **85** — START when the program has no schedule. Provisional: disabled, with a one-line reason. Blocks: nothing.
+- **86** — Plan for a run with no schedule. Provisional: "NO WORKOUTS SCHEDULED" and "Programs →". Blocks: nothing.
+- **87** — the deload rules in Plan. Provisional: one read-only line under MARK WEEK AS DELOAD. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -35,13 +43,102 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
+### 87 Deload rules in Plan: where and how they show (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 33
+**Ask:** Where next to the deload action do the rules in effect show, and in what form?
+**Options:** (a) one read-only line under MARK WEEK AS DELOAD (MARK CYCLE AS DELOAD): the rules, and whether they're your default or this run's; nothing when no rules are on. (b) The same beside each session's DELOAD toggle. (c) Behind a ⋯ on the deload button.
+**Recommendation:** (a): one place per week, next to the action that applies them, and an unset feature shows nothing (standing UI rule).
+**Blocked until answered/done:** nothing; chunk 33 builds (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: your G43 answer says "show the rules in effect read-only next to the deload action". Plan has two deload actions: MARK WEEK AS DELOAD above the panel, and a DELOAD toggle on each session.
+A competent default would: pick (a) and continue, which D31 now says to do.
+Cost of deferral: one line of UI and its screen test.
+
+### 86 Plan's line for a run with no schedule (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 33
+**Ask:** What does Plan show for a run with no schedule, now that one can't be set during a run?
+**Options:** (a) "NO WORKOUTS SCHEDULED", then "Programs →" linking to the Programs page, the same for weekday and sequence runs. (b) Today's two messages ("NO DAYS SCHEDULED", "NO SLOTS SCHEDULED"), each with the new link.
+**Recommendation:** (a): there's nothing left to set up per schedule type, so one message does.
+**Blocked until answered/done:** nothing; chunk 33 builds (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: your G39 answer says "an existing run with none shows a line linking to the Programs page". Only a run started before Start needed a schedule can be in this state.
+A competent default would: pick (a) and continue, which D31 now says to do.
+Cost of deferral: one string and its screen test.
+
+### 85 START without a schedule: how it shows (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 33
+**Ask:** How does START show that the program needs a schedule first?
+**Options:** (a) START disabled, with one line under it: "Schedule at least one workout to start". (b) START enabled, and tapping it shows that message instead of starting.
+**Recommendation:** (a): the reason shows before the tap, and nothing can start by accident.
+**Blocked until answered/done:** nothing; chunk 33 builds (a), on the planner and on the Programs page.
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: your G39 answer says "the planner requires a schedule before Start". I read it as every START, the Programs page's included, because that page starts a run without opening the planner (TASKS-1.1 "Readings of the second answers").
+A competent default would: pick (a) and continue, which D31 now says to do.
+Cost of deferral: the button state, one line and their screen tests.
+
+### 84 Highlighting: how Plan knows a week started empty (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 31
+**Ask:** A week that started empty shows no highlighting (your G42 answer), but nothing records how a week started. How does Plan tell?
+**Options:**
+- (a) On a week-dependent run, while Settings → NEW WEEK STARTS is "empty", weeks after week 1 show no highlighting; so does a week with no source.
+- (b) Only a session that's still empty shows none; once filled, it's compared with its source.
+- (c) Record each week's source when it's planned (a column that `v2_plan_week` sets). Exact, but it changes data, so it's yours to choose.
+**Recommendation:** (a): it matches your answer for anyone who builds weeks fresh, with no data change. It's wrong only for weeks planned before the setting was last changed.
+**Blocked until answered/done:** nothing; chunk 31 builds (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: `v2_plan_week` picks a week's source when it plans it (037 L325–333) but stores nothing about it, and `v2_week_plans` has no such column (001, 027, 037). A week also starts empty under "copy" when there's nothing usable to copy (DECISIONS 42).
+A competent default would: pick (a) and continue, which D31 now says to do. (c) changes data, so it waits for you.
+Cost of deferral: the rule in `weekDiff.ts` and one screen test.
+
+### 83 Highlighting: the same exercise twice in one workout (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 31
+**Ask:** Exercises are matched by identity (G23, G36). When a workout has the same exercise twice, which is matched with which?
+**Options:** (a) In order of position: first with first, second with second. (b) By slot (the exercise's own row) first, then by identity.
+**Recommendation:** (a): simplest, and the same as plain identity matching whenever an exercise appears once.
+**Blocked until answered/done:** nothing; chunk 31 builds (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: matching by identity is ambiguous only when an exercise repeats in one workout, such as a heavy and a light bench press.
+A competent default would: pick (a) and continue, which D31 now says to do.
+Cost of deferral: the matching rule in `weekDiff.ts` and its tests.
+
+### 82 Highlighting: which exercises count as moved (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 31
+**Ask:** Only the moved item is highlighted, and both when two neighbours trade places (G36). Which ones in other reorders?
+**Options:** (a) Every exercise outside any of the largest groups that kept their order: one exercise moved past two others is the only one, two neighbours that traded places are both, and two such pairs are all four. (b) One per tie, chosen by a fixed rule such as the lower one.
+**Recommendation:** (a): it's the general form of your "both", with no tie-break rule to explain.
+**Blocked until answered/done:** nothing; chunk 31 builds (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: a reorder can have more than one smallest set of "moved" exercises. Two neighbours trading places is the simplest case, and you answered it.
+A competent default would: pick (a) and continue, which D31 now says to do.
+Cost of deferral: the order rule in `weekDiff.ts` and its tests.
+
+### 81 SPEC change 1.1: Adam's answers to G35–G44 and P4, and a standing rule for display-only edge cases
+- What: TASKS-1.1's gaps G35–G37 and G39–G44 (G38 was a reading), and P4: does D29 cover chunk 32's migration?
+- Answer (Adam):
+  - G35–G44 and P4 (yes) are answered in TASKS-1.1 "Answered gaps" (second round) and SPEC.md [P1.1]. G44 becomes chunk 34 and G40 chunk 35; the six readings he was shown are confirmed.
+  - Standing rule (D31): a display-only edge case gets the simplest option consistent with SPEC, recorded as a provisional decision, and work continues. Only data or behaviour stops a chunk. Entries 82–87 are the first.
+  - Open after the answers: G45 (it changes data), in TASKS-1.1.
+- Date: 2026-10-10
+
 ### 80 SPEC change 1.1: Adam's answers to TASKS-1.1's gaps G16–G34 and P1
 - What: The spec gaps TASKS-1.1 raised against SPEC change 1.1 (G16–G34), and P1: does D29 cover 1.1's function-only migrations?
 - Answer (Adam):
   - Rest, tempo, the warmup routine and superset grouping stay run-wide, edited in the week's Structure view and labelled "every week". Per-week storage is a later revision (TASKS-1.1's appendix).
   - G16, G17, G21–G31, G34 and P1 (yes) are answered in TASKS-1.1 "Answered gaps" and SPEC.md [P1.1]. G18–G20, G32 and G33 fell away.
   - COMPACT is removed, which supersedes D6's compact view once TASKS-1.1 chunk 29 ships.
-  - Open in TASKS-1.1 after the answers: G35–G37, G39–G44, and P4 (who merges 039, which now also adds a function). G38 became a reading.
+  - G35–G37, G39–G44 and P4 followed; Adam answered them in entry 81. G38 became a reading.
 - Date: 2026-10-10
 
 ### 79 After B1/B2: live check of REDO's removal
@@ -431,3 +528,6 @@ Format of D1–D28: **Decided** — the question. **Answer** — what was chosen
 - Proof 1: a jsdom snapshot of the full session screen, taken on master before the chunk and compared with the chunk's branch.
 - Proof 2: a test that logs a set and checks the row written.
 - Any difference that isn't a new feature blocks the merge.
+
+**D31 · Display-only edge cases are decided provisionally.** *(Adam, 2026-10-10)*
+**Answer:** For a display-only edge case (what's highlighted, a label, an empty state, where a control sits), take the simplest option consistent with SPEC, record it as a provisional decision in "Waiting on Adam" (Decisions), and continue. Stop only for something that changes data or behaviour.
