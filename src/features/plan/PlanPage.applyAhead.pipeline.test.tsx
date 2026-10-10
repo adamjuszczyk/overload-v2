@@ -165,6 +165,8 @@ describe('PlanPage — applying a swap ahead, through the REAL pure core and exe
   it('repoints the later week whose row has the SAME own id at the edited week\'s real resulting row, and skips the week that only stores the slot in carry_* — never a hand-built id on either side', async () => {
     renderPlanPage()
 
+    // The exercise ⋯ is in the STRUCTURE view (chunk 29).
+    fireEvent.click(await screen.findByText('STRUCTURE'))
     fireEvent.click(await screen.findByLabelText('Bench Press options'))
     fireEvent.click(screen.getByLabelText('Swap Bench Press'))
     await act(async () => {
