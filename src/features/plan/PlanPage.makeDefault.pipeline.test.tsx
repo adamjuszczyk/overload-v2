@@ -85,6 +85,8 @@ const updateSetMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addPointedExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addWeekExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addPointedSetMock = vi.fn(async (..._args: unknown[]) => undefined)
+const addPointedStageMock = vi.fn(async (..._args: unknown[]) => undefined)
+const removeSetMock = vi.fn(async (..._args: unknown[]) => undefined)
 const repointMock = vi.fn(async (..._args: unknown[]) => undefined)
 const relinkMock = vi.fn(async (..._args: unknown[]) => undefined)
 const removeWeekExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
@@ -123,7 +125,7 @@ vi.mock('./weekPlanService', () => ({
   addWarmupSet: vi.fn(async () => undefined),
   addStage: vi.fn(async () => undefined),
   updateSet: (...args: unknown[]) => updateSetMock(...args),
-  removeSet: vi.fn(async () => undefined),
+  removeSet: (...args: unknown[]) => removeSetMock(...args),
   copyFromPreviousWeek: vi.fn(async () => undefined),
   copyWorkoutFromPreviousWeek: vi.fn(async () => undefined),
   planWeek: () => planWeekMock(),
@@ -133,7 +135,7 @@ vi.mock('./weekPlanService', () => ({
   addWeekExercise: (...args: unknown[]) => addWeekExerciseMock(...args),
   addPointedExercise: (...args: unknown[]) => addPointedExerciseMock(...args),
   addPointedSet: (...args: unknown[]) => addPointedSetMock(...args),
-  addPointedStage: vi.fn(async () => undefined),
+  addPointedStage: (...args: unknown[]) => addPointedStageMock(...args),
   removeWeekExercise: (...args: unknown[]) => removeWeekExerciseMock(...args),
   reorderWeekExercises: vi.fn(async () => undefined),
 }))
@@ -147,6 +149,8 @@ afterEach(() => {
   addPointedExerciseMock.mockClear()
   addWeekExerciseMock.mockClear()
   addPointedSetMock.mockClear()
+  addPointedStageMock.mockClear()
+  removeSetMock.mockClear()
   repointMock.mockClear()
   relinkMock.mockClear()
   removeWeekExerciseMock.mockClear()
@@ -366,6 +370,21 @@ describe('PlanPage — make this week the default after the source week swapped 
     expect(repointMock.mock.calls.map((c) => c[0])).toEqual(['wp-5'])
   })
 
+  // ...and the swapped slot's other parts reach it there: the default also changed the swapped-in exercise's
+  // first set to 6–8, and the week that took the swap holds that set under the swapped-in row, not the replaced one.
+  // Break: look for the swapped slot's sets only under the replaced row -> week 4 is not updated.
+  it('the swapped slot\'s other parts reach a week that took the swap: its set under the swapped-in row is updated too', async () => {
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault([dset('pi-1', 1, { repMin: 6, repMax: 8 }), dset('pi-2', 2)])]]]))
+    allPlans = [sourceWithSwap(), tookSwap(4), withRow(5)]
+    await apply(2)
+    expect(updateSetMock.mock.calls).toEqual([
+      ['r1-w4', { repMin: 6, repMax: 8, isAmrap: false }],
+      ['r1-w5', { repMin: 6, repMax: 8, isAmrap: false }],
+    ])
+    expect(relinkMock).toHaveBeenCalledTimes(1)
+    expect(repointMock.mock.calls.map((c) => c[0])).toEqual(['wp-5'])
+  })
+
   it('without the source session in what Plan held (the function names another), a swap is told as a removal and an addition: never guessed', async () => {
     makeWeekDefaultMock.mockResolvedValue({ ...answerWithRow, workouts: [{ ...answerWithRow.workouts[0], sourceWeekPlanId: 'wp-elsewhere' }] })
     allPlans = [sourceWithSwap(), withRow(4)]
@@ -376,6 +395,38 @@ describe('PlanPage — make this week the default after the source week swapped 
     expect(repointMock).not.toHaveBeenCalled()
     expect(removeWeekExerciseMock.mock.calls).toEqual([['wp-4', 'pe-row']])
     expect(addPointedExerciseMock.mock.calls.map((c) => (c[0] as { programExerciseId: string }).programExerciseId)).toEqual(['pe-incline'])
+  })
+
+  // M12: a stage the source week added under the swapped-in exercise's head is added ahead under the week's head
+  // for it. In a later week that head still names the replaced row's program set until the swap's re-link runs, so
+  // the record has to name the OLD head; the new head's id finds nothing and the stage is silently not added.
+  // Break: name the new head (pi-1) in the record -> addPointedStage is never called.
+  it('M12 — a stage added under a swapped slot\'s head is added ahead under the later week\'s head', async () => {
+    const rowDropset = (): DefaultExercise => ({ id: 'pe-row', exerciseId: 'ex-row', position: 1, sets: [dset('pr-1', 1, { stageKind: 'dropset' })] })
+    makeWeekDefaultMock.mockResolvedValue({ ...answerWithRow, workouts: [{ ...answerWithRow.workouts[0], oldExercises: [benchDefault(), rowDropset()] }] })
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault([dset('pi-1', 1, { stageKind: 'dropset' }), dset('pi-1s1', 1, { parentProgramSetId: 'pi-1', stageIndex: 1, repMin: 12, repMax: 12 })])]]]))
+    allPlans = [
+      oldWeek(3, {
+        exercises: [bench(), inclineEx()],
+        sets: [
+          ...benchSets(3),
+          planSet(3, 'i1', 1, 'pr-1', { programExerciseId: 'pe-incline', stageKind: 'dropset' }),
+          planSet(3, 'i1s', 1, null, { programExerciseId: 'pe-incline', parentWeekPlanSetId: 'i1-w3', stageIndex: 1, isDropset: true, repMin: 12, repMax: 12 }),
+        ],
+      }),
+      oldWeek(4, { exercises: [bench(), rowEx()], sets: [...benchSets(4), planSet(4, 'r1', 1, 'pr-1', { programExerciseId: 'pe-row', stageKind: 'dropset', targetWeight: 140 })] }),
+    ]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 1 PLANNED WEEK/)
+
+    expect(repointMock.mock.calls).toEqual([['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'r1-w4', programSetId: 'pi-1' }]]])
+    // (userId, week plan, the SWAPPED-IN row, the week's own head, the stage's index, the stage as the default has it)
+    expect(addPointedStageMock).toHaveBeenCalledTimes(1)
+    const [userId, weekPlanId, rowId, parentId, stageIndex, stage] = addPointedStageMock.mock.calls[0] as [string, string, string, string, number, { programSetId: string; programExerciseId: string }]
+    expect([userId, weekPlanId, rowId, parentId, stageIndex]).toEqual(['user-1', 'wp-4', 'pe-incline', 'r1-w4', 1])
+    expect([stage.programSetId, stage.programExerciseId]).toEqual(['pi-1s1', 'pe-incline'])
   })
 
   // R1: the source week also added a warmup on the swapped-in exercise. Paired by plain ordinal, a later week's
@@ -397,6 +448,49 @@ describe('PlanPage — make this week the default after the source week swapped 
     expect(repointMock.mock.calls).toEqual([['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'r1-w4', programSetId: 'pi-1' }, { weekSetId: 'r2-w4', programSetId: 'pi-2' }]]])
     expect(updateSetMock).not.toHaveBeenCalled() // no working set became a warmup, nothing was flipped
     expect(addPointedSetMock.mock.calls.map((c) => [c[1], (c[3] as { programSetId: string; isWarmup: boolean }).programSetId, (c[3] as { isWarmup: boolean }).isWarmup])).toEqual([['wp-4', 'pi-w', true]])
+  })
+})
+
+// ─── A part the later week no longer matches: its own set, its own head kind ──────
+
+describe('PlanPage — make this week the default, and a later week that differs where a part would go', () => {
+  // R3: the default adds a third set to Bench. A week that already has a third set of its own (added there,
+  // linked to nothing) differs from the old default where the new set would go; it keeps its own.
+  // Break: add the set anyway -> week 5 gets a fourth set.
+  it('R3 — a set the default adds is not added to a week that has a set of its own there', async () => {
+    makeWeekDefaultMock.mockResolvedValue(functionAnswer)
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [{ id: 'pe-bench', exerciseId: 'ex-a', position: 0, sets: [dset('ps-1', 1), dset('ps-2', 2), dset('ps-3', 3, { repMin: 6, repMax: 8 })] }]]]))
+    allPlans = [oldWeek(3), oldWeek(4), oldWeek(5, { sets: [...benchSets(5), planSet(5, 'mine', 3, null)] })]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(screen.getByText(/1 SKIPPED \(ALREADY DIFFERENT\)/)).toBeTruthy()
+    expect(addPointedSetMock.mock.calls.map((c) => [c[1], (c[3] as { programSetId: string }).programSetId])).toEqual([['wp-4', 'ps-3']])
+  })
+
+  // R8: the old default's first set was a dropset head with a stage, and the default drops the stage. A week
+  // that changed the head's kind itself (myo-reps) has stages of its own, which stay.
+  // Break: drop the head-kind check -> the stage of week 5's myo-reps head is removed too.
+  it('R8 — a stage the default drops is not removed from a head whose kind the week changed itself', async () => {
+    const staged = (n: number, headKind: 'dropset' | 'myo_reps'): WeekPlan =>
+      oldWeek(n, {
+        sets: [
+          planSet(n, 's1', 1, 'ps-1', { stageKind: headKind }),
+          planSet(n, 's1s', 1, 'ps-1s1', { parentWeekPlanSetId: `s1-w${n}`, stageIndex: 1, isDropset: true, repMin: 12, repMax: 12 }),
+          planSet(n, 's2', 2, 'ps-2'),
+        ],
+      })
+    const oldStaged: DefaultExercise = { id: 'pe-bench', exerciseId: 'ex-a', position: 0, sets: [dset('ps-1', 1, { stageKind: 'dropset' }), dset('ps-1s1', 1, { parentProgramSetId: 'ps-1', stageIndex: 1, repMin: 12, repMax: 12 }), dset('ps-2', 2)] }
+    const newPlain: DefaultExercise = { id: 'pe-bench', exerciseId: 'ex-a', position: 0, sets: [dset('ps-1', 1, { stageKind: 'dropset' }), dset('ps-2', 2)] }
+    makeWeekDefaultMock.mockResolvedValue({ ...functionAnswer, workouts: [{ ...functionAnswer.workouts[0], oldExercises: [oldStaged] }] })
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [newPlain]]]))
+    allPlans = [staged(3, 'dropset'), staged(4, 'dropset'), staged(5, 'myo_reps')]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(removeSetMock.mock.calls.map((c) => c[0])).toEqual(['s1s-w4']) // week 4's stage; week 5's own stage stays
   })
 })
 
