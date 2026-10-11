@@ -381,7 +381,7 @@ export default function SetRow({
                 fontSize: 9,
                 letterSpacing: '0.06em',
               }}
-              title="Failed to sync after 3 attempts — this set only exists on this device"
+              title="Couldn't sync — still queued on this device; tap the notice at the top to retry"
             >
               SYNC FAILED
             </span>
@@ -831,7 +831,7 @@ export default function SetRow({
               fontSize: 9,
               letterSpacing: '0.06em',
             }}
-            title="Failed to sync after 3 attempts — this set only exists on this device"
+            title="Couldn't sync — still queued on this device; tap the notice at the top to retry"
           >
             SYNC FAILED
           </span>

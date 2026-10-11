@@ -3,23 +3,29 @@ import { db } from '../../lib/db'
 import { supabase } from '../../lib/supabase'
 import { queryClient } from '../../lib/queryClient'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import { useOfflineStore } from './offlineStore'
+import { useOfflineStore, type SyncFailure } from './offlineStore'
+import type { SyncQueueItem } from '../../lib/db'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
 
 export function useSyncQueueInit() {
   const addPending = useOfflineStore((s) => s.addPending)
 
   useEffect(() => {
-    db.sync_queue.toArray().then((items) => {
+    db.sync_queue.orderBy('createdAt').toArray().then((items) => {
       for (const item of items) {
         const payload = item.payload as { id?: string }
         if (payload?.id) addPending(payload.id)
       }
+      // Writes that stopped retrying in an earlier visit are shown again.
+      useOfflineStore.getState().setSyncFailures(failuresOf(items))
     })
   }, []) // run once on mount
 }
 
-const MAX_SYNC_ATTEMPTS = 3
+// Failed passes before a write stops retrying on its own. One attempt is one
+// flush pass (reconnect, app start, a finish, a retry tap), so five means five
+// separate chances on a gym connection, not five tries in a row.
+export const MAX_SYNC_ATTEMPTS = 5
 
 export function useSyncQueueRunner() {
   const isOnline = useOnlineStatus()
@@ -64,11 +70,64 @@ async function withFinishDerivedFromServer(payload: Record<string, unknown>) {
   }
 }
 
+// ─── Ordering ────────────────────────────────────────────────────────────────
+// Writes to the same record keep their order: a write that fails holds back
+// every later write to that record until it succeeds, so an older write can
+// never land on top of a newer one. A write is also held while a record it
+// depends on is held (a set log behind its session row, a stage behind its
+// head set), since sending it would only fail on the foreign key. Writes to
+// any other record still go.
+function payloadOf(item: SyncQueueItem) {
+  return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null }
+}
+
+function recordKey(item: SyncQueueItem): string | null {
+  const id = payloadOf(item).id
+  return id ? `${item.table}:${id}` : null
+}
+
+function dependencyKeys(item: SyncQueueItem): string[] {
+  const p = payloadOf(item)
+  const keys: string[] = []
+  const own = recordKey(item)
+  if (own) keys.push(own)
+  if (p.session_id) keys.push(`v2_sessions:${p.session_id}`)
+  if (item.table === 'v2_set_logs' && p.parent_set_id) keys.push(`v2_set_logs:${p.parent_set_id}`)
+  return keys
+}
+
+function sessionIdOf(item: SyncQueueItem): string | null {
+  const p = payloadOf(item)
+  if (item.table === 'v2_sessions') return p.id ?? null
+  return p.session_id ?? null
+}
+
+// The writes that can't sync right now without the user: each one that gave
+// up, and every write held behind one. `items` in queue (createdAt) order.
+function failuresOf(items: SyncQueueItem[]): SyncFailure[] {
+  const held = new Set<string>()
+  const failures: SyncFailure[] = []
+  for (const item of items) {
+    if (!item.gaveUp && !dependencyKeys(item).some((k) => held.has(k))) continue
+    const own = recordKey(item)
+    if (own) held.add(own)
+    failures.push({ queueId: item.id!, table: item.table, recordId: payloadOf(item).id ?? null, sessionId: sessionIdOf(item) })
+  }
+  return failures
+}
+
 async function flushOnce() {
-  const { removePending, addFailed } = useOfflineStore.getState()
+  const { removePending } = useOfflineStore.getState()
   const items = await db.sync_queue.orderBy('createdAt').toArray()
+  // Record keys with an earlier write still unsent in this pass.
+  const held = new Set<string>()
   for (const item of items) {
     const payload = item.payload as { id?: string }
+    const own = recordKey(item)
+    if (item.gaveUp || dependencyKeys(item).some((k) => held.has(k))) {
+      if (own) held.add(own)
+      continue
+    }
     try {
       if (item.operation === 'upsert') {
         const { error } = await supabase
@@ -83,25 +142,31 @@ async function flushOnce() {
       await db.sync_queue.delete(item.id!)
       if (payload?.id) removePending(payload.id)
     } catch (err) {
+      if (own) held.add(own)
       const attempts = (item.attempts ?? 0) + 1
-      if (attempts >= MAX_SYNC_ATTEMPTS) {
-        // Dead-letter: stop retrying and surface the failure instead of
-        // silently spinning forever on an item that will never sync.
-        console.error('[sync] giving up on item after', attempts, 'attempts', item.id, err)
-        await db.sync_queue.delete(item.id!)
-        if (payload?.id) {
-          removePending(payload.id)
-          addFailed(payload.id)
-        }
-      } else {
-        await db.sync_queue.update(item.id!, { attempts })
-        console.error('[sync] attempt', attempts, 'failed for item', item.id, err)
-      }
+      // Never dropped: after MAX_SYNC_ATTEMPTS it stops retrying on its own
+      // and stays queued (still holding back later writes to its record)
+      // until the user taps retry on the screen it belongs to.
+      const gaveUp = attempts >= MAX_SYNC_ATTEMPTS
+      await db.sync_queue.update(item.id!, { attempts, gaveUp })
+      console.error(gaveUp ? '[sync] stopped retrying item' : '[sync] attempt failed for item', attempts, item.id, err)
     }
   }
 
+  useOfflineStore.getState().setSyncFailures(failuresOf(await db.sync_queue.orderBy('createdAt').toArray()))
+
   // Refresh session data so UI reflects the synced logs
   queryClient.invalidateQueries({ queryKey: ['v2_session'] })
+}
+
+// The notice's "Tap to retry": every write that stopped retrying gets a fresh
+// set of attempts, and the queue is sent again, in order.
+export async function retrySyncFailures(): Promise<void> {
+  const items = await db.sync_queue.toArray()
+  for (const item of items) {
+    if (item.gaveUp) await db.sync_queue.update(item.id!, { attempts: 0, gaveUp: false })
+  }
+  await flushSyncQueue()
 }
 
 // B3: only one flush runs at a time. A flush reads the queue, then deletes
