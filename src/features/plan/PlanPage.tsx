@@ -5,6 +5,7 @@ import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit, PlanningType, ProgramSet } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
+import { hasScheduledWorkout } from '../programs/hasSchedule'
 import {
   useWeekPlans,
   useAllWeekPlans,
@@ -48,11 +49,11 @@ import {
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadRules'
+import { deloadRulesLine, type DeloadRulesOwner } from './deloadRulesLine'
 import { useSettingsStore } from '../settings/settingsStore'
 import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
-import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import MakeWeekDefault from './MakeWeekDefault'
@@ -97,24 +98,29 @@ const DOW_SHORT_TITLE: Record<DayOfWeek, string> = {
   monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
 }
 
-// Plan screen tabs (chunk 6, SPEC.md "Plan screen" — Program tab + Weeks).
-// Same tab-bar shape as CoachPage.tsx's own ANALYSIS/ASK/CONTEXT bar
-// (flex row, rounded + overflow-hidden border, accent/surface fill),
-// written in this file's own inline-style idiom rather than CoachPage's
-// Tailwind classes.
-type PlanTab = 'weeks' | 'program'
-
-const PLAN_TABS: { id: PlanTab; label: string }[] = [
-  { id: 'weeks', label: 'WEEKS' },
-  { id: 'program', label: 'PROGRAM' },
-]
+// There is no program tab (chunk 33, SPEC Plan screen [P1.1]: "No program tab.
+// It's removed; what it did happens in the week or is fixed for the run"). The
+// WEEKS / PROGRAM bar and ProgramTab.tsx are gone; where each thing the tab
+// did lives now:
+//   - rest, rest after, tempo, superset grouping and rest, the warmup routine,
+//     a set's own rest and stage rest → STRUCTURE (chunk 30), labelled "every
+//     week", and an exercise's weight unit in its ⋯ there;
+//   - stable volume (sets, reps, set kinds, the exercise list) → edit the week,
+//     then "Make this week the new default" (chunk 32);
+//   - priorities → shown view-only (chunk 28), set in the planner;
+//   - fixed for the run (G30): the schedule (its type, a weekday per workout,
+//     the sequence order), the workouts and the deload-rules override. No
+//     screen edits them; the planner refuses a run's copy (PlannerPage.tsx);
+//   - the planning type was already fixed (the tab never offered it);
+//   - the rules in effect → one read-only line under the deload action.
 
 // Plan's week panel shows one week in two views (chunk 29, SPEC Plan screen
 // [P1.1], G16): SETS (how many sets, and each set's weight, reps and RIR, tags
 // included, stage rows' and warmup sets' numbers too) and STRUCTURE (the
 // shape: exercise order, swap, add and remove an exercise, set kinds with
-// warmup sets and stages added and removed). The switch is the WEEKS/PROGRAM
-// bar itself (SegmentBar below), not a lookalike.
+// warmup sets and stages added and removed). The switch is a SegmentBar
+// (below): the segmented bar chunk 6 built for the WEEKS / PROGRAM tabs, kept
+// for this switch so Plan adds no new visual language.
 type PlanView = 'sets' | 'structure'
 
 const PLAN_VIEWS: { id: PlanView; label: string }[] = [
@@ -252,10 +258,6 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // this replaces) is gone — "There's no compact view" (G17).
   const [planView, setPlanView] = useState<PlanView>('sets')
 
-  // Program/Weeks tab (chunk 6) — page-local, resets on reload like planView
-  // above; nothing in SPEC says it should persist across visits.
-  const [activeTab, setActiveTab] = useState<PlanTab>('weeks')
-
   // The opening view is the current week (the current cycle on a sequence run).
   useEffect(() => {
     if (activeMeso) setViewWeek(currentWeek)
@@ -268,7 +270,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // Chunk 25 (SPEC "Scheduling → Sequence" — "the cycle replaces the week
   // everywhere the week is used"; reviewer's note 3: "Labels 'Cycle n'
   // everywhere a sequence run shows a week"). Review fix (first review):
-  // this page's own Weeks-tab body (scheduledDays/WorkoutSwitcher/
+  // this page's own week body (scheduledDays/WorkoutSwitcher/
   // WorkoutDayPanel below) is now ALSO sequence-aware, via the parallel
   // sequenceSlots/selectedSlot/SequenceSlotSwitcher derived below —
   // program.schedule (weekday-only) and scheduledDays/selected stay exactly
@@ -291,6 +293,14 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // jsdom test file).
   const globalDeloadRules = useSettingsStore((s) => s.deloadRules)
   const effectiveDeloadRules = resolveEffectiveDeloadRules(program?.deloadRules, globalDeloadRules)
+  // Chunk 33 (SPEC Deload [P1.1], G43): "Plan shows the rules in effect,
+  // read-only, next to the deload action." The line under MARK WEEK AS DELOAD
+  // shows exactly what marking is handed (effectiveDeloadRules above, never a
+  // second resolution), and says whose they are: the run's own override, else
+  // the Settings default as it is now. A run on "use my default" follows a
+  // change in Settings because this reads the store live.
+  const deloadRulesOwner: DeloadRulesOwner = program?.deloadRules != null ? 'run' : 'default'
+  const deloadRulesText = deloadRulesLine(effectiveDeloadRules, deloadRulesOwner)
 
   // Chunk 22 (reviewer's note 5) — "Already started — sets left as they
   // are", shown after a mark/unmark that the started guard caught. Cleared
@@ -380,6 +390,17 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   const selectedSlot = sequenceSlots.find((s) => s.id === selectedSlotId && s.workoutDay)
     ?? sequenceSlots.find((s) => s.workoutDay)
     ?? null
+  // Chunk 33 (SPEC Plan screen [P1.1] empty states): whether this run has any
+  // scheduled workout at all, by the same check every START uses
+  // (programs/hasSchedule.ts), read from what this page already loads: a
+  // weekday with a workout (weekday run), or a slot with a workout (sequence
+  // run). A run started before Start needed a schedule can have none.
+  const hasSchedule = hasScheduledWorkout({
+    scheduleType: program?.scheduleType,
+    schedule: program?.schedule,
+    workoutDays,
+    sequenceItems: sequenceItemsRaw,
+  })
   // This slot's own week-plan row for the viewed cycle — matched by BOTH
   // workout_day_id and sequence_position (review: "never by workout
   // alone"), so the two slots of a repeated workout (SPEC G8) open
@@ -589,32 +610,10 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
             </button>
           </div>
         </div>
-
-        {/* Program / Weeks tab bar */}
-        <SegmentBar segments={PLAN_TABS} active={activeTab} onSelect={setActiveTab} marginTop={12} />
       </div>
 
       {/* Content */}
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 32px', minHeight: 0 }}>
-
-        {/* Program tab — the active run's copy: its workouts, each opening
-            the existing workout editor on the run's copy (SPEC.md "Plan
-            screen"). Volume/design-field editing from this tab is later
-            chunks' scope (chunk 6 brief: "the tab can edit it" already,
-            through the existing editor this links to — chunk 9 adds the
-            per-type rules on top). */}
-        {activeTab === 'program' && (
-          program
-            ? <ProgramTab program={program} mesoId={activeMeso.id} />
-            : (
-              <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
-                <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
-              </div>
-            )
-        )}
-
-        {activeTab === 'weeks' && (
-        <>
         {/* Past week notice */}
         {isPast && (
           <div style={{ marginBottom: 14, padding: '8px 12px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 8 }}>
@@ -664,7 +663,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               style={{
                 width: '100%',
                 height: 48,
-                marginBottom: weekDeloadNotice ? 6 : 16,
+                marginBottom: deloadRulesText || weekDeloadNotice ? 6 : 16,
                 background: weekIsFullyDeload ? 'var(--accent-muted)' : 'var(--surface)',
                 border: `1px dashed ${weekIsFullyDeload ? 'var(--accent)' : 'var(--border-strong)'}`,
                 borderRadius: 11,
@@ -684,6 +683,13 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
                       : (isSequence ? 'MARK CYCLE AS DELOAD' : 'MARK WEEK AS DELOAD'))}
               </span>
             </button>
+            {/* The rules this action applies (chunk 33, SPEC Deload [P1.1]; DECISIONS 87,
+                provisional): read-only, nothing when no rules are on. */}
+            {deloadRulesText && (
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginBottom: weekDeloadNotice ? 6 : 16, lineHeight: 1.5 }}>
+                {deloadRulesText}
+              </p>
+            )}
             {weekDeloadNotice && (
               <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginBottom: 16, lineHeight: 1.5 }}>
                 {weekDeloadNotice}
@@ -704,40 +710,22 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
           </div>
         )}
 
-        {/* No scheduled days (weekday only — isSequence has its own parallel
-            empty state below, since scheduledDays is always [] for one and
-            would otherwise show this same, wrong-for-it message). */}
-        {!isSequence && !plansLoading && !daysLoading && scheduledDays.length === 0 && (
+        {/* A run with no schedule (chunk 33; SPEC Plan screen empty states [P1.1],
+            G39 — "A run with no schedule (started before Start needed one) → a line
+            linking to the Programs page"; DECISIONS 86, provisional): one line for
+            a weekday run and a sequence run alike, since a schedule can't be set up
+            during a run any more — its schedule is fixed for the run — so there is
+            nothing per type left to say. The check is the one every START uses. */}
+        {!plansLoading && !daysLoading && !hasSchedule && (
           <div style={{ textAlign: 'center', paddingTop: 60 }}>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
-              NO DAYS SCHEDULED
-            </p>
-            {/* Chunk 11 — ProgramBuilderPage (the old target, a whole-program
-                schedule editor at /program/:id) is gone; schedule assignment
-                now lives inline in the Program tab's own StepExercises, so
-                this switches tabs instead of navigating away. */}
-            <button
-              onClick={() => setActiveTab('program')}
-              style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)' }}
-            >
-              Set up weekly schedule →
-            </button>
-          </div>
-        )}
-
-        {/* Chunk 25 review fix — the sequence equivalent of "No scheduled
-            days" above: no workout-bearing slot exists yet (an empty
-            sequence, or every slot a rest day). */}
-        {isSequence && !plansLoading && !daysLoading && !sequenceSlots.some((s) => s.workoutDay) && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
-              NO SLOTS SCHEDULED
+              NO WORKOUTS SCHEDULED
             </p>
             <button
-              onClick={() => setActiveTab('program')}
+              onClick={() => navigate('/program')}
               style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)' }}
             >
-              Set up the sequence →
+              Programs →
             </button>
           </div>
         )}
@@ -813,8 +801,6 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               planningType={program?.planningType ?? 'week_dependent'}
             />
           </>
-        )}
-        </>
         )}
       </div>
     </div>
@@ -1410,7 +1396,7 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
       {/* SETS / STRUCTURE (chunk 29) — the switch between the panel's two
           views, directly under the page-level actions above (the DELOAD
           toggle, the apply-ahead banner, COPY THIS WORKOUT), which sit over
-          both. Built from the WEEKS/PROGRAM bar (SegmentBar). */}
+          both. A SegmentBar. */}
       <SegmentBar segments={PLAN_VIEWS} active={view} onSelect={onViewChange} marginBottom={8} />
 
       {/* The workout's warmup routine (chunk 30; SPEC Warmup routine [P1.1]) —
@@ -1522,27 +1508,24 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
 }
 
 // ─── Segment bar ──────────────────────────────────────────────────────────────
-// The WEEKS / PROGRAM bar's own pattern (chunk 6): a flex row, rounded, with an
-// overflow-hidden border; each segment a mono label filled with the accent when
-// active and with the surface otherwise. Chunk 29 shares it, so the SETS /
-// STRUCTURE switch is that bar rather than a lookalike. The WEEKS / PROGRAM bar
-// renders exactly what it did (it is this with marginTop 12); an undefined
-// margin is left out of the style, so neither bar carries the other's.
+// The bar chunk 6 built for the WEEKS / PROGRAM tabs (gone in chunk 33): a flex
+// row, rounded, with an overflow-hidden border; each segment a mono label filled
+// with the accent when active and with the surface otherwise. It stays as the
+// SETS / STRUCTURE switch (chunk 29), markup unchanged. An undefined margin is
+// left out of the style.
 function SegmentBar<T extends string>({
   segments,
   active,
   onSelect,
-  marginTop,
   marginBottom,
 }: {
   segments: { id: T; label: string }[]
   active: T
   onSelect: (id: T) => void
-  marginTop?: number
   marginBottom?: number
 }) {
   return (
-    <div style={{ display: 'flex', marginTop, borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)', marginBottom }}>
+    <div style={{ display: 'flex', borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)', marginBottom }}>
       {segments.map((segment) => (
         <button
           key={segment.id}
@@ -1769,8 +1752,8 @@ function ExerciseSection({
       {/* Superset grouping, run-wide (chunk 30; SPEC Supersets [P1.1]): a linked
           unit's round rests after its last member, and the toggle between this
           exercise and the next — any two neighbours in THIS week's order. Both
-          are the program tab's own controls, labelled "every week"; neither
-          is on a past week. */}
+          are run-wide controls (the ones the program tab used to hold), labelled
+          "every week"; neither is on a past week. */}
       {structure?.blockRest && (
         <div style={{ padding: '0 16px 6px' }}>
           <BlockRestEditor
@@ -1993,8 +1976,8 @@ function StructureSetGroup({
             </>
           ) : (
             <>
-              {/* The set's own REST, and on a staged head its STAGE REST: the
-                  program tab's steppers on the set's program set (chunk 30). */}
+              {/* The set's own REST, and on a staged head its STAGE REST: run-wide
+                  steppers on the set's program set (chunk 30). */}
               {headFields && (
                 <SetRestMenu fields={headFields} of={headOf} stageRestDefaultText={isStaged ? stageRestDefaultText(stageKind) : undefined} />
               )}

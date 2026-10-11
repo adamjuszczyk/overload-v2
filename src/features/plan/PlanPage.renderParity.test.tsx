@@ -98,6 +98,15 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // only action, DELETE STAGE, is STRUCTURE's). No value differs: the page's text,
 // in order, is identical once COMPACT and ADD EXERCISE are set against SETS and
 // STRUCTURE, and the only aria-labels missing are those three ⋯ buttons'.
+//
+// Chunk 33 re-capture (SPEC Plan screen [P1.1]: "No program tab"): the WEEKS /
+// PROGRAM bar is gone, so the fixture file lost exactly that <div> (593
+// characters: the bar and its two buttons) and nothing else: the SETS / STRUCTURE
+// switch, which is the same bar's markup, is byte for byte where it was. This
+// fixture's program has no deload rules and the Settings store holds none, so the
+// new line under MARK WEEK AS DELOAD (the rules in effect) isn't rendered either:
+// an unset feature shows nothing. PlanPage.programTabRemoved.test.tsx proves that line,
+// and the page without a bar, at the screen layer.
 
 afterEach(() => cleanup())
 

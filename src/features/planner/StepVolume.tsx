@@ -3,7 +3,6 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { Program, ProgramExercise, ProgramSet, PlanningType } from '../../types'
 import type { RepTarget } from '../../lib/plannerVocabulary.js'
 import type { DeloadRules } from '../../lib/deloadRules'
-import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { useWorkoutDays, useProgramExercises, useUpdatePlanningType, useUpdateProgramDeloadRules } from '../programs/usePrograms'
 import DeloadRulesEditor from '../settings/DeloadRulesEditor'
 import {
@@ -24,7 +23,6 @@ import {
   formatRepTarget,
   parseRepTarget,
   columnsToRepTarget,
-  repTargetToColumns,
   STAGE_KINDS,
   STAGE_KIND_LABELS,
   resolveStageKind,
@@ -35,11 +33,12 @@ import RatingChips from '../gym/RatingChips.js'
 import { formatRestTime } from '../../lib/formatRestTime'
 
 // Step 3 — Volume (SPEC.md "Stepped program planner" step 3; TASKS.md "step
-// 3 picks stable / week-dependent and plans sets"). Reused as-is by a
-// stable run's Program tab (ProgramTab.tsx), where `canChangePlanningType`
-// is false (planning type is decided once, at save time — SPEC doesn't
-// offer changing it mid-run) and `volumeReadOnly` follows chunk 9's own
-// rule (true for a week-dependent run).
+// 3 picks stable / week-dependent and plans sets"). Serves the planner only (a
+// saved program): chunk 33 removed Plan's program tab, the only other caller
+// (it passed `canChangePlanningType` false and a `volumeReadOnly` that followed
+// chunk 9's rule), and the planner refuses a run's copy. A running program's
+// volume is edited in the week and made the default from there (SPEC Programs
+// and runs [P1.1]), and its deload-rules override is fixed for the run.
 //
 // "The only required value is the number of sets per exercise. Rep
 // targets... are optional" (SPEC) — Save/Start are never blocked by a
@@ -49,16 +48,10 @@ export default function StepVolume({
   program,
   volumeReadOnly,
   canChangePlanningType,
-  onVolumeChange,
 }: {
   program: Program
   volumeReadOnly: boolean
   canChangePlanningType: boolean
-  // Chunk 20 ("Apply this change to planned weeks ahead") — same posture as
-  // StepExercises.tsx's own onVolumeChange: only ProgramTab.tsx (a stable
-  // run) ever passes this; the planner's own saved-program/week-dependent
-  // usage never does, so it stays undefined and inert there.
-  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const updatePlanningType = useUpdatePlanningType()
@@ -122,7 +115,6 @@ export default function StepVolume({
           workoutDayId={day.id}
           workoutName={day.name}
           volumeReadOnly={volumeReadOnly}
-          onVolumeChange={onVolumeChange}
         />
       ))}
     </div>
@@ -134,12 +126,11 @@ export default function StepVolume({
 // program"; reviewer's note 7: "Planner step 3 and the program tab: a
 // per-program override, either 'Use my default' (null) or its own rules
 // (same editor component). It's a design field, editable for both
-// planning types." — so this section renders unconditionally here
-// (StepVolume is shared, as-is, by both the planner and ProgramTab.tsx's
-// stable-run usage — see this file's own header comment), never gated by
-// volumeReadOnly/canChangePlanningType the way the PLANNING picker above
-// is: a design field applies "to this run from the next session on"
-// regardless of planning type (SPEC "Programs and runs").
+// planning types." — so this section renders unconditionally here, never
+// gated by volumeReadOnly/canChangePlanningType the way the PLANNING picker
+// above is. Since chunk 33 it is the planner's alone: the override is set on a
+// saved program and copied to a run when it starts, and is fixed for the run
+// (SPEC Programs and runs [P1.1]); Plan shows the rules in effect, read-only.
 function ProgramDeloadRulesSection({ program }: { program: Program }) {
   const updateOverride = useUpdateProgramDeloadRules()
   const override = program.deloadRules ?? null
@@ -203,23 +194,14 @@ function WorkoutVolumeEditor({
   workoutDayId,
   workoutName,
   volumeReadOnly,
-  onVolumeChange,
 }: {
   workoutDayId: string
   workoutName: string
   volumeReadOnly: boolean
-  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: exercises = [], isLoading: exercisesLoading } = useProgramExercises(workoutDayId)
   const exerciseIds = exercises.map((e) => e.id)
-  const { data: allSets = [], isLoading: setsLoading } = useProgramSets(exerciseIds)
-  // Chunk 32: a program set with removed_at set was dropped from the run's default by
-  // "Make this week the new default" (migration 040). It stays in the table so weeks
-  // planned earlier keep their link and its rest, and fetchProgramSets returns it for the
-  // workout screen; this list shows the default, so it leaves it out. Until chunk 33
-  // removes the program tab, this is the one list that would otherwise show the set again
-  // (and let it be edited as if it were still part of the run's default).
-  const sets = allSets.filter((s) => !s.removedAt)
+  const { data: sets = [], isLoading: setsLoading } = useProgramSets(exerciseIds)
 
   if (exercisesLoading || (setsLoading && exerciseIds.length > 0)) {
     return (
@@ -242,7 +224,6 @@ function WorkoutVolumeEditor({
           exercise={ex}
           sets={sets.filter((s) => s.programExerciseId === ex.id)}
           volumeReadOnly={volumeReadOnly}
-          onVolumeChange={onVolumeChange ? (changes) => onVolumeChange(workoutDayId, changes) : undefined}
         />
       ))}
     </div>
@@ -255,31 +236,19 @@ function ExerciseSetsEditor({
   exercise,
   sets,
   volumeReadOnly,
-  onVolumeChange,
 }: {
   exercise: ProgramExercise
   sets: ProgramSet[]
   volumeReadOnly: boolean
-  onVolumeChange?: (changes: ChangeRecord[]) => void
 }) {
   const heads = headSets(sets).sort((a, b) => a.position - b.position)
   const setCount = useSetExerciseSetCount()
 
-  // Chunk 20 — "stable program-tab volume edits (add/remove set...)"
-  // (reviewer's note 2). Always ±1 per tap (the stepper's own change(-1)/
-  // change(1) below), so this never needs a recorded ordinal — applyAhead.ts
-  // always appends/removes THAT later week's own current trailing head
-  // (scope decisions 6/7, the report).
   function changeCount(delta: number) {
     if (volumeReadOnly) return
     const next = Math.max(0, heads.length + delta)
     if (next === heads.length) return
     setCount.mutate({ programExerciseId: exercise.id, currentHeads: heads, count: next })
-    const change: ChangeRecord =
-      delta > 0
-        ? { editType: 'addSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
-        : { editType: 'removeSet', slotId: slotIdOf(exercise), exerciseId: exercise.exerciseId }
-    onVolumeChange?.([change])
   }
 
   return (
@@ -349,7 +318,6 @@ function ExerciseSetsEditor({
                 exercise={exercise}
                 group={group}
                 readOnly={volumeReadOnly}
-                onVolumeChange={onVolumeChange}
               />
             ))}
         </div>
@@ -442,7 +410,6 @@ function SetTargetRow({
   isStage = false,
   stageKindLabel,
   onRemove,
-  onCommit,
 }: {
   displayNumber: number
   set: ProgramSet
@@ -454,12 +421,6 @@ function SetTargetRow({
   stageKindLabel?: string
   // Stage rows only — the SETS stepper owns removing a whole head.
   onRemove?: () => void
-  // Chunk 20 ("Apply this change to planned weeks ahead" — stable
-  // program-tab's own "rep target"). Fired with the real old/new RepTarget
-  // right after a successful write; ProgramSetGroupEditor (the only
-  // caller) turns it into a ChangeRecord, since only it knows this row's
-  // own head ordinal and stage index.
-  onCommit?: (oldTarget: RepTarget, newTarget: RepTarget) => void
 }) {
   const updateTarget = useUpdateSetRepTarget()
   const updateRest = useUpdateProgramSetRest()
@@ -492,7 +453,6 @@ function SetTargetRow({
     if (target === null) return
     if (formatRepTarget(target) === formatRepTarget(current)) return
     updateTarget.mutate({ id: set.id, target })
-    onCommit?.(current, target)
   }
 
   return (
@@ -565,13 +525,11 @@ function ProgramSetGroupEditor({
   exercise,
   group,
   readOnly,
-  onVolumeChange,
 }: {
   displayNumber: number
   exercise: ProgramExercise
   group: Group<ProgramSet>
   readOnly: boolean
-  onVolumeChange?: (changes: ChangeRecord[]) => void
 }) {
   const { head, stages } = group
   const stageKind = resolveStageKind(head.stageKind ?? null)
@@ -595,30 +553,12 @@ function ProgramSetGroupEditor({
     })
   }
 
-  // Chunk 20 — "stable program-tab volume edits (...rep target...)"
-  // (reviewer's note 2). slotIdOf(exercise) collapses to exercise.id (no
-  // carry concept at the program level — see applyAhead.ts's own header);
-  // displayNumber IS the head ordinal applyAhead.ts matches on (the same
-  // 1-based rank ExerciseSetsEditor's own caller already assigns it).
-  function handleRepTargetCommit(stageIndex: number | null, oldTarget: RepTarget, newTarget: RepTarget) {
-    const change: ChangeRecord = {
-      editType: 'repTarget',
-      slotId: slotIdOf(exercise),
-      exerciseId: exercise.exerciseId,
-      setPosition: { headOrdinal: displayNumber, stageIndex },
-      oldValue: repTargetToColumns(oldTarget),
-      newValue: repTargetToColumns(newTarget),
-    }
-    onVolumeChange?.([change])
-  }
-
   return (
     <div>
       <SetTargetRow
         displayNumber={displayNumber}
         set={head}
         readOnly={readOnly}
-        onCommit={(oldT, newT) => handleRepTargetCommit(null, oldT, newT)}
       />
 
       {stages.length > 0 && (
@@ -632,7 +572,6 @@ function ProgramSetGroupEditor({
               isStage
               stageKindLabel={STAGE_KIND_LABELS[stageKind]}
               onRemove={() => removeStage.mutate(stage.id)}
-              onCommit={(oldT, newT) => handleRepTargetCommit(stage.stageIndex, oldT, newT)}
             />
           ))}
 

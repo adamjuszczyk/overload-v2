@@ -4,6 +4,8 @@ import { ArrowLeft, X, AlertTriangle } from 'lucide-react'
 import type { DayOfWeek } from '../../types'
 import { usePrograms, useWorkoutDays, useUpdateProgramName } from '../programs/usePrograms'
 import { useStartRun } from '../programs/useMesos'
+import { useProgramHasSchedule } from '../programs/useProgramHasSchedule'
+import { NO_SCHEDULE_START_REASON } from '../programs/hasSchedule'
 import { useToastStore } from '../notifications/toastStore'
 import { detectSharedWeekdayWorkouts, useSplitSharedWeekdayWorkouts, type SharedWeekdayGroup } from './usePlanner'
 import StepPriorities from './StepPriorities'
@@ -27,11 +29,16 @@ import StepVolume from './StepVolume'
 //
 // Reached only against a `kind = 'saved'` program (ProgramsPage.tsx's
 // "saved programs" list and its "+" create flow, since chunk 26 — formerly
-// ProgramPage.tsx's "my programs") — step 1 and Save/Start are
-// hidden for any other kind as a defensive fallback, never the intended
-// path (a stable run's own copy is edited inline in Plan's Program tab,
-// ProgramTab.tsx, with the same step 2/3 components below, not through this
-// route).
+// ProgramPage.tsx's "my programs"). A run's copy is refused (chunk 33, SPEC
+// Programs and runs [P1.1]: "The planner refuses to open a run's copy"): a
+// running program's schedule, workouts and deload-rules override are fixed for
+// the run, and the rest of what Plan's program tab used to edit (which was the
+// only other place these steps were shown) happens in the week.
+//
+// Starting needs a schedule (chunk 33, G39): START is disabled while the program
+// has no scheduled workout, with the reason under it (programs/hasSchedule.ts is
+// the one check, shared with the Programs page's START RUN and Plan's
+// no-schedule line).
 type Step = 'priorities' | 'exercises' | 'volume'
 
 const STEPS: { id: Step; label: string }[] = [
@@ -49,7 +56,8 @@ export default function PlannerPage() {
   const program = programs.find((p) => p.id === programId)
   const { data: workoutDays = [] } = useWorkoutDays(programId ?? '')
 
-  const isSaved = (program?.kind ?? 'saved') === 'saved'
+  // A run's copy (kind 'run') is refused below; an unset kind reads as saved.
+  const isRunCopy = program !== undefined && (program.kind ?? 'saved') !== 'saved'
   const [step, setStep] = useState<Step>('priorities')
 
   const [editingName, setEditingName] = useState(false)
@@ -73,6 +81,9 @@ export default function PlannerPage() {
   const splitWorkouts = useSplitSharedWeekdayWorkouts(programId ?? '')
 
   const startRun = useStartRun()
+  // null until the program's workouts (and, for a sequence program, its
+  // sequence) have answered.
+  const hasSchedule = useProgramHasSchedule(program)
 
   if (programsLoading) {
     return (
@@ -87,6 +98,28 @@ export default function PlannerPage() {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16 }}>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
           PROGRAM NOT FOUND
+        </p>
+        <button
+          onClick={() => navigate('/program')}
+          style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}
+        >
+          ← Back to programs
+        </button>
+      </div>
+    )
+  }
+
+  // A run's copy: no step, no editor — a short message and the way back
+  // (chunk 33, SPEC Programs and runs [P1.1]). Display-only wording, provisional
+  // (DECISIONS D31): same markup and tokens as PROGRAM NOT FOUND above.
+  if (isRunCopy) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12, padding: '0 20px', textAlign: 'center' }}>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
+          THIS PROGRAM IS A RUN&apos;S COPY
+        </p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          It can&apos;t be opened in the planner. Edit its weeks in Plan.
         </p>
         <button
           onClick={() => navigate('/program')}
@@ -115,8 +148,9 @@ export default function PlannerPage() {
     }
   }
 
-  const visibleSteps = isSaved ? STEPS : STEPS.filter((s) => s.id !== 'priorities')
-  const activeStep = isSaved ? step : (step === 'priorities' ? 'exercises' : step)
+  // START waits for the answer, and stays off while a program has no scheduled
+  // workout (the reason shows under it only once that is known).
+  const startDisabled = startRun.isPending || hasSchedule !== true
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--base)' }}>
@@ -153,11 +187,11 @@ export default function PlannerPage() {
           step is reachable at any time, nothing here blocks moving on. */}
       <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)' }}>
-          {visibleSteps.map((s) => (
+          {STEPS.map((s) => (
             <button
               key={s.id}
               onClick={() => setStep(s.id)}
-              style={{ flex: 1, padding: '10px 2px', background: activeStep === s.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: activeStep === s.id ? 'var(--base)' : 'var(--text-muted)' }}
+              style={{ flex: 1, padding: '10px 2px', background: step === s.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: step === s.id ? 'var(--base)' : 'var(--text-muted)' }}
             >
               {s.label}
             </button>
@@ -167,17 +201,18 @@ export default function PlannerPage() {
 
       {/* Content */}
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 24px', minHeight: 0 }}>
-        {activeStep === 'priorities' && <StepPriorities programId={program.id} />}
-        {activeStep === 'exercises' && <StepExercises program={program} volumeReadOnly={false} />}
-        {activeStep === 'volume' && <StepVolume program={program} volumeReadOnly={false} canChangePlanningType={isSaved} />}
+        {step === 'priorities' && <StepPriorities programId={program.id} />}
+        {step === 'exercises' && <StepExercises program={program} volumeReadOnly={false} />}
+        {step === 'volume' && <StepVolume program={program} volumeReadOnly={false} canChangePlanningType />}
       </div>
 
       {/* Save / Start — visible from any step (TASKS.md: "save stores the
-          program as is; Start creates a run"). Hidden for the defensive
-          run-kind fallback (see header comment) — a run is already active,
-          "saving"/"starting" it again has no meaning. */}
-      {isSaved && (
-        <div style={{ display: 'flex', gap: 10, padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+          program as is; Start creates a run"). Chunk 33 (G39): START is off
+          while the program has no scheduled workout, with one line under it
+          saying why (DECISIONS 85, provisional). The row of buttons is the
+          bar's own as before; the line sits beneath it. */}
+      <div style={{ padding: '12px 20px', paddingBottom: 'calc(12px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
           <button
             onClick={() => navigate('/program')}
             style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', color: 'var(--text-secondary)' }}
@@ -186,15 +221,20 @@ export default function PlannerPage() {
           </button>
           <button
             onClick={handleStart}
-            disabled={startRun.isPending}
-            style={{ flex: 1, height: 50, background: startRun.isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: startRun.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: startRun.isPending ? 'var(--text-muted)' : 'var(--base)' }}
+            disabled={startDisabled}
+            style={{ flex: 1, height: 50, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: startDisabled ? 'var(--text-muted)' : 'var(--base)' }}
           >
             {startRun.isPending ? '…' : 'START'}
           </button>
         </div>
-      )}
+        {hasSchedule === false && (
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', lineHeight: 1.5, textAlign: 'center', marginTop: 8 }}>
+            {NO_SCHEDULE_START_REASON}
+          </p>
+        )}
+      </div>
 
-      {isSaved && sharedGroups.length > 0 && !g14Dismissed && (
+      {sharedGroups.length > 0 && !g14Dismissed && (
         <G14Prompt
           groups={sharedGroups}
           workoutDays={workoutDays}

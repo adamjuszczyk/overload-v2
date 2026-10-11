@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
-import type { Mesocycle, Program } from '../../types'
+import type { Mesocycle, Program, SequenceItem, WorkoutDay } from '../../types'
 
 // Chunk 26 — ProgramsPage.tsx replaces ProgramPage.tsx at the same /program
 // route (App.tsx), reached only from Plan's header now (PROGRAM is gone
@@ -20,6 +20,12 @@ import type { Mesocycle, Program } from '../../types'
 
 let mesosData: Mesocycle[] = []
 let savedPrograms: Program[] = []
+// Chunk 33 — what the sheet's START RUN reads to know whether the selected
+// program has a scheduled workout (through useProgramHasSchedule): the program's
+// workouts, and for a sequence program its sequence. A key with no entry reads as
+// "not answered yet" (undefined data), like a query that hasn't resolved.
+let workoutDaysByProgram: Record<string, WorkoutDay[]> = {}
+let sequenceItemsByProgram: Record<string, SequenceItem[]> = {}
 const startRunMutateAsyncMock = vi.fn()
 const completeMesoMutateAsyncMock = vi.fn()
 const deleteMesoMutateAsyncMock = vi.fn()
@@ -36,6 +42,8 @@ vi.mock('./useMesos', () => ({
 vi.mock('./usePrograms', () => ({
   useSavedPrograms: () => ({ data: savedPrograms, isLoading: false }),
   useCreateProgram: () => ({ mutateAsync: createProgramMutateAsyncMock, isPending: false }),
+  useWorkoutDays: (programId: string) => ({ data: programId ? workoutDaysByProgram[programId] : undefined, isLoading: false }),
+  useSequenceItems: (programId: string) => ({ data: programId ? sequenceItemsByProgram[programId] : undefined, isLoading: false }),
 }))
 
 vi.mock('../notifications/toastStore', () => ({
@@ -53,10 +61,16 @@ afterEach(() => {
   showToastMock.mockReset()
   savedPrograms = []
   mesosData = []
+  workoutDaysByProgram = {}
+  sequenceItemsByProgram = {}
 })
 
 beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
+  // The two saved programs below each have one workout on a Monday, so the tests
+  // that start one (chunk 33: starting needs a schedule) can; the schedule tests
+  // at the end set up their own.
+  workoutDaysByProgram = { 'prog-1': [workoutDay('prog-1')], 'prog-2': [workoutDay('prog-2')] }
 })
 
 function program(overrides: Partial<Program> = {}): Program {
@@ -67,8 +81,15 @@ function program(overrides: Partial<Program> = {}): Program {
   }
 }
 
-const SAVED_PROGRAM_1 = program({ id: 'prog-1', name: 'Upper/Lower' })
-const SAVED_PROGRAM_2 = program({ id: 'prog-2', name: 'Push Pull Legs' })
+function workoutDay(programId: string): WorkoutDay {
+  return { id: `wd-${programId}`, programId, userId: 'user-1', name: 'Full Body', position: 0, exercises: [] }
+}
+const MONDAY = (programId: string) =>
+  ({ monday: `wd-${programId}`, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null }) as Program['schedule']
+const NO_DAYS = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null } as Program['schedule']
+
+const SAVED_PROGRAM_1 = program({ id: 'prog-1', name: 'Upper/Lower', schedule: MONDAY('prog-1') })
+const SAVED_PROGRAM_2 = program({ id: 'prog-2', name: 'Push Pull Legs', schedule: MONDAY('prog-2') })
 
 const ACTIVE_MESO: Mesocycle = {
   id: 'meso-active-1',
@@ -302,6 +323,184 @@ describe('ProgramsPage — completed runs: priorities pages (MesoPrioritiesPage,
     fireEvent.click(screen.getByLabelText('Delete run'))
 
     expect(screen.queryByText(/^AT \//)).toBeNull()
+  })
+})
+
+// ─── Start needs a schedule (chunk 33) ──────────────────────────────────────
+// SPEC Programs and runs [P1.1] (G39): "Starting a run needs a schedule: at least
+// one workout on a weekday (weekday), or one workout in the sequence (sequence).
+// Start isn't possible without one." The Programs page starts a run without
+// opening the planner, so its sheet has the same check as the planner's START
+// (DECISIONS 85, provisional: disabled, one line under it).
+
+describe('ProgramsPage — START RUN needs a schedule (chunk 33)', () => {
+  const REASON = 'Schedule at least one workout to start'
+  const startRunButton = () => screen.getByRole('button', { name: 'START RUN' }) as HTMLButtonElement
+
+  function openSheetFor(rowIndex = 0) {
+    fireEvent.click(screen.getAllByText('START')[rowIndex])
+  }
+
+  describe('a weekday program', () => {
+    it('with no workout on any weekday: START RUN is disabled, the reason shows, and useStartRun is never called', () => {
+      savedPrograms = [program({ id: 'prog-1', name: 'Upper/Lower', schedule: NO_DAYS })]
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+
+      fireEvent.click(startRunButton())
+      expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+      expect(screen.queryByText(/^AT \//)).toBeNull()
+    })
+
+    it('a form submit by any other route (Enter in the name field) starts nothing either', () => {
+      savedPrograms = [program({ id: 'prog-1', name: 'Upper/Lower', schedule: NO_DAYS })]
+      renderProgramsPage()
+
+      openSheetFor()
+      fireEvent.submit(startRunButton().closest('form')!)
+
+      expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+    })
+
+    it('with one workout on a weekday: START RUN is enabled, no reason shows, and it starts the program', async () => {
+      savedPrograms = [SAVED_PROGRAM_1]
+      startRunMutateAsyncMock.mockResolvedValue('new-meso-1')
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(false)
+      expect(screen.queryByText(REASON)).toBeNull()
+
+      fireEvent.click(startRunButton())
+      await waitFor(() => expect(startRunMutateAsyncMock).toHaveBeenCalledTimes(1))
+      expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Upper/Lower', programId: 'prog-1' })
+    })
+
+    it('a weekday that names a workout the program no longer has is not a scheduled workout', () => {
+      savedPrograms = [program({ id: 'prog-1', schedule: { ...NO_DAYS, monday: 'wd-gone' } })]
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('the row\'s own START still opens the sheet (the check is on the sheet\'s START RUN)', () => {
+      savedPrograms = [program({ id: 'prog-1', name: 'Upper/Lower', schedule: NO_DAYS })]
+      renderProgramsPage()
+
+      const rowStart = screen.getByText('START') as HTMLButtonElement
+      expect(rowStart.disabled).toBe(false)
+      fireEvent.click(rowStart)
+      expect(screen.getByText('START RUN', { selector: 'button' })).toBeTruthy()
+    })
+  })
+
+  describe('a sequence program', () => {
+    const SEQUENCE_PROGRAM = () => program({ id: 'prog-1', name: 'Cycle', scheduleType: 'sequence', schedule: NO_DAYS })
+    const item = (position: number, workoutDayId: string | null): SequenceItem =>
+      ({ id: `si-${position}`, userId: 'user-1', programId: 'prog-1', position, workoutDayId })
+
+    it('with no slot at all: START RUN is disabled and the reason shows', () => {
+      savedPrograms = [SEQUENCE_PROGRAM()]
+      sequenceItemsByProgram = { 'prog-1': [] }
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+      fireEvent.click(startRunButton())
+      expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+    })
+
+    it('with only rest slots: START RUN is disabled and the reason shows', () => {
+      savedPrograms = [SEQUENCE_PROGRAM()]
+      sequenceItemsByProgram = { 'prog-1': [item(0, null), item(1, null)] }
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('a weekday map left under a sequence program does not schedule it', () => {
+      savedPrograms = [program({ id: 'prog-1', scheduleType: 'sequence', schedule: MONDAY('prog-1') })]
+      sequenceItemsByProgram = { 'prog-1': [] }
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('with one workout in the sequence: START RUN is enabled, no reason shows, and it starts the program', async () => {
+      savedPrograms = [SEQUENCE_PROGRAM()]
+      sequenceItemsByProgram = { 'prog-1': [item(0, null), item(1, 'wd-prog-1')] }
+      startRunMutateAsyncMock.mockResolvedValue('new-meso-1')
+      renderProgramsPage()
+
+      openSheetFor()
+      expect(startRunButton().disabled).toBe(false)
+      expect(screen.queryByText(REASON)).toBeNull()
+
+      fireEvent.click(startRunButton())
+      await waitFor(() => expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Cycle', programId: 'prog-1' }))
+    })
+  })
+
+  it('is decided for the program the sheet has selected: choosing another in the picker changes it', async () => {
+    savedPrograms = [
+      program({ id: 'prog-1', name: 'Upper/Lower', schedule: MONDAY('prog-1') }),
+      program({ id: 'prog-2', name: 'Push Pull Legs', schedule: NO_DAYS }),
+    ]
+    startRunMutateAsyncMock.mockResolvedValue('new-meso-1')
+    renderProgramsPage()
+
+    openSheetFor(0) // prog-1: scheduled
+    expect(startRunButton().disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Push Pull Legs' })) // prog-2: none
+    expect(startRunButton().disabled).toBe(true)
+    expect(screen.getByText(REASON)).toBeTruthy()
+    fireEvent.click(startRunButton())
+    expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upper/Lower' })) // back to prog-1
+    expect(startRunButton().disabled).toBe(false)
+    expect(screen.queryByText(REASON)).toBeNull()
+    fireEvent.click(startRunButton())
+    await waitFor(() => expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Upper/Lower', programId: 'prog-1' }))
+  })
+
+  it('while the program\'s workouts have not answered: START RUN waits, and no reason shows yet', () => {
+    savedPrograms = [SAVED_PROGRAM_1]
+    workoutDaysByProgram = {} // no answer for prog-1
+    renderProgramsPage()
+
+    openSheetFor()
+    expect(startRunButton().disabled).toBe(true)
+    expect(screen.queryByText(REASON)).toBeNull()
+    fireEvent.click(startRunButton())
+    expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('the reason line is a single line of the sheet (it fits at 375px: no fixed width wider than that)', () => {
+    savedPrograms = [program({ id: 'prog-1', schedule: NO_DAYS })]
+    const { container } = renderProgramsPage()
+
+    openSheetFor()
+    expect(screen.getByText(REASON)).toBeTruthy()
+    const offenders: string[] = []
+    for (const el of container.querySelectorAll<HTMLElement>('[style]')) {
+      for (const prop of ['width', 'minWidth'] as const) {
+        const m = /^(\d+(?:\.\d+)?)px$/.exec(el.style[prop])
+        if (m && Number(m[1]) > 375) offenders.push(`${el.tagName}.${prop}=${el.style[prop]}`)
+      }
+    }
+    expect(offenders).toEqual([])
   })
 })
 
