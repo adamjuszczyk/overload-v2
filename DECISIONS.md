@@ -1,10 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, 2026-10-11, after chunk 32's code failed review twice (entry 105, blocking). Merged and live: chunks 27–31, 34, 35 and migration 040. Stopped: chunk 32's code (not merged) and chunk 33 (needs 32). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
-
-Decisions — blocking:
-- **105** — chunk 32's code failed review twice; the second failure is a behaviour bug (apply-ahead after "Make this week the new default" can write a later week's set as both warmup and staged). Recommendation: one more fix round by the same builder, scoped to the head's whole kind. Blocks: chunk 32 and chunk 33.
+*Rewritten at every chunk boundary. Last: 2026-10-10, 2026-10-11, after Adam answered 105 (one more fix round for chunk 32's code; if it fails, ship without the offer and continue). Merged and live: chunks 27–31, 34, 35 and migration 040. In progress: chunk 32's code; then 33. Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -64,7 +61,7 @@ Chunk: TASKS-1.1 chunk 32 (code; branch `build/chunk-32` at `066a261`, not merge
 (c) Merge as is. Not recommended: it can write invalid data to planned weeks.
 **Recommendation:** (a). The fix is local (three record branches in `applyAhead.ts` plus the swapped-slot pairing in `makeWeekDefault.ts`), the rest of the chunk passed two independent reviews, and (b) drops a SPEC behaviour.
 **Blocked until answered/done:** chunk 32's code merge, and chunk 33 (it removes the program tab, whose stable-volume editing chunk 32 replaces).
-**Answer:**
+**Answer:** (Adam, 2026-10-11) (a): one more fix round by the same builder, as described. If that round fails again for any reason, ship chunk 32 without the apply-ahead offer after "Make this week the new default" (option b), note it in DECISIONS as a known gap, and continue with chunk 33. Don't come back to Adam for this chunk again.
 **Evidence:**
 What happened:
 - First review (two independent lenses) failed the first push on two data bugs: a "remove the last exercise, add one" read as a swap (moving the removed exercise's weights onto the new one in later weeks), and a swapped slot's sets paired across warmup/working. Plus smaller gaps. The builder's one retry fixed all of them; the reviewer's own break (position-only swap pairing) fails 8 tests; the independent retry pass confirmed every retry claim (13 of 14 breaks caught, the 14th equivalent).
