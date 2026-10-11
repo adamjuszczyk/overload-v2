@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ProgramExercise, ProgramSet, WeekPlan, WeekPlanSet } from '../../types'
+import { groupWeekPlanSets } from '../gym/setGroupLogic'
+import { setPositionOf } from './applyAhead'
 import {
   chooseDiffSources,
   computeWeekDiff,
@@ -246,6 +248,32 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     expect(setFlags(d, 'e', 'w1')?.weight).toBe(true) // 100 against 105
     expect(setFlags(d, 'e', 'w2')?.weight).toBe(true) // 105 against 110
     expect(setFlags(d, 'e', 'w3')?.added).toBe(true) // position 4 has no counterpart
+    expect(flagsOf(d, 'e').removedHeads).toEqual([])
+  })
+
+  it('a position is chunk 20\'s set position: the head ordinal (a rank, not the raw set number) then the stage index — the same one apply-ahead uses', () => {
+    // Set numbers with gaps and a duplicate; stages out of order.
+    const rows = [
+      wset('c', 'e', 7),
+      wset('a', 'e', 1),
+      wset('b', 'e', 3, { stageKind: 'dropset' }),
+      stage('b2', 'b', 'e', 2),
+      stage('b1', 'b', 'e', 1),
+      wset('d', 'e', 3),
+    ]
+    const [exercise] = weekToDiffExercises(ex, rows)
+    const groups = groupWeekPlanSets(rows).sort((x, y) => x.head.setNumber - y.head.setNumber)
+    exercise.heads.forEach((head, i) => {
+      expect(setPositionOf(groups, head.id)).toEqual({ headOrdinal: i + 1, stageIndex: null })
+      head.stages.forEach((st) => expect(setPositionOf(groups, st.id)).toEqual({ headOrdinal: i + 1, stageIndex: st.stageIndex }))
+    })
+    expect(exercise.heads.map((h) => h.id)).toEqual(['a', 'b', 'd', 'c'])
+    expect(exercise.heads[1].stages.map((st) => st.id)).toEqual(['b1', 'b2'])
+
+    // So set numbers 1, 3, 7 against 1, 2, 3 are first, second and third in both: nothing differs.
+    const week = [wset('w1', 'e', 1), wset('w3', 'e', 3), wset('w7', 'e', 7)]
+    const d = diffBetween([ex, week], [ex, sets('e', 3)])
+    expect([...flagsOf(d, 'e').sets.values()].every((f) => !f.added && !f.weight && !f.reps && !f.rir && !f.kind)).toBe(true)
     expect(flagsOf(d, 'e').removedHeads).toEqual([])
   })
 
@@ -538,17 +566,22 @@ describe('computeWeekDiff — a week against its sources', () => {
   })
 
   it('stable: weights and RIR against last week, sets and structure against the default', () => {
-    const lastWeek = plan(1, ex, [wset('e-1', 'e', 1, { targetWeight: 100, targetRir: 2 })])
+    // Last week: two sets (100 / RIR 2, and 105 / RIR 2). This week: the first as it was, the second changed, a third the default has no room for.
+    const lastWeek = plan(1, ex, [wset('e-1', 'e', 1, { targetWeight: 100, targetRir: 2 }), wset('e-2', 'e', 2, { targetWeight: 105, targetRir: 2 })])
     const thisWeek = [
-      wset('e-1', 'e', 1, { targetWeight: 102.5, targetRir: 1 }),
-      wset('e-2', 'e', 2, { targetWeight: 100 }), // the default has one set only
+      wset('e-1', 'e', 1, { targetWeight: 100, targetRir: 2 }),
+      wset('e-2', 'e', 2, { targetWeight: 107.5, targetRir: 1 }),
+      wset('e-3', 'e', 3, { targetWeight: 100 }),
     ]
     const d = computeWeekDiff({
       planningType: 'stable', weekStart: 'copy', weekNumber: 2, week: { isDeload: false, exercises: ex, sets: thisWeek },
-      slotWeeks: [lastWeek], runCopy: runCopy([pset('p1', 'e', 1)]),
+      slotWeeks: [lastWeek], runCopy: runCopy([pset('p1', 'e', 1), pset('p2', 'e', 2)]),
     })!
-    expect(setFlags(d, 'e', 'e-1')).toMatchObject({ weight: true, rir: true, reps: false, added: false })
-    expect(setFlags(d, 'e', 'e-2')).toMatchObject({ added: true })
+    // The default has no weights at all: if it were what weights are compared with, set 1 (100 = last week's) would differ.
+    expect(setFlags(d, 'e', 'e-1')).toMatchObject({ weight: false, rir: false, reps: false, added: false })
+    expect(setFlags(d, 'e', 'e-2')).toMatchObject({ weight: true, rir: true, reps: false, added: false })
+    // The default has two sets; a third is new.
+    expect(setFlags(d, 'e', 'e-3')).toMatchObject({ added: true })
   })
 
   it('stable: the default is read for structure even when there is no last week; weights and RIR then show nothing', () => {

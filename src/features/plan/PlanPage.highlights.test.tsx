@@ -476,6 +476,20 @@ describe('PlanPage STRUCTURE — exercises, their order, set kinds', () => {
     expect(removed[0].nextElementSibling).toBe(headerOf('Squat').parentElement)
     cleanup()
 
+    cleanup()
+
+    // The last exercise is gone: its line is the card's last, and the exercise before it now has the divider a non-last section has.
+    mockState.all = [plan(4, rows4, sets4()), plan(5, [BENCH, withPosition(ROW, 1)], [wset('b5', 'pe-bench', 1), wset('r5', 'pe-row', 1)])]
+    renderPlan(5)
+    openStructureView()
+    const last = removedLines()
+    expect(last.map((r) => struck(r).text)).toEqual(['Squat'])
+    expect(last[0].nextElementSibling).toBeNull()
+    expect(last[0].getAttribute('style')).not.toContain('1px solid') // no divider under the last line of the card
+    expect(headerOf('Row').parentElement!.getAttribute('style')).toContain('border-bottom: 1px solid')
+    expect(headerOf('Bench Press').parentElement!.getAttribute('style')).toContain('border-bottom: 1px solid')
+    cleanup()
+
     // Bench Press was first and is gone: its line is at the top of the card.
     mockState.all = [plan(4, rows4, sets4()), plan(5, [withPosition(ROW, 0), withPosition(SQUAT, 1)], [wset('r5', 'pe-row', 1), wset('q5', 'pe-squat', 1)])]
     renderPlan(5)
