@@ -751,6 +751,103 @@ describe('PlanPage STRUCTURE — a set\'s own REST and a staged head\'s STAGE RE
   })
 })
 
+// ─── A superset member's sets ─────────────────────────────────────────────────
+
+// Every test above runs without a superset block, so an exercise is always a unit of one. Here Dips (pe-3) and
+// Squat (pe-2) are linked in blk-1, and each has a plain set 1 and a rest-pause head as set 2 with one stage. Every
+// set names a program set of its OWN exercise row, and the two members' program sets differ in every value, so a
+// REST or STAGE REST that is read from, or written to, the other member's program set (the unit's first member's, say)
+// is seen on the screen and in the write.
+const SUPERSET_WEEK = [pe('pe-3', EX_DIPS, 0, { supersetBlockId: 'blk-1' }), pe('pe-2', EX_SQUAT, 1, { supersetBlockId: 'blk-1' })]
+const SUPERSET_SETS: WeekPlanSet[] = [
+  wset({ id: 'd1', programExerciseId: 'pe-3', setNumber: 1, programSetId: 'ps-d1' }),
+  wset({ id: 'd2', programExerciseId: 'pe-3', setNumber: 2, stageKind: 'rest_pause', programSetId: 'ps-d2' }),
+  wset({ id: 'd2s', programExerciseId: 'pe-3', setNumber: 2, isDropset: true, parentWeekPlanSetId: 'd2', stageIndex: 1, programSetId: 'ps-d2s' }),
+  wset({ id: 'q1', programExerciseId: 'pe-2', setNumber: 1, programSetId: 'ps-q1' }),
+  wset({ id: 'q2', programExerciseId: 'pe-2', setNumber: 2, stageKind: 'rest_pause', programSetId: 'ps-q2' }),
+  wset({ id: 'q2s', programExerciseId: 'pe-2', setNumber: 2, isDropset: true, parentWeekPlanSetId: 'q2', stageIndex: 1, programSetId: 'ps-q2s' }),
+]
+const SUPERSET_PROGRAM_SETS: ProgramSet[] = [
+  pset({ id: 'ps-d1', programExerciseId: 'pe-3', restSeconds: 50 }),
+  pset({ id: 'ps-d2', programExerciseId: 'pe-3', position: 1, stageKind: 'rest_pause', stageRestSeconds: 25 }),
+  pset({ id: 'ps-d2s', programExerciseId: 'pe-3', position: 2, parentProgramSetId: 'ps-d2', stageIndex: 1, restSeconds: 12 }),
+  pset({ id: 'ps-q1', programExerciseId: 'pe-2', restSeconds: 60 }),
+  pset({ id: 'ps-q2', programExerciseId: 'pe-2', position: 1, stageKind: 'rest_pause', restSeconds: 70, stageRestSeconds: 40 }),
+  pset({ id: 'ps-q2s', programExerciseId: 'pe-2', position: 2, parentProgramSetId: 'ps-q2', stageIndex: 1, restSeconds: 8 }),
+]
+
+describe('PlanPage STRUCTURE — a superset member\'s sets: each member\'s REST and STAGE REST are its OWN program sets, the second member\'s included', () => {
+  const FIRST = 0 // Dips
+  const SECOND = 1 // Squat
+  const stageMenuOf = (nth: number) => fireEvent.click(screen.getAllByLabelText('Options for stage')[nth])
+  const everyWeek = () => within(screen.getByRole('group', { name: 'Every week' }))
+
+  function arrangeSuperset() {
+    mockState.blocks = [{ id: 'blk-1', restWithinRoundSeconds: null, restAfterRoundSeconds: null }]
+    mockState.programSets = SUPERSET_PROGRAM_SETS
+    const view = arrange(SUPERSET_WEEK, SUPERSET_SETS)
+    // Control: the two ARE one superset (a unit of two), with one pair of round rests, after Squat.
+    expect(screen.getAllByText('· SUPERSET')).toHaveLength(2)
+    expect(screen.getAllByText('WITHIN ROUND')).toHaveLength(1)
+    return view
+  }
+
+  it('the second member\'s set REST, STAGE REST and stage REST show its own values and write ITS program sets; the first member\'s write its own', () => {
+    arrangeSuperset()
+
+    // Squat, the second member. Set 2 is a staged head: REST 70 s and STAGE REST 40 s, both Squat's.
+    setMenu(2, SECOND)
+    expect(everyWeek().getByText('1min 10s')).toBeTruthy()
+    expect(everyWeek().getByText('40s')).toBeTruthy()
+    more('rest of set 2 for Squat')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-q2', restSeconds: 85 })
+    more('stage rest of set 2 for Squat')
+    expect(updateStageRestMutate).toHaveBeenLastCalledWith({ id: 'ps-q2', stageRestSeconds: 55 })
+    setMenu(2, SECOND)
+    // Set 1, and the stage row (its own rest, not its head's).
+    setMenu(1, SECOND)
+    more('rest of set 1 for Squat')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-q1', restSeconds: 75 })
+    setMenu(1, SECOND)
+    stageMenuOf(SECOND)
+    more('rest of stage 1 of set 2 for Squat')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-q2s', restSeconds: 23 })
+    stageMenuOf(SECOND)
+
+    // Dips, the first member: its own, with its own values (set 2 has no rest of its own, a stage rest of 25 s).
+    setMenu(2, FIRST)
+    expect(everyWeek().getByText('CHAIN')).toBeTruthy()
+    expect(everyWeek().getByText('25s')).toBeTruthy()
+    more('rest of set 2 for Dips')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-d2', restSeconds: 15 })
+    more('stage rest of set 2 for Dips')
+    expect(updateStageRestMutate).toHaveBeenLastCalledWith({ id: 'ps-d2', stageRestSeconds: 40 })
+    setMenu(2, FIRST)
+    setMenu(1, FIRST)
+    more('rest of set 1 for Dips')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-d1', restSeconds: 65 })
+    setMenu(1, FIRST)
+    stageMenuOf(FIRST)
+    more('rest of stage 1 of set 2 for Dips')
+    expect(updateSetRestMutate).toHaveBeenLastCalledWith({ id: 'ps-d2s', restSeconds: 27 })
+
+    // Nothing else was written, and each write went to a program set of the member whose menu it was.
+    expect(updateSetRestMutate.mock.calls.map((c) => (c[0] as { id: string }).id)).toEqual(['ps-q2', 'ps-q1', 'ps-q2s', 'ps-d2', 'ps-d1', 'ps-d2s'])
+    expect(updateStageRestMutate.mock.calls.map((c) => (c[0] as { id: string }).id)).toEqual(['ps-q2', 'ps-d2'])
+    expect(updateRestMutate).not.toHaveBeenCalled() // (an exercise's own rest is another write)
+  })
+
+  it('each member\'s markers are its own program sets\' values', () => {
+    arrangeSuperset()
+    expect(runWideMarkers()).toEqual([
+      'REST 50s', // Dips set 1
+      'STAGE REST 25s', 'REST 12s', // Dips set 2 (a staged head with a stage rest and none of its own) and its stage
+      'REST 1min 0s', // Squat set 1
+      'REST 1min 10s', 'STAGE REST 40s', 'REST 8s', // Squat set 2 (rest and stage rest) and its stage
+    ])
+  })
+})
+
 // ─── Sets with no program set of their own exercise (G45 answered "no") ───────
 
 describe('PlanPage STRUCTURE — a set with no program set of its OWN exercise row shows no REST and no STAGE REST (G45)', () => {
@@ -1096,6 +1193,21 @@ describe('PlanPage STRUCTURE — a marker shows only where the field is set (the
     expect(stageChips).toEqual(['REST-PAUSE', 'STAGE REST 20s']) // the kind, and the stage rest — no "REST" chip for the head
     const stageRow = screen.getByText('REST 10s').parentElement as HTMLElement
     expect(Array.from(stageRow.querySelectorAll('span')).map((el) => el.textContent)).toEqual(['REST 10s'])
+  })
+
+  it('a stage row has no STAGE REST marker even when its own program set carries a stage rest (the stage rest is a staged HEAD\'s field)', () => {
+    // The stage's program set (ps-b3s) holds a stage rest of 33 s — stale data, say, from a stage that was once a head.
+    mockState.programSets = PROGRAM_SETS.map((ps) => (ps.id === 'ps-b3s' ? { ...ps, stageRestSeconds: 33 } : ps))
+    arrange()
+
+    // Control: the data is there, and the head's own stage rest still shows ...
+    expect(mockState.programSets.find((ps) => ps.id === 'ps-b3s')?.stageRestSeconds).toBe(33)
+    expect(screen.getByText('STAGE REST 20s')).toBeTruthy()
+    // ... but the stage row shows only its own rest, and nothing on the page reads 33 s.
+    const stageRow = screen.getByText('REST 10s').parentElement as HTMLElement
+    expect(Array.from(stageRow.querySelectorAll('span')).map((el) => el.textContent)).toEqual(['REST 10s'])
+    expect(screen.queryByText('STAGE REST 33s')).toBeNull()
+    expect(runWideMarkers().filter((m) => m.startsWith('STAGE REST'))).toEqual(['STAGE REST 20s'])
   })
 
   it('the SETS view marks none of them (each view marks its own fields), nor shows a routine, a toggle or a label', () => {
