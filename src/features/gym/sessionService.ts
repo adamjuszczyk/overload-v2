@@ -217,10 +217,15 @@ export async function createSession(
   workoutDayId: string,
   date: string,
   movedToDate?: string | null,
+  // B3: a client-side id makes a re-tap after a lost reply idempotent. The
+  // first insert may have landed with its reply lost; the retry then hits
+  // the primary key and returns that row instead of making a second one.
+  id?: string,
 ): Promise<Session> {
   const { data, error } = await supabase
     .from('v2_sessions')
     .insert({
+      ...(id !== undefined ? { id } : {}),
       user_id: userId,
       mesocycle_id: mesoId,
       week_plan_id: weekPlanId,
@@ -232,7 +237,18 @@ export async function createSession(
     })
     .select('*')
     .single()
-  if (error) throw error
+  if (error) {
+    if (id !== undefined && error.code === '23505') {
+      const { data: existing, error: readError } = await supabase
+        .from('v2_sessions')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', userId)
+        .single()
+      if (!readError && existing) return toSession(existing as DbSession)
+    }
+    throw error
+  }
   return toSession(data as DbSession)
 }
 
