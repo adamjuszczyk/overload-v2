@@ -139,6 +139,10 @@ vi.mock('./useWeekPlan', () => ({
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+// Chunk 32: a stable run's current and later weeks also show "Make this week the new default" (it owns
+// a mutation, which needs a QueryClientProvider this file's render() doesn't set up). Nothing here is
+// about it: PlanPage.makeDefault.test.tsx proves the real component.
+vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
 const { openStructureView, openSetsView } = await import('./planMenus.testutil')
