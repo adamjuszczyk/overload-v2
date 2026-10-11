@@ -185,7 +185,6 @@ describe('PlannerPage — Save and Start', () => {
     expect(showToastMock).toHaveBeenCalledWith('network down')
     expect(screen.queryByText('AT /plan')).toBeNull()
   })
-
 })
 
 // Chunk 33 (SPEC Programs and runs [P1.1]: "The planner refuses to open a run's
