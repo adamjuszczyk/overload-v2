@@ -197,10 +197,13 @@ describe('diffDefault — nothing changed', () => {
     expect(records(d, d)).toEqual([])
   })
 
-  it('a rep target that reads the same is no change (8 and 8–8 are both "8")', () => {
-    const old = [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: 8 })])]
-    const neu = [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: 8 })])]
+  it('a rep target that reads the same is no change: a lone minimum with no maximum shows as no target, as an empty one does', () => {
+    // A row shows a target only with both ends (or AMRAP): 8 with no maximum reads "none".
+    const old = [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: null })])]
+    const neu = [dex('pe-1', 0, [dset('a1')])]
     expect(records(old, neu)).toEqual([])
+    // ...and one that reads differently is a change.
+    expect(records(neu, [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: 8 })])]).map((r) => r.editType)).toEqual(['repTarget'])
   })
 
   it('a program set\'s own position is not a part: a week keeps its own set numbers', () => {
