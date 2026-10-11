@@ -109,6 +109,11 @@ async function mount(useHook: () => unknown) {
 
 const refetchesStarted = () => CACHE_NAMES.every((name) => fetches[name].length === 2)
 
+// The query client passes a change on to React on a timer of its own, so "the mutation is still pending" is
+// only proven once those timers have had their turn: without the wait, a mutation that had already finished
+// would still read as pending here and the test would pass for the wrong reason.
+const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 25)) })
+
 afterEach(() => {
   cleanup()
   for (const m of [updateRestMock, updateTempoMock, updateUnitMock, createBlockMock, setBlockMock]) m.mockReset()
@@ -148,11 +153,13 @@ describe('a run-wide write stays pending until the run copy and every week cache
     await waitFor(() => expect(refetchesStarted()).toBe(true))
     expect(write).toHaveBeenCalledTimes(1)
     // ... and the mutation is still pending: the caches hold the rows from before it.
+    await settle()
     expect(result.current.isPending).toBe(true)
 
     const others = CACHE_NAMES.filter((name) => name !== last)
     for (const name of others) {
       await act(async () => { fetches[name][1].resolve(CACHES[name].data) })
+      await settle()
       expect(result.current.isPending, `${hook} stopped waiting once ${name} had answered, with ${last} still out`).toBe(true)
     }
     await act(async () => { fetches[last][1].resolve(CACHES[last].data) })
@@ -170,12 +177,14 @@ describe('a run-wide write stays pending until the run copy and every week cache
     act(() => { result.current.mutate(vars as never) })
     await waitFor(() => expect(refetchesStarted()).toBe(true))
     expect(write).toHaveBeenCalledTimes(1)
+    await settle()
     expect(result.current.isPending).toBe(true)
     expect(result.current.isError).toBe(false)
 
     for (const name of CACHE_NAMES) {
       expect(result.current.isPending, `${hook} stopped waiting before ${name} had answered`).toBe(true)
       await act(async () => { fetches[name][1].resolve(CACHES[name].data) })
+      await settle()
     }
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(result.current.isPending).toBe(false)

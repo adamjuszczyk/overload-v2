@@ -13,6 +13,12 @@ import type { ProgramExercise, WeekPlan } from '../../types'
 // that write them also put the new value into the week caches (optimistic, put back on failure) and mark
 // them stale when the write settles — or the control that was just tapped would keep showing the old value
 // for up to the query client's 5 minutes, and a stepper tapped three times would write 15 s three times.
+// (That a write stays pending until those caches have refetched is usePrograms.pending.test.tsx's.)
+//
+// The fixture is a swap: the Row (pe-r) was the run's exercise at position 1 and is still in the run's copy
+// and in week 1; from week 2 the Incline Press (pe-s, a week_only row of its own) sits at position 1 instead.
+// A patch for pe-s that matched by position, not by id, would land on the Row — in the run's copy, in week 1's
+// cache and in the meso's history — and the tests below look for exactly that.
 //
 // The services are mocked (no Supabase); the query client is the app's own singleton, which is the one the
 // hooks write the cache through.
@@ -42,29 +48,43 @@ const exercise = (id: string, over: Partial<ProgramExercise> = {}): ProgramExerc
   id, workoutDayId: 'wd-1', userId: 'user-1', exerciseId: `ex-${id}`, position: 0, weightUnit: null,
   restSeconds: null, restAfterSeconds: null, tempo: null, supersetBlockId: null, ...over,
 })
+// The replaced row, with every design field set so that a patch that lands on it shows.
+const replaced = (): ProgramExercise => exercise('pe-r', { position: 1, restSeconds: 45, restAfterSeconds: 30, tempo: '2-0-2-0', weightUnit: 'kg' })
 const week = (id: string, weekNumber: number, exercises: ProgramExercise[]): WeekPlan => ({
   id, userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber, isDeload: false, notes: null,
   sets: [], exercises, createdAt: '',
 })
 
+const WEEK1_KEY = ['v2_weekPlans', 'meso-1', 1] as const
 const WEEK_KEY = ['v2_weekPlans', 'meso-1', 2] as const
 const OTHER_WEEK_KEY = ['v2_weekPlans', 'meso-1', 3] as const
 const ALL_KEY = ['v2_allWeekPlans', 'meso-1'] as const
 const RUN_COPY_KEY = ['v2_programExercises', 'wd-1'] as const
 
-// Week 2 and week 3 both show the run copy's pe-1 and the week_only pe-s (a swapped-in row, which the run
-// copy's own list does not hold).
+// Week 1 still has the replaced Row (pe-r) at position 1; weeks 2 and 3 have the week_only pe-s there. The run
+// copy's own list holds pe-1 and the Row, and never pe-s.
 function seed() {
+  const week1 = week('wp-1', 1, [exercise('pe-1', { restSeconds: 90 }), replaced()])
   const week2 = week('wp-2', 2, [exercise('pe-1', { restSeconds: 90 }), exercise('pe-s', { position: 1 })])
   const week3 = week('wp-3', 3, [exercise('pe-1', { restSeconds: 90 }), exercise('pe-s', { position: 1 })])
+  queryClient.setQueryData(WEEK1_KEY, [week1])
   queryClient.setQueryData(WEEK_KEY, [week2])
   queryClient.setQueryData(OTHER_WEEK_KEY, [week3])
-  queryClient.setQueryData(ALL_KEY, [week2, week3])
-  queryClient.setQueryData(RUN_COPY_KEY, [exercise('pe-1', { restSeconds: 90 })])
-  return { week2, week3 }
+  queryClient.setQueryData(ALL_KEY, [week1, week2, week3])
+  queryClient.setQueryData(RUN_COPY_KEY, [exercise('pe-1', { restSeconds: 90 }), replaced()])
+  return { week1, week2, week3 }
 }
-const rowOf = (key: readonly unknown[], planIndex: number, id: string) =>
-  queryClient.getQueryData<WeekPlan[]>(key)![planIndex].exercises.find((e) => e.id === id)!
+const rowOf = (key: readonly unknown[], planId: string, id: string) =>
+  queryClient.getQueryData<WeekPlan[]>(key)!.find((wp) => wp.id === planId)!.exercises.find((e) => e.id === id)!
+const runCopyRow = (id: string) => queryClient.getQueryData<ProgramExercise[]>(RUN_COPY_KEY)!.find((e) => e.id === id)
+
+// The Row is in the run's copy, in week 1's cache and in the meso's history, at the position pe-s has in
+// weeks 2 and 3: an edit of pe-s must not reach it in any of them.
+function expectReplacedRowUntouched() {
+  expect(rowOf(WEEK1_KEY, 'wp-1', 'pe-r')).toEqual(replaced())
+  expect(rowOf(ALL_KEY, 'wp-1', 'pe-r')).toEqual(replaced())
+  expect(runCopyRow('pe-r')).toEqual(replaced())
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -100,17 +120,19 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
 
     act(() => { result.current.mutate({ id: 'pe-s', changes: { restSeconds: 15 } }) })
-    await waitFor(() => expect(rowOf(WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15))
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').restSeconds).toBe(15))
 
     // Optimistic, before the write has answered: the week on screen, the other week, and the meso's history.
-    expect(rowOf(OTHER_WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15)
-    expect(rowOf(ALL_KEY, 0, 'pe-s').restSeconds).toBe(15)
-    expect(rowOf(ALL_KEY, 1, 'pe-s').restSeconds).toBe(15)
+    expect(rowOf(OTHER_WEEK_KEY, 'wp-3', 'pe-s').restSeconds).toBe(15)
+    expect(rowOf(ALL_KEY, 'wp-2', 'pe-s').restSeconds).toBe(15)
+    expect(rowOf(ALL_KEY, 'wp-3', 'pe-s').restSeconds).toBe(15)
     // The other row of the week is untouched, and so are the row's other fields.
-    expect(rowOf(WEEK_KEY, 0, 'pe-1').restSeconds).toBe(90)
-    expect(rowOf(WEEK_KEY, 0, 'pe-s').restAfterSeconds).toBeNull()
-    // The run copy's own list never held the week_only row, and still doesn't.
-    expect(queryClient.getQueryData<ProgramExercise[]>(RUN_COPY_KEY)!.map((e) => e.id)).toEqual(['pe-1'])
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').restSeconds).toBe(90)
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').restAfterSeconds).toBeNull()
+    // The run copy's own list never held the week_only row, and still doesn't — and the Row it holds at
+    // pe-s's position, in it and in week 1, is not pe-s and is left alone.
+    expect(queryClient.getQueryData<ProgramExercise[]>(RUN_COPY_KEY)!.map((e) => e.id)).toEqual(['pe-1', 'pe-r'])
+    expectReplacedRowUntouched()
     expect(updateRestMock).toHaveBeenCalledWith('pe-s', { restSeconds: 15 })
 
     write.resolve()
@@ -126,11 +148,13 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
 
     act(() => { result.current.mutate({ id: 'pe-1', changes: { restAfterSeconds: 120 } }) })
-    await waitFor(() => expect(rowOf(WEEK_KEY, 0, 'pe-1').restAfterSeconds).toBe(120))
-    expect(queryClient.getQueryData<ProgramExercise[]>(RUN_COPY_KEY)![0].restAfterSeconds).toBe(120)
-    expect(rowOf(OTHER_WEEK_KEY, 0, 'pe-1').restAfterSeconds).toBe(120)
-    expect(rowOf(WEEK_KEY, 0, 'pe-1').restSeconds).toBe(90) // the other field of the same change is left alone
-    expect(rowOf(WEEK_KEY, 0, 'pe-s').restAfterSeconds).toBeNull()
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').restAfterSeconds).toBe(120))
+    expect(runCopyRow('pe-1')!.restAfterSeconds).toBe(120)
+    expect(rowOf(OTHER_WEEK_KEY, 'wp-3', 'pe-1').restAfterSeconds).toBe(120)
+    expect(rowOf(WEEK1_KEY, 'wp-1', 'pe-1').restAfterSeconds).toBe(120) // week 1 shows pe-1 too
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').restSeconds).toBe(90) // the other field of the same change is left alone
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').restAfterSeconds).toBeNull()
+    expectReplacedRowUntouched()
     write.resolve()
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
   })
@@ -142,16 +166,51 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
 
     act(() => { result.current.mutate({ id: 'pe-1', changes: { restSeconds: 150 } }) })
-    await waitFor(() => expect(rowOf(WEEK_KEY, 0, 'pe-1').restSeconds).toBe(150))
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').restSeconds).toBe(150))
     write.reject(new Error('offline'))
     await waitFor(() => expect(result.current.isError).toBe(true))
 
+    expect(queryClient.getQueryData(WEEK1_KEY)).toEqual([before.week1])
     expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
     expect(queryClient.getQueryData(OTHER_WEEK_KEY)).toEqual([before.week3])
-    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
-    expect(queryClient.getQueryData<ProgramExercise[]>(RUN_COPY_KEY)![0].restSeconds).toBe(90)
+    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week1, before.week2, before.week3])
+    expect(runCopyRow('pe-1')!.restSeconds).toBe(90)
     // ... and they are still marked stale, so the next read is the server's.
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans']]))
+  })
+
+  // Another edit's optimistic patch may be sitting in a cache entry this write never touched (a week of some
+  // other workout, say). Putting that entry back from this write's snapshot would wipe the other edit's value
+  // off the screen until its own refetch landed.
+  it('a failed write puts back only the entries it patched: an entry the row was never in keeps what another edit put there meanwhile', async () => {
+    const before = seed()
+    // Week 4 of another workout, and another meso's history: cached, and neither holds pe-1.
+    const OTHER_WORKOUT_WEEK_KEY = ['v2_weekPlans', 'meso-1', 4] as const
+    const OTHER_MESO_KEY = ['v2_allWeekPlans', 'meso-2'] as const
+    queryClient.setQueryData(OTHER_WORKOUT_WEEK_KEY, [week('wp-4', 4, [exercise('pe-x')])])
+    queryClient.setQueryData(OTHER_MESO_KEY, [week('wp-9', 1, [exercise('pe-y')])])
+
+    const write = deferred()
+    updateRestMock.mockReturnValue(write.promise)
+    const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
+    act(() => { result.current.mutate({ id: 'pe-1', changes: { restSeconds: 150 } }) })
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').restSeconds).toBe(150))
+
+    // Meanwhile another edit's patch lands on both of those entries ...
+    const editedWeek4 = [week('wp-4', 4, [exercise('pe-x', { restSeconds: 33 })])]
+    const editedOtherMeso = [week('wp-9', 1, [exercise('pe-y', { tempo: '4-0-1-0' })])]
+    queryClient.setQueryData(OTHER_WORKOUT_WEEK_KEY, editedWeek4)
+    queryClient.setQueryData(OTHER_MESO_KEY, editedOtherMeso)
+
+    // ... and this write fails.
+    write.reject(new Error('offline'))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    // The entries that held pe-1 are back as they were; the two that never did are as the other edit left them.
+    expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
+    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week1, before.week2, before.week3])
+    expect(queryClient.getQueryData(OTHER_WORKOUT_WEEK_KEY)).toEqual(editedWeek4)
+    expect(queryClient.getQueryData(OTHER_MESO_KEY)).toEqual(editedOtherMeso)
   })
 
   it('TEMPO and the UNIT are patched the same way (the unit is what a set\'s weight is shown in)', async () => {
@@ -163,21 +222,28 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
 
     await act(async () => { tempo.result.current.mutate({ id: 'pe-s', tempo: '3-1-X-0' }) })
     await waitFor(() => expect(tempo.result.current.isSuccess).toBe(true))
-    expect(rowOf(WEEK_KEY, 0, 'pe-s').tempo).toBe('3-1-X-0')
-    expect(rowOf(WEEK_KEY, 0, 'pe-1').tempo).toBeNull()
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').tempo).toBe('3-1-X-0')
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').tempo).toBeNull()
     expect(updateTempoMock).toHaveBeenCalledWith('pe-s', '3-1-X-0')
+    expectReplacedRowUntouched()
     // Settled: the TEMPO write marks every week cache stale too (this hook's own call, not the REST one's).
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan'], [...RUN_COPY_KEY]]))
     invalidated.length = 0
 
     await act(async () => { unit.result.current.mutate({ id: 'pe-1', weightUnit: 'lbs' }) })
     await waitFor(() => expect(unit.result.current.isSuccess).toBe(true))
-    expect(rowOf(WEEK_KEY, 0, 'pe-1').weightUnit).toBe('lbs')
-    expect(rowOf(ALL_KEY, 1, 'pe-1').weightUnit).toBe('lbs')
-    expect(rowOf(WEEK_KEY, 0, 'pe-s').weightUnit).toBeNull()
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').weightUnit).toBe('lbs')
+    expect(rowOf(ALL_KEY, 'wp-3', 'pe-1').weightUnit).toBe('lbs')
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').weightUnit).toBeNull()
     expect(updateUnitMock).toHaveBeenCalledWith('pe-1', 'lbs')
     // ... and so does the UNIT write.
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan'], [...RUN_COPY_KEY]]))
+
+    // The unit of the swapped-in row is its own too, and the Row at its position keeps its kg.
+    await act(async () => { unit.result.current.mutate({ id: 'pe-s', weightUnit: 'lbs' }) })
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').weightUnit).toBe('lbs'))
+    expect(rowOf(OTHER_WEEK_KEY, 'wp-3', 'pe-s').weightUnit).toBe('lbs')
+    expectReplacedRowUntouched()
   })
 
   it('a failed TEMPO or UNIT write restores the week caches too', async () => {
@@ -190,7 +256,7 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     await act(async () => { tempo.result.current.mutate({ id: 'pe-1', tempo: '2-0-2-0' }) })
     await waitFor(() => expect(tempo.result.current.isError).toBe(true))
     expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
-    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
+    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week1, before.week2, before.week3])
     // ... and the week caches are marked stale, so the next read is the server's (a failed write settles too).
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan']]))
     invalidated.length = 0
@@ -198,7 +264,7 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     await act(async () => { unit.result.current.mutate({ id: 'pe-1', weightUnit: 'kg' }) })
     await waitFor(() => expect(unit.result.current.isError).toBe(true))
     expect(queryClient.getQueryData(WEEK_KEY)).toEqual([before.week2])
-    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week2, before.week3])
+    expect(queryClient.getQueryData(ALL_KEY)).toEqual([before.week1, before.week2, before.week3])
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan']]))
   })
 
@@ -215,10 +281,10 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     const { result } = renderHook(() => useUpdateProgramExerciseRest('wd-1'), { wrapper })
 
     act(() => { result.current.mutate({ id: 'pe-s', changes: { restSeconds: 15 } }) })
-    await waitFor(() => expect(rowOf(WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15))
+    await waitFor(() => expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').restSeconds).toBe(15))
     stale.resolve()
     await inFlight
-    expect(rowOf(WEEK_KEY, 0, 'pe-s').restSeconds).toBe(15)
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-s').restSeconds).toBe(15)
 
     write.resolve()
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
@@ -247,7 +313,7 @@ describe('the design-field hooks keep Plan\'s week caches in step', () => {
     expect(setBlockMock).toHaveBeenCalledWith(['pe-1', 'pe-s'], 'blk-new')
     expect(invalidated).toEqual(expect.arrayContaining([['v2_weekPlans'], ['v2_allWeekPlans'], ['v2_weekPlan'], [...RUN_COPY_KEY]]))
     // (Marked stale, not rewritten: the cached copies still hold what they held until the refetch lands.)
-    expect(rowOf(WEEK_KEY, 0, 'pe-1').supersetBlockId).toBeNull()
+    expect(rowOf(WEEK_KEY, 'wp-2', 'pe-1').supersetBlockId).toBeNull()
     expect(before.week2.exercises[0].supersetBlockId).toBeNull()
   })
 
