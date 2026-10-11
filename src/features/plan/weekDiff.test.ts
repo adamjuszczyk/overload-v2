@@ -208,6 +208,13 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     const d = diffBetween([ex, week], [ex, source])
     expect(setFlags(d, 'e', 'e-1')?.reps).toBe(false)
     expect(setFlags(d, 'e', 'e-2')?.reps).toBe(false)
+
+    // An AMRAP is AMRAP whatever stray min and max it carries; a half-set pair shows as no target at all.
+    const amrapSource = [wset('e-1', 'e', 1, { isAmrap: true, repMin: null, repMax: null }), wset('e-2', 'e', 2, { repMin: 8, repMax: null })]
+    const amrapWeek = [wset('e-1', 'e', 1, { isAmrap: true, repMin: 6, repMax: 8 }), wset('e-2', 'e', 2, { repMin: null, repMax: null })]
+    const same = diffBetween([ex, amrapWeek], [ex, amrapSource])
+    expect(setFlags(same, 'e', 'e-1')?.reps).toBe(false)
+    expect(setFlags(same, 'e', 'e-2')?.reps).toBe(false)
   })
 
   it('a set the source has and the week hasn\'t is removed (always the trailing one); a set only the week has is added', () => {

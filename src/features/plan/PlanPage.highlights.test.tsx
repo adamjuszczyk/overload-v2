@@ -903,6 +903,45 @@ describe('PlanPage — past weeks highlight too, compared as they are now', () =
 // Several workouts, and the page itself
 // ═══════════════════════════════════════════════════════════════════════════════
 
+describe('PlanPage — a week with nothing to flag renders exactly what it did before the highlighting', () => {
+  it('a week identical to its source is the very same markup as a week compared with nothing, in both views (no attribute, no style, no element is added)', () => {
+    // The week: warmup, a staged set with a stage, a tagged set, on two exercises, in a unit that isn't the
+    // Settings one, with run-wide fields set. Week 4 is its source and equal to it; the other render has no
+    // week 4, so it is compared with nothing at all.
+    const sets = (suffix: string) => [
+      wset(`w${suffix}`, 'pe-bench', 1, { isWarmup: true, targetRir: null, targetWeight: 40, repMin: 10, repMax: 10 }),
+      wset(`h${suffix}`, 'pe-bench', 2, { stageKind: 'rest_pause', repMin: 8, repMax: 12 }),
+      stageOf(`hs${suffix}`, `h${suffix}`, 'pe-bench', 1),
+      wset(`t${suffix}`, 'pe-bench', 3, { tags: ['push here'] }),
+      wset(`r${suffix}`, 'pe-row', 1, { targetWeight: null, targetRir: null, repMin: null, repMax: null }),
+    ]
+    const rows = [pe('pe-bench', EX_BENCH, 0, { restSeconds: 120, tempo: '3-1-1-0', weightUnit: 'lbs' }), pe('pe-row', EX_ROW, 1, { supersetBlockId: 'blk' })]
+    const markup = (withSource: boolean) => {
+      mockState.all = withSource ? [plan(4, rows, sets('4')), plan(5, rows, sets('5'))] : [plan(5, rows, sets('5'))]
+      const { container } = renderPlan(5)
+      const setsView = container.innerHTML
+      openStructureView()
+      const structureView = container.innerHTML
+      cleanup()
+      return { sets: setsView, structure: structureView }
+    }
+    const compared = markup(true)
+    const alone = markup(false)
+    expect(compared.sets).toBe(alone.sets)
+    expect(compared.structure).toBe(alone.structure)
+    expect(compared.sets).toContain('Bench Press')
+    expect(compared.structure).toContain('REST 2min 0s')
+    expect(compared.sets).not.toContain('data-diff')
+    expect(compared.structure).not.toContain('<del')
+
+    // The control: against a source that differs, the same week's markup does change (so the equality above means something).
+    mockState.all = [plan(4, rows, sets('4').map((s) => (s.id === 'h4' ? { ...s, targetWeight: 90 } : s))), plan(5, rows, sets('5'))]
+    const { container } = renderPlan(5)
+    expect(container.innerHTML).not.toBe(alone.sets)
+    expect(container.innerHTML).toContain('data-diff="changed"')
+  })
+})
+
 describe('PlanPage — each workout is compared with its own history', () => {
   it('another workout\'s planned weeks are no source: Pull Day\'s week 4 is not Push Day\'s', () => {
     mockState.program = makeProgram({ schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-b' } })
