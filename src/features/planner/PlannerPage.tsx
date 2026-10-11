@@ -82,8 +82,8 @@ export default function PlannerPage() {
 
   const startRun = useStartRun()
   // null until the program's workouts (and, for a sequence program, its
-  // sequence) have answered; a run's copy is never started, so it reads nothing.
-  const hasSchedule = useProgramHasSchedule(isRunCopy ? undefined : program)
+  // sequence) have answered.
+  const hasSchedule = useProgramHasSchedule(program)
 
   if (programsLoading) {
     return (
@@ -140,9 +140,6 @@ export default function PlannerPage() {
   }
 
   async function handleStart() {
-    // The disabled button already stops a tap; this keeps any other way to
-    // trigger it from starting a program with no scheduled workout.
-    if (hasSchedule !== true) return
     try {
       await startRun.mutateAsync({ name: program!.name, programId: program!.id })
       navigate('/plan')
