@@ -1,0 +1,7 @@
+{
+ "migration": "040_p11_make_week_default.sql",
+ "new": [],
+ "columns": {
+  "v2_program_sets": ["removed_at"]
+ }
+}
