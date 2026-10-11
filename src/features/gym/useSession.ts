@@ -5,6 +5,7 @@ import { db } from '../../lib/db'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
+import { flushSyncQueue, hasQueuedWritesFor } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
@@ -521,7 +522,7 @@ export function useCompleteSession() {
       energyRating?: EnergyRating | null
       pumpRating?: PumpRating | null
     }) => {
-      if (!isOnline) {
+      const queueFinish = async () => {
         // completed_at derived the same way the online path derives it
         // (deriveCompletedAt, sessionCompletion.ts) — from this session's
         // own cached set_logs, not wall-clock time. Real, confirmed gap in
@@ -573,6 +574,15 @@ export function useCompleteSession() {
         addPending(id)
         return { status }
       }
+
+      if (!isOnline) return queueFinish()
+      // B3: queued sets (logged offline, not yet sent) aren't in the server's
+      // copy of this session's logs, which completeSession reads. Send the
+      // queue first; if writes for this session are still left (the flush
+      // failed), queue the finish behind them rather than write from an
+      // incomplete read.
+      await flushSyncQueue().catch(() => {})
+      if (await hasQueuedWritesFor(id)) return queueFinish()
       return completeSession(id, note, energyRating, pumpRating)
     },
     onSuccess: ({ status }, { id }) => {
