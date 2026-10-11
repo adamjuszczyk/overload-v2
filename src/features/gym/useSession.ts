@@ -396,6 +396,11 @@ export function useCreateSession() {
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
   const addPending = useOfflineStore((s) => s.addPending)
+  // B3: the id of a start that has not succeeded yet, keyed by the workout it
+  // is for. A re-tap after a lost reply reuses it, so the server can tell the
+  // retry from a new start. Cleared on success: starting the same workout
+  // again after that (a skipped one) is a new session.
+  const pendingStart = useRef<{ key: string; id: string } | null>(null)
 
   return useMutation({
     networkMode: 'always',
@@ -417,8 +422,13 @@ export function useCreateSession() {
       date: string
       movedToDate?: string | null
     }) => {
+      const startKey = `${mesoId}|${workoutDayId}|${date}`
+      if (pendingStart.current?.key !== startKey) {
+        pendingStart.current = { key: startKey, id: crypto.randomUUID() }
+      }
+      const id = pendingStart.current.id
+
       if (!isOnline) {
-        const id = crypto.randomUUID()
         const startedAt = new Date().toISOString()
         const session: Session = {
           id,
@@ -479,13 +489,15 @@ export function useCreateSession() {
         return session
       }
 
-      return createSession(user!.id, mesoId, weekPlanId, workoutDayId, date, movedToDate)
+      return createSession(user!.id, mesoId, weekPlanId, workoutDayId, date, movedToDate, id)
     },
     onSuccess: (session) => {
+      pendingStart.current = null
       queryClient.setQueryData(['v2_session', session.id], session)
       queryClient.setQueriesData(
         { queryKey: ['v2_sessions'] },
-        (old: Session[] | undefined) => (old ? [...old, session] : old),
+        (old: Session[] | undefined) =>
+          old ? [...old.filter((s) => s.id !== session.id), session] : old,
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
     },
