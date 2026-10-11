@@ -578,6 +578,72 @@ describe('PlanPage — offered ahead as a swap only when the week on screen show
   })
 })
 
+// ─── A swapped slot's sets are paired by what the source week did with each of them ───
+
+// Old default: pe-wd-1 with ps-a1 (8) and ps-a2 (10). The source week swapped it for pe-new and deleted the first
+// set, so pe-new's one set named ps-a2 before the call and names ps-n1 after it. The pair a2 → n1 is only in the two
+// readings together: what Plan held when the confirm was tapped, and what the call left (`sourceAfter`).
+describe('PlanPage — a swapped slot is paired by the source week\'s own links', () => {
+  const oldExercises = [defaultExercise('pe-wd-1', 0, [
+    setDefaultSet('ps-a1', { position: 1, repMin: 8, repMax: 8 }),
+    setDefaultSet('ps-a2', { position: 2, repMin: 10, repMax: 10 }),
+  ])]
+  function swapped(sourceAfter?: MakeWeekDefaultOutcome['sourceAfter']): MakeWeekDefaultOutcome {
+    return {
+      result: { mesocycleId: 'meso-1', weekNumber: 3, skipped: [], workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-wd-1-3', sourceSequencePosition: null, oldExercises }] },
+      newDefaults: new Map([['wd-1', [{ id: 'pe-new', exerciseId: 'ex-new', position: 0, sets: [setDefaultSet('ps-n1', { position: 1, repMin: 10, repMax: 10 })] }]]]),
+      ...(sourceAfter === undefined ? {} : { sourceAfter }),
+    }
+  }
+  // Source week 3 as Plan holds it: the swapped-in row's one set, naming `programSetId`.
+  function sourceWeek(programSetId: string): WeekPlan {
+    const row: ProgramExercise = { id: 'pe-new', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-new', position: 0, weightUnit: null }
+    const planned: WeekPlanSet = { id: 's-new-3', weekPlanId: 'wp-wd-1-3', userId: 'user-1', programExerciseId: 'pe-new', setNumber: 1, targetRir: null, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, programSetId }
+    return plan(3, { exercises: [row], sets: [planned] })
+  }
+  const afterCall = new Map([['wp-wd-1-3', new Map([['s-new-3', 'ps-n1']])]])
+  const offered = () => {
+    fireEvent.click(screen.getByText('APPLY'))
+    return (applyAheadMutate.mock.calls[0][0] as { groups: AheadGroup[] }).groups[0].changes
+  }
+
+  // Break: ignore `sourceAfter` (pass no chain to the diff) -> the first set of the old row stands for the new one:
+  // the relink names ps-a1, the second set is removed and the rep target is rewritten.
+  it('the set the source week kept is the pair, the set it deleted is a removal: nothing is rewritten', () => {
+    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
+    renderPlanPage()
+    confirmAndAnswer((o) => o.onSuccess(swapped(afterCall)))
+    const changes = offered()
+    expect(changes.map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise', 'removeHeadSet'])
+    expect(changes[0]).toMatchObject({ relink: [{ from: 'ps-a2', to: 'ps-n1' }] })
+    expect(changes[1]).toMatchObject({ editType: 'removeHeadSet', defaultSet: { programSetId: 'ps-a1' } })
+  })
+
+  it('where the source sessions could not be re-read (no sourceAfter) the sets are paired by ordinal within kind', () => {
+    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
+    renderPlanPage()
+    confirmAndAnswer((o) => o.onSuccess(swapped(null)))
+    const changes = offered()
+    expect(changes.map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise', 'removeHeadSet', 'repTarget'])
+    expect(changes[0]).toMatchObject({ relink: [{ from: 'ps-a1', to: 'ps-n1' }] })
+  })
+
+  // The before-reading is the week as Plan held it when the confirm was tapped: after the call the page re-reads
+  // the source week, whose set now names ps-n1, and a chain made from that has no pair.
+  // Break: read the source week's links in onSuccess (after the refetch) instead of before the call -> no pair.
+  it('the links before the call are what was on screen when the confirm was tapped, not what the refetch shows', () => {
+    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
+    const { rerender } = renderPlanPage()
+    fireEvent.click(screen.getByText(ACTION))
+    fireEvent.click(screen.getByText('MAKE DEFAULT'))
+    plans = [sourceWeek('ps-n1'), plan(4)] // the call has pointed the set at the program set it ended up on
+    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    act(() => (makeMutate.mock.calls[0][2] as MutateOptions).onSuccess(swapped(afterCall)))
+    const changes = offered()
+    expect(changes[0]).toMatchObject({ editType: 'swapExercise', relink: [{ from: 'ps-a2', to: 'ps-n1' }] })
+  })
+})
+
 describe('PlanPage — when the call fails', () => {
   it('shows the error as a toast, closes the confirm, offers nothing and touches nothing', () => {
     useWeekdayRun('stable', [plan(3), plan(4)])

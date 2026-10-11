@@ -248,7 +248,8 @@ describe('addStage in a swapped slot — the head is found by the OLD head\'s pr
     relink: [{ from: 'a1', to: 'q1' }],
   }
   const stage = shape('q1s1', 'pe-new', { stageIndex: 1, repMin: 10, repMax: 10 })
-  const addStage: ChangeRecord = { editType: 'addStage', slotId: 'pe-old', exerciseId: 'ex-pe-old', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: stage, oldSetIds: [] }
+  // (The old head was a plain working set: no stages, so its whole kind is "working".)
+  const addStage: ChangeRecord = { editType: 'addStage', slotId: 'pe-old', exerciseId: 'ex-pe-old', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: stage, oldSetIds: [], headKind: 'working' }
   const holdsOld = week(3, [pe('pe-old')], [set('h', 'pe-old', { programSetId: 'a1', stageKind: 'dropset' })])
 
   // Break: name the NEW head (q1) as the head -> the week's head (still linked to a1 until the swap's
@@ -308,7 +309,7 @@ describe('removeHeadSet / removeStage from a make-default — the set is found b
   })
 
   it('removeStage removes the stage linked to the old stage, and only a stage', () => {
-    const removeStage: ChangeRecord = { editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: 2 }, defaultSet: { programSetId: 's2' } }
+    const removeStage: ChangeRecord = { editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: 2 }, defaultSet: { programSetId: 's2', headKind: 'dropset' } }
     const w = week(3, [pe('pe-1')], [
       set('h', 'pe-1', { programSetId: 'a1' }),
       set('st1', 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: 1, programSetId: 's1' }),
@@ -319,8 +320,9 @@ describe('removeHeadSet / removeStage from a make-default — the set is found b
   })
 
   // R8: the old default's head was a dropset head with a stage; the default drops the stage. A later week that
-  // changed the head's kind ITSELF (myo-reps) has stages of its own, which a removal must not take.
-  describe('removeStage — only under a head that still has the old head\'s kind', () => {
+  // changed the head's kind ITSELF (myo-reps, a warmup) has stages of its own, which a removal must not take: the
+  // head's WHOLE kind (headKindOf) must still be the old head's.
+  describe('removeStage — only under a head that still has the old head\'s whole kind', () => {
     const drop: ChangeRecord = {
       editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: 1 },
       defaultSet: { programSetId: 's1', headKind: 'dropset' },
@@ -340,17 +342,29 @@ describe('removeHeadSet / removeStage from a make-default — the set is found b
       expect(one(drop, under('myo_reps'))).toMatchObject({ status: 'skipped', reason: 'structural' })
     })
 
-    it('a null kind on a head that has stages reads as a dropset, on both sides', () => {
+    // B: a null kind on a head that has stages reads as a dropset (the record names the old head's RESOLVED kind,
+    // makeWeekDefault.ts), so a week head with no kind stored IS the old dropset head.
+    it('a null kind on a head that has stages reads as a dropset', () => {
       expect(one(drop, under(null))).toMatchObject({ status: 'applied' })
       expect(one(drop, under(undefined))).toMatchObject({ status: 'applied' })
-      const fromNull: ChangeRecord = { ...drop, defaultSet: { programSetId: 's1', headKind: null } } as ChangeRecord
-      expect(one(fromNull, under('dropset'))).toMatchObject({ status: 'applied' })
-      expect(one(fromNull, under('myo_reps'))).toMatchObject({ status: 'skipped', reason: 'structural' })
     })
 
-    it('a record without headKind is the removal it was (no kind to compare)', () => {
+    // Case 3's cousin: the week's head is a warmup (with a stage, which only a legacy bug could leave there) or has
+    // become a plain working set: not the old dropset head, so the stage stays.
+    it('a head the week made a warmup, or a plain working set, is not the old head: its stage stays', () => {
+      const asWarmup = week(3, [pe('pe-1')], [
+        set('h', 'pe-1', { programSetId: 'a1', isWarmup: true }),
+        set('st1', 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: 1, programSetId: 's1' }),
+      ])
+      expect(one(drop, asWarmup)).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    // A record that does not name the old head's kind cannot tell the week still holds the old head: nothing is
+    // removed (every record the diff builds names it).
+    it('a record without headKind is left alone: there is no old kind to hold', () => {
       const bare: ChangeRecord = { ...drop, defaultSet: { programSetId: 's1' } } as ChangeRecord
-      expect(one(bare, under('myo_reps'))).toMatchObject({ status: 'applied' })
+      expect(one(bare, under('dropset'))).toMatchObject({ status: 'skipped', reason: 'structural' })
+      expect(one(bare, under('myo_reps'))).toMatchObject({ status: 'skipped', reason: 'structural' })
     })
   })
 
@@ -452,40 +466,138 @@ describe('repTarget from a make-default — written only where the week still ho
   })
 })
 
-describe('stageKind and warmup from a make-default — also only where the week holds the old kind', () => {
+// A head's kind is ONE part (headKindOf): a plain working set, a warmup, or staged with its resolved stage kind. The
+// warmup and stageKind records name the old head's WHOLE kind (`headKind`) and a week takes one only where its head
+// is still exactly that one: a head the week made something else keeps all of it, never half, and nothing is written
+// that is both a warmup and staged.
+describe('stageKind and warmup from a make-default — only where the week holds the old head\'s whole kind', () => {
+  // The old default's head a1 was staged (a dropset), and the default makes it myo-reps.
   const kind: ChangeRecord = {
     editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: null },
-    oldValue: 'dropset', newValue: 'myo_reps', defaultSet: { programSetId: 'a1' },
+    oldValue: 'dropset', newValue: 'myo_reps', defaultSet: { programSetId: 'a1', headKind: 'dropset' },
   }
+  // The old default's head a1 was a plain working set, and the default makes it a warmup.
   const warmup: ChangeRecord = {
     editType: 'warmup', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: null },
-    oldValue: false, newValue: true, defaultSet: { programSetId: 'a1' },
+    oldValue: false, newValue: true, defaultSet: { programSetId: 'a1', headKind: 'working', oldStageIds: [] },
   }
+  // The week's head `h` (linked to a1) with the stages given: a stage that names `programSetId` is the old default's.
+  const head = (overrides: Partial<WeekPlanSet> = {}, stages: Partial<WeekPlanSet>[] = []) =>
+    week(3, [pe('pe-1')], [
+      set('h', 'pe-1', { programSetId: 'a1', ...overrides }),
+      ...stages.map((s, i) => set(`st${i + 1}`, 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: i + 1, ...s })),
+    ])
 
-  it('a stage kind is written where the week\'s set still has the old kind', () => {
-    const w = week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1', stageKind: 'dropset' })])
-    expect(one(kind, w)).toMatchObject({ status: 'applied', ops: [{ setId: 'h', changes: { stageKind: 'myo_reps' } }] })
+  it('a stage kind is written where the week\'s head is still the old staged kind', () => {
+    expect(one(kind, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied', ops: [{ setId: 'h', changes: { stageKind: 'myo_reps' } }] })
   })
 
   it('a week that changed the kind itself keeps it', () => {
-    const w = week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1', stageKind: 'cluster' })])
-    expect(one(kind, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(one(kind, head({ stageKind: 'cluster' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
   })
 
-  it('no kind and a missing kind are the same old value', () => {
-    const fromNone: ChangeRecord = { ...kind, oldValue: null } as ChangeRecord
-    expect(one(fromNone, week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1' })]))).toMatchObject({ status: 'applied' })
+  // B: a head with stages and no kind stored IS a dropset (resolveStageKind), the old head's whole kind.
+  it('a head with stages and no kind stored is the old dropset head: no kind and a missing kind are the same', () => {
+    expect(one(kind, head({ stageKind: null }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied' })
+    expect(one(kind, head({}, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied' })
   })
 
-  it('a set becomes a warmup where it still isn\'t one; a week that already turned it into one is skipped', () => {
-    expect(one(warmup, week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1' })]))).toMatchObject({ status: 'applied', ops: [{ changes: { isWarmup: true } }] })
-    expect(one(warmup, week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1', isWarmup: true })]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  // ...and a head WITHOUT stages is a plain working set whatever kind it still carries: not the old staged head.
+  it('a head with no stages is a plain working set, whatever kind it carries: not the old staged head', () => {
+    expect(one(kind, head({ stageKind: 'dropset' }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('a set becomes a warmup where it is still the plain working set the old default had; a week that already turned it into one is skipped', () => {
+    expect(one(warmup, head())).toMatchObject({ status: 'applied', ops: [{ changes: { isWarmup: true } }] })
+    expect(one(warmup, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
   })
 
   it('neither is written on a stage row', () => {
     const w = week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'x' }), set('st', 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: 1, programSetId: 'a1' })])
     expect(one(kind, w)).toMatchObject({ status: 'skipped' })
     expect(one(warmup, w)).toMatchObject({ status: 'skipped' })
+  })
+
+  // A record that names no whole kind cannot tell the week still holds the old head: it writes nothing (every
+  // record the diff builds names it).
+  it('a record without the old head\'s kind writes nothing', () => {
+    const noKindOnKind: ChangeRecord = { ...kind, defaultSet: { programSetId: 'a1' } } as ChangeRecord
+    const noKindOnWarmup: ChangeRecord = { ...warmup, defaultSet: { programSetId: 'a1', oldStageIds: [] } } as ChangeRecord
+    expect(one(noKindOnKind, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(one(noKindOnWarmup, head())).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  // CASE 1. The old default makes a1 a warmup; the later week had made it a dropset with a stage of its own (a
+  // stage that names no program set). The old kind was a plain working set; this head is not one any more, so the
+  // warmup is not written, and the week's own stage is not left under a warmup. Break: gate the warmup record on
+  // the single field it writes (`isWarmup === oldValue`, as it did) -> this week gets a warmup that is staged.
+  it('CASE 1 — a week that made the head a dropset with a stage of its own gets no warmup over it', () => {
+    for (const w of [
+      head({ stageKind: 'dropset' }, [{ programSetId: null }]),
+      head({ stageKind: null }, [{ programSetId: null }]),
+      head({ stageKind: 'myo_reps' }, [{ programSetId: 'from-an-older-default' }]),
+    ]) {
+      expect(one(warmup, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+    }
+  })
+
+  // CASE 2. The old default stages a1 as a dropset (a plain working set becomes a dropset with a stage s1; the
+  // kind here is the one that differs from the plain set's stored kind); the later week made it a warmup. The kind
+  // is not written onto a warmup. Break: gate the stageKind record on `stageKind === oldValue` only (as it did) ->
+  // the warmup of this week is given a stage kind.
+  it('CASE 2 — a week that made the head a warmup gets no stage kind', () => {
+    const plainToMyo: ChangeRecord = {
+      editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: 'rest_pause', newValue: 'myo_reps', defaultSet: { programSetId: 'a1', headKind: 'working' },
+    }
+    // The plain head the old default had stored a kind that showed nowhere; the warmup of this week carries the same one.
+    expect(one(plainToMyo, head({ isWarmup: true, stageKind: 'rest_pause' }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(one(plainToMyo, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    // The same record on a week whose head is still the plain working set the old default had does apply.
+    expect(one(plainToMyo, head({ stageKind: 'rest_pause' }))).toMatchObject({ status: 'applied', ops: [{ changes: { stageKind: 'myo_reps' } }] })
+  })
+
+  // A record gated on a warmup (the old head WAS a warmup; the default makes it a staged working set) still never puts
+  // a kind on the week's warmup: the kind of a warmup shows nowhere and a staged warmup is the state to avoid.
+  it('no stage kind is ever written onto a warmup, even when the old head was one', () => {
+    const fromWarmup: ChangeRecord = {
+      editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: null, newValue: 'myo_reps', defaultSet: { programSetId: 'a1', headKind: 'warmup' },
+    }
+    expect(one(fromWarmup, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  // A head becomes a warmup only over the old default's stages (the same offer removes them): a stage of the
+  // week's own would stay under a warmup.
+  describe('a head becomes a warmup only where every stage it has is one the old default had', () => {
+    // The old default's a1 was a dropset with the stages s1 and s2, and the default makes it a warmup.
+    const staged: ChangeRecord = {
+      ...warmup, defaultSet: { programSetId: 'a1', headKind: 'dropset', oldStageIds: ['s1', 's2'] },
+    } as ChangeRecord
+
+    it('exactly the old default\'s stages (or fewer: the week deleted one itself): a warmup', () => {
+      expect(one(staged, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }, { programSetId: 's2' }]))).toMatchObject({ status: 'applied', ops: [{ changes: { isWarmup: true } }] })
+      expect(one(staged, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied' })
+    })
+
+    it('a stage of its own (it names nothing, or a program set the old default no longer has): the head stays as it is', () => {
+      expect(one(staged, head({}, [{ programSetId: 's1' }, { programSetId: null }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+      expect(one(staged, head({}, [{ programSetId: 's1' }, { programSetId: 'from-an-older-default' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    it('two stages that name one program set are not "each of the old default\'s stages once": the second is its own', () => {
+      expect(one(staged, head({}, [{ programSetId: 's1' }, { programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    it('a record that lists no old stages cannot tell any stage is the old default\'s: a staged head is left alone', () => {
+      const noStages: ChangeRecord = { ...staged, defaultSet: { programSetId: 'a1', headKind: 'dropset' } } as ChangeRecord
+      expect(one(noStages, head({}, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    it('turning a warmup into a working set needs no such check: it has no stages to keep', () => {
+      const unWarm: ChangeRecord = { ...warmup, oldValue: true, newValue: false, defaultSet: { programSetId: 'a1', headKind: 'warmup', oldStageIds: [] } } as ChangeRecord
+      expect(one(unWarm, head({ isWarmup: true }))).toMatchObject({ status: 'applied', ops: [{ changes: { isWarmup: false } }] })
+    })
   })
 })
 
@@ -528,7 +640,8 @@ describe('addSet / addWarmupSet / addStage from a make-default — the new set n
   })
 
   const stage = shape('n1', 'pe-1', { position: 2, stageIndex: 2, repMin: 12, repMax: 12 })
-  const addStage: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 2, headProgramSetId: 'a2', defaultSet: stage }
+  // (The old default's head a2 was a plain working set: no stages, its whole kind is "working".)
+  const addStage: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 2, headProgramSetId: 'a2', defaultSet: stage, headKind: 'working' }
 
   it('a stage is added under the head the week has linked to the old default\'s head, at the default\'s stage index', () => {
     const w = week(3, [pe('pe-1')], [set('h1', 'pe-1', { setNumber: 1, programSetId: 'a1' }), set('h2', 'pe-1', { setNumber: 2, programSetId: 'a2' })])
@@ -540,7 +653,8 @@ describe('addSet / addWarmupSet / addStage from a make-default — the new set n
 
   // The old default's own stages under that head (`oldSetIds`) are not the week's own, so a week that
   // still holds them takes the stage: at the week's next index when one of them sits at the default's.
-  const stageOfOldDefault: ChangeRecord = { ...addStage, oldSetIds: ['os2', 'os3'] } as ChangeRecord
+  // (With stages, the old head was a staged one: here a dropset, a null kind reading as one.)
+  const stageOfOldDefault: ChangeRecord = { ...addStage, oldSetIds: ['os2', 'os3'], headKind: 'dropset' } as ChangeRecord
 
   it('...or at the week\'s next index when the head holds one of the old default\'s stages at that index', () => {
     const w = week(3, [pe('pe-1')], [
@@ -568,6 +682,55 @@ describe('addSet / addWarmupSet / addStage from a make-default — the new set n
     // ...and the same when its link is to a program set the old default no longer has.
     const leftOver = week(3, [pe('pe-1')], [set('h2', 'pe-1', { programSetId: 'a2' }), set('x', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2, programSetId: 'from-an-older-default' })])
     expect(one(stageOfOldDefault, leftOver)).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+})
+
+// ─── A stage under a head the week made something else ───────────────────────
+
+// An added stage is part of the head's kind: it goes only under a head that is still, as a whole, the old default's
+// head (headKindOf), and never under a warmup. The week's head is found by its link to the old head.
+describe('addStage from a make-default — only under a head that is still the old head\'s whole kind', () => {
+  const head = (overrides: Partial<WeekPlanSet> = {}, stages: Partial<WeekPlanSet>[] = []) =>
+    week(3, [pe('pe-1')], [
+      set('h', 'pe-1', { programSetId: 'a1', ...overrides }),
+      ...stages.map((s, i) => set(`st${i + 1}`, 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: i + 1, ...s })),
+    ])
+
+  // The old default's a1 was a dropset with the stage s1, and the default adds s2 under it.
+  const s2 = shape('n2', 'pe-1', { position: 1, stageIndex: 2, repMin: 10, repMax: 10 })
+  const addS2: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: s2, oldSetIds: ['s1'], headKind: 'dropset' }
+
+  it('a head that is still the old dropset head takes the stage, at the next index', () => {
+    expect(one(addS2, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedStage', parentId: 'h', stageIndex: 2 }] })
+    expect(one(addS2, head({}, [{ programSetId: 's1' }]))).toMatchObject({ status: 'applied' }) // no kind stored reads as a dropset
+  })
+
+  // CASE 3. The later week made the head myo-reps, or a warmup with no stages: it is not the old default's dropset
+  // head, so the stage is not added. Break: skip the whole-kind check (only look for the linked head, as it did) ->
+  // the stage lands under the week's myo-reps head, and under its warmup.
+  it('CASE 3 — a week that made the head myo-reps, or a warmup with no stages, or a plain set again, gets no stage', () => {
+    expect(one(addS2, head({ stageKind: 'myo_reps' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(one(addS2, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(one(addS2, head({ stageKind: 'dropset' }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  // CASE 2. The old default stages the plain a1 (a dropset with a stage joins it); the later week made it a warmup.
+  // Break: drop the check that the head is not a warmup (the kind check alone cannot see it when the record's old kind is a
+  // warmup) -> a stage lands under a warmup; or skip the whole-kind check -> the same.
+  it('CASE 2 — a week that made the plain head a warmup gets no stage under it', () => {
+    const addS1: ChangeRecord = { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: shape('n1', 'pe-1', { stageIndex: 1 }), oldSetIds: [], headKind: 'working' }
+    expect(one(addS1, head())).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedStage', parentId: 'h', stageIndex: 1 }] })
+    expect(one(addS1, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('no stage goes under a warmup even when the old head was a warmup (a record that names it so)', () => {
+    const fromWarmup: ChangeRecord = { ...addS2, oldSetIds: [], headKind: 'warmup' } as ChangeRecord
+    expect(one(fromWarmup, head({ isWarmup: true }))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('a record without the old head\'s kind adds nothing: it cannot tell the head is the old one', () => {
+    const bare: ChangeRecord = { ...addS2, headKind: undefined } as ChangeRecord
+    expect(one(bare, head({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
   })
 })
 

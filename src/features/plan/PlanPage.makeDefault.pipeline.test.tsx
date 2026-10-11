@@ -81,6 +81,7 @@ let currentWorkoutDays: WorkoutDay[] = [workoutDay]
 
 const makeWeekDefaultMock = vi.fn()
 const fetchRunCopyDefaultsMock = vi.fn()
+const fetchSourceSetLinksMock = vi.fn()
 const updateSetMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addPointedExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addWeekExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
@@ -110,6 +111,7 @@ vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./makeDefaultService', () => ({
   makeWeekDefault: (...args: unknown[]) => makeWeekDefaultMock(...args),
   fetchRunCopyDefaults: (...args: unknown[]) => fetchRunCopyDefaultsMock(...args),
+  fetchSourceSetLinks: (...args: unknown[]) => fetchSourceSetLinksMock(...args),
 }))
 // Every weekPlanService.ts export useWeekPlan.ts imports (a factory mock replaces the whole module).
 vi.mock('./weekPlanService', () => ({
@@ -142,9 +144,16 @@ vi.mock('./weekPlanService', () => ({
 
 const { default: PlanPage } = await import('./PlanPage')
 
+beforeEach(() => {
+  // What the source sessions' planned sets name after the call. Nothing, unless a test says: only a swapped slot
+  // reads it, and a slot it does not reach is paired by ordinal within kind (the fallback).
+  fetchSourceSetLinksMock.mockResolvedValue(new Map())
+})
+
 afterEach(() => {
   makeWeekDefaultMock.mockReset()
   fetchRunCopyDefaultsMock.mockReset()
+  fetchSourceSetLinksMock.mockReset()
   updateSetMock.mockClear()
   addPointedExerciseMock.mockClear()
   addWeekExerciseMock.mockClear()
@@ -342,6 +351,9 @@ describe('PlanPage — make this week the default after the source week swapped 
   beforeEach(() => {
     makeWeekDefaultMock.mockResolvedValue(answerWithRow)
     fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault()]]]))
+    // The call pointed each of the source week's planned sets at the program set it ended up on: Row's pr-1 and pr-2
+    // are Incline's pi-1 and pi-2 now. That, with what Plan held before the call, is the exact pairing.
+    fetchSourceSetLinksMock.mockResolvedValue(new Map([['wp-3', new Map([['i1-w3', 'pi-1'], ['i2-w3', 'pi-2']])]]))
   })
 
   async function apply(count: number) {
@@ -405,6 +417,7 @@ describe('PlanPage — make this week the default after the source week swapped 
     const rowDropset = (): DefaultExercise => ({ id: 'pe-row', exerciseId: 'ex-row', position: 1, sets: [dset('pr-1', 1, { stageKind: 'dropset' })] })
     makeWeekDefaultMock.mockResolvedValue({ ...answerWithRow, workouts: [{ ...answerWithRow.workouts[0], oldExercises: [benchDefault(), rowDropset()] }] })
     fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault([dset('pi-1', 1, { stageKind: 'dropset' }), dset('pi-1s1', 1, { parentProgramSetId: 'pi-1', stageIndex: 1, repMin: 12, repMax: 12 })])]]]))
+    fetchSourceSetLinksMock.mockResolvedValue(new Map([['wp-3', new Map([['i1-w3', 'pi-1'], ['i1s-w3', 'pi-1s1']])]]))
     allPlans = [
       oldWeek(3, {
         exercises: [bench(), inclineEx()],
@@ -440,6 +453,7 @@ describe('PlanPage — make this week the default after the source week swapped 
       withRow(4),
     ]
     fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault([dset('pi-w', 1, { isWarmup: true, repMin: 12, repMax: 12 }), dset('pi-1', 2), dset('pi-2', 3)])]]]))
+    fetchSourceSetLinksMock.mockResolvedValue(new Map([['wp-3', new Map([['iw-w3', 'pi-w'], ['i1-w3', 'pi-1'], ['i2-w3', 'pi-2']])]]))
     await makeDefaultAndOfferAhead()
     await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
     fireEvent.click(screen.getByText('APPLY'))
@@ -491,6 +505,177 @@ describe('PlanPage — make this week the default, and a later week that differs
     fireEvent.click(screen.getByText('APPLY'))
     await screen.findByText(/APPLIED TO 1 OF 2 PLANNED WEEKS/)
     expect(removeSetMock.mock.calls.map((c) => c[0])).toEqual(['s1s-w4']) // week 4's stage; week 5's own stage stays
+  })
+})
+
+// ─── C: a swapped slot's sets are paired by what the source week did with each of them ───
+
+// The review's case. Row's old default sets: pr-1 (8), pr-2 (10), pr-3 (12). The source week swapped Row for Incline and
+// deleted the first set, so Incline's two planned sets named pr-2 and pr-3 before the call and name pi-1 (10) and pi-2
+// (12) after it. The later week holds Row's three sets, each with a weight.
+describe('PlanPage — make this week the default after the source week swapped an exercise AND deleted its first set (C)', () => {
+  const rowThree = (): DefaultExercise => ({ id: 'pe-row', exerciseId: 'ex-row', position: 1, sets: [dset('pr-1', 1, { repMin: 8, repMax: 8 }), dset('pr-2', 2, { repMin: 10, repMax: 10 }), dset('pr-3', 3, { repMin: 12, repMax: 12 })] })
+  const inclineTwo = (): DefaultExercise => ({ id: 'pe-incline', exerciseId: 'ex-incline', position: 1, sets: [dset('pi-1', 1, { repMin: 10, repMax: 10 }), dset('pi-2', 2, { repMin: 12, repMax: 12 })] })
+  const source = (): WeekPlan =>
+    oldWeek(3, {
+      exercises: [bench(), inclineEx()],
+      sets: [
+        ...benchSets(3),
+        planSet(3, 'i2', 1, 'pr-2', { programExerciseId: 'pe-incline', repMin: 10, repMax: 10 }),
+        planSet(3, 'i3', 2, 'pr-3', { programExerciseId: 'pe-incline', repMin: 12, repMax: 12 }),
+      ],
+    })
+  const rowWeek = (n: number): WeekPlan =>
+    oldWeek(n, {
+      exercises: [bench(), rowEx()],
+      sets: [
+        ...benchSets(n),
+        planSet(n, 'L1', 1, 'pr-1', { programExerciseId: 'pe-row', repMin: 8, repMax: 8, targetWeight: 80 }),
+        planSet(n, 'L2', 2, 'pr-2', { programExerciseId: 'pe-row', repMin: 10, repMax: 10, targetWeight: 70 }),
+        planSet(n, 'L3', 3, 'pr-3', { programExerciseId: 'pe-row', repMin: 12, repMax: 12, targetWeight: 60 }),
+      ],
+    })
+
+  beforeEach(() => {
+    makeWeekDefaultMock.mockResolvedValue({ ...answerWithRow, workouts: [{ ...answerWithRow.workouts[0], oldExercises: [benchDefault(), rowThree()] }] })
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineTwo()]]]))
+    allPlans = [source(), rowWeek(4)]
+  })
+
+  async function apply() {
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 1 PLANNED WEEK/)
+  }
+
+  // Break: pair the slot's sets by ordinal even where the source week's links are known -> L1 is relinked to pi-1 and
+  // rewritten to 10, L2 to pi-2 and rewritten to 12, and L3 (the set the source week kept) is deleted.
+  it('deletes L1, re-links L2 to pi-1 and L3 to pi-2, and rewrites no rep target', async () => {
+    fetchSourceSetLinksMock.mockResolvedValue(new Map([['wp-3', new Map([['i2-w3', 'pi-1'], ['i3-w3', 'pi-2']])]]))
+    await apply()
+    expect(fetchSourceSetLinksMock).toHaveBeenCalledWith(['wp-3'])
+    expect(repointMock.mock.calls).toEqual([['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'L2-w4', programSetId: 'pi-1' }, { weekSetId: 'L3-w4', programSetId: 'pi-2' }]]])
+    expect(removeSetMock.mock.calls.map((c) => c[0])).toEqual(['L1-w4'])
+    expect(updateSetMock).not.toHaveBeenCalled() // no rep target rewritten, no weight touched
+  })
+
+  // The fallback, said exactly: where the source sessions could not be re-read after the call there is no chain, and the
+  // slot is paired by ordinal within kind (the nth working set of the old row for the nth of the new one). Here that
+  // reads the deleted first set as the new first set: a guess, and wrong for this week.
+  it('where the source week could not be re-read it falls back to ordinal within kind (a guess)', async () => {
+    fetchSourceSetLinksMock.mockRejectedValue(new Error('read failed'))
+    await apply()
+    expect(repointMock.mock.calls).toEqual([['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'L1-w4', programSetId: 'pi-1' }, { weekSetId: 'L2-w4', programSetId: 'pi-2' }]]])
+    expect(removeSetMock.mock.calls.map((c) => c[0])).toEqual(['L3-w4'])
+    expect(updateSetMock.mock.calls).toEqual([['L1-w4', { repMin: 10, repMax: 10, isAmrap: false }], ['L2-w4', { repMin: 12, repMax: 12, isAmrap: false }]])
+  })
+})
+
+// ─── A head's kind is ONE part: a later week that made the head something else keeps all of it ───
+
+describe('PlanPage — make this week the default, and a later week that made a head something else (A, B)', () => {
+  const benchSetsOf = (sets: DefaultSet[]): DefaultExercise[] => [{ id: 'pe-bench', exerciseId: 'ex-a', position: 0, sets }]
+  const stageOf = (id: string, head: string, stageIndex: number, overrides: Partial<DefaultSet> = {}) =>
+    dset(id, 1, { parentProgramSetId: head, stageIndex, repMin: 12, repMax: 12, ...overrides })
+  const plain2 = () => dset('ps-2', 2)
+
+  // A later week whose first set is `head` (linked to the default's ps-1) with the stages given; a stage that names
+  // `null` is the week's own. The second set is the default's.
+  const weekWithHead = (n: number, head: Partial<WeekPlanSet>, stages: { programSetId: string | null }[] = []): WeekPlan =>
+    oldWeek(n, {
+      sets: [
+        planSet(n, 's1', 1, 'ps-1', head),
+        ...stages.map((st, i) => planSet(n, `st${i + 1}`, 1, st.programSetId, { parentWeekPlanSetId: `s1-w${n}`, stageIndex: i + 1, isDropset: true, repMin: 12, repMax: 12 })),
+        planSet(n, 's2', 2, 'ps-2'),
+      ],
+    })
+
+  function offer(old: DefaultExercise[], neu: DefaultExercise[]) {
+    makeWeekDefaultMock.mockResolvedValue({ ...functionAnswer, workouts: [{ ...functionAnswer.workouts[0], oldExercises: old }] })
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', neu]]))
+  }
+  async function applyAll(weeks: number, outcome: RegExp) {
+    await makeDefaultAndOfferAhead()
+    await screen.findByText(`APPLY THIS CHANGE TO ${weeks} PLANNED WEEKS AHEAD?`)
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(outcome)
+  }
+  const writtenTo = (week: number) => [
+    ...updateSetMock.mock.calls.map((c) => c[0] as string),
+    ...removeSetMock.mock.calls.map((c) => c[0] as string),
+    ...addPointedStageMock.mock.calls.map((c) => c[1] as string),
+    ...addPointedSetMock.mock.calls.map((c) => c[1] as string),
+  ].filter((id) => id.endsWith(`-w${week}`) || id === `wp-${week}`)
+
+  // CASE 1. Break: gate the warmup record on the single field it writes -> week 5's dropset head (and its own stage)
+  // is made a warmup.
+  it('CASE 1 — the default makes a set a warmup: a week that made it a dropset with a stage of its own is left alone', async () => {
+    offer(benchSetsOf([dset('ps-1', 1), plain2()]), benchSetsOf([dset('ps-1', 1, { isWarmup: true }), plain2()]))
+    allPlans = [oldWeek(3), oldWeek(4), weekWithHead(5, { stageKind: 'dropset' }, [{ programSetId: null }])]
+    await applyAll(2, /APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(screen.getByText(/1 SKIPPED \(ALREADY DIFFERENT\)/)).toBeTruthy()
+    expect(updateSetMock.mock.calls).toEqual([['s1-w4', { isWarmup: true }]]) // week 4 held the old plain set
+    expect(writtenTo(5)).toEqual([]) // nothing at all was written to week 5: no warmup over its stage
+  })
+
+  // CASE 2. Break: gate stageKind and addStage on their own field only -> week 5's warmup is given the kind and a stage.
+  it('CASE 2 — the default stages a set as myo-reps: a week that made it a warmup gets neither the kind nor the stage', async () => {
+    offer(
+      benchSetsOf([dset('ps-1', 1), plain2()]),
+      benchSetsOf([dset('ps-1', 1, { stageKind: 'myo_reps' }), stageOf('ps-1s1', 'ps-1', 1), plain2()]),
+    )
+    allPlans = [oldWeek(3), oldWeek(4), weekWithHead(5, { isWarmup: true })]
+    await applyAll(2, /APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(updateSetMock.mock.calls).toEqual([['s1-w4', { stageKind: 'myo_reps' }]])
+    expect(addPointedStageMock.mock.calls.map((c) => [c[1], c[3]])).toEqual([['wp-4', 's1-w4']])
+    expect(writtenTo(5)).toEqual([])
+  })
+
+  // CASE 3. Break: skip the whole-kind check in addStage -> the stage lands under week 5's myo-reps head and week 6's warmup.
+  it('CASE 3 — the default adds a stage to a dropset head: weeks that made it myo-reps, or a warmup with no stages, get none', async () => {
+    const oldDrop = benchSetsOf([dset('ps-1', 1, { stageKind: 'dropset' }), stageOf('ps-1s1', 'ps-1', 1), plain2()])
+    offer(oldDrop, benchSetsOf([dset('ps-1', 1, { stageKind: 'dropset' }), stageOf('ps-1s1', 'ps-1', 1), stageOf('ps-1s2', 'ps-1', 2, { repMin: 8, repMax: 8 }), plain2()]))
+    allPlans = [
+      oldWeek(3),
+      weekWithHead(4, { stageKind: 'dropset' }, [{ programSetId: 'ps-1s1' }]),
+      weekWithHead(5, { stageKind: 'myo_reps' }, [{ programSetId: 'ps-1s1' }]),
+      weekWithHead(6, { isWarmup: true }),
+    ]
+    await applyAll(3, /APPLIED TO 1 OF 3 PLANNED WEEKS/)
+    expect(screen.getByText(/2 SKIPPED \(ALREADY DIFFERENT\)/)).toBeTruthy()
+    expect(addPointedStageMock.mock.calls.map((c) => [c[1], c[3], c[4]])).toEqual([['wp-4', 's1-w4', 2]])
+    expect(writtenTo(5)).toEqual([])
+    expect(writtenTo(6)).toEqual([])
+  })
+
+  // B. Break: compare the raw kind column in the stageKind gate -> week 4's kind stays a dropset while its stage goes.
+  it('B — old dropset (two stages) to myo-reps (one): a week whose head has no kind stored gets the kind change AND the stage removal', async () => {
+    offer(
+      benchSetsOf([dset('ps-1', 1, { stageKind: 'dropset' }), stageOf('ps-1s1', 'ps-1', 1), stageOf('ps-1s2', 'ps-1', 2), plain2()]),
+      benchSetsOf([dset('ps-1', 1, { stageKind: 'myo_reps' }), stageOf('ps-1s1', 'ps-1', 1), plain2()]),
+    )
+    allPlans = [
+      oldWeek(3),
+      weekWithHead(4, { stageKind: null }, [{ programSetId: 'ps-1s1' }, { programSetId: 'ps-1s2' }]),
+      weekWithHead(5, { stageKind: 'myo_reps' }, [{ programSetId: 'ps-1s1' }, { programSetId: 'ps-1s2' }]),
+    ]
+    await applyAll(2, /APPLIED TO 1 OF 2 PLANNED WEEKS/)
+    expect(removeSetMock.mock.calls.map((c) => c[0])).toEqual(['st2-w4'])
+    expect(updateSetMock.mock.calls).toEqual([['s1-w4', { stageKind: 'myo_reps' }]])
+    expect(writtenTo(5)).toEqual([]) // week 5 made the head myo-reps itself: it keeps both its kind and its stages
+  })
+
+  it('B — a default that only moves a head from "no kind" to "dropset" has nothing to offer: it reads the same', async () => {
+    offer(
+      benchSetsOf([dset('ps-1', 1, { stageKind: null }), stageOf('ps-1s1', 'ps-1', 1), plain2()]),
+      benchSetsOf([dset('ps-1', 1, { stageKind: 'dropset' }), stageOf('ps-1s1', 'ps-1', 1), plain2()]),
+    )
+    allPlans = [oldWeek(3), oldWeek(4)]
+    await makeDefaultAndOfferAhead()
+    await waitFor(() => expect(useToastStore.getState().message).toBe('Week 3 is now the default.'))
+    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
+    expect(updateSetMock).not.toHaveBeenCalled()
   })
 })
 

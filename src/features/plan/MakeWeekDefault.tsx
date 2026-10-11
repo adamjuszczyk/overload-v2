@@ -4,7 +4,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useToastStore } from '../notifications/toastStore'
 import { useMakeWeekDefault } from './useMakeWeekDefault'
 import { useApplyAheadOffer, ApplyAheadBanner } from './ApplyAheadOffer'
-import { buildDefaultOffer, laterSessionsOf, sourceLinksOf } from './makeWeekDefault'
+import { buildDefaultOffer, chainsOf, laterSessionsOf, sourceLinksOf, sourceSetLinksOf } from './makeWeekDefault'
 
 // Chunk 32 — "Make this week the new default" (SPEC Weeks and copying [P1.1]; Plan screen:
 // "stable runs: 'Make this week the new default' (current and future weeks, with a
@@ -58,10 +58,14 @@ export default function MakeWeekDefault({
     // it ends up on, and the link a swapped-in row's sets have to the replaced row's
     // program sets is the only trace of a swap. Without it a swap is not offered as one.
     const sourceLinks = new Map(weekPlans.map((plan) => [plan.id, sourceLinksOf(plan)]))
+    // ...and, per planned set, which program set it named: after the call the same set
+    // names the program set it ended up on, and the pair is how a swapped slot's sets are
+    // matched exactly (makeWeekDefault.ts chainOf).
+    const setLinksBefore = new Map(weekPlans.map((plan) => [plan.id, sourceSetLinksOf(plan)]))
     makeDefault.mutate(
       { weekNumber },
       {
-        onSuccess: ({ result, newDefaults }) => {
+        onSuccess: ({ result, newDefaults, sourceAfter }) => {
           setConfirming(false)
           // The default is written. Say so, and, when it applies, which sessions kept the
           // current default or that the offer could not be prepared (it needs the new
@@ -76,7 +80,10 @@ export default function MakeWeekDefault({
                 : done,
           )
           if (!newDefaults) return
-          const offer = buildDefaultOffer(result, newDefaults, allWeekPlans, sourceLinks)
+          // Where the source sessions could not be re-read there is no chain, and a swapped
+          // slot's sets are paired by ordinal within kind.
+          const chains = sourceAfter ? chainsOf(setLinksBefore, sourceAfter) : undefined
+          const offer = buildDefaultOffer(result, newDefaults, allWeekPlans, sourceLinks, chains)
           if (!offer) {
             applyAheadOffer.dismiss()
             return

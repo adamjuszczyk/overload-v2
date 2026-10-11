@@ -236,7 +236,7 @@ describe('useApplyAhead — what each new op calls', () => {
     calls.length = 0
     const stage = shape('n1', 'pe-1', { stageIndex: 2 })
     await run(
-      { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: stage },
+      { editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: stage, headKind: 'working' },
       week(4, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1' })]),
     )
     expect(calls).toEqual([{ fn: 'addPointedStage', args: ['user-1', 'wp-4', 'pe-1', 'h', 2, stage] }])

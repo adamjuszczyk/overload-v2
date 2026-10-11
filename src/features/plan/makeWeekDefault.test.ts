@@ -3,11 +3,14 @@ import type { ProgramExercise, ProgramSet, WeekPlan, WeekPlanSet } from '../../t
 import {
   buildDefaultOffer,
   canMakeWeekDefault,
+  chainOf,
+  chainsOf,
   diffDefault,
   isDefaultSource,
   laterSessionsOf,
   parseMakeDefaultResult,
   sourceLinksOf,
+  sourceSetLinksOf,
   toDefaultExercises,
   type DefaultExercise,
   type DefaultSet,
@@ -37,8 +40,8 @@ function dex(id: string, position: number, sets: DefaultSet[] = [], exerciseId =
 const sets = (count: number, prefix: string, extra: Partial<DefaultSet> = {}): DefaultSet[] =>
   Array.from({ length: count }, (_, i) => dset(`${prefix}${i + 1}`, { position: i + 1, ...extra }))
 
-function records(old: DefaultExercise[], neu: DefaultExercise[], links?: SourceLinks): ChangeRecord[] {
-  return diffDefault('wd-1', old, neu, links).changes
+function records(old: DefaultExercise[], neu: DefaultExercise[], links?: SourceLinks, chain?: ReadonlyMap<string, string>): ChangeRecord[] {
+  return diffDefault('wd-1', old, neu, links, chain).changes
 }
 
 // What the source week showed before the call: the swapped-in row `rowId`'s planned sets named
@@ -137,6 +140,54 @@ describe('sourceLinksOf — per exercise row, the program sets its planned sets 
   it('sets under a row the session does not list are not read: the function only reads the session\'s own rows', () => {
     const links = sourceLinksOf({ exercises: [row('r')], sets: [planned('s', 'gone', 'p1')] })
     expect(links.size).toBe(0)
+  })
+})
+
+// ─── ...and, per planned set, which program set it named: with what it names after the call, the exact pair ──
+
+describe('sourceSetLinksOf / chainOf / chainsOf — old program set → new program set, from the source week itself', () => {
+  const row = (id: string): ProgramExercise => ({ id, workoutDayId: 'wd-1', userId: 'u', exerciseId: `ex-${id}`, position: 0, weightUnit: null })
+  const planned = (id: string, programExerciseId: string, programSetId: string | null, overrides: Partial<WeekPlanSet> = {}): WeekPlanSet => ({
+    id, weekPlanId: 'wp', userId: 'u', programExerciseId, setNumber: 1, targetRir: null, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, programSetId, ...overrides,
+  })
+
+  it('maps each planned set, head or stage, that names a program set, by its own id', () => {
+    const links = sourceSetLinksOf({
+      exercises: [row('r')],
+      sets: [planned('h', 'r', 'p1'), planned('st', 'r', 'p1s1', { parentWeekPlanSetId: 'h', stageIndex: 1 }), planned('mine', 'r', null), planned('gone', 'not-listed', 'p9')],
+    })
+    expect([...links]).toEqual([['h', 'p1'], ['st', 'p1s1']]) // a set that names nothing is nobody's partner; a set under an unlisted row is not read
+  })
+
+  it('chainOf: a set that moved from one program set to another is the pair old → new', () => {
+    const before = new Map([['x1', 'a2'], ['x2', 'a3']])
+    const after = new Map([['x1', 'n1'], ['x2', 'n2']])
+    expect([...chainOf(before, after)]).toEqual([['a2', 'n1'], ['a3', 'n2']])
+  })
+
+  it('chainOf: a set that names the same program set after as before (a kept row\'s: updated in place) is no pair', () => {
+    expect(chainOf(new Map([['k', 'a1']]), new Map([['k', 'a1']])).size).toBe(0)
+  })
+
+  it('chainOf: a set added in the source week (no link before) and a set deleted by it (no link after) are nobody\'s partner', () => {
+    const chain = chainOf(new Map([['kept', 'a1'], ['deleted', 'a2']]), new Map([['kept', 'n1'], ['added', 'n2']]))
+    expect([...chain]).toEqual([['a1', 'n1']])
+  })
+
+  it('chainOf: two planned sets that named one old program set and ended on different new ones leave that old set with no exact partner', () => {
+    const before = new Map([['x1', 'a1'], ['x2', 'a1'], ['y', 'a2']])
+    const after = new Map([['x1', 'n1'], ['x2', 'n2'], ['y', 'n3']])
+    expect([...chainOf(before, after)]).toEqual([['a2', 'n3']])
+    // ...while two that ended on the same one agree.
+    expect([...chainOf(new Map([['x1', 'a1'], ['x2', 'a1']]), new Map([['x1', 'n1'], ['x2', 'n1']]))]).toEqual([['a1', 'n1']])
+  })
+
+  it('chainsOf: one chain per source session; a session that could not be read after the call gets an empty one', () => {
+    const before = new Map([['wp-a', new Map([['x', 'a1']])], ['wp-b', new Map([['y', 'b1']])]])
+    const after = new Map([['wp-a', new Map([['x', 'n1']])]])
+    const chains = chainsOf(before, after)
+    expect([...chains.get('wp-a')!]).toEqual([['a1', 'n1']])
+    expect(chains.get('wp-b')!.size).toBe(0)
   })
 })
 
@@ -284,26 +335,82 @@ describe('diffDefault — a set that stayed (its program set was updated in plac
     ])
   })
 
-  it('a head turned into a warmup is a warmup record', () => {
+  // A head's kind is ONE part (applyAhead.ts headKindOf): working, warmup, or staged with its
+  // resolved stage kind. The kind records name the OLD head's whole kind, and a later week
+  // takes them only where its head is still that.
+  it('a head turned into a warmup is a warmup record naming the old head\'s whole kind (a plain working set) and its stages (none)', () => {
     const old = [dex('pe-1', 0, [dset('a1')])]
     const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true })])]
     expect(records(old, neu)).toEqual([
-      { editType: 'warmup', slotId: 'pe-1', exerciseId: 'ex-of-pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: false, newValue: true, defaultSet: { programSetId: 'a1' } },
+      {
+        editType: 'warmup', slotId: 'pe-1', exerciseId: 'ex-of-pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: false, newValue: true,
+        defaultSet: { programSetId: 'a1', headKind: 'working', oldStageIds: [] },
+      },
     ])
   })
 
-  it('a stage kind that changed is a stageKind record; a null kind and a missing one are the same', () => {
-    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dset('a2', { position: 2 })])]
-    const neu = [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dset('a2', { position: 2, stageKind: null })])]
+  it('a staged head turned into a warmup names the old kind (staged) and the old stages: the week may hold no stage of its own', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dstage('s1', 'a1', 1), dstage('s2', 'a1', 2)])]
+    const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true })])]
+    const out = records(old, neu)
+    // A warmup has no stage kind that shows: no stageKind record, only the stages going and the head turning.
+    expect(out.map((r) => r.editType)).toEqual(['removeStage', 'removeStage', 'warmup'])
+    expect(out[2]).toMatchObject({ defaultSet: { programSetId: 'a1', headKind: 'myo_reps', oldStageIds: ['s1', 's2'] } })
+  })
+
+  it('a stage kind that changed on a staged head is a stageKind record naming the old head\'s whole kind', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])]
+    const neu = [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dstage('s1', 'a1', 1)])]
     expect(records(old, neu)).toEqual([
-      { editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-of-pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: 'dropset', newValue: 'myo_reps', defaultSet: { programSetId: 'a1' } },
+      {
+        editType: 'stageKind', slotId: 'pe-1', exerciseId: 'ex-of-pe-1', setPosition: { headOrdinal: 1, stageIndex: null }, oldValue: 'dropset', newValue: 'myo_reps',
+        defaultSet: { programSetId: 'a1', headKind: 'dropset' },
+      },
     ])
   })
 
-  it('a warmup carries no stage kind: working with a kind → warmup is a warmup change and a kind change', () => {
-    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'rest_pause' })])]
-    const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true, stageKind: 'rest_pause' })])]
-    expect(records(old, neu).map((r) => r.editType)).toEqual(['warmup', 'stageKind'])
+  // B: stage kinds are compared RESOLVED (a null kind on a head with stages reads as a dropset), in every
+  // record. Break: compare the raw kinds -> a record that writes 'dropset' over a null that already reads as one.
+  it('B — null and "dropset" are the same kind on a head with stages: no stageKind record either way, nothing to write', () => {
+    const nullKind = [dex('pe-1', 0, [dset('a1', { stageKind: null }), dstage('s1', 'a1', 1)])]
+    const explicit = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])]
+    expect(records(nullKind, explicit)).toEqual([])
+    expect(records(explicit, nullKind)).toEqual([])
+  })
+
+  it('B — old dropset with s1 and s2, new myo-reps with s1: the kind change AND the stage removal, each naming the old whole kind', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1), dstage('s2', 'a1', 2)])]
+    const neu = [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dstage('s1', 'a1', 1)])]
+    const out = records(old, neu)
+    expect(out.map((r) => r.editType)).toEqual(['removeStage', 'stageKind'])
+    expect(out[0]).toMatchObject({ defaultSet: { programSetId: 's2', headKind: 'dropset' } })
+    expect(out[1]).toMatchObject({ oldValue: 'dropset', newValue: 'myo_reps', defaultSet: { programSetId: 'a1', headKind: 'dropset' } })
+  })
+
+  it('a kind that shows nowhere is no part: a plain head\'s stored kind, a head that is plain or a warmup afterwards', () => {
+    // plain -> plain: whatever kind a stage-less head still carries shows nowhere and does nothing.
+    expect(records([dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' })])], [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' })])])).toEqual([])
+    // staged -> plain: the stages go, the kind it keeps stored is not a change.
+    const out = records(
+      [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])],
+      [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' })])],
+    )
+    expect(out.map((r) => r.editType)).toEqual(['removeStage'])
+    // working with a kind -> warmup: the warmup record only (a warmup has no kind that shows).
+    expect(records([dex('pe-1', 0, [dset('a1', { stageKind: 'rest_pause' })])], [dex('pe-1', 0, [dset('a1', { isWarmup: true, stageKind: 'rest_pause' })])]).map((r) => r.editType)).toEqual(['warmup'])
+  })
+
+  it('a plain head that becomes staged: a stageKind record only where the resolved kind differs (null reads as a dropset), the stage names the old kind "working"', () => {
+    const old = [dex('pe-1', 0, [dset('a1')])]
+    // A dropset (null kind): the stage makes it one, nothing to write for the kind.
+    const toDropset = records(old, [dex('pe-1', 0, [dset('a1'), dstage('n1', 'a1', 1)])])
+    expect(toDropset.map((r) => r.editType)).toEqual(['addStage'])
+    expect(toDropset[0]).toMatchObject({ headKind: 'working' })
+    // Myo-reps: the kind is a part, written with the stage, both gated on the old plain head.
+    const toMyo = records(old, [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dstage('n1', 'a1', 1)])])
+    expect(toMyo.map((r) => r.editType)).toEqual(['stageKind', 'addStage'])
+    expect(toMyo[0]).toMatchObject({ oldValue: null, newValue: 'myo_reps', defaultSet: { programSetId: 'a1', headKind: 'working' } })
+    expect(toMyo[1]).toMatchObject({ headKind: 'working' })
   })
 
   it('a stage\'s rep target is matched by the stage\'s own program set and carries the stage\'s index', () => {
@@ -337,12 +444,18 @@ describe('diffDefault — sets that joined or left', () => {
 
   // The kind the stage's head had BEFORE the default changed: a week that changed the head's kind itself
   // has stages of its own, which a removal must not take (applyAhead.ts).
-  it('...the head\'s OLD kind, also when the same default changes it: dropset stages go as the head becomes plain', () => {
+  it('...the head\'s OLD kind, also when the same default makes the head plain: its dropset stages go, nothing about a kind is written', () => {
     const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])]
     const neu = [dex('pe-1', 0, [dset('a1')])]
     const out = records(old, neu)
-    expect(out.map((r) => r.editType)).toEqual(['removeStage', 'stageKind'])
+    expect(out.map((r) => r.editType)).toEqual(['removeStage'])
     expect(out[0]).toMatchObject({ defaultSet: { programSetId: 's1', headKind: 'dropset' } })
+  })
+
+  it('a head with stages and no kind stored is a dropset: the removal names it so', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { stageKind: null }), dstage('s1', 'a1', 1), dstage('s2', 'a1', 2)])]
+    const neu = [dex('pe-1', 0, [dset('a1', { stageKind: null }), dstage('s1', 'a1', 1)])]
+    expect(records(old, neu)[0]).toMatchObject({ editType: 'removeStage', defaultSet: { programSetId: 's2', headKind: 'dropset' } })
   })
 
   it('a working set that joined is an addSet record naming its new program set, its kind and rep target, and the old default\'s sets of the row', () => {
@@ -385,6 +498,7 @@ describe('diffDefault — sets that joined or left', () => {
         editType: 'addStage', slotId: 'pe-1', exerciseId: 'ex-of-pe-1', headOrdinal: 2, headProgramSetId: 'a2',
         defaultSet: { ...shape(dstage('n1', 'a2', 1, { position: 2, repMin: 12, repMax: 12 }), 'pe-1') },
         oldSetIds: [], // the old default's stages under that head: none
+        headKind: 'working', // ...and the old head was a plain working set
       },
     ])
   })
@@ -639,6 +753,130 @@ describe('diffDefault — exercises that joined, left, were swapped or moved', (
   })
 })
 
+// ─── C: a swapped slot's sets, paired by what the source week did with each of them ───
+
+describe('diffDefault — a swapped slot\'s sets are paired by the source week\'s own links', () => {
+  // The review's case. The old row R: a1 (8), a2 (10), a3 (12). The source week swapped R for N and DELETED the
+  // first set, so N's two sets named a2 and a3 before the call and name n1 (10) and n2 (12) after it.
+  const oldR = () => [dex('R', 0, [dset('a1', { position: 1, repMin: 8, repMax: 8 }), dset('a2', { position: 2, repMin: 10, repMax: 10 }), dset('a3', { position: 3, repMin: 12, repMax: 12 })], 'ex-r')]
+  const n1 = () => dset('n1', { position: 1, repMin: 10, repMax: 10 })
+  const n2 = () => dset('n2', { position: 2, repMin: 12, repMax: 12 })
+  const newN = () => [dex('N', 0, [n1(), n2()], 'ex-n')]
+  const evidence = named('N', 'a2', 'a3')
+  const chain = new Map([['a2', 'n1'], ['a3', 'n2']])
+
+  // Break: pair by ordinal even where the chain is known (what it did) -> a1 stands for n1 and a2 for n2: two rep
+  // targets rewritten, a3 removed, and the relink names the wrong sets.
+  it('the set the source week deleted is the removal, the others are re-linked to their own: no rep target is rewritten', () => {
+    const out = records(oldR(), newN(), evidence, chain)
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'removeHeadSet'])
+    expect(out[0]).toMatchObject({ slotId: 'R', resultingProgramExerciseId: 'N', relink: [{ from: 'a2', to: 'n1' }, { from: 'a3', to: 'n2' }] })
+    expect(out[1]).toMatchObject({ slotId: 'R', headOrdinal: 1, defaultSet: { programSetId: 'a1', swappedInto: 'N' } })
+  })
+
+  it('...which an ordinal pairing, where no chain could be read, gets wrong for this case: it is the fallback, not the rule', () => {
+    const out = records(oldR(), newN(), evidence)
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'removeHeadSet', 'repTarget', 'repTarget'])
+    expect(out[0]).toMatchObject({ relink: [{ from: 'a1', to: 'n1' }, { from: 'a2', to: 'n2' }] })
+    expect(out[1]).toMatchObject({ defaultSet: { programSetId: 'a3' } })
+  })
+
+  // A leftover on both sides is a removal and an addition, as in a kept slot: the source week deleted a1's set and
+  // added another at the end (15), and the later week should end as the source week did.
+  it('a set the source week added is an addition, not the stand-in for a set it deleted', () => {
+    const neu = [dex('N', 0, [n1(), n2(), dset('n3', { position: 3, repMin: 15, repMax: 15 })], 'ex-n')]
+    const out = records(oldR(), neu, evidence, chain)
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'removeHeadSet', 'addSet'])
+    expect(out[0]).toMatchObject({ relink: [{ from: 'a2', to: 'n1' }, { from: 'a3', to: 'n2' }] })
+    expect(out[1]).toMatchObject({ defaultSet: { programSetId: 'a1' } })
+    expect(out[2]).toMatchObject({ defaultSet: { programSetId: 'n3', programExerciseId: 'N' }, oldSetIds: ['a1', 'a2', 'a3'] })
+  })
+
+  it('a rep target changed in the source week is a repTarget on the pair, wherever the pair sits', () => {
+    const neu = [dex('N', 0, [dset('n1', { position: 1, repMin: 5, repMax: 5 }), n2()], 'ex-n')]
+    const out = records(oldR(), neu, evidence, chain)
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'removeHeadSet', 'repTarget'])
+    expect(out[2]).toMatchObject({ defaultSet: { programSetId: 'a2', swappedInto: 'N' }, oldValue: { repMin: 10, repMax: 10 }, newValue: { repMin: 5, repMax: 5 } })
+  })
+
+  // Stages follow their own link as well, not their index: the source week deleted the FIRST stage, so the new
+  // head's one stage (index 1) is the old second stage.
+  it('a stage is paired by its link, not its index: the one the source week deleted is the removal', () => {
+    const old = [dex('R', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1, { repMin: 10, repMax: 10 }), dstage('s2', 'a1', 2, { repMin: 6, repMax: 6 })], 'ex-r')]
+    const neu = [dex('N', 0, [dset('n1', { stageKind: 'dropset' }), dstage('t1', 'n1', 1, { repMin: 6, repMax: 6 })], 'ex-n')]
+    const out = records(old, neu, named('N', 'a1', 's2'), new Map([['a1', 'n1'], ['s2', 't1']]))
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'removeStage'])
+    expect(out[0]).toMatchObject({ relink: [{ from: 'a1', to: 'n1' }, { from: 's2', to: 't1' }] })
+    expect(out[1]).toMatchObject({ defaultSet: { programSetId: 's1', swappedInto: 'N', headKind: 'dropset' } })
+  })
+
+  // The chain does not look at kinds: a set the source week turned from a warmup into a working set keeps its pair.
+  it('a warmup the source week turned into a working set is still that set: a warmup record, no removal and no addition', () => {
+    const old = [dex('R', 0, [dset('w1', { position: 1, isWarmup: true }), dset('a1', { position: 2 })], 'ex-r')]
+    const neu = [dex('N', 0, [dset('n1', { position: 1 }), dset('n2', { position: 2 })], 'ex-n')]
+    const out = records(old, neu, named('N', 'w1', 'a1'), new Map([['w1', 'n1'], ['a1', 'n2']]))
+    expect(out.map((r) => r.editType)).toEqual(['swapExercise', 'warmup'])
+    expect(out[1]).toMatchObject({ oldValue: true, newValue: false, defaultSet: { programSetId: 'w1', swappedInto: 'N', headKind: 'warmup', oldStageIds: [] } })
+  })
+
+  // The fallback, said exactly: it is used for a slot the chain does not reach (none of the old row's sets has a
+  // partner among the new row's: the source week was not re-read after the call, or its planned sets named nothing).
+  it('a chain that reaches none of the slot\'s sets is no chain for it: the sets are paired by ordinal within kind', () => {
+    const plain = records(oldR(), newN(), evidence)
+    expect(records(oldR(), newN(), evidence, new Map())).toEqual(plain)
+    expect(records(oldR(), newN(), evidence, new Map([['zz', 'yy']]))).toEqual(plain) // pairs of some other slot
+    expect(records(oldR(), newN(), evidence, new Map([['a2', 'not-a-set-of-N']]))).toEqual(plain)
+  })
+
+  it('a kept slot pairs by program set id, whatever the chain says', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: 8 })])]
+    const neu = [dex('pe-1', 0, [dset('a1', { repMin: 5, repMax: 5 })])]
+    expect(records(old, neu, new Map(), new Map([['a1', 'elsewhere']]))).toEqual(records(old, neu))
+  })
+
+  it('the chain of one slot does not pair another slot\'s sets: each swapped slot uses the pairs that reach it', () => {
+    const old = [dex('R1', 0, [dset('a1', { repMin: 8, repMax: 8 }), dset('a2', { position: 2 })], 'ex-1'), dex('R2', 1, [dset('b1'), dset('b2', { position: 2 })], 'ex-2')]
+    const neu = [dex('N1', 0, [dset('n2', { position: 2 })], 'ex-n1'), dex('N2', 1, [dset('m1'), dset('m2', { position: 2 })], 'ex-n2')]
+    const links: SourceLinks = new Map([['N1', new Set(['a2'])], ['N2', new Set(['b1', 'b2'])]])
+    // N1's chain reaches (a2 -> n2); N2's does not (nothing read for it): the first by link, the second by ordinal.
+    const out = records(old, neu, links, new Map([['a2', 'n2']]))
+    const swaps = out.filter((r) => r.editType === 'swapExercise') as Extract<ChangeRecord, { editType: 'swapExercise' }>[]
+    expect(swaps.map((w) => [w.slotId, w.relink])).toEqual([
+      ['R1', [{ from: 'a2', to: 'n2' }]],
+      ['R2', [{ from: 'b1', to: 'm1' }, { from: 'b2', to: 'm2' }]],
+    ])
+  })
+})
+
+// ─── Nothing is written that is both a warmup and staged ──────────────────────
+
+describe('diffDefault — a warmup is never staged, in what a default hands on', () => {
+  // The app never has a warmup with stages. A default made of such a set (only a past bug could leave one) is read
+  // as a warmup without them: none is added under it, and the old ones go with the kind.
+  it('a head that is a warmup in the new default gets no stage: a plain head made one is the warmup record alone', () => {
+    const old = [dex('pe-1', 0, [dset('a1')])]
+    const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true }), dstage('x1', 'a1', 1)])]
+    expect(records(old, neu).map((r) => r.editType)).toEqual(['warmup'])
+  })
+
+  it('...and the old default\'s stages under it are removed with the head turning', () => {
+    const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])]
+    const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true }), dstage('s1', 'a1', 1)])]
+    const out = records(old, neu)
+    expect(out.map((r) => r.editType)).toEqual(['removeStage', 'warmup'])
+    expect(out[0]).toMatchObject({ defaultSet: { programSetId: 's1', headKind: 'dropset' } })
+    expect(out[1]).toMatchObject({ defaultSet: { programSetId: 'a1', headKind: 'dropset', oldStageIds: ['s1'] } })
+  })
+
+  it('a warmup that joins is written without stages, as a set and as part of an exercise', () => {
+    const stagedWarmup = [dset('w1', { isWarmup: true }), dstage('x1', 'w1', 1)]
+    const [added] = records([dex('pe-1', 0, [dset('a1')])], [dex('pe-1', 0, [...stagedWarmup, dset('a1', { position: 2 })])])
+    expect((added as Extract<ChangeRecord, { editType: 'addWarmupSet' }>).defaultSet!.stages).toEqual([])
+    const [joined] = records([], [dex('pe-2', 0, stagedWarmup)])
+    expect((joined as Extract<ChangeRecord, { editType: 'addExercise' }>).defaultRow!.sets[0].stages).toEqual([])
+  })
+})
+
 // ─── The offer ───────────────────────────────────────────────────────────────
 
 describe('laterSessionsOf / buildDefaultOffer', () => {
@@ -699,6 +937,21 @@ describe('laterSessionsOf / buildDefaultOffer', () => {
     expect(types(new Map([['wp-elsewhere', named('pe-9', 'a1')]]))).toEqual(['removeExercise', 'addExercise'])
     // The session's own, with nothing named by that row: the removal and the addition again.
     expect(types(new Map([['wp-3', new Map()]]))).toEqual(['removeExercise', 'addExercise'])
+  })
+
+  // C, through the offer: the swapped slot is paired with the chain of the session the default came from.
+  // Break: leave the chains out of the call to diffDefault -> the first expectation pairs a1 with n1.
+  it('the chain of the session the default came from pairs a swapped slot\'s sets; another session\'s chain does not', () => {
+    const swapped = result({ workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-3', sourceSequencePosition: null, oldExercises: [dex('pe-1', 0, [dset('a1', { repMin: 8, repMax: 8 }), dset('a2', { position: 2, repMin: 10, repMax: 10 })], 'ex-a')] }] })
+    const next = new Map([['wd-1', [dex('pe-9', 0, [dset('q1', { repMin: 10, repMax: 10 })], 'ex-q')]]])
+    const evidence = new Map([['wp-3', named('pe-9', 'a2')]])
+    const relinkOf = (chains?: ReadonlyMap<string, ReadonlyMap<string, string>>) =>
+      (buildDefaultOffer(swapped, next, [week(4)], evidence, chains)!.groups[0].changes[0] as Extract<ChangeRecord, { editType: 'swapExercise' }>).relink
+    expect(relinkOf(new Map([['wp-3', new Map([['a2', 'q1']])]]))).toEqual([{ from: 'a2', to: 'q1' }])
+    // No chain for the session (or only another session's): by ordinal within kind.
+    expect(relinkOf()).toEqual([{ from: 'a1', to: 'q1' }])
+    expect(relinkOf(new Map())).toEqual([{ from: 'a1', to: 'q1' }])
+    expect(relinkOf(new Map([['wp-elsewhere', new Map([['a2', 'q1']])]]))).toEqual([{ from: 'a1', to: 'q1' }])
   })
 
   it('a workout with nothing planned ahead is left out; another with something to apply still gets its offer', () => {

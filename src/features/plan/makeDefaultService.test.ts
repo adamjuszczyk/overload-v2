@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ProgramExercise, ProgramSet } from '../../types'
 
-// Chunk 32 — the two calls around "Make this week the new default": the RPC, and the read
-// of the run's copy afterwards. Isolated from the real client and from the other services
-// they delegate to (the run's exercise list has one read path: runProgramExercises.ts).
+// Chunk 32 — the calls around "Make this week the new default": the RPC, and the two reads
+// after it (what the source sessions' planned sets name now, and the run's copy). Isolated
+// from the real client and from the other services they delegate to (the run's exercise
+// list has one read path: runProgramExercises.ts).
 
 const rpcMock = vi.fn()
-vi.mock('../../lib/supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpcMock(...args) } }))
+const fromMock = vi.fn()
+vi.mock('../../lib/supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpcMock(...args), from: (...args: unknown[]) => fromMock(...args) } }))
 const fetchRunProgramExercisesMock = vi.fn()
 vi.mock('../programs/runProgramExercises', () => ({
   fetchRunProgramExercises: (...args: unknown[]) => fetchRunProgramExercisesMock(...args),
@@ -14,10 +16,11 @@ vi.mock('../programs/runProgramExercises', () => ({
 const fetchProgramSetsMock = vi.fn()
 vi.mock('../planner/plannerService', () => ({ fetchProgramSets: (...args: unknown[]) => fetchProgramSetsMock(...args) }))
 
-const { makeWeekDefault, fetchRunCopyDefaults } = await import('./makeDefaultService')
+const { makeWeekDefault, fetchRunCopyDefaults, fetchSourceSetLinks } = await import('./makeDefaultService')
 
 beforeEach(() => {
   rpcMock.mockReset()
+  fromMock.mockReset()
   fetchRunProgramExercisesMock.mockReset()
   fetchProgramSetsMock.mockReset()
 })
@@ -49,6 +52,65 @@ describe('makeWeekDefault', () => {
     const error = new Error('v2_make_week_default: every session of week 3 of mesocycle m is deload or empty; there is nothing to make the default')
     rpcMock.mockResolvedValue({ data: null, error })
     await expect(makeWeekDefault('meso-1', 3)).rejects.toBe(error)
+  })
+})
+
+// A query builder that records the calls chained on it and answers when awaited.
+function query(result: { data: unknown; error: unknown }) {
+  const calls: [string, unknown[]][] = []
+  const chain: Record<string, unknown> = {}
+  for (const name of ['select', 'in', 'not']) {
+    chain[name] = (...args: unknown[]) => {
+      calls.push([name, args])
+      return chain
+    }
+  }
+  chain.then = (resolve: (value: unknown) => unknown) => resolve(result)
+  return { chain, calls }
+}
+
+describe('fetchSourceSetLinks — what the source sessions\' planned sets name after the call', () => {
+  it('reads the planned sets of the source sessions that name a program set, in one request, by session', async () => {
+    const q = query({
+      data: [
+        { id: 'i1', week_plan_id: 'wp-3', program_set_id: 'pi-1' },
+        { id: 'i2', week_plan_id: 'wp-3', program_set_id: 'pi-2' },
+        { id: 'p1', week_plan_id: 'wp-pull-3', program_set_id: 'pp-1' },
+      ],
+      error: null,
+    })
+    fromMock.mockReturnValue(q.chain)
+
+    const result = await fetchSourceSetLinks(['wp-3', 'wp-pull-3', 'wp-empty'])
+
+    expect(fromMock).toHaveBeenCalledTimes(1)
+    expect(fromMock).toHaveBeenCalledWith('v2_week_plan_sets')
+    expect(q.calls).toEqual([
+      ['select', ['id, week_plan_id, program_set_id']],
+      ['in', ['week_plan_id', ['wp-3', 'wp-pull-3', 'wp-empty']]],
+      ['not', ['program_set_id', 'is', null]], // a set that names nothing is nobody's partner
+    ])
+    expect([...result.keys()]).toEqual(['wp-3', 'wp-pull-3', 'wp-empty'])
+    expect([...result.get('wp-3')!]).toEqual([['i1', 'pi-1'], ['i2', 'pi-2']])
+    expect([...result.get('wp-pull-3')!]).toEqual([['p1', 'pp-1']])
+    expect(result.get('wp-empty')!.size).toBe(0) // a session with nothing linked is an empty answer, not a missing one
+  })
+
+  it('no source sessions, no request', async () => {
+    expect((await fetchSourceSetLinks([])).size).toBe(0)
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('a row of another session than those asked for is ignored', async () => {
+    fromMock.mockReturnValue(query({ data: [{ id: 'x', week_plan_id: 'wp-other', program_set_id: 'p' }], error: null }).chain)
+    const result = await fetchSourceSetLinks(['wp-3'])
+    expect([...result.keys()]).toEqual(['wp-3'])
+    expect(result.get('wp-3')!.size).toBe(0)
+  })
+
+  it('a read that fails fails the call (the hook turns it into "no links": a swapped slot is then paired by ordinal)', async () => {
+    fromMock.mockReturnValue(query({ data: null, error: new Error('read failed') }).chain)
+    await expect(fetchSourceSetLinks(['wp-3'])).rejects.toThrow('read failed')
   })
 })
 

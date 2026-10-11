@@ -100,17 +100,26 @@
 //     week's weight pairing matches last week's sets by that row) and its sets name the
 //     default's program sets; an added set names its new program set.
 //   - A SWAP is a swap only where the source week showed it (makeWeekDefault.ts
-//     pairSwaps). Its sets pair with the swapped-in row's by ordinal WITHIN KIND (warmups
-//     with warmups, working sets with working sets, a head's stages by stage index: G44's
-//     rule), and every record of a swapped slot is matched under the replaced row or — in
-//     a week that took the swap already, through a hand swap's apply-ahead — under the
+//     pairSwaps). Its sets pair with the swapped-in row's by identity: the source week's
+//     planned set named an old program set before the call and names a new one after it,
+//     and that chain is the pair (makeWeekDefault.ts chainOf). Only where the chain
+//     could not be read does the slot fall back to ordinal WITHIN KIND (warmups with
+//     warmups, working sets with working sets, a head's stages by stage index: G44's
+//     rule). Every record of a swapped slot is matched under the replaced row or — in a
+//     week that took the swap already, through a hand swap's apply-ahead — under the
 //     swapped-in row, whose sets still name the replaced row's program sets
 //     (`swappedInto`).
 //   - What is ADDED is not added where the week has a set of its own of that kind (its
 //     `oldSetIds`: the old default's sets of the row; a week's head or stage that is none
 //     of them is its own): it differs from the old default where the new set would go.
-//     Likewise a stage is not removed from a head whose kind the week changed itself
-//     (`headKind`: the old head's kind).
+//   - A head's KIND is one part: working, warmup, or staged with its resolved stage
+//     kind (headKindOf: a null kind on a head with stages reads as a dropset). A warmup,
+//     stageKind, addStage or removeStage record applies to a later week only where the
+//     head's whole kind is still the old default's (`headKind`), so a week that made the
+//     head something else (a dropset with a stage of its own, a warmup, myo-reps) keeps
+//     all of it, never half. And a head is never written to both a warmup and staged: no
+//     stage or stage kind goes onto a warmup, and a head becomes a warmup only where it
+//     holds no stage of its own.
 // A record without these fields is exactly what it was before this chunk.
 
 import type { WeekPlan, ProgramExercise, WeekPlanSet } from '../../types'
@@ -157,6 +166,23 @@ export interface ReorderMove {
 
 // ─── What a make-default record points at (chunk 32) ─────────────────────────
 
+// A head's kind, as ONE thing (chunk 32, final round): a plain working set, a warmup, or
+// a staged set with its resolved stage kind. The app never has a head that is both a
+// warmup and staged (a warmup gets no stage controls, WARMUP is not offered once a head
+// has stages), so these are alternatives. `StageKind` values stand for the staged kinds.
+export type HeadKind = 'working' | 'warmup' | StageKind
+
+// The whole kind of a head, whether it is a default's (a program set and its stages) or a
+// week's: a warmup is a warmup (whatever kind it still carries); a head without stages is
+// a plain working set (a stage kind it still carries shows nowhere and does nothing);
+// a head WITH stages is staged, and a null kind on it reads as a dropset (resolveStageKind),
+// so null and 'dropset' are the same kind here.
+export function headKindOf(head: { isWarmup?: boolean | null; stageKind?: StageKind | null }, hasStages: boolean): HeadKind {
+  if (head.isWarmup) return 'warmup'
+  if (!hasStages) return 'working'
+  return resolveStageKind(head.stageKind ?? null)
+}
+
 // How a record built from a make-default finds the later week's set: the program set
 // of the OLD default it is linked to (see this file's header).
 export interface DefaultSetKey {
@@ -167,9 +193,13 @@ export interface DefaultSetKey {
   // replaced row's program sets; the record is matched under whichever of the two the
   // week holds.
   swappedInto?: string
-  // removeStage only: the old default's kind of the head the stage hung under. A later
-  // week whose head has another kind changed it itself, and its stages are its own.
-  headKind?: StageKind | null
+  // warmup, stageKind and removeStage: the WHOLE kind of the old default's head (the one
+  // the set is, or the stage hung under). A later week whose head is anything else
+  // changed the head itself, and the record leaves all of it as it is.
+  headKind?: HeadKind
+  // warmup only: the old default's stages under the head. A head becomes a warmup only
+  // where it has no stage that is none of them (the same offer removes those).
+  oldStageIds?: string[]
 }
 
 // A program set of the NEW default, as a week row is written from it: what is added to
@@ -201,10 +231,11 @@ export interface DefaultRowShape {
   sets: DefaultSetShape[]
 }
 
-// A swapped slot's sets, old program set → the program set that took its place (heads
-// by ordinal WITHIN KIND, warmups with warmups and working sets with working sets, the
-// way weights are paired; stages by stage index within their head): the later week's
-// sets are re-linked to the swapped-in row's own program sets, as the source week's were.
+// A swapped slot's sets, old program set → the program set that took its place (the
+// source week's own chain where it could be read; else heads by ordinal WITHIN KIND,
+// warmups with warmups and working sets with working sets, the way weights are paired,
+// and stages by stage index within their head): the later week's sets are re-linked to
+// the swapped-in row's own program sets, as the source week's were.
 export interface DefaultRelink {
   from: string
   to: string
@@ -283,10 +314,11 @@ export type ChangeRecord =
       // keeps it on: a swapped slot's week head still names the replaced row's); the new
       // stage names `defaultSet`. `oldSetIds`: the old default's stages under that head;
       // a stage of the week's head that is none of them is its own, and the week is left
-      // alone.
+      // alone. `headKind`: the old head's WHOLE kind, which the week's head must still be.
       defaultSet?: DefaultSetShape
       headProgramSetId?: string
       oldSetIds?: string[]
+      headKind?: HeadKind
     }
   | { editType: 'removeStage'; slotId: string; exerciseId: string; setPosition: SetPosition; defaultSet?: DefaultSetKey }
   // Week-level REMOVE SET (review fix item 3 — a set's own ⋯ DELETE SET):
@@ -469,6 +501,24 @@ function hasOwnStage(week: WeekPlan, head: WeekPlanSet, oldSetIds: string[] | un
   return stagesFor(week, head.id).some((s) => !(s.programSetId != null && known.has(s.programSetId)))
 }
 
+// The whole kind of a head of this later week: warmup, working (no stages), or staged with
+// its resolved stage kind.
+function weekHeadKind(week: WeekPlan, head: WeekPlanSet): HeadKind {
+  return headKindOf(head, stagesFor(week, head.id).length > 0)
+}
+
+// Whether every stage of this head is one of the old default's, each once: the stages a
+// make-default that turns the head into a warmup removes. A head that has a stage of its
+// own would stay staged, so it must not become a warmup.
+function stagesAreAllOld(week: WeekPlan, head: WeekPlanSet, oldStageIds: string[] | undefined): boolean {
+  const stages = stagesFor(week, head.id)
+  if (stages.length === 0) return true
+  if (!oldStageIds) return false
+  const known = new Set(oldStageIds)
+  const linked = stages.map((s) => s.programSetId)
+  return linked.every((id) => id != null && known.has(id)) && new Set(linked).size === linked.length
+}
+
 // Rep targets are compared as the row shows them (8 to 8 is "8"), so equal here means
 // equal on screen (weekDiff.ts compares them the same way).
 type RepColumns = { repMin: number | null; repMax: number | null; isAmrap: boolean }
@@ -591,15 +641,28 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
       const set = key ? linkedSet(week, row, key.programSetId) : resolveSetRow(week, row, change.setPosition)
       if (!set) return { ...base, status: 'skipped', reason: 'structural' }
       if (key) {
-        const holdsOld =
-          change.editType === 'repTarget'
-            ? repKey({ repMin: set.repMin ?? null, repMax: set.repMax ?? null, isAmrap: set.isAmrap ?? false }) === repKey(change.oldValue)
-            : change.editType === 'stageKind'
-              ? set.parentWeekPlanSetId == null && (set.stageKind ?? null) === change.oldValue
-              : change.editType === 'warmup'
-                ? set.parentWeekPlanSetId == null && set.isWarmup === change.oldValue
-                : false
-        if (!holdsOld) return { ...base, status: 'skipped', reason: 'structural' }
+        if (change.editType === 'repTarget') {
+          if (repKey({ repMin: set.repMin ?? null, repMax: set.repMax ?? null, isAmrap: set.isAmrap ?? false }) !== repKey(change.oldValue)) {
+            return { ...base, status: 'skipped', reason: 'structural' }
+          }
+        } else if (change.editType === 'stageKind' || change.editType === 'warmup') {
+          // A head's kind is ONE part (headKindOf): the week holds the old default's part
+          // only where the head is still, as a whole, what the old default's head was —
+          // working, warmup, or staged with that stage kind (a null kind on a head with
+          // stages reads as a dropset). A head the week made something else keeps all of
+          // it: a kind written onto a head that is another kind now would be half of a
+          // change the week already differs from, and could leave a warmup that is staged.
+          if (set.parentWeekPlanSetId != null || key.headKind === undefined || weekHeadKind(week, set) !== key.headKind) {
+            return { ...base, status: 'skipped', reason: 'structural' }
+          }
+          // Never a stage kind on a warmup; a head becomes a warmup only where every stage
+          // it has is one the old default had (the same offer removes those): a stage of
+          // its own would stay under a warmup.
+          if (change.editType === 'stageKind' && set.isWarmup) return { ...base, status: 'skipped', reason: 'structural' }
+          if (change.editType === 'warmup' && change.newValue && !stagesAreAllOld(week, set, key.oldStageIds)) {
+            return { ...base, status: 'skipped', reason: 'structural' }
+          }
+        }
       }
       const changes: WeekPlanSetChanges =
         change.editType === 'weightTarget'
@@ -727,14 +790,20 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
         : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the head is the week's set linked to the old
-      // default's head, and the stage names its own program set. A week whose head has a
-      // stage of its own (none of the old default's) already differs where the new stage
-      // would go and is left alone. It keeps the default's stage index unless the week's
-      // head already has one of the old default's stages there.
+      // default's head, and the stage names its own program set. The head must still be,
+      // as a whole, the old default's head kind (headKindOf): a week that made it a
+      // warmup, or another stage kind, or took its stages away, keeps all of it, and a
+      // stage never goes under a warmup. A week whose head has a stage of its own (none of
+      // the old default's) already differs where the new stage would go and is left
+      // alone. It keeps the default's stage index unless the week's head already has one
+      // of the old default's stages there.
       if (change.defaultSet) {
         const added = change.defaultSet
         const linkedHead = change.headProgramSetId ? linkedSet(week, row, change.headProgramSetId) : undefined
         if (!linkedHead || linkedHead.parentWeekPlanSetId != null || holdsProgramSet(week, added.programSetId)) {
+          return { ...base, status: 'skipped', reason: 'structural' }
+        }
+        if (linkedHead.isWarmup || change.headKind === undefined || weekHeadKind(week, linkedHead) !== change.headKind) {
           return { ...base, status: 'skipped', reason: 'structural' }
         }
         if (hasOwnStage(week, linkedHead, change.oldSetIds)) return { ...base, status: 'skipped', reason: 'structural' }
@@ -765,18 +834,16 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
         : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the stage the week still has linked to the old
-      // default's stage (never a head under that link), under a head that still has the
-      // old head's kind: a week that changed the head's kind itself (myo-reps against the
-      // old dropset) has stages of its own, and they stay. A null kind on a head that has
-      // stages reads as a dropset (resolveStageKind), on both sides.
+      // default's stage (never a head under that link), under a head that is still, as a
+      // whole, the old head's kind (headKindOf): a week that changed the head's kind itself
+      // (myo-reps against the old dropset, a warmup) has stages of its own, and they stay.
+      // A null kind on a head that has stages reads as a dropset, on both sides.
       if (change.defaultSet) {
         const linked = linkedSet(week, row, change.defaultSet.programSetId)
         if (!linked || linked.parentWeekPlanSetId == null) return { ...base, status: 'skipped', reason: 'structural' }
-        if (change.defaultSet.headKind !== undefined) {
-          const head = week.sets.find((s) => s.id === linked.parentWeekPlanSetId)
-          if (!head || resolveStageKind(head.stageKind ?? null) !== resolveStageKind(change.defaultSet.headKind)) {
-            return { ...base, status: 'skipped', reason: 'structural' }
-          }
+        const head = week.sets.find((s) => s.id === linked.parentWeekPlanSetId)
+        if (!head || change.defaultSet.headKind === undefined || weekHeadKind(week, head) !== change.defaultSet.headKind) {
+          return { ...base, status: 'skipped', reason: 'structural' }
         }
         return { ...base, status: 'applied', ops: [{ kind: 'removeSet', weekPlanId: week.id, setId: linked.id }] }
       }
