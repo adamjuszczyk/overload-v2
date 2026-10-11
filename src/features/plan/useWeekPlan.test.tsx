@@ -48,7 +48,10 @@ const copyWorkoutFromPreviousWeekMock = vi.fn()
 // what the screen gives them (no "only this week" argument any more).
 const swapWeekExerciseMock = vi.fn()
 const reorderWeekExercisesMock = vi.fn()
+// Chunk 31 — useRemoveSet's executor.
+const removeSetMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
+  removeSet: (...args: unknown[]) => removeSetMock(...args),
   swapWeekExercise: (...args: unknown[]) => swapWeekExerciseMock(...args),
   reorderWeekExercises: (...args: unknown[]) => reorderWeekExercisesMock(...args),
   planWeek: (...args: unknown[]) => planWeekMock(...args),
@@ -64,7 +67,7 @@ vi.mock('./weekPlanService', () => ({
 // convention every other PlanPage-adjacent test file already uses.
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek, useSwapWeekExercise, useReorderWeekExercises, useApplyAhead } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useRemoveSet, useSetDeload, useSetWeekDeload, useCopyWorkoutFromPreviousWeek, useSwapWeekExercise, useReorderWeekExercises, useApplyAhead } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -79,6 +82,7 @@ afterEach(() => {
   copyWorkoutFromPreviousWeekMock.mockReset()
   swapWeekExerciseMock.mockReset()
   reorderWeekExercisesMock.mockReset()
+  removeSetMock.mockReset()
   // The imported queryClient is ALSO a module-level singleton (see the
   // cache-scope tests below) — clear it so no test's seeded cache data
   // leaks into the next.
@@ -146,6 +150,71 @@ describe('useUpdateSet — networkMode: always (chunk 19)', () => {
     await waitFor(() => expect(result.current.isPaused).toBe(false))
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(updateSetMock).toHaveBeenCalledWith('set-1', { targetWeight: 100 })
+  })
+})
+
+// Chunk 31 (SPEC Plan screen [P1.1]: "A week is compared with its source as it is now"). Plan reads a
+// week's source from the meso-wide list (useAllWeekPlans), so an edit that changes a set's numbers or
+// removes a set must refresh that list as well as the week's own, or the next week would be compared
+// with the content from before the edit until the list went stale (5 minutes).
+describe('useUpdateSet / useRemoveSet — refresh the meso-wide list another week is compared with (chunk 31)', () => {
+  const invalidatedKeys = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey)
+
+  it('an edit of a set\'s numbers invalidates this week\'s list and the meso-wide one', async () => {
+    updateSetMock.mockResolvedValue(undefined)
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateSet('meso-1', 4), { wrapper })
+
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetWeight: 100 } })
+    })
+
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(['v2_allWeekPlans', 'meso-1']))
+    expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 4))
+    spy.mockRestore()
+  })
+
+  it('so does a failed one (the list is refreshed whichever way the edit ends)', async () => {
+    updateSetMock.mockRejectedValue(new Error('nope'))
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateSet('meso-1', 4), { wrapper })
+
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetRir: 1 } })
+    })
+
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(['v2_allWeekPlans', 'meso-1']))
+    spy.mockRestore()
+  })
+
+  it('removing a set invalidates this week\'s list and the meso-wide one', async () => {
+    removeSetMock.mockResolvedValue(undefined)
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useRemoveSet('meso-1', 4), { wrapper })
+
+    act(() => {
+      result.current.mutate('set-1')
+    })
+
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(['v2_allWeekPlans', 'meso-1']))
+    expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 4))
+    expect(removeSetMock).toHaveBeenCalledWith('set-1')
+    spy.mockRestore()
+  })
+
+  it('the list invalidated is the meso\'s own, not another meso\'s', async () => {
+    updateSetMock.mockResolvedValue(undefined)
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateSet('meso-7', 2), { wrapper })
+
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetWeight: 50 } })
+    })
+
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(['v2_allWeekPlans', 'meso-7']))
+    expect(invalidatedKeys(spy)).not.toContainEqual(['v2_allWeekPlans', 'meso-1'])
+    spy.mockRestore()
   })
 })
 

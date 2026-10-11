@@ -340,7 +340,14 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      // Chunk 31: another week is compared with THIS week's content as it is now
+      // (Plan's highlighting reads its source from the meso-wide list), so an edit
+      // here must refresh that list too — the same call every structural edit
+      // below already makes.
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 
@@ -385,7 +392,11 @@ export function useRemoveSet(mesoId: string, weekNumber: number) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      // Chunk 31: as useUpdateSet's — the meso-wide list is another week's source.
+      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+    },
   })
 }
 
