@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import type { WeekPlan } from '../../types'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
@@ -37,6 +37,10 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
   const [offer, setOfferState] = useState<PendingApplyAheadOffer | null>(null)
   const [outcome, setOutcome] = useState<OutcomeState | null>(null)
   const mutation = useApplyAhead(mesoId)
+  // B6: apply() is single-flight. The button's `disabled` follows
+  // mutation.isPending, which only updates on the next render, so two taps in
+  // one task both got through and ran the writes twice (an added set twice).
+  const applying = useRef(false)
 
   useEffect(() => {
     setOfferState(null)
@@ -64,10 +68,14 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
   }
 
   function apply() {
-    if (!offer) return
+    if (!offer || applying.current) return
+    applying.current = true
     mutation.mutate(
       { changes: offer.changes, weeks: offer.weeks },
       {
+        onSettled: () => {
+          applying.current = false
+        },
         onSuccess: (data: ApplyAheadResult) => {
           setOutcome({ summary: data.summary })
           setOfferState(null)
