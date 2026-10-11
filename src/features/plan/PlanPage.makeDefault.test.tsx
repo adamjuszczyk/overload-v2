@@ -629,8 +629,9 @@ describe('PlanPage — a swapped slot is paired by the source week\'s own links'
   })
 
   // The before-reading is the week as Plan held it when the confirm was tapped: after the call the page re-reads
-  // the source week, whose set now names ps-n1, and a chain made from that has no pair.
-  // Break: read the source week's links in onSuccess (after the refetch) instead of before the call -> no pair.
+  // the source week, whose set now names ps-n1, and a chain made from that has no pair. (This pins it against a
+  // refactor that reads the page's data once the call has answered, e.g. from a hook-level callback; the per-call
+  // callback here closes over the props of the render that tapped CONFIRM, which is the same reading.)
   it('the links before the call are what was on screen when the confirm was tapped, not what the refetch shows', () => {
     useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
     const { rerender } = renderPlanPage()

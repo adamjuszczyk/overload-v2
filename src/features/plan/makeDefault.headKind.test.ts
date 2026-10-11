@@ -142,6 +142,37 @@ describe('CASE 1 — the default makes a1 a warmup; the later week had made it a
   })
 })
 
+// The same with a staged head: the default turns a dropset (with a stage) into a warmup. The stage goes with the kind.
+describe('CASE 1b — the default turns a dropset head into a warmup; the later week made it myo-reps', () => {
+  const old = [dex('pe-1', 0, [dset('a1', { stageKind: 'dropset' }), dstage('s1', 'a1', 1)])]
+  const neu = [dex('pe-1', 0, [dset('a1', { isWarmup: true })])]
+
+  // Break: leave out the whole-kind equality of the warmup record (the own-stage guard alone cannot see this: the
+  // week's stage IS the old default's) -> the head becomes a warmup, and the stage stays under it because its removal
+  // is gated on the old kind.
+  it('writes nothing: the head is not turned into a warmup that keeps its stage', () => {
+    const week = headWeek({ stageKind: 'myo_reps' }, [{ programSetId: 's1' }])
+    const { group, result, after } = run(old, neu, week)
+    expect(types(group)).toEqual(['removeStage', 'warmup'])
+    expect(result).toMatchObject({ status: 'skipped', reason: 'structural' })
+    expect(warmupAndStaged(after)).toEqual([])
+  })
+
+  it('a week that still holds the old dropset head becomes a warmup and its stage goes', () => {
+    const { result, after } = run(old, neu, headWeek({ stageKind: 'dropset' }, [{ programSetId: 's1' }]))
+    expect(result).toMatchObject({ status: 'applied', ops: [{ kind: 'removeSet', setId: 'st1' }, { kind: 'updateSet', setId: 'h', changes: { isWarmup: true } }] })
+    expect(headsOf(after)).toMatchObject([{ isWarmup: true }])
+    expect(stagesOf(after, 'h')).toEqual([])
+  })
+
+  it('a week whose dropset head has a stage of its own as well: the old stage goes, the head stays a dropset with the stage that is its own', () => {
+    const { result, after } = run(old, neu, headWeek({ stageKind: 'dropset' }, [{ programSetId: 's1' }, { programSetId: null }]))
+    expect(result).toMatchObject({ status: 'applied', ops: [{ kind: 'removeSet', setId: 'st1' }] })
+    expect(headsOf(after)).toMatchObject([{ isWarmup: false }])
+    expect(stagesOf(after, 'h')).toHaveLength(1)
+  })
+})
+
 // ─── CASE 2 ──────────────────────────────────────────────────────────────────
 
 describe('CASE 2 — the default stages a1 as a dropset; the later week made it a warmup', () => {
@@ -344,6 +375,7 @@ describe('no combination of old default, new default and later week leaves a hea
     { name: 'dropset (no kind), s1', head: {}, stages: ['s1'] },
     { name: 'dropset, s1 s2', head: { stageKind: 'dropset' }, stages: ['s1', 's2'] },
     { name: 'myo-reps, s1 s2', head: { stageKind: 'myo_reps' }, stages: ['s1', 's2'] },
+    { name: 'myo-reps, s1 only', head: { stageKind: 'myo_reps' }, stages: ['s1'] },
     { name: 'dropset, a stage of its own', head: { stageKind: 'dropset' }, stages: [null] },
     { name: 'no kind, s1 and one of its own', head: {}, stages: ['s1', null] },
     { name: 'cluster, one of its own', head: { stageKind: 'cluster' }, stages: ['from-an-older-default'] },

@@ -589,6 +589,13 @@ describe('stageKind and warmup from a make-default — only where the week holds
       expect(one(staged, head({}, [{ programSetId: 's1' }, { programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
     })
 
+    // The whole-kind equality, not only the guard above, keeps this week out: its stages ARE the old default's, so the guard
+    // passes, but the removal of those stages is gated on the same kind (it is not a dropset any more) and would not take
+    // them. Turning the head into a warmup would leave a warmup that is staged.
+    it('a head the week made myo-reps is not turned into a warmup, though its stages are all the old default\'s', () => {
+      expect(one(staged, head({ stageKind: 'myo_reps' }, [{ programSetId: 's1' }, { programSetId: 's2' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
     it('a record that lists no old stages cannot tell any stage is the old default\'s: a staged head is left alone', () => {
       const noStages: ChangeRecord = { ...staged, defaultSet: { programSetId: 'a1', headKind: 'dropset' } } as ChangeRecord
       expect(one(noStages, head({}, [{ programSetId: 's1' }]))).toMatchObject({ status: 'skipped', reason: 'structural' })
