@@ -229,6 +229,7 @@ export function useAddSet(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: async ({
       workoutDayId,
       weekPlanId,
@@ -370,6 +371,7 @@ export function useAddStage(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({
       weekPlanId,
       programExerciseId,
@@ -393,6 +395,7 @@ export function useAddStage(mesoId: string, weekNumber: number) {
 export function useRemoveSet(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: (id: string) => removeSet(id),
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: qk })
@@ -414,6 +417,7 @@ export function useCopyFromPreviousWeek(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: () => copyFromPreviousWeek(user!.id, mesoId, weekNumber),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
@@ -436,6 +440,7 @@ export function useCopyWorkoutFromPreviousWeek(mesoId: string, weekNumber: numbe
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({
       workoutDayId,
       weekPlanId,
@@ -483,6 +488,7 @@ export function useSwapWeekExercise(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: (params: { weekPlanId: string; programExerciseId: string; replacementExerciseId: string }) =>
       swapWeekExercise({ userId: user!.id, ...params }),
     onSuccess: () => {
@@ -496,6 +502,7 @@ export function useAddWeekExercise(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: (params: { weekPlanId: string; workoutDayId: string; exerciseId: string; position: number }) =>
       addWeekExercise({ userId: user!.id, ...params }),
     onSuccess: () => {
@@ -508,6 +515,7 @@ export function useAddWeekExercise(mesoId: string, weekNumber: number) {
 export function useRemoveWeekExercise(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({ weekPlanId, programExerciseId }: { weekPlanId: string; programExerciseId: string }) =>
       removeWeekExercise(weekPlanId, programExerciseId),
     onSuccess: () => {
@@ -520,6 +528,7 @@ export function useRemoveWeekExercise(mesoId: string, weekNumber: number) {
 export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({
       weekPlanId,
       moves,
