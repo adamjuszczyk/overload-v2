@@ -107,3 +107,14 @@ export function flushSyncQueue(): Promise<void> {
   })()
   return inFlight
 }
+
+// B3: true while the queue still holds a write for this session (one of its
+// set logs, or the session row itself). A finish uses it after flushing: any
+// left means the server doesn't have the session's full logs yet.
+export async function hasQueuedWritesFor(sessionId: string): Promise<boolean> {
+  const items = await db.sync_queue.toArray()
+  return items.some((item) => {
+    const payload = item.payload as { id?: string; session_id?: string } | null
+    return payload?.session_id === sessionId || (item.table === 'v2_sessions' && payload?.id === sessionId)
+  })
+}
