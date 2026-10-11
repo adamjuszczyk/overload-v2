@@ -107,6 +107,10 @@ interface SyncQueueItem {
   // after the sets queued before it have been sent (B3). Plain field, not an
   // index: no schema bump, and items queued before this shipped lack it.
   recomputeFinish?: boolean
+  // Set once `attempts` reaches MAX_SYNC_ATTEMPTS (useSyncQueue.ts): the item
+  // is no longer retried on its own but stays queued, holding back later
+  // writes to its record, until the user taps retry. Plain field, no bump.
+  gaveUp?: boolean
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────

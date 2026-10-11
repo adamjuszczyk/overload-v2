@@ -4,6 +4,7 @@ import type { ScheduleType } from './referenceByExercise'
 import { useActiveSession, useReopenSession, useUpdateSessionNote } from './useSession'
 import { countCompletedSets } from './countCompletedSets'
 import TodayHeader from './TodayHeader'
+import SyncFailedNotice from '../offline/SyncFailedNotice'
 
 // Chunk 25 — extracted out of TodayPage.tsx (previously a local, non-
 // exported function there, "Extracted so hooks run unconditionally")
@@ -64,6 +65,7 @@ export default function CompletedTodayScreen({
   return (
     <div className="px-4 pt-8 pb-6">
       <TodayHeader label={todayLabel} />
+      <SyncFailedNotice sessionId={basicSession.id} className="mt-4" />
       {onBack && (
         <button
           onClick={onBack}

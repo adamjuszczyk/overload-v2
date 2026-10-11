@@ -23,6 +23,7 @@ import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
+import SyncFailedNotice from './features/offline/SyncFailedNotice'
 import { useSeedDefaultExercisesIfEmpty } from './features/library/useExercises'
 
 function SyncManager() {
@@ -126,7 +127,9 @@ export function AppRoutes() {
               opening /coach directly still resolves to *something*
               (COACH-ANALYSIS-SPEC.md §3), it just isn't in Nav for
               anyone else. */}
-          <Route path="/coach"    element={<CoachPage />}    />
+          {/* A Coach note with no session that can't sync shows here (the
+              Coach code itself is frozen). Renders nothing otherwise. */}
+          <Route path="/coach"    element={<><SyncFailedNotice sessionId={null} className="px-4 pt-4" /><CoachPage /></>} />
           <Route path="*" element={<Navigate to="/today" replace />} />
         </Routes>
       </main>

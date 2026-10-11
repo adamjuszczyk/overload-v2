@@ -40,6 +40,7 @@ import WorkoutSidebarSheet from './WorkoutSidebarSheet'
 import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
+import SyncFailedNotice from '../offline/SyncFailedNotice'
 import { formatRestTime } from '../../lib/formatRestTime'
 
 interface GymSessionProps {
@@ -483,6 +484,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
   return (
     <div className="pb-24">
+      {/* A write for this session that can't sync (renders nothing otherwise). */}
+      <SyncFailedNotice sessionId={sessionId} className="px-4 pt-4" />
       {/* Session header */}
       <div className="px-4 pt-8 pb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">

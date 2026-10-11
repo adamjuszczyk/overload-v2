@@ -6,6 +6,7 @@ import type { HistorySetRow } from './historyService'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { FORM_SCALE, ENERGY_SCALE, PUMP_SCALE } from '../gym/ratingScales'
+import SyncFailedNotice from '../offline/SyncFailedNotice'
 import type { MuscleGroup } from '../../types'
 
 const MUSCLE_LABEL: Record<MuscleGroup, string> = {
@@ -90,6 +91,7 @@ export default function SessionDetail({ sessionId, onBack }: Props) {
   return (
     <div className="px-4 pt-8 pb-24">
       {backBtn}
+      <SyncFailedNotice sessionId={sessionId} className="mb-4" />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-1">
