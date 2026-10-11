@@ -268,6 +268,41 @@ describe('PlanPage SETS — the numbers that differ from last week (a week-depen
     expect(removedLines()).toHaveLength(0)
   })
 
+  it('a staged working set added in week 5 is marked whole with its stages (SETS); in STRUCTURE only its stage rows are added', () => {
+    const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
+    mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'b4-', 1)), plan(5, [BENCH], [...workSets('pe-bench', 'b5-', 1), ...staged])]
+    renderPlan(5)
+
+    expect(mark(wholeRow('02'))).toBe('added')
+    expect(markedCells('02')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
+    // Its two stage rows: every number on them too, though a stage's newness is not the SETS view's own mark.
+    const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
+    expect(stageRows).toHaveLength(2)
+    for (const row of stageRows) {
+      const c = cellsOf(row)
+      expect([mark(c.weight), mark(c.reps), mark(c.rir)]).toEqual(['changed', 'changed', 'changed'])
+      expect(mark(row.parentElement)).toBeNull() // no row-level mark on a stage in SETS
+    }
+    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
+    cleanup()
+
+    // STRUCTURE: the working set is not that view's to mark; its stages are rows added.
+    renderPlan(5)
+    openStructureView()
+    expect(mark(wholeRow('02'))).toBeNull()
+    expect(screen.getAllByText('↳').map((arrow) => mark(arrow.parentElement!.parentElement))).toEqual(['added', 'added'])
+  })
+
+  it('the stages of a working set removed in week 5 go with it: one dim row in SETS, none of their own, and nothing in STRUCTURE', () => {
+    const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
+    mockState.all = [plan(4, [BENCH], [...workSets('pe-bench', 'b4-', 1), ...staged]), plan(5, [BENCH], workSets('pe-bench', 'b5-', 1))]
+    renderPlan(5)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02100kg × 8  RIR 2'])
+    openStructureView()
+    expect(allMarks()).toHaveLength(0)
+    expect(allRemoved()).toHaveLength(0)
+  })
+
   it('a stage\'s and a warmup\'s numbers are marked where they differ from their counterpart\'s', () => {
     const base = (warmW: number, stageW: number) => [
       wset('w', 'pe-bench', 1, { isWarmup: true, targetRir: null, targetWeight: warmW, repMin: 10, repMax: 10 }),

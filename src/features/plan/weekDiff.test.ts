@@ -286,6 +286,13 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     expect(setFlags(d, 'e', 'w2a')?.added).toBe(true)
   })
 
+  it('the stages of a set the week no longer has go with it: one removed set, no removed stages of their own', () => {
+    const source = [wset('s1', 'e', 1), wset('s2', 'e', 2, { stageKind: 'dropset' }), stage('s2a', 's2', 'e', 1), stage('s2b', 's2', 'e', 2)]
+    const d = diffBetween([ex, [wset('w1', 'e', 1)]], [ex, source])
+    expect(flagsOf(d, 'e').removedHeads.map((r) => [r.ordinal, r.stageIndex])).toEqual([[2, null]])
+    expect(flagsOf(d, 'e').removedStages.size).toBe(0)
+  })
+
   it('an added exercise has nothing inside it compared, and a removed one leaves only its line', () => {
     const d = diffBetween([[pe('n', 'n', 0)], sets('n', 2)], [[pe('x', 'x', 0)], sets('x', 2)])
     expect(flagsOf(d, 'n').added).toBe(true)
