@@ -22,8 +22,6 @@ const MAX_SYNC_ATTEMPTS = 3
 
 export function useSyncQueueRunner() {
   const isOnline = useOnlineStatus()
-  const removePending = useOfflineStore((s) => s.removePending)
-  const addFailed = useOfflineStore((s) => s.addFailed)
   // null, not isOnline — "not yet observed", distinct from a real online/
   // offline reading. Found by adversarial review: seeding this from
   // isOnline itself meant a cold start that begins already online (the PWA
@@ -40,16 +38,14 @@ export function useSyncQueueRunner() {
 
   useEffect(() => {
     if (isOnline && !prevOnline.current) {
-      flushSyncQueue(removePending, addFailed)
+      flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
     }
     prevOnline.current = isOnline
-  }, [isOnline, removePending, addFailed])
+  }, [isOnline])
 }
 
-async function flushSyncQueue(
-  removePending: (id: string) => void,
-  addFailed: (id: string) => void,
-) {
+async function flushOnce() {
+  const { removePending, addFailed } = useOfflineStore.getState()
   const items = await db.sync_queue.orderBy('createdAt').toArray()
   for (const item of items) {
     const payload = item.payload as { id?: string }
@@ -82,4 +78,32 @@ async function flushSyncQueue(
 
   // Refresh session data so UI reflects the synced logs
   queryClient.invalidateQueries({ queryKey: ['v2_session'] })
+}
+
+// B3: only one flush runs at a time. A flush reads the queue, then deletes
+// each item after its upsert; a second flush started in that window read the
+// same items and replayed them, so an old write (a session's in_progress
+// upsert) could land after the newer one (its completion). A call made while
+// one runs does not start a second: it asks for one more pass after the
+// current one (items queued meanwhile) and shares the running promise, so
+// awaiting it still means "the queue as it was when I called is sent".
+let inFlight: Promise<void> | null = null
+let passRequested = false
+
+export function flushSyncQueue(): Promise<void> {
+  if (inFlight) {
+    passRequested = true
+    return inFlight
+  }
+  inFlight = (async () => {
+    try {
+      do {
+        passRequested = false
+        await flushOnce()
+      } while (passRequested)
+    } finally {
+      inFlight = null
+    }
+  })()
+  return inFlight
 }
