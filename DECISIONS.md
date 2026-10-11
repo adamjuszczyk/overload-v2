@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after the B1/B2 fixes and the docs merge; header updated the same day by the SPEC change 1.1 planning session. Phase 1 is closed out (chunks 1–26 merged and live, migrations through 037); nothing is being built. SPEC change 1.1 is planned in TASKS-1.1.md (chunks 27–35, not started). Adam answered G16–G34 and P1 (entry 80), then G35–G44 and P4 (entry 81). One gap, G45, waits on Adam in TASKS-1.1 and isn't repeated here. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules, which aren't built).*
+*Rewritten at every chunk boundary. Last: 2026-10-11, after chunk 33 (#70, merged by Adam): revision 1.1 is complete — chunks 27–35 and migrations 038–040 merged and live, with one known gap (106: no apply-ahead offer after making the default). The step 5 review is Adam's, against a checklist generated from SPEC.md; the [P1.1] rules are now built (except the gap).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -10,6 +10,16 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **85** — START when the program has no schedule. Provisional: disabled, with a one-line reason. Blocks: nothing.
 - **86** — Plan for a run with no schedule. Provisional: "NO WORKOUTS SCHEDULED" and "Programs →". Blocks: nothing.
 - **87** — the deload rules in Plan. Provisional: one read-only line under MARK WEEK AS DELOAD. Blocks: nothing.
+- **90** — after START on the Programs page, the app still opens the run's priorities, now read-only. Provisional: leave it (it shows what the run copied); alternative: open Plan. Blocks: nothing.
+- **91** — how marks show in Plan's priorities. Provisional: a small accent label on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing. Blocks: nothing.
+- **94** — Plan while its reads are out. Provisional: the existing spinner until the programs read (and, on a sequence run, the sequence, week plans and last event) answer; weekday runs also wait for programs now. Blocks: nothing.
+- **95** — Plan when a read fails with nothing to show. Provisional: "COULDN'T LOAD PLAN" / "Check your connection and try again." (the priorities screen's error markup); nothing is planned. Blocks: nothing.
+- **98** — Plan's SETS / STRUCTURE details. Provisional: opens on SETS; the choice is kept across week/workout switches, not across reloads; a STRUCTURE set row shows number, kind marker and ⋯ only; a stage row has no ⋯ in SETS; an empty workout's SETS view says "NO EXERCISES IN THIS DAY" (add from STRUCTURE). Blocks: nothing.
+- **99** — "Make this week the new default": does an empty (non-deload) session count as the week's content? Provisional: no — skipped like a deload, so that workout keeps its current default (matches how copying skips empty weeks). Changes data, so say if you want the other reading; nothing has used the action yet. Blocks: nothing.
+- **102** — how run-wide fields show in STRUCTURE. Provisional: tag-style chips under the exercise or set where set (`REST 2min 45s`, `TEMPO 3-1-1-0`, `UNIT LBS` only when it differs from Settings, `STAGE REST 20s`); one EVERY WEEK label over each group; exercise ⋯ order swap/move/warmups, EVERY WEEK group, UNIT, remove; the routine as a card above the exercises (text-only on a past week, absent if empty). Blocks: nothing.
+- **104** — how differences show. Provisional: a changed number cell gets an accent border/muted fill; an added set marks its number and reps (weight/RIR only if last week's set at that position differs or is missing; never on week 1); an added/moved exercise's header is accent on the muted band; a removed exercise is a dim struck-through line in STRUCTURE after the exercise it followed (a swap: old directly above new); a removed working set shows in SETS with what it held, a removed warmup/stage in STRUCTURE; a changed kind puts a dot on the set's ⋯; the unit isn't compared. On a stable run, a set the default has but last week lacks gets weight/RIR marked. Blocks: nothing.
+- **109** — chunk 33's wording and placement. Provisional: START disabled with "Schedule at least one workout to start" under it (planner, and the Programs sheet's START RUN; the row's START still opens the sheet); Plan: "NO WORKOUTS SCHEDULED" + "Programs →"; deload line "Deload rules (this run's | your default): …" under the deload button (also when it reads UNMARK; none on a past week); refusal "THIS PROGRAM IS A RUN'S COPY" with "← Back to programs". Blocks: nothing.
+- **110** — two program-tab conveniences have no one-to-one equivalent in Plan: one-tap ALL SETS rep target, and turning an existing set into a warmup (the per-row WARMUP toggle was already dropped from the week on 2026-10-10). Both outcomes stay reachable per set (or delete + ADD WARMUP SETS), then Make default. Provisional: leave as is. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -42,6 +52,124 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 108 TASKS-1.1 chunk 33 merged: the program tab is removed (#70)
+- What: chunk 33, code only. Passed review first time: reviewer's checks green; independent review (own worktree) caught all 14 adversarial breaks and confirmed every data-changing capability of the old tab is reachable (Structure, Make default) or fixed for the run per SPEC, and that dropping StepVolume's removedAt filter is safe (only the planner mounts it; it refuses run copies; only `v2_make_week_default` writes `removed_at`, to run copies). Planner tests changed only where the chunk removes or requires behaviour.
+- Answer: merged by Adam (`a75d681`), all checks green. Provisional 109, 110 (D31). Pre-existing, not changed: an override of `{}` (CUSTOM with every rule off) reads as null on the client, so Plan's line, marking and the planner treat it as "use my default"; Plan's no-schedule line doesn't wait for the sequence read (can flash briefly, as on master).
+- Date: 2026-10-11
+
+### 107 TASKS-1.1 chunk 32's code merged without the apply-ahead offer (#69)
+- What: chunk 32's code. Review history: first push failed (false swap; warmup/working mix-up); retry fixed them but a behaviour bug remained (a set could become warmup and staged) → blocking 105; Adam allowed one final round; that round failed again (duplicate stage_index; stale stage kind) → shipped per 105 option (b) without the offer (known gap 106). The shipped code: the action, confirm, RPC, refresh, toasts, StepVolume's removedAt filter; `applyAhead.ts`, `useWeekPlan.ts`, `weekPlanService.ts`, `ApplyAheadOffer.tsx` byte-identical to master. Absence test (real hooks and banner) proves no write to any other week; gating/confirm/error/networkMode/filter break-proven; reviewer's own break caught.
+- Answer: merged by the reviewer, `243410a`. Display choices (provisional, D31): labels MAKE THIS WEEK/CYCLE THE NEW DEFAULT; confirm "Make week N the new default?" / MAKE DEFAULT; toast "Week N is now the default." (+ a note when deload or empty sessions kept their default).
+- Date: 2026-10-11
+
+### 106 Known gap: no "Apply this change to planned weeks ahead" after "Make this week the new default" (chunk 32)
+- What: SPEC (Weeks and copying [P1.1]) says making the default "then offers the existing Apply this change to planned weeks ahead … only where they still match the old default". Chunk 32 ships without that offer, per Adam's answer to 105: the fix round (933f2a1) passed its own claims but the independent review found two more wrong writes (two stages added under one head in one apply could share a stage_index; a stage added to a stageless head that still stores an old stage kind kept that kind instead of the new default's). Later weeks already planned keep their content; weeks planned afterwards start from the new default.
+- Answer: shipped without the offer (Adam, 2026-10-11, option b of 105). The removed mapping is recoverable from `build/chunk-32` at `933f2a1` (diffDefault, pointed ops, exact-link swap pairing, whole-head-kind gates) for a later revision; the two findings above are what it still needs.
+- Date: 2026-10-11
+
+### 105 Chunk 32's code failed review twice: apply-ahead can write a set that is both warmup and staged
+Severity: blocking
+Chunk: TASKS-1.1 chunk 32 (code; branch `build/chunk-32` at `066a261`, not merged; migration 040 is merged and live and unaffected)
+**Ask:** Allow one more fix round for chunk 32's code (a behaviour fix plus its proofs), or decide otherwise?
+**Options:**
+(a) One more round by the same builder, scoped to the bug below: treat a head's kind as ONE part (working / warmup / staged + resolved stage kind). A `warmup`, `stageKind` or `addStage` record applies to a later week only where that head's whole kind still equals the old default's; compare stage kinds resolved (null = dropset) everywhere; pair a swapped slot's sets by the exact pre-call links (source set → old program set → new program set) instead of ordinal within kind. Then the reviewer re-verifies as before.
+(b) Ship chunk 32 without the apply-ahead offer after making the default (the action alone; later planned weeks stay as they are and pick the default up only when re-planned). Deviates from SPEC ("it then offers the existing Apply this change to planned weeks ahead"), so it's yours to accept.
+(c) Merge as is. Not recommended: it can write invalid data to planned weeks.
+**Recommendation:** (a). The fix is local (three record branches in `applyAhead.ts` plus the swapped-slot pairing in `makeWeekDefault.ts`), the rest of the chunk passed two independent reviews, and (b) drops a SPEC behaviour.
+**Blocked until answered/done:** chunk 32's code merge, and chunk 33 (it removes the program tab, whose stable-volume editing chunk 32 replaces).
+**Answer:** (Adam, 2026-10-11) (a): one more fix round by the same builder, as described. If that round fails again for any reason, ship chunk 32 without the apply-ahead offer after "Make this week the new default" (option b), note it in DECISIONS as a known gap, and continue with chunk 33. Don't come back to Adam for this chunk again.
+**Evidence:**
+What happened:
+- First review (two independent lenses) failed the first push on two data bugs: a "remove the last exercise, add one" read as a swap (moving the removed exercise's weights onto the new one in later weeks), and a swapped slot's sets paired across warmup/working. Plus smaller gaps. The builder's one retry fixed all of them; the reviewer's own break (position-only swap pairing) fails 8 tests; the independent retry pass confirmed every retry claim (13 of 14 breaks caught, the 14th equivalent).
+- The same pass found a bug the first review missed (present since the first push): the `warmup`, `stageKind` and `addStage` records each check only the field they write. Scratch cases: (1) old default makes head h a warmup; a later week had turned h into a dropset with its own stage → it gets `isWarmup: true` (a warmup with a dropset kind and a stage). (2) old default stages h as a dropset; a later week had made h a warmup → it gets `stageKind: 'dropset'` plus a stage under the warmup. (3) old default adds a stage to a dropset; a later week changed h to myo_reps, or to a warmup → a stage is added under it. The app never otherwise allows a set that is both warmup and staged (`updateSet` notes PlanPage never offers WARMUP on a staged head).
+- Minor, same pass: `stageKind` compares raw kinds while `removeStage` treats null as dropset, so half a head's change can apply; a swapped slot that deleted a middle set pairs later weeks' sets by order, moving rep targets (and so the weights shown against them) onto neighbouring sets; a swap that was then moved is read as removal + addition (deliberate, documented).
+A competent default would: send it back for another fix — doesn't apply because your rule says a second failure that is a behaviour bug escalates as blocking.
+Cost of deferral: n/a (blocking). Nothing is live: the action isn't on master, so no planned week has been written by it.
+
+### 103 TASKS-1.1 chunk 31 merged: differences from the week's source highlighted (#68)
+- What: chunk 31, code only. First independent review failed: an added set was "marked whole" (weight and RIR highlighted on week 1, against G34, and on stable weeks against "weights and RIR against last week"); several rules unproven (stable weights source skipping deload/empty weeks, a stage's RIR and reps, a partly-deload week). The one retry fixed and proved them; 51 earlier breaks re-run, all caught; the reviewer's own break caught.
+- Answer: merged by the reviewer, `f07da39`. Provisional 104 (D31). Note: warmups are in the set position (G23 reading), so a warmup added above shifts every later set's comparison.
+- Date: 2026-10-11
+
+### 101 TASKS-1.1 chunk 30 merged: run-wide fields in Plan's STRUCTURE view (#67)
+- What: chunk 30, code only. Independent review of the first push: 40 of 47 adversarial breaks caught; one regression (shared `usePrograms.ts` hooks stopped returning their invalidation promise, so the link toggle's `isPending` guard cleared early, in the planner too). The one retry fixed it and added the missing proofs (a superset member's set rests, run-wide writes on a sequence run's repeated workout, the week-cache restore); 129 breaks re-run, all caught; the reviewer's own two breaks caught.
+- Answer: merged by the reviewer, `adc059f`. Provisional 102 (D31). Note for Adam: a swapped-in exercise keeps the replaced row's superset block (G35 reading), so editing that block's round rests, or linking the swapped-in exercise to a neighbour, changes the run's grouping (run-wide by SPEC).
+- Date: 2026-10-11
+
+### 100 TASKS-1.1 chunk 32's migration 040 merged (#66)
+- What: `v2_program_sets.removed_at`, `v2_plan_week` skipping removed sets, `v2_make_week_default`. Builder's battery (114 verdicts, 29 break variants) re-run by the reviewer; D29 scratch-copy check re-run (no row changes); two independent reviewers with their own fixtures (correctness; safety, RLS, atomicity, concurrency) found nothing blocking. Empty sessions skipped like deload (provisional 99).
+- Answer: merged by the reviewer under D29, `632959d`. Deploy succeeded (Supabase Preview); live probe 040.json and live check-embeds 30/30 pass.
+- Date: 2026-10-10
+
+### 99 Make-default: an empty normal session is skipped like a deload (deferred)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 32 (migration 040)
+**Ask:** When a stable week is made the new default and one of its workouts' sessions is normal but has no exercises, should that empty session become the workout's default (emptying it), or be skipped so the workout keeps its current default?
+**Options:** (a) skip it, like a deload; in a sequence cycle take the first non-deload, non-empty occurrence; a week where every workout is skipped is refused. (b) Use it: the workout's default becomes empty (its rows soft-removed).
+**Recommendation:** (a): `v2_plan_week` already skips empty occurrences as a copy source (DECISIONS 42), and (a) can't wipe a workout's default by accident.
+**Blocked until answered/done:** nothing; 040 is built with (a). Flipping it is one predicate in `v2_make_week_default`, and nothing has used the action yet.
+**Answer:** provisional (a), until you change it.
+**Evidence:**
+What happened: SPEC says "Deload sessions are excluded: their workouts keep the current default" and "this week's content becomes the run's default"; it's silent on an empty normal session. The 040 builder first read "normal" as "not deload" only, so an empty session would empty the default.
+A competent default would: match the copy rule (skip empty) — doesn't apply as a silent default because it changes what's written to the run's copy.
+Cost of deferral: if you choose (b), one predicate in a new migration (function replace), before or after the action is first used; defaults already made under (a) stay.
+
+### 97 TASKS-1.1 chunk 29 merged: Plan's week in SETS / STRUCTURE views; COMPACT removed (#65)
+- What: chunk 29, code only. Handlers unchanged (builder's 30-flow master/branch replay byte-identical). Independent review: scope and capabilities clean; 54 of 60 reviewer breaks caught on the first push; the tests-only retry (interrupted once by a container restart, resumed) pinned the other 6, two re-checked by the reviewer.
+- Answer: merged by the reviewer, `3a94ae5`. Provisional 98 (D31). COMPACT's removal supersedes D6's compact view (entry 80).
+- Date: 2026-10-10
+
+### 96 TASKS-1.1 chunk 35 merged: a sequence run's current cycle (#64)
+- What: chunk 35, code only. First review failed (a cold load could auto-plan the calendar week on a sequence run before programs loaded; COPY LAST CYCLE and per-control past-cycle gates were unproven; a failed read spun forever). The builder's one retry fixed all three; the reviewer's breaks (cold-load wait removed: 4 fail; copy gate at cycle−1: 2 fail) confirm.
+- Answer: merged by the reviewer, `f5fe217`. Provisional 94, 95 (D31). Not changed (pre-existing class): an open weight editor still commits after a refetch moves the cycle past it.
+- Date: 2026-10-10
+
+### 93 TASKS-1.1 chunk 34 merged: stable weeks pair weights by set kind (039, #63)
+- What: chunk 34, migration 039 only (`v2_plan_week` replaced). Passed review first time: the builder's scratch proof re-run by the reviewer, plus an independent fixture of 7 adversarial cases; 039 changed no existing row.
+- Answer: merged by the reviewer under D29, `1c81818`. Deploy succeeded (Supabase Preview); live check-embeds 30/30.
+- Date: 2026-10-10
+
+### 92 TASKS-1.1 chunk 28 merged: priorities view-only in Plan (#62)
+- What: chunk 28, code only. Passed review first time (reviewer re-ran every check and one break: a mark-named button beside a label fails 7 tests).
+- Answer: merged by the reviewer, `0304a23`. Provisional display choices 90 and 91 (D31).
+- Date: 2026-10-10
+
+### 91 Plan's priorities: how a mark shows (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 28
+**Ask:** How does a run's mark show on Plan's view-only priorities screen?
+**Options:** (a) the accent mono label Plan rows use for a set's kind, on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing (the group's label and the "X without Y" summary carry it). (b) The same, plus an "INHERITED: FOCUS" caption on inheriting subgroups.
+**Recommendation:** (a): the standing UI rule says an unset feature shows nothing.
+**Blocked until answered/done:** nothing; chunk 28 built (a).
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: SPEC says "Plan shows them view-only" and nothing about inherited marks; the old editor showed an INHERITED caption.
+A competent default would: pick (a) and continue, which D31 says to do.
+Cost of deferral: one line and its absence test.
+
+### 90 After START, the Programs page opens the run's priorities, now read-only (provisional, D31)
+Severity: deferred
+Chunk: TASKS-1.1 chunk 28
+**Ask:** After START on the Programs page, should the app still open `/plan/priorities` (now read-only), or open Plan?
+**Options:** (a) leave it: it shows the marks the run copied. (b) Open `/plan`.
+**Recommendation:** (a): it's not wrong, and changing it is outside chunk 28's scope and changes an existing test.
+**Blocked until answered/done:** nothing.
+**Answer:** provisional under D31: (a), until you change it.
+**Evidence:**
+What happened: `ProgramsPage.handleStartMeso` navigates to `/plan/priorities` after START (pinned by `ProgramsPage.test.tsx`); that screen used to be where a new run's marks were set. Found by chunk 28's builder.
+A competent default would: leave it and continue (D31).
+Cost of deferral: one navigate call and its test.
+
+### 89 TASKS-1.1 chunk 27 merged: "only this week" removed (code #60, migration 038 #61)
+- What: chunk 27, code first then 038 (P3). The first review failed (a stage-copy write no test pinned; a swap/reorder on a row the week no longer has stopped failing before writing); the builder's one retry fixed both.
+- Answer: merged by the reviewer. Code `1f6816f`; 038 `70399ca` under D29 (check-migration exit 1, function only; replay, embeds and the scratch row check green). 038's deploy succeeded (Supabase Preview); live check-embeds 30/30. No live-app check: this container can't reach the app (31); it's in Adam's step 5 review.
+- Date: 2026-10-10
+
+### 88 G45: a set's own rest on a set with no program set of its own exercise
+- What: TASKS-1.1 G45: can a set added in a week, or a set of an added or swapped-in exercise, have its own rest?
+- Answer (Adam): no. "A set with no program set of its own exercise has no own rest; it uses its exercise's rest, then the global rest, as today" (option (c)). In SPEC Rest [P1.1] and TASKS-1.1 chunk 30.
+- Date: 2026-10-10
 
 ### 87 Deload rules in Plan: where and how they show (provisional, D31)
 Severity: deferred

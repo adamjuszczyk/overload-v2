@@ -323,6 +323,10 @@ rule independent and optional:
   set's own rest, superset rest and stage rest are shown and edited in the
   week's Structure view, labelled "every week". Per-week rest is a later
   revision.
+  - [P1.1] A set with no program set of its own exercise (a set added in a
+    week; the sets of an exercise added or swapped in during a week) has no
+    own rest: it uses its exercise's rest, then the global rest, as today
+    (Adam, G45).
 
 ### Supersets [P1]
 
