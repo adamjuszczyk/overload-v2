@@ -1643,8 +1643,29 @@ export async function unmarkSessionDeload(userId: string, weekPlanId: string): P
     return 'alreadyStarted'
   }
 
-  await applyDeloadRestore(userId, weekPlanId, current.deloadRestore)
+  // B5: checked before anything is deleted, so a failed read leaves the
+  // session as it was.
+  const snapshot = await withoutGoneProgramSets(current.deloadRestore)
+  await applyDeloadRestore(userId, weekPlanId, snapshot)
   return 'restored'
+}
+
+// The saved pre-deload copy names the program set each planned set came from.
+// One deleted since marking would break the foreign key on insert, after the
+// session's sets were already deleted (the session left without sets, the copy
+// kept, every retry failing the same way). A set whose program set is gone is
+// restored without the link, as the database does to a live row (on delete set
+// null). Done once, up front, in chunks to keep the request short.
+async function withoutGoneProgramSets(snapshot: DeloadRestoreEntry[]): Promise<DeloadRestoreEntry[]> {
+  const named = [...new Set(snapshot.map((e) => e.programSetId).filter((id): id is string => id != null))]
+  if (named.length === 0) return snapshot
+  const existing = new Set<string>()
+  for (let i = 0; i < named.length; i += 50) {
+    const { data, error } = await supabase.from('v2_program_sets').select('id').in('id', named.slice(i, i + 50))
+    if (error) throw error
+    for (const row of (data ?? []) as Array<{ id: string }>) existing.add(row.id)
+  }
+  return snapshot.map((e) => (e.programSetId != null && !existing.has(e.programSetId) ? { ...e, programSetId: null } : e))
 }
 
 // Week-level shortcut (chunk 21's own week action, extended): "the
