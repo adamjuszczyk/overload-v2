@@ -212,6 +212,8 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   useUpdateProgramSetStageRest: () => ({ mutate: updateStageRestMutate, isPending: false }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [EX_PRESS] }) }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: mockState.all.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.all, isLoading: false }),

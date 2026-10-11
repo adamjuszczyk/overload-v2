@@ -31,6 +31,8 @@ vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays }),
   useSequenceItems: () => ({ data: sequenceItems, isError: errored.items }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useAllWeekPlans: () => ({ data: allWeekPlans, isError: errored.plans }),
 }))

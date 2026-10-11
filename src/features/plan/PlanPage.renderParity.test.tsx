@@ -262,6 +262,8 @@ vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [decoyExercise], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: [weekPlan], isLoading: false }),
   // Chunk 8 — the meso-wide history query PlanPage now reads for its

@@ -142,6 +142,8 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 // views. This is the only change to this file; PlanPage.sequenceCycle.test.tsx
 // covers the current cycle itself.
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   // Chunk 25 review fix 2 — properly week-aware (filters allPlans by the
   // passed weekNumber) so a test can advance to cycle 2 (NEXT WEEK) and see

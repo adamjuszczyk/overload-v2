@@ -56,6 +56,8 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('./useSequenceCurrentCycle', () => ({
   useSequenceCurrentCycle: () => ({ cycle: 1, failed: false }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: weekPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: weekPlans, isLoading: false }),
