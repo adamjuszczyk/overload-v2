@@ -525,34 +525,31 @@ export function useCompleteSession() {
       pumpRating?: PumpRating | null
     }) => {
       const queueFinish = async () => {
-        // completed_at derived the same way the online path derives it
-        // (deriveCompletedAt, sessionCompletion.ts) — from this session's
-        // own cached set_logs, not wall-clock time. Real, confirmed gap in
-        // this specific path (not silently assumed correct): the Dexie
-        // set_logs cache only ever gets rows written to it by useLogSet's
-        // *offline* branch — the online branch (the common case) never
-        // writes to Dexie at all, and primeOfflineCache explicitly excludes
-        // the current session (.neq('id', sessionId), it's priming the
-        // *reference* cache for other sessions). So a session logged partly
-        // or fully online, then completed offline with zero further offline
-        // logs, has nothing here to derive from and correctly falls back to
-        // null ("unavailable") rather than a wrong value — never
-        // re-introduces the original inflated-duration bug, but is a real,
-        // narrower fix than the online path gets. See CONTEXT.md.
+        // completed_at and status derived the same way the online path derives
+        // them (deriveCompletedAt / shouldClassifyAsSkipped,
+        // sessionCompletion.ts) — from this session's set logs, not
+        // wall-clock time. What this device can see is a provisional answer
+        // (see knownLogs below); the replay re-derives both from the server.
         // createdAt (the sync_queue item's own timestamp, used for FIFO
         // replay ordering in useSyncQueue.ts) is deliberately real wall-clock
         // time regardless — it answers "when was this queued", a different
         // question from "what should this session's completed_at be", and
         // must never be null the way completedAt now legitimately can be.
         const now = new Date().toISOString()
-        const cachedLogs = await db.set_logs.where('sessionId').equals(id).toArray()
+        // B3: everything this device knows of the session's logs, not only the
+        // sets logged offline: the Dexie rows plus the session screen's own
+        // list (sets logged online earlier, and these offline ones again,
+        // de-duplicated by id). Only a provisional answer for the screen: the
+        // queued finish is flagged so the replay derives both values again
+        // from the server's full list (useSyncQueue.ts).
+        const dexieLogs = await db.set_logs.where('sessionId').equals(id).toArray()
+        const knownLogs = new Map<string, { loggedAt: string; isSkipped: boolean }>()
+        for (const l of queryClient.getQueryData<Session>(['v2_session', id])?.setLogs ?? []) {
+          knownLogs.set(l.id, { loggedAt: l.loggedAt, isSkipped: l.isSkipped })
+        }
+        for (const l of dexieLogs) knownLogs.set(l.id, { loggedAt: l.loggedAt, isSkipped: l.isSkipped })
+        const cachedLogs = [...knownLogs.values()]
         const completedAt = deriveCompletedAt(cachedLogs.map((l) => ({ loggedAt: l.loggedAt })))
-        // Same narrower-fix caveat as completedAt just above: this Dexie
-        // cache only reliably holds rows for a session logged (at least
-        // partly) offline, so a session logged entirely online then
-        // completed offline has nothing here to classify from and falls
-        // back to 'completed' — never a false 'skipped', only a possible
-        // miss, consistent with the completedAt gap already documented here.
         const status: 'completed' | 'skipped' = shouldClassifyAsSkipped(
           cachedLogs.map((l) => ({ isSkipped: l.isSkipped })),
         )
@@ -572,6 +569,7 @@ export function useCompleteSession() {
             pump_rating: pumpRating,
           },
           createdAt: now,
+          recomputeFinish: true,
         })
         addPending(id)
         return { status }
