@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, Fragment } from 'react'
 import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react'
 import type { Program, WorkoutDay, ProgramExercise, DayOfWeek, ScheduleType, WeightUnit } from '../../types'
-import { slotIdOf, type ChangeRecord } from '../plan/applyAhead'
 import { queryClient } from '../../lib/queryClient'
 import {
   useWorkoutDays,
@@ -49,9 +48,10 @@ import {
 //
 // Step 2 — Exercises and order (SPEC.md "Stepped program planner" step 2;
 // TASKS.md "step 2 adds workouts, exercises (existing picker), order
-// (up/down) and one weekday per workout"). Reused as-is (same component) by
-// a stable run's Program tab (ProgramTab.tsx, TASKS.md "the program tab
-// edits the run's copy... with the same step 2/step 3 components").
+// (up/down) and one weekday per workout"). Serves the planner only (a saved
+// program): chunk 33 removed Plan's program tab, the only other caller, and the
+// planner refuses a run's copy, so nothing edits a running program's workouts
+// or schedule any more (SPEC Programs and runs [P1.1]: fixed for the run).
 //
 // Schedule type (chunk 25 — SPEC.md "Scheduling → Sequence" / TASKS.md
 // "Planner step 2 gains the schedule type and a sequence editor"): a
@@ -71,8 +71,7 @@ import {
 // program: a checklist shown at the top of the session... the warmup
 // routine checklist" is explicitly step 2's own, per SPEC's "Planner step 2"
 // excerpt). Design field, same posture as rest/tempo/superset grouping
-// below: never gated by volumeReadOnly, editable for both planning types,
-// in both the planner and the program tab (this same reused component).
+// below: never gated by volumeReadOnly, editable for both planning types.
 // Lives below the exercise list (WarmupRoutineEditor, below) — add an item,
 // edit its text, remove it, and reorder with the same up/down arrow pattern
 // the exercise rows above already use (moveWarmupItem,
@@ -129,19 +128,9 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
 export default function StepExercises({
   program,
   volumeReadOnly,
-  onVolumeChange,
 }: {
   program: Program
   volumeReadOnly: boolean
-  // Chunk 20 ("Apply this change to planned weeks ahead") — only ever
-  // passed by ProgramTab.tsx (a stable run's own program tab); the planner
-  // (PlannerPage.tsx, saved programs and week-dependent runs) never passes
-  // this, so it stays undefined there and nothing below ever calls it —
-  // zero behaviour change for every existing caller. Reported per workout
-  // day (never per saved-program edit — ProgramTab is the only caller that
-  // can ever reach a 'stable' planningType, so this is a no-op anywhere
-  // else even if it were wired).
-  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: workoutDays = [], isLoading } = useWorkoutDays(program.id)
   const createDay = useCreateWorkoutDay(program.id)
@@ -205,7 +194,6 @@ export default function StepExercises({
           schedule={program.schedule}
           scheduleType={scheduleType}
           volumeReadOnly={volumeReadOnly}
-          onVolumeChange={onVolumeChange}
         />
       ))}
 
@@ -258,18 +246,15 @@ function WorkoutEditor({
   schedule,
   scheduleType,
   volumeReadOnly,
-  onVolumeChange,
 }: {
   programId: string
   workoutDay: WorkoutDay
   schedule: Program['schedule']
-  // Chunk 25 — optional, defaults to 'weekday' (ProgramTab.tsx's own
-  // existing caller doesn't pass it yet — see this chunk's report): gates
-  // the weekday chip row below, same "may not exist yet" fallback
-  // convention every other optional prop on this screen already takes.
+  // Chunk 25 — optional, defaults to 'weekday': gates the weekday chip row
+  // below, same "may not exist yet" fallback convention every other optional
+  // prop on this screen already takes.
   scheduleType?: ScheduleType
   volumeReadOnly: boolean
-  onVolumeChange?: (workoutDayId: string, changes: ChangeRecord[]) => void
 }) {
   const { data: exercises = [], isLoading } = useProgramExercises(workoutDay.id)
   const [editingName, setEditingName] = useState(false)
@@ -329,17 +314,6 @@ function WorkoutEditor({
       next.map((ex, i) => ({ ...ex, position: i })),
     )
     reorder.mutate(next.map((ex, i) => ({ id: ex.id, position: i })))
-    // Review fix item 3 — the stable program-tab's own exercise reorder;
-    // SPEC names no exception for it. Same ReorderMove shape PlanPage.tsx's
-    // own week-level reorder already builds — only exercises that actually
-    // moved, each with its true pre-move position.
-    const newPositionById = new Map(next.map((ex, i) => [ex.id, i]))
-    const moves = exercises
-      .map((ex) => ({ slotId: slotIdOf(ex), oldPosition: ex.position, newPosition: newPositionById.get(ex.id)! }))
-      .filter((m) => m.oldPosition !== m.newPosition)
-    if (moves.length > 0) {
-      onVolumeChange?.(workoutDay.id, [{ editType: 'reorderExercise', moves }])
-    }
   }
 
   // Toggles the gap after exercises[gapIndex] — link merges the two
@@ -394,8 +368,7 @@ function WorkoutEditor({
           always '{}' there (v2_plan_week's own header), so this row would
           have nothing to show; SequenceEditor (StepExercises' own top
           level) is that mode's equivalent, one per program rather than per
-          workout. Every existing caller that doesn't pass scheduleType
-          (ProgramTab.tsx) still sees this row exactly as before. */}
+          workout. */}
       {(scheduleType ?? 'weekday') === 'weekday' && (
       <div className="hide-scrollbar" style={{ overflowX: 'auto', padding: '0 16px 12px' }}>
         <div style={{ display: 'flex', gap: 5 }}>
@@ -524,12 +497,6 @@ function WorkoutEditor({
           workoutDayId={workoutDay.id}
           existingExerciseIds={exercises.map((e) => e.exerciseId)}
           onClose={() => setShowPicker(false)}
-          // Chunk 20 — "Adding or removing an exercise in a week is allowed
-          // for both planning types" (SPEC); for stable, apply-ahead covers
-          // a PROGRAM-tab add the same way, since a stable week is always
-          // built fresh from the program and already-planned weeks
-          // wouldn't otherwise see it (SPEC "Programs and runs").
-          onAdded={(exerciseId) => onVolumeChange?.(workoutDay.id, [{ editType: 'addExercise', workoutDayId: workoutDay.id, exerciseId }])}
         />
       )}
 
@@ -576,13 +543,7 @@ function WorkoutEditor({
             </button>
             <button
               onClick={() => {
-                const target = exercises.find((e) => e.id === confirmDeleteExercise.id)
                 deleteExercise.mutate(confirmDeleteExercise.id)
-                // Chunk 20 — same "both planning types, program-tab covers
-                // it for stable" reasoning as ADD above.
-                if (target) {
-                  onVolumeChange?.(workoutDay.id, [{ editType: 'removeExercise', slotId: slotIdOf(target), exerciseId: target.exerciseId }])
-                }
                 setConfirmDeleteExercise(null)
               }}
               disabled={deleteExercise.isPending}

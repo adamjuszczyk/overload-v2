@@ -5,6 +5,8 @@ import { differenceInCalendarWeeks, parseISO, format } from 'date-fns'
 import type { Mesocycle } from '../../types'
 import { useSavedPrograms, useCreateProgram } from './usePrograms'
 import { useMesos, useStartRun, useCompleteMeso, useDeleteMeso } from './useMesos'
+import { useProgramHasSchedule } from './useProgramHasSchedule'
+import { NO_SCHEDULE_START_REASON } from './hasSchedule'
 import { useToastStore } from '../notifications/toastStore'
 
 // The Programs page (chunk 26 — SPEC.md "Programs page", TASKS.md chunk 26:
@@ -32,7 +34,11 @@ import { useToastStore } from '../notifications/toastStore'
 //                                     Starting while a run is active still
 //                                     ends the old one first — v2_start_run
 //                                     itself is atomic about that; this page
-//                                     never duplicates that logic.
+//                                     never duplicates that logic. Chunk 33:
+//                                     the sheet's START RUN needs the
+//                                     selected program to have a scheduled
+//                                     workout (hasSchedule.ts), with the
+//                                     reason under it when it doesn't.
 //   - end a run                    → "END RUN" on the active run's card
 //                                     (was "COMPLETE MESO" — same
 //                                     useCompleteMeso.mutateAsync call).
@@ -88,6 +94,15 @@ export default function ProgramsPage() {
   const createProgram = useCreateProgram()
   const showToast = useToastStore((s) => s.show)
 
+  // Chunk 33 (SPEC Programs page / Programs and runs [P1.1], G39: "Start needs a
+  // schedule"): this sheet starts a run without opening the planner, so it needs
+  // the same check the planner's START has. It reads the program the sheet has
+  // selected (a row's START preselects its own; the picker below can change it);
+  // null = not known yet, so START waits and no reason shows meanwhile.
+  const selectedProgram = showStartMeso ? programs.find((p) => p.id === selectedProgramId) : undefined
+  const hasSchedule = useProgramHasSchedule(selectedProgram)
+  const startDisabled = !selectedProgramId || startRun.isPending || hasSchedule !== true
+
   // presetProgramId: which program a saved-program row's own START button
   // was tapped on (preselected in the picker below) — omitted when reopened
   // generically (right after ending a run), which still defaults to the
@@ -102,6 +117,10 @@ export default function ProgramsPage() {
     e.preventDefault()
     const name = mesoName.trim() || programs.find((p) => p.id === selectedProgramId)?.name || 'Mesocycle'
     if (!selectedProgramId) return
+    // The disabled button already stops a tap; this keeps a form submit by any
+    // other route (Enter in the name field) from starting a program with no
+    // scheduled workout.
+    if (hasSchedule !== true) return
     // v2_start_run (chunk 6) replaces the old completeAllActiveMesos +
     // createMeso two-request path with one atomic, race-safe RPC call — this
     // is the one call site in the app that starts a run, so it's also the
@@ -368,11 +387,18 @@ export default function ProgramsPage() {
 
               <button
                 type="submit"
-                disabled={!selectedProgramId || startRun.isPending}
-                style={{ width: '100%', height: 54, background: (!selectedProgramId || startRun.isPending) ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: (!selectedProgramId || startRun.isPending) ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: (!selectedProgramId || startRun.isPending) ? 'var(--text-muted)' : 'var(--base)' }}
+                disabled={startDisabled}
+                style={{ width: '100%', height: 54, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: startDisabled ? 'var(--text-muted)' : 'var(--base)' }}
               >
                 {startRun.isPending ? '…' : 'START RUN'}
               </button>
+              {/* Why START is off (chunk 33, DECISIONS 85, provisional): only once
+                  the program is known to have no scheduled workout. */}
+              {hasSchedule === false && (
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', lineHeight: 1.5, textAlign: 'center', marginTop: 8 }}>
+                  {NO_SCHEDULE_START_REASON}
+                </p>
+              )}
             </form>
           )}
         </BottomSheet>

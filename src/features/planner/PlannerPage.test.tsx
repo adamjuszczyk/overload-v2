@@ -2,17 +2,17 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
-import type { Program, WorkoutDay } from '../../types'
+import type { Program, WorkoutDay, SequenceItem } from '../../types'
 
 // Chunk 11 — the planner's own wizard shell: step switching, rename, G14,
 // Save (navigates, writes nothing of its own) and Start (v2_start_run,
 // chunk 6). StepPriorities/StepExercises/StepVolume are each their own
 // heavily-tested component (StepPriorities.test.tsx/StepExercises.test.tsx/
-// StepVolume.test.tsx) — mocked here to one-line stand-ins, same posture
-// ProgramTab.test.tsx takes toward the very same two step components.
+// StepVolume.test.tsx) — mocked here to one-line stand-ins.
 
 let programs: Program[] = []
 let workoutDays: WorkoutDay[] = []
+let sequenceItems: SequenceItem[] = []
 const updateNameMutateAsyncMock = vi.fn()
 const startRunMutateAsyncMock = vi.fn()
 const splitMutateAsyncMock = vi.fn()
@@ -22,6 +22,9 @@ vi.mock('../programs/usePrograms', () => ({
   usePrograms: () => ({ data: programs, isLoading: false }),
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
   useUpdateProgramName: () => ({ mutateAsync: updateNameMutateAsyncMock }),
+  // Chunk 33 — START reads the program's sequence (a sequence program is
+  // scheduled by it), through useProgramHasSchedule.
+  useSequenceItems: () => ({ data: sequenceItems, isLoading: false }),
 }))
 
 vi.mock('../programs/useMesos', () => ({
@@ -58,6 +61,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
   programs = []
   workoutDays = []
+  sequenceItems = []
 })
 
 const EMPTY_SCHEDULE = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null }
@@ -70,6 +74,11 @@ function program(overrides: Partial<Program> = {}): Program {
     ...overrides,
   }
 }
+
+// Chunk 33 — starting needs a schedule, so the tests that start a program give it
+// one workout on a weekday.
+const WORKOUT_DAY: WorkoutDay = { id: 'wd-1', programId: 'prog-1', userId: 'user-1', name: 'Full Body', position: 0, exercises: [] }
+const MONDAY_SCHEDULE = { ...EMPTY_SCHEDULE, monday: 'wd-1' }
 
 function LocationProbe() {
   const location = useLocation()
@@ -154,7 +163,8 @@ describe('PlannerPage — Save and Start', () => {
   })
 
   it('START calls v2_start_run (via useStartRun) with the program\'s own name and id, then goes to /plan', async () => {
-    programs = [program({ name: 'Hypertrophy' })]
+    programs = [program({ name: 'Hypertrophy', schedule: MONDAY_SCHEDULE })]
+    workoutDays = [WORKOUT_DAY]
     startRunMutateAsyncMock.mockResolvedValue('meso-1')
     renderPlanner()
 
@@ -165,7 +175,8 @@ describe('PlannerPage — Save and Start', () => {
   })
 
   it('a failed START surfaces the error through the toast store and stays on the planner', async () => {
-    programs = [program()]
+    programs = [program({ schedule: MONDAY_SCHEDULE })]
+    workoutDays = [WORKOUT_DAY]
     startRunMutateAsyncMock.mockRejectedValue(new Error('network down'))
     renderPlanner()
 
@@ -174,15 +185,193 @@ describe('PlannerPage — Save and Start', () => {
     expect(showToastMock).toHaveBeenCalledWith('network down')
     expect(screen.queryByText('AT /plan')).toBeNull()
   })
+})
 
-  it('a defensive run-kind program (should never actually be routed here) hides step 1 and Save/Start', () => {
+// Chunk 33 (SPEC Programs and runs [P1.1]: "The planner refuses to open a run's
+// copy"). This was a defensive fallback that showed steps 2 and 3 with editing
+// on; a run's schedule, workouts and deload-rules override are fixed for the run.
+describe('PlannerPage — a run\'s copy is refused (chunk 33)', () => {
+  const RUN_COPY_MESSAGE = 'THIS PROGRAM IS A RUN\'S COPY'
+
+  it('shows a short message and renders no step, no editor, no Save/Start', () => {
+    programs = [program({ kind: 'run', schedule: MONDAY_SCHEDULE })]
+    workoutDays = [WORKOUT_DAY]
+    renderPlanner()
+
+    expect(screen.getByText(RUN_COPY_MESSAGE)).toBeTruthy()
+    // Absence: none of the three steps, nor the switcher that reaches them.
+    expect(screen.queryByText('STEP PRIORITIES')).toBeNull()
+    expect(screen.queryByText('STEP EXERCISES')).toBeNull()
+    expect(screen.queryByText('STEP VOLUME')).toBeNull()
+    expect(screen.queryByText('1 · PRIORITIES')).toBeNull()
+    expect(screen.queryByText('2 · EXERCISES')).toBeNull()
+    expect(screen.queryByText('3 · VOLUME')).toBeNull()
+    expect(screen.queryByText('SAVE')).toBeNull()
+    expect(screen.queryByText('START')).toBeNull()
+    // ... nor the program's name as a rename button (the header is not rendered).
+    expect(screen.queryByText('My Program')).toBeNull()
+  })
+
+  it('refuses a run\'s copy whatever its planning type', () => {
+    for (const planningType of ['stable', 'week_dependent'] as const) {
+      programs = [program({ kind: 'run', planningType })]
+      const { unmount } = renderPlanner()
+      expect(screen.getByText(RUN_COPY_MESSAGE)).toBeTruthy()
+      expect(screen.queryByText('STEP EXERCISES')).toBeNull()
+      unmount()
+    }
+  })
+
+  it('the way back goes to the real /program route', () => {
     programs = [program({ kind: 'run' })]
     renderPlanner()
 
-    expect(screen.queryByText('1 · PRIORITIES')).toBeNull()
-    expect(screen.queryByText('SAVE')).toBeNull()
+    fireEvent.click(screen.getByText('← Back to programs'))
+
+    expect(screen.getByText('AT /program')).toBeTruthy()
+  })
+
+  it('does not refuse a saved program, nor one whose kind is not set (it reads as saved)', () => {
+    programs = [program({ kind: 'saved' })]
+    const first = renderPlanner()
+    expect(screen.queryByText(RUN_COPY_MESSAGE)).toBeNull()
+    expect(screen.getByText('STEP PRIORITIES')).toBeTruthy()
+    first.unmount()
+
+    const unset = program()
+    delete (unset as { kind?: Program['kind'] }).kind
+    programs = [unset]
+    renderPlanner()
+    expect(screen.queryByText(RUN_COPY_MESSAGE)).toBeNull()
+    expect(screen.getByText('STEP PRIORITIES')).toBeTruthy()
+  })
+
+  it('a run\'s copy never reaches START, even with a scheduled workout (nothing is started from here)', () => {
+    programs = [program({ kind: 'run', schedule: MONDAY_SCHEDULE })]
+    workoutDays = [WORKOUT_DAY]
+    renderPlanner()
+
     expect(screen.queryByText('START')).toBeNull()
-    expect(screen.getByText('STEP EXERCISES')).toBeTruthy()
+    expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+  })
+})
+
+// Chunk 33 (SPEC Programs and runs [P1.1], G39: "Starting a run needs a
+// schedule: at least one workout on a weekday (weekday), or one workout in the
+// sequence (sequence). Start isn't possible without one."; DECISIONS 85,
+// provisional: START disabled, one line under it).
+describe('PlannerPage — START needs a schedule (chunk 33)', () => {
+  const REASON = 'Schedule at least one workout to start'
+  const startButton = () => screen.getByText('START') as HTMLButtonElement
+
+  describe('a weekday program', () => {
+    it('with no workout on any weekday: START is disabled, the reason shows, and tapping it starts nothing', () => {
+      programs = [program({ schedule: EMPTY_SCHEDULE })]
+      workoutDays = [WORKOUT_DAY]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+
+      fireEvent.click(startButton())
+      expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+      expect(screen.queryByText('AT /plan')).toBeNull()
+    })
+
+    it('with a workout on a weekday: START is enabled, no reason shows, and it starts the program', async () => {
+      programs = [program({ name: 'Hypertrophy', schedule: { ...EMPTY_SCHEDULE, thursday: 'wd-1' } })]
+      workoutDays = [WORKOUT_DAY]
+      startRunMutateAsyncMock.mockResolvedValue('meso-1')
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(false)
+      expect(screen.queryByText(REASON)).toBeNull()
+
+      fireEvent.click(startButton())
+      expect(startRunMutateAsyncMock).toHaveBeenCalledTimes(1)
+      expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Hypertrophy', programId: 'prog-1' })
+      expect(await screen.findByText('AT /plan')).toBeTruthy()
+    })
+
+    it('a weekday that names a workout the program no longer has is not a scheduled workout', () => {
+      programs = [program({ schedule: { ...EMPTY_SCHEDULE, monday: 'wd-gone' } })]
+      workoutDays = [WORKOUT_DAY]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('a stale sequence under a weekday program is not read (only the weekday map is)', () => {
+      programs = [program({ scheduleType: 'weekday', schedule: EMPTY_SCHEDULE })]
+      workoutDays = [WORKOUT_DAY]
+      sequenceItems = [{ id: 'si-1', userId: 'user-1', programId: 'prog-1', position: 0, workoutDayId: 'wd-1' }]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+  })
+
+  describe('a sequence program', () => {
+    it('with no slot at all: START is disabled and the reason shows', () => {
+      programs = [program({ scheduleType: 'sequence' })]
+      workoutDays = [WORKOUT_DAY]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+      fireEvent.click(startButton())
+      expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+    })
+
+    it('with only rest slots: START is disabled and the reason shows', () => {
+      programs = [program({ scheduleType: 'sequence' })]
+      workoutDays = [WORKOUT_DAY]
+      sequenceItems = [
+        { id: 'si-1', userId: 'user-1', programId: 'prog-1', position: 0, workoutDayId: null },
+        { id: 'si-2', userId: 'user-1', programId: 'prog-1', position: 1, workoutDayId: null },
+      ]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('a weekday map left under a sequence program does not schedule it', () => {
+      programs = [program({ scheduleType: 'sequence', schedule: MONDAY_SCHEDULE })]
+      workoutDays = [WORKOUT_DAY]
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(true)
+      expect(screen.getByText(REASON)).toBeTruthy()
+    })
+
+    it('with one workout in the sequence: START is enabled, no reason shows, and it starts the program', () => {
+      programs = [program({ name: 'Cycle', scheduleType: 'sequence' })]
+      workoutDays = [WORKOUT_DAY]
+      sequenceItems = [
+        { id: 'si-1', userId: 'user-1', programId: 'prog-1', position: 0, workoutDayId: null },
+        { id: 'si-2', userId: 'user-1', programId: 'prog-1', position: 1, workoutDayId: 'wd-1' },
+      ]
+      startRunMutateAsyncMock.mockResolvedValue('meso-1')
+      renderPlanner()
+
+      expect(startButton().disabled).toBe(false)
+      expect(screen.queryByText(REASON)).toBeNull()
+
+      fireEvent.click(startButton())
+      expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Cycle', programId: 'prog-1' })
+    })
+  })
+
+  it('SAVE stays available without a schedule (it writes nothing and leaves the planner)', () => {
+    programs = [program({ schedule: EMPTY_SCHEDULE })]
+    renderPlanner()
+
+    fireEvent.click(screen.getByText('SAVE'))
+
+    expect(screen.getByText('AT /program')).toBeTruthy()
   })
 })
 
