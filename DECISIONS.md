@@ -51,6 +51,11 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
+### 106 Known gap: no "Apply this change to planned weeks ahead" after "Make this week the new default" (chunk 32)
+- What: SPEC (Weeks and copying [P1.1]) says making the default "then offers the existing Apply this change to planned weeks ahead … only where they still match the old default". Chunk 32 ships without that offer, per Adam's answer to 105: the fix round (933f2a1) passed its own claims but the independent review found two more wrong writes (two stages added under one head in one apply could share a stage_index; a stage added to a stageless head that still stores an old stage kind kept that kind instead of the new default's). Later weeks already planned keep their content; weeks planned afterwards start from the new default.
+- Answer: shipped without the offer (Adam, 2026-10-11, option b of 105). The removed mapping is recoverable from `build/chunk-32` at `933f2a1` (diffDefault, pointed ops, exact-link swap pairing, whole-head-kind gates) for a later revision; the two findings above are what it still needs.
+- Date: 2026-10-11
+
 ### 105 Chunk 32's code failed review twice: apply-ahead can write a set that is both warmup and staged
 Severity: blocking
 Chunk: TASKS-1.1 chunk 32 (code; branch `build/chunk-32` at `066a261`, not merged; migration 040 is merged and live and unaffected)
