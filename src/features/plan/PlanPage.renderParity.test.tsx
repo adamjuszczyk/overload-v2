@@ -284,6 +284,16 @@ vi.mock('./useWeekPlan', () => ({
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
+// Chunk 31 — this meso starts today, so the viewed week is week 1, which is compared with the run's copy
+// (weekDiff.ts); the run's copy here is the decoy's workout, and its program sets are read through this hook.
+// The decoy has none. Nothing else about the page changes: the default SETS view marks only the numbers of
+// an exercise both sides have and the working sets added or removed within one, and the decoy shares no
+// exercise with the week, so the render below is byte-identical to the frozen one.
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  useProgramSets: () => ({ data: [] }),
+}))
+
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
 // gym/useSession.ts, which needs a real QueryClientProvider this file's
 // own render() doesn't set up — every other PlanPage hook is mocked away

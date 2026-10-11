@@ -279,6 +279,15 @@ export interface ProgramSet {
   isAmrap: boolean
   restSeconds: number | null  // rest after this set — design field, chunk 13+
   createdAt: string
+  // v2_program_sets.removed_at (migration 040, chunk 32: "Make this week the new
+  // default" soft-removes a set the default drops, so weeks planned earlier keep
+  // their program_set_id link and, with it, the set's run-wide rest). Set = no
+  // longer part of the run's default. fetchProgramSets keeps returning such rows
+  // (the workout screen finds a planned set's rest through them); whatever reads
+  // "the default" skips them (v2_plan_week, Plan's highlighting). Optional, same
+  // "may not exist yet" convention as the fields above: absent reads as null (part
+  // of the default), and the mapper only sets it on a row that has it.
+  removedAt?: string | null
 }
 
 export interface WorkoutDay {
