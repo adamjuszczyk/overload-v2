@@ -119,11 +119,18 @@ const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan
 })
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [mockState.meso], isLoading: false }) }))
-vi.mock('../programs/usePrograms', () => ({
+vi.mock('../programs/usePrograms', async () => ({
+  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [mockState.program], isLoading: false }),
   useWorkoutDays: () => ({ data: mockState.days, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
+}))
+// Chunk 30: the STRUCTURE view's run-wide fields call these hooks (StructureFields.tsx); this
+// file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [EX_NEW] }) }))
 vi.mock('./useWeekPlan', () => ({
@@ -755,7 +762,9 @@ describe('PlanPage — supersets keep every per-item action in both views', () =
     arrangeSuperset()
     openStructureView()
 
-    expect(screen.getAllByText(/SUPERSET/)).toHaveLength(2)
+    // The marker is on the two members, not on the plain exercise. (Chunk 30: the view now also holds
+    // the link toggles and the block's rests, whose text says SUPERSET too, so this counts the marker itself.)
+    expect(screen.getAllByText('· SUPERSET')).toHaveLength(2)
     for (const name of ['Bench Press', 'Squat', 'Dips']) openExerciseMenu(name)
     for (const name of ['Bench Press', 'Squat', 'Dips']) {
       expect(screen.getByLabelText(`Swap ${name}`)).toBeTruthy()

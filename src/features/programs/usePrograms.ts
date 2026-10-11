@@ -1,7 +1,8 @@
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem } from '../../types'
+import type { QueryKey } from '@tanstack/react-query'
+import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem, WeekPlan } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
 import type { DeloadRules } from '../../lib/deloadRules'
 import {
@@ -176,6 +177,62 @@ export function useDeleteWorkoutDay(programId: string) {
   })
 }
 
+// ─── Plan's weeks keep their own copy of a program exercise's design fields ──
+// A week's exercise list is a join over the program-exercise rows
+// (weekPlanService.ts's toProgramExerciseFromWeekPlanExercise), so a row's rest,
+// tempo, unit and superset block are also cached inside every week plan the app
+// has read: ['v2_weekPlans', meso, week] (the week on Plan's screen),
+// ['v2_allWeekPlans', meso] (the meso's history) and ['v2_weekPlan', id] (one
+// planned session, the workout screen's). Until chunk 30 only the planner and the
+// program tab edited these fields and neither shows a week; since then Plan's
+// STRUCTURE view edits them from inside a week, so the hooks below that write one
+// also put the new value into those caches (optimistic, put back if the write
+// fails) and mark them stale when the write settles. In the planner and the
+// program tab no such cache exists or is shown, so there it does nothing.
+const WEEK_PLAN_LIST_KEYS: QueryKey[] = [['v2_weekPlans'], ['v2_allWeekPlans']]
+
+// The cache entries a patch changed, as they were before it.
+type WeekPlanCacheSnapshot = [QueryKey, WeekPlan[]][]
+
+async function patchWeekPlanExercise(id: string, patch: Partial<ProgramExercise>): Promise<WeekPlanCacheSnapshot> {
+  // A fetch already in flight would land after this patch and put the old value back.
+  for (const queryKey of WEEK_PLAN_LIST_KEYS) await queryClient.cancelQueries({ queryKey })
+  // Only an entry that holds the row is patched, and only it is handed back for a restore: putting
+  // back an entry the row was never in would write over some other edit's optimistic patch to it.
+  const patched: WeekPlanCacheSnapshot = []
+  for (const queryKey of WEEK_PLAN_LIST_KEYS) {
+    for (const [key, plans] of queryClient.getQueriesData<WeekPlan[]>({ queryKey })) {
+      if (!plans?.some((wp) => wp.exercises.some((e) => e.id === id))) continue
+      patched.push([key, plans])
+      queryClient.setQueryData<WeekPlan[]>(
+        key,
+        plans.map((wp) =>
+          wp.exercises.some((e) => e.id === id)
+            ? { ...wp, exercises: wp.exercises.map((e) => (e.id === id ? { ...e, ...patch } : e)) }
+            : wp,
+        ),
+      )
+    }
+  }
+  return patched
+}
+
+function restoreWeekPlans(snapshot: WeekPlanCacheSnapshot | undefined) {
+  for (const [key, plans] of snapshot ?? []) queryClient.setQueryData(key, plans)
+}
+
+// What the callers return from onSettled / onSuccess: a mutation awaits the promise its callback
+// returns, so it stays pending (and the link toggles, which are disabled while one is, stay
+// disabled) until these caches have refetched and hold the server's rows — the same wait the
+// run copy's own invalidation gave before this chunk.
+function refreshWeekPlans() {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['v2_weekPlans'] }),
+    queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans'] }),
+    queryClient.invalidateQueries({ queryKey: ['v2_weekPlan'] }),
+  ])
+}
+
 // ─── Program Exercises ────────────────────────────────────────────────────────
 
 export function useProgramExercises(workoutDayId: string) {
@@ -223,12 +280,15 @@ export function useUpdateProgramExerciseWeightUnit(workoutDayId: string) {
       queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
         old?.map((e) => (e.id === id ? { ...e, weightUnit } : e)),
       )
-      return { prev }
+      const weeks = await patchWeekPlanExercise(id, { weightUnit })
+      return { prev, weeks }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+      restoreWeekPlans(ctx?.weeks)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    // Returned, so the mutation stays pending until the run copy's list and the week caches have refetched.
+    onSettled: () => Promise.all([queryClient.invalidateQueries({ queryKey: qk }), refreshWeekPlans()]),
   })
 }
 
@@ -255,12 +315,15 @@ export function useUpdateProgramExerciseRest(workoutDayId: string) {
       queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
         old?.map((e) => (e.id === id ? { ...e, ...changes } : e)),
       )
-      return { prev }
+      const weeks = await patchWeekPlanExercise(id, changes)
+      return { prev, weeks }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+      restoreWeekPlans(ctx?.weeks)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    // Returned, so the mutation stays pending until the run copy's list and the week caches have refetched.
+    onSettled: () => Promise.all([queryClient.invalidateQueries({ queryKey: qk }), refreshWeekPlans()]),
   })
 }
 
@@ -285,12 +348,15 @@ export function useUpdateProgramExerciseTempo(workoutDayId: string) {
       queryClient.setQueryData(qk, (old: ProgramExercise[] | undefined) =>
         old?.map((e) => (e.id === id ? { ...e, tempo } : e)),
       )
-      return { prev }
+      const weeks = await patchWeekPlanExercise(id, { tempo })
+      return { prev, weeks }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(qk, ctx.prev)
+      restoreWeekPlans(ctx?.weeks)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    // Returned, so the mutation stays pending until the run copy's list and the week caches have refetched.
+    onSettled: () => Promise.all([queryClient.invalidateQueries({ queryKey: qk }), refreshWeekPlans()]),
   })
 }
 
@@ -324,8 +390,13 @@ export function useToggleSupersetLink(workoutDayId: string) {
         await setSupersetBlockForExercises(plan.ids, blockId)
       }
     },
+    // Returned, so isPending (which the link toggles are disabled by) holds until the run copy's list and
+    // the week caches have refetched: a second tap plans from those rows, so they must be the new ones.
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['v2_programExercises', workoutDayId] }),
+        refreshWeekPlans(),
+      ]),
   })
 }
 

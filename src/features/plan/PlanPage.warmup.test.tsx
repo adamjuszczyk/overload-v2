@@ -62,11 +62,18 @@ const updateSetMutate = vi.fn()
 const addWarmupMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
-vi.mock('../programs/usePrograms', () => ({
+vi.mock('../programs/usePrograms', async () => ({
+  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [makeProgram()], isLoading: false }),
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
+}))
+// Chunk 30: the STRUCTURE view's run-wide fields call these hooks (StructureFields.tsx); this
+// file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
