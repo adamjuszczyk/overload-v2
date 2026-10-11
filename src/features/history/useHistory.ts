@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
+import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
 import {
   fetchHistorySessions,
   fetchHistoryDetail,
@@ -40,6 +41,7 @@ export function useDeleteSession() {
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY })
       queryClient.removeQueries({ queryKey: ['v2_historyDetail', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
       queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
       // Same gap as useCompleteSession's onSuccess (useSession.ts) — deleting

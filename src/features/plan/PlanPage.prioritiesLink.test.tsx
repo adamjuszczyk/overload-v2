@@ -60,6 +60,8 @@ vi.mock('./useProgramPriorities', () => ({
   useProgramPriorities: () => ({ data: runMarks, isLoading: false, isError: false }),
   useSetPriorityMark: () => ({ mutate: vi.fn(), isPending: false }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: [], isLoading: false }),
   useAllWeekPlans: () => ({ data: [], isLoading: false }),

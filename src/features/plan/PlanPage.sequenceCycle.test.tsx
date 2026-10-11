@@ -126,6 +126,8 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('../gym/useSession', () => ({
   useLastDoneOrSkippedSession: (mesoId: string) => lastEventHook(mesoId),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: allPlans.filter((w) => w.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => readOverrides.plans ?? { data: allPlans, isLoading: false },

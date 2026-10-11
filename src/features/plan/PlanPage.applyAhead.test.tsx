@@ -118,6 +118,8 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
 vi.mock('../library/useExercises', () => ({
   useExercises: () => ({ data: [EX_REPLACEMENT] }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.currentPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.allPlans, isLoading: false }),

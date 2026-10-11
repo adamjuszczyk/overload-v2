@@ -131,6 +131,8 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Nothing is done yet, so the current cycle is cycle 1: the one viewed.
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: allPlans.filter((w) => w.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: allPlans, isLoading: false }),
