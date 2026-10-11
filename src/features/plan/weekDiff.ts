@@ -470,17 +470,28 @@ export interface WeekDiffInput {
   runCopy: { exercises: ProgramExercise[]; programSets: ProgramSet[] } | null
 }
 
+type ChoiceInput = Pick<WeekDiffInput, 'planningType' | 'weekStart' | 'weekNumber' | 'slotWeeks'> & { isDeload: boolean }
+
+function choiceOf(input: ChoiceInput): DiffSourceChoice {
+  return chooseDiffSources({
+    planningType: input.planningType,
+    weekNumber: input.weekNumber,
+    weekStart: input.weekStart,
+    isDeload: input.isDeload,
+    priorWeeks: plannedWeekRecords(input.slotWeeks),
+  })
+}
+
+// Whether comparing this week reads the run's copy, so a caller reads it only then.
+export function weekDiffNeedsRunCopy(input: ChoiceInput): boolean {
+  return needsRunCopy(choiceOf(input))
+}
+
 // What differs, or null when nothing is compared: a deload session, a week with no
 // source, and (while the run's copy isn't read yet) a week that needs it.
 export function computeWeekDiff(input: WeekDiffInput): WeekDiff | null {
-  const { planningType, weekStart, weekNumber, week, slotWeeks, runCopy } = input
-  const choice = chooseDiffSources({
-    planningType,
-    weekNumber,
-    weekStart,
-    isDeload: week.isDeload,
-    priorWeeks: plannedWeekRecords(slotWeeks),
-  })
+  const { week, slotWeeks, runCopy } = input
+  const choice = choiceOf({ ...input, isDeload: week.isDeload })
 
   // The search only ever returns a week before the viewed one, so the viewed week
   // itself (it is in slotWeeks too) is never its own source.
