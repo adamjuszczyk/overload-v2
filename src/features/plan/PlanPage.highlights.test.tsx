@@ -884,10 +884,10 @@ describe('PlanPage — a sequence run compares each slot with its own source slo
     { id: 'si-1', userId: 'user-1', programId: 'prog-1', position: 1, workoutDayId: 'wd-b' },
     { id: 'si-2', userId: 'user-1', programId: 'prog-1', position: 2, workoutDayId: 'wd-1' },
   ]
-  const slotPlan = (cycle: number, position: number, weight: number) => {
+  const slotPlan = (cycle: number, position: number, weight: number, reps = 8) => {
     const workoutDayId = position === 1 ? 'wd-b' : 'wd-1'
     const row = position === 1 ? B_ROW : A_ROW
-    return plan(cycle, [row], [wset(`s${cycle}-${position}`, row.id, 1, { targetWeight: weight })], { workoutDayId, sequencePosition: position })
+    return plan(cycle, [row], [wset(`s${cycle}-${position}`, row.id, 1, { targetWeight: weight, repMin: reps, repMax: reps })], { workoutDayId, sequencePosition: position })
   }
   const arrangeSequence = (cycle2: { a0: number; a2: number }) => {
     mockState.program = makeProgram({ scheduleType: 'sequence', schedule: EMPTY_SCHEDULE })
@@ -919,6 +919,28 @@ describe('PlanPage — a sequence run compares each slot with its own source slo
     expect(markedCells('01').weight).toBe('changed') // slot 3: 125 ≠ its own 120
     fireEvent.click(screen.getByText('SLOT 1'))
     expect(markedCells('01').weight).toBeNull()
+  })
+
+  it('cycle 1 is compared with the run\'s copy of each slot\'s OWN workout: the two A slots with A\'s copy, B with B\'s', () => {
+    mockState.program = makeProgram({ scheduleType: 'sequence', schedule: EMPTY_SCHEDULE })
+    mockState.days = [workoutDay, workoutDayB]
+    mockState.sequenceItems = items
+    // A's copy says 8 reps; B's says 12.
+    mockState.runCopy = { 'wd-1': [A_ROW], 'wd-b': [B_ROW] }
+    mockState.programSets = [pset('pa', 'pe-a', 1, { repMin: 8, repMax: 8 }), pset('pb', 'pe-b', 1, { repMin: 12, repMax: 12 })]
+    // Slot 1 (A): 5 reps. Slot 2 (B): 12 reps (as its copy). Slot 3 (A): 8 reps (as its copy).
+    mockState.all = [slotPlan(1, 0, 100, 5), slotPlan(1, 1, 80, 12), slotPlan(1, 2, 120, 8)]
+    renderPlan(1)
+
+    expect(screen.getByText('CYCLE 1')).toBeTruthy()
+    expect(markedCells('01').reps).toBe('changed') // slot 1: 5 against A's 8
+    fireEvent.click(screen.getByText('SLOT 2'))
+    expect(markedCells('01').reps).toBeNull() // slot 2 (B): 12 against B's 12 (A's 8 would differ)
+    fireEvent.click(screen.getByText('SLOT 3'))
+    expect(markedCells('01').reps).toBeNull() // slot 3 (A): 8 against A's 8
+    // Each workout's own copy was read, for its own rows.
+    expect(programSetReads).toContainEqual(['pe-a'])
+    expect(programSetReads).toContainEqual(['pe-b'])
   })
 
   it('a different workout in between does not interfere (slot 2 is workout B, compared with B\'s own slot)', () => {
