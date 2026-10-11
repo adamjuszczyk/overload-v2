@@ -212,7 +212,14 @@ function WorkoutVolumeEditor({
 }) {
   const { data: exercises = [], isLoading: exercisesLoading } = useProgramExercises(workoutDayId)
   const exerciseIds = exercises.map((e) => e.id)
-  const { data: sets = [], isLoading: setsLoading } = useProgramSets(exerciseIds)
+  const { data: allSets = [], isLoading: setsLoading } = useProgramSets(exerciseIds)
+  // Chunk 32: a program set with removed_at set was dropped from the run's default by
+  // "Make this week the new default" (migration 040). It stays in the table so weeks
+  // planned earlier keep their link and its rest, and fetchProgramSets returns it for the
+  // workout screen; this list shows the default, so it leaves it out. Until chunk 33
+  // removes the program tab, this is the one list that would otherwise show the set again
+  // (and let it be edited as if it were still part of the run's default).
+  const sets = allSets.filter((s) => !s.removedAt)
 
   if (exercisesLoading || (setsLoading && exerciseIds.length > 0)) {
     return (

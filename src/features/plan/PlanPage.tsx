@@ -55,6 +55,8 @@ import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
+import MakeWeekDefault from './MakeWeekDefault'
+import { canMakeWeekDefault } from './makeWeekDefault'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE, DiffDot } from './planMenu'
 import {
   StructureFieldsProvider,
@@ -474,6 +476,18 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
     !isPast && !plansLoading && !daysLoading && (isSequence ? sequenceSlots.some((s) => s.workoutDay) : scheduledDays.length > 0)
   const weekIsFullyDeload = weekPlans.length > 0 && weekPlans.every((wp) => wp.isDeload)
 
+  // Chunk 32 — "Make this week the new default" (SPEC Weeks and copying [P1.1]; Plan
+  // screen actions): page-level, above both views, only where SPEC offers it:
+  //   - a STABLE run (a week-dependent run's next week copies this one anyway);
+  //   - the current week and later ones (G29) — on a sequence run `isPast` follows chunk
+  //     35's current cycle, the one with the next due workout, not the calendar week;
+  //   - a week with at least one session that can be a source: not deload, not empty
+  //     (canMakeWeekDefault: the function's own refusals). "It isn't offered on a week
+  //     that's all deload" (G27), nor on one whose sessions are all deload or empty, nor
+  //     on a week with nothing planned yet.
+  const showMakeDefault =
+    program?.planningType === 'stable' && !isPast && !plansLoading && !daysLoading && canMakeWeekDefault(weekPlans)
+
   // ── No active meso ────────────────────────────────────────────────────────
 
   if (mesosLoading) return <PlanSpinner />
@@ -676,6 +690,19 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               </p>
             )}
           </>
+        )}
+
+        {/* Make this week the new default (chunk 32) — a stable run's page-level action,
+            next to the two above; confirm first, no undo. Its apply-ahead offer is the
+            existing banner, here for every workout whose default was rewritten. */}
+        {showMakeDefault && (
+          <MakeWeekDefault
+            mesoId={activeMeso.id}
+            weekNumber={viewWeek}
+            isSequence={isSequence}
+            allWeekPlans={allWeekPlans}
+            sharedWorkoutDayIds={sharedWorkoutDayIds}
+          />
         )}
 
         {/* Loading */}
