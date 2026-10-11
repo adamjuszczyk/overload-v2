@@ -210,6 +210,32 @@ describe('CASE 2 — the default stages a1 as a dropset; the later week made it 
   })
 })
 
+// The opposite conversion, said as a known limit rather than left to surprise: the default turns a WARMUP into a staged working set
+// (the source week toggled WARMUP off and added a drop stage). Nothing structural goes onto a warmup, so a later week that still
+// holds the warmup takes the part that stops it being one, and neither the stage kind nor the stage: it is never a warmup that is
+// staged, not even between two writes. (The stage is added by hand, or comes with the weeks planned from the default.)
+describe('a default that turns a warmup into a staged working set', () => {
+  const old = [dex('pe-1', 0, [dset('a1', { isWarmup: true })])]
+  const toMyo = [dex('pe-1', 0, [dset('a1', { stageKind: 'myo_reps' }), dstage('s1', 'a1', 1)])]
+  const toDropset = [dex('pe-1', 0, [dset('a1'), dstage('s1', 'a1', 1)])]
+
+  it('a week that still holds the warmup stops being one and gets neither the kind nor the stage', () => {
+    const week = headWeek({ isWarmup: true })
+    const { group, result, after } = run(old, toMyo, week)
+    expect(types(group)).toEqual(['warmup', 'stageKind', 'addStage'])
+    expect(result).toEqual({ weekPlanId: 'wp-4', weekNumber: 4, status: 'applied', ops: [{ kind: 'updateSet', weekPlanId: 'wp-4', setId: 'h', changes: { isWarmup: false } }] })
+    expect(headsOf(after)).toMatchObject([{ isWarmup: false, stageKind: null }])
+    expect(stagesOf(after, 'h')).toEqual([])
+  })
+
+  it('...also when the kind needs no write (a null kind reads as a dropset): only the stage is held back', () => {
+    const { group, result } = run(old, toDropset, headWeek({ isWarmup: true }))
+    expect(types(group)).toEqual(['warmup', 'addStage'])
+    expect(result).toMatchObject({ status: 'applied', ops: [{ kind: 'updateSet', changes: { isWarmup: false } }] })
+    expect((result as Extract<WeekApplyResult, { status: 'applied' }>).ops).toHaveLength(1)
+  })
+})
+
 // ─── CASE 3 ──────────────────────────────────────────────────────────────────
 
 describe('CASE 3 — the default adds a stage to a dropset head; the later week made the head myo-reps, or a warmup with no stages', () => {

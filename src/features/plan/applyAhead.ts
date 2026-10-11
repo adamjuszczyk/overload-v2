@@ -119,7 +119,9 @@
 //     head something else (a dropset with a stage of its own, a warmup, myo-reps) keeps
 //     all of it, never half. And a head is never written to both a warmup and staged: no
 //     stage or stage kind goes onto a warmup, and a head becomes a warmup only where it
-//     holds no stage of its own.
+//     holds no stage of its own. (So a default that turns a warmup into a staged working
+//     set reaches a week that still holds the warmup as the part that stops it being one;
+//     its stage and stage kind are not written onto the warmup.)
 // A record without these fields is exactly what it was before this chunk.
 
 import type { WeekPlan, ProgramExercise, WeekPlanSet } from '../../types'
