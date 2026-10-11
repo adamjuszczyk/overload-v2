@@ -539,7 +539,21 @@ describe('PlanPage — when the call fails', () => {
     expect(makeMutate).toHaveBeenCalledTimes(1)
   })
 
-  it('an error that is not an Error still says something', () => {
+  // What the real client throws: supabase-js answers a refused RPC with the parsed error body, a plain
+  // object that is not an Error, and the service throws it as it came (seen in a real browser: the toast
+  // then reads the fixed copy, the same as the app's other RPC toasts). It still says something, and the
+  // screen is as it was.
+  it('an error that is not an Error (a PostgREST error body) says the fixed copy', () => {
+    useWeekdayRun('stable', [plan(3), plan(4)])
+    renderPlanPage()
+    confirmAndAnswer((o) => o.onError({ code: 'P0001', details: null, hint: null, message: 'v2_make_week_default: week 3 of mesocycle m is not planned' }))
+    expect(useToastStore.getState().message).toBe('Could not make this week the default')
+    expect(screen.queryByText('Make week 3 the new default?')).toBeNull()
+    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
+    expect(applyAheadMutate).not.toHaveBeenCalled()
+  })
+
+  it('...and a plain string too', () => {
     useWeekdayRun('stable', [plan(3)])
     renderPlanPage()
     confirmAndAnswer((o) => o.onError('boom'))
