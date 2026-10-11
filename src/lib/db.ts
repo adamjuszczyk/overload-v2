@@ -102,6 +102,11 @@ interface SyncQueueItem {
   payload: unknown
   createdAt: string
   attempts?: number // failed replay attempts — dead-lettered after 3
+  // A session finish queued offline (useCompleteSession). Its status and
+  // completed_at are re-derived from the server's set logs when it is replayed,
+  // after the sets queued before it have been sent (B3). Plain field, not an
+  // index: no schema bump, and items queued before this shipped lack it.
+  recomputeFinish?: boolean
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { queryClient } from '../../lib/queryClient'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from './offlineStore'
+import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
 
 export function useSyncQueueInit() {
   const addPending = useOfflineStore((s) => s.addPending)
@@ -44,6 +45,25 @@ export function useSyncQueueRunner() {
   }, [isOnline])
 }
 
+// B3: a finish queued offline guessed its status and completed_at from the
+// logs this device could see. Every set queued before it has been sent by the
+// time it is replayed (FIFO), so the server's logs are the full list: derive
+// both again from them, the same way the online finish does. A failed read
+// throws, which counts as a failed attempt like any other, never a guess.
+async function withFinishDerivedFromServer(payload: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('v2_set_logs')
+    .select('logged_at, is_skipped')
+    .eq('session_id', payload.id as string)
+  if (error) throw error
+  const logs = (data ?? []) as Array<{ logged_at: string; is_skipped: boolean }>
+  return {
+    ...payload,
+    status: shouldClassifyAsSkipped(logs.map((l) => ({ isSkipped: l.is_skipped }))) ? 'skipped' : 'completed',
+    completed_at: deriveCompletedAt(logs.map((l) => ({ loggedAt: l.logged_at }))),
+  }
+}
+
 async function flushOnce() {
   const { removePending, addFailed } = useOfflineStore.getState()
   const items = await db.sync_queue.orderBy('createdAt').toArray()
@@ -53,7 +73,11 @@ async function flushOnce() {
       if (item.operation === 'upsert') {
         const { error } = await supabase
           .from(item.table)
-          .upsert(item.payload as Record<string, unknown>)
+          .upsert(
+            item.recomputeFinish
+              ? await withFinishDerivedFromServer(item.payload as Record<string, unknown>)
+              : (item.payload as Record<string, unknown>),
+          )
         if (error) throw error
       }
       await db.sync_queue.delete(item.id!)
