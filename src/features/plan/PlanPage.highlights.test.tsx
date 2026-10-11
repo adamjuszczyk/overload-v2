@@ -256,6 +256,25 @@ describe('PlanPage SETS — the numbers that differ from last week (a week-depen
     expect(markedCells('02')).toEqual({ weight: null, reps: null, rir: null })
   })
 
+  it('a set removed in week 5 shows what it held, in the exercise\'s own unit (lbs here); one that held only a rep target shows only that', () => {
+    const lbs = pe('pe-bench', EX_BENCH, 0, { weightUnit: 'lbs' })
+    mockState.all = [
+      plan(4, [lbs], [wset('a1', 'pe-bench', 1), wset('a2', 'pe-bench', 2, { targetWeight: 100, repMin: 6, repMax: 6, targetRir: 3 })]),
+      plan(5, [lbs], [wset('b1', 'pe-bench', 1)]),
+    ]
+    renderPlan(5)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02220.5lbs × 6  RIR 3'])
+    cleanup()
+
+    // A removed set that held only a rep target shows that and nothing else (no empty placeholders).
+    mockState.all = [
+      plan(4, [BENCH], [wset('a1', 'pe-bench', 1), wset('a2', 'pe-bench', 2, { targetWeight: null, targetRir: null, repMin: 10, repMax: 12 })]),
+      plan(5, [BENCH], [wset('b1', 'pe-bench', 1)]),
+    ]
+    renderPlan(5)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['0210–12'])
+  })
+
   it('a working set added in week 5 is marked whole: its number and every number on it', () => {
     mockState.all = [week4(), plan(5, [BENCH, SQUAT], [...workSets('pe-bench', 'b5-', 4), wset('q5-1', 'pe-squat', 1, { targetWeight: 120 })])]
     renderPlan(5)
@@ -571,6 +590,8 @@ describe('PlanPage — a stable run: sets, structure and reps against the run\'s
     mockState.all = [lastWeek(), plan(5, [BENCH, lunge], [...workSets('pe-bench', 'b5-', 4, () => ({ repMin: 8, repMax: 8 })), wset('l5', 'pe-lunge', 1)])]
     renderPlan(5)
 
+    // The run's copy was read for ITS rows (Bench Press, Row — in its own order), not the week's.
+    expect(programSetReads).toContainEqual(['pe-bench', 'pe-row'])
     expect(mark(wholeRow('04'))).toBe('added') // the default has three sets
     expect(mark(wholeRow('03'))).toBeNull()
     openStructureView()
