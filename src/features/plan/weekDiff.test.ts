@@ -228,8 +228,9 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     expect(setFlags(fewer, 'e', 'e-2')?.added).toBe(false)
 
     const more = diffBetween([ex, sets('e', 4)], [ex, source])
-    expect(setFlags(more, 'e', 'e-4')?.added).toBe(true)
-    expect(setFlags(more, 'e', 'e-3')?.added).toBe(false)
+    // Here last week is both sources, and it has no fourth set: new against it in every way.
+    expect(setFlags(more, 'e', 'e-4')).toMatchObject({ added: true, weight: true, rir: true })
+    expect(setFlags(more, 'e', 'e-3')).toMatchObject({ added: false, weight: false, rir: false })
     expect(flagsOf(more, 'e').removedHeads).toEqual([])
   })
 
@@ -307,6 +308,20 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     ])
   })
 
+  it('a stage\'s weight, reps and RIR are each flagged on their own, and a stage equal to its counterpart is not flagged at all', () => {
+    const source = [wset('s1', 'e', 1, { stageKind: 'dropset' }), stage('s1a', 's1', 'e', 1, { targetWeight: 80, repMin: 6, repMax: 6, targetRir: 0 })]
+    const flags = (over: Partial<WeekPlanSet>) => {
+      const week = [wset('w1', 'e', 1, { stageKind: 'dropset' }), stage('w1a', 'w1', 'e', 1, { targetWeight: 80, repMin: 6, repMax: 6, targetRir: 0, ...over })]
+      return setFlags(diffBetween([ex, week], [ex, source]), 'e', 'w1a')
+    }
+    expect(flags({})).toEqual({ added: false, weight: false, reps: false, rir: false, kind: false })
+    expect(flags({ targetWeight: 70 })).toMatchObject({ weight: true, reps: false, rir: false })
+    expect(flags({ repMin: 8, repMax: 10 })).toMatchObject({ weight: false, reps: true, rir: false })
+    expect(flags({ isAmrap: true, repMin: null, repMax: null })).toMatchObject({ weight: false, reps: true, rir: false })
+    expect(flags({ targetRir: 1 })).toMatchObject({ weight: false, reps: false, rir: true })
+    expect(flags({ targetRir: null })).toMatchObject({ weight: false, reps: false, rir: true })
+  })
+
   it('the stages of a set the source doesn\'t have are added with it', () => {
     const week = [wset('w1', 'e', 1), wset('w2', 'e', 2, { stageKind: 'rest_pause' }), stage('w2a', 'w2', 'e', 1)]
     const d = diffBetween([ex, week], [ex, sets('e', 1)])
@@ -326,6 +341,85 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     expect(flagsOf(d, 'n').added).toBe(true)
     expect(flagsOf(d, 'n').sets.size).toBe(0)
     expect(d.removedExercises).toHaveLength(1)
+  })
+})
+
+// ─── An added set ─────────────────────────────────────────────────────────────
+
+describe('diffWeek — an added set: its number and reps are the shape source\'s to say, its weight and RIR the numbers source\'s (G34, G24)', () => {
+  const ex = [pe('e', 'bench', 0)]
+  // A stable run: the shape source is the default (three sets), the numbers source is last week; null = week 1 (no numbers source).
+  const defaultThree = () => runCopyToDiffExercises(ex, [pset('p1', 'e', 1), pset('p2', 'e', 2), pset('p3', 'e', 3)])
+  const stableWeek = (weekSets: WeekPlanSet[], lastWeek: WeekPlanSet[] | null) =>
+    diffWeek(weekToDiffExercises(ex, weekSets), { shape: defaultThree(), numbers: lastWeek ? weekToDiffExercises(ex, lastWeek) : null })
+  // Three working sets and a fourth, which the default has no room for.
+  const four = (over: Partial<WeekPlanSet> = {}) => [...sets('e', 3), wset('e-4', 'e', 4, { targetWeight: 100, targetRir: 2, ...over })]
+
+  it('week 1 has no numbers source: a set beyond the copy is added, and its weight and RIR — whatever they are — are not flagged', () => {
+    const d = stableWeek(four({ targetWeight: 999, targetRir: 0 }), null)
+    expect(setFlags(d, 'e', 'e-4')).toEqual({ added: true, weight: false, reps: false, rir: false, kind: false })
+    expect(setFlags(d, 'e', 'e-1')).toEqual({ added: false, weight: false, reps: false, rir: false, kind: false })
+  })
+
+  it('a set beyond the default whose weight and RIR equal last week\'s set at that position is added, and nothing more', () => {
+    const d = stableWeek(four(), four())
+    expect(setFlags(d, 'e', 'e-4')).toEqual({ added: true, weight: false, reps: false, rir: false, kind: false })
+  })
+
+  it('... where they differ from last week\'s set at that position, each is flagged on its own', () => {
+    expect(setFlags(stableWeek(four(), four({ targetWeight: 95 })), 'e', 'e-4')).toMatchObject({ added: true, weight: true, rir: false })
+    expect(setFlags(stableWeek(four(), four({ targetRir: 3 })), 'e', 'e-4')).toMatchObject({ added: true, weight: false, rir: true })
+  })
+
+  it('... and where last week has no set at that position, they differ from it (a set last week did not have)', () => {
+    const d = stableWeek(four(), sets('e', 3))
+    expect(setFlags(d, 'e', 'e-4')).toMatchObject({ added: true, weight: true, rir: true })
+    expect(setFlags(d, 'e', 'e-3')).toMatchObject({ added: false, weight: false, rir: false })
+  })
+
+  it('weight and RIR follow last week alone, set added or not: a set the default has and last week hasn\'t differs from last week', () => {
+    const d = diffWeek(weekToDiffExercises(ex, four()), {
+      shape: runCopyToDiffExercises(ex, [pset('p1', 'e', 1), pset('p2', 'e', 2), pset('p3', 'e', 3), pset('p4', 'e', 4)]),
+      numbers: weekToDiffExercises(ex, sets('e', 3)),
+    })
+    expect(setFlags(d, 'e', 'e-4')).toMatchObject({ added: false, weight: true, rir: true })
+  })
+
+  it('the stages of an added working set: their weight and RIR follow last week\'s stage, or last week\'s lack of the set; on week 1 never', () => {
+    const staged = (over: Partial<WeekPlanSet> = {}) => [
+      ...sets('e', 3),
+      wset('e-4', 'e', 4, { stageKind: 'dropset' }),
+      stage('e-4a', 'e-4', 'e', 1, { targetWeight: 80, repMin: 6, repMax: 6, targetRir: 0, ...over }),
+    ]
+    // Last week had the same fourth set with the same stage: the stage is added, its numbers are last week's.
+    expect(setFlags(stableWeek(staged(), staged()), 'e', 'e-4a')).toEqual({ added: true, weight: false, reps: false, rir: false, kind: false })
+    // The stage's weight differs from last week's; or last week has no such set at all (its stages go with it).
+    expect(setFlags(stableWeek(staged(), staged({ targetWeight: 70 })), 'e', 'e-4a')).toMatchObject({ added: true, weight: true, rir: false })
+    expect(setFlags(stableWeek(staged(), sets('e', 3)), 'e', 'e-4a')).toMatchObject({ added: true, weight: true, rir: true })
+    // Week 1: no numbers source.
+    expect(setFlags(stableWeek(staged(), null), 'e', 'e-4a')).toMatchObject({ added: true, weight: false, rir: false })
+  })
+
+  it('a stage added under a set last week also had is the structure view\'s to mark: its numbers are not flagged for being new', () => {
+    const d = stableWeek(
+      [...sets('e', 3), wset('e-4', 'e', 4, { stageKind: 'dropset' }), stage('e-4a', 'e-4', 'e', 1)],
+      [...sets('e', 3), wset('e-4', 'e', 4)], // the same fourth set, last week without the stage
+    )
+    expect(setFlags(d, 'e', 'e-4a')).toMatchObject({ added: true, weight: false, rir: false })
+  })
+
+  it('a warmup with no counterpart is the structure view\'s to mark (a new set kind): its numbers are not flagged for being new', () => {
+    const d = diffBetween([ex, [wset('e-1', 'e', 1), wset('e-2', 'e', 2, { isWarmup: true, targetRir: null, targetWeight: 40 })]], [ex, [wset('e-1', 'e', 1)]])
+    expect(setFlags(d, 'e', 'e-2')).toMatchObject({ added: true, weight: false, rir: false })
+  })
+
+  it('an exercise the numbers source lacks has nothing inside it compared with that source', () => {
+    // Stable: the default has Bench, last week (the numbers source) doesn't.
+    const d = diffWeek(weekToDiffExercises(ex, sets('e', 2)), {
+      shape: runCopyToDiffExercises(ex, [pset('p1', 'e', 1), pset('p2', 'e', 2)]),
+      numbers: weekToDiffExercises([pe('x', 'squat', 0)], sets('x', 2)),
+    })
+    expect([...flagsOf(d, 'e').sets.values()].every((f) => !f.weight && !f.rir && !f.added)).toBe(true)
   })
 })
 
@@ -478,6 +572,19 @@ describe('chooseDiffSources — where each kind of week is compared from', () =>
     expect(choose({ weekNumber: 2, priorWeeks: prior([1], [2], [3]) })).toEqual({ shape: { kind: 'week', weekNumber: 1 }, numbers: { kind: 'week', weekNumber: 1 } })
   })
 
+  it('a stable week\'s weights and RIR are the last normal, non-empty occurrence too: a deload week or an empty one between is skipped', () => {
+    const stable = (weekNumber: number, ...weeks: Parameters<typeof prior>) => choose({ planningType: 'stable', weekNumber, priorWeeks: prior(...weeks) })
+    // Deload then empty before week 4: back to week 1. Its sets, structure and reps are the default's whichever week that is.
+    expect(stable(4, [1], [2, { deload: true }], [3, { empty: true }])).toEqual({ shape: { kind: 'runCopy' }, numbers: { kind: 'week', weekNumber: 1 } })
+    // Just a deload week before it, or just an empty one: the week before that, not the week before.
+    expect(stable(4, [1], [2], [3, { deload: true }]).numbers).toEqual({ kind: 'week', weekNumber: 2 })
+    expect(stable(4, [1], [2], [3, { empty: true }]).numbers).toEqual({ kind: 'week', weekNumber: 2 })
+    // Only weeks before this one count.
+    expect(stable(2, [1], [2], [3]).numbers).toEqual({ kind: 'week', weekNumber: 1 })
+    // Nothing usable before it: no numbers source (the default is still the shape).
+    expect(stable(3, [1, { deload: true }], [2, { empty: true }])).toEqual({ shape: { kind: 'runCopy' }, numbers: { kind: 'none' } })
+  })
+
   it('nothing is compared: a deload session, a week with no last week, and a week that started empty (provisional 84)', () => {
     const none = { shape: { kind: 'none' }, numbers: { kind: 'none' } }
     expect(choose({ isDeload: true })).toEqual(none)
@@ -580,8 +687,29 @@ describe('computeWeekDiff — a week against its sources', () => {
     // The default has no weights at all: if it were what weights are compared with, set 1 (100 = last week's) would differ.
     expect(setFlags(d, 'e', 'e-1')).toMatchObject({ weight: false, rir: false, reps: false, added: false })
     expect(setFlags(d, 'e', 'e-2')).toMatchObject({ weight: true, rir: true, reps: false, added: false })
-    // The default has two sets; a third is new.
-    expect(setFlags(d, 'e', 'e-3')).toMatchObject({ added: true })
+    // The default has two sets; a third is new — and last week had no third set either, so its weight and RIR differ from last week's.
+    expect(setFlags(d, 'e', 'e-3')).toMatchObject({ added: true, weight: true, rir: true })
+  })
+
+  it('stable: weights and RIR are the last NORMAL, non-empty week\'s — a deload week or an empty one between is skipped (the default is the shape either way)', () => {
+    const copy = runCopy([pset('p1', 'e', 1)])
+    const at = (n: number, weight: number, rir: number, over: Partial<WeekPlan> = {}) => plan(n, ex, sets('e', 1, { targetWeight: weight, targetRir: rir }), over)
+    const view = (weekSets: WeekPlanSet[], slotWeeks: WeekPlan[]) =>
+      computeWeekDiff({ planningType: 'stable', weekStart: 'copy', weekNumber: 4, week: { isDeload: false, exercises: ex, sets: weekSets }, slotWeeks, runCopy: copy })!
+    const equal = sets('e', 1, { targetWeight: 100, targetRir: 2 }) // week 2's
+    const heavier = sets('e', 1, { targetWeight: 105, targetRir: 1 })
+
+    // Week 3 is a deload session (60, RIR 4); week 2 is the last normal one (100, RIR 2).
+    const deloadBetween = [at(2, 100, 2), at(3, 60, 4, { isDeload: true })]
+    expect(setFlags(view(equal, deloadBetween), 'e', 'e-1')).toMatchObject({ weight: false, rir: false })
+    expect(setFlags(view(heavier, deloadBetween), 'e', 'e-1')).toMatchObject({ weight: true, rir: true })
+
+    // Week 3 is planned empty — with its exercises listed but no sets, or with nothing at all.
+    for (const empty of [plan(3, ex, []), plan(3, [], [])]) {
+      const emptyBetween = [at(2, 100, 2), empty]
+      expect(setFlags(view(equal, emptyBetween), 'e', 'e-1'), 'equal to week 2').toMatchObject({ weight: false, rir: false })
+      expect(setFlags(view(heavier, emptyBetween), 'e', 'e-1'), 'differs from week 2').toMatchObject({ weight: true, rir: true })
+    }
   })
 
   it('stable: the default is read for structure even when there is no last week; weights and RIR then show nothing', () => {

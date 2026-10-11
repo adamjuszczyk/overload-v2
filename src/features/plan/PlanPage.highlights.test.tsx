@@ -275,7 +275,7 @@ describe('PlanPage SETS — the numbers that differ from last week (a week-depen
     expect(removedLines().map((r) => r.textContent)).toEqual(['0210–12'])
   })
 
-  it('a working set added in week 5 is marked whole: its number and every number on it', () => {
+  it('a working set added in week 5 is marked: its number, its reps, and its weight and RIR too, since last week has no fourth set for them to equal', () => {
     mockState.all = [week4(), plan(5, [BENCH, SQUAT], [...workSets('pe-bench', 'b5-', 4), wset('q5-1', 'pe-squat', 1, { targetWeight: 120 })])]
     renderPlan(5)
 
@@ -287,14 +287,14 @@ describe('PlanPage SETS — the numbers that differ from last week (a week-depen
     expect(removedLines()).toHaveLength(0)
   })
 
-  it('a staged working set added in week 5 is marked whole with its stages (SETS); in STRUCTURE only its stage rows are added', () => {
+  it('a staged working set added in week 5 is marked with its stages (SETS); in STRUCTURE only its stage rows are added', () => {
     const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
     mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'b4-', 1)), plan(5, [BENCH], [...workSets('pe-bench', 'b5-', 1), ...staged])]
     renderPlan(5)
 
     expect(mark(wholeRow('02'))).toBe('added')
-    expect(markedCells('02')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
-    // Its two stage rows: every number on them too, though a stage's newness is not the SETS view's own mark.
+    expect(markedCells('02')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' }) // last week has no second set
+    // Its two stage rows: every number on them too (last week has no stages there), though a stage's newness is not the SETS view's own mark.
     const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
     expect(stageRows).toHaveLength(2)
     for (const row of stageRows) {
@@ -341,6 +341,28 @@ describe('PlanPage SETS — the numbers that differ from last week (a week-depen
     const stageRow = screen.getByText('↳').parentElement as HTMLElement
     const stage = cellsOf(stageRow)
     expect([mark(stage.weight), mark(stage.reps), mark(stage.rir)]).toEqual(['changed', null, null])
+  })
+
+  it('a stage\'s reps alone, and a stage\'s RIR alone, are each marked on the stage row — on that cell, and on nothing else', () => {
+    // stageOf's stage: 80 kg, 6 reps, RIR 0. Its head (01) and everything else is the same in both weeks.
+    const staged = (over: Partial<WeekPlanSet> = {}) => [wset('h', 'pe-bench', 1, { stageKind: 'dropset' }), stageOf('hs', 'h', 'pe-bench', 1, over)]
+    const stageCells = () => {
+      const c = cellsOf(screen.getByText('↳').parentElement as HTMLElement)
+      return { weight: mark(c.weight), reps: mark(c.reps), rir: mark(c.rir), accent: { reps: inAccent(c.reps), rir: inAccent(c.rir) } }
+    }
+
+    mockState.all = [plan(4, [BENCH], staged()), plan(5, [BENCH], staged({ repMin: 8, repMax: 10 }))]
+    renderPlan(5)
+    expect(stageCells()).toEqual({ weight: null, reps: 'changed', rir: null, accent: { reps: true, rir: false } })
+    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
+    expect(allMarks()).toHaveLength(1)
+    cleanup()
+
+    mockState.all = [plan(4, [BENCH], staged()), plan(5, [BENCH], staged({ targetRir: 2 }))]
+    renderPlan(5)
+    expect(stageCells()).toEqual({ weight: null, reps: null, rir: 'changed', accent: { reps: false, rir: true } })
+    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
+    expect(allMarks()).toHaveLength(1)
   })
 
   it('a warmup or a stage new this week is not the SETS view\'s to mark (it is a set kind); its working sets\' added/removed are', () => {
@@ -608,9 +630,108 @@ describe('PlanPage — a stable run: sets, structure and reps against the run\'s
     expect(programSetReads).toContainEqual(['pe-bench', 'pe-row'])
     expect(mark(wholeRow('04'))).toBe('added') // the default has three sets
     expect(mark(wholeRow('03'))).toBeNull()
+    // Last week (three sets) had no fourth set either: its weight and RIR differ from it as well as its reps from the default's.
+    expect(markedCells('04')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
     openStructureView()
     expect(exerciseMark('Lunge')).toBe('added')
     expect(removedLines().map((r) => struck(r).text)).toEqual(['Row'])
+  })
+
+  it('a set beyond the default that equals last week\'s set at that position: its number and reps are marked, its weight and RIR are not', () => {
+    stable() // the default has three sets of 8
+    // Last week had four sets (100 / 105 / 110 / 115, RIR 2, 8 reps) and this week has the same four.
+    const four = (prefix: string) => workSets('pe-bench', prefix, 4, () => ({ repMin: 8, repMax: 8 }))
+    mockState.all = [plan(4, [BENCH], four('l4-')), plan(5, [BENCH], four('b5-'))]
+    renderPlan(5)
+
+    expect(mark(wholeRow('04'))).toBe('added') // beyond the default
+    expect(inAccent(screen.getByText('04'))).toBe(true)
+    expect(markedCells('04')).toEqual({ weight: null, reps: 'changed', rir: null }) // reps are the default's to say; weight and RIR are last week's
+    expect(inAccent(cellsOf(rowOf('04')).reps)).toBe(true)
+    expect(inAccent(cellsOf(rowOf('04')).weight)).toBe(false)
+    expect(inAccent(cellsOf(rowOf('04')).rir)).toBe(false)
+    // The three the default has: nothing.
+    for (const n of ['01', '02', '03']) expect(markedCells(n), n).toEqual({ weight: null, reps: null, rir: null })
+    expect(allMarks().filter((m) => m.getAttribute('data-diff') === 'changed')).toHaveLength(1)
+  })
+
+  it('... and where last week\'s set at that position differs, its weight and RIR are marked on their own; where last week has none, both are', () => {
+    stable()
+    const four = (prefix: string, fourth: Partial<WeekPlanSet> = {}) => workSets('pe-bench', prefix, 4, (n) => ({ repMin: 8, repMax: 8, ...(n === 4 ? fourth : {}) }))
+    const weekFive = plan(5, [BENCH], four('b5-')) // the fourth: 115, RIR 2
+    const cellsOfFourth = () => markedCells('04')
+
+    mockState.all = [plan(4, [BENCH], four('l4-', { targetWeight: 100 })), weekFive]
+    renderPlan(5)
+    expect(cellsOfFourth()).toEqual({ weight: 'changed', reps: 'changed', rir: null })
+    cleanup()
+
+    mockState.all = [plan(4, [BENCH], four('l4-', { targetRir: 3 })), weekFive]
+    renderPlan(5)
+    expect(cellsOfFourth()).toEqual({ weight: null, reps: 'changed', rir: 'changed' })
+    cleanup()
+
+    mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'l4-', 3, () => ({ repMin: 8, repMax: 8 }))), weekFive]
+    renderPlan(5)
+    expect(cellsOfFourth()).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
+  })
+
+  it('a staged set beyond the default that equals last week\'s: its number, its reps and its stages\' reps are marked — no weight, no RIR', () => {
+    stable()
+    const withStaged = (prefix: string) => [
+      ...workSets('pe-bench', prefix, 3, () => ({ repMin: 8, repMax: 8 })),
+      wset(`${prefix}h`, 'pe-bench', 4, { stageKind: 'dropset', repMin: 8, repMax: 8 }),
+      stageOf(`${prefix}s1`, `${prefix}h`, 'pe-bench', 1),
+      stageOf(`${prefix}s2`, `${prefix}h`, 'pe-bench', 2),
+    ]
+    mockState.all = [plan(4, [BENCH], withStaged('l4-')), plan(5, [BENCH], withStaged('b5-'))]
+    renderPlan(5)
+
+    expect(mark(wholeRow('04'))).toBe('added')
+    expect(markedCells('04')).toEqual({ weight: null, reps: 'changed', rir: null })
+    const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
+    expect(stageRows).toHaveLength(2)
+    for (const row of stageRows) {
+      const c = cellsOf(row)
+      expect([mark(c.weight), mark(c.reps), mark(c.rir)]).toEqual([null, 'changed', null])
+    }
+  })
+
+  it('weights and RIR are last week\'s — the last NORMAL week: a deload week between is skipped', () => {
+    stable()
+    mockState.programSets = [pset('p1', 'pe-bench', 1)]
+    const weekAt = (n: number, weight: number, rir: number, over: Partial<WeekPlan> = {}) =>
+      plan(n, [BENCH], [wset(`w${n}`, 'pe-bench', 1, { targetWeight: weight, targetRir: rir })], over)
+    // Week 2: 100 / RIR 2. Week 3: a deload session, 60 / RIR 4. Week 4 is the one viewed.
+    const history = [weekAt(2, 100, 2), weekAt(3, 60, 4, { isDeload: true })]
+
+    mockState.all = [...history, weekAt(4, 100, 2)]
+    renderPlan(4)
+    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null }) // against week 2, not the deload week
+    cleanup()
+
+    mockState.all = [...history, weekAt(4, 105, 1)]
+    renderPlan(4)
+    expect(markedCells('01')).toEqual({ weight: 'changed', reps: null, rir: 'changed' }) // a real difference from week 2
+  })
+
+  it.each([
+    ['planned empty, its exercises listed', [BENCH]],
+    ['planned with nothing at all', [] as ProgramExercise[]],
+  ])('weights and RIR are last week\'s — the last NON-EMPTY week: an empty week between (%s) is skipped', (_name, emptyWeekExercises) => {
+    stable()
+    mockState.programSets = [pset('p1', 'pe-bench', 1)]
+    const weekAt = (n: number, weight: number, rir: number) => plan(n, [BENCH], [wset(`w${n}`, 'pe-bench', 1, { targetWeight: weight, targetRir: rir })])
+    const history = [weekAt(2, 100, 2), plan(3, emptyWeekExercises, [])]
+
+    mockState.all = [...history, weekAt(4, 100, 2)]
+    renderPlan(4)
+    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null }) // against week 2 — an empty week is no source
+    cleanup()
+
+    mockState.all = [...history, weekAt(4, 105, 1)]
+    renderPlan(4)
+    expect(markedCells('01')).toEqual({ weight: 'changed', reps: null, rir: 'changed' })
   })
 
   it('a stable week with no last week still compares with the default; its weights and RIR show nothing', () => {
@@ -693,13 +814,33 @@ describe('PlanPage — week 1 is compared with the run\'s copy as it is now', ()
     expect(removedLines()[0].previousElementSibling).toBe(headerOf('Bench Press').parentElement)
   })
 
-  it('week 1\'s weights and RIR are never marked, whatever they are', () => {
+  it('week 1\'s weights and RIR are never marked, whatever they are — on a set the copy lacks just as on one it has', () => {
     copy()
     mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1, { repMin: 8, repMax: 8, targetWeight: 999, targetRir: 0 }), wset('b2', 'pe-bench', 2, { targetWeight: 1, targetRir: null })])]
     renderPlan(1)
-    // Set 1 matches the copy's; set 2 is a set the copy doesn't have (added: marked whole, in SETS) — but set 1's numbers are not.
+    // Set 1 matches the copy's, and its 999 kg / RIR 0 are not marked.
     expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
+    // Set 2 is a set the copy doesn't have: its number and its reps are marked (new against the copy) — its weight and RIR are NOT.
     expect(mark(wholeRow('02'))).toBe('added')
+    expect(inAccent(screen.getByText('02'))).toBe(true)
+    expect(markedCells('02')).toEqual({ weight: null, reps: 'changed', rir: null })
+    expect(inAccent(cellsOf(rowOf('02')).reps)).toBe(true)
+    expect(inAccent(cellsOf(rowOf('02')).weight)).toBe(false)
+    expect(inAccent(cellsOf(rowOf('02')).rir)).toBe(false)
+  })
+
+  it('week 1: the stages of a set the copy lacks carry that set\'s reps mark, and no weight or RIR mark', () => {
+    copy()
+    const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
+    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1), ...staged])]
+    renderPlan(1)
+    expect(markedCells('02')).toEqual({ weight: null, reps: 'changed', rir: null })
+    const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
+    expect(stageRows).toHaveLength(2)
+    for (const row of stageRows) {
+      const c = cellsOf(row)
+      expect([mark(c.weight), mark(c.reps), mark(c.rir)]).toEqual([null, 'changed', null])
+    }
   })
 
   it('week 1 of a stable run too; and the copy\'s sets that the default dropped (removed_at) are not part of it', () => {
@@ -814,6 +955,33 @@ describe('PlanPage — what is never highlighted', () => {
     ]
     renderPlan(5)
     expect(markedCells('01').weight).toBeNull()
+  })
+
+  it('a week with one deload session: the normal session is compared as usual, and only the deload session shows nothing', () => {
+    mockState.program = makeProgram({ schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-b' } })
+    mockState.days = [workoutDay, workoutDayB]
+    const pullRow = pe('pe-pull', EX_ROW, 0, {}, 'wd-b')
+    mockState.all = [
+      // Week 4: Push 100 kg (normal); Pull 40 kg, a deload session. Week 5: Push 105 kg (a change); Pull 30 kg, a deload session again.
+      plan(4, [BENCH], [wset('b4', 'pe-bench', 1, { targetWeight: 100 })]),
+      plan(4, [pullRow], [wset('p4', 'pe-pull', 1, { targetWeight: 40 })], { workoutDayId: 'wd-b', isDeload: true }),
+      plan(5, [BENCH], [wset('b5', 'pe-bench', 1, { targetWeight: 105 })]),
+      plan(5, [pullRow], [wset('p5', 'pe-pull', 1, { targetWeight: 30 })], { workoutDayId: 'wd-b', isDeload: true }),
+    ]
+    renderPlan(5)
+
+    // Push is a normal session: its change is marked, against week 4's Push (a normal session, although Pull is a deload one that week).
+    expect(screen.queryByLabelText('Unmark this session as deload')).toBeNull()
+    expect(markedCells('01')).toEqual({ weight: 'changed', reps: null, rir: null })
+    expect(allMarks()).toHaveLength(1)
+    // Pull is the deload session: it shows nothing, in either view.
+    fireEvent.click(screen.getByText('THU'))
+    expect(screen.getByLabelText('Unmark this session as deload')).toBeTruthy()
+    expect(screen.getByText('Row')).toBeTruthy()
+    expect(allMarks()).toHaveLength(0)
+    openStructureView()
+    expect(allMarks()).toHaveLength(0)
+    expect(allRemoved()).toHaveLength(0)
   })
 
   it('a tag added this week is not highlighted — it is shown as a tag, as always', () => {

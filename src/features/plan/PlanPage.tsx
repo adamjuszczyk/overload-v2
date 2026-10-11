@@ -1807,9 +1807,12 @@ function PlanSetGroup({
   // SetRow.tsx).
   weightUnit: WeightUnit | null | undefined
   // Chunk 31 — what this exercise differs from its source by; the SETS view marks the
-  // numbers (weight, reps, RIR) of every row that has a counterpart there, and a
-  // working set that has none (new this week) whole, with the rows of its stages. A
-  // warmup set's or a stage's own newness is the STRUCTURE view's to mark.
+  // numbers (weight, reps, RIR) that differ, and a working set that has no counterpart
+  // in the shape source (new this week) by its number and its reps, with the rows of its
+  // stages' reps. Its weight and RIR are not "new": like every set's they are the numbers
+  // source's to say (weekDiff.ts), so they are marked only where last week's set at that
+  // position differs or isn't there, and never on week 1. A warmup set's or a stage's own
+  // newness is the STRUCTURE view's to mark.
   diff?: ExerciseDiff
   onRemoveHead: () => void
   onUpdate: (id: string, changes: SetChanges) => void
@@ -1821,12 +1824,15 @@ function PlanSetGroup({
   // kind marker.
   const stageKind = resolveStageKind(head.stageKind ?? null)
   const headDiff = diff?.sets.get(head.id)
-  const whole = !!headDiff?.added && !head.isWarmup
+  // A working set the shape source has no set for: new, so its number and its reps (and
+  // its stages' reps) are marked. Its weight and RIR are NOT marked for being new: they
+  // follow headDiff.weight / .rir (the numbers source's), like every other set's.
+  const newSet = !!headDiff?.added && !head.isWarmup
   return (
     <div>
       <SetRow
         displayNumber={displayNumber}
-        marks={{ number: whole, weight: whole || !!headDiff?.weight, reps: whole || !!headDiff?.reps, rir: whole || !!headDiff?.rir }}
+        marks={{ number: newSet, weight: !!headDiff?.weight, reps: newSet || !!headDiff?.reps, rir: !!headDiff?.rir }}
         targetRir={head.targetRir}
         repTarget={columnsToRepTarget({ repMin: head.repMin ?? null, repMax: head.repMax ?? null, isAmrap: head.isAmrap ?? false })}
         targetWeight={head.targetWeight ?? null}
@@ -1871,7 +1877,7 @@ function PlanSetGroup({
               <SetRow
                 key={stage.id}
                 isStage
-                marks={{ weight: whole || !!stageDiff?.weight, reps: whole || !!stageDiff?.reps, rir: whole || !!stageDiff?.rir }}
+                marks={{ weight: !!stageDiff?.weight, reps: newSet || !!stageDiff?.reps, rir: !!stageDiff?.rir }}
                 targetRir={stage.targetRir}
                 repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
                 targetWeight={stage.targetWeight ?? null}

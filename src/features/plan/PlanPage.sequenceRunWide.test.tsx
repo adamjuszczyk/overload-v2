@@ -264,6 +264,9 @@ describe('PlanPage STRUCTURE on a sequence run — the run-wide writes are the v
   ])('$slot ($workout): its routine item, its own exercise ($own), its set — each addressed by $workout\'s own ids', ({ slot, workout, own, ownRow, absent, routineItem, setRow, setOf, programRows }) => {
     renderPlan()
     if (slot !== 'SLOT 1') fireEvent.click(screen.getByText(slot)) // (in the SETS view: the STRUCTURE view's hooks are not called yet)
+    // SLOT 1 is the slot shown first, so whatever was read so far was its panel's (workout A's run copy); from here on
+    // the chosen slot's panel is the only one mounted, and every read is its own.
+    programSetReads.length = 0
     openStructureView()
     for (const text of absent) expect(screen.queryByText(text), `${text} is another slot's`).toBeNull()
     expect(screen.getByText(own)).toBeTruthy()
@@ -280,10 +283,10 @@ describe('PlanPage STRUCTURE on a sequence run — the run-wide writes are the v
     expect(writes[1]).toEqual(['rest', { id: ownRow, changes: { restSeconds: 15 } }])
     expect(writes[2][1]).toMatchObject({ id: setRow })
     for (const hook of ['rest', 'routine', 'updateItem', 'blocks', 'link']) expect(keyedBy(hook), hook).toEqual([workout])
-    // Every read is this slot's own rows (the STRUCTURE view's) or a shown workout's run copy (the
-    // highlighting's, chunk 31: SLOT 1 is shown first, whichever slot is then chosen) ...
-    const runCopies = Object.keys(RUN_COPY).map(runCopyRows)
-    expect(programSetReads.every((ids) => [programRows, ...runCopies].includes(ids.join()))).toBe(true)
+    // Every read is this slot's own rows (the STRUCTURE view's) or the run copy of this slot's OWN workout (the
+    // highlighting's, chunk 31) — never another workout's run copy ...
+    expect(programSetReads.length).toBeGreaterThan(0)
+    expect(programSetReads.every((ids) => [programRows, runCopyRows(workout)].includes(ids.join()))).toBe(true)
     // ... and the STRUCTURE view did read this slot's own rows.
     expect(programSetReads.some((ids) => ids.join() === programRows)).toBe(true)
   })

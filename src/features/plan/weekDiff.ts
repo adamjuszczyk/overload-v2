@@ -30,6 +30,13 @@ import { findLastUsableWeek, type PlannedWeekRecord, type PlanningType, type Wee
 // week, and a week-dependent week's reps, weights and RIR all with last week.
 // Reps always follow the SHAPE source: "a stable week's against the default, a
 // week-dependent week's against last week, and week 1's against the run's copy".
+// That holds for a set the shape source has no counterpart for (an ADDED set) too:
+// its number and its reps are the shape source's to say (new, so marked), but its
+// weight and RIR are the numbers source's, like any other set's — never marked on
+// week 1, and against last week's set at that position otherwise (marked when last
+// week has none there, or when it differs). So a stable week's fourth set, beyond a
+// three-set default, whose weight and RIR equal last week's fourth set's, is marked
+// for its number and reps only.
 //
 // Nothing is compared (no source at all) for: a deload session (SPEC's default:
 // it differs by design and is already marked); a week-dependent week after week 1
@@ -226,7 +233,8 @@ export function plannedWeekRecords(weeks: WeekPlan[]): PlannedWeekRecord[] {
 // What differs about one set row (a head or a stage) of the week.
 export interface SetDiff {
   // No counterpart in the shape source: the set (a stage) is new. A set under a new
-  // set is new too.
+  // set is new too. This says nothing about weight and RIR: those follow the numbers
+  // source alone (a new set's can equal last week's).
   added: boolean
   weight: boolean
   reps: boolean
@@ -381,25 +389,41 @@ function compareShape(week: DiffExercise, source: DiffExercise, out: ExerciseDif
   }
 }
 
-// Weights and RIR of one exercise both sides have: set by set where the other side
-// has the set; a set it doesn't have is not compared (it is added or removed, and
-// that is the shape's to say).
+// Weights and RIR of one exercise both sources have, set by set against the set at the
+// same position of the NUMBERS source — whatever the shape source says about that set:
+// a set the default lacks is not thereby a different weight (it is the shape's to say
+// it is new), and one the default has but last week lacks is compared with last week.
+//   - a counterpart: the number differs, or it doesn't;
+//   - a working set with no counterpart at its position (last week has no such set) is
+//     new against last week, so its weight and RIR differ from it; so do its stages';
+//   - a warmup or a stage with no counterpart is a new set kind, which the structure
+//     view marks (a warmup's or a stage's own newness is not the sets view's), so its
+//     numbers are left alone.
 function compareNumbers(week: DiffExercise, source: DiffExercise, out: ExerciseDiff): void {
-  const count = Math.min(week.heads.length, source.heads.length)
-  for (let p = 0; p < count; p++) {
-    const w = week.heads[p]
+  week.heads.forEach((w, p) => {
     const s = source.heads[p]
     const d = setDiffOf(out, w.id)
-    d.weight = w.targetWeight !== s.targetWeight
-    d.rir = w.targetRir !== s.targetRir
-    for (const stage of w.stages) {
-      const counterpart = s.stages.find((x) => x.stageIndex === stage.stageIndex)
-      if (!counterpart) continue
-      const sd = setDiffOf(out, stage.id)
-      sd.weight = stage.targetWeight !== counterpart.targetWeight
-      sd.rir = stage.targetRir !== counterpart.targetRir
+    const newAgainstSource = !s && !w.isWarmup
+    if (s) {
+      d.weight = w.targetWeight !== s.targetWeight
+      d.rir = w.targetRir !== s.targetRir
+    } else if (newAgainstSource) {
+      d.weight = true
+      d.rir = true
     }
-  }
+    for (const stage of w.stages) {
+      const counterpart = s?.stages.find((x) => x.stageIndex === stage.stageIndex)
+      if (counterpart) {
+        const sd = setDiffOf(out, stage.id)
+        sd.weight = stage.targetWeight !== counterpart.targetWeight
+        sd.rir = stage.targetRir !== counterpart.targetRir
+      } else if (newAgainstSource) {
+        const sd = setDiffOf(out, stage.id)
+        sd.weight = true
+        sd.rir = true
+      }
+    }
+  })
 }
 
 export function diffWeek(
