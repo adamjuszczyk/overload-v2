@@ -221,6 +221,43 @@ describe('fetchProgramSets', () => {
   })
 })
 
+// Chunk 31 (migration 040): a set the run's default has dropped keeps its row (weeks planned earlier still
+// name it, and the workout screen finds a planned set's rest through it), so the fetch keeps returning it —
+// Plan's highlighting and v2_plan_week are what leave it out of "the default".
+describe('fetchProgramSets — a set removed from the default (removed_at)', () => {
+  const row = (id: string, removedAt?: string | null) => ({
+    id, user_id: 'user-1', program_exercise_id: 'pe-1', position: 1,
+    is_warmup: false, stage_kind: null, stage_rest_seconds: null,
+    parent_program_set_id: null, stage_index: 0, rep_min: 8, rep_max: 8,
+    is_amrap: false, rest_seconds: 90, created_at: '2026-01-01T00:00:00Z',
+    ...(removedAt === undefined ? {} : { removed_at: removedAt }),
+  })
+
+  it('is still returned, carrying removedAt, and the query does not filter it out', async () => {
+    const chain = makeChain({ data: [row('ps-1'), row('ps-2', '2026-10-01T00:00:00Z')], error: null })
+    fromMock.mockReturnValue(chain)
+
+    const result = await fetchProgramSets(['pe-1'])
+
+    expect(result.map((r) => r.id)).toEqual(['ps-1', 'ps-2'])
+    expect(result[1].removedAt).toBe('2026-10-01T00:00:00Z')
+    expect(result[1].restSeconds).toBe(90) // its rest is still there for the workout screen
+    // No filter on the column: the rows come back whatever removed_at says.
+    expect(chain.is).toBeUndefined()
+    expect(chain.eq).not.toHaveBeenCalledWith('removed_at', expect.anything())
+  })
+
+  it('a set that was never removed maps exactly as it did (no removedAt field), whether the column is null or not there yet', async () => {
+    const chain = makeChain({ data: [row('ps-1', null), row('ps-2')], error: null })
+    fromMock.mockReturnValue(chain)
+
+    const result = await fetchProgramSets(['pe-1'])
+
+    expect('removedAt' in result[0]).toBe(false)
+    expect('removedAt' in result[1]).toBe(false)
+  })
+})
+
 // ─── setExerciseSetCount ────────────────────────────────────────────────────
 
 describe('setExerciseSetCount — reconciles head rows to exactly `count`', () => {

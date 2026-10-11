@@ -33,6 +33,9 @@ type DbProgramSet = {
   is_amrap: boolean
   rest_seconds: number | null
   created_at: string
+  // Absent until migration 040 has been applied (chunk 32): when the default drops a
+  // set it is set, not deleted.
+  removed_at?: string | null
 }
 
 function toProgramSet(row: DbProgramSet): ProgramSet {
@@ -51,6 +54,9 @@ function toProgramSet(row: DbProgramSet): ProgramSet {
     isAmrap: row.is_amrap,
     restSeconds: row.rest_seconds,
     createdAt: row.created_at,
+    // Only on a row the default has dropped: every other row maps exactly as it did
+    // before 040 (Plan's highlighting skips a set that has it; nothing else does).
+    ...(row.removed_at ? { removedAt: row.removed_at } : {}),
   }
 }
 
@@ -59,6 +65,12 @@ function toProgramSet(row: DbProgramSet): ProgramSet {
 // Bulk fetch for every program-exercise id given, one request — the
 // per-workout volume view (StepVolume.tsx) calls this once per workout with
 // every one of its exercises' ids, not once per exercise.
+//
+// Returns sets with removed_at set too (040), each carrying `removedAt`: weeks
+// planned before "Make this week the new default" dropped a set still name it, and
+// the workout screen finds that planned set's rest through it. What reads the run's
+// default skips them itself (Plan's highlighting, weekDiff.ts); a filter here would
+// hide a real set's rest from the workout screen.
 export async function fetchProgramSets(programExerciseIds: string[]): Promise<ProgramSet[]> {
   if (programExerciseIds.length === 0) return []
   const { data, error } = await supabase

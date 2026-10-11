@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, CalendarDays } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
-import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit } from '../../types'
+import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit, PlanningType, ProgramSet } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
 import {
@@ -55,7 +55,7 @@ import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import ProgramTab from './ProgramTab'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
-import { MenuButton, MenuAction, MENU_PANEL_STYLE } from './planMenu'
+import { MenuButton, MenuAction, MENU_PANEL_STYLE, DiffDot } from './planMenu'
 import {
   StructureFieldsProvider,
   StructureRoutine,
@@ -69,6 +69,9 @@ import {
 } from './StructureFields'
 import { setRestMarkers, stageRestDefaultText } from './structureFields'
 import { SupersetLinkToggle, BlockRestEditor, EveryWeekLabel } from '../planner/designFieldEditors'
+import { WeekDiffGate } from './WeekDiffGate'
+import { CHANGED_BAND, CHANGED_CELL, CHANGED_EDGE, RemovedExerciseLine, RemovedSetRow, RemovedStructureRow } from './WeekDiffMarks'
+import { computeWeekDiff, weekDiffNeedsRunCopy, weeksOfSlot, type ExerciseDiff, type WeekDiff } from './weekDiff'
 import { useSequenceCurrentCycle } from './useSequenceCurrentCycle'
 import { dateForDow } from '../gym/moveSession'
 import { useToday } from '../../hooks/useToday'
@@ -753,6 +756,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
               sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
               deloadRules={effectiveDeloadRules}
+              planningType={program?.planningType ?? 'week_dependent'}
             />
           </>
         )}
@@ -787,6 +791,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               isShared={false}
               sharedWeekdays={null}
               deloadRules={effectiveDeloadRules}
+              planningType={program?.planningType ?? 'week_dependent'}
             />
           </>
         )}
@@ -832,9 +837,13 @@ interface PanelProps {
   // override, else the global default, else none — PlanPage.tsx's own
   // resolveEffectiveDeloadRules call, computed once for the whole page).
   deloadRules: DeloadRules | null
+  // Chunk 31 — the run's planning type, which decides what this week is compared
+  // with (weekDiff.ts's chooseDiffSources): undefined on the program reads as
+  // week-dependent (the column default), resolved once by PlanScreen.
+  planningType: PlanningType
 }
 
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, view, onViewChange, canCopyFromHistory, isShared, sharedWeekdays, deloadRules }: PanelProps) {
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, view, onViewChange, canCopyFromHistory, isShared, sharedWeekdays, deloadRules, planningType }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -845,7 +854,11 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   // always read before this chunk. fallbackProgramExercises is still
   // fetched unconditionally (same as before) so that "no week plan" case
   // renders exactly as today.
-  const { data: fallbackProgramExercises = [] } = useProgramExercises(workoutDay.id)
+  // Chunk 31: this same read is the run's copy of the workout (its current list: not
+  // week-only, not removed), which week 1 and a stable week are compared with, so its
+  // not-yet-read state (undefined) is kept apart from an empty list.
+  const { data: runCopyExercises } = useProgramExercises(workoutDay.id)
+  const fallbackProgramExercises = runCopyExercises ?? []
   const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
 
   // Chunk 13 — contiguous same-block runs, in this week's own order. Move
@@ -902,6 +915,23 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
     // sequencePosition (null for a weekday run, or absent on a pre-chunk-25
     // fixture) is the slot every later week must also match.
     return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber, weekPlan?.sequencePosition ?? null)
+  }
+
+  // Chunk 31 (SPEC Plan screen [P1.1]: "Anything different from the week's source is
+  // highlighted") — what this week differs from its source by, weekDiff.ts's pure
+  // decision over data Plan already holds: every week of the run (the same meso-wide
+  // read as above), narrowed to THIS workout's slot (on a sequence run a repeated
+  // workout's two slots are two histories, each compared with its own), and the run's
+  // copy of the workout, read below only for a week that is compared with it. Nothing
+  // is stored, and a week is compared as it is now (G22): the sources are read live
+  // on every render. NEW WEEK STARTS is the store's, read live like deloadRules.
+  const weekStart = useSettingsStore((s) => s.weekStart)
+  const slotWeeks = weeksOfSlot(allWeekPlansForApplyAhead, workoutDay.id, weekPlan?.sequencePosition ?? null)
+  const diffNeedsRunCopy =
+    !!weekPlan && weekDiffNeedsRunCopy({ planningType, weekStart, weekNumber, slotWeeks, isDeload: weekPlan.isDeload })
+  function computeDiff(runCopy: { exercises: ProgramExercise[]; programSets: ProgramSet[] } | null): WeekDiff | null {
+    if (!weekPlan) return null
+    return computeWeekDiff({ planningType, weekStart, weekNumber, week: weekPlan, slotWeeks, runCopy })
   }
 
   // Which sheet (if any) is open: swapping a specific slot, or adding a new
@@ -1185,8 +1215,29 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   // STRUCTURE view `fieldsFor` carries each exercise's run-wide fields (chunk 30:
   // StructureFields.tsx); in SETS it is null and a section draws exactly what it
   // did before.
-  function renderExercises(fieldsFor: StructureFieldsFor | null) {
-    return programExercises.map((pe, idx) => {
+  //
+  // Chunk 31: `diff` is what this week differs from its source by (null: nothing is
+  // compared, and this draws exactly what it always did). The STRUCTURE view draws an
+  // exercise the source has and the week doesn't as a dim struck-through line right
+  // after the exercise it followed there — a swap: the old exercise directly above
+  // the new one — so the list below is the week's exercises with those lines among
+  // them, and "last" is the last of them.
+  function renderExercises(fieldsFor: StructureFieldsFor | null, diff: WeekDiff | null) {
+    const removedAfter = (anchor: string | null) =>
+      view === 'structure' && diff ? diff.removedExercises.filter((r) => r.after === anchor) : []
+    type Entry = { kind: 'exercise'; pe: ProgramExercise; idx: number } | { kind: 'removed'; key: string; name: string }
+    const entries: Entry[] = []
+    removedAfter(null).forEach((r, i) => entries.push({ kind: 'removed', key: `removed:top:${i}`, name: r.name }))
+    programExercises.forEach((pe, idx) => {
+      entries.push({ kind: 'exercise', pe, idx })
+      removedAfter(pe.id).forEach((r, i) => entries.push({ kind: 'removed', key: `removed:${pe.id}:${i}`, name: r.name }))
+    })
+
+    return entries.map((entry, entryIdx) => {
+      if (entry.kind === 'removed') {
+        return <RemovedExerciseLine key={entry.key} name={entry.name} isLast={entryIdx === entries.length - 1} />
+      }
+      const { pe, idx } = entry
       const exerciseSets = sets.filter((s) => s.programExerciseId === pe.id)
       const groups = groupWeekPlanSets(exerciseSets).sort(
         (a, b) => a.head.setNumber - b.head.setNumber,
@@ -1205,7 +1256,8 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
           pe={pe}
           groups={groups}
           isPast={isPast}
-          isLast={idx === programExercises.length - 1}
+          isLast={entryIdx === entries.length - 1}
+          diff={diff?.exercises.get(pe.id)}
           // A marker on every member of a 2+ block (a plain week shows it on
           // nobody). Linking and unlinking is the STRUCTURE view's toggle
           // between two neighbours (`structure.link`), run-wide (SPEC Supersets
@@ -1358,14 +1410,22 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
               NO EXERCISES IN THIS DAY
             </p>
           </div>
-        ) : view === 'structure' ? (
-          // Every hook the run-wide fields add lives in this one component, so
-          // the SETS view calls none of them.
-          <StructureFieldsProvider workoutDayId={workoutDay.id} programExercises={programExercises} isPast={isPast}>
-            {(fieldsFor) => renderExercises(fieldsFor)}
-          </StructureFieldsProvider>
         ) : (
-          renderExercises(null)
+          // What differs from the week's source (chunk 31). The gate reads the run's
+          // copy's sets only for a week that is compared with it.
+          <WeekDiffGate needsRunCopy={diffNeedsRunCopy} runCopyExercises={runCopyExercises} compute={computeDiff}>
+            {(diff) =>
+              view === 'structure' ? (
+                // Every hook the run-wide fields add lives in this one component, so
+                // the SETS view calls none of them.
+                <StructureFieldsProvider workoutDayId={workoutDay.id} programExercises={programExercises} isPast={isPast}>
+                  {(fieldsFor) => renderExercises(fieldsFor, diff)}
+                </StructureFieldsProvider>
+              ) : (
+                renderExercises(null, diff)
+              )
+            }
+          </WeekDiffGate>
         )}
       </div>
 
@@ -1524,6 +1584,11 @@ interface ExerciseSectionProps {
   // rest), STRUCTURE view only: null in SETS, where the section draws exactly
   // what it did before (StructureFields.tsx).
   structure: StructureExerciseFields | null
+  // Chunk 31 — what this exercise differs from its source by (weekDiff.ts). Undefined:
+  // nothing is compared, and the section draws exactly what it always did. SETS marks
+  // the numbers (weight, reps, RIR) and working sets added or removed; STRUCTURE the
+  // exercise (added, moved), warmup sets and stages added or removed, and a set's kind.
+  diff?: ExerciseDiff
 }
 
 function ExerciseSection({
@@ -1548,9 +1613,16 @@ function ExerciseSection({
   inSuperset,
   showMoveControls,
   structure,
+  diff,
 }: ExerciseSectionProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const name = pe.exercise?.name ?? 'this exercise'
+  // An exercise that is new this week, or has moved: its header is highlighted, in the
+  // STRUCTURE view only (exercises and their order are that view's fields).
+  const mark = view === 'structure' && diff ? (diff.added ? 'added' : diff.moved ? 'moved' : null) : null
+  // The rows the source has and the week doesn't, drawn after the week's own: a working
+  // set in SETS, a warmup set in STRUCTURE (stages are drawn under their set).
+  const removedHeads = (diff?.removedHeads ?? []).filter((r) => (view === 'sets' ? !r.isWarmup : r.isWarmup))
   // Every menu action closes the menu: it was opened for one action.
   const act = (fn: () => void) => () => {
     setMenuOpen(false)
@@ -1559,9 +1631,9 @@ function ExerciseSection({
   return (
     <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
       {/* Exercise header row */}
-      <div style={{ padding: '12px 16px 6px', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div data-diff={mark ?? undefined} style={{ padding: '12px 16px 6px', display: 'flex', alignItems: 'center', gap: 10, ...(mark ? CHANGED_BAND : {}) }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: mark ? 'var(--accent)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {pe.exercise?.name ?? '—'}
           </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
@@ -1634,7 +1706,7 @@ function ExerciseSection({
           SETS view's rows carry the numbers; the STRUCTURE view's carry the
           kind (and the ⋯ that changes it). Both number the heads the same
           way, so "set 2" is the same set in either. */}
-      {groups.length > 0 && (
+      {(groups.length > 0 || removedHeads.length > 0) && (
         <div style={{ paddingBottom: 10 }}>
           {groups.map((group, idx) =>
             view === 'sets' ? (
@@ -1644,6 +1716,7 @@ function ExerciseSection({
                 displayNumber={idx + 1}
                 isPast={isPast}
                 weightUnit={pe.weightUnit}
+                diff={diff}
                 onRemoveHead={() => onRemoveSet(group.head.id)}
                 onUpdate={(id, changes) => onUpdateSet(id, changes)}
                 onApplyTagToAll={onApplyTagToAll}
@@ -1656,11 +1729,19 @@ function ExerciseSection({
                 exerciseName={name}
                 isPast={isPast}
                 setFields={structure?.setFields}
+                diff={diff}
                 onRemoveHead={() => onRemoveSet(group.head.id)}
                 onRemoveStage={(id) => onRemoveSet(id)}
                 onUpdate={(id, changes) => onUpdateSet(id, changes)}
                 onAddStage={() => onAddStage(group)}
               />
+            ),
+          )}
+          {removedHeads.map((removed) =>
+            view === 'sets' ? (
+              <RemovedSetRow key={`removed:${removed.ordinal}`} removed={removed} weightUnit={pe.weightUnit} />
+            ) : (
+              <RemovedStructureRow key={`removed:${removed.ordinal}`} removed={removed} />
             ),
           )}
         </div>
@@ -1712,6 +1793,7 @@ function PlanSetGroup({
   displayNumber,
   isPast,
   weightUnit,
+  diff,
   onRemoveHead,
   onUpdate,
   onApplyTagToAll,
@@ -1724,6 +1806,14 @@ function PlanSetGroup({
   // SetRow's own useWeightDisplay call, same pattern as the gym screen's
   // SetRow.tsx).
   weightUnit: WeightUnit | null | undefined
+  // Chunk 31 — what this exercise differs from its source by; the SETS view marks the
+  // numbers (weight, reps, RIR) that differ, and a working set that has no counterpart
+  // in the shape source (new this week) by its number and its reps, with the rows of its
+  // stages' reps. Its weight and RIR are not "new": like every set's they are the numbers
+  // source's to say (weekDiff.ts), so they are marked only where last week's set at that
+  // position differs or isn't there, and never on week 1. A warmup set's or a stage's own
+  // newness is the STRUCTURE view's to mark.
+  diff?: ExerciseDiff
   onRemoveHead: () => void
   onUpdate: (id: string, changes: SetChanges) => void
   onApplyTagToAll: (tag: string) => void
@@ -1733,10 +1823,16 @@ function PlanSetGroup({
   // SetGroup.tsx uses (a legacy/null kind reads as a dropset): the head's
   // kind marker.
   const stageKind = resolveStageKind(head.stageKind ?? null)
+  const headDiff = diff?.sets.get(head.id)
+  // A working set the shape source has no set for: new, so its number and its reps (and
+  // its stages' reps) are marked. Its weight and RIR are NOT marked for being new: they
+  // follow headDiff.weight / .rir (the numbers source's), like every other set's.
+  const newSet = !!headDiff?.added && !head.isWarmup
   return (
     <div>
       <SetRow
         displayNumber={displayNumber}
+        marks={{ number: newSet, weight: !!headDiff?.weight, reps: newSet || !!headDiff?.reps, rir: !!headDiff?.rir }}
         targetRir={head.targetRir}
         repTarget={columnsToRepTarget({ repMin: head.repMin ?? null, repMax: head.repMax ?? null, isAmrap: head.isAmrap ?? false })}
         targetWeight={head.targetWeight ?? null}
@@ -1775,18 +1871,22 @@ function PlanSetGroup({
 
       {stages.length > 0 && (
         <div style={STAGE_NEST_STYLE}>
-          {stages.map((stage) => (
-            <SetRow
-              key={stage.id}
-              isStage
-              targetRir={stage.targetRir}
-              repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
-              targetWeight={stage.targetWeight ?? null}
-              weightUnit={weightUnit}
-              isPast={isPast}
-              onUpdate={(changes) => onUpdate(stage.id, changes)}
-            />
-          ))}
+          {stages.map((stage) => {
+            const stageDiff = diff?.sets.get(stage.id)
+            return (
+              <SetRow
+                key={stage.id}
+                isStage
+                marks={{ weight: !!stageDiff?.weight, reps: newSet || !!stageDiff?.reps, rir: !!stageDiff?.rir }}
+                targetRir={stage.targetRir}
+                repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
+                targetWeight={stage.targetWeight ?? null}
+                weightUnit={weightUnit}
+                isPast={isPast}
+                onUpdate={(changes) => onUpdate(stage.id, changes)}
+              />
+            )
+          })}
         </div>
       )}
     </div>
@@ -1815,6 +1915,7 @@ function StructureSetGroup({
   exerciseName,
   isPast,
   setFields,
+  diff,
   onRemoveHead,
   onRemoveStage,
   onUpdate,
@@ -1829,6 +1930,12 @@ function StructureSetGroup({
   // them over. A set that names no program set of its own exercise row gets none
   // (G45), whatever this is.
   setFields?: (set: WeekPlanSet) => StructureSetFields
+  // Chunk 31 — what this exercise differs from its source by; the STRUCTURE view marks
+  // a warmup set or a stage that is new this week, a warmup or stage the source has and
+  // the week doesn't (a dim struck-through row in its place), and — on the set's ⋯ — a
+  // set whose kind differs (warmup, staged, and the stage kind). A working set's own
+  // newness is the SETS view's.
+  diff?: ExerciseDiff
   onRemoveHead: () => void
   onRemoveStage: (id: string) => void
   onUpdate: (id: string, changes: SetChanges) => void
@@ -1839,11 +1946,21 @@ function StructureSetGroup({
   const headFields = setFields ? setFields(head) : null
   const isStaged = stages.length > 0
   const headOf = `set ${displayNumber} for ${exerciseName}`
+  const headDiff = diff?.sets.get(head.id)
+  // The stages the source's counterpart has and this set hasn't, among this set's own
+  // in stage order.
+  const removedStages = diff?.removedStages.get(head.id) ?? []
+  const stageRows = [
+    ...stages.map((stage, stageIdx) => ({ stageIndex: stage.stageIndex, stage, stageIdx, removed: undefined })),
+    ...removedStages.map((removed) => ({ stageIndex: removed.stageIndex ?? 0, stage: undefined, stageIdx: -1, removed })),
+  ].sort((a, b) => a.stageIndex - b.stageIndex)
   return (
     <div>
       <StructureSetRow
         displayNumber={displayNumber}
         isPast={isPast}
+        added={head.isWarmup && !!headDiff?.added}
+        kindChanged={!!headDiff?.kind}
         kindLabel={head.isWarmup ? 'WARMUP' : isStaged ? STAGE_KIND_LABELS[stageKind] : undefined}
         restMarkers={setRestMarkers(headFields?.programSet ?? null, isStaged)}
         menu={(close) =>
@@ -1883,15 +2000,17 @@ function StructureSetGroup({
         }
       />
 
-      {isStaged && (
+      {stageRows.length > 0 && (
         <div style={STAGE_NEST_STYLE}>
-          {stages.map((stage, stageIdx) => {
+          {stageRows.map(({ stage, stageIdx, removed }) => {
+            if (!stage) return <RemovedStructureRow key={`removed:${removed!.stageIndex}`} removed={removed!} />
             const stageFieldsOf = setFields ? setFields(stage) : null
             return (
               <StructureSetRow
                 key={stage.id}
                 isStage
                 isPast={isPast}
+                added={!!diff?.sets.get(stage.id)?.added}
                 restMarkers={setRestMarkers(stageFieldsOf?.programSet ?? null, false)}
                 menu={(close) => (
                   <>
@@ -1921,6 +2040,8 @@ function StructureSetRow({
   kindLabel,
   restMarkers,
   isPast,
+  added = false,
+  kindChanged = false,
   menu,
 }: {
   displayNumber?: number
@@ -1928,22 +2049,28 @@ function StructureSetRow({
   kindLabel?: string
   restMarkers?: string[]
   isPast: boolean
+  // Chunk 31 — a warmup set or a stage that is new this week: its row is the accent
+  // (its number, on the muted band an added exercise's header has).
+  added?: boolean
+  // Chunk 31 — the set's kind differs from the source's: a dot on the ⋯ (the kind
+  // controls are inside it), or, on a past week with no ⋯, on the spacer in its place.
+  kindChanged?: boolean
   menu: (close: () => void) => React.ReactNode
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
+    <div data-diff={added ? 'added' : undefined}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6, ...(added ? CHANGED_BAND : {}) }}>
         {/* Set number */}
-        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
+        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: added ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}>
           {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
         </span>
         <div style={{ flex: 1, minWidth: 0 }} />
         {isPast ? (
-          <div style={{ width: 28, flexShrink: 0 }} />
+          <div style={{ width: 28, flexShrink: 0, ...(kindChanged ? { position: 'relative' as const } : {}) }}>{kindChanged && <DiffDot />}</div>
         ) : (
-          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} />
+          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} dot={kindChanged} />
         )}
       </div>
 
@@ -2001,6 +2128,7 @@ function SetRow({
   tags,
   isPast,
   isWarmup = false,
+  marks,
   menu,
   onUpdate,
 }: {
@@ -2029,6 +2157,10 @@ function SetRow({
   // RIR stepper out: "Mandatory fields never apply to warmup sets" [P2], and
   // RIR is never logged on one in the first place.
   isWarmup?: boolean
+  // Chunk 31 — which of the row's values differ from the week's source (weekDiff.ts):
+  // the number (a working set new this week), weight, reps, RIR. Each marked one is
+  // drawn in the accent; a row with none is what it always was.
+  marks?: { number?: boolean; weight?: boolean; reps?: boolean; rir?: boolean }
   // The ⋯ menu's contents; `close` collapses the panel. Omitted on a row with
   // nothing to put behind a ⋯ (an empty ⋯ would be a placeholder), and ignored
   // on a past (read-only) week, which gets no ⋯ at all.
@@ -2044,10 +2176,10 @@ function SetRow({
   const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
 
   return (
-    <div>
+    <div data-diff={marks?.number ? 'added' : undefined}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
         {/* Set number */}
-        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: 'var(--text-dim)', flexShrink: 0 }}>
+        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: marks?.number ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}>
           {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
         </span>
 
@@ -2057,6 +2189,7 @@ function SetRow({
           valueKg={targetWeight}
           unit={resolvedUnit}
           disabled={isPast}
+          changed={!!marks?.weight}
           onChange={(kg) => onUpdate({ targetWeight: kg })}
         />
 
@@ -2068,6 +2201,7 @@ function SetRow({
           value={repTarget}
           currentTargetRir={targetRir}
           disabled={isPast}
+          changed={!!marks?.reps}
           onChange={(columns) => onUpdate(columns)}
         />
 
@@ -2078,6 +2212,7 @@ function SetRow({
           <RirStepper
             value={targetRir}
             disabled={isPast}
+            changed={!!marks?.rir}
             onChange={(v) => onUpdate({ targetRir: v })}
           />
         )}
@@ -2139,11 +2274,14 @@ function RepTargetEditor({
   value,
   currentTargetRir,
   disabled,
+  changed = false,
   onChange,
 }: {
   value: RepTarget
   currentTargetRir: number | null
   disabled: boolean
+  // Chunk 31 — the target differs from the week's source: the cell is the accent.
+  changed?: boolean
   onChange: (columns: RepTargetColumns & { targetRir?: number }) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -2211,7 +2349,8 @@ function RepTargetEditor({
       onClick={startEditing}
       disabled={disabled}
       aria-label={value.type === 'none' ? 'Set rep target' : undefined}
-      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: value.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)' }}
+      data-diff={changed ? 'changed' : undefined}
+      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: value.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)', ...(changed ? CHANGED_CELL : {}) }}
     >
       {value.type === 'none' ? '—' : formatRepTarget(value)}
     </button>
@@ -2230,11 +2369,14 @@ function WeightTargetEditor({
   valueKg,
   unit,
   disabled,
+  changed = false,
   onChange,
 }: {
   valueKg: number | null
   unit: WeightUnit
   disabled: boolean
+  // Chunk 31 — the target differs from the week's source: the cell is the accent.
+  changed?: boolean
   onChange: (kg: number | null) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -2308,7 +2450,8 @@ function WeightTargetEditor({
       type="button"
       onClick={startEditing}
       disabled={disabled}
-      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontSize: 12, color: valueKg === null ? 'var(--text-dim)' : 'var(--text-primary)' }}
+      data-diff={changed ? 'changed' : undefined}
+      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontSize: 12, color: valueKg === null ? 'var(--text-dim)' : 'var(--text-primary)', ...(changed ? CHANGED_CELL : {}) }}
     >
       {valueKg != null ? `${toDisplayWeight(valueKg, unit)}${unit}` : '—'}
     </button>
@@ -2435,14 +2578,17 @@ function TagsEditor({
 function RirStepper({
   value,
   disabled,
+  changed = false,
   onChange,
 }: {
   value: number | null
   disabled: boolean
+  // Chunk 31 — the RIR differs from the week's source: the stepper is the accent.
+  changed?: boolean
   onChange: (v: number | null) => void
 }) {
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', height: 28, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0 }}>
+    <div data-diff={changed ? 'changed' : undefined} style={{ display: 'inline-flex', alignItems: 'center', height: 28, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0, ...(changed ? CHANGED_EDGE : {}) }}>
       <button
         disabled={disabled || value === null}
         onClick={() => {
@@ -2455,11 +2601,11 @@ function RirStepper({
       </button>
       <div style={{ minWidth: 46, textAlign: 'center', whiteSpace: 'nowrap' }}>
         {value === null ? (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: 'var(--text-dim)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: changed ? 'var(--accent)' : 'var(--text-dim)' }}>
             NO RIR
           </span>
         ) : (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: 'var(--text-primary)' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: changed ? 'var(--accent)' : 'var(--text-primary)' }}>
             RIR {value}
           </span>
         )}

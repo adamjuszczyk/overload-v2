@@ -285,6 +285,21 @@ export function useAddWarmupSet(mesoId: string, weekNumber: number) {
   })
 }
 
+// Chunk 31 (SPEC Plan screen [P1.1]: "A week is compared with its source as it is
+// now"). Plan reads a source week's content from the meso-wide list
+// (useAllWeekPlans), and an edit of a set's numbers or the removal of a set changes
+// what every LATER week is compared with, so the list is refreshed after it. Only
+// when a later week is planned: those are the weeks this one is the source of (a week
+// not planned yet is planned from the server's copy of this one, and planning it
+// refreshes the list: usePlanWeek). The list is the whole meso, every set of every
+// week, too heavy to refetch on every tap of an RIR stepper when nothing reads the
+// change. A list that hasn't been read yet is invalidated anyway (nothing to refetch).
+function refreshWeeksComparedWithThisOne(mesoId: string, weekNumber: number) {
+  const all = queryClient.getQueryData<WeekPlan[]>(['v2_allWeekPlans', mesoId])
+  if (all && !all.some((wp) => wp.weekNumber > weekNumber)) return
+  queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+}
+
 export function useUpdateSet(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
@@ -340,7 +355,10 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      refreshWeeksComparedWithThisOne(mesoId, weekNumber)
+    },
   })
 }
 
@@ -385,7 +403,10 @@ export function useRemoveSet(mesoId: string, weekNumber: number) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: qk })
+      refreshWeeksComparedWithThisOne(mesoId, weekNumber)
+    },
   })
 }
 
