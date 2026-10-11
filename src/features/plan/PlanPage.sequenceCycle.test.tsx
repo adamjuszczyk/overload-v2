@@ -526,12 +526,12 @@ function expectEditable(cycle: number, slot = 0) {
   // — the run-wide fields (chunk 30): an exercise's ⋯ holds REST, REST AFTER and TEMPO under EVERY WEEK
   //   and the unit, all live; the two exercises have a link toggle between them; the routine can be added to
   fireEvent.click(labelled(`${EX1} options`))
-  expect(within(screen.getByRole('group', { name: 'Every week' })).getByText('EVERY WEEK')).toBeTruthy()
+  expect(within(labelled('Every week')).getByText('EVERY WEEK')).toBeTruthy()
   expect(asButton(labelled(`More rest for ${EX1}`)).disabled).toBe(false)
   expect(asButton(labelled(`More rest after for ${EX1}`)).disabled).toBe(false)
-  expect(asButton(within(screen.getByRole('group', { name: 'Weight unit' })).getByRole('button', { name: 'LBS' })).disabled).toBe(false)
+  expect(asButton(within(labelled('Weight unit')).getByText('LBS')).disabled).toBe(false)
   fireEvent.click(labelled(`${EX1} options`))
-  expect(asButton(screen.getByRole('button', { name: /LINK AS SUPERSET/ })).disabled).toBe(false)
+  expect(asButton(screen.getByText('LINK AS SUPERSET').closest('button')).disabled).toBe(false)
   expect(screen.getByText('ADD ITEM')).toBeTruthy()
   expect(screen.getByText(ROUTINE_TEXT)).toBeTruthy()
   expect(asButton(labelled('Options for warmup item 1')).disabled).toBe(false)
@@ -581,8 +581,8 @@ function expectReadOnly() {
     expect(screen.getByText('↳')).toBeTruthy()
     // The run-wide fields (chunk 30) have no control here either: no REST / TEMPO / unit group, no link toggle
     // between the exercises, no way to add to the routine.
-    expect(screen.queryByRole('group', { name: 'Every week' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Weight unit' })).toBeNull()
+    expect(maybeLabelled('Every week')).toBeNull()
+    expect(maybeLabelled('Weight unit')).toBeNull()
     expect(allLabelled(/^(More|Less) /)).toHaveLength(0)
     expect(screen.queryByText('LINK AS SUPERSET')).toBeNull()
     expect(screen.queryByText('SUPERSET — TAP TO UNLINK')).toBeNull()
