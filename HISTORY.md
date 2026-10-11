@@ -24262,3 +24262,11 @@ it was replaced by a `$VERCEL_GIT_PREVIOUS_SHA` version, then on 2026-09-29 (Ada
 
 ### From CONTEXT.md: Rules discovered → "Known gap" (eight plan mutations on the default networkMode; fixed: #74, which also fixed a ninth, useReorderWeekExercises)
 - **Known gap (found 2026-10-06, rechecked by reading `useWeekPlan.ts` 2026-10-10):** eight plan-editing mutations still use TanStack's default network mode (`useAddSet`, `useAddStage`, `useRemoveSet`, `useCopyFromPreviousWeek`, `useCopyWorkoutFromPreviousWeek`, `useSwapWeekExercise`, `useAddWeekExercise`, `useRemoveWeekExercise`), so offline they pause instead of failing, against the house rule; the other six set `networkMode: 'always'`. Not fixed: a small separate change, raised with Adam.
+
+## 2026-10-11 sync-queue order (#83) — Moved out of CONTEXT.md (no longer true), word for word
+
+### From CONTEXT.md: Open items → "Sync queue replays past a failed item" (fixed: #83, DECISIONS 114)
+- **Sync queue replays past a failed item (found 2026-10-11 fixing B3; read from code, not fixed):** when a queued write fails transiently, `flushSyncQueue` moves on to the later ones, so an older write for the same row (a session's `in_progress` create) can land after a newer one (its finish) on a later pass. Overlap is closed (#73); this is not. Raise with Adam first.
+
+### From CONTEXT.md: Tooling and tests → Vitest count
+2359 tests in 174 files pass on master `320a6b0` (2026-10-11)
