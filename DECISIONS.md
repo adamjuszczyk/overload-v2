@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 30 (#67, merged and live; 27–29, 34, 35 and migration 040 before it). The 1.1 build is under way (31–33 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
+*Rewritten at every chunk boundary. Last: 2026-10-10, after TASKS-1.1 chunk 31 (#68, merged and live; 27–30, 34, 35 and migration 040 before it). The 1.1 build is under way (32's code and 33 to go). Adam answered G45 (entry 88); no gap is open. Display-only choices are provisional under D31 (Decisions below). The step 5 review is Adam's, against a checklist generated from SPEC.md (skip the [P1.1] rules not yet built).*
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -17,6 +17,7 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **98** — Plan's SETS / STRUCTURE details. Provisional: opens on SETS; the choice is kept across week/workout switches, not across reloads; a STRUCTURE set row shows number, kind marker and ⋯ only; a stage row has no ⋯ in SETS; an empty workout's SETS view says "NO EXERCISES IN THIS DAY" (add from STRUCTURE). Blocks: nothing.
 - **99** — "Make this week the new default": does an empty (non-deload) session count as the week's content? Provisional: no — skipped like a deload, so that workout keeps its current default (matches how copying skips empty weeks). Changes data, so say if you want the other reading; nothing has used the action yet. Blocks: nothing.
 - **102** — how run-wide fields show in STRUCTURE. Provisional: tag-style chips under the exercise or set where set (`REST 2min 45s`, `TEMPO 3-1-1-0`, `UNIT LBS` only when it differs from Settings, `STAGE REST 20s`); one EVERY WEEK label over each group; exercise ⋯ order swap/move/warmups, EVERY WEEK group, UNIT, remove; the routine as a card above the exercises (text-only on a past week, absent if empty). Blocks: nothing.
+- **104** — how differences show. Provisional: a changed number cell gets an accent border/muted fill; an added set marks its number and reps (weight/RIR only if last week's set at that position differs or is missing; never on week 1); an added/moved exercise's header is accent on the muted band; a removed exercise is a dim struck-through line in STRUCTURE after the exercise it followed (a swap: old directly above new); a removed working set shows in SETS with what it held, a removed warmup/stage in STRUCTURE; a changed kind puts a dot on the set's ⋯; the unit isn't compared. On a stable run, a set the default has but last week lacks gets weight/RIR marked. Blocks: nothing.
 
 To-dos:
 - **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
@@ -49,6 +50,11 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 103 TASKS-1.1 chunk 31 merged: differences from the week's source highlighted (#68)
+- What: chunk 31, code only. First independent review failed: an added set was "marked whole" (weight and RIR highlighted on week 1, against G34, and on stable weeks against "weights and RIR against last week"); several rules unproven (stable weights source skipping deload/empty weeks, a stage's RIR and reps, a partly-deload week). The one retry fixed and proved them; 51 earlier breaks re-run, all caught; the reviewer's own break caught.
+- Answer: merged by the reviewer, `f07da39`. Provisional 104 (D31). Note: warmups are in the set position (G23 reading), so a warmup added above shifts every later set's comparison.
+- Date: 2026-10-11
 
 ### 101 TASKS-1.1 chunk 30 merged: run-wide fields in Plan's STRUCTURE view (#67)
 - What: chunk 30, code only. Independent review of the first push: 40 of 47 adversarial breaks caught; one regression (shared `usePrograms.ts` hooks stopped returning their invalidation promise, so the link toggle's `isPending` guard cleared early, in the planner too). The one retry fixed it and added the missing proofs (a superset member's set rests, run-wide writes on a sequence run's repeated workout, the week-cache restore); 129 breaks re-run, all caught; the reviewer's own two breaks caught.
