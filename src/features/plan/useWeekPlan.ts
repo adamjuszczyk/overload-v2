@@ -24,9 +24,10 @@ import {
   repointWeekExercise,
   addWeekExercise,
   addPointedExercise,
+  addPointedSet,
+  addPointedStage,
   removeWeekExercise,
   reorderWeekExercises,
-  type PointedSet,
 } from './weekPlanService'
 import {
   planApplyAheadBundle,
@@ -582,11 +583,6 @@ export interface ApplyAheadResult {
   writtenWeekNumbers: number[]
 }
 
-// What a set added from a make-default names (chunk 32): its program set, kind and rep target.
-function pointedOf(set: PointedSet): PointedSet {
-  return { programSetId: set.programSetId, stageKind: set.stageKind, repMin: set.repMin, repMax: set.repMax, isAmrap: set.isAmrap }
-}
-
 async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> {
   switch (op.kind) {
     case 'updateSet':
@@ -624,19 +620,13 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
         sets: op.sets,
       })
       return
-    case 'addPointedSet': {
-      // A warmup goes above this week's first working set (decided from this week's
-      // rows at write time); a working set takes the number the plan gave it.
-      const head = op.set.isWarmup
-        ? await addWarmupSet(userId, op.weekPlanId, op.programExerciseId, pointedOf(op.set))
-        : await addSet(userId, op.weekPlanId, op.programExerciseId, op.setNumber, pointedOf(op.set))
-      for (const stage of op.set.stages) {
-        await addStage(userId, op.weekPlanId, op.programExerciseId, head.id, head.setNumber, stage.stageIndex, pointedOf(stage))
-      }
+    // The set numbers are decided in the service, from the week's rows as they are when
+    // each is written (applyAhead.ts: another op of the same week may have renumbered them).
+    case 'addPointedSet':
+      await addPointedSet(userId, op.weekPlanId, op.programExerciseId, op.set)
       return
-    }
     case 'addPointedStage':
-      await addStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.setNumber, op.stageIndex, pointedOf(op.set))
+      await addPointedStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.stageIndex, op.set)
       return
     case 'addExercise':
       await addWeekExercise({

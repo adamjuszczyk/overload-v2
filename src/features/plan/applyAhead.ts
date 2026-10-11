@@ -307,12 +307,16 @@ export type ApplyAheadOp =
   // sets (see this file's header). An added exercise names the default's row, not a
   // fresh week-only one; its sets name the default's program sets.
   | { kind: 'addPointedExercise'; weekPlanId: string; programExerciseId: string; position: number; sets: DefaultSetShape[] }
-  // One head with the stages it brought. A working set takes `setNumber` (this week's
-  // own next); a warmup is placed above this week's first working set when it is
-  // written, from this week's rows (warmupInsert.ts), like addWarmupSet.
-  | { kind: 'addPointedSet'; weekPlanId: string; programExerciseId: string; setNumber: number; set: DefaultSetShape }
-  // A stage added under a head the week already has.
-  | { kind: 'addPointedStage'; weekPlanId: string; programExerciseId: string; parentId: string; setNumber: number; stageIndex: number; set: DefaultSetShape }
+  // One head with the stages it brought. Its set number is decided when it is written,
+  // from this week's rows as they are THEN: a working set takes the number after this
+  // week's highest, a warmup goes above its first working set (warmupInsert.ts, like
+  // addWarmupSet) and moves the rows below it down. A number computed here, from the
+  // week as it is now, would be stale as soon as another op of the same week (a warmup
+  // added before it) renumbered the rows.
+  | { kind: 'addPointedSet'; weekPlanId: string; programExerciseId: string; set: DefaultSetShape }
+  // A stage added under a head the week already has; it takes the head's number as it is
+  // when the stage is written, for the same reason.
+  | { kind: 'addPointedStage'; weekPlanId: string; programExerciseId: string; parentId: string; stageIndex: number; set: DefaultSetShape }
 
 export type SkipReason = 'deload' | 'structural'
 
@@ -414,14 +418,6 @@ function defaultKeyOf(change: ChangeRecord): DefaultSetKey | undefined {
     default:
       return undefined
   }
-}
-
-// This week's next set number under `row`: after its highest head (stages share their
-// head's number), 1 on an empty row. A deleted set leaves a gap, and head count + 1
-// would then repeat a number a surviving set holds.
-function nextHeadSetNumber(week: WeekPlan, row: ProgramExercise): number {
-  const heads = sortedHeadsFor(week, row.id)
-  return heads.length === 0 ? 1 : heads[heads.length - 1].setNumber + 1
 }
 
 // The UI's own already-sorted groups (PlanPage.tsx computes exactly this
@@ -660,7 +656,7 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
         return {
           ...base,
           status: 'applied',
-          ops: [{ kind: 'addPointedStage', weekPlanId: week.id, programExerciseId: added.programExerciseId, parentId: linkedHead.id, setNumber: linkedHead.setNumber, stageIndex, set: added }],
+          ops: [{ kind: 'addPointedStage', weekPlanId: week.id, programExerciseId: added.programExerciseId, parentId: linkedHead.id, stageIndex, set: added }],
         }
       }
       const head = sortedHeadsFor(week, row.id)[change.headOrdinal - 1]
@@ -726,7 +722,7 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
         return {
           ...base,
           status: 'applied',
-          ops: [{ kind: 'addPointedSet', weekPlanId: week.id, programExerciseId: change.defaultSet.programExerciseId, setNumber: nextHeadSetNumber(week, row), set: change.defaultSet }],
+          ops: [{ kind: 'addPointedSet', weekPlanId: week.id, programExerciseId: change.defaultSet.programExerciseId, set: change.defaultSet }],
         }
       }
       const heads = sortedHeadsFor(week, row.id)
@@ -742,13 +738,13 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the warmup names its own program set; where it
       // goes (above this week's first working set) is decided from this week's rows when
-      // it is written, as addWarmupSet does. `setNumber` is only used by working sets.
+      // it is written, as addWarmupSet does.
       if (change.defaultSet) {
         if (holdsProgramSet(week, change.defaultSet.programSetId)) return { ...base, status: 'skipped', reason: 'structural' }
         return {
           ...base,
           status: 'applied',
-          ops: [{ kind: 'addPointedSet', weekPlanId: week.id, programExerciseId: change.defaultSet.programExerciseId, setNumber: nextHeadSetNumber(week, row), set: change.defaultSet }],
+          ops: [{ kind: 'addPointedSet', weekPlanId: week.id, programExerciseId: change.defaultSet.programExerciseId, set: change.defaultSet }],
         }
       }
       return { ...base, status: 'applied', ops: [{ kind: 'addWarmupSet', weekPlanId: week.id, programExerciseId: row.id }] }

@@ -1067,6 +1067,51 @@ export async function repointWeekExercise(
   }
 }
 
+// Chunk 32: a set a make-default added to an exercise a later planned week already has
+// (head and the stages it brought), naming its program set. The number is decided HERE,
+// from the week's rows as they are now, not when the offer was planned: another op of the
+// same week (a warmup added above) may have renumbered them since. A warmup goes above the
+// week's first working set (addWarmupSet), a working set after the highest head.
+export async function addPointedSet(
+  userId: string,
+  weekPlanId: string,
+  programExerciseId: string,
+  set: DefaultSetShape,
+): Promise<void> {
+  let head: WeekPlanSet
+  if (set.isWarmup) {
+    head = await addWarmupSet(userId, weekPlanId, programExerciseId, set)
+  } else {
+    const { data, error } = await supabase
+      .from('v2_week_plan_sets')
+      .select('set_number')
+      .eq('week_plan_id', weekPlanId)
+      .eq('program_exercise_id', programExerciseId)
+      .is('parent_week_plan_set_id', null)
+    if (error) throw error
+    const highest = ((data ?? []) as { set_number: number }[]).reduce((max, r) => Math.max(max, r.set_number), 0)
+    head = await addSet(userId, weekPlanId, programExerciseId, highest + 1, set)
+  }
+  for (const stage of set.stages) {
+    await addStage(userId, weekPlanId, programExerciseId, head.id, head.setNumber, stage.stageIndex, stage)
+  }
+}
+
+// A stage a make-default added to a head the later week already has. It shares its head's
+// number as the head has it now.
+export async function addPointedStage(
+  userId: string,
+  weekPlanId: string,
+  programExerciseId: string,
+  parentId: string,
+  stageIndex: number,
+  set: DefaultSetShape,
+): Promise<void> {
+  const { data, error } = await supabase.from('v2_week_plan_sets').select('set_number').eq('id', parentId).single()
+  if (error) throw error
+  await addStage(userId, weekPlanId, programExerciseId, parentId, (data as { set_number: number }).set_number, stageIndex, set)
+}
+
 // Chunk 32: an exercise a make-default added, written into a later planned week as the
 // default's OWN row — the same row id in every week, never a fresh week-only row per
 // week (addWeekExercise creates one). The next week's weights are matched to last
