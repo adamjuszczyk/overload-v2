@@ -180,6 +180,11 @@ const editRoutineItem = (from: string, to: string) => {
 // The distinct workout ids a hook was keyed by across every render.
 const keyedBy = (hook: string) => Array.from(new Set(keys[hook] ?? []))
 const EVERY_HOOK = ['rest', 'tempo', 'unit', 'link', 'blockRest', 'blocks', 'routine', 'addItem', 'updateItem', 'removeItem', 'reorderItems']
+// Chunk 31: cycle 1 is compared with the run's copy of the workout (weekDiff.ts), whose program sets are
+// read through the same hook, keyed by the run copy's own rows. Those reads are the highlighting's; every
+// other read must be the viewed slot's own rows.
+const runCopyRows = (workoutDayId: string) => RUN_COPY[workoutDayId].map((p) => p.id).join()
+const SLOT_2_ROWS = 'pe-a1,pe-a2,pe-a-n1'
 
 describe('PlanPage STRUCTURE on a sequence run — the run-wide writes are the viewed slot\'s workout\'s own, never another slot\'s, plan\'s or workout\'s', () => {
   it('SLOT 2 (the second A): the routine and every field write workout A\'s own routine, rows and program sets — and nothing else', async () => {
@@ -245,9 +250,11 @@ describe('PlanPage STRUCTURE on a sequence run — the run-wide writes are the v
     ])
     // Every hook the view adds was keyed by workout A's id and by no other (not the slot's, the plan's or B's) ...
     for (const hook of EVERY_HOOK) expect(keyedBy(hook), hook).toEqual(['wd-a'])
-    // ... and the program sets were read for this slot's own rows.
-    expect(programSetReads.every((ids) => ids.join() === 'pe-a1,pe-a2,pe-a-n1')).toBe(true)
-    expect(programSetReads.length).toBeGreaterThan(0)
+    // ... and the program sets were read for this slot's own rows (the STRUCTURE view's read) and for
+    // nothing else of any other slot or workout — but for the run's copy of workout A, which cycle 1 is
+    // compared with (chunk 31's highlighting reads it).
+    expect(programSetReads.every((ids) => [SLOT_2_ROWS, runCopyRows('wd-a')].includes(ids.join()))).toBe(true)
+    expect(programSetReads.some((ids) => ids.join() === SLOT_2_ROWS)).toBe(true)
   })
 
   // The first A and B, lighter: the same four kinds of write, each addressed by its own slot's rows.
@@ -273,6 +280,11 @@ describe('PlanPage STRUCTURE on a sequence run — the run-wide writes are the v
     expect(writes[1]).toEqual(['rest', { id: ownRow, changes: { restSeconds: 15 } }])
     expect(writes[2][1]).toMatchObject({ id: setRow })
     for (const hook of ['rest', 'routine', 'updateItem', 'blocks', 'link']) expect(keyedBy(hook), hook).toEqual([workout])
-    expect(programSetReads.every((ids) => ids.join() === programRows)).toBe(true)
+    // Every read is this slot's own rows (the STRUCTURE view's) or a shown workout's run copy (the
+    // highlighting's, chunk 31: SLOT 1 is shown first, whichever slot is then chosen) ...
+    const runCopies = Object.keys(RUN_COPY).map(runCopyRows)
+    expect(programSetReads.every((ids) => [programRows, ...runCopies].includes(ids.join()))).toBe(true)
+    // ... and the STRUCTURE view did read this slot's own rows.
+    expect(programSetReads.some((ids) => ids.join() === programRows)).toBe(true)
   })
 })
