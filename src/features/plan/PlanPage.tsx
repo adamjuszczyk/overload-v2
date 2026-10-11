@@ -2043,7 +2043,8 @@ function StructureSetRow({
   kindLabel?: string
   restMarkers?: string[]
   isPast: boolean
-  // Chunk 31 — a warmup set or a stage that is new this week: its number is the accent.
+  // Chunk 31 — a warmup set or a stage that is new this week: its row is the accent
+  // (its number, on the muted band an added exercise's header has).
   added?: boolean
   // Chunk 31 — the set's kind differs from the source's: a dot on the ⋯ (the kind
   // controls are inside it), or, on a past week with no ⋯, on the spacer in its place.
@@ -2054,7 +2055,7 @@ function StructureSetRow({
   const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
   return (
     <div data-diff={added ? 'added' : undefined}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6, ...(added ? CHANGED_BAND : {}) }}>
         {/* Set number */}
         <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: added ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}>
           {isStage ? '↳' : String(displayNumber).padStart(2, '0')}

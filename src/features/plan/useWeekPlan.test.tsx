@@ -158,7 +158,7 @@ describe('useUpdateSet — networkMode: always (chunk 19)', () => {
 // removes a set must refresh that list as well as the week's own, or the next week would be compared
 // with the content from before the edit until the list went stale (5 minutes).
 describe('useUpdateSet / useRemoveSet — refresh the meso-wide list another week is compared with (chunk 31)', () => {
-  const invalidatedKeys = (spy: ReturnType<typeof vi.spyOn>) =>
+  const invalidatedKeys = (spy: { mock: { calls: unknown[][] } }) =>
     spy.mock.calls.map((call) => (call[0] as { queryKey: unknown[] }).queryKey)
 
   it('an edit of a set\'s numbers invalidates this week\'s list and the meso-wide one', async () => {
