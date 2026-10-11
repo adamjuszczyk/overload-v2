@@ -24225,3 +24225,40 @@ Adam answered G35–G44 and P4 and set a standing rule for display-only edge cas
 
 ### From CONTEXT.md: Where the build is (Phase 1 line; still true)
 - **Phase 1 finished (2026-10-09): chunks 1–26 merged and live (migrations through 037).** Chunks 20, 22 and 25 merged after a tests-only third retry Adam approved (DECISIONS 64, 67, 73). Merge records: HISTORY.md and DECISIONS Closed.
+
+## 2026-10-11 fix session (B3–B6, Plan read-only) — Moved out of CONTEXT.md (no longer true), word for word
+
+Each item below was replaced in CONTEXT.md by the current state; the label says where it sat.
+
+### From CONTEXT.md: What exists → Platform, "Offline" line
+- Offline: Dexie cache (`db.ts`) primed on session start; `useLogSet`, `useCreateSession`, `useCompleteSession`, `useSkipSession` (no caller since REDO's removal) queue through the sync queue (`useSyncQueue`); all write mutations use `networkMode: 'always'`.
+
+### From CONTEXT.md: What exists → Apply ahead (chunk 20), closing sentence
+**Every new edit type must extend `applyAhead.ts`, its tests and a screen-layer record test.**
+
+### From CONTEXT.md: What exists → Deload per session / rules (chunk 22), unmark clause
+unmark: restore, then clear; a started session is flag-only with a notice.
+
+### From CONTEXT.md: Repo facts → vercel.json ignoreCommand
+- `vercel.json` `ignoreCommand` is exactly `git diff --quiet HEAD^ HEAD -- . ':(exclude)*.md'`: it skips the build when the pushed commit changes only `.md` files (any directory) and builds otherwise. Vercel rejects an `ignoreCommand` over 256 characters (the previous 274-character version failed validation on the merge to master). Its known gap: it compares only `HEAD^` to `HEAD`, so a multi-commit push whose last commit is docs-only is skipped even if earlier commits changed code.
+
+### From CONTEXT.md: Checks that lied #8, tail of the sentence
+it was replaced by a `$VERCEL_GIT_PREVIOUS_SHA` version, then on 2026-09-29 (Adam's instruction, because that version exceeded Vercel's 256-character limit) by the `HEAD^` form again, so the gap is live.
+
+### From CONTEXT.md: Tooling and tests → Vitest count
+1794 tests in 143 files pass on master `1f6816f` (chunk 27, 2026-10-10)
+
+### From CONTEXT.md: Tooling and tests → scripts test count
+(134 on master `632959d`; not part of `npm test`, which is Vitest over `src/`)
+
+### From CONTEXT.md: Open items → "B1 gaps found on the way" (all four fixed in B3: start id #72, overlapping flush #73, online finish #75, offline finish #78)
+- **B1 gaps found on the way (2026-10-10; read from code, none shown to have happened, none fixed; raise with Adam first):** the online `createSession` has no client-side id, so a start whose response is lost can be re-tapped into a second row; the offline finish (`useCompleteSession`) decides `skipped` from Dexie's copy of the logs, which only holds sets logged offline (its comment says "never a false skipped", true only for an empty copy); the online finish reads server-side logs only, so queued sets give a null or early `completed_at`; `flushSyncQueue` isn't guarded against overlapping runs.
+
+### From CONTEXT.md: Open items → "Deload restore can fail partway" (fixed: B5, #80)
+- **Deload restore can fail partway (found 2026-10-10 planning TASKS-1.1; read from code, not shown to have happened, not fixed; raise with Adam first):** the program tab used to hard-delete program sets (`plannerService.ts`; the tab is gone since chunk 33 and the default now soft-removes, so no new path creates it, but older snapshots can still name a deleted set). Restoring a deload snapshot that names one deletes the session's sets, then fails on the foreign key (`weekPlanService.ts` L1575–1576): the session is left part-empty and the snapshot stays. TASKS-1.1 "Found in passing".
+
+### From CONTEXT.md: Open items → "Apply-ahead double tap" (fixed: B6, #79)
+- **Apply-ahead double tap (found 2026-10-11 reviewing chunk 32; chunk 20's code, not fixed; raise with Adam first):** `useApplyAheadOffer`'s `apply()` has no in-flight guard, only the button's `disabled` (from `isPending`, which updates after a tick), so two taps in one event-loop task run the apply twice and can duplicate added sets.
+
+### From CONTEXT.md: Rules discovered → "Known gap" (eight plan mutations on the default networkMode; fixed: #74, which also fixed a ninth, useReorderWeekExercises)
+- **Known gap (found 2026-10-06, rechecked by reading `useWeekPlan.ts` 2026-10-10):** eight plan-editing mutations still use TanStack's default network mode (`useAddSet`, `useAddStage`, `useRemoveSet`, `useCopyFromPreviousWeek`, `useCopyWorkoutFromPreviousWeek`, `useSwapWeekExercise`, `useAddWeekExercise`, `useRemoveWeekExercise`), so offline they pause instead of failing, against the house rule; the other six set `networkMode: 'always'`. Not fixed: a small separate change, raised with Adam.
