@@ -14,16 +14,17 @@ import { MenuButton, MenuAction, MENU_PANEL_STYLE } from '../plan/planMenu'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { normaliseTempo } from '../../lib/plannerVocabulary.js'
 
-// The design-field editors of the planner's step 2 (StepExercises.tsx) and of a
-// stable run's program tab, which reuses it: a rest stepper, the tempo field,
-// the weight-unit chips, the superset link toggle and a block's round rests,
-// the warmup routine, and the two small helpers they share (IconBtn, Sheet).
+// The design-field editors of the planner's step 2 (StepExercises.tsx) and of
+// Plan's STRUCTURE view: a rest stepper, the tempo field, the weight-unit
+// chips, the superset link toggle and a block's round rests, the warmup
+// routine, and the two small helpers they share (IconBtn, Sheet).
 //
 // Chunk 30 (TASKS-1.1 "Rest, tempo, grouping, the routine and units in the
 // Structure view (run-wide)") moved them here from StepExercises.tsx, nothing
 // else: each is the same markup, state and callback it was in that file, so
-// the planner (and the program tab) render and behave exactly as before. Plan's
-// week panel (the STRUCTURE view) is the second user; it passes the same
+// the planner renders and behaves exactly as before. (Plan's program tab, which
+// used them too, is gone since chunk 33.) Plan's week panel (the STRUCTURE view)
+// is the second user; it passes the same
 // mutations the planner does (useUpdateProgramExerciseRest and the rest, all in
 // usePrograms.ts / usePlanner.ts), because these fields are run-wide: every
 // edit goes to the exercise's own program-exercise row, whichever view makes it.

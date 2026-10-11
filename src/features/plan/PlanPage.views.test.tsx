@@ -9,7 +9,8 @@ import type { ChangeRecord } from './applyAhead'
 
 // Chunk 29 (TASKS-1.1 "Plan shows one week in two views"; SPEC Plan screen
 // [P1.1], G16/G17; the standing UI rule). The week panel has a SETS view and a
-// STRUCTURE view behind a switch that is the WEEKS/PROGRAM bar's own pattern.
+// STRUCTURE view behind a switch that is the WEEKS/PROGRAM bar's own pattern
+// (that bar went in chunk 33; the switch's markup is pinned below as it was).
 //
 //   SETS       the `+` ADD SET; each set row's weight, reps and RIR (a stage's
 //              too; a warmup's without RIR); tag markers; a set's ⋯ with its
@@ -215,13 +216,21 @@ async function applyAheadChanges(): Promise<ChangeRecord[]> {
 // ─── The switch ───────────────────────────────────────────────────────────────
 
 describe('PlanPage — the SETS / STRUCTURE switch', () => {
-  it('opens on SETS; the switch is the WEEKS/PROGRAM bar\'s own markup, so it adds no new visual language', () => {
+  // The switch's markup as master rendered it (taken from the frozen render
+  // fixture, the SETS / STRUCTURE bar of chunk 29, before the WEEKS / PROGRAM bar
+  // it shares its pattern with was removed): the bar is the same markup, so the
+  // app still has one segmented control and Plan adds no new visual language.
+  const SWITCH_MARKUP =
+    '<div style="display: flex; border-radius: 11px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 8px;">' +
+    '<button style="flex: 1 1 0%; padding: 10px 0px; background: var(--accent); border: medium; cursor: pointer; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--base);">SETS</button>' +
+    '<button style="flex: 1 1 0%; padding: 10px 0px; background: var(--surface); border: medium; cursor: pointer; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--text-muted);">STRUCTURE</button>' +
+    '</div>'
+
+  it('opens on SETS; the switch\'s markup is unchanged, and there is no WEEKS / PROGRAM bar beside it', () => {
     arrange()
 
     const sets = screen.getByText('SETS')
     const structure = screen.getByText('STRUCTURE')
-    const weeks = screen.getByText('WEEKS')
-    const program = screen.getByText('PROGRAM')
 
     // SETS is showing: its `+` is on the page, the exercise ⋯ is not.
     expect(sets.style.background).toBe('var(--accent)')
@@ -229,17 +238,11 @@ describe('PlanPage — the SETS / STRUCTURE switch', () => {
     expect(screen.getByLabelText('Add set to Bench Press')).toBeTruthy()
     expect(screen.queryByLabelText('Bench Press options')).toBeNull()
 
-    // The same buttons, style for style: the active one and the idle one.
-    expect(sets.style.cssText).toBe(weeks.style.cssText)
-    expect(structure.style.cssText).toBe(program.style.cssText)
-    // ... in the same container, whose only difference is where its margin is.
-    const strip = (el: HTMLElement) => {
-      const c = el.cloneNode(false) as HTMLElement
-      c.style.removeProperty('margin-top')
-      c.style.removeProperty('margin-bottom')
-      return c.style.cssText
-    }
-    expect(strip(sets.parentElement as HTMLElement)).toBe(strip(weeks.parentElement as HTMLElement))
+    // The switch, byte for byte as it was while the WEEKS / PROGRAM bar existed.
+    expect((sets.parentElement as HTMLElement).outerHTML).toBe(SWITCH_MARKUP)
+    // The bar it was built from is gone (chunk 33): no program tab, no WEEKS.
+    expect(screen.queryByText('WEEKS')).toBeNull()
+    expect(screen.queryByText('PROGRAM')).toBeNull()
 
     // Tapping STRUCTURE moves the fill, and the page.
     openStructureView()

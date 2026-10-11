@@ -1122,7 +1122,9 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(screen.getByText('CYCLE 1')).toBeTruthy()
       expect(isMarkedCurrent('CYCLE 1')).toBe(true)
       expect(banner()).toBeNull()
-      expect(screen.getByText('NO SLOTS SCHEDULED')).toBeTruthy()
+      // Chunk 33: one line for a run with no schedule, whichever type it is.
+      expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
+      expect(screen.queryByText('NO SLOTS SCHEDULED')).toBeNull()
     })
   })
 })
