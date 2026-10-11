@@ -1061,7 +1061,15 @@ export async function repointWeekExercise(
     .eq('program_exercise_id', fromProgramExerciseId)
   if (setsError) throw setsError
 
-  for (const link of relink ?? []) {
+  await relinkWeekSets(relink ?? [])
+}
+
+// Chunk 32: point week sets at other program sets, one update per set. Used by the swap
+// above, and alone for a week that took a swap already (its row is the swapped-in row, its
+// sets still name the replaced row's program sets): the sets keep their weights, RIR, tags
+// and numbers, and only the link to the default changes.
+export async function relinkWeekSets(links: { weekSetId: string; programSetId: string }[]): Promise<void> {
+  for (const link of links) {
     const { error } = await supabase.from('v2_week_plan_sets').update({ program_set_id: link.programSetId }).eq('id', link.weekSetId)
     if (error) throw error
   }

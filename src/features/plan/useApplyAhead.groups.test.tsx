@@ -40,6 +40,7 @@ vi.mock('./weekPlanService', () => ({
   updateSet: record('updateSet'),
   removeSet: record('removeSet'),
   repointWeekExercise: record('repointWeekExercise'),
+  relinkWeekSets: record('relinkWeekSets'),
   addWeekExercise: record('addWeekExercise'),
   addPointedExercise: record('addPointedExercise'),
   addPointedSet: record('addPointedSet'),
@@ -151,6 +152,49 @@ describe('useApplyAhead with per-part groups', () => {
   })
 })
 
+// M31: the outcome the banner shows ("Applied to N of M planned weeks") counts WEEKS. A make-default rewrites
+// every workout of the week at once, so a later week holds one session per workout: two workouts, two later
+// weeks, is "2 of 2", not "4 of 4". Break: count the sessions (the bundle's summarizeApplyAhead) -> this fails.
+describe('useApplyAhead with per-part groups — the outcome counts weeks, not sessions', () => {
+  const rep = (slot: string, programSetId: string): ChangeRecord => ({
+    editType: 'repTarget', slotId: slot, exerciseId: `ex-${slot}`, setPosition: { headOrdinal: 1, stageIndex: null },
+    oldValue: { repMin: 8, repMax: 10, isAmrap: false }, newValue: { repMin: 6, repMax: 8, isAmrap: false }, defaultSet: { programSetId },
+  })
+  const groups: AheadGroup[] = [
+    { workoutDayId: 'wd-1', changes: [rep('pe-1', 'a1')] },
+    { workoutDayId: 'wd-2', changes: [rep('pe-2', 'b1')] },
+  ]
+  const changes = groups.flatMap((g) => g.changes)
+  const session = (weekNumber: number, workoutDayId: string, row: string, programSetId: string, overrides: Partial<WeekPlan> = {}) =>
+    week(weekNumber, [pe(row, { workoutDayId })], [set(`${programSetId}-${weekNumber}`, row, { programSetId, repMin: 8, repMax: 10 })], { id: `wp-${workoutDayId}-${weekNumber}`, workoutDayId, ...overrides })
+
+  it('two workouts over two later weeks are two planned weeks, each applied', async () => {
+    const weeks = [session(4, 'wd-1', 'pe-1', 'a1'), session(4, 'wd-2', 'pe-2', 'b1'), session(5, 'wd-1', 'pe-1', 'a1'), session(5, 'wd-2', 'pe-2', 'b1')]
+    const { result } = renderHook(() => useApplyAhead('meso-1'), { wrapper })
+    let out!: Awaited<ReturnType<typeof result.current.mutateAsync>>
+    await act(async () => {
+      out = await result.current.mutateAsync({ changes, weeks, groups })
+    })
+    expect(calls.filter((c) => c.fn === 'updateSet')).toHaveLength(4) // every session was written...
+    expect(out.summary).toEqual({ total: 2, applied: 2, skippedDeload: 0, skippedStructural: 0 }) // ...and counted as 2 weeks
+    expect(out.writtenWeekNumbers).toEqual([4, 5])
+  })
+
+  it('a week counts as applied when any of its sessions took a part; deload only when every one of them is deload', async () => {
+    const weeks = [
+      session(4, 'wd-1', 'pe-1', 'a1'), session(4, 'wd-2', 'pe-2', 'b1', { isDeload: true }), // applied (one session took it)
+      session(5, 'wd-1', 'pe-1', 'a1', { isDeload: true }), session(5, 'wd-2', 'pe-2', 'b1', { isDeload: true }), // deload
+    ]
+    const { result } = renderHook(() => useApplyAhead('meso-1'), { wrapper })
+    let out!: Awaited<ReturnType<typeof result.current.mutateAsync>>
+    await act(async () => {
+      out = await result.current.mutateAsync({ changes, weeks, groups })
+    })
+    expect(out.summary).toEqual({ total: 2, applied: 1, skippedDeload: 1, skippedStructural: 0 })
+    expect(out.writtenWeekNumbers).toEqual([4])
+  })
+})
+
 describe('useApplyAhead — what each new op calls', () => {
   async function run(change: ChangeRecord, w: WeekPlan, groupMode = true) {
     const { result } = renderHook(() => useApplyAhead('meso-1'), { wrapper })
@@ -165,6 +209,14 @@ describe('useApplyAhead — what each new op calls', () => {
       week(4, [pe('pe-old')], [set('s1', 'pe-old', { programSetId: 'a1' })]),
     )
     expect(calls).toEqual([{ fn: 'repointWeekExercise', args: ['wp-4', 'pe-old', 'pe-new', [{ weekSetId: 's1', programSetId: 'q1' }]] }])
+  })
+
+  it('a swap in a week that took it already only re-links the sets: relinkWeekSets, no repoint', async () => {
+    await run(
+      { editType: 'swapExercise', slotId: 'pe-old', exerciseId: 'ex-pe-old', newExerciseId: 'ex-new', resultingProgramExerciseId: 'pe-new', relink: [{ from: 'a1', to: 'q1' }, { from: 'a2', to: 'q2' }] },
+      week(4, [pe('pe-new', { exerciseId: 'ex-new' })], [set('s1', 'pe-new', { programSetId: 'a1' }), set('s2', 'pe-new', { setNumber: 2, programSetId: 'a2' })]),
+    )
+    expect(calls).toEqual([{ fn: 'relinkWeekSets', args: [[{ weekSetId: 's1', programSetId: 'q1' }, { weekSetId: 's2', programSetId: 'q2' }]] }])
   })
 
   it('a hand swap calls it with the three arguments it always had', async () => {

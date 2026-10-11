@@ -99,10 +99,22 @@
 //     repointExercise does for a swap, never a fresh week-only row per week: the next
 //     week's weight pairing matches last week's sets by that row) and its sets name the
 //     default's program sets; an added set names its new program set.
+//   - A SWAP is a swap only where the source week showed it (makeWeekDefault.ts
+//     pairSwaps). Its sets pair with the swapped-in row's by ordinal WITHIN KIND (warmups
+//     with warmups, working sets with working sets, a head's stages by stage index: G44's
+//     rule), and every record of a swapped slot is matched under the replaced row or — in
+//     a week that took the swap already, through a hand swap's apply-ahead — under the
+//     swapped-in row, whose sets still name the replaced row's program sets
+//     (`swappedInto`).
+//   - What is ADDED is not added where the week has a set of its own of that kind (its
+//     `oldSetIds`: the old default's sets of the row; a week's head or stage that is none
+//     of them is its own): it differs from the old default where the new set would go.
+//     Likewise a stage is not removed from a head whose kind the week changed itself
+//     (`headKind`: the old head's kind).
 // A record without these fields is exactly what it was before this chunk.
 
 import type { WeekPlan, ProgramExercise, WeekPlanSet } from '../../types'
-import { columnsToRepTarget, formatRepTarget, type StageKind } from '../../lib/plannerVocabulary.js'
+import { columnsToRepTarget, formatRepTarget, resolveStageKind, type StageKind } from '../../lib/plannerVocabulary.js'
 import { groupWeekPlanSets, nextStageIndex, type SetGroup } from '../gym/setGroupLogic'
 
 // ─── Shared shapes ──────────────────────────────────────────────────────────
@@ -149,6 +161,15 @@ export interface ReorderMove {
 // of the OLD default it is linked to (see this file's header).
 export interface DefaultSetKey {
   programSetId: string
+  // A swapped slot's records: the row that replaced the slot's row in the new default. A
+  // later week that took the swap already (a hand swap's apply-ahead repoints its row at
+  // that same row) holds it instead of the replaced row, its sets still naming the
+  // replaced row's program sets; the record is matched under whichever of the two the
+  // week holds.
+  swappedInto?: string
+  // removeStage only: the old default's kind of the head the stage hung under. A later
+  // week whose head has another kind changed it itself, and its stages are its own.
+  headKind?: StageKind | null
 }
 
 // A program set of the NEW default, as a week row is written from it: what is added to
@@ -181,8 +202,9 @@ export interface DefaultRowShape {
 }
 
 // A swapped slot's sets, old program set → the program set that took its place (heads
-// by ordinal, stages by index within their head): the later week's sets are re-linked
-// to the swapped-in row's own program sets, as the source week's were.
+// by ordinal WITHIN KIND, warmups with warmups and working sets with working sets, the
+// way weights are paired; stages by stage index within their head): the later week's
+// sets are re-linked to the swapped-in row's own program sets, as the source week's were.
 export interface DefaultRelink {
   from: string
   to: string
@@ -257,9 +279,14 @@ export type ChangeRecord =
       exerciseId: string
       headOrdinal: number
       // Chunk 32, from a make-default: the head is the later week's set linked to
-      // `headProgramSetId` (an old-default program set); the new stage names `defaultSet`.
+      // `headProgramSetId` (an OLD-default program set, whichever row the new default
+      // keeps it on: a swapped slot's week head still names the replaced row's); the new
+      // stage names `defaultSet`. `oldSetIds`: the old default's stages under that head;
+      // a stage of the week's head that is none of them is its own, and the week is left
+      // alone.
       defaultSet?: DefaultSetShape
       headProgramSetId?: string
+      oldSetIds?: string[]
     }
   | { editType: 'removeStage'; slotId: string; exerciseId: string; setPosition: SetPosition; defaultSet?: DefaultSetKey }
   // Week-level REMOVE SET (review fix item 3 — a set's own ⋯ DELETE SET):
@@ -270,12 +297,14 @@ export type ChangeRecord =
   // addSet: both the week-level ADD SET button and the stable program-tab's
   // own stepper (+) — both always append at the matched week's own current
   // end, so one editType serves both (scope decisions 6/7, the report).
-  // Chunk 32, from a make-default: `defaultSet` is the new program set it names.
-  | { editType: 'addSet'; slotId: string; exerciseId: string; defaultSet?: DefaultSetShape }
+  // Chunk 32, from a make-default: `defaultSet` is the new program set it names, and
+  // `oldSetIds` the old default's heads of the row: a week with a head of the same kind
+  // that is none of them has a set of its own and is left alone.
+  | { editType: 'addSet'; slotId: string; exerciseId: string; defaultSet?: DefaultSetShape; oldSetIds?: string[] }
   // "Add warmup sets" (Plan's exercise ⋯ menu, 2026-10-10): one warmup head
   // inserted above the matched week's own first working set (warmupInsert.ts
   // decides where, from THAT week's rows — never the edited week's number).
-  | { editType: 'addWarmupSet'; slotId: string; exerciseId: string; defaultSet?: DefaultSetShape }
+  | { editType: 'addWarmupSet'; slotId: string; exerciseId: string; defaultSet?: DefaultSetShape; oldSetIds?: string[] }
   // removeSet: the stable program-tab's stepper (−) ONLY — always the
   // matched week's own current trailing head (scope decision 7).
   | { editType: 'removeSet'; slotId: string; exerciseId: string }
@@ -300,6 +329,10 @@ export type ApplyAheadOp =
   // Chunk 32: a swap from a make-default also re-links the moved sets (`relink`: the
   // later week's own set ids → the swapped-in row's program sets).
   | { kind: 'repointExercise'; weekPlanId: string; fromProgramExerciseId: string; toProgramExerciseId: string; relink?: { weekSetId: string; programSetId: string }[] }
+  // Chunk 32: a week that took a swap already (a hand swap's apply-ahead repointed its
+  // row at the swapped-in row) has its sets under that row still naming the REPLACED
+  // row's program sets; a make-default's swap re-links them, with no row to repoint.
+  | { kind: 'relinkSets'; weekPlanId: string; links: { weekSetId: string; programSetId: string }[] }
   | { kind: 'addExercise'; weekPlanId: string; workoutDayId: string; exerciseId: string; position: number }
   | { kind: 'removeExercise'; weekPlanId: string; programExerciseId: string }
   | { kind: 'reorderExercises'; weekPlanId: string; moves: { programExerciseId: string; oldPosition: number; newPosition: number }[] }
@@ -397,6 +430,43 @@ function linkedSet(week: WeekPlan, row: ProgramExercise, programSetId: string): 
 // a make-default adds is not added twice.
 function holdsProgramSet(week: WeekPlan, programSetId: string): boolean {
   return week.sets.some((s) => s.programSetId === programSetId)
+}
+
+// The row a make-default record is about, in this later week: the old default's row it
+// names, or — for a swapped slot, whose week may have taken the swap already — the
+// swapped-in row. Such a week holds the swapped-in row instead of the replaced one, its
+// sets still naming the replaced row's program sets, so the record's set is found under it
+// by the same link. (A week that holds both is not a week that took the swap: the swap
+// record skips it, and the replaced row is the one the other records find.)
+function defaultRowFor(week: WeekPlan, slotId: string, exerciseId: string, swappedInto: string | undefined): ProgramExercise | undefined {
+  const row = findMatchingExercise(week, slotId, exerciseId)
+  if (row || swappedInto === undefined) return row
+  return week.exercises.find((e) => e.id === swappedInto)
+}
+
+// A new set of a swapped slot belongs to the swapped-in row: its shape names that row,
+// which is not the slot's own.
+function swappedIntoOf(slotId: string, shape: DefaultSetShape): string | undefined {
+  return shape.programExerciseId !== slotId ? shape.programExerciseId : undefined
+}
+
+// A set the week has of its own, of the same kind as one a make-default adds: a head of
+// the row (warmup with warmup, working with working) that is none of the old default's
+// (`oldSetIds`) — added in that week, or left over from an earlier default. Where one
+// exists the week already differs from the old default where the new set would go, so
+// the part no longer matches and is not applied. Without `oldSetIds` there is no old
+// default to compare with, and nothing is own.
+function hasOwnHead(week: WeekPlan, row: ProgramExercise, isWarmup: boolean, oldSetIds: string[] | undefined): boolean {
+  if (!oldSetIds) return false
+  const known = new Set(oldSetIds)
+  return sortedHeadsFor(week, row.id).some((h) => h.isWarmup === isWarmup && !(h.programSetId != null && known.has(h.programSetId)))
+}
+
+// The same for stages under one head.
+function hasOwnStage(week: WeekPlan, head: WeekPlanSet, oldSetIds: string[] | undefined): boolean {
+  if (!oldSetIds) return false
+  const known = new Set(oldSetIds)
+  return stagesFor(week, head.id).some((s) => !(s.programSetId != null && known.has(s.programSetId)))
 }
 
 // Rep targets are compared as the row shows them (8 to 8 is "8"), so equal here means
@@ -511,12 +581,13 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     case 'stageKind':
     case 'warmup':
     case 'repTarget': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
-      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32: a record from a make-default finds its set by its link and writes only
       // where the week still holds the old default's value. A set whose value was
-      // changed in this week (or whose link is gone) keeps what it has.
+      // changed in this week (or whose link is gone) keeps what it has. Its row is the
+      // slot's, or the swapped-in row where the week took the swap already.
       const key = defaultKeyOf(change)
+      const row = key ? defaultRowFor(week, change.slotId, change.exerciseId, key.swappedInto) : findMatchingExercise(week, change.slotId, change.exerciseId)
+      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       const set = key ? linkedSet(week, row, key.programSetId) : resolveSetRow(week, row, change.setPosition)
       if (!set) return { ...base, status: 'skipped', reason: 'structural' }
       if (key) {
@@ -551,24 +622,37 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // follow-up edit's own later match).
     case 'swapExercise': {
       const row = findMatchingExercise(week, change.slotId, change.exerciseId)
-      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32: from a make-default, the sets that move with the row are also
       // re-linked to the swapped-in row's own program sets (the source week's were).
-      // A week that already holds the swapped-in row differs already (and would hit the
-      // unique (week, row) key), so it is skipped.
       if (change.relink) {
-        if (week.exercises.some((e) => e.id === change.resultingProgramExerciseId)) return { ...base, status: 'skipped', reason: 'structural' }
         const to = new Map(change.relink.map((r) => [r.from, r.to]))
-        const relink = week.sets
-          .filter((s) => s.programExerciseId === row.id && s.programSetId != null && to.has(s.programSetId))
-          .sort((a, b) => a.setNumber - b.setNumber || a.stageIndex - b.stageIndex)
-          .map((s) => ({ weekSetId: s.id, programSetId: to.get(s.programSetId!)! }))
-        return {
-          ...base,
-          status: 'applied',
-          ops: [{ kind: 'repointExercise', weekPlanId: week.id, fromProgramExerciseId: row.id, toProgramExerciseId: change.resultingProgramExerciseId, relink }],
+        const relinkUnder = (rowId: string) =>
+          week.sets
+            .filter((s) => s.programExerciseId === rowId && s.programSetId != null && to.has(s.programSetId))
+            .sort((a, b) => a.setNumber - b.setNumber || a.stageIndex - b.stageIndex)
+            .map((s) => ({ weekSetId: s.id, programSetId: to.get(s.programSetId!)! }))
+        const taken = week.exercises.find((e) => e.id === change.resultingProgramExerciseId)
+        if (row) {
+          // The week still holds the replaced row: repoint it. A week that holds the
+          // swapped-in row as well differs already (and would hit the unique (week,
+          // row) key), so it is skipped.
+          if (taken) return { ...base, status: 'skipped', reason: 'structural' }
+          return {
+            ...base,
+            status: 'applied',
+            ops: [{ kind: 'repointExercise', weekPlanId: week.id, fromProgramExerciseId: row.id, toProgramExerciseId: change.resultingProgramExerciseId, relink: relinkUnder(row.id) }],
+          }
         }
+        // The week took the swap already (a hand swap's apply-ahead repointed its row at
+        // the swapped-in row): its sets under that row still name the replaced row's
+        // program sets, and are re-linked to the new ones. A week whose sets there name
+        // nothing of the old default's has nothing to re-link and is left as it is.
+        if (!taken) return { ...base, status: 'skipped', reason: 'structural' }
+        const links = relinkUnder(taken.id)
+        if (links.length === 0) return { ...base, status: 'skipped', reason: 'structural' }
+        return { ...base, status: 'applied', ops: [{ kind: 'relinkSets', weekPlanId: week.id, links }] }
       }
+      if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       return {
         ...base,
         status: 'applied',
@@ -638,17 +722,22 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // setGroupLogic.ts — never the edited week's own new index), mirroring
     // exactly what a direct ADD STAGE tap in that week would compute.
     case 'addStage': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      const row = change.defaultSet
+        ? defaultRowFor(week, change.slotId, change.exerciseId, swappedIntoOf(change.slotId, change.defaultSet))
+        : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the head is the week's set linked to the old
-      // default's head, and the stage names its own program set. It keeps the default's
-      // stage index unless the week's head already has a stage there.
+      // default's head, and the stage names its own program set. A week whose head has a
+      // stage of its own (none of the old default's) already differs where the new stage
+      // would go and is left alone. It keeps the default's stage index unless the week's
+      // head already has one of the old default's stages there.
       if (change.defaultSet) {
         const added = change.defaultSet
         const linkedHead = change.headProgramSetId ? linkedSet(week, row, change.headProgramSetId) : undefined
         if (!linkedHead || linkedHead.parentWeekPlanSetId != null || holdsProgramSet(week, added.programSetId)) {
           return { ...base, status: 'skipped', reason: 'structural' }
         }
+        if (hasOwnStage(week, linkedHead, change.oldSetIds)) return { ...base, status: 'skipped', reason: 'structural' }
         const stages = stagesFor(week, linkedHead.id)
         const stageIndex = stages.some((s) => s.stageIndex === added.stageIndex)
           ? nextStageIndex({ head: linkedHead, stages }, (s) => s.stageIndex)
@@ -671,13 +760,24 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     }
 
     case 'removeStage': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      const row = change.defaultSet
+        ? defaultRowFor(week, change.slotId, change.exerciseId, change.defaultSet.swappedInto)
+        : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the stage the week still has linked to the old
-      // default's stage (never a head under that link).
+      // default's stage (never a head under that link), under a head that still has the
+      // old head's kind: a week that changed the head's kind itself (myo-reps against the
+      // old dropset) has stages of its own, and they stay. A null kind on a head that has
+      // stages reads as a dropset (resolveStageKind), on both sides.
       if (change.defaultSet) {
         const linked = linkedSet(week, row, change.defaultSet.programSetId)
         if (!linked || linked.parentWeekPlanSetId == null) return { ...base, status: 'skipped', reason: 'structural' }
+        if (change.defaultSet.headKind !== undefined) {
+          const head = week.sets.find((s) => s.id === linked.parentWeekPlanSetId)
+          if (!head || resolveStageKind(head.stageKind ?? null) !== resolveStageKind(change.defaultSet.headKind)) {
+            return { ...base, status: 'skipped', reason: 'structural' }
+          }
+        }
         return { ...base, status: 'applied', ops: [{ kind: 'removeSet', weekPlanId: week.id, setId: linked.id }] }
       }
       const set = resolveSetRow(week, row, change.setPosition)
@@ -690,7 +790,9 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // trailing" there (distinct from the program-tab's own removeSet,
     // below, which is deliberately trailing-only).
     case 'removeHeadSet': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      const row = change.defaultSet
+        ? defaultRowFor(week, change.slotId, change.exerciseId, change.defaultSet.swappedInto)
+        : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the head the week still has linked to the old
       // default's head, by its link, not by its ordinal (which a warmup added above or
@@ -712,13 +814,18 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     // setExerciseSetCount's own shrink behaviour), not a recorded absolute
     // ordinal — symmetric with addSet's own "append at my own end".
     case 'addSet': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      const row = change.defaultSet
+        ? defaultRowFor(week, change.slotId, change.exerciseId, swappedIntoOf(change.slotId, change.defaultSet))
+        : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the new set names its own program set and takes
-      // the default's kind and rep target; a week that already has a set linked to that
-      // program set is left alone.
+      // the default's kind and rep target. A week that already has a set linked to that
+      // program set, or a working set of its own (one the old default doesn't have: it
+      // already differs where the new set would go), is left alone.
       if (change.defaultSet) {
-        if (holdsProgramSet(week, change.defaultSet.programSetId)) return { ...base, status: 'skipped', reason: 'structural' }
+        if (holdsProgramSet(week, change.defaultSet.programSetId) || hasOwnHead(week, row, false, change.oldSetIds)) {
+          return { ...base, status: 'skipped', reason: 'structural' }
+        }
         return {
           ...base,
           status: 'applied',
@@ -734,13 +841,18 @@ function resolveOneWeek(change: ChangeRecord, week: WeekPlan): WeekApplyResult {
     }
 
     case 'addWarmupSet': {
-      const row = findMatchingExercise(week, change.slotId, change.exerciseId)
+      const row = change.defaultSet
+        ? defaultRowFor(week, change.slotId, change.exerciseId, swappedIntoOf(change.slotId, change.defaultSet))
+        : findMatchingExercise(week, change.slotId, change.exerciseId)
       if (!row) return { ...base, status: 'skipped', reason: 'structural' }
       // Chunk 32, from a make-default: the warmup names its own program set; where it
       // goes (above this week's first working set) is decided from this week's rows when
-      // it is written, as addWarmupSet does.
+      // it is written, as addWarmupSet does. A week with a warmup of its own is left alone,
+      // as for a working set.
       if (change.defaultSet) {
-        if (holdsProgramSet(week, change.defaultSet.programSetId)) return { ...base, status: 'skipped', reason: 'structural' }
+        if (holdsProgramSet(week, change.defaultSet.programSetId) || hasOwnHead(week, row, true, change.oldSetIds)) {
+          return { ...base, status: 'skipped', reason: 'structural' }
+        }
         return {
           ...base,
           status: 'applied',

@@ -75,20 +75,27 @@ const functionAnswer: MakeDefaultResult = {
 }
 
 let allPlans: WeekPlan[] = []
+// The run's program and workouts: one workout unless a test says otherwise (it resets after each).
+let currentProgram: Program = program
+let currentWorkoutDays: WorkoutDay[] = [workoutDay]
 
 const makeWeekDefaultMock = vi.fn()
 const fetchRunCopyDefaultsMock = vi.fn()
 const updateSetMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addPointedExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
 const addWeekExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
+const addPointedSetMock = vi.fn(async (..._args: unknown[]) => undefined)
+const repointMock = vi.fn(async (..._args: unknown[]) => undefined)
+const relinkMock = vi.fn(async (..._args: unknown[]) => undefined)
+const removeWeekExerciseMock = vi.fn(async (..._args: unknown[]) => undefined)
 const planWeekMock = vi.fn(async () => 0)
 
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
   ...(await import('./structureHooks.testutil')).quietProgramsHooks,
-  usePrograms: () => ({ data: [program], isLoading: false }),
-  useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
+  usePrograms: () => ({ data: [currentProgram], isLoading: false }),
+  useWorkoutDays: () => ({ data: currentWorkoutDays, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
@@ -121,12 +128,13 @@ vi.mock('./weekPlanService', () => ({
   copyWorkoutFromPreviousWeek: vi.fn(async () => undefined),
   planWeek: () => planWeekMock(),
   swapWeekExercise: vi.fn(),
-  repointWeekExercise: vi.fn(async () => undefined),
+  repointWeekExercise: (...args: unknown[]) => repointMock(...args),
+  relinkWeekSets: (...args: unknown[]) => relinkMock(...args),
   addWeekExercise: (...args: unknown[]) => addWeekExerciseMock(...args),
   addPointedExercise: (...args: unknown[]) => addPointedExerciseMock(...args),
-  addPointedSet: vi.fn(async () => undefined),
+  addPointedSet: (...args: unknown[]) => addPointedSetMock(...args),
   addPointedStage: vi.fn(async () => undefined),
-  removeWeekExercise: vi.fn(async () => undefined),
+  removeWeekExercise: (...args: unknown[]) => removeWeekExerciseMock(...args),
   reorderWeekExercises: vi.fn(async () => undefined),
 }))
 
@@ -138,7 +146,13 @@ afterEach(() => {
   updateSetMock.mockClear()
   addPointedExerciseMock.mockClear()
   addWeekExerciseMock.mockClear()
+  addPointedSetMock.mockClear()
+  repointMock.mockClear()
+  relinkMock.mockClear()
+  removeWeekExerciseMock.mockClear()
   planWeekMock.mockClear()
+  currentProgram = program
+  currentWorkoutDays = [workoutDay]
 })
 
 function renderPlanPage() {
@@ -254,6 +268,174 @@ describe('PlanPage — make this week the default, then apply it ahead (real hoo
     expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
     expect(updateSetMock).not.toHaveBeenCalled()
     expect(addPointedExerciseMock).not.toHaveBeenCalled()
+  })
+})
+
+// ─── What the source week showed: a swap, or a removal and an addition ────────────
+
+// The review's finding. PlanPage adds an exercise at programExercises.length and removeWeekExercise does not
+// renumber, so "remove the last exercise, add another" puts the new one at the removed one's position. A
+// position-only reading took that for a swap and repointed a later week's removed row at the added exercise,
+// keeping its sets and their weights. What tells the two apart is what the source week's rows named BEFORE
+// the call (a swapped-in row's sets keep their link to the replaced row's program sets; an added row's sets
+// have none), so it is read from the week as Plan holds it when the confirm is tapped.
+
+const rowEx = (): ProgramExercise => ({ id: 'pe-row', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-row', position: 1, weightUnit: null })
+const inclineEx = (): ProgramExercise => ({ id: 'pe-incline', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-incline', position: 1, weightUnit: null })
+const curlEx = (): ProgramExercise => ({ id: 'pe-curl', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-curl', position: 1, weightUnit: null })
+
+const benchSets = (n: number) => [planSet(n, 's1', 1, 'ps-1'), planSet(n, 's2', 2, 'ps-2')]
+// A later week that holds the old default: Bench and Row, the row's two sets at 140 kg.
+const rowSets = (n: number, row = 'pe-row') => [
+  planSet(n, 'r1', 1, 'pr-1', { programExerciseId: row, targetWeight: 140 }),
+  planSet(n, 'r2', 2, 'pr-2', { programExerciseId: row, targetWeight: 140 }),
+]
+const withRow = (n: number): WeekPlan => oldWeek(n, { exercises: [bench(), rowEx()], sets: [...benchSets(n), ...rowSets(n)] })
+// A later week that took the swap already (a hand swap's apply-ahead repointed its row at the swapped-in row).
+const tookSwap = (n: number): WeekPlan => oldWeek(n, { exercises: [bench(), inclineEx()], sets: [...benchSets(n), ...rowSets(n, 'pe-incline')] })
+
+const benchDefault = (): DefaultExercise => ({ id: 'pe-bench', exerciseId: 'ex-a', position: 0, sets: [dset('ps-1', 1), dset('ps-2', 2)] })
+const rowDefault = (): DefaultExercise => ({ id: 'pe-row', exerciseId: 'ex-row', position: 1, sets: [dset('pr-1', 1), dset('pr-2', 2)] })
+const answerWithRow: MakeDefaultResult = {
+  mesocycleId: 'meso-1', weekNumber: 3, skipped: [],
+  workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-3', sourceSequencePosition: null, oldExercises: [benchDefault(), rowDefault()] }],
+}
+
+describe('PlanPage — make this week the default after the source week removed the last exercise and added another', () => {
+  // Source week 3: Curl was added by hand where Row was (position 1): its set names no program set.
+  const sourceWithAdd = (): WeekPlan => oldWeek(3, { exercises: [bench(), curlEx()], sets: [...benchSets(3), planSet(3, 'c1', 1, null, { programExerciseId: 'pe-curl', repMin: 10, repMax: 12 })] })
+  const newDefault: DefaultExercise[] = [benchDefault(), { id: 'pe-curl', exerciseId: 'ex-curl', position: 1, sets: [dset('pq-1', 1, { repMin: 10, repMax: 12 })] }]
+
+  beforeEach(() => {
+    makeWeekDefaultMock.mockResolvedValue(answerWithRow)
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', newDefault]]))
+  })
+
+  // Break: pair a removed and an added row at the same place as a swap, with no evidence -> repointMock is called
+  // with each later week's Row and removeWeekExercise / addPointedExercise are not.
+  it('is a removal and an addition in the later weeks: the removed row goes, the added one comes in as the DEFAULT\'S row, nothing is repointed', async () => {
+    allPlans = [sourceWithAdd(), withRow(4), withRow(5)]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 2 OF 2 PLANNED WEEKS/)
+
+    expect(repointMock).not.toHaveBeenCalled() // no later week's Row (and its 140 kg) was handed to Curl
+    expect(removeWeekExerciseMock.mock.calls).toEqual([['wp-4', 'pe-row'], ['wp-5', 'pe-row']])
+    const added = addPointedExerciseMock.mock.calls.map((c) => c[0] as { weekPlanId: string; programExerciseId: string; position: number; sets: { programSetId: string }[] })
+    expect(added.map((a) => [a.weekPlanId, a.programExerciseId, a.position, a.sets.map((s) => s.programSetId)])).toEqual([
+      ['wp-4', 'pe-curl', 1, ['pq-1']],
+      ['wp-5', 'pe-curl', 1, ['pq-1']],
+    ])
+  })
+})
+
+describe('PlanPage — make this week the default after the source week swapped an exercise', () => {
+  // Source week 3: Row was swapped for Incline (a week-only row at its place) whose sets kept naming Row's program sets.
+  const sourceWithSwap = (): WeekPlan => oldWeek(3, { exercises: [bench(), inclineEx()], sets: [...benchSets(3), planSet(3, 'i1', 1, 'pr-1', { programExerciseId: 'pe-incline' }), planSet(3, 'i2', 2, 'pr-2', { programExerciseId: 'pe-incline' })] })
+  const inclineDefault = (sets: DefaultSet[] = [dset('pi-1', 1), dset('pi-2', 2)]): DefaultExercise => ({ id: 'pe-incline', exerciseId: 'ex-incline', position: 1, sets })
+
+  beforeEach(() => {
+    makeWeekDefaultMock.mockResolvedValue(answerWithRow)
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault()]]]))
+  })
+
+  async function apply(count: number) {
+    await makeDefaultAndOfferAhead()
+    await screen.findByText(`APPLY THIS CHANGE TO ${count} PLANNED WEEKS AHEAD?`)
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(new RegExp(`APPLIED TO ${count} OF ${count} PLANNED WEEKS`))
+  }
+
+  it('a swap the source week showed repoints each later week\'s row, its sets re-linked to the new row\'s program sets (weights stay)', async () => {
+    allPlans = [sourceWithSwap(), withRow(4), withRow(5)]
+    await apply(2)
+    expect(repointMock.mock.calls).toEqual([
+      ['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'r1-w4', programSetId: 'pi-1' }, { weekSetId: 'r2-w4', programSetId: 'pi-2' }]],
+      ['wp-5', 'pe-row', 'pe-incline', [{ weekSetId: 'r1-w5', programSetId: 'pi-1' }, { weekSetId: 'r2-w5', programSetId: 'pi-2' }]],
+    ])
+    expect(removeWeekExerciseMock).not.toHaveBeenCalled()
+    expect(addPointedExerciseMock).not.toHaveBeenCalled()
+  })
+
+  // R7. Break: skip a week that does not hold the replaced row (what it did) -> relinkMock is not called.
+  it('a later week that took the swap already has its sets re-linked in place; one that did not is repointed', async () => {
+    allPlans = [sourceWithSwap(), tookSwap(4), withRow(5)]
+    await apply(2)
+    expect(relinkMock.mock.calls).toEqual([[[{ weekSetId: 'r1-w4', programSetId: 'pi-1' }, { weekSetId: 'r2-w4', programSetId: 'pi-2' }]]])
+    expect(repointMock.mock.calls.map((c) => c[0])).toEqual(['wp-5'])
+  })
+
+  it('without the source session in what Plan held (the function names another), a swap is told as a removal and an addition: never guessed', async () => {
+    makeWeekDefaultMock.mockResolvedValue({ ...answerWithRow, workouts: [{ ...answerWithRow.workouts[0], sourceWeekPlanId: 'wp-elsewhere' }] })
+    allPlans = [sourceWithSwap(), withRow(4)]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 1 PLANNED WEEK/)
+    expect(repointMock).not.toHaveBeenCalled()
+    expect(removeWeekExerciseMock.mock.calls).toEqual([['wp-4', 'pe-row']])
+    expect(addPointedExerciseMock.mock.calls.map((c) => (c[0] as { programExerciseId: string }).programExerciseId)).toEqual(['pe-incline'])
+  })
+
+  // R1: the source week also added a warmup on the swapped-in exercise. Paired by plain ordinal, a later week's
+  // first 100 kg WORKING set stood for the new row's warmup: it became a warmup, and the last set was added bare.
+  // Break: pair a swapped slot's sets by plain ordinal -> updateSet turns a working set into a warmup, and the
+  // relink names the wrong program sets.
+  it('R1 — a warmup the source week added on the swapped-in exercise is added ahead as a warmup; no working set turns into one', async () => {
+    const warm = planSet(3, 'iw', 1, null, { programExerciseId: 'pe-incline', isWarmup: true, repMin: 12, repMax: 12 })
+    allPlans = [
+      oldWeek(3, { exercises: [bench(), inclineEx()], sets: [...benchSets(3), warm, planSet(3, 'i1', 2, 'pr-1', { programExerciseId: 'pe-incline' }), planSet(3, 'i2', 3, 'pr-2', { programExerciseId: 'pe-incline' })] }),
+      withRow(4),
+    ]
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([['wd-1', [benchDefault(), inclineDefault([dset('pi-w', 1, { isWarmup: true, repMin: 12, repMax: 12 }), dset('pi-1', 2), dset('pi-2', 3)])]]]))
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText(/APPLIED TO 1 OF 1 PLANNED WEEK/)
+
+    expect(repointMock.mock.calls).toEqual([['wp-4', 'pe-row', 'pe-incline', [{ weekSetId: 'r1-w4', programSetId: 'pi-1' }, { weekSetId: 'r2-w4', programSetId: 'pi-2' }]]])
+    expect(updateSetMock).not.toHaveBeenCalled() // no working set became a warmup, nothing was flipped
+    expect(addPointedSetMock.mock.calls.map((c) => [c[1], (c[3] as { programSetId: string; isWarmup: boolean }).programSetId, (c[3] as { isWarmup: boolean }).isWarmup])).toEqual([['wp-4', 'pi-w', true]])
+  })
+})
+
+// M31, through the screen: the outcome counts WEEKS. A make-default rewrites every workout of the week at
+// once, so a later week holds one session per workout: two workouts over two later weeks is "2 of 2".
+// Break: count the sessions (the bundle's summarizeApplyAhead) -> "APPLIED TO 4 OF 4".
+describe('PlanPage — make this week the default on a week with two workouts', () => {
+  const workoutDay2: WorkoutDay = { id: 'wd-2', programId: 'prog-1', userId: 'user-1', name: 'Pull Day', position: 1, exercises: [] }
+  const pullEx = (): ProgramExercise => ({ id: 'pe-pull', workoutDayId: 'wd-2', userId: 'user-1', exerciseId: 'ex-pull', position: 0, weightUnit: null })
+  const pullWeek = (n: number): WeekPlan => ({
+    id: `wp-pull-${n}`, userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-2', weekNumber: n, isDeload: false, notes: null,
+    exercises: [pullEx()], sets: [planSet(n, 'p1', 1, 'pp-1', { programExerciseId: 'pe-pull', weekPlanId: `wp-pull-${n}` })], createdAt: '2026-01-01T00:00:00Z',
+  })
+  const answer: MakeDefaultResult = {
+    mesocycleId: 'meso-1', weekNumber: 3, skipped: [],
+    workouts: [
+      { workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-3', sourceSequencePosition: null, oldExercises },
+      { workoutDayId: 'wd-2', sourceWeekPlanId: 'wp-pull-3', sourceSequencePosition: null, oldExercises: [{ id: 'pe-pull', exerciseId: 'ex-pull', position: 0, sets: [dset('pp-1', 1)] }] },
+    ],
+  }
+
+  beforeEach(() => {
+    currentProgram = { ...program, schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1', wednesday: 'wd-2' } }
+    currentWorkoutDays = [workoutDay, workoutDay2]
+    makeWeekDefaultMock.mockResolvedValue(answer)
+    fetchRunCopyDefaultsMock.mockResolvedValue(new Map([
+      ['wd-1', newExercises],
+      ['wd-2', [{ id: 'pe-pull', exerciseId: 'ex-pull', position: 0, sets: [dset('pp-1', 1, { repMin: 6, repMax: 8 })] }]],
+    ]))
+  })
+
+  it('four later sessions in two later weeks: the offer says 2 planned weeks and the outcome says 2 of 2, every session written', async () => {
+    allPlans = [oldWeek(3), pullWeek(3), oldWeek(4), pullWeek(4), oldWeek(5), pullWeek(5)]
+    await makeDefaultAndOfferAhead()
+    await screen.findByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')
+    fireEvent.click(screen.getByText('APPLY'))
+    await screen.findByText('APPLIED TO 2 OF 2 PLANNED WEEKS')
+    // Both workouts' later sessions were written: the bench set and the pull set, in each later week.
+    expect(updateSetMock.mock.calls.map((c) => c[0]).sort()).toEqual(['p1-w4', 'p1-w5', 's2-w4', 's2-w5'])
   })
 })
 

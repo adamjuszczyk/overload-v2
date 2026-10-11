@@ -4,7 +4,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useToastStore } from '../notifications/toastStore'
 import { useMakeWeekDefault } from './useMakeWeekDefault'
 import { useApplyAheadOffer, ApplyAheadBanner } from './ApplyAheadOffer'
-import { buildDefaultOffer, laterSessionsOf } from './makeWeekDefault'
+import { buildDefaultOffer, laterSessionsOf, sourceLinksOf } from './makeWeekDefault'
 
 // Chunk 32 — "Make this week the new default" (SPEC Weeks and copying [P1.1]; Plan screen:
 // "stable runs: 'Make this week the new default' (current and future weeks, with a
@@ -29,12 +29,17 @@ export default function MakeWeekDefault({
   mesoId,
   weekNumber,
   isSequence,
+  weekPlans,
   allWeekPlans,
   sharedWorkoutDayIds,
 }: {
   mesoId: string
   weekNumber: number
   isSequence: boolean
+  // The sessions of the week being made the default, as Plan holds them (what is on
+  // screen). Read when the confirm is tapped, before the call: they are the evidence of
+  // a swap, which the call erases (sourceLinksOf).
+  weekPlans: WeekPlan[]
   // Every planned session of the run, to find the later weeks of the workouts rewritten.
   allWeekPlans: WeekPlan[]
   sharedWorkoutDayIds: ReadonlySet<string>
@@ -49,6 +54,10 @@ export default function MakeWeekDefault({
   const hasBanner = !!applyAheadOffer.offer || !!applyAheadOffer.outcome
 
   function confirm() {
+    // BEFORE the call: it points every planned set of the source week at the program set
+    // it ends up on, and the link a swapped-in row's sets have to the replaced row's
+    // program sets is the only trace of a swap. Without it a swap is not offered as one.
+    const sourceLinks = new Map(weekPlans.map((plan) => [plan.id, sourceLinksOf(plan)]))
     makeDefault.mutate(
       { weekNumber },
       {
@@ -67,7 +76,7 @@ export default function MakeWeekDefault({
                 : done,
           )
           if (!newDefaults) return
-          const offer = buildDefaultOffer(result, newDefaults, allWeekPlans)
+          const offer = buildDefaultOffer(result, newDefaults, allWeekPlans, sourceLinks)
           if (!offer) {
             applyAheadOffer.dismiss()
             return

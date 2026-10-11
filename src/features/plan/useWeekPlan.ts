@@ -22,6 +22,7 @@ import {
   planWeek,
   swapWeekExercise,
   repointWeekExercise,
+  relinkWeekSets,
   addWeekExercise,
   addPointedExercise,
   addPointedSet,
@@ -607,6 +608,10 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
       // make-default it also re-links the moved sets (chunk 32).
       if (op.relink) await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId, op.relink)
       else await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
+      return
+    // Chunk 32: a week that took a swap already — only its sets' links change.
+    case 'relinkSets':
+      await relinkWeekSets(op.links)
       return
     // Chunk 32 — what a make-default adds, pointed at the default's own row and program
     // sets (applyAhead.ts's header): never addWeekExercise, whose fresh week-only row

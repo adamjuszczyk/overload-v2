@@ -158,6 +158,124 @@ describe('swapExercise from a make-default — the sets move to the swapped-in r
   })
 })
 
+// ─── A week that took the swap already (R7) ──────────────────────────────────
+
+// The usual order of events: the source week's swap was offered ahead (chunk 20) and a later week took
+// it. Its row is the swapped-in row (the very row id the default keeps: a repoint names the same one) and
+// its sets, moved with the swap, still name the REPLACED row's program sets. Make-default has no row to
+// repoint there, but the sets must follow the default's new program sets, and the swapped slot's other
+// parts must find their sets under the swapped-in row.
+describe('a swap from a make-default, in a week that took the swap already', () => {
+  const swap: ChangeRecord = {
+    editType: 'swapExercise', slotId: 'pe-old', exerciseId: 'ex-pe-old', newExerciseId: 'ex-new', resultingProgramExerciseId: 'pe-new',
+    relink: [{ from: 'a1', to: 'q1' }, { from: 'a2', to: 'q2' }, { from: 'a2s1', to: 'q2s1' }],
+  }
+  const swappedIn = (overrides: Partial<ProgramExercise> = {}) => pe('pe-new', { exerciseId: 'ex-new', ...overrides })
+  const took = (extra: WeekPlanSet[] = [], weekNumber = 3) =>
+    week(weekNumber, [swappedIn()], [
+      set('s2', 'pe-new', { setNumber: 2, programSetId: 'a2', targetWeight: 90 }),
+      set('s1', 'pe-new', { setNumber: 1, programSetId: 'a1', targetWeight: 100 }),
+      set('s2-1', 'pe-new', { setNumber: 2, stageIndex: 1, parentWeekPlanSetId: 's2', programSetId: 'a2s1' }),
+      ...extra,
+    ])
+
+  // Break: skip the week because it does not hold the replaced row (what it did before) -> this fails.
+  it('re-links the sets that still name the replaced row\'s program sets to the swapped-in row\'s own, in set order: a relink op, no repoint', () => {
+    expect(one(swap, took())).toEqual({
+      weekPlanId: 'wp-3', weekNumber: 3, status: 'applied',
+      ops: [{
+        kind: 'relinkSets', weekPlanId: 'wp-3',
+        links: [{ weekSetId: 's1', programSetId: 'q1' }, { weekSetId: 's2', programSetId: 'q2' }, { weekSetId: 's2-1', programSetId: 'q2s1' }],
+      }],
+    })
+  })
+
+  it('only the default\'s sets are re-linked: a set with no link, or linked to some other program set, stays as it is', () => {
+    const w = took([set('hand', 'pe-new', { setNumber: 3 }), set('other', 'pe-new', { setNumber: 4, programSetId: 'zzz' })])
+    const result = one(swap, w)
+    expect(result.status === 'applied' && (result.ops[0] as { links: { weekSetId: string }[] }).links.map((l) => l.weekSetId)).toEqual(['s1', 's2', 's2-1'])
+  })
+
+  it('a week whose sets under the swapped-in row already name its own program sets has nothing to re-link: skipped, not rewritten', () => {
+    const w = week(3, [swappedIn()], [set('s1', 'pe-new', { programSetId: 'q1' }), set('s2', 'pe-new', { setNumber: 2, programSetId: 'q2' })])
+    expect(one(swap, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('a week that holds neither the replaced nor the swapped-in row is skipped', () => {
+    expect(one(swap, week(3, [pe('pe-other')], [set('s1', 'pe-other', { programSetId: 'a1' })]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('the swapped slot\'s other parts find their sets under the swapped-in row, by the same link, and write only where the old value stands', () => {
+    const rep: ChangeRecord = {
+      editType: 'repTarget', slotId: 'pe-old', exerciseId: 'ex-pe-old', setPosition: { headOrdinal: 1, stageIndex: null },
+      oldValue: REPS_8_10, newValue: REPS_6_8, defaultSet: { programSetId: 'a1', swappedInto: 'pe-new' },
+    }
+    const holds = took().sets.map((s) => (s.id === 's1' ? { ...s, repMin: 8, repMax: 10 } : s))
+    expect(one(rep, { ...took(), sets: holds })).toMatchObject({ status: 'applied', ops: [{ kind: 'updateSet', setId: 's1', changes: { repMin: 6, repMax: 8, isAmrap: false } }] })
+    // A week that took the swap and then changed the rep target itself keeps it, as any week does.
+    const own = took().sets.map((s) => (s.id === 's1' ? { ...s, repMin: 12, repMax: 12 } : s))
+    expect(one(rep, { ...took(), sets: own })).toMatchObject({ status: 'skipped', reason: 'structural' })
+    // Without the swapped-in row named, the record finds no row of the old default in this week.
+    expect(one({ ...rep, defaultSet: { programSetId: 'a1' } }, { ...took(), sets: holds })).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('a set the default dropped is removed from the swapped-in row, by its link', () => {
+    const removeSecond: ChangeRecord = { editType: 'removeHeadSet', slotId: 'pe-old', exerciseId: 'ex-pe-old', headOrdinal: 2, defaultSet: { programSetId: 'a2', swappedInto: 'pe-new' } }
+    expect(one(removeSecond, took())).toMatchObject({ status: 'applied', ops: [{ kind: 'removeSet', setId: 's2' }] })
+  })
+
+  it('a set the default added belongs to the swapped-in row: added there, in a week that took the swap and in one that did not', () => {
+    const addSet: ChangeRecord = { editType: 'addSet', slotId: 'pe-old', exerciseId: 'ex-pe-old', defaultSet: shape('q3', 'pe-new', { position: 3 }), oldSetIds: ['a1', 'a2'] }
+    expect(one(addSet, took())).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedSet', programExerciseId: 'pe-new', set: { programSetId: 'q3' } }] })
+    const holdsOld = week(3, [pe('pe-old')], [set('s1', 'pe-old', { programSetId: 'a1' }), set('s2', 'pe-old', { setNumber: 2, programSetId: 'a2' })])
+    expect(one(addSet, holdsOld)).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedSet', programExerciseId: 'pe-new' }] })
+  })
+
+  it('one swap, two weeks: a week that holds the replaced row is repointed and re-linked, a week that took the swap is re-linked, each with its own sets', () => {
+    const results = planApplyAheadGroups([{ workoutDayId: 'wd-1', changes: [swap] }], [
+      week(3, [pe('pe-old')], [set('o1', 'pe-old', { programSetId: 'a1' })]),
+      took([], 4),
+    ])
+    expect(results.map((r) => (r.status === 'applied' ? r.ops.map((o) => o.kind) : r.reason))).toEqual([['repointExercise'], ['relinkSets']])
+  })
+})
+
+// ─── A stage the default adds under a swapped slot's head (M12) ──────────────
+
+describe('addStage in a swapped slot — the head is found by the OLD head\'s program set', () => {
+  const swap: ChangeRecord = {
+    editType: 'swapExercise', slotId: 'pe-old', exerciseId: 'ex-pe-old', newExerciseId: 'ex-new', resultingProgramExerciseId: 'pe-new',
+    relink: [{ from: 'a1', to: 'q1' }],
+  }
+  const stage = shape('q1s1', 'pe-new', { stageIndex: 1, repMin: 10, repMax: 10 })
+  const addStage: ChangeRecord = { editType: 'addStage', slotId: 'pe-old', exerciseId: 'ex-pe-old', headOrdinal: 1, headProgramSetId: 'a1', defaultSet: stage, oldSetIds: [] }
+  const holdsOld = week(3, [pe('pe-old')], [set('h', 'pe-old', { programSetId: 'a1', stageKind: 'dropset' })])
+
+  // Break: name the NEW head (q1) as the head -> the week's head (still linked to a1 until the swap's
+  // re-link runs) is not found, and the stage is silently skipped: this fails.
+  it('the stage is added under the week\'s head, which still names the old program set when the records are resolved', () => {
+    const [result] = planApplyAheadGroups([{ workoutDayId: 'wd-1', changes: [swap, addStage] }], [holdsOld])
+    expect(result).toEqual({
+      weekPlanId: 'wp-3', weekNumber: 3, status: 'applied',
+      ops: [
+        { kind: 'repointExercise', weekPlanId: 'wp-3', fromProgramExerciseId: 'pe-old', toProgramExerciseId: 'pe-new', relink: [{ weekSetId: 'h', programSetId: 'q1' }] },
+        { kind: 'addPointedStage', weekPlanId: 'wp-3', programExerciseId: 'pe-new', parentId: 'h', stageIndex: 1, set: stage },
+      ],
+    })
+  })
+
+  it('...and a record that names the new head instead finds nothing: the stage is not added (what the right id prevents)', () => {
+    const wrong: ChangeRecord = { ...addStage, headProgramSetId: 'q1' } as ChangeRecord
+    const [result] = planApplyAheadGroups([{ workoutDayId: 'wd-1', changes: [swap, wrong] }], [holdsOld])
+    expect(result.status === 'applied' && result.ops.map((o) => o.kind)).toEqual(['repointExercise'])
+  })
+
+  it('in a week that took the swap already, the stage goes under the head of the swapped-in row', () => {
+    const took = week(3, [pe('pe-new', { exerciseId: 'ex-new' })], [set('h', 'pe-new', { programSetId: 'a1', stageKind: 'dropset' })])
+    expect(one(addStage, took)).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedStage', programExerciseId: 'pe-new', parentId: 'h' }] })
+  })
+})
+
 // ─── A set that left the default ─────────────────────────────────────────────
 
 describe('removeHeadSet / removeStage from a make-default — the set is found by its link', () => {
@@ -200,6 +318,42 @@ describe('removeHeadSet / removeStage from a make-default — the set is found b
     expect(one({ ...removeStage, defaultSet: { programSetId: 'a1' } }, w)).toMatchObject({ status: 'skipped', reason: 'structural' }) // a head under the link
   })
 
+  // R8: the old default's head was a dropset head with a stage; the default drops the stage. A later week that
+  // changed the head's kind ITSELF (myo-reps) has stages of its own, which a removal must not take.
+  describe('removeStage — only under a head that still has the old head\'s kind', () => {
+    const drop: ChangeRecord = {
+      editType: 'removeStage', slotId: 'pe-1', exerciseId: 'ex-pe-1', setPosition: { headOrdinal: 1, stageIndex: 1 },
+      defaultSet: { programSetId: 's1', headKind: 'dropset' },
+    }
+    const under = (headKind: 'dropset' | 'myo_reps' | null | undefined) =>
+      week(3, [pe('pe-1')], [
+        set('h', 'pe-1', { programSetId: 'a1', ...(headKind === undefined ? {} : { stageKind: headKind }) }),
+        set('st1', 'pe-1', { parentWeekPlanSetId: 'h', stageIndex: 1, programSetId: 's1' }),
+      ])
+
+    it('removes the stage when the week\'s head still has the old head\'s kind', () => {
+      expect(one(drop, under('dropset'))).toMatchObject({ status: 'applied', ops: [{ kind: 'removeSet', setId: 'st1' }] })
+    })
+
+    // Break: skip the head-kind check (what it did) -> the stage of the week's own myo-reps head goes.
+    it('a week that changed the head\'s kind itself keeps its stages', () => {
+      expect(one(drop, under('myo_reps'))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    it('a null kind on a head that has stages reads as a dropset, on both sides', () => {
+      expect(one(drop, under(null))).toMatchObject({ status: 'applied' })
+      expect(one(drop, under(undefined))).toMatchObject({ status: 'applied' })
+      const fromNull: ChangeRecord = { ...drop, defaultSet: { programSetId: 's1', headKind: null } } as ChangeRecord
+      expect(one(fromNull, under('dropset'))).toMatchObject({ status: 'applied' })
+      expect(one(fromNull, under('myo_reps'))).toMatchObject({ status: 'skipped', reason: 'structural' })
+    })
+
+    it('a record without headKind is the removal it was (no kind to compare)', () => {
+      const bare: ChangeRecord = { ...drop, defaultSet: { programSetId: 's1' } } as ChangeRecord
+      expect(one(bare, under('myo_reps'))).toMatchObject({ status: 'applied' })
+    })
+  })
+
   it('a record without defaultSet is still matched by ordinal (the hand edit it always was)', () => {
     const hand: ChangeRecord = { editType: 'removeHeadSet', slotId: 'pe-1', exerciseId: 'ex-pe-1', headOrdinal: 2 }
     const w = week(3, [pe('pe-1')], [set('s1', 'pe-1', { setNumber: 1 }), set('s2', 'pe-1', { setNumber: 2 })])
@@ -234,10 +388,35 @@ describe('repTarget from a make-default — written only where the week still ho
     expect(one(change, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
   })
 
-  it('equal as the row shows it is equal: a number target 8 stored as 8–8 is the old default\'s 8', () => {
+  it('a number target is the old default\'s number', () => {
     const num: ChangeRecord = { ...change, oldValue: { repMin: 8, repMax: 8, isAmrap: false } } as ChangeRecord
-    const w = week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: 8 })])
-    expect(one(num, w)).toMatchObject({ status: 'applied' })
+    expect(one(num, week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: 8 })]))).toMatchObject({ status: 'applied' })
+    expect(one(num, week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: 9 })]))).toMatchObject({ status: 'skipped' })
+  })
+
+  // M19: "the same" is what the row SHOWS, not how it is stored. A lone minimum (no maximum) reads "none", as an
+  // empty target does; an AMRAP set reads "AMRAP" whatever min and max it still carries. The week's storage
+  // differs from the old default's here and the display does not, so it still matches.
+  // Break: compare the raw columns instead of the shown targets -> both fail.
+  it('storage that differs but displays the same counts as matching: a lone minimum is "none", as an empty target is', () => {
+    const fromNone: ChangeRecord = { ...change, oldValue: { repMin: null, repMax: null, isAmrap: false } } as ChangeRecord
+    const lone = week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: null })])
+    expect(one(fromNone, lone)).toMatchObject({ status: 'applied', ops: [{ setId: 's-a2' }] })
+    // ...the other way round too: the old default's lone minimum, the week's empty target.
+    const fromLone: ChangeRecord = { ...change, oldValue: { repMin: 8, repMax: null, isAmrap: false } } as ChangeRecord
+    expect(one(fromLone, week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2' })]))).toMatchObject({ status: 'applied' })
+  })
+
+  it('...and an AMRAP set that still carries a minimum and a maximum is the old default\'s AMRAP', () => {
+    const fromAmrap: ChangeRecord = { ...change, oldValue: { repMin: null, repMax: null, isAmrap: true } } as ChangeRecord
+    const stale = week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', isAmrap: true, repMin: 5, repMax: 5 })])
+    expect(one(fromAmrap, stale)).toMatchObject({ status: 'applied' })
+  })
+
+  it('...while what differs on screen still differs: a lone minimum is not an AMRAP, nor an 8–10', () => {
+    const fromAmrap: ChangeRecord = { ...change, oldValue: { repMin: null, repMax: null, isAmrap: true } } as ChangeRecord
+    expect(one(fromAmrap, week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: null })]))).toMatchObject({ status: 'skipped' })
+    expect(one(change, week(3, [pe('pe-1')], [set('s-a2', 'pe-1', { programSetId: 'a2', repMin: 8, repMax: null })]))).toMatchObject({ status: 'skipped' })
   })
 
   it('AMRAP is a target of its own: an AMRAP set is not an 8–10 set, and an 8–10 set is not AMRAP', () => {
@@ -359,18 +538,90 @@ describe('addSet / addWarmupSet / addStage from a make-default — the new set n
     })
   })
 
-  it('...or at the week\'s next index when the head already has a stage there', () => {
+  // The old default's own stages under that head (`oldSetIds`) are not the week's own, so a week that
+  // still holds them takes the stage: at the week's next index when one of them sits at the default's.
+  const stageOfOldDefault: ChangeRecord = { ...addStage, oldSetIds: ['os2', 'os3'] } as ChangeRecord
+
+  it('...or at the week\'s next index when the head holds one of the old default\'s stages at that index', () => {
     const w = week(3, [pe('pe-1')], [
       set('h2', 'pe-1', { programSetId: 'a2' }),
-      set('hand', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2 }),
-      set('hand2', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 3 }),
+      set('old2', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2, programSetId: 'os2' }),
+      set('old3', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 3, programSetId: 'os3' }),
     ])
-    expect(one(addStage, w)).toMatchObject({ status: 'applied', ops: [{ stageIndex: 4 }] })
+    expect(one(stageOfOldDefault, w)).toMatchObject({ status: 'applied', ops: [{ stageIndex: 4 }] })
   })
 
   it('skipped when the week has no set linked to the head, only a stage of its own, or already has the stage', () => {
     expect(one(addStage, week(3, [pe('pe-1')], [set('h', 'pe-1', { programSetId: 'a1' })]))).toMatchObject({ status: 'skipped', reason: 'structural' })
     expect(one(addStage, week(3, [pe('pe-1')], [set('h2', 'pe-1', { programSetId: 'a2' }), set('x', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2, programSetId: 'n1' })]))).toMatchObject({ status: 'skipped' })
+  })
+
+  // R3, for a stage: a head with a stage of its own already differs from the old default where the new stage
+  // would go. Break: apply it anyway (appended at the next index, as it did) -> this fails.
+  it('a head that has a stage of its own (none of the old default\'s) is left alone', () => {
+    const w = week(3, [pe('pe-1')], [
+      set('h2', 'pe-1', { programSetId: 'a2' }),
+      set('old2', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 1, programSetId: 'os2' }),
+      set('mine', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2 }),
+    ])
+    expect(one(stageOfOldDefault, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+    // ...and the same when its link is to a program set the old default no longer has.
+    const leftOver = week(3, [pe('pe-1')], [set('h2', 'pe-1', { programSetId: 'a2' }), set('x', 'pe-1', { parentWeekPlanSetId: 'h2', stageIndex: 2, programSetId: 'from-an-older-default' })])
+    expect(one(stageOfOldDefault, leftOver)).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+})
+
+// ─── A set the week has of its own (R3) ──────────────────────────────────────
+
+// The old default had two sets (a1, a2) and the new one adds a third. A later week with a THIRD set of its
+// own (added there, linked to nothing) no longer matches the old default where the new set would go.
+describe('addSet / addWarmupSet from a make-default — not where the week has a set of its own of that kind', () => {
+  const addSet: ChangeRecord = { editType: 'addSet', slotId: 'pe-1', exerciseId: 'ex-pe-1', defaultSet: shape('q3', 'pe-1', { position: 3, repMin: 6, repMax: 8 }), oldSetIds: ['a1', 'a2'] }
+  const addWarm: ChangeRecord = { editType: 'addWarmupSet', slotId: 'pe-1', exerciseId: 'ex-pe-1', defaultSet: shape('w1', 'pe-1', { isWarmup: true, repMin: 12, repMax: 12 }), oldSetIds: ['a1', 'a2'] }
+  const two = [set('s1', 'pe-1', { setNumber: 1, programSetId: 'a1' }), set('s2', 'pe-1', { setNumber: 2, programSetId: 'a2' })]
+
+  it('a week that holds exactly the old default\'s sets takes the new one', () => {
+    expect(one(addSet, week(3, [pe('pe-1')], two))).toMatchObject({ status: 'applied', ops: [{ kind: 'addPointedSet' }] })
+  })
+
+  // Break: skip the own-set check (add regardless) -> this fails and the week gets a fourth set.
+  it('a week with a third working set of its own (no link) is left alone', () => {
+    const w = week(3, [pe('pe-1')], [...two, set('mine', 'pe-1', { setNumber: 3 })])
+    expect(one(addSet, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('...and so is a week whose extra set is linked to a program set the old default no longer has (left over from an earlier default)', () => {
+    const w = week(3, [pe('pe-1')], [...two, set('older', 'pe-1', { setNumber: 3, programSetId: 'from-an-older-default' })])
+    expect(one(addSet, w)).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('a week that deleted one of the old default\'s sets has no set of its own: it takes the new one', () => {
+    expect(one(addSet, week(3, [pe('pe-1')], [two[0]]))).toMatchObject({ status: 'applied' })
+  })
+
+  it('kinds are told apart: a warmup of its own does not stop a working set, and a working set of its own does not stop a warmup', () => {
+    expect(one(addSet, week(3, [pe('pe-1')], [...two, set('w', 'pe-1', { setNumber: 0, isWarmup: true })]))).toMatchObject({ status: 'applied' })
+    expect(one(addWarm, week(3, [pe('pe-1')], [...two, set('mine', 'pe-1', { setNumber: 3 })]))).toMatchObject({ status: 'applied' })
+    // ...and a warmup of its own does stop a warmup.
+    expect(one(addWarm, week(3, [pe('pe-1')], [...two, set('w', 'pe-1', { setNumber: 0, isWarmup: true })]))).toMatchObject({ status: 'skipped', reason: 'structural' })
+  })
+
+  it('stages are not heads: a stage of its own under one of the old default\'s sets does not count as a set of its own', () => {
+    const w = week(3, [pe('pe-1')], [...two, set('st', 'pe-1', { setNumber: 2, stageIndex: 1, parentWeekPlanSetId: 's2' })])
+    expect(one(addSet, w)).toMatchObject({ status: 'applied' })
+  })
+
+  it('a record without oldSetIds has no old default to compare with: nothing is the week\'s own', () => {
+    const bare: ChangeRecord = { ...addSet, oldSetIds: undefined } as ChangeRecord
+    expect(one(bare, week(3, [pe('pe-1')], [...two, set('mine', 'pe-1', { setNumber: 3 })]))).toMatchObject({ status: 'applied' })
+  })
+
+  it('in a swapped slot the week\'s sets under the replaced row are compared with the old row\'s sets', () => {
+    const swapped: ChangeRecord = { ...addSet, slotId: 'pe-old', exerciseId: 'ex-pe-old', defaultSet: shape('q3', 'pe-new', { position: 3 }) } as ChangeRecord
+    const holdsOld = week(3, [pe('pe-old')], [set('s1', 'pe-old', { programSetId: 'a1' }), set('s2', 'pe-old', { setNumber: 2, programSetId: 'a2' })])
+    expect(one(swapped, holdsOld)).toMatchObject({ status: 'applied', ops: [{ programExerciseId: 'pe-new' }] })
+    const withOwn = week(3, [pe('pe-old')], [...holdsOld.sets, set('mine', 'pe-old', { setNumber: 3 })])
+    expect(one(swapped, withOwn)).toMatchObject({ status: 'skipped', reason: 'structural' })
   })
 })
 

@@ -523,6 +523,61 @@ describe('PlanPage — after "Make this week the new default"', () => {
   })
 })
 
+// ─── A swap is told from the week on screen, read before the call ────────────
+
+// The old default's one exercise (pe-wd-1) is gone from the new default, and one at the same place
+// (pe-new) is in. Whether that is a SWAP or a removal and an addition is not in the function's answer: it
+// is in what the source week's rows named before the call, which the call erases (it points every planned
+// set of that week at the program set it ends up on). A swapped-in row's sets keep naming the replaced
+// row's program sets; an exercise added by hand names none.
+describe('PlanPage — offered ahead as a swap only when the week on screen showed one', () => {
+  function replacedOutcome(): MakeWeekDefaultOutcome {
+    const oldExercises = [defaultExercise('pe-wd-1', 0, [setDefaultSet('ps-wd-1', { repMin: 8, repMax: 10 })])]
+    return {
+      result: { mesocycleId: 'meso-1', weekNumber: 3, skipped: [], workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-wd-1-3', sourceSequencePosition: null, oldExercises }] },
+      newDefaults: new Map([['wd-1', [{ id: 'pe-new', exerciseId: 'ex-new', position: 0, sets: [setDefaultSet('ps-new', { repMin: 8, repMax: 10 })] }]]]),
+    }
+  }
+  // Source week 3 as Plan holds it: the row at the replaced row's place, its one set naming `programSetId`.
+  function sourceWeek(programSetId: string | null): WeekPlan {
+    const row: ProgramExercise = { id: 'pe-new', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-new', position: 0, weightUnit: null }
+    const planned: WeekPlanSet = { id: 's-new-3', weekPlanId: 'wp-wd-1-3', userId: 'user-1', programExerciseId: 'pe-new', setNumber: 1, targetRir: null, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, programSetId }
+    return plan(3, { exercises: [row], sets: [planned] })
+  }
+  const changesOfferedOnApply = () => {
+    fireEvent.click(screen.getByText('APPLY'))
+    return (applyAheadMutate.mock.calls[0][0] as { groups: AheadGroup[] }).groups[0].changes
+  }
+
+  // Break: pair a removed and an added row at the same place as a swap, evidence or not -> the second case
+  // offers a swap too, and fails.
+  it('the row\'s sets named the replaced row\'s program set: one swap record', () => {
+    useWeekdayRun('stable', [sourceWeek('ps-wd-1'), plan(4)])
+    renderPlanPage()
+    confirmAndAnswer((o) => o.onSuccess(replacedOutcome()))
+    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise'])
+  })
+
+  it('the row\'s set named nothing (an exercise added by hand where the removed one was): a removal and an addition, never a swap', () => {
+    useWeekdayRun('stable', [sourceWeek(null), plan(4)])
+    renderPlanPage()
+    confirmAndAnswer((o) => o.onSuccess(replacedOutcome()))
+    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['removeExercise', 'addExercise'])
+  })
+
+  it('the evidence is what was on screen when the confirm was tapped: the refetch after the call (its sets now name the new program set) does not erase it', () => {
+    useWeekdayRun('stable', [sourceWeek('ps-wd-1'), plan(4)])
+    const { rerender } = renderPlanPage()
+    fireEvent.click(screen.getByText(ACTION))
+    fireEvent.click(screen.getByText('MAKE DEFAULT'))
+    // The call has pointed the source week's sets at the program sets they ended up on, and the page re-read them.
+    plans = [sourceWeek('ps-new'), plan(4)]
+    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    act(() => (makeMutate.mock.calls[0][2] as MutateOptions).onSuccess(replacedOutcome()))
+    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise'])
+  })
+})
+
 describe('PlanPage — when the call fails', () => {
   it('shows the error as a toast, closes the confirm, offers nothing and touches nothing', () => {
     useWeekdayRun('stable', [plan(3), plan(4)])

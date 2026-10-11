@@ -700,6 +700,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
             mesoId={activeMeso.id}
             weekNumber={viewWeek}
             isSequence={isSequence}
+            weekPlans={weekPlans}
             allWeekPlans={allWeekPlans}
             sharedWorkoutDayIds={sharedWorkoutDayIds}
           />

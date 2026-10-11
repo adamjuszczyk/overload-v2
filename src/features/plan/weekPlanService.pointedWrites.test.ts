@@ -18,7 +18,7 @@ vi.mock('../programs/runProgramExercises', () => ({
   fetchRunProgramExercises: vi.fn(),
 }))
 
-const { addSet, addWarmupSet, addStage, addPointedSet, addPointedStage, addPointedExercise, repointWeekExercise } = await import('./weekPlanService')
+const { addSet, addWarmupSet, addStage, addPointedSet, addPointedStage, addPointedExercise, repointWeekExercise, relinkWeekSets } = await import('./weekPlanService')
 
 type Result = { data?: unknown; error?: unknown }
 
@@ -246,5 +246,31 @@ describe('repointWeekExercise — re-links the moved sets when asked to', () => 
     queue(makeChain(), makeChain(), makeChain({ data: null, error: new Error('relink failed') }), makeChain())
     await expect(repointWeekExercise('wp-3', 'pe-old', 'pe-new', [{ weekSetId: 's1', programSetId: 'q1' }, { weekSetId: 's2', programSetId: 'q2' }])).rejects.toThrow('relink failed')
     expect(fromMock).toHaveBeenCalledTimes(3)
+  })
+})
+
+// A week that took the swap already: its row is the swapped-in row, so only the sets' links change.
+describe('relinkWeekSets — only the link to the program set changes', () => {
+  it('one update per set, by the set\'s own id, and nothing else written (weight, RIR, tags and number stay)', async () => {
+    const l1 = makeChain()
+    const l2 = makeChain()
+    queue(l1, l2)
+    await relinkWeekSets([{ weekSetId: 's1', programSetId: 'q1' }, { weekSetId: 's2', programSetId: 'q2' }])
+    expect(fromMock.mock.calls.map((c) => c[0])).toEqual(['v2_week_plan_sets', 'v2_week_plan_sets'])
+    expect(l1.update).toHaveBeenCalledWith({ program_set_id: 'q1' })
+    expect(l1.eq).toHaveBeenCalledWith('id', 's1')
+    expect(l2.update).toHaveBeenCalledWith({ program_set_id: 'q2' })
+    expect(l2.eq).toHaveBeenCalledWith('id', 's2')
+  })
+
+  it('no links, no request', async () => {
+    await relinkWeekSets([])
+    expect(fromMock).not.toHaveBeenCalled()
+  })
+
+  it('a failed update stops the rest and is thrown as it came', async () => {
+    queue(makeChain({ data: null, error: new Error('relink failed') }), makeChain())
+    await expect(relinkWeekSets([{ weekSetId: 's1', programSetId: 'q1' }, { weekSetId: 's2', programSetId: 'q2' }])).rejects.toThrow('relink failed')
+    expect(fromMock).toHaveBeenCalledTimes(1)
   })
 })

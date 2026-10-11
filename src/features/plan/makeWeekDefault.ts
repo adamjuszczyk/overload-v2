@@ -1,18 +1,20 @@
 import type { ProgramExercise, ProgramSet, WeekPlan } from '../../types'
 import { columnsToRepTarget, formatRepTarget, type StageKind } from '../../lib/plannerVocabulary.js'
-import type { AheadGroup, ChangeRecord, DefaultRelink, DefaultSetShape, ReorderMove } from './applyAhead'
+import type { AheadGroup, ChangeRecord, DefaultRelink, DefaultSetKey, DefaultSetShape, ReorderMove } from './applyAhead'
 
 // Chunk 32 (TASKS-1.1 "Stable: Make this week the new default"; SPEC Weeks and copying
 // [P1.1]): the pure half of the action. Supabase-free and React-free, so every rule
 // below is tested directly; MakeWeekDefault.tsx draws the action, makeDefaultService.ts
 // makes the call, and applyAhead.ts plans what the offer writes.
 //
-// Three things live here:
+// Four things live here:
 //   1. Whether a week can be made the default at all (canMakeWeekDefault), the client's
 //      form of the function's own refusals.
 //   2. The RPC's answer, parsed (parseMakeDefaultResult): the OLD default of every
 //      workout whose default it rewrote, and the workouts it left alone.
-//   3. Old default → new default as change records (diffDefault) and the offer built
+//   3. What the source week showed BEFORE the call, which is the only trace of a swap
+//      (sourceLinksOf).
+//   4. Old default → new default as change records (diffDefault) and the offer built
 //      from them (buildDefaultOffer): "Apply this change to planned weeks ahead".
 
 // ─── 1. Can this week be made the default ─────────────────────────────────────
@@ -164,7 +166,33 @@ export function toDefaultExercises(exercises: ProgramExercise[], programSets: Pr
   }))
 }
 
-// ─── 3. Old default → new default, as change records ──────────────────────────
+// ─── 3. What the source week showed before the call: the evidence of a swap ───
+
+// A swap in the source week moves the replaced row's sets to the swapped-in row with their
+// `program_set_id` unchanged (weekPlanService.ts swapWeekExercise), so the swapped-in row's
+// planned sets still NAME the replaced row's program sets. An exercise added by hand has
+// sets that name nothing. That link is the only trace of a swap in what the function
+// answers (the old default's rows say what left and what joined, not whether one replaced
+// the other), and the call erases it from the week: it points every planned set of the
+// source week at the program set it ends up on. So it is read from the week as Plan holds
+// it BEFORE the call (MakeWeekDefault.tsx does, on confirm).
+// Per exercise row the session lists: the program sets its planned sets named.
+export type SourceLinks = ReadonlyMap<string, ReadonlySet<string>>
+
+export function sourceLinksOf(plan: Pick<WeekPlan, 'exercises' | 'sets'>): SourceLinks {
+  // The function only reads sets under rows the session lists.
+  const rows = new Set(plan.exercises.map((e) => e.id))
+  const links = new Map<string, Set<string>>()
+  for (const s of plan.sets) {
+    if (!s.programSetId || !rows.has(s.programExerciseId)) continue
+    const named = links.get(s.programExerciseId) ?? new Set<string>()
+    named.add(s.programSetId)
+    links.set(s.programExerciseId, named)
+  }
+  return links
+}
+
+// ─── 4. Old default → new default, as change records ──────────────────────────
 
 const compareIds = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 type Positioned = { position: number; id: string }
@@ -210,8 +238,11 @@ type Pairing = 'id' | 'ordinal'
 //     set that merely changed (its rep target, its kind) keeps its id.
 //   - Swapped exercise ('ordinal'): the swapped-in row has program sets of its own (new
 //     ids), made from the source week's sets, which moved with the swap in their order.
-//     The nth head of the old row stands for the nth head of the new one, and a head's
-//     stages likewise.
+//     Pairing is by ordinal WITHIN KIND: the nth warmup of the old row stands for the nth
+//     warmup of the new one, and the nth working set for the nth working set (G44's rule,
+//     the one weights are paired by). A warmup the source week added or removed on the
+//     swapped-in exercise is then an addition or a removal of a warmup, and no working
+//     set turns into a warmup or the other way round. A head's stages pair by stage index.
 // Position within the exercise is not a part: a week keeps its own set numbers, and an
 // added set goes where the week's own rows say (applyAhead.ts).
 function diffSets(
@@ -230,9 +261,13 @@ function diffSets(
       if (q) pairedHead.set(p.id, q)
     }
   } else {
-    oldHeads.forEach((p, i) => {
-      if (i < newHeads.length) pairedHead.set(p.id, newHeads[i])
-    })
+    for (const warmup of [true, false]) {
+      const olds = oldHeads.filter((h) => h.isWarmup === warmup)
+      const news = newHeads.filter((h) => h.isWarmup === warmup)
+      olds.forEach((p, i) => {
+        if (i < news.length) pairedHead.set(p.id, news[i])
+      })
+    }
   }
   const pairedNewHeads = new Set([...pairedHead.values()].map((q) => q.id))
 
@@ -241,6 +276,14 @@ function diffSets(
   const additions: ChangeRecord[] = []
   const relink: DefaultRelink[] = []
   const { slotId, exerciseId } = slot
+  // How a record names the old default's program set it is about. For a swapped slot it
+  // also names the swapped-in row, which a week that took the swap already holds.
+  const keyOf = (programSetId: string, headKind?: StageKind | null): DefaultSetKey => ({
+    programSetId,
+    ...(pairing === 'ordinal' ? { swappedInto: targetRowId } : {}),
+    ...(headKind !== undefined ? { headKind } : {}),
+  })
+  const oldHeadIds = oldHeads.map((h) => h.id)
 
   oldHeads.forEach((p, i) => {
     const headOrdinal = i + 1
@@ -248,51 +291,52 @@ function diffSets(
     if (!q) {
       // The head is gone from the default, and its stages with it (the week set's stages
       // are deleted with it).
-      removals.push({ editType: 'removeHeadSet', slotId, exerciseId, headOrdinal, defaultSet: { programSetId: p.id } })
+      removals.push({ editType: 'removeHeadSet', slotId, exerciseId, headOrdinal, defaultSet: keyOf(p.id) })
       return
     }
     if (pairing === 'ordinal') relink.push({ from: p.id, to: q.id })
 
     const setPosition = { headOrdinal, stageIndex: null }
     if (repKey(p) !== repKey(q)) {
-      updates.push({ editType: 'repTarget', slotId, exerciseId, setPosition, oldValue: repOf(p), newValue: repOf(q), defaultSet: { programSetId: p.id } })
+      updates.push({ editType: 'repTarget', slotId, exerciseId, setPosition, oldValue: repOf(p), newValue: repOf(q), defaultSet: keyOf(p.id) })
     }
     if (p.isWarmup !== q.isWarmup) {
-      updates.push({ editType: 'warmup', slotId, exerciseId, setPosition, oldValue: p.isWarmup, newValue: q.isWarmup, defaultSet: { programSetId: p.id } })
+      updates.push({ editType: 'warmup', slotId, exerciseId, setPosition, oldValue: p.isWarmup, newValue: q.isWarmup, defaultSet: keyOf(p.id) })
     }
     if (kindOf(p) !== kindOf(q)) {
-      updates.push({ editType: 'stageKind', slotId, exerciseId, setPosition, oldValue: kindOf(p), newValue: kindOf(q), defaultSet: { programSetId: p.id } })
+      updates.push({ editType: 'stageKind', slotId, exerciseId, setPosition, oldValue: kindOf(p), newValue: kindOf(q), defaultSet: keyOf(p.id) })
     }
 
-    // The head's stages.
+    // The head's stages: the same program set for a kept exercise, the same stage index
+    // under the paired head for a swapped one.
     const oldStages = stagesOf(oldSets, p.id)
     const newStages = stagesOf(newSets, q.id)
     const pairedStage = new Map<string, DefaultSet>() // old stage id → new stage
-    if (pairing === 'id') {
-      for (const s of oldStages) {
-        const t = newStages.find((x) => x.id === s.id)
-        if (t) pairedStage.set(s.id, t)
-      }
-    } else {
-      oldStages.forEach((s, k) => {
-        if (k < newStages.length) pairedStage.set(s.id, newStages[k])
-      })
+    for (const s of oldStages) {
+      const t = newStages.find((x) => (pairing === 'id' ? x.id === s.id : x.stageIndex === s.stageIndex))
+      if (t) pairedStage.set(s.id, t)
     }
     const pairedNewStages = new Set([...pairedStage.values()].map((t) => t.id))
     for (const s of oldStages) {
       const t = pairedStage.get(s.id)
       const stagePosition = { headOrdinal, stageIndex: s.stageIndex }
       if (!t) {
-        removals.push({ editType: 'removeStage', slotId, exerciseId, setPosition: stagePosition, defaultSet: { programSetId: s.id } })
+        // Its head's old kind goes with it: a week that changed the head's kind itself
+        // has stages of its own, and keeps them (applyAhead.ts).
+        removals.push({ editType: 'removeStage', slotId, exerciseId, setPosition: stagePosition, defaultSet: keyOf(s.id, kindOf(p)) })
         continue
       }
       if (pairing === 'ordinal') relink.push({ from: s.id, to: t.id })
       if (repKey(s) !== repKey(t)) {
-        updates.push({ editType: 'repTarget', slotId, exerciseId, setPosition: stagePosition, oldValue: repOf(s), newValue: repOf(t), defaultSet: { programSetId: s.id } })
+        updates.push({ editType: 'repTarget', slotId, exerciseId, setPosition: stagePosition, oldValue: repOf(s), newValue: repOf(t), defaultSet: keyOf(s.id) })
       }
     }
     for (const t of newStages) {
       if (pairedNewStages.has(t.id)) continue
+      // The head is found in a later week by its OLD program set `p.id` — also for a
+      // swapped slot, whose week's head still names the replaced row's program set until
+      // the swap record re-links it (a record is matched against the week as it is, not as
+      // the records before it leave it).
       additions.push({
         editType: 'addStage',
         slotId,
@@ -300,6 +344,7 @@ function diffSets(
         headOrdinal,
         headProgramSetId: p.id,
         defaultSet: toShape(t, newSets, targetRowId),
+        oldSetIds: oldStages.map((x) => x.id),
       })
     }
   })
@@ -311,30 +356,41 @@ function diffSets(
       slotId,
       exerciseId,
       defaultSet: toShape(q, newSets, targetRowId),
+      oldSetIds: oldHeadIds,
     })
   }
 
   return { records: [...removals, ...updates, ...additions], relink }
 }
 
-// A swap is a removed row and an added row at the same position (the source week's
-// swap puts the replacement at the replaced row's place). Anything else that left or
-// joined the default is a removal or an addition by itself. A swap that also moved is
-// both of those: the function can't tell it from a removal and an addition.
-function pairSwaps(removed: DefaultExercise[], added: DefaultExercise[]) {
+// A swap is a removed row R and an added row N where the source week SHOWED a swap: N's
+// planned sets, in that week, named R's program sets (SourceLinks above), and N sits at R's
+// place (the source week's swap puts the replacement where the replaced row was).
+// Position alone is never enough: removing the last exercise and adding another puts the
+// new row at the removed row's position, and reading that as a swap would repoint a later
+// week's removed row at an exercise that was merely added, with the removed row's sets and
+// their weights. Without the evidence (`links` absent: the source week was not at hand, or
+// N's sets name nothing, or name more than one removed row) it is a removal and an
+// addition, never a swap. A swap that was moved afterwards is the same: re-pointing a row
+// cannot also carry its place.
+function pairSwaps(removed: DefaultExercise[], added: DefaultExercise[], links: SourceLinks | undefined) {
   const used = new Set<string>()
   const swaps: { old: DefaultExercise; neu: DefaultExercise }[] = []
-  const removedOnly: DefaultExercise[] = []
-  for (const r of removed) {
-    const a = added.find((x) => !used.has(x.id) && x.position === r.position)
-    if (a) {
-      used.add(a.id)
-      swaps.push({ old: r, neu: a })
-    } else {
-      removedOnly.push(r)
-    }
+  for (const n of added) {
+    const named = links?.get(n.id)
+    if (!named || named.size === 0) continue
+    const candidates = removed.filter((r) => !used.has(r.id) && r.position === n.position && r.sets.some((s) => named.has(s.id)))
+    if (candidates.length !== 1) continue
+    used.add(candidates[0].id)
+    swaps.push({ old: candidates[0], neu: n })
   }
-  return { swaps, removedOnly, addedOnly: added.filter((x) => !used.has(x.id)) }
+  const swappedOld = new Set(swaps.map((s) => s.old.id))
+  const swappedNew = new Set(swaps.map((s) => s.neu.id))
+  return {
+    swaps,
+    removedOnly: removed.filter((r) => !swappedOld.has(r.id)),
+    addedOnly: added.filter((a) => !swappedNew.has(a.id)),
+  }
 }
 
 // The moves that put the kept exercises where the new default has them, split into
@@ -370,8 +426,10 @@ function reorderRecords(kept: { old: DefaultExercise; neu: DefaultExercise }[]):
 
 // One workout's old default → its new one, as records of the existing types (G26):
 //   removeExercise     a row that left the default
-//   swapExercise       a row replaced by one at the same place (the later week's row and
-//                      its sets are re-pointed at the swapped-in row and its program sets)
+//   swapExercise       a row replaced by one the source week showed as a swap (the later
+//                      week's row and its sets are re-pointed at the swapped-in row and
+//                      its program sets, warmups with warmups and working sets with
+//                      working sets)
 //   <set-level>        removeHeadSet / removeStage / repTarget / warmup / stageKind for a
 //                      set that changed or left; addSet / addWarmupSet / addStage for one
 //                      that joined, each naming its new program set
@@ -380,7 +438,14 @@ function reorderRecords(kept: { old: DefaultExercise; neu: DefaultExercise }[]):
 // In that order, so a week's ops are written removals first, additions last. Every part
 // is its own record: a later week takes the ones whose old part it still holds
 // (applyAhead.ts planApplyAheadGroups).
-export function diffDefault(workoutDayId: string, oldExercises: DefaultExercise[], newExercises: DefaultExercise[]): AheadGroup {
+// `sourceLinks`: what the source week's rows named before the call (sourceLinksOf), the
+// evidence a row replaced another. Without it nothing is a swap.
+export function diffDefault(
+  workoutDayId: string,
+  oldExercises: DefaultExercise[],
+  newExercises: DefaultExercise[],
+  sourceLinks?: SourceLinks,
+): AheadGroup {
   const oldRows = [...oldExercises].sort(byPositionThenId)
   const newRows = [...newExercises].sort(byPositionThenId)
   const newById = new Map(newRows.map((e) => [e.id, e]))
@@ -389,7 +454,7 @@ export function diffDefault(workoutDayId: string, oldExercises: DefaultExercise[
   const kept = oldRows.filter((o) => newById.has(o.id)).map((o) => ({ old: o, neu: newById.get(o.id)! }))
   const removed = oldRows.filter((o) => !newById.has(o.id))
   const added = newRows.filter((n) => !oldIds.has(n.id))
-  const { swaps, removedOnly, addedOnly } = pairSwaps(removed, added)
+  const { swaps, removedOnly, addedOnly } = pairSwaps(removed, added, sourceLinks)
 
   const removals: ChangeRecord[] = removedOnly.map((o) => ({ editType: 'removeExercise', slotId: o.id, exerciseId: o.exerciseId }))
 
@@ -451,10 +516,15 @@ export function laterSessionsOf(allWeekPlans: WeekPlan[], workoutDayId: string, 
 // null when there is nothing to offer: no later week of a rewritten workout is planned
 // ("the offer shows only when later weeks are planned"), or the new default is what the
 // old one was. A workout whose new default couldn't be read is left out.
+// `sourceLinks`: per planned session of the made week (by its id), what its rows named
+// before the call (sourceLinksOf). The session each workout's default came from is the one
+// the function names (`sourceWeekPlanId`); when it is not in the map, that workout's
+// swaps cannot be told from a removal and an addition, and are not offered as swaps.
 export function buildDefaultOffer(
   result: MakeDefaultResult,
   newDefaults: ReadonlyMap<string, DefaultExercise[]>,
   allWeekPlans: WeekPlan[],
+  sourceLinks?: ReadonlyMap<string, SourceLinks>,
 ): DefaultOffer | null {
   const groups: AheadGroup[] = []
   const weeks: WeekPlan[] = []
@@ -463,7 +533,7 @@ export function buildDefaultOffer(
     if (later.length === 0) continue
     const next = newDefaults.get(workout.workoutDayId)
     if (!next) continue
-    const group = diffDefault(workout.workoutDayId, workout.oldExercises, next)
+    const group = diffDefault(workout.workoutDayId, workout.oldExercises, next, sourceLinks?.get(workout.sourceWeekPlanId))
     if (group.changes.length === 0) continue
     groups.push(group)
     weeks.push(...later)
