@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import type { WeekPlan } from '../../types'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useApplyAhead, ApplyAheadError, type ApplyAheadResult } from './useWeekPlan'
-import { type AheadGroup, type ChangeRecord, type ApplyAheadSummary } from './applyAhead'
+import { type ChangeRecord, type ApplyAheadSummary } from './applyAhead'
 
 // Chunk 20 — "Apply this change to planned weeks ahead" (TASKS.md / SPEC.md
 // "Weeks and copying"). Shared by PlanPage.tsx (week-level edits, both
@@ -20,14 +20,6 @@ export interface PendingApplyAheadOffer {
   changes: ChangeRecord[]
   weeks: WeekPlan[] // candidate weeks this offer would touch — always non-empty
   isShared: boolean // G14 — this workout covers more than one weekday
-  // Chunk 32 — an offer after "Make this week the new default" spans every workout whose
-  // default was rewritten, and its records are per part (applyAhead.ts
-  // planApplyAheadGroups): `groups` are the records per workout (`changes` is all of
-  // them), `weeks` the later planned sessions of those workouts, and `weekCount` how
-  // many weeks (cycles) those sessions are in, which is what the offer says. Absent on
-  // every other offer.
-  groups?: AheadGroup[]
-  weekCount?: number
 }
 
 interface OutcomeState {
@@ -61,14 +53,9 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
   // later planned week) — setOffer itself also clears any stale PRIOR
   // offer/outcome in that case, so the banner never shows a change that no
   // longer matches what was just done.
-  function setOffer(
-    changes: ChangeRecord[],
-    weeks: WeekPlan[],
-    isShared: boolean,
-    perPart?: { groups: AheadGroup[]; weekCount: number },
-  ) {
+  function setOffer(changes: ChangeRecord[], weeks: WeekPlan[], isShared: boolean) {
     setOutcome(null)
-    setOfferState(weeks.length === 0 || changes.length === 0 ? null : { changes, weeks, isShared, ...perPart })
+    setOfferState(weeks.length === 0 || changes.length === 0 ? null : { changes, weeks, isShared })
   }
 
   function dismiss() {
@@ -79,9 +66,7 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
   function apply() {
     if (!offer) return
     mutation.mutate(
-      offer.groups
-        ? { changes: offer.changes, weeks: offer.weeks, groups: offer.groups }
-        : { changes: offer.changes, weeks: offer.weeks },
+      { changes: offer.changes, weeks: offer.weeks },
       {
         onSuccess: (data: ApplyAheadResult) => {
           setOutcome({ summary: data.summary })
@@ -89,9 +74,7 @@ export function useApplyAheadOffer(mesoId: string, resetKey: string) {
         },
         onError: (err: unknown) => {
           const summary =
-            err instanceof ApplyAheadError
-              ? err.summary
-              : { total: offer.weekCount ?? offer.weeks.length, applied: 0, skippedDeload: 0, skippedStructural: 0 }
+            err instanceof ApplyAheadError ? err.summary : { total: offer.weeks.length, applied: 0, skippedDeload: 0, skippedStructural: 0 }
           setOutcome({ summary, error: err instanceof Error ? err.message : 'Could not apply the change.' })
           setOfferState(null)
         },
@@ -147,7 +130,7 @@ export function ApplyAheadBanner({
         ) : offer ? (
           <>
             <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              {`APPLY THIS CHANGE TO ${offer.weekCount ?? offer.weeks.length} PLANNED ${weekWord(offer.weekCount ?? offer.weeks.length)} AHEAD?`}
+              {`APPLY THIS CHANGE TO ${offer.weeks.length} PLANNED ${weekWord(offer.weeks.length)} AHEAD?`}
             </p>
             {offer.isShared && (
               <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: 4, lineHeight: 1.5 }}>

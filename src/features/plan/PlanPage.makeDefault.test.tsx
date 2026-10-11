@@ -5,9 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { addDays, format, startOfWeek, subWeeks } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise, SequenceItem, Session } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
-import type { AheadGroup, ChangeRecord } from './applyAhead'
-import type { MakeWeekDefaultOutcome } from './useMakeWeekDefault'
-import type { DefaultExercise, DefaultSet } from './makeWeekDefault'
+import type { MakeDefaultResult } from './makeWeekDefault'
 import { useToastStore } from '../notifications/toastStore'
 
 // Chunk 32 (TASKS-1.1 "Stable: Make this week the new default"; SPEC Weeks and copying
@@ -21,10 +19,10 @@ import { useToastStore } from '../notifications/toastStore'
 //   - the confirm step: opening it calls nothing, CANCEL calls nothing, CONFIRM calls
 //     the mutation for the viewed week (the hook calls the function with (run, week):
 //     useMakeWeekDefault.test.tsx; the function's own call: makeDefaultService.test.ts);
-//   - after it, "Apply this change to planned weeks ahead" is offered exactly when later
-//     weeks of a rewritten workout are planned, carrying the records of the old default →
-//     new default (the screen-layer record test the apply-ahead rule asks for); an error
-//     of the call is a toast, no offer, nothing else.
+//   - after it: a toast, and nothing else. There is NO "Apply this change to planned weeks
+//     ahead" offer (taken out of this chunk after review), and nothing is written to any
+//     week, however many later weeks are planned (absence tests, Checks that lied #32); an
+//     error of the call is a toast, nothing else.
 
 afterEach(() => {
   cleanup()
@@ -83,9 +81,13 @@ function useWeekdayRun(planningType: Program['planningType'], weekPlans: WeekPla
 }
 
 const makeMutate = vi.fn()
-const applyAheadMutate = vi.fn()
 const makeIsPending = { value: false }
-const updateSetMutate = vi.fn()
+// Every write the Plan screen can make to a week goes through one of the hooks mocked below; each
+// is recorded here by name, so a test can say that none was called.
+const writes: string[] = []
+const record = (name: string) => (..._args: unknown[]) => {
+  writes.push(name)
+}
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
@@ -104,21 +106,23 @@ vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: applyAheadMutate, isPending: false }),
+  useApplyAhead: () => ({ mutate: record('useApplyAhead'), isPending: false }),
+  // Not recorded: the page itself plans the week it opens (v2_plan_week leaves rows that exist as they are),
+  // whenever a week is viewed, with or without this action.
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetDeload: () => ({ mutate: vi.fn() }),
-  useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateSet: () => ({ mutate: updateSetMutate }),
-  useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetDeload: () => ({ mutate: record('useSetDeload') }),
+  useSetWeekDeload: () => ({ mutate: record('useSetWeekDeload'), isPending: false }),
+  useAddSet: () => ({ mutate: record('useAddSet'), isPending: false }),
+  useAddStage: () => ({ mutate: record('useAddStage') }),
+  useAddWarmupSet: () => ({ mutate: record('useAddWarmupSet'), isPending: false }),
+  useUpdateSet: () => ({ mutate: record('useUpdateSet') }),
+  useRemoveSet: () => ({ mutate: record('useRemoveSet'), isPending: false }),
+  useCopyFromPreviousWeek: () => ({ mutate: record('useCopyFromPreviousWeek'), isPending: false }),
+  useCopyWorkoutFromPreviousWeek: () => ({ mutate: record('useCopyWorkoutFromPreviousWeek'), isPending: false }),
+  useSwapWeekExercise: () => ({ mutateAsync: record('useSwapWeekExercise'), isPending: false }),
+  useAddWeekExercise: () => ({ mutate: record('useAddWeekExercise'), isPending: false }),
+  useRemoveWeekExercise: () => ({ mutate: record('useRemoveWeekExercise'), isPending: false }),
+  useReorderWeekExercises: () => ({ mutate: record('useReorderWeekExercises'), isPending: false }),
 }))
 vi.mock('./useMakeWeekDefault', () => ({
   useMakeWeekDefault: (mesoId: string) => ({
@@ -140,8 +144,7 @@ function renderPlanPage() {
 
 afterEach(() => {
   makeMutate.mockReset()
-  applyAheadMutate.mockReset()
-  updateSetMutate.mockReset()
+  writes.length = 0
   makeIsPending.value = false
   sequenceItems = []
   lastDoneOrSkipped = null
@@ -362,286 +365,64 @@ describe('PlanPage — "Make this week the new default": the confirm step', () =
   })
 })
 
-// ─── What follows: the toast, and "Apply this change to planned weeks ahead" ──
+// ─── What follows: the toast, and nothing else ───────────────────────────────
 
-function setDefaultSet(id: string, overrides: Partial<DefaultSet> = {}): DefaultSet {
-  return { id, position: 1, isWarmup: false, parentProgramSetId: null, stageIndex: 0, stageKind: null, repMin: null, repMax: null, isAmrap: false, ...overrides }
-}
-function defaultExercise(id: string, position: number, sets: DefaultSet[]): DefaultExercise {
-  return { id, exerciseId: 'ex-a', position, sets }
-}
+// What the hook hands over (useMakeWeekDefault.ts): the function's answer.
+const answer = (skipped: MakeDefaultResult['skipped'] = []): MakeDefaultResult => ({ mesocycleId: 'meso-1', weekNumber: 3, skipped })
 
-// The function's answer for workout wd-1 (old default: one exercise, one set at 8–10), and the run's
-// copy afterwards (the rep target is 6–8 now, and an exercise joined).
-function outcome(overrides: Partial<MakeWeekDefaultOutcome> = {}): MakeWeekDefaultOutcome {
-  const oldExercises = [defaultExercise('pe-wd-1', 0, [setDefaultSet('ps-wd-1', { repMin: 8, repMax: 10 })])]
-  return {
-    result: { mesocycleId: 'meso-1', weekNumber: 3, skipped: [], workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-wd-1-3', sourceSequencePosition: null, oldExercises }] },
-    newDefaults: new Map([[
-      'wd-1',
-      [
-        defaultExercise('pe-wd-1', 0, [setDefaultSet('ps-wd-1', { repMin: 6, repMax: 8 })]),
-        { id: 'pe-joined', exerciseId: 'ex-joined', position: 1, sets: [setDefaultSet('ps-joined', { position: 1, repMin: 12, repMax: 15 })] },
-      ],
-    ]]),
-    ...overrides,
-  }
-}
+type MutateOptions = { onSuccess: (result: MakeDefaultResult) => void; onError: (e: unknown) => void }
 
-type MutateOptions = { onSuccess: (o: MakeWeekDefaultOutcome) => void; onError: (e: unknown) => void }
-
-function confirmAndAnswer(answer: (options: MutateOptions) => void) {
+function confirmAndAnswer(reply: (options: MutateOptions) => void) {
   fireEvent.click(screen.getByText(ACTION))
   fireEvent.click(screen.getByText('MAKE DEFAULT'))
-  act(() => answer(makeMutate.mock.calls[0][2] as MutateOptions))
+  act(() => reply(makeMutate.mock.calls[0][2] as MutateOptions))
 }
 
 describe('PlanPage — after "Make this week the new default"', () => {
-  it('says what happened, closes the confirm, and offers nothing when no later week is planned', () => {
+  it('says what happened and closes the confirm', () => {
     useWeekdayRun('stable', [plan(3)])
     renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
+    confirmAndAnswer((o) => o.onSuccess(answer()))
     expect(useToastStore.getState().message).toBe('Week 3 is now the default.')
     expect(screen.queryByText('Make week 3 the new default?')).toBeNull()
-    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
   })
 
-  it('offers "Apply this change to planned weeks ahead" when later weeks of a rewritten workout are planned', () => {
-    useWeekdayRun('stable', [plan(3), plan(4), plan(5)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
-    expect(screen.getByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')).toBeTruthy()
-  })
-
-  it('...and not when the only planned weeks are before it or are another workout\'s', () => {
-    useWeekdayRun('stable', [plan(2), plan(3), plan(4, { workoutDayId: 'wd-2' })])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
-    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
-  })
-
-  it('counts weeks, not sessions: two workouts rewritten, two later weeks planned for both, is "2 planned weeks"', () => {
-    useWeekdayRun('stable', [plan(3), plan(3, { workoutDayId: 'wd-2' }), plan(4), plan(4, { workoutDayId: 'wd-2' }), plan(5), plan(5, { workoutDayId: 'wd-2' })])
-    renderPlanPage()
-    const both = outcome()
-    both.result.workouts.push({
-      workoutDayId: 'wd-2', sourceWeekPlanId: 'wp-wd-2-3', sourceSequencePosition: null,
-      oldExercises: [defaultExercise('pe-wd-2', 0, [setDefaultSet('ps-wd-2', { repMin: 8, repMax: 10 })])],
-    })
-    both.newDefaults!.set('wd-2', [defaultExercise('pe-wd-2', 0, [setDefaultSet('ps-wd-2', { repMin: 5, repMax: 5 })])])
-    confirmAndAnswer((o) => o.onSuccess(both))
-    expect(screen.getByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')).toBeTruthy()
-  })
-
-  it('no offer when nothing about the default changed', () => {
-    useWeekdayRun('stable', [plan(3), plan(4)])
-    renderPlanPage()
-    const same = outcome()
-    same.newDefaults = new Map([['wd-1', same.result.workouts[0].oldExercises]])
-    confirmAndAnswer((o) => o.onSuccess(same))
-    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
-  })
-
-  // The screen-layer record test (CONTEXT: every new edit type extends applyAhead.ts, its tests AND a
-  // screen-layer record test): APPLY hands the apply-ahead mutation the records of old default → new
-  // default, per workout, with the later sessions — not records built from a screen edit.
-  it('APPLY hands over the records of the old default → new default, per workout, and the later planned sessions', () => {
-    useWeekdayRun('stable', [plan(3), plan(4), plan(5)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
-    expect(applyAheadMutate).not.toHaveBeenCalled() // the offer is made, never applied by itself
-    fireEvent.click(screen.getByText('APPLY'))
-    expect(applyAheadMutate).toHaveBeenCalledTimes(1)
-    const sent = applyAheadMutate.mock.calls[0][0] as { changes: ChangeRecord[]; weeks: WeekPlan[]; groups: AheadGroup[] }
-    expect(sent.weeks.map((w) => w.id)).toEqual(['wp-wd-1-4', 'wp-wd-1-5'])
-    expect(sent.groups).toHaveLength(1)
-    expect(sent.groups[0].workoutDayId).toBe('wd-1')
-    expect(sent.groups[0].changes).toEqual([
-      {
-        editType: 'repTarget',
-        slotId: 'pe-wd-1',
-        exerciseId: 'ex-a',
-        setPosition: { headOrdinal: 1, stageIndex: null },
-        oldValue: { repMin: 8, repMax: 10, isAmrap: false },
-        newValue: { repMin: 6, repMax: 8, isAmrap: false },
-        defaultSet: { programSetId: 'ps-wd-1' },
-      },
-      {
-        editType: 'addExercise',
-        workoutDayId: 'wd-1',
-        exerciseId: 'ex-joined',
-        defaultRow: {
-          programExerciseId: 'pe-joined',
-          position: 1,
-          sets: [{ programSetId: 'ps-joined', programExerciseId: 'pe-joined', position: 1, isWarmup: false, stageKind: null, repMin: 12, repMax: 15, isAmrap: false, stageIndex: 0, stages: [] }],
-        },
-      },
-    ])
-    expect(sent.changes).toEqual(sent.groups[0].changes)
-  })
-
-  it('a skipped workout (deload or empty everywhere this week) is told in the toast', () => {
+  it('a workout that kept the current default (deload or empty everywhere this week) is told in the toast', () => {
     useWeekdayRun('stable', [plan(3)])
     renderPlanPage()
-    const withSkipped = outcome()
-    withSkipped.result.skipped = [{ workoutDayId: 'wd-2', reason: 'deload' }]
-    confirmAndAnswer((o) => o.onSuccess(withSkipped))
+    confirmAndAnswer((o) => o.onSuccess(answer([{ workoutDayId: 'wd-2', reason: 'deload' }])))
     expect(useToastStore.getState().message).toBe('Week 3 is now the default. Deload or empty sessions kept the current default.')
   })
 
-  it('the default is written even when the new default could not be read: the toast says the offer could not be made, and there is none', () => {
-    useWeekdayRun('stable', [plan(3), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome({ newDefaults: null })))
-    expect(useToastStore.getState().message).toBe('Week 3 is now the default. Planned weeks ahead could not be offered the change.')
-    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
+  // ABSENCE. Chunk 32 ships without the apply-ahead offer: the weeks planned after the one made the
+  // default keep exactly what they have. Break: show the offer again (the banner, a hand-over to
+  // apply-ahead, or any write to a week) after a success -> this fails.
+  it('offers nothing for the weeks planned after it, hands nothing to apply-ahead, and writes to no week', () => {
+    for (const reply of [answer(), answer([{ workoutDayId: 'wd-2', reason: 'deload' }])]) {
+      useWeekdayRun('stable', [plan(3), plan(3, { workoutDayId: 'wd-2' }), plan(4), plan(4, { workoutDayId: 'wd-2' }), plan(5), plan(6, { isDeload: true })])
+      const view = renderPlanPage()
+      writes.length = 0 // whatever the screen did to mount is not what is asked about
+      makeMutate.mockReset()
+      confirmAndAnswer((o) => o.onSuccess(reply))
+      expect(makeMutate).toHaveBeenCalledTimes(1)
+      expect(useToastStore.getState().message).toContain('Week 3 is now the default.')
+      expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
+      expect(screen.queryByText('APPLY')).toBeNull()
+      expect(screen.queryByLabelText('Dismiss')).toBeNull()
+      expect(writes).toEqual([])
+      view.unmount()
+    }
   })
 
-  it('...and without later weeks that is not worth a word', () => {
-    useWeekdayRun('stable', [plan(3)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome({ newDefaults: null })))
-    expect(useToastStore.getState().message).toBe('Week 3 is now the default.')
-  })
-
-  it('moving to another week clears a pending offer: it was made for the week it was made on', () => {
+  it('...and a later week looked at afterwards shows no offer either', () => {
     useWeekdayRun('stable', [plan(3), plan(4), plan(5)])
     renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
-    expect(screen.getByText('APPLY THIS CHANGE TO 2 PLANNED WEEKS AHEAD?')).toBeTruthy()
+    writes.length = 0
+    confirmAndAnswer((o) => o.onSuccess(answer()))
     nextWeek()
+    expect(screen.getByText('WEEK 4')).toBeTruthy()
     expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
-  })
-
-  it('an offer can be dismissed and then applies nothing', () => {
-    useWeekdayRun('stable', [plan(3), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(outcome()))
-    fireEvent.click(screen.getByLabelText('Dismiss'))
-    expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
-    expect(applyAheadMutate).not.toHaveBeenCalled()
-  })
-})
-
-// ─── A swap is told from the week on screen, read before the call ────────────
-
-// The old default's one exercise (pe-wd-1) is gone from the new default, and one at the same place
-// (pe-new) is in. Whether that is a SWAP or a removal and an addition is not in the function's answer: it
-// is in what the source week's rows named before the call, which the call erases (it points every planned
-// set of that week at the program set it ends up on). A swapped-in row's sets keep naming the replaced
-// row's program sets; an exercise added by hand names none.
-describe('PlanPage — offered ahead as a swap only when the week on screen showed one', () => {
-  function replacedOutcome(): MakeWeekDefaultOutcome {
-    const oldExercises = [defaultExercise('pe-wd-1', 0, [setDefaultSet('ps-wd-1', { repMin: 8, repMax: 10 })])]
-    return {
-      result: { mesocycleId: 'meso-1', weekNumber: 3, skipped: [], workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-wd-1-3', sourceSequencePosition: null, oldExercises }] },
-      newDefaults: new Map([['wd-1', [{ id: 'pe-new', exerciseId: 'ex-new', position: 0, sets: [setDefaultSet('ps-new', { repMin: 8, repMax: 10 })] }]]]),
-    }
-  }
-  // Source week 3 as Plan holds it: the row at the replaced row's place, its one set naming `programSetId`.
-  function sourceWeek(programSetId: string | null): WeekPlan {
-    const row: ProgramExercise = { id: 'pe-new', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-new', position: 0, weightUnit: null }
-    const planned: WeekPlanSet = { id: 's-new-3', weekPlanId: 'wp-wd-1-3', userId: 'user-1', programExerciseId: 'pe-new', setNumber: 1, targetRir: null, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, programSetId }
-    return plan(3, { exercises: [row], sets: [planned] })
-  }
-  const changesOfferedOnApply = () => {
-    fireEvent.click(screen.getByText('APPLY'))
-    return (applyAheadMutate.mock.calls[0][0] as { groups: AheadGroup[] }).groups[0].changes
-  }
-
-  // Break: pair a removed and an added row at the same place as a swap, evidence or not -> the second case
-  // offers a swap too, and fails.
-  it('the row\'s sets named the replaced row\'s program set: one swap record', () => {
-    useWeekdayRun('stable', [sourceWeek('ps-wd-1'), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(replacedOutcome()))
-    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise'])
-  })
-
-  it('the row\'s set named nothing (an exercise added by hand where the removed one was): a removal and an addition, never a swap', () => {
-    useWeekdayRun('stable', [sourceWeek(null), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(replacedOutcome()))
-    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['removeExercise', 'addExercise'])
-  })
-
-  it('the evidence is what was on screen when the confirm was tapped: the refetch after the call (its sets now name the new program set) does not erase it', () => {
-    useWeekdayRun('stable', [sourceWeek('ps-wd-1'), plan(4)])
-    const { rerender } = renderPlanPage()
-    fireEvent.click(screen.getByText(ACTION))
-    fireEvent.click(screen.getByText('MAKE DEFAULT'))
-    // The call has pointed the source week's sets at the program sets they ended up on, and the page re-read them.
-    plans = [sourceWeek('ps-new'), plan(4)]
-    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
-    act(() => (makeMutate.mock.calls[0][2] as MutateOptions).onSuccess(replacedOutcome()))
-    expect(changesOfferedOnApply().map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise'])
-  })
-})
-
-// ─── A swapped slot's sets are paired by what the source week did with each of them ───
-
-// Old default: pe-wd-1 with ps-a1 (8) and ps-a2 (10). The source week swapped it for pe-new and deleted the first
-// set, so pe-new's one set named ps-a2 before the call and names ps-n1 after it. The pair a2 → n1 is only in the two
-// readings together: what Plan held when the confirm was tapped, and what the call left (`sourceAfter`).
-describe('PlanPage — a swapped slot is paired by the source week\'s own links', () => {
-  const oldExercises = [defaultExercise('pe-wd-1', 0, [
-    setDefaultSet('ps-a1', { position: 1, repMin: 8, repMax: 8 }),
-    setDefaultSet('ps-a2', { position: 2, repMin: 10, repMax: 10 }),
-  ])]
-  function swapped(sourceAfter?: MakeWeekDefaultOutcome['sourceAfter']): MakeWeekDefaultOutcome {
-    return {
-      result: { mesocycleId: 'meso-1', weekNumber: 3, skipped: [], workouts: [{ workoutDayId: 'wd-1', sourceWeekPlanId: 'wp-wd-1-3', sourceSequencePosition: null, oldExercises }] },
-      newDefaults: new Map([['wd-1', [{ id: 'pe-new', exerciseId: 'ex-new', position: 0, sets: [setDefaultSet('ps-n1', { position: 1, repMin: 10, repMax: 10 })] }]]]),
-      ...(sourceAfter === undefined ? {} : { sourceAfter }),
-    }
-  }
-  // Source week 3 as Plan holds it: the swapped-in row's one set, naming `programSetId`.
-  function sourceWeek(programSetId: string): WeekPlan {
-    const row: ProgramExercise = { id: 'pe-new', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-new', position: 0, weightUnit: null }
-    const planned: WeekPlanSet = { id: 's-new-3', weekPlanId: 'wp-wd-1-3', userId: 'user-1', programExerciseId: 'pe-new', setNumber: 1, targetRir: null, isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, programSetId }
-    return plan(3, { exercises: [row], sets: [planned] })
-  }
-  const afterCall = new Map([['wp-wd-1-3', new Map([['s-new-3', 'ps-n1']])]])
-  const offered = () => {
-    fireEvent.click(screen.getByText('APPLY'))
-    return (applyAheadMutate.mock.calls[0][0] as { groups: AheadGroup[] }).groups[0].changes
-  }
-
-  // Break: ignore `sourceAfter` (pass no chain to the diff) -> the first set of the old row stands for the new one:
-  // the relink names ps-a1, the second set is removed and the rep target is rewritten.
-  it('the set the source week kept is the pair, the set it deleted is a removal: nothing is rewritten', () => {
-    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(swapped(afterCall)))
-    const changes = offered()
-    expect(changes.map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise', 'removeHeadSet'])
-    expect(changes[0]).toMatchObject({ relink: [{ from: 'ps-a2', to: 'ps-n1' }] })
-    expect(changes[1]).toMatchObject({ editType: 'removeHeadSet', defaultSet: { programSetId: 'ps-a1' } })
-  })
-
-  it('where the source sessions could not be re-read (no sourceAfter) the sets are paired by ordinal within kind', () => {
-    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
-    renderPlanPage()
-    confirmAndAnswer((o) => o.onSuccess(swapped(null)))
-    const changes = offered()
-    expect(changes.map((c: ChangeRecord) => c.editType)).toEqual(['swapExercise', 'removeHeadSet', 'repTarget'])
-    expect(changes[0]).toMatchObject({ relink: [{ from: 'ps-a1', to: 'ps-n1' }] })
-  })
-
-  // The before-reading is the week as Plan held it when the confirm was tapped: after the call the page re-reads
-  // the source week, whose set now names ps-n1, and a chain made from that has no pair. (This pins it against a
-  // refactor that reads the page's data once the call has answered, e.g. from a hook-level callback; the per-call
-  // callback here closes over the props of the render that tapped CONFIRM, which is the same reading.)
-  it('the links before the call are what was on screen when the confirm was tapped, not what the refetch shows', () => {
-    useWeekdayRun('stable', [sourceWeek('ps-a2'), plan(4)])
-    const { rerender } = renderPlanPage()
-    fireEvent.click(screen.getByText(ACTION))
-    fireEvent.click(screen.getByText('MAKE DEFAULT'))
-    plans = [sourceWeek('ps-n1'), plan(4)] // the call has pointed the set at the program set it ended up on
-    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
-    act(() => (makeMutate.mock.calls[0][2] as MutateOptions).onSuccess(swapped(afterCall)))
-    const changes = offered()
-    expect(changes[0]).toMatchObject({ editType: 'swapExercise', relink: [{ from: 'ps-a2', to: 'ps-n1' }] })
+    expect(writes).toEqual([])
   })
 })
 
@@ -655,9 +436,8 @@ describe('PlanPage — when the call fails', () => {
     expect(screen.queryByText('Make week 3 the new default?')).toBeNull()
     expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
     expect(screen.getByText(ACTION)).toBeTruthy()
-    // Nothing was written from here: no apply-ahead, no set edit.
-    expect(applyAheadMutate).not.toHaveBeenCalled()
-    expect(updateSetMutate).not.toHaveBeenCalled()
+    // Nothing was written from here: no apply-ahead, no set edit, no week touched.
+    expect(writes).toEqual([])
     expect(makeMutate).toHaveBeenCalledTimes(1)
   })
 
@@ -672,7 +452,7 @@ describe('PlanPage — when the call fails', () => {
     expect(useToastStore.getState().message).toBe('Could not make this week the default')
     expect(screen.queryByText('Make week 3 the new default?')).toBeNull()
     expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
-    expect(applyAheadMutate).not.toHaveBeenCalled()
+    expect(writes).toEqual([])
   })
 
   it('...and a plain string too', () => {

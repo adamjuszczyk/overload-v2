@@ -693,18 +693,9 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
         )}
 
         {/* Make this week the new default (chunk 32) — a stable run's page-level action,
-            next to the two above; confirm first, no undo. Its apply-ahead offer is the
-            existing banner, here for every workout whose default was rewritten. */}
-        {showMakeDefault && (
-          <MakeWeekDefault
-            mesoId={activeMeso.id}
-            weekNumber={viewWeek}
-            isSequence={isSequence}
-            weekPlans={weekPlans}
-            allWeekPlans={allWeekPlans}
-            sharedWorkoutDayIds={sharedWorkoutDayIds}
-          />
-        )}
+            next to the two above; confirm first, no undo. It changes the run's default and
+            nothing in the weeks already planned (no apply-ahead offer follows it). */}
+        {showMakeDefault && <MakeWeekDefault mesoId={activeMeso.id} weekNumber={viewWeek} isSequence={isSequence} />}
 
         {/* Loading */}
         {(plansLoading || daysLoading) && (

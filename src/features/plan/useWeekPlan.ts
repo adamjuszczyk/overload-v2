@@ -22,24 +22,11 @@ import {
   planWeek,
   swapWeekExercise,
   repointWeekExercise,
-  relinkWeekSets,
   addWeekExercise,
-  addPointedExercise,
-  addPointedSet,
-  addPointedStage,
   removeWeekExercise,
   reorderWeekExercises,
 } from './weekPlanService'
-import {
-  planApplyAheadBundle,
-  planApplyAheadGroups,
-  summarizeApplyAhead,
-  summarizeApplyAheadByWeek,
-  type AheadGroup,
-  type ChangeRecord,
-  type ApplyAheadOp,
-  type ApplyAheadSummary,
-} from './applyAhead'
+import { planApplyAheadBundle, summarizeApplyAhead, type ChangeRecord, type ApplyAheadOp, type ApplyAheadSummary } from './applyAhead'
 
 function key(mesoId: string, weekNumber: number) {
   return ['v2_weekPlans', mesoId, weekNumber] as const
@@ -567,15 +554,11 @@ export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
 export class ApplyAheadError extends Error {
   writtenWeekNumbers: number[]
   summary: ApplyAheadSummary
-  // The week whose ops were running when it failed (some of them may be written), null
-  // for a caller that doesn't say.
-  failedWeekNumber: number | null
-  constructor(message: string, writtenWeekNumbers: number[], summary: ApplyAheadSummary, failedWeekNumber: number | null = null) {
+  constructor(message: string, writtenWeekNumbers: number[], summary: ApplyAheadSummary) {
     super(message)
     this.name = 'ApplyAheadError'
     this.writtenWeekNumbers = writtenWeekNumbers
     this.summary = summary
-    this.failedWeekNumber = failedWeekNumber
   }
 }
 
@@ -604,34 +587,8 @@ async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> 
       // row the edited week's own swap already created (repointWeekExercise
       // — swapWeekExercise's own second half, minus the insert) — never a
       // fresh createWeekOnlyProgramExercise per later week. A repoint clears
-      // the row's carry_program_exercise_id, as a swap does. From a
-      // make-default it also re-links the moved sets (chunk 32).
-      if (op.relink) await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId, op.relink)
-      else await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
-      return
-    // Chunk 32: a week that took a swap already — only its sets' links change.
-    case 'relinkSets':
-      await relinkWeekSets(op.links)
-      return
-    // Chunk 32 — what a make-default adds, pointed at the default's own row and program
-    // sets (applyAhead.ts's header): never addWeekExercise, whose fresh week-only row
-    // per week no later week's weights could be matched to.
-    case 'addPointedExercise':
-      await addPointedExercise({
-        userId,
-        weekPlanId: op.weekPlanId,
-        programExerciseId: op.programExerciseId,
-        position: op.position,
-        sets: op.sets,
-      })
-      return
-    // The set numbers are decided in the service, from the week's rows as they are when
-    // each is written (applyAhead.ts: another op of the same week may have renumbered them).
-    case 'addPointedSet':
-      await addPointedSet(userId, op.weekPlanId, op.programExerciseId, op.set)
-      return
-    case 'addPointedStage':
-      await addPointedStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.stageIndex, op.set)
+      // the row's carry_program_exercise_id, as a swap does.
+      await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
       return
     case 'addExercise':
       await addWeekExercise({
@@ -658,34 +615,20 @@ export function useApplyAhead(mesoId: string) {
     // applyAmrapRirDefault also defaulting RIR); almost always length 1.
     // planApplyAheadBundle (applyAhead.ts) applies every record in it to
     // each candidate week as one atomic unit — never a partial write.
-    //
-    // Chunk 32: `groups` (set only by a make-default's offer) are per-part records for
-    // the workouts whose default was rewritten, resolved record by record against each
-    // later session (planApplyAheadGroups) and counted in weeks (cycles), not sessions.
-    mutationFn: async ({
-      changes,
-      weeks,
-      groups,
-    }: {
-      changes: ChangeRecord[]
-      weeks: WeekPlan[]
-      groups?: AheadGroup[]
-    }): Promise<ApplyAheadResult> => {
-      const results = groups ? planApplyAheadGroups(groups, weeks) : planApplyAheadBundle(changes, weeks)
-      const summary = groups ? summarizeApplyAheadByWeek(results) : summarizeApplyAhead(results)
+    mutationFn: async ({ changes, weeks }: { changes: ChangeRecord[]; weeks: WeekPlan[] }): Promise<ApplyAheadResult> => {
+      const results = planApplyAheadBundle(changes, weeks)
+      const summary = summarizeApplyAhead(results)
       const written: number[] = []
-      let writing: number | null = null
       try {
         for (const r of results) {
           if (r.status !== 'applied') continue
-          writing = r.weekNumber
           for (const op of r.ops) {
             await runApplyAheadOp(op, user!.id)
           }
-          if (!written.includes(r.weekNumber)) written.push(r.weekNumber)
+          written.push(r.weekNumber)
         }
       } catch (err) {
-        throw new ApplyAheadError(err instanceof Error ? err.message : 'Apply failed', written, summary, writing)
+        throw new ApplyAheadError(err instanceof Error ? err.message : 'Apply failed', written, summary)
       }
       return { summary, writtenWeekNumbers: written }
     },
@@ -699,12 +642,10 @@ export function useApplyAhead(mesoId: string) {
     },
     onError: (err) => {
       if (!(err instanceof ApplyAheadError)) return
-      // The week that failed part-way has some of its ops written: refresh it too.
-      const touched = err.failedWeekNumber != null ? [...err.writtenWeekNumbers, err.failedWeekNumber] : err.writtenWeekNumbers
-      for (const wn of touched) {
+      for (const wn of err.writtenWeekNumbers) {
         queryClient.invalidateQueries({ queryKey: key(mesoId, wn) })
       }
-      if (touched.length > 0) {
+      if (err.writtenWeekNumbers.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
       }
     },

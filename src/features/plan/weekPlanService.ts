@@ -9,7 +9,6 @@ import {
 } from '../programs/runProgramExercises'
 import { planWarmupInsert } from './warmupInsert'
 import { resolveSwapSlot, resolveAddSlot } from './weekEdits'
-import type { DefaultSetShape } from './applyAhead'
 import {
   resolveDeloadBaseOccurrence,
   resolveDeloadExerciseMapping,
@@ -382,30 +381,11 @@ export async function setWeekDeload(mesoId: string, weekNumber: number, isDeload
 
 // ─── Sets ─────────────────────────────────────────────────────────────────────
 
-// Chunk 32 ("Make this week the new default" → "Apply this change to planned weeks
-// ahead"): a set added to a later week from the default names the default's own program
-// set and takes its kind and rep target (a stage row carries no kind: 027's check).
-// Weight, RIR and tags are not part of a default and start empty. Absent for every
-// other caller, which writes exactly what it always did.
-export type PointedSet = Pick<DefaultSetShape, 'programSetId' | 'stageKind' | 'repMin' | 'repMax' | 'isAmrap'>
-
-function pointedColumns(pointed: PointedSet | undefined, isStage = false): Record<string, unknown> {
-  if (!pointed) return {}
-  return {
-    program_set_id: pointed.programSetId,
-    stage_kind: isStage ? null : pointed.stageKind,
-    rep_min: pointed.repMin,
-    rep_max: pointed.repMax,
-    is_amrap: pointed.isAmrap,
-  }
-}
-
 export async function addSet(
   userId: string,
   weekPlanId: string,
   programExerciseId: string,
   setNumber: number,
-  pointed?: PointedSet,
 ): Promise<WeekPlanSet> {
   const { data, error } = await supabase
     .from('v2_week_plan_sets')
@@ -416,7 +396,6 @@ export async function addSet(
       set_number: setNumber,
       target_rir: null,
       is_dropset: false,
-      ...pointedColumns(pointed),
     })
     .select()
     .single()
@@ -433,7 +412,6 @@ export async function addWarmupSet(
   userId: string,
   weekPlanId: string,
   programExerciseId: string,
-  pointed?: PointedSet,
 ): Promise<WeekPlanSet> {
   const { data: existing, error: readError } = await supabase
     .from('v2_week_plan_sets')
@@ -463,7 +441,6 @@ export async function addWarmupSet(
       target_rir: null,
       is_dropset: false,
       is_warmup: true,
-      ...pointedColumns(pointed),
     })
     .select()
     .single()
@@ -486,7 +463,6 @@ export async function addStage(
   parentId: string,
   setNumber: number,
   stageIndex: number,
-  pointed?: PointedSet,
 ): Promise<WeekPlanSet> {
   const { data, error } = await supabase
     .from('v2_week_plan_sets')
@@ -499,7 +475,6 @@ export async function addStage(
       is_dropset: true,
       parent_week_plan_set_id: parentId,
       stage_index: stageIndex,
-      ...pointedColumns(pointed, true),
     })
     .select()
     .single()
@@ -1035,17 +1010,10 @@ export async function swapWeekExercise(params: {
 // own second half (the two updates), minus the insert: it clears
 // carry_program_exercise_id on the row it repoints, the same way
 // swapWeekExercise does.
-//
-// Chunk 32: applied ahead from a make-default, the moved sets are also re-linked
-// (`relink`: each set's own id → the program set of the swapped-in row that took its
-// place), as the source week's were when the function wrote the default. Without it the
-// sets would keep naming the REPLACED row's program sets, which the workout screen and
-// Plan's STRUCTURE view refuse for the new row. Absent for a hand-made swap.
 export async function repointWeekExercise(
   weekPlanId: string,
   fromProgramExerciseId: string,
   toProgramExerciseId: string,
-  relink?: { weekSetId: string; programSetId: string }[],
 ): Promise<void> {
   const { error: exError } = await supabase
     .from('v2_week_plan_exercises')
@@ -1060,127 +1028,6 @@ export async function repointWeekExercise(
     .eq('week_plan_id', weekPlanId)
     .eq('program_exercise_id', fromProgramExerciseId)
   if (setsError) throw setsError
-
-  await relinkWeekSets(relink ?? [])
-}
-
-// Chunk 32: point week sets at other program sets, one update per set. Used by the swap
-// above, and alone for a week that took a swap already (its row is the swapped-in row, its
-// sets still name the replaced row's program sets): the sets keep their weights, RIR, tags
-// and numbers, and only the link to the default changes.
-export async function relinkWeekSets(links: { weekSetId: string; programSetId: string }[]): Promise<void> {
-  for (const link of links) {
-    const { error } = await supabase.from('v2_week_plan_sets').update({ program_set_id: link.programSetId }).eq('id', link.weekSetId)
-    if (error) throw error
-  }
-}
-
-// Chunk 32: a set a make-default added to an exercise a later planned week already has
-// (head and the stages it brought), naming its program set. The number is decided HERE,
-// from the week's rows as they are now, not when the offer was planned: another op of the
-// same week (a warmup added above) may have renumbered them since. A warmup goes above the
-// week's first working set (addWarmupSet), a working set after the highest head.
-export async function addPointedSet(
-  userId: string,
-  weekPlanId: string,
-  programExerciseId: string,
-  set: DefaultSetShape,
-): Promise<void> {
-  let head: WeekPlanSet
-  if (set.isWarmup) {
-    head = await addWarmupSet(userId, weekPlanId, programExerciseId, set)
-  } else {
-    const { data, error } = await supabase
-      .from('v2_week_plan_sets')
-      .select('set_number')
-      .eq('week_plan_id', weekPlanId)
-      .eq('program_exercise_id', programExerciseId)
-      .is('parent_week_plan_set_id', null)
-    if (error) throw error
-    const highest = ((data ?? []) as { set_number: number }[]).reduce((max, r) => Math.max(max, r.set_number), 0)
-    head = await addSet(userId, weekPlanId, programExerciseId, highest + 1, set)
-  }
-  for (const stage of set.stages) {
-    await addStage(userId, weekPlanId, programExerciseId, head.id, head.setNumber, stage.stageIndex, stage)
-  }
-}
-
-// A stage a make-default added to a head the later week already has. It shares its head's
-// number as the head has it now.
-export async function addPointedStage(
-  userId: string,
-  weekPlanId: string,
-  programExerciseId: string,
-  parentId: string,
-  stageIndex: number,
-  set: DefaultSetShape,
-): Promise<void> {
-  const { data, error } = await supabase.from('v2_week_plan_sets').select('set_number').eq('id', parentId).single()
-  if (error) throw error
-  await addStage(userId, weekPlanId, programExerciseId, parentId, (data as { set_number: number }).set_number, stageIndex, set)
-}
-
-// Chunk 32: an exercise a make-default added, written into a later planned week as the
-// default's OWN row — the same row id in every week, never a fresh week-only row per
-// week (addWeekExercise creates one). The next week's weights are matched to last
-// week's sets by that row (v2_plan_week), and a run-wide edit made to the row reaches
-// every week that names it. The sets it brought are numbered as v2_plan_week numbers a
-// week planned from the default (the program set's position), name their program sets
-// and take their kind and rep target; weight, RIR and tags start empty. The row first,
-// then all heads in one request, then all stages in one (each request is atomic; a
-// failure between them leaves a row with some of its sets, which a retry skips because
-// the week then holds the row).
-export async function addPointedExercise(params: {
-  userId: string
-  weekPlanId: string
-  programExerciseId: string
-  position: number
-  sets: DefaultSetShape[]
-}): Promise<void> {
-  const { userId, weekPlanId, programExerciseId, position, sets } = params
-  const { error: rowError } = await supabase.from('v2_week_plan_exercises').insert({
-    user_id: userId,
-    week_plan_id: weekPlanId,
-    program_exercise_id: programExerciseId,
-    position,
-  })
-  if (rowError) throw rowError
-  if (sets.length === 0) return
-
-  const { data: heads, error: headError } = await supabase
-    .from('v2_week_plan_sets')
-    .insert(
-      sets.map((h) => ({
-        week_plan_id: weekPlanId,
-        user_id: userId,
-        program_exercise_id: programExerciseId,
-        set_number: h.position,
-        target_rir: null,
-        is_dropset: false,
-        is_warmup: h.isWarmup,
-        ...pointedColumns(h),
-      })),
-    )
-    .select('id, program_set_id')
-  if (headError) throw headError
-  const weekSetIdOf = new Map((heads as { id: string; program_set_id: string }[]).map((r) => [r.program_set_id, r.id]))
-
-  const stageRows = sets.flatMap((h) =>
-    h.stages.map((st) => ({
-      week_plan_id: weekPlanId,
-      user_id: userId,
-      program_exercise_id: programExerciseId,
-      set_number: h.position, // a stage shares its head's number (TASKS.md §2.1)
-      target_rir: null,
-      is_dropset: true,
-      parent_week_plan_set_id: weekSetIdOf.get(h.programSetId) ?? null,
-      stage_index: st.stageIndex,
-      ...pointedColumns(st, true),
-    })),
-  )
-  if (stageRows.length === 0) return
-  const { error: stageError } = await supabase.from('v2_week_plan_sets').insert(stageRows)
-  if (stageError) throw stageError
 }
 
 // An add: a brand-new week-only slot (never in a superset — weekEdits.ts's
