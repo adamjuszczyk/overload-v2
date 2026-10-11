@@ -56,6 +56,7 @@ import WorkoutSwitcher from './WorkoutSwitcher'
 import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
+import { useDoneWeekPlanIds } from './useDoneWeekPlanIds'
 import MakeWeekDefault from './MakeWeekDefault'
 import { canMakeWeekDefault } from './makeWeekDefault'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE, DiffDot } from './planMenu'
@@ -264,6 +265,9 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   }, [activeMeso?.id])
 
   const isPast = viewWeek < currentWeek
+  // Week plans with a completed or skipped session: read-only like a past week.
+  const doneWeekPlanIds = useDoneWeekPlanIds(activeMeso?.id)
+  const isSessionDone = (wp: WeekPlan | undefined) => !!wp && doneWeekPlanIds.has(wp.id)
 
   const { data: programs = [] } = usePrograms()
   const program = programs.find((p) => p.id === activeMeso?.programId)
@@ -754,7 +758,8 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               headerLabel={DOW_LABEL[selected.dow]}
               workoutDay={selected.workoutDay}
               weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
-              isPast={isPast}
+              isPast={isPast || isSessionDone(weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id))}
+              doneWeekPlanIds={doneWeekPlanIds}
               mesoId={activeMeso.id}
               weekNumber={viewWeek}
               view={planView}
@@ -789,7 +794,8 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               headerLabel={`SLOT ${selectedSlot.position + 1}`}
               workoutDay={selectedSlot.workoutDay!}
               weekPlan={selectedSlotWeekPlan}
-              isPast={isPast}
+              isPast={isPast || isSessionDone(selectedSlotWeekPlan)}
+              doneWeekPlanIds={doneWeekPlanIds}
               mesoId={activeMeso.id}
               weekNumber={viewWeek}
               view={planView}
@@ -819,7 +825,13 @@ interface PanelProps {
   headerLabel: string
   workoutDay: WorkoutDay
   weekPlan: WeekPlan | undefined
+  // True for a past week and for a week plan whose session is completed or
+  // skipped: the panel is read-only either way.
   isPast: boolean
+  // Every week plan of the run with a completed or skipped session. The panel
+  // reads it to say why it is locked on a current week, and to keep
+  // apply-ahead off later rows whose session has happened.
+  doneWeekPlanIds: Set<string>
   mesoId: string
   weekNumber: number
   // Chunk 29 — which of the panel's two views shows (SETS or STRUCTURE), and
@@ -848,7 +860,7 @@ interface PanelProps {
   planningType: PlanningType
 }
 
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, weekNumber, view, onViewChange, canCopyFromHistory, isShared, sharedWeekdays, deloadRules, planningType }: PanelProps) {
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPlanIds, mesoId, weekNumber, view, onViewChange, canCopyFromHistory, isShared, sharedWeekdays, deloadRules, planningType }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
@@ -875,6 +887,10 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
   exerciseUnits.forEach((unit, unitIndex) =>
     unit.forEach((pe) => unitIndexByProgramExerciseId.set(pe.id, unitIndex)),
   )
+
+  // This session has happened (completed or skipped): isPast above already
+  // includes it, so this is only for the line that says why.
+  const sessionDone = !!weekPlan && doneWeekPlanIds.has(weekPlan.id)
 
   const addSet = useAddSet(mesoId, weekNumber)
   const addStage = useAddStage(mesoId, weekNumber)
@@ -919,7 +935,12 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
     // weekPlan is THIS workout's own row for the viewed week/cycle; its
     // sequencePosition (null for a weekday run, or absent on a pre-chunk-25
     // fixture) is the slot every later week must also match.
-    return laterPlannedWeeks(allWeekPlansForApplyAhead, workoutDay.id, weekNumber, weekPlan?.sequencePosition ?? null)
+    return laterPlannedWeeks(
+      allWeekPlansForApplyAhead.filter((wp) => !doneWeekPlanIds.has(wp.id)),
+      workoutDay.id,
+      weekNumber,
+      weekPlan?.sequencePosition ?? null,
+    )
   }
 
   // Chunk 31 (SPEC Plan screen [P1.1]: "Anything different from the week's source is
@@ -1362,6 +1383,14 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, mesoId, we
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
           {deloadNotice}
         </p>
+      )}
+
+      {sessionDone && (
+        <div style={{ marginBottom: 8 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)' }}>
+            SESSION DONE — READ ONLY
+          </span>
+        </div>
       )}
 
       {/* Apply this change to planned weeks ahead (chunk 20) — dismissible,

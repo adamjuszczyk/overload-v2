@@ -5,6 +5,7 @@ import { db } from '../../lib/db'
 import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
+import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
 import { flushSyncQueue, hasQueuedWritesFor } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
@@ -501,6 +502,7 @@ export function useCreateSession() {
           old ? [...old.filter((s) => s.id !== session.id), session] : old,
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
     },
   })
 }
@@ -595,6 +597,7 @@ export function useCompleteSession() {
       )
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       // Completing a session changes history and progress data too — without
       // this those screens keep showing pre-completion state until refetched
       // for an unrelated reason.
@@ -657,6 +660,7 @@ export function useReopenSession() {
       )
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
     },
   })
 }
@@ -684,6 +688,7 @@ export function useUpdateSessionNote() {
     onSettled: (_, __, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['v2_session', id] })
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
     },
   })
 }
@@ -723,6 +728,7 @@ export function useSkipSession() {
           old?.map((s) => (s.id === id ? { ...s, status: 'skipped' as const } : s)),
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       // Chunk 25 — same reasoning as useCompleteSession's own invalidate above.
       queryClient.invalidateQueries({ queryKey: ['v2_lastDoneOrSkippedSession'] })
     },
@@ -747,6 +753,7 @@ export function useSkipMissedSession() {
     }) => skipMissedSession(user!.id, mesoId, weekPlanId, workoutDayId, date, existingSessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       // Chunk 25 — a sequence run's own Skip action goes through this same
       // function (useSequenceScheduler.ts); same reasoning as
       // useCompleteSession/useSkipSession's own invalidate.
@@ -786,6 +793,7 @@ export function useMoveSession() {
     }) => moveSessionTo({ userId: user!.id, ...params }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
     },
   })
@@ -801,6 +809,7 @@ export function useClearMovedSession() {
       clearMovedSession({ userId: user!.id, ...params }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
       queryClient.invalidateQueries({ queryKey: ['v2_history'] })
     },
   })
@@ -861,6 +870,7 @@ export function useStartMovedSession() {
           old?.map((s) => (s.id === id ? { ...s, status: 'in_progress' as const, startedAt } : s)),
       )
       queryClient.invalidateQueries({ queryKey: ['v2_sessions'] })
+      queryClient.invalidateQueries({ queryKey: [DONE_WEEK_PLANS_KEY] })
     },
   })
 }

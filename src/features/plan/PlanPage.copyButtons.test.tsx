@@ -79,6 +79,8 @@ vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
+// Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.currentPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.allPlans, isLoading: false }),
