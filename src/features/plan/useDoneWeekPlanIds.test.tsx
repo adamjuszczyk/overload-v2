@@ -31,6 +31,12 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
+// The finish sends the sync queue first (B3); nothing is queued here.
+vi.mock('../offline/useSyncQueue', () => ({
+  flushSyncQueue: async () => {},
+  hasQueuedWritesFor: async () => false,
+}))
+
 const completeSessionMock = vi.fn().mockResolvedValue({ status: 'completed' })
 const reopenSessionMock = vi.fn().mockResolvedValue({ startedAt: null })
 const skipSessionMock = vi.fn().mockResolvedValue(undefined)
