@@ -24287,3 +24287,11 @@ Same-record order (#83): a failed write holds back later writes to its record (a
 
 ### From CONTEXT.md: Plan / Program → finished sessions read-only, hook detail (shortened; still true)
 - `useDoneWeekPlanIds(mesoId)` (key `v2_doneWeekPlanIds`, paged; invalidated by finish, reopen, skip, note, history delete)
+
+## 2026-10-12 SPEC change 1.2 planning session — Moved out of CONTEXT.md (no longer true), word for word
+
+### From CONTEXT.md: Where the build is → Step 5 checklist (no longer true: SPEC.md now holds the 1.2 spec, with the superseded [P1.1] rules removed; the checklist comes from SPEC.md at master `6e5f654`)
+  - **Step 5 checklist:** generate it from SPEC.md as is; every [P1.1] rule is built except the apply-ahead offer after making the default (DECISIONS 106).
+
+### From CONTEXT.md: Repo facts → Docs, the SPEC.md sentence before 1.2 (superseded by the [1.2] sentence)
+- Docs: SPEC.md = Overload Planner Extension spec (phases 1–2; it answers every gap G1–G15 raised against it; [P1.1] marks change 1.1's rules).
