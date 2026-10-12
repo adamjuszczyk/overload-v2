@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout — header, rest and jump states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 1540px; box-sizing: border-box; background: {{c.base}}; padding: 20px 16px; display: flex; flex-direction: column; gap: 18px; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">DELOAD WEEK</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="padding: 18px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">DELOAD · WEEK 2 · TUESDAY</span>
+      <h1 style="margin: 0; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PULL 1</h1>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">IN PROGRESS</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; color: {{c.t1}}">6:30</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.accentText}}">2 OF 9 SETS</span>
+    </div>
+  </div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">SEQUENCE PROGRAM</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="padding: 18px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CYCLE 3 · SLOT 2</span>
+      <h1 style="margin: 0; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PULL 1</h1>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">IN PROGRESS</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; color: {{c.t1}}">21:04</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.accentText}}">5 OF 13 SETS</span>
+    </div>
+  </div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CHANGES THAT COULDN'T SYNC</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="padding: 18px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">WEEK 2 · TUESDAY</span>
+      <h1 style="margin: 0; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PULL 1</h1>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">IN PROGRESS</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; color: {{c.t1}}">48:12</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.accentText}}">6 OF 15 SETS</span>
+    </div>
+  </div><div role="status" style="min-height: 44px; box-sizing: border-box; padding: 4px 16px; border-bottom: 1px solid {{c.bsub}}; background: {{c.errorMuted}}; display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.error}}">
+  <span style="flex: 1">1 CHANGE COULDN'T SYNC</span><button style="flex: 0 0 auto; height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{c.t1}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em">RETRY</button>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">RETRYING</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div role="status" style="min-height: 44px; box-sizing: border-box; padding: 4px 16px; border-bottom: 1px solid {{c.bsub}}; background: {{c.errorMuted}}; display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.error}}">
+  <span style="flex: 1">RETRYING…</span>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST · PAST TARGET</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 10px 16px; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; color: {{c.accentText}}">2:14</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.tm}}">/ 2:00</span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.15em; color: {{c.accentText}}">GO</span>
+      </div>
+      <div style="height: 4px; border-radius: 2px; background: {{c.raised}}; overflow: hidden"><div style="width: 100%; height: 4px; background: {{c.accent}}"></div></div>
+    </div>
+    
+    <button aria-label="Hide rest timer" style="width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+  </div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST · HIDDEN</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 0 16px; height: 44px; display: flex; align-items: center; gap: 8px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; color: {{c.t1}}">0:48</span>
+    <button aria-label="Show rest timer" style="margin-left: auto; width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 15l-6-6-6 6"></path></svg></button>
+  </div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST · HIDDEN, PAST TARGET</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 0 16px; height: 44px; display: flex; align-items: center; gap: 8px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; color: {{c.accentText}}">2:14</span><span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.15em; color: {{c.accentText}}">GO</span>
+    <button aria-label="Show rest timer" style="margin-left: auto; width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 15l-6-6-6 6"></path></svg></button>
+  </div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CURRENT SET BELOW · REST TIMER OFF</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 10px 16px; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1"></div>
+    <button style="flex: 0 0 auto; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; color: {{c.accentText}}; display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"></path></svg>SET 03</button>
+    
+  </div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CURRENT SET ABOVE · REST RUNNING</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 10px 16px; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; color: {{c.t1}}">0:36</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.tm}}">/ 2:00</span>
+      </div>
+      <div style="height: 4px; border-radius: 2px; background: {{c.raised}}; overflow: hidden"><div style="width: 30%; height: 4px; background: {{c.accent}}"></div></div>
+    </div>
+    <button style="flex: 0 0 auto; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; color: {{c.accentText}}; display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>SET 03</button>
+    <button aria-label="Hide rest timer" style="width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+  </div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">FINISHED AUTOMATICALLY</span>
+<div style="border: 1px solid {{c.border}}; border-radius: 12px; overflow: hidden; background: {{c.base}}; display: flex; flex-direction: column">
+<div style="padding: 12px 16px; display: flex; justify-content: center">
+  <div role="status" style="height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.overlay}}; display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.15em; color: {{c.t1}}"><span style="color: {{c.success}}; display: flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span>SESSION COMPLETED AUTOMATICALLY</div>
+</div><nav style="height: 64px; flex: 0 0 auto; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":1540}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const ICONS = {
+      TODAY: 'M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4M3 10l7-7M14 21l7-7',
+      PLAN: 'M3 4h7v7H3zM3 14h7v7H3zM14 4h7M14 9h7M14 15h7M14 20h7',
+      PROGRESS: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+      HISTORY: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 6v6l4 2',
+      LIBRARY: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
+      SETTINGS: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1'
+    };
+    const nav = Object.keys(ICONS).map((k) => ({ label: k, d: ICONS[k], current: k === 'TODAY' ? 'page' : 'false', fg: k === 'TODAY' ? c.accentText : c.tm }));
+    return { c, nav };
+  }
+}
+</script>
+</body>
+</html>

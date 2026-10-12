@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Program planner — add exercise empties</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 550px; box-sizing: border-box; background: {{c.raised}}; padding: 24px 16px; display: flex; flex-direction: column; gap: 32px; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+  <sc-for list="{{pickers}}" as="p" hint-placeholder-count="2">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{p.block}}</span>
+      <div style="border-radius: 12px; overflow: hidden; background: {{c.scrimBg}}; padding-top: 20px">
+        <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 14px 0 8px; display: flex; flex-direction: column; gap: 12px">
+          <span style="padding: 0 16px; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 18px; color: {{c.t1}}">Add exercise</span>
+          <div style="display: flex; gap: 6px; overflow: hidden; padding: 0 16px">
+            <sc-for list="{{p.chips}}" as="g" hint-placeholder-count="5">
+              <button aria-pressed="{{g.on}}" style="flex: 0 0 auto; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid {{g.bd}}; background: {{g.bg}}; color: {{g.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em">{{g.label}}</button>
+            </sc-for>
+          </div>
+          <span style="border-top: 1px solid {{c.bsub}}; padding: 32px 0; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{p.caption}}</span>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":550}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', successMuted: 'rgba(22,101,52,0.10)', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', successMuted: 'rgba(74,222,128,0.12)', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    c.scrimBg = 'linear-gradient(' + c.scrim + ', ' + c.scrim + '), ' + c.base;
+    const taken = ['MON', 'TUE', 'THU', 'FRI', 'SAT'];
+    const week = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((d) => ({ label: d, bg: taken.includes(d) ? c.raised : c.surface, fg: taken.includes(d) ? c.td : c.t2 }));
+    const chipRow = (selected) => ['ALL', 'CHEST', 'BACK', 'SHOULDERS', 'BICEPS', 'TRICEPS', 'FOREARMS', 'QUADS', 'HAMSTRINGS', 'GLUTES', 'CALVES', 'CORE', 'OTHER'].map((g) => {
+      const on = g === selected;
+      return { label: g, on: on ? 'true' : 'false', bd: on ? c.accent : c.border, bg: on ? c.accentMuted : c.surface, fg: on ? c.accentText : c.t2 };
+    });
+    const pickers = [
+      { block: 'ADD EXERCISE · EVERY EXERCISE ALREADY IN THE WORKOUT', caption: 'ALL EXERCISES ADDED', chips: chipRow('ALL') },
+      { block: 'ADD EXERCISE · NOTHING LEFT IN THE GROUP', caption: 'NONE IN THIS GROUP', chips: chipRow('CHEST') }
+    ];
+    return { c, week, pickers };
+  }
+}
+</script>
+</body>
+</html>

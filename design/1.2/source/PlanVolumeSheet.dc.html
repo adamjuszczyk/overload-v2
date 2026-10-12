@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Volume per muscle</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: {{c.base}}; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 20px 16px; display: flex; flex-direction: column; gap: 12px">
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; color: {{c.t1}}">PLAN</span>
+    <div style="height: 56px; border-radius: 10px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: {{c.scrim}}"></div>
+
+  <div role="dialog" aria-label="Volume per muscle" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 14px">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-start">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">WEEK 2 · SETS PER MUSCLE</span>
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Volume</span>
+      </div>
+      <a href="Main.dc.html" aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+      </a>
+    </div>
+
+    <div role="table" aria-label="Sets per muscle, last week and this week" style="display: flex; flex-direction: column">
+      <div role="row" style="display: grid; grid-template-columns: minmax(0, 1fr) 64px 24px 64px 56px; align-items: center; padding: 0 2px 8px; border-bottom: 1px solid {{c.bsub}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+        <span role="columnheader">MUSCLE</span>
+        <span role="columnheader" style="text-align: right">WEEK 1</span>
+        <span aria-hidden="true"></span>
+        <span role="columnheader">WEEK 2</span>
+        <span aria-hidden="true"></span>
+      </div>
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="9">
+        <div role="row" style="display: flex; flex-direction: column; gap: 2px; padding: 9px 2px; border-bottom: 1px solid {{c.bsub}}">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 64px 24px 64px 56px; align-items: center">
+            <span role="cell" style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">{{r.name}}</span>
+            <span role="cell" style="text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; color: {{c.t2}}">{{r.last}}</span>
+            <span aria-hidden="true" style="text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.td}}">→</span>
+            <span role="cell" style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 15px; color: {{c.t1}}">{{r.next}}</span>
+            <span role="cell" style="justify-self: end; min-width: 38px; box-sizing: border-box; text-align: center; padding: 3px 6px; border-radius: 6px; border: 1px solid {{r.chipBd}}; background: {{r.chipBg}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; color: {{r.chipFg}}">{{r.delta}}</span>
+          </div>
+          <sc-if value="{{r.hasNote}}" hint-placeholder-val="{{false}}">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.12em; color: {{c.tm}}">{{r.note}}</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <span style="font-size: 12px; line-height: 1.5; color: {{c.t2}}">Week 1 counts the sets you actually did. Warmups don't count. A drop counts as ½ set — you can change that in Settings.</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const data = [
+      ['Back', 9, 10],
+      ['Chest', 10, 11],
+      ['Side delts', 10, 4, 'YOU PLANNED 4 LAST WEEK · DID 10'],
+      ['Rear delts', 3, 2, 'YOU PLANNED 2 LAST WEEK · DID 3'],
+      ['Biceps', 5.5, 5.5],
+      ['Triceps', 6, 6],
+      ['Quads', 8, 6],
+      ['Hamstrings', 5, 5],
+      ['Other', 2, 2]
+    ];
+    const fmt = (n) => (n % 1 ? Math.floor(n) + '½' : String(n));
+    const rows = data.map(([name, last, next, note]) => {
+      const d = next - last;
+      const changed = d !== 0;
+      return {
+        name, last: fmt(last), next: fmt(next),
+        delta: changed ? (d > 0 ? '+' : '−') + fmt(Math.abs(d)) : '',
+        chipBg: changed ? c.accentMuted : 'transparent', chipBd: changed ? c.accent : 'transparent', chipFg: changed ? c.accentText : c.td,
+        hasNote: !!note, note: note || ''
+      };
+    });
+    return { c, rows };
+  }
+}
+</script>
+</body>
+</html>

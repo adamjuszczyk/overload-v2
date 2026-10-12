@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout — option sheet states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 1278px; box-sizing: border-box; background: {{c.base}}; padding: 20px 16px; display: flex; flex-direction: column; gap: 18px; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">SET OPTIONS · A DROP</span>
+<div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 20px 20px 12px 12px; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">LAT PULLDOWN · SET 03 · DROP 1</span>
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Set options</span>
+  </div>
+  <button aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+  <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">FORM</span>
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px"><button aria-pressed="false" style="height: 44px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; color: {{c.t2}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em">RUSHED</button><button aria-pressed="false" style="height: 44px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; color: {{c.t2}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em">NORMAL</button><button aria-pressed="false" style="height: 44px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; color: {{c.t2}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em">CONTROLLED</button><button aria-pressed="false" style="height: 44px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; color: {{c.t2}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em">EXTRA CONTROLLED</button></div>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 52px; border-top: 1px solid {{c.bsub}}; border-bottom: 1px solid {{c.bsub}}">
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-size: 15px; color: {{c.t1}}">Log this set in lbs</span>
+    <span style="font-size: 12px; color: {{c.tm}}">This exercise is in kg.</span>
+  </span>
+  <button role="switch" aria-checked="false" aria-label="Log this set in lbs" style="position: relative; flex: 0 0 auto; width: 48px; height: 28px; border-radius: 14px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; padding: 0"><span style="position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 10px; background: {{c.tm}}"></span></button>
+</div>
+<a href="WorkoutDeleteSet.dc.html" style="height: 52px; box-sizing: border-box; border-radius: 10px; border: 0; background: {{c.errorMuted}}; color: {{c.error}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.2em; text-decoration: none; display: flex; align-items: center; justify-content: center">DELETE SET</a>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">SET OPTIONS · THIS SET IN LBS</span>
+<div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 20px 20px 12px 12px; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">EZ BAR CURL · SET 02</span>
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Set options</span>
+  </div>
+  <button aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+</div>
+<div style="display: flex; justify-content: space-between; align-items: center; min-height: 52px; border-top: 1px solid {{c.bsub}}; border-bottom: 1px solid {{c.bsub}}">
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-size: 15px; color: {{c.t1}}">Log this set in lbs</span>
+    <span style="font-size: 12px; color: {{c.tm}}">This exercise is in kg.</span>
+  </span>
+  <button role="switch" aria-checked="true" aria-label="Log this set in lbs" style="position: relative; flex: 0 0 auto; width: 48px; height: 28px; border-radius: 14px; border: 1px solid {{c.accent}}; background: {{c.accent}}; padding: 0"><span style="position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 10px; background: {{c.onAccent}}"></span></button>
+</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">EXERCISE OPTIONS · SKIPPING</span>
+<div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 20px 20px 12px 12px; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REAR DELTS · 1 OF 3 SETS DONE</span>
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Face Pull</span>
+  </div>
+  <button aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+</div>
+<div style="display: flex; flex-direction: column; border-top: 1px solid {{c.bsub}}"><a href="SwapSheet.dc.html" style="min-height: 60px; border-bottom: 1px solid {{c.bsub}}; text-decoration: none; display: flex; align-items: center; gap: 12px"><span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"></path></svg></span>
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Swap for today</span>
+    <span style="font-size: 12px; color: {{c.tm}}">Next week's plan stays the same.</span>
+  </span></a><div style="padding: 10px 0 12px; border-bottom: 1px solid {{c.bsub}}; display: flex; flex-direction: column; gap: 10px">
+  <div style="display: flex; align-items: center; gap: 12px"><span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 8px; background: {{c.errorMuted}}; color: {{c.error}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l10 8-10 8V4zM19 5v14"></path></svg></span>
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Skip the rest of this exercise</span>
+    <span style="font-size: 12px; color: {{c.tm}}">Sets 02 and 03 will be marked skipped.</span>
+  </span></div>
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-left: 48px"><button disabled aria-disabled="true" style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 0; background: {{c.raised}}; color: {{c.td}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em">CANCEL</button><button style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 0; background: {{c.errorMuted}}; color: {{c.error}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.2em">SKIPPING…</button></div>
+</div><div style="min-height: 60px; text-decoration: none; display: flex; align-items: center; gap: 12px"><span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7v5l4 2"></path></svg></span>
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Exercise history</span>
+    
+  </span></div></div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">EXERCISE OPTIONS · NOTHING LEFT TO SKIP</span>
+<div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 20px 20px 12px 12px; padding: 10px 16px 20px; display: flex; flex-direction: column; gap: 14px">
+<div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">BACK · 3 OF 3 SETS DONE</span>
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Seated Cable Row</span>
+  </div>
+  <button aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+</div>
+<div style="display: flex; flex-direction: column; border-top: 1px solid {{c.bsub}}"><a href="SwapSheet.dc.html" style="min-height: 60px; border-bottom: 1px solid {{c.bsub}}; text-decoration: none; display: flex; align-items: center; gap: 12px"><span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"></path></svg></span>
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Swap for today</span>
+    <span style="font-size: 12px; color: {{c.tm}}">Next week's plan stays the same.</span>
+  </span></a><div style="min-height: 60px; text-decoration: none; display: flex; align-items: center; gap: 12px"><span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7v5l4 2"></path></svg></span>
+  <span style="display: flex; flex-direction: column; gap: 2px">
+    <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Exercise history</span>
+    
+  </span></div></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":1278}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const ICONS = {
+      TODAY: 'M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4M3 10l7-7M14 21l7-7',
+      PLAN: 'M3 4h7v7H3zM3 14h7v7H3zM14 4h7M14 9h7M14 15h7M14 20h7',
+      PROGRESS: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+      HISTORY: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 6v6l4 2',
+      LIBRARY: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
+      SETTINGS: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1'
+    };
+    const nav = Object.keys(ICONS).map((k) => ({ label: k, d: ICONS[k], current: k === 'TODAY' ? 'page' : 'false', fg: k === 'TODAY' ? c.accentText : c.tm }));
+    return { c, nav };
+  }
+}
+</script>
+</body>
+</html>
