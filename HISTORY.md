@@ -24270,3 +24270,20 @@ it was replaced by a `$VERCEL_GIT_PREVIOUS_SHA` version, then on 2026-09-29 (Ada
 
 ### From CONTEXT.md: Tooling and tests → Vitest count
 2359 tests in 174 files pass on master `320a6b0` (2026-10-11)
+
+## 2026-10-12 safeupdate hotfix (041, #85) — Moved out of CONTEXT.md, word for word
+
+### From CONTEXT.md: Where the build is → 2026-10-11 fix session bullet (shortened; the detail is in DECISIONS 111, 112, 114)
+- **2026-10-11 fix session (live-app bugs, no features; DECISIONS 111, 112):** each its own PR, merged by the reviewer once green, all code only. B3 offline: #72 session-start id, #73 one flush at a time, #74 plan mutations `networkMode: 'always'`, #75 finish sends the queue first, #78 offline finish re-derived on replay. #77 Plan: finished sessions read-only. #79 B6 apply double tap. #80 B5 deload restore. #81 B4 `ignoreCommand`. #83 sync-queue order (DECISIONS 114). D30 parity proof on #75, #78, #83. Live checks are Adam's.
+
+### From CONTEXT.md: Where the build is → next migration number
+- **Next migration number: 041** (028–040 merged and live; TASKS-1.1 plans no more).
+
+### From CONTEXT.md: What exists → Offline line, #83 sentence (shortened; still true)
+Same-record order (#83): a failed write holds back later writes to its record (and a session's sets, a head's stages), others still go; after 5 failed passes it stops retrying but stays queued (`gaveUp`), and `SyncFailedNotice` says "N changes couldn't sync. Tap to retry." on its session's workout, finished and History screens (`/coach` for a note with no session).
+
+### From CONTEXT.md: Repo facts → check-migration default (no longer true: it falls back to origin/master)
+`check-migration.mjs` defaults to comparing against `origin/main`.
+
+### From CONTEXT.md: Plan / Program → finished sessions read-only, hook detail (shortened; still true)
+- `useDoneWeekPlanIds(mesoId)` (key `v2_doneWeekPlanIds`, paged; invalidated by finish, reopen, skip, note, history delete)

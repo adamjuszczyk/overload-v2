@@ -1,7 +1,10 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-11, after the sync-queue order fix (#83, DECISIONS 114), which followed the fix session (B3–B6, Plan read-only; #72–#81, DECISIONS 111): code only, no migration, no data change. Before that, revision 1.1 was complete (chunks 27–35, migrations 038–040) with one known gap (106). The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+*Rewritten at every chunk boundary. Last: 2026-10-12, hotfix 041 (#85) waiting on your merge (115); before it the sync-queue order fix (#83, DECISIONS 114), which followed the fix session (B3–B6, Plan read-only; #72–#81, DECISIONS 111): code only, no migration, no data change. Before that, revision 1.1 was complete (chunks 27–35, migrations 038–040) with one known gap (106). The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+
+Blocking:
+- **115** — merge #85 (migration 041): starting a run fails in production until it's deployed. check-migration flags it (create or replace function, grants, notify: the same as 034–040). Recommendation: merge; the bodies are 034/040's verbatim plus ` where true` on 7 temp-table deletes (diffed in the PR). After: read every `Supabase Preview` run on the merge commit, then start a run. Blocks: starting a run, and Plan's week planning and make-default wherever safeupdate applies.
 
 Decisions (provisional under D31: each is built as written unless you change it):
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -55,6 +58,19 @@ Deferred is only allowed when the work can continue without committing to the an
 When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
+Severity: blocking
+Chunk: hotfix
+**Ask:** merge #85. Merging deploys 041.
+**Options:** merge as is / ask for changes.
+**Recommendation:** merge. Each function body is its latest definition (034, 040, 040) with only ` where true` added to its bare `delete from tmp_...;` (4 + 1 + 2), proven by a run diff in the PR; same grants and the schema reload.
+**Blocked until answered/done:** starting a new run in production.
+**Answer:**
+**Evidence:**
+What happened: Adam saw "DELETE requires a WHERE clause" from `v2_start_run` in the Supabase Postgres log. pg-safeupdate rejects DELETE/UPDATE without WHERE on API requests; `v2_copy_program` clears four temp tables with bare deletes. A scan of every function's latest definition (5 functions: 021 `reassign_exercise_history`, 028 `v2_start_run`, 034 `v2_copy_program`, 040 `v2_plan_week`, `v2_make_week_default`) found 7 bare DELETEs, no bare UPDATE, all in the three re-created. `check-migration`: exit 1 (flagged, the same statement kinds as 034–040; script unchanged); `check-migration-order`: OK. Not done: a local replay with safeupdate loaded (image pull refused: Docker Hub 429, ECR data limit); CI's `migration-replay` applies the file but doesn't load safeupdate.
+A competent default would: merge it at once — doesn't apply because: check-migration flags it, so the merge is Adam's (Escalation 8), and merging deploys.
+Cost of deferral: n/a (blocking).
 
 ### 114 Sync queue: writes to the same record keep their order (#83)
 - What: the open item from the fix session. A failed queued write no longer lets later writes to the same record overtake it: it holds back every later write to that record until it succeeds; a set log is also held behind its session row and a stage behind its head (they would only fail on the foreign key); other records still go. Retry limit 5 failed passes (was 3; one attempt per flush pass: reconnect, app start, finish, retry tap). After that the write stops retrying but stays queued (`gaveUp`, never deleted, was dropped before) and `SyncFailedNotice` shows "N changes couldn't sync. Tap to retry." on its session's workout, finished and History screens, `/coach` for a note with no session; reloaded on app start.
