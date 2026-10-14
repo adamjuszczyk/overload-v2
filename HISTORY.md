@@ -24287,3 +24287,6 @@ Same-record order (#83): a failed write holds back later writes to its record (a
 
 ### From CONTEXT.md: Plan / Program → finished sessions read-only, hook detail (shortened; still true)
 - `useDoneWeekPlanIds(mesoId)` (key `v2_doneWeekPlanIds`, paged; invalidated by finish, reopen, skip, note, history delete)
+
+## 2026-10-14 — Supabase integration check
+- 2026-10-14: docs-only merge to master after the project moved to the "business" org and its GitHub integration was reconnected (Automatic branching off, Deploy to production on), to see what the integration reports on a merge.
