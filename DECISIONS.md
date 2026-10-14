@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Your answers to 117–120 are in (closed below); the seed now has the second account (118). Next: your dashboard list (116); then I verify staging end to end. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Staging is set up and verified end to end (116 closed; results in CONTEXT.md, "Staging verification"). Open: the Postgres version check (123), rotating the leaked bypass secret (122), and 121 before the release. Each list is ordered by what it blocks.*
 
 Decisions:
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -23,7 +23,8 @@ Decisions:
 - **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
 
 To-dos:
-- **116** — Set up staging in the dashboards: the steps (a)–(k) in entry 116, with the values to enter. When: now. Blocks: staging's database, app and checks, so the 1.2 build.
+- **123** — Read the Postgres version of the staging branch and of production (Supabase dashboard → each → Project Settings → Infrastructure, or `select version();` in each one's SQL editor) and write both in entry 123. When: before the build starts. Blocks: the setup's "staging matches production" claim, so the build.
+- **122** — Rotate the Vercel bypass secret: it was printed into this session's log by a Playwright error (not into the repo or any file). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → revoke it, Create a new one, put it in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`. When: before the build. Blocks: nothing until then.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -53,6 +54,19 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
+### 123 Postgres version: staging branch vs production
+**Ask:** read the Postgres version on the staging branch (`vcrwtydicuwqjxrufdfx`) and on production (Supabase dashboard, each project → Project Settings → Infrastructure; or `select version();` in each SQL editor) and write both here.
+**Recommendation:** do it before the build. If they differ, say which: a branch built on a newer Postgres than production would let a chunk pass on staging and fail at the release; the fix would be recreating the branch on production's version (Supabase's branch API takes a `postgres_engine`) or accepting the difference for 1.2.
+**Blocks:** the setup's "staging matches production" claim (build process: "checked at setup, not assumed"), so the build.
+**Evidence:** this environment has no SQL access (no DB password, no Management API: supabase.com is blocked), and nothing the app exposes reports the version. Lower bound: migration 037's `nulls not distinct` (Postgres 15+) applied on the branch. Supabase's API creates a branch on the latest engine unless told otherwise; production's image is `supabase/postgres:17.6.1.155` (`replay-migrations.sh`).
+**Answer:**
+
+### 122 Rotate the Vercel bypass secret
+**Ask:** revoke the Protection Bypass for Automation secret and create a new one (Vercel → overload-v2 → Settings → Deployment Protection), then put the new one in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`.
+**Recommendation:** do it before the build. **When:** before the build.
+**Blocks:** nothing until then.
+**Evidence:** during step 6 a Playwright request failed and its error log printed the request headers, including `x-vercel-protection-bypass`, into this session's transcript. It never reached the repo, a file or GitHub. The secret only opens preview deployments, which since 119 hold synthetic data, but it should not outlive a leak. Scripts now print only an error's first line and filter the secret out (CONTEXT.md, inventory).
+
 ### 121 Before the release: prove production's migration history
 **Ask:** run, from your worktree `overload-v2-switch` on an up-to-date `master`: `npx --yes supabase@2.119.0 migration list --linked` and paste the output here. Expected: every version `000`–`041` in both the Local and Remote columns, nothing local-only.
 **Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
@@ -80,22 +94,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-14
 
 ### 116 Set up staging in the dashboards (Adam's list)
-**Ask:** the steps below, in order; each is one dashboard step with the values to enter. Then tell me "the list is done".
-**Recommendation:** all of them now. **When:** now. Values in `<…>` come from an earlier step.
-**Blocks:** everything on staging: its database, app, checks and the 1.2 build.
-- **(a) Supabase branch.** Supabase dashboard → org "business" → project Overload → branch dropdown in the top bar → **Create branch**: name `staging`; **Sync with Git branch** `staging`; **Include data** off → Create. Then **Branches** → `staging` → ⋯ → **Switch to persistent** → confirm. (If Create branch is missing: avatar menu → Feature previews → "Branching via dashboard" → Enable.) It builds from migrations `000`–`041`; no seed yet (that waits for my config change after (j)). Cost: Micro compute, about $0.0134/hour (~$10/month), not covered by the spend cap.
-- **(b) Sign-ups off on the branch only.** Switch the dashboard to branch `staging` → Authentication → Sign In / Providers → **Allow new users to sign up**: off → Save. (Production is not touched; my config change keeps it off on every deploy.)
-- **(c) The staging test account.** (The second account, `staging-other@example.com`, is the seed's own; nothing to do for it.) Still on branch `staging` → Authentication → Users → **Add user → Create new user**: Email `staging-test@example.com`; Password: a new random password of 20+ characters from your password manager (used nowhere else); **Auto Confirm User** ticked → Create user. Do this before (k): the seed attaches its data to this account and keeps its password.
-- **(d) The branch's API values.** Still on branch `staging` → Project Settings → API (Data API / API keys): note the Project URL `https://<branch-ref>.supabase.co` and the **anon** (publishable) key. Never the service-role key.
-- **(e) This cloud environment's secrets.** Claude Code session title bar → environment menu → Edit → environment variables (Network secrets where offered): `STAGING_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `STAGING_SUPABASE_ANON_KEY` = `<anon key>`; `STAGING_TEST_PASSWORD` = the password from (c); `VERCEL_AUTOMATION_BYPASS_SECRET` = the secret from (i). New sessions pick them up, so step 6 runs in a new session.
-- **(f) This cloud environment's network allowlist.** Same Edit screen → Network access → Allowed domains, "Allow package managers" left ticked: add `overload-v2-staging.vercel.app` and `<branch-ref>.supabase.co`. Optional, same screen → Setup script: `npm ci` (fresh containers have no `node_modules`).
-- **(g) Vercel env vars for `staging`.** Vercel → project overload-v2 → Settings → Environment Variables → Add, Environment **Preview** only, Git branch **`staging`**: `VITE_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `VITE_SUPABASE_ANON_KEY` = `<anon key>`; `VITE_APP_ENV` = `staging`. Production's variables untouched. 119 is yes: add the same three again for **Preview with no branch selected** (all preview branches), so every preview deployment uses the staging database.
-- **(h) Vercel domain for `staging`.** Vercel → overload-v2 → Settings → Domains → Add `overload-v2-staging.vercel.app` → environment **Preview**, Git branch **`staging`** → Save. (If Vercel refuses that name, take the one it offers and put it in (f) instead.)
-- **(i) Vercel bypass secret** (117: yes). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → Create → copy it into (e). Vercel Authentication stays on.
-- **(j) A ruleset for `staging` matching master's.** GitHub → adamjuszczyk/overload-v2 → Settings → Rules → Rulesets → New branch ruleset: name `staging protection`; Enforcement **Active**; Target branches → Add target → Include by pattern `staging`; tick **Restrict deletions**, **Block force pushes**, **Require a pull request before merging** (required approvals 0; allowed merge methods Merge and Squash), **Require status checks to pass** → Add checks → `migration-replay` (GitHub Actions); Bypass list: **empty** (Adam, 2026-10-14) → Create. (Master's two rulesets hold these rules between them, read 2026-10-14; master's "master needs migration-replay" lets Repository admin bypass, staging's lets no one.)
-- **(k) Then tell me "the list is done".** I add `[remotes.staging]` to `supabase/config.toml` (the branch ref, seed on, sign-ups off, the staging site URL) in a PR into `staging`. Its merge is the first push that should deploy config and seed to the branch; it also shows whether pushes deploy with Automatic branching off. Then I verify staging end to end (step 6) and report each result.
-**Evidence:** Supabase docs (read from the docs source on GitHub; supabase.com is blocked from here): a persistent branch linked to a git branch runs "the same deployment workflow … on every commit pushed to your git branch"; Automatic branching only creates branches for new git branches/PRs, so with it off nothing else gets billed. The docs don't say outright that a linked branch deploys with Automatic branching off; (k)'s merge is the test, and if it doesn't deploy, the fallback is a decision (Automatic branching on with "Supabase changes only", which bills a branch per PR touching `supabase/`, or a GitHub Action running `supabase db push` with a database-password secret). Persistent branches, production included, skip seed and `[auth]` config unless a `[remotes.<name>]` block names their ref; production deploys never seed. A branch is built from the migrations, not cloned: its Postgres version may be newer than production's (the API defaults to the latest) and is checked in step 6. Northstar's tables aren't in the migration history, so they don't exist on staging.
-
+- What: the dashboard steps (a)–(k) for staging: the persistent Supabase branch, sign-ups off, the test account, this environment's secrets and allowlist, Vercel env vars (all preview branches) and domain, the bypass secret, the `staging` ruleset (no bypass actor).
+- Answer: done by Adam 2026-10-14; (k): `[remotes.staging]` (#90, fixed in #91), seed numbering (#92); staging verified end to end (CONTEXT.md, "Staging verification"); open: 122, 123.
+- Date: 2026-10-14
 ### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
 - What: 041 re-creates `v2_copy_program`, `v2_plan_week`, `v2_make_week_default` with ` where true` on 7 bare temp-table deletes that pg-safeupdate rejected.
 - Answer: merged by Adam (#85, `6e5f654`); `Supabase Preview` success on the merge commit (2026-10-12). Full text in HISTORY.md.
