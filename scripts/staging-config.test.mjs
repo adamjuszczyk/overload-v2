@@ -5,7 +5,8 @@
 //   * supabase/config.toml: no [remotes.*] block names production's project
 //     ref (a remote block is what turns on seed and config for a persistent
 //     branch, production included); a [remotes.staging] block, once present,
-//     seeds from seed.sql and turns sign-ups off.
+//     seeds from seed.sql and turns sign-ups off without turning email
+//     sign-in off.
 //   * supabase/seed.sql keeps its guard.
 //   * staging-guard.mjs refuses production and anything it can't recognise.
 import { test } from 'node:test';
@@ -54,7 +55,9 @@ test('[remotes.staging], once present, seeds from seed.sql with sign-ups off', (
   assert.equal(config['remotes.staging.db.seed']?.enabled, 'true');
   assert.match(config['remotes.staging.db.seed']?.sql_paths ?? '', /"\.\/seed\.sql"/);
   assert.equal(config['remotes.staging.auth']?.enable_signup, 'false');
-  assert.equal(config['remotes.staging.auth.email']?.enable_signup, 'false');
+  // [auth.email] enable_signup is the email provider itself, not sign-ups:
+  // false disables email sign-in for every account (seen 2026-10-14).
+  assert.notEqual(config['remotes.staging.auth.email']?.enable_signup, 'false');
 });
 
 test('seed.sql keeps its guard', () => {
