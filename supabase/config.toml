@@ -431,5 +431,9 @@ site_url = "https://overload-v2-staging.vercel.app"
 additional_redirect_urls = ["https://overload-v2-staging.vercel.app"]
 enable_signup = false
 
+# Not a sign-up switch: the CLI maps [auth.email] enable_signup to "email
+# provider enabled". false turned email sign-in off for everyone
+# (email_provider_disabled, 2026-10-14). Sign-ups are off through
+# [remotes.staging.auth] enable_signup above.
 [remotes.staging.auth.email]
-enable_signup = false
+enable_signup = true
