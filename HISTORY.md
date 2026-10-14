@@ -24551,3 +24551,36 @@ Cost of deferral: n/a (blocking).
 - **Plan week panel (chunks 29–30; standing UI rule; full detail in HISTORY.md, chunk 30 boundary):** page-level actions on top of each workout panel (session DELOAD, apply-ahead banner, COPY THIS WORKOUT; COPY WEEK, MARK WEEK AS DELOAD, MOVE THIS SESSION above the panel), then SETS / STRUCTURE (`SegmentBar`; opens on SETS, page-local). **SETS:** number, weight, `×`, reps, RIR (none on warmups), ⋯ → tags + DELETE SET; `+` ADD SET; markers only where set. **STRUCTURE:** exercise ⋯ → SWAP, MOVE, ADD WARMUP SETS, REMOVE, plus run-wide REST / REST AFTER / TEMPO (EVERY WEEK) and UNIT; ADD EXERCISE; set ⋯ → ADD STAGE / STAGE KIND / DELETE STAGE / warmup DELETE, plus REST / STAGE REST only on a set naming a program set of its own row (G45 (c)); link toggles over this week's order and round rests; the warmup routine card. Run-wide writes go to each exercise's own row via the program tab's hooks (`designFieldEditors.tsx`, `StructureFields.tsx`); no apply-ahead offer; the `usePrograms.ts` hooks keep `isPending` until the run copy and week caches refetch. Past weeks/cycles read-only. Tests: `planMenus.testutil.ts` (`openSetsView`/`openStructureView`).
 - Deload rules (chunk 22): `src/lib/deloadRules.ts` (pure) validates the rules shape, resolves precedence (run program's `deload_rules` → user's → none), calculates (sets −%/−n rounded, never <1, last working sets removed, staged set = one, warmups untouched; weight % of logged-else-planned base, rounded to a kg/lbs step; reps shift both ends, AMRAP unchanged; RIR +n) and finds the base occurrence (latest earlier normal occurrence that happened, else the session's own plan). `resolveDeloadExerciseMapping` matches each marked-week exercise to the base by slot + exercise (chunk 20's rule) and writes with the marked week's own program exercise; unmatched → its own sets; nothing outside the session's list. Mark with rules: snapshot to `deload_restore` first, then replace; unmark: restore, then clear (a saved set whose program set was deleted since comes back with no link, checked before anything is deleted — B5, #80); a started session is flag-only with a notice. Settings DELOAD RULES (off by default); program override USE MY DEFAULT (null) / CUSTOM (`{}` stays an override).
 
+
+## 2026-10-14 staging: 122 and 123 closed, default-privileges proof — Moved out of CONTEXT.md and DECISIONS.md, word for word
+
+### From DECISIONS.md: Waiting on Adam line
+- **123** — Read the Postgres version of the staging branch and of production (Supabase dashboard → each → Project Settings → Infrastructure, or `select version();` in each one's SQL editor) and write both in entry 123. When: before the build starts. Blocks: the setup's "staging matches production" claim, so the build.
+
+### From DECISIONS.md: Waiting on Adam line
+- **122** — Rotate the Vercel bypass secret: it was printed into this session's log by a Playwright error (not into the repo or any file). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → revoke it, Create a new one, put it in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`. When: before the build. Blocks: nothing until then.
+
+### From DECISIONS.md: Waiting on Adam header
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Staging is set up and verified end to end (116 closed; results in CONTEXT.md, "Staging verification"). Open: the Postgres version check (123), rotating the leaked bypass secret (122), and 121 before the release. Each list is ordered by what it blocks.*
+
+### From DECISIONS.md: 123, full text
+### 123 Postgres version: staging branch vs production
+**Ask:** read the Postgres version on the staging branch (`vcrwtydicuwqjxrufdfx`) and on production (Supabase dashboard, each project → Project Settings → Infrastructure; or `select version();` in each SQL editor) and write both here.
+**Recommendation:** do it before the build. If they differ, say which: a branch built on a newer Postgres than production would let a chunk pass on staging and fail at the release; the fix would be recreating the branch on production's version (Supabase's branch API takes a `postgres_engine`) or accepting the difference for 1.2.
+**Blocks:** the setup's "staging matches production" claim (build process: "checked at setup, not assumed"), so the build.
+**Evidence:** this environment has no SQL access (no DB password, no Management API: supabase.com is blocked), and nothing the app exposes reports the version. Lower bound: migration 037's `nulls not distinct` (Postgres 15+) applied on the branch. Supabase's API creates a branch on the latest engine unless told otherwise; production's image is `supabase/postgres:17.6.1.155` (`replay-migrations.sh`).
+**Answer:**
+
+### From DECISIONS.md: 122, full text
+### 122 Rotate the Vercel bypass secret
+**Ask:** revoke the Protection Bypass for Automation secret and create a new one (Vercel → overload-v2 → Settings → Deployment Protection), then put the new one in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`.
+**Recommendation:** do it before the build. **When:** before the build.
+**Blocks:** nothing until then.
+**Evidence:** during step 6 a Playwright request failed and its error log printed the request headers, including `x-vercel-protection-bypass`, into this session's transcript. It never reached the repo, a file or GitHub. The secret only opens preview deployments, which since 119 hold synthetic data, but it should not outlive a leak. Scripts now print only an error's first line and filter the secret out (CONTEXT.md, inventory).
+
+### From CONTEXT.md: Staging verification, Postgres line
+- **Postgres version: not checked from here** (no SQL access; DECISIONS 123). Lower bound: 037's `nulls not distinct` applied, so 15 or later.
+
+### From CONTEXT.md: Migrations (1.2), deploy-check line
+- After each schema merge the reviewer checks the Supabase deploy on the staging branch succeeded (Dashboard → Branches log is Adam's; on GitHub, the `Supabase Preview` runs on the merge commit, read every run). **A failed staging deploy is blocking.**
+
