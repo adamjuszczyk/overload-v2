@@ -55,6 +55,26 @@
 --   STG No exercises  saved, one workout with no exercises, no schedule
 -- Settings: global deload rules on (so the override and the default differ).
 
+-- ── Privileges a new branch lacks ───────────────────────────────────────────
+-- Supabase creates a branch "without default privileges on the public
+-- schema" (Supabase docs, Working with branches). Production has the
+-- platform's defaults, read from production's image (supabase/postgres
+-- 17.6.1.155, pg_default_acl): role postgres's new tables, sequences and
+-- functions in public are granted to anon, authenticated and service_role.
+-- The migrations rely on that (only 000 grants explicitly, and none revoke),
+-- so without this the app's tables answer 42501 on staging (seen 2026-10-14:
+-- v2_programs denied to anon and authenticated). RLS still decides which
+-- rows anyone sees. This file runs on the staging branch only, so production
+-- is untouched; the default privileges also cover tables later migrations
+-- create on staging.
+alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public grant all on functions to anon, authenticated, service_role;
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to anon, authenticated, service_role;
+grant all on all functions in schema public to anon, authenticated, service_role;
+
 do $seed$
 declare
   c_email   constant text := 'staging-test@example.com';
@@ -488,3 +508,5 @@ begin
     (select count(*) from v2_set_logs where user_id = o), c_other_email;
 end
 $seed$;
+
+notify pgrst, 'reload schema';
