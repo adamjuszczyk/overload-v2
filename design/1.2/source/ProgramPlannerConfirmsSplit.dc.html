@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Program planner — split shared workouts</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 760px; box-sizing: border-box; background: {{c.base}}; padding: 24px 16px; display: flex; flex-direction: column; gap: 32px; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+  <sc-for list="{{dialogs}}" as="d" hint-placeholder-count="6">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{d.block}}</span>
+      <div style="border-radius: 12px; background: {{c.scrimBg}}; padding: 20px 14px">
+        <div role="alertdialog" aria-label="{{d.title}}" style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+          <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 18px; line-height: 1.25; color: {{c.t1}}">{{d.title}}</span>
+          <span style="font-size: 14px; line-height: 1.5; color: {{c.t2}}">{{d.body}}</span>
+          <sc-if value="{{d.err}}" hint-placeholder-val="{{false}}">
+            <span role="alert" style="display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: {{c.error}}"><svg style="flex: 0 0 auto; margin-top: 2px" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 8v5M12 16h.01"></path></svg>{{d.errText}}</span>
+          </sc-if>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 6px">
+            <button style="height: 48px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{c.t1}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.2em">CANCEL</button>
+            <sc-if value="{{d.danger}}" hint-placeholder-val="{{true}}">
+              <button style="height: 48px; border-radius: 10px; border: 0; background: {{c.errorMuted}}; color: {{c.error}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.2em">{{d.verb}}</button>
+            </sc-if>
+            <sc-if value="{{d.primary}}" hint-placeholder-val="{{false}}">
+              <button style="height: 48px; border-radius: 10px; border: 0; background: {{c.accent}}; color: {{c.onAccent}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.2em">{{d.verb}}</button>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', successMuted: 'rgba(22,101,52,0.10)', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', successMuted: 'rgba(74,222,128,0.12)', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    c.scrimBg = 'linear-gradient(' + c.scrim + ', ' + c.scrim + '), ' + c.base;
+    const split = 'Creates 2 new workouts: a copy of each shared one for every extra weekday, which then points at the copy. The original keeps its first weekday. This can\'t be undone.';
+    const d = (block, title, body, verb, o) => Object.assign({ block, title, body, verb, danger: true, primary: false, err: false, errText: '' }, o || {});
+    const dialogs = [
+      d('DELETE WORKOUT', 'Delete “Push 1”?', 'This removes the workout and every exercise in it. This can\'t be undone.', 'DELETE'),
+      d('REMOVE EXERCISE', 'Remove “Dips”?', 'This also removes its planned sets here. This can\'t be undone.', 'REMOVE'),
+      d('REMOVE WARMUP ITEM', 'Remove this item?', '“Band pull-aparts”. This can\'t be undone.', 'REMOVE'),
+      d('REMOVE SLOT', 'Remove this slot?', '“Pull 1”. This can\'t be undone.', 'REMOVE'),
+      d('ONE WORKOUT, SEVERAL WEEKDAYS · CONFIRM', 'Give each weekday its own workout?', split, 'CONFIRM', { danger: false, primary: true }),
+      d('ONE WORKOUT, SEVERAL WEEKDAYS · SPLIT FAILED', 'Give each weekday its own workout?', split, 'CONFIRM', { danger: false, primary: true, err: true, errText: 'Couldn\'t split the schedule: Failed to fetch — you may be offline' })
+    ];
+    return { c, dialogs: dialogs.slice(4) };
+  }
+}
+</script>
+</body>
+</html>

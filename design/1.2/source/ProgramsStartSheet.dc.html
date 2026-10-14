@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Programs — start a program</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: {{c.base}}; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 20px 16px; display: flex; flex-direction: column; gap: 12px">
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; color: {{c.t1}}">PROGRAMS</span>
+    <div style="height: 140px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+    <div style="height: 200px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: {{c.scrim}}"></div>
+
+  <sc-if value="{{showError}}" hint-placeholder-val="{{false}}">
+    <div role="alert" style="position: absolute; top: 16px; left: 16px; right: 16px; box-sizing: border-box; background: {{c.overlay}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px">
+      <span style="flex: 0 0 auto; color: {{c.error}}; padding-top: 1px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4M12 16h.01"></path></svg></span>
+      <span style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 14px; line-height: 1.45; color: {{c.t1}}">Couldn't start Upper / Lower.</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; color: {{c.t2}}">DELETE requires a WHERE clause</span></span>
+    </div>
+  </sc-if>
+
+  <div role="dialog" aria-label="{{title}}" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 16px">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: center">
+      <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">{{title}}</span>
+      <a href="Programs.dc.html" aria-label="Close" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></a>
+    </div>
+
+    <sc-if value="{{noPrograms}}" hint-placeholder-val="{{false}}">
+      <div style="padding: 24px 0 8px; display: flex; flex-direction: column; align-items: center; gap: 14px">
+        <span style="font-size: 15px; color: {{c.t2}}">Create a program first.</span>
+        <a href="ProgramsNewSheet.dc.html" style="width: 100%; height: 52px; box-sizing: border-box; border-radius: 10px; background: {{c.accent}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 15px; letter-spacing: 0.03em; color: {{c.onAccent}}">CREATE PROGRAM</a>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{hasPrograms}}" hint-placeholder-val="{{true}}">
+      <div style="display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <label for="mname" style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">NAME <span style="color: {{c.td}}">(OPTIONAL)</span></label>
+          <input id="mname" value="" placeholder="{{placeholder}}" readonly="readonly" style="height: 48px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; padding: 0 14px; font-family: 'Archivo', sans-serif; font-size: 16px; color: {{c.t1}}">
+        </div>
+
+        <div role="radiogroup" aria-label="Program" style="display: flex; flex-direction: column; gap: 8px">
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">PROGRAM</span>
+          <sc-for list="{{programs}}" as="p" hint-placeholder-count="3">
+            <button role="radio" aria-checked="{{p.checked}}" style="min-height: 48px; border-radius: 10px; border: 1px solid {{p.bd}}; background: {{p.bg}}; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; text-align: left">
+              <span style="font-family: 'Archivo', sans-serif; font-weight: 600; font-size: 15px; color: {{p.fg}}">{{p.name}}</span>
+              <span style="width: 18px; height: 18px; box-sizing: border-box; border-radius: 9px; border: 2px solid {{p.dot}}; display: flex; align-items: center; justify-content: center">
+                <sc-if value="{{p.on}}" hint-placeholder-val="{{false}}"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{p.dot}}"></span></sc-if>
+              </span>
+            </button>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{showNote}}" hint-placeholder-val="{{false}}">
+          <span style="font-size: 13px; line-height: 1.45; color: {{c.t2}}">Starting it finishes Push Pull Legs. Its weeks stay in History.</span>
+        </sc-if>
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <button disabled="{{startDisabled}}" style="height: 52px; border-radius: 10px; border: 0; background: {{startBg}}; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 15px; letter-spacing: 0.03em; color: {{startFg}}">{{startLabel}}</button>
+          <sc-if value="{{showReason}}" hint-placeholder-val="{{false}}">
+            <span style="text-align: center; font-size: 13px; color: {{c.t2}}">Schedule at least one workout to start.</span>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"state":{"editor":"enum","options":["after-end","active","no-schedule","no-programs","pending","error"],"default":"after-end"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+
+    const states = ['after-end', 'active', 'no-schedule', 'no-programs', 'pending', 'error'];
+    const st = states.indexOf(this.props.state) >= 0 ? this.props.state : 'after-end';
+    const mesoRunning = st !== 'after-end' && st !== 'no-programs';
+    const picked = st === 'no-schedule' ? 'Strength' : 'Upper / Lower';
+    const programs = ['Push Pull Legs', 'Upper / Lower', 'Strength'].map((n) => {
+      const on = n === picked;
+      return { name: n, on, checked: on ? 'true' : 'false', bd: on ? c.accent : c.border, bg: on ? c.accentMuted : c.surface, fg: on ? c.accentText : c.t1, dot: on ? c.accentText : c.bstrong };
+    });
+    const blocked = st === 'no-schedule';
+    const pending = st === 'pending';
+    return {
+      c, programs,
+      title: mesoRunning ? 'Start a new program' : 'Start a program',
+      noPrograms: st === 'no-programs', hasPrograms: st !== 'no-programs',
+      placeholder: picked,
+      showNote: mesoRunning,
+      showReason: blocked,
+      showError: st === 'error',
+      startDisabled: blocked || pending,
+      startBg: blocked ? c.raised : c.accent,
+      startFg: blocked ? c.td : c.onAccent,
+      startLabel: pending ? 'STARTING…' : 'START PROGRAM'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Copy last week's numbers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: {{c.base}}; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 20px 16px; display: flex; flex-direction: column; gap: 12px">
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; color: {{c.t1}}">PLAN</span>
+    <div style="height: 56px; border-radius: 10px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+    <div style="height: 220px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: {{c.scrim}}"></div>
+
+  <div role="dialog" aria-label="Copy last week's numbers" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 16px">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-start">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">WEEK 2 · FROM WEEK 1'S PLAN</span>
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Copy last week's numbers</span>
+      </div>
+      <a href="Main.dc.html" aria-label="Close" style="flex: 0 0 auto; width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+      </a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">COPY</span>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+        <sc-for list="{{fields}}" as="f" hint-placeholder-count="3">
+          <button role="checkbox" aria-checked="{{f.checked}}" onClick="{{f.toggle}}" style="height: 48px; border-radius: 10px; border: 1px solid {{f.bd}}; background: {{f.bg}}; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; padding: 0">
+            <span style="width: 18px; height: 18px; box-sizing: border-box; border-radius: 5px; border: 2px solid {{f.box}}; background: {{f.boxBg}}; color: {{c.onAccent}}; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{f.on}}" hint-placeholder-val="{{true}}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></sc-if>
+            </span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em; color: {{c.t1}}">{{f.label}}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">INTO</span>
+      <div style="display: flex; flex-direction: column; border: 1px solid {{c.border}}; border-radius: 10px; overflow: hidden">
+        <sc-for list="{{workouts}}" as="w" hint-placeholder-count="5">
+          <button role="checkbox" aria-checked="{{w.checked}}" aria-disabled="{{w.disabledAttr}}" onClick="{{w.toggle}}" style="min-height: 48px; padding: 0 12px; border: 0; border-top: {{w.sep}}; background: {{w.bg}}; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer">
+            <span style="flex: 0 0 auto; width: 20px; height: 20px; box-sizing: border-box; border-radius: 5px; border: 2px solid {{w.box}}; background: {{w.boxBg}}; color: {{c.onAccent}}; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{w.on}}" hint-placeholder-val="{{true}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></sc-if>
+            </span>
+            <span style="width: 34px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{w.dayFg}}">{{w.day}}</span>
+            <span style="flex: 1; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{w.nameFg}}">{{w.name}}</span>
+            <sc-if value="{{w.done}}" hint-placeholder-val="{{false}}">
+              <span style="display: flex; align-items: center; gap: 5px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>DONE</span>
+            </sc-if>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+
+    <button role="switch" aria-checked="{{owChecked}}" onClick="{{toggleOw}}" style="min-height: 60px; padding: 8px 12px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer">
+      <span style="flex: 1; display: flex; flex-direction: column; gap: 3px">
+        <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Overwrite what's already there</span>
+        <span style="font-family: 'Archivo', sans-serif; font-size: 12px; line-height: 1.4; color: {{c.t2}}">{{owHelp}}</span>
+      </span>
+      <span style="flex: 0 0 auto; width: 44px; height: 26px; box-sizing: border-box; border-radius: 13px; background: {{owTrack}}; border: 1px solid {{owTrackBd}}; position: relative">
+        <span style="position: absolute; top: 2px; left: {{owKnob}}; width: 20px; height: 20px; border-radius: 10px; background: {{owKnobBg}}"></span>
+      </span>
+    </button>
+
+    <button style="height: 52px; border-radius: 10px; border: 0; background: {{c.accent}}; color: {{c.onAccent}}; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 15px; letter-spacing: 0.03em">{{cta}}</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { fields: { w: true, r: true, q: true }, picked: { tue: true, thu: true, fri: true, sat: true }, ow: false }; }
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const st = this.state;
+    const fields = [['w', 'WEIGHT'], ['r', 'REPS'], ['q', 'RIR']].map(([id, label]) => {
+      const on = !!st.fields[id];
+      return {
+        label, on, checked: on ? 'true' : 'false',
+        bd: on ? c.accent : c.border, bg: on ? c.accentMuted : c.surface,
+        box: on ? c.accent : c.bstrong, boxBg: on ? c.accent : c.surface,
+        toggle: () => this.setState({ fields: Object.assign({}, st.fields, { [id]: !on }) })
+      };
+    });
+    const list = [
+      { id: 'mon', day: 'MON', name: 'Push 1', done: true },
+      { id: 'tue', day: 'TUE', name: 'Pull 1' },
+      { id: 'thu', day: 'THU', name: 'Push 2' },
+      { id: 'fri', day: 'FRI', name: 'Pull 2' },
+      { id: 'sat', day: 'SAT', name: 'Legs' }
+    ];
+    const workouts = list.map((w, i) => {
+      const on = !w.done && !!st.picked[w.id];
+      return {
+        day: w.day, name: w.name, done: !!w.done, on,
+        checked: on ? 'true' : 'false', disabledAttr: w.done ? 'true' : 'false',
+        sep: i === 0 ? '0' : '1px solid ' + c.bsub,
+        bg: w.done ? c.raised : c.surface,
+        box: w.done ? c.border : on ? c.accent : c.bstrong, boxBg: on ? c.accent : (w.done ? c.raised : c.surface),
+        dayFg: c.tm, nameFg: w.done ? c.tm : c.t1,
+        toggle: () => { if (!w.done) this.setState({ picked: Object.assign({}, st.picked, { [w.id]: !st.picked[w.id] }) }); }
+      };
+    });
+    const n = workouts.filter((w) => w.on).length;
+    const ow = st.ow;
+    return {
+      c, fields, workouts,
+      owChecked: ow ? 'true' : 'false',
+      owHelp: ow ? 'On: numbers you already typed get replaced.' : 'Off: only empty boxes get filled.',
+      owTrack: ow ? c.accent : c.raised, owTrackBd: ow ? c.accent : c.bstrong,
+      owKnob: ow ? '20px' : '2px', owKnobBg: ow ? c.onAccent : c.bstrong,
+      toggleOw: () => this.setState({ ow: !ow }),
+      cta: n === 0 ? 'PICK A WORKOUT' : 'COPY INTO ' + n + (n === 1 ? ' WORKOUT' : ' WORKOUTS')
+    };
+  }
+}
+</script>
+</body>
+</html>

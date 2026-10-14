@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout — set options</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: {{c.base}}; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px">
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; color: {{c.t1}}">PULL 1</span>
+    <div style="height: 120px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+    <div style="height: 260px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: {{c.scrim}}"></div>
+
+  <div role="dialog" aria-label="Set options" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 16px">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">LAT PULLDOWN · SET 03</span>
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Set options</span>
+      </div>
+      <a href="Workout.dc.html" aria-label="Close" style="box-sizing: border-box; width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+    <a href="WorkoutSetType.dc.html" style="min-height: 52px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: space-between">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">SET TYPE</span>
+      <span style="display: flex; align-items: center; gap: 6px; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Dropset · 1 drop<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="{{c.tm}}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+    </a>
+    <a href="TagSheet.dc.html" style="min-height: 52px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: space-between">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CUES</span>
+      <span style="display: flex; align-items: center; gap: 6px; font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Push here<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="{{c.tm}}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+    </a>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">FORM</span>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+        <sc-for list="{{form}}" as="f" hint-placeholder-count="4">
+          <button aria-pressed="{{f.pressed}}" onClick="{{f.pick}}" style="height: 44px; border-radius: 10px; border: 1px solid {{f.bd}}; background: {{f.bg}}; color: {{f.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em; cursor: pointer">{{f.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; min-height: 52px; border-top: 1px solid {{c.bsub}}; border-bottom: 1px solid {{c.bsub}}">
+      <span style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-family: 'Archivo', sans-serif; font-size: 15px; color: {{c.t1}}">Log this set in lbs</span>
+        <span style="font-size: 12px; color: {{c.tm}}">This exercise is in kg.</span>
+      </span>
+      <button role="switch" aria-checked="false" aria-label="Log this set in lbs" style="position: relative; width: 48px; height: 28px; border-radius: 14px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; padding: 0"><span style="position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 10px; background: {{c.tm}}"></span></button>
+    </div>
+
+    <button style="height: 52px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{c.t1}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.2em">SKIP THIS SET</button>
+    <a href="WorkoutDeleteSet.dc.html" style="height: 52px; box-sizing: border-box; border-radius: 10px; background: {{c.errorMuted}}; color: {{c.error}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.2em">DELETE SET</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { form: null }; }
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const form = ['RUSHED', 'NORMAL', 'CONTROLLED', 'EXTRA CONTROLLED'].map((l) => {
+      const on = this.state.form === l;
+      return { label: l, pressed: on ? 'true' : 'false', bd: on ? c.accent : c.border, bg: on ? c.accentMuted : c.surface, fg: on ? c.accentText : c.t2,
+        pick: () => this.setState({ form: on ? null : l }) };
+    });
+    return { c, form };
+  }
+}
+</script>
+</body>
+</html>
+
