@@ -9,21 +9,27 @@
 --     enabled. Only [remotes.staging] does; scripts/staging-config.test.mjs
 --     fails if any remote names production's ref.
 --   * The guard below refuses to run on a database that holds any account
---     other than the staging test account (production holds real accounts),
+--     other than the two staging accounts (production holds real accounts),
 --     and on one that holds production's known owner id.
 --
--- Everything belongs to ONE account: staging-test@example.com (example.com
--- is reserved by IANA, so no real person can own it). Its password is never
--- in this repository: if the account doesn't exist yet the seed creates it
--- with a random password nobody knows; the password that works is set on the
--- staging branch by Adam (CONTEXT.md, "Accounts") and kept in the cloud
--- environment's secret STAGING_TEST_PASSWORD.
+-- Two synthetic accounts (example.com is reserved by IANA, so no real person
+-- can own either):
+--   staging-test@example.com   the test account: owns everything below. Its
+--     password is never in this repository: if the account doesn't exist yet
+--     the seed creates it with a random password nobody knows; the password
+--     that works is set on the staging branch by Adam (CONTEXT.md,
+--     "Accounts") and kept in the cloud environment's secret
+--     STAGING_TEST_PASSWORD.
+--   staging-other@example.com  never signs in (random password nobody
+--     knows): owns a small program, run, session, logs, a note and a mark, so
+--     verify-rls run as the test account has foreign rows it must not see
+--     (DECISIONS 118).
 --
 -- Dates are relative to the day the seed runs (Monday of that week = week
 -- start). Supabase runs a seed file once; to re-seed (for example after the
 -- active run's weeks have gone by), paste this file into the staging
--- branch's SQL editor: it deletes the test account's data and rebuilds it,
--- keeping the account and its password.
+-- branch's SQL editor: it deletes both accounts' data and rebuilds it,
+-- keeping the accounts and the test account's password.
 --
 -- Data shapes covered (SPEC.md [P1]/[P1.1]/[1.2] and TASKS-1.2's F1–F6, G50):
 --   STG Upper/Lower   saved, weekday, week-dependent, with a non-empty
@@ -53,9 +59,13 @@ do $seed$
 declare
   c_email   constant text := 'staging-test@example.com';
   c_new_id  constant uuid := '7e57ac00-0000-4000-8000-000000000001';
+  c_other_email constant text := 'staging-other@example.com';
+  c_other_id    constant uuid := '7e57ac00-0000-4000-8000-000000000002';
   -- Production's owner account. Its presence means this is not staging.
   c_prod_marker constant uuid := '12e79b69-9891-4f53-a7cf-650edd83659f';
   t   uuid;
+  o   uuid;   -- the other account
+  acct record;
   d0  date := date_trunc('week', current_date)::date;  -- this Monday
   tbl text;
   pass int;
@@ -80,29 +90,31 @@ begin
   if exists (select 1 from auth.users where id = c_prod_marker) then
     raise exception 'seed.sql refuses to run: this database holds production''s owner account';
   end if;
-  if exists (select 1 from auth.users where email is distinct from c_email) then
-    raise exception 'seed.sql refuses to run: this database holds an account other than %', c_email;
+  if exists (select 1 from auth.users where email is null or email not in (c_email, c_other_email)) then
+    raise exception 'seed.sql refuses to run: this database holds an account other than % and %', c_email, c_other_email;
   end if;
 
-  -- ── The staging test account ────────────────────────────────────────────
+  -- ── The two staging accounts (created only if missing) ──────────────────
+  for acct in select * from (values (c_email, c_new_id), (c_other_email, c_other_id)) as a(email, id) loop
+    if not exists (select 1 from auth.users where email = acct.email) then
+      insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
+                              email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                              created_at, updated_at, confirmation_token, recovery_token,
+                              email_change_token_new, email_change)
+      values ('00000000-0000-0000-0000-000000000000', acct.id, 'authenticated', 'authenticated', acct.email,
+              extensions.crypt(gen_random_uuid()::text || gen_random_uuid()::text, extensions.gen_salt('bf')),
+              now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
+      insert into auth.identities (id, user_id, provider_id, identity_data, provider,
+                                   last_sign_in_at, created_at, updated_at)
+      values (gen_random_uuid(), acct.id, acct.id::text,
+              jsonb_build_object('sub', acct.id::text, 'email', acct.email, 'email_verified', true),
+              'email', now(), now(), now());
+    end if;
+  end loop;
   select id into t from auth.users where email = c_email;
-  if t is null then
-    t := c_new_id;
-    insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
-                            email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-                            created_at, updated_at, confirmation_token, recovery_token,
-                            email_change_token_new, email_change)
-    values ('00000000-0000-0000-0000-000000000000', t, 'authenticated', 'authenticated', c_email,
-            extensions.crypt(gen_random_uuid()::text || gen_random_uuid()::text, extensions.gen_salt('bf')),
-            now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
-    insert into auth.identities (id, user_id, provider_id, identity_data, provider,
-                                 last_sign_in_at, created_at, updated_at)
-    values (gen_random_uuid(), t, t::text,
-            jsonb_build_object('sub', t::text, 'email', c_email, 'email_verified', true),
-            'email', now(), now(), now());
-  end if;
+  select id into o from auth.users where email = c_other_email;
 
-  -- ── Start clean: delete the account's data, keep the account ────────────
+  -- ── Start clean: delete both accounts' data, keep the accounts ──────────
   -- Every public table with a user_id column, repeated until foreign keys
   -- stop getting in the way (cascades do most of it on the first pass).
   for pass in 1..6 loop
@@ -114,7 +126,7 @@ begin
       order by c.table_name
     loop
       begin
-        execute format('delete from public.%I where user_id = $1', tbl) using t;
+        execute format('delete from public.%I where user_id = any($1)', tbl) using array[t, o];
       exception when foreign_key_violation then
         left_over := left_over + 1;
       end;
@@ -122,7 +134,36 @@ begin
     exit when left_over = 0;
   end loop;
 
-  -- The app's SQL functions read auth.uid(); act as the test account.
+  -- ── The other account: a little of everything, for RLS checks ──────────
+  -- The app's SQL functions read auth.uid(); act as the other account first.
+  perform set_config('request.jwt.claim.sub', o::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', o::text, 'role', 'authenticated')::text, true);
+  insert into v2_user_settings (user_id) values (o);
+  insert into exercises (user_id, name, muscle_group) values (o, 'Other Goblet Squat', 'quads') returning id into e_squat;
+  insert into exercises (user_id, name, muscle_group) values (o, 'Other Push-Up', 'chest') returning id into e_bench;
+  insert into v2_programs (user_id, name, kind, schedule_type, planning_type)
+  values (o, 'OTHER Program', 'saved', 'weekday', 'week_dependent') returning id into p_ul;
+  insert into v2_workout_days (program_id, user_id, name, position) values (p_ul, o, 'Other Day', 1) returning id into w_ua;
+  update v2_programs set schedule = jsonb_build_object('tuesday', w_ua) where id = p_ul;
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (w_ua, o, e_squat, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (o, pe, 1, 8, 10), (o, pe, 2, 8, 10);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (w_ua, o, e_bench, 2) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, is_amrap) values (o, pe, 1, true);
+  insert into v2_program_priorities (user_id, program_id, tag_type, tag_value, mark) values (o, p_ul, 'muscle_group', 'quads', 'focus');
+  m_ul := v2_start_run(p_ul, 'OTHER run', d0 - 7);
+  perform v2_plan_week(m_ul, 1);
+  insert into v2_coach_meso_tag_priorities (user_id, mesocycle_id, tag_type, tag_value, priority) values (o, m_ul, 'muscle_group', 'quads', 'high');
+  insert into v2_sessions (user_id, mesocycle_id, week_plan_id, workout_day_id, date, status, started_at, completed_at)
+  select o, m_ul, wp.id, wp.workout_day_id, d0 - 6, 'completed', (d0 - 6 + time '18:00') at time zone 'UTC', (d0 - 6 + time '19:00') at time zone 'UTC'
+  from v2_week_plans wp where wp.mesocycle_id = m_ul returning id into s;
+  insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir, logged_at)
+  select o, s, pe5.exercise_id, ws.id, ws.set_number, 20, 10, 2, (d0 - 6 + time '18:10') at time zone 'UTC'
+  from v2_week_plan_sets ws join v2_program_exercises pe5 on pe5.id = ws.program_exercise_id
+  where ws.week_plan_id = (select week_plan_id from v2_sessions where id = s);
+  insert into v2_coach_notes (user_id, body, session_id) values (o, 'Other account note (synthetic).', s);
+  m_ul := null; p_ul := null; w_ua := null; e_squat := null; e_bench := null; s := null;
+
+  -- Now act as the test account for everything below.
   perform set_config('request.jwt.claim.sub', t::text, true);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', t::text, 'role', 'authenticated')::text, true);
 
@@ -441,8 +482,9 @@ begin
   update v2_set_logs set exercise_id = e_leg_press, weight = 180
   where session_id = s and exercise_id = e_squat and not is_warmup;
 
-  raise notice 'staging seed: % programs, % runs, % sessions, % set logs for %',
+  raise notice 'staging seed: % programs, % runs, % sessions, % set logs for %; % set logs for %',
     (select count(*) from v2_programs where user_id = t), (select count(*) from v2_mesocycles where user_id = t),
-    (select count(*) from v2_sessions where user_id = t), (select count(*) from v2_set_logs where user_id = t), c_email;
+    (select count(*) from v2_sessions where user_id = t), (select count(*) from v2_set_logs where user_id = t), c_email,
+    (select count(*) from v2_set_logs where user_id = o), c_other_email;
 end
 $seed$;

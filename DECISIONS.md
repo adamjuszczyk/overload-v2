@@ -1,13 +1,9 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Next: your dashboard list (116) and four decisions; then I verify staging end to end. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Your answers to 117–120 are in (closed below); the seed now has the second account (118). Next: your dashboard list (116); then I verify staging end to end. Each list is ordered by what it blocks.*
 
 Decisions:
-- **117** — How does the reviewer's browser get past Vercel's login on staging? Recommendation: Protection Bypass for Automation (Vercel Authentication stays on). Blocks: the reviewer's live checks on staging, so the build.
-- **120** — Which models for the 1.2 reviewer and builders? Recommendation: your choice; 1.1 ran builders as subagents at max effort in worktrees, which this environment still supports with a pinned model. Blocks: the build.
-- **119** — Point every Vercel Preview deployment, not only `staging`'s, at the staging database? Recommendation: yes. Blocks: nothing (safety).
-- **118** — A second synthetic account on staging so verify-rls's foreign-row probe can catch a leak there? Recommendation: yes. Blocks: nothing (the anon probe works without it).
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
 - **83** — the same exercise twice in one workout, for highlighting. Provisional: matched in order of position. Blocks: nothing.
 - **84** — how Plan knows a week started empty. Provisional: Settings → NEW WEEK STARTS is "empty" (week-dependent runs); exact would need a new column, which is yours to choose. Blocks: nothing.
@@ -64,29 +60,24 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
 
 ### 120 Models for the 1.2 reviewer and builders
-**Ask:** which model (and effort) runs the 1.2 reviewer session, and which runs the builders?
-**Recommendation:** your choice (the build process leaves it to you). Facts for it: subagents can be pinned to a model here (probed 2026-10-14), and worktree isolation works.
-**Blocks:** the build.
-**Answer:**
+- What: which models run the 1.2 reviewer (coordinator and batch reviewers) and the builders.
+- Answer: Adam's choice, recorded in the 1.2 build-process file in the project (models and effort for the coordinator, batch reviewers and builders). Nothing to do at setup.
+- Date: 2026-10-14
 
 ### 119 Which database Vercel Preview deployments use
-**Ask:** set the Preview environment's `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_APP_ENV=staging` for **all** preview branches (not only `staging`) to the staging branch's values?
-**Recommendation:** yes. A builder's PR gets a Vercel preview of unreleased 1.2 code; with production's values it would run against real data if anyone signed in to it. With staging's values every preview is badged and synthetic.
-**Blocks:** nothing (safety). **Options:** (a) all preview branches use staging's values; (b) only `staging` does (116 (g) as written).
-**Evidence:** which values Preview uses today can't be read from here (vercel.com is blocked). Vercel applies a branch-specific value over the Preview value of the same name, so (a) is three more variables, Preview, no branch.
+- What: whether every Vercel Preview deployment, not only `staging`'s, uses the staging database.
+- Answer: yes, every preview deployment uses the staging database (116 (g)).
+- Date: 2026-10-14
 
 ### 118 A second synthetic account on staging for verify-rls
-**Ask:** may the seed add a second account (`staging-other@example.com`, a random password nobody knows, never signed in) owning a few rows, so verify-rls run as the staging test account has foreign rows it must not see?
-**Recommendation:** yes. Today the seed puts everything on one account (your instruction), so on staging verify-rls's signed-in "foreign rows = 0" can't fail even if RLS broke (unreachable and passing look the same). The anon probe still works without it.
-**Blocks:** nothing.
-**Answer:**
+- What: a second synthetic account so verify-rls's foreign-row probe can catch a leak on staging.
+- Answer: yes, in the seed: `staging-other@example.com` (random password nobody knows) owns a program, run, session, logs, a note and a mark. On the local stack verify-rls passes, and with RLS off on `v2_programs` it reports both probes as LEAK.
+- Date: 2026-10-14
 
 ### 117 How the reviewer's browser reaches the staging app
-**Ask:** which route past Vercel's login for the staging domain?
-**Recommendation:** (a) Protection Bypass for Automation: one secret, kept in this environment's secrets, sent as `x-vercel-protection-bypass` (Playwright: open the page once with `?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true`, or send the header on every request). Every other preview stays protected.
-**Options:** (a) the bypass secret; (b) turn Vercel Authentication off for the project (every preview deployment public; the repo is public anyway, but previews of builder branches would be too); (c) a Deployment Protection Exception for the staging domain (reported as Enterprise / paid add-on only).
-**Blocks:** the reviewer's live checks on staging (Escalation 1), so the build.
-**Evidence:** Vercel docs (read through search results; vercel.com is blocked from here): new projects get Standard Protection by default, which "protects all domains except production domains", including branch URLs and a domain assigned to a preview branch. Protection Bypass for Automation is listed as available on all plans (changelog "automation testing now available on all plans"); it bypasses Vercel Authentication and Password Protection. Not confirmed on this project's settings page; if the Create button isn't there on Hobby, (b) is the fallback.
+- What: the route past Vercel's login for the reviewer's browser on staging.
+- Answer: (a) Protection Bypass for Automation; the secret goes in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET` (116 (e), (i)).
+- Date: 2026-10-14
 
 ### 116 Set up staging in the dashboards (Adam's list)
 **Ask:** the steps below, in order; each is one dashboard step with the values to enter. Then tell me "the list is done".
@@ -94,14 +85,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Blocks:** everything on staging: its database, app, checks and the 1.2 build.
 - **(a) Supabase branch.** Supabase dashboard → org "business" → project Overload → branch dropdown in the top bar → **Create branch**: name `staging`; **Sync with Git branch** `staging`; **Include data** off → Create. Then **Branches** → `staging` → ⋯ → **Switch to persistent** → confirm. (If Create branch is missing: avatar menu → Feature previews → "Branching via dashboard" → Enable.) It builds from migrations `000`–`041`; no seed yet (that waits for my config change after (j)). Cost: Micro compute, about $0.0134/hour (~$10/month), not covered by the spend cap.
 - **(b) Sign-ups off on the branch only.** Switch the dashboard to branch `staging` → Authentication → Sign In / Providers → **Allow new users to sign up**: off → Save. (Production is not touched; my config change keeps it off on every deploy.)
-- **(c) The staging test account.** Still on branch `staging` → Authentication → Users → **Add user → Create new user**: Email `staging-test@example.com`; Password: a new random password of 20+ characters from your password manager (used nowhere else); **Auto Confirm User** ticked → Create user. Do this before (k): the seed attaches its data to this account and keeps its password.
+- **(c) The staging test account.** (The second account, `staging-other@example.com`, is the seed's own; nothing to do for it.) Still on branch `staging` → Authentication → Users → **Add user → Create new user**: Email `staging-test@example.com`; Password: a new random password of 20+ characters from your password manager (used nowhere else); **Auto Confirm User** ticked → Create user. Do this before (k): the seed attaches its data to this account and keeps its password.
 - **(d) The branch's API values.** Still on branch `staging` → Project Settings → API (Data API / API keys): note the Project URL `https://<branch-ref>.supabase.co` and the **anon** (publishable) key. Never the service-role key.
-- **(e) This cloud environment's secrets.** Claude Code session title bar → environment menu → Edit → environment variables (Network secrets where offered): `STAGING_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `STAGING_SUPABASE_ANON_KEY` = `<anon key>`; `STAGING_TEST_PASSWORD` = the password from (c); `VERCEL_AUTOMATION_BYPASS_SECRET` = the secret from (i) (if 117 is (a)). New sessions pick them up, so step 6 runs in a new session.
+- **(e) This cloud environment's secrets.** Claude Code session title bar → environment menu → Edit → environment variables (Network secrets where offered): `STAGING_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `STAGING_SUPABASE_ANON_KEY` = `<anon key>`; `STAGING_TEST_PASSWORD` = the password from (c); `VERCEL_AUTOMATION_BYPASS_SECRET` = the secret from (i). New sessions pick them up, so step 6 runs in a new session.
 - **(f) This cloud environment's network allowlist.** Same Edit screen → Network access → Allowed domains, "Allow package managers" left ticked: add `overload-v2-staging.vercel.app` and `<branch-ref>.supabase.co`. Optional, same screen → Setup script: `npm ci` (fresh containers have no `node_modules`).
-- **(g) Vercel env vars for `staging`.** Vercel → project overload-v2 → Settings → Environment Variables → Add, Environment **Preview** only, Git branch **`staging`**: `VITE_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `VITE_SUPABASE_ANON_KEY` = `<anon key>`; `VITE_APP_ENV` = `staging`. Production's variables untouched. (If 119 is yes: the same three again for Preview with no branch.)
+- **(g) Vercel env vars for `staging`.** Vercel → project overload-v2 → Settings → Environment Variables → Add, Environment **Preview** only, Git branch **`staging`**: `VITE_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `VITE_SUPABASE_ANON_KEY` = `<anon key>`; `VITE_APP_ENV` = `staging`. Production's variables untouched. 119 is yes: add the same three again for **Preview with no branch selected** (all preview branches), so every preview deployment uses the staging database.
 - **(h) Vercel domain for `staging`.** Vercel → overload-v2 → Settings → Domains → Add `overload-v2-staging.vercel.app` → environment **Preview**, Git branch **`staging`** → Save. (If Vercel refuses that name, take the one it offers and put it in (f) instead.)
-- **(i) Vercel bypass secret** (if 117 is (a)). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → Create → copy it into (e). Vercel Authentication stays on.
-- **(j) A ruleset for `staging` matching master's.** GitHub → adamjuszczyk/overload-v2 → Settings → Rules → Rulesets → New branch ruleset: name `staging protection`; Enforcement **Active**; Target branches → Add target → Include by pattern `staging`; tick **Restrict deletions**, **Block force pushes**, **Require a pull request before merging** (required approvals 0; allowed merge methods Merge and Squash), **Require status checks to pass** → Add checks → `migration-replay` (GitHub Actions); Bypass list: Repository admin (as master's "master needs migration-replay") → Create. (Master's two rulesets hold exactly these rules between them; read 2026-10-14.)
+- **(i) Vercel bypass secret** (117: yes). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → Create → copy it into (e). Vercel Authentication stays on.
+- **(j) A ruleset for `staging` matching master's.** GitHub → adamjuszczyk/overload-v2 → Settings → Rules → Rulesets → New branch ruleset: name `staging protection`; Enforcement **Active**; Target branches → Add target → Include by pattern `staging`; tick **Restrict deletions**, **Block force pushes**, **Require a pull request before merging** (required approvals 0; allowed merge methods Merge and Squash), **Require status checks to pass** → Add checks → `migration-replay` (GitHub Actions); Bypass list: **empty** (Adam, 2026-10-14) → Create. (Master's two rulesets hold these rules between them, read 2026-10-14; master's "master needs migration-replay" lets Repository admin bypass, staging's lets no one.)
 - **(k) Then tell me "the list is done".** I add `[remotes.staging]` to `supabase/config.toml` (the branch ref, seed on, sign-ups off, the staging site URL) in a PR into `staging`. Its merge is the first push that should deploy config and seed to the branch; it also shows whether pushes deploy with Automatic branching off. Then I verify staging end to end (step 6) and report each result.
 **Evidence:** Supabase docs (read from the docs source on GitHub; supabase.com is blocked from here): a persistent branch linked to a git branch runs "the same deployment workflow … on every commit pushed to your git branch"; Automatic branching only creates branches for new git branches/PRs, so with it off nothing else gets billed. The docs don't say outright that a linked branch deploys with Automatic branching off; (k)'s merge is the test, and if it doesn't deploy, the fallback is a decision (Automatic branching on with "Supabase changes only", which bills a branch per PR touching `supabase/`, or a GitHub Action running `supabase db push` with a database-password secret). Persistent branches, production included, skip seed and `[auth]` config unless a `[remotes.<name>]` block names their ref; production deploys never seed. A branch is built from the migrations, not cloned: its Postgres version may be newer than production's (the API defaults to the latest) and is checked in step 6. Northstar's tables aren't in the migration history, so they don't exist on staging.
 
