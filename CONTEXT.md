@@ -49,7 +49,7 @@ Goal: the build runs in one go, without Adam, unless something actually goes wro
 
 **Migrations (1.2)**
 - `migration-replay` stays the required check on every PR. `check-migration` still runs on every schema chunk; a flag no longer stops the build: the reviewer merges into staging and logs the migration, one line, under "For the release" in DECISIONS.md.
-- After each schema merge the reviewer checks the Supabase deploy on the staging branch succeeded (Dashboard → Branches log is Adam's; on GitHub, the `Supabase Preview` runs on the merge commit, read every run). **A failed staging deploy is blocking.**
+- After each schema merge the reviewer checks the Supabase deploy on the staging branch succeeded (Dashboard → Branches log is Adam's; on GitHub, the `Supabase Preview` runs on the merge commit, read every run). **A failed staging deploy is blocking.** Then every table the migration added must answer `200` (not `42501`) to an anon `select … limit=0` on staging; `verify-rls` counts `42501` as a pass, so it can't catch a missing grant.
 - R2: `v2_apply_ops` and `v2_plan_week` are each called once, as the signed-in test account, on staging, before the release.
 
 **Live checks (1.2)**
@@ -73,8 +73,9 @@ Goal: the build runs in one go, without Adam, unless something actually goes wro
 - The reviewer's browser (Playwright with the bypass header): loads `overload-v2-staging.vercel.app` (title "Overload STAGING", manifest "Overload STAGING" / cyan icons), signs in as the test account, sees the STAGING badge on every screen, the six STG programs (not the other account's) and Plan's week 3; no page errors.
 - `verify-rls.mjs` on staging (test account as `RLS_TEST_*`): 62 of 62 probes pass.
 - Production unchanged: master is still `a3ffbe8` (#87 only); its last Vercel production deployment is `6e5f654` (2026-10-12), #87's build skipped; no Supabase production run since #87's (a no-op `success`); every test write went to `vcrwtydicuwqjxrufdfx` (staging-guard).
-- **Postgres version: not checked from here** (no SQL access; DECISIONS 123). Lower bound: 037's `nulls not distinct` applied, so 15 or later.
+- Postgres: production 17.6, staging 17.11 — same major version, minor releases only; accepted by Adam (DECISIONS 123).
 - Found and fixed on the way: #90 (default privileges), #91 (email provider), #92 (log numbering); rules below.
+- Default privileges (#90), proven on a local replay (production's image, branch simulated by revoking `public`'s defaults; 2026-10-14): after seed.sql's block, a throwaway later migration's table, sequence and function got exactly the grants the untouched image gives (anon, authenticated, service_role), also when created by another login role after `set role postgres`. Not covered: an object owned by a role other than `postgres` (owner-only). So whether 042's tables get grants on staging depends on the branch running migrations as `postgres`; see Migrations (1.2).
 
 ## What exists
 Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`.

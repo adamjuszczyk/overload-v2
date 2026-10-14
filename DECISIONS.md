@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Staging is set up and verified end to end (116 closed; results in CONTEXT.md, "Staging verification"). Open: the Postgres version check (123), rotating the leaked bypass secret (122), and 121 before the release. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2 complete: staging verified end to end; 122 (bypass secret rotated) and 123 (Postgres 17.6 vs 17.11, accepted) closed. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. Each list is ordered by what it blocks.*
 
 Decisions:
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -23,8 +23,6 @@ Decisions:
 - **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
 
 To-dos:
-- **123** — Read the Postgres version of the staging branch and of production (Supabase dashboard → each → Project Settings → Infrastructure, or `select version();` in each one's SQL editor) and write both in entry 123. When: before the build starts. Blocks: the setup's "staging matches production" claim, so the build.
-- **122** — Rotate the Vercel bypass secret: it was printed into this session's log by a Playwright error (not into the repo or any file). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → revoke it, Create a new one, put it in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`. When: before the build. Blocks: nothing until then.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -55,17 +53,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 ## Open
 
 ### 123 Postgres version: staging branch vs production
-**Ask:** read the Postgres version on the staging branch (`vcrwtydicuwqjxrufdfx`) and on production (Supabase dashboard, each project → Project Settings → Infrastructure; or `select version();` in each SQL editor) and write both here.
-**Recommendation:** do it before the build. If they differ, say which: a branch built on a newer Postgres than production would let a chunk pass on staging and fail at the release; the fix would be recreating the branch on production's version (Supabase's branch API takes a `postgres_engine`) or accepting the difference for 1.2.
-**Blocks:** the setup's "staging matches production" claim (build process: "checked at setup, not assumed"), so the build.
-**Evidence:** this environment has no SQL access (no DB password, no Management API: supabase.com is blocked), and nothing the app exposes reports the version. Lower bound: migration 037's `nulls not distinct` (Postgres 15+) applied on the branch. Supabase's API creates a branch on the latest engine unless told otherwise; production's image is `supabase/postgres:17.6.1.155` (`replay-migrations.sh`).
-**Answer:**
+- What: the Postgres version of the staging branch and of production.
+- Answer: both Postgres 17 (production 17.6, staging 17.11): same major version, minor releases only. Accepted, closed (Adam).
+- Date: 2026-10-14
 
 ### 122 Rotate the Vercel bypass secret
-**Ask:** revoke the Protection Bypass for Automation secret and create a new one (Vercel → overload-v2 → Settings → Deployment Protection), then put the new one in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`.
-**Recommendation:** do it before the build. **When:** before the build.
-**Blocks:** nothing until then.
-**Evidence:** during step 6 a Playwright request failed and its error log printed the request headers, including `x-vercel-protection-bypass`, into this session's transcript. It never reached the repo, a file or GitHub. The secret only opens preview deployments, which since 119 hold synthetic data, but it should not outlive a leak. Scripts now print only an error's first line and filter the secret out (CONTEXT.md, inventory).
+- What: rotate the Protection Bypass for Automation secret, printed into the setup session's log by a Playwright error.
+- Answer: done (Adam); the new secret is in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`.
+- Date: 2026-10-14
 
 ### 121 Before the release: prove production's migration history
 **Ask:** run, from your worktree `overload-v2-switch` on an up-to-date `master`: `npx --yes supabase@2.119.0 migration list --linked` and paste the output here. Expected: every version `000`–`041` in both the Local and Remote columns, nothing local-only.
