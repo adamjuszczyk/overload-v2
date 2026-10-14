@@ -413,6 +413,7 @@ begin
       moved date := null;
       logged_at timestamptz;
       head record; st record; i int := 0;
+      n int;                     -- the log's set_number, as the app numbers it
     begin
       sess_date := r.start_date + (r.week_number - 1) * 7 + r.dow - 1;
 
@@ -451,20 +452,27 @@ begin
         i := i + 1;
         exit when upto is not null and i > upto;
         logged_at := logged_at + interval '3 minutes';
+        -- The app numbers a log 1-based per exercise within the session,
+        -- warmups and working sets separately (useExerciseCardState.ts),
+        -- not by the plan's set_number.
+        select count(*) + 1 into n from v2_set_logs
+        where session_id = s and exercise_id = head.exercise_id and is_warmup = head.is_warmup and parent_set_id is null;
         if skip_set = -1 or skip_set = i then
           insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, is_skipped, logged_at, is_warmup)
-          values (t, s, head.exercise_id, head.id, head.set_number, true, logged_at, head.is_warmup);
+          values (t, s, head.exercise_id, head.id, n, true, logged_at, head.is_warmup);
           continue;
         end if;
         insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
                                  logged_at, rest_seconds, is_warmup, stage_kind, entered_unit, form_rating)
-        values (t, s, head.exercise_id, head.id, head.set_number,
+        values (t, s, head.exercise_id, head.id, n,
                 coalesce(head.target_weight, 50), coalesce(head.rep_max, head.rep_min, 8),
                 case when head.is_warmup then null else coalesce(head.target_rir, 2) end,
                 logged_at, case when i > 1 then 150 end, head.is_warmup,
                 -- pre-1.1 logs carry no stage kind (legacy dropsets read as dropset)
                 case when r.mesocycle_id = m_ppl then null else head.stage_kind end,
-                'kg', case when i % 3 = 0 then 'controlled' end)
+                -- a warmup log carries no unit or form rating (SetRow.tsx)
+                case when head.is_warmup then null else 'kg' end,
+                case when i % 3 = 0 and not head.is_warmup then 'controlled' end)
         returning id into hl;
         for st in
           select * from v2_week_plan_sets where parent_week_plan_set_id = head.id order by stage_index
@@ -472,7 +480,7 @@ begin
           logged_at := logged_at + interval '20 seconds';
           insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
                                    logged_at, is_dropset, parent_set_id, stage_index, entered_unit)
-          values (t, s, head.exercise_id, st.id, head.set_number, coalesce(st.target_weight, head.target_weight, 40),
+          values (t, s, head.exercise_id, st.id, n, coalesce(st.target_weight, head.target_weight, 40),
                   coalesce(st.rep_max, 6), 0, logged_at, true, hl, st.stage_index, 'kg');
         end loop;
       end loop;
