@@ -24778,3 +24778,8 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 
 ### From CONTEXT.md: Where the build is → the 1.2 line before the TASKS patch
 - **1.2 (TASKS-1.2.md, chunks 36–69, migrations 042–044): not started.** Staging set up and verified 2026-10-14 (next section). PR #86 (into `staging`, Adam's merge) holds the 1.2 spec, the 83 boards and TASKS-1.2.md; this session patches TASKS-1.2 for the build on staging (G46–G51, R1–R5, the staging process). Then: the data-model review, then the build (Adam's 1.2 sequence, steps 4–5).
+
+## 2026-10-14 TASKS-1.2 final patch (G52–G55, data-model review) — Moved out of CONTEXT.md (no longer true), word for word
+
+### From CONTEXT.md: Where the build is → the 1.2 line before this patch
+- **1.2 (TASKS-1.2.md, chunks 36–69 with 51a/b, 54a/b, 58a/b; migrations 042–044): not started.** Staging set up and verified 2026-10-14 (next section). **PR #86** (into `staging`, Adam's merge, 2026-10-14) holds SPEC.md as of 2026-10-14 (G46–G51 written in), the 83 boards, TASKS-1.2.md patched for the build on staging (G46–G51 wired in and answered; R1–R5 applied; every live step a reviewer's staging step with the account and seed data named; one release section with the checklist from SPEC; the verification policy; the build order 36–50, 51a, 51b, 52, 65, 66, 53, 54a, 54b, 55–57, 58a, 58b, 59–64, 67–69; a Seed section; **open spec gaps G52–G55** at its top, Adam's to answer) and `.claude/agents/builder.md`. Adam reviews TASKS-1.2 before it merges. Then: the data-model review, then the build (Adam's 1.2 sequence, steps 4–5). Chunk 36 carries a seed revision (three more staging accounts, week 2's differences) that reaches staging only when Adam re-seeds after it merges.

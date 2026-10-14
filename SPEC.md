@@ -134,7 +134,7 @@ guessed. Each is written into the rules below as stated here.
     their order, set counts and set kinds. Tempo, rest, supersets and the warmup
     routine are stored once per program, not per week, so they aren't in it.
 
-### Answers to TASKS-1.2's spec gaps — Adam, 2026-10-13
+### Answers to TASKS-1.2's spec gaps — Adam, 2026-10-13 and 2026-10-14
 
 Each is written into the rules below as stated here.
 
@@ -154,6 +154,21 @@ Each is written into the rules below as stated here.
   exception to the "program" wording sweep.
 - **G51 — "Drops and stages count as":** applies to the VOLUME sheet only.
   History, Progress and the finish screen count as they do today.
+- **G52 — A workout skipped as a whole** (2026-10-14): a session marked
+  skipped gives no REVIEW items. A finished session with skipped sets still
+  lists each of them.
+- **G53 — COPY on a stable week** (2026-10-14): Weight and RIR only. The
+  default owns a stable week's rep targets; they change in CHANGE THE PROGRAM.
+- **G54 — Warmups and the log lock** (2026-10-14): warmups never take part.
+  The current set is the first unlogged working set or stage; a warmup's LOG
+  never asks.
+- **G55 — The ⋯ on warmup and stage rows in Plan** (2026-10-14): a warmup
+  row's ⋯ opens the set type picker with Normal and Warmup only, the rest row
+  where any other set would have one, Cues and REMOVE THIS SET. Stage rows have
+  no ⋯; the head's stepper changes how many there are.
+- **Cues edited during a workout** (2026-10-14): change that set's cue in this
+  week's plan, where cues live. Cues are never copied, so it affects this week
+  only; a workout on two days that share one plan shows it on both.
 
 ---
 
@@ -545,7 +560,8 @@ optional:
   copies its normal sessions; its deload sessions copy from the last normal
   occurrence.
 - [1.2] **COPY (2c)** — in the week's header, opens a sheet (board 2):
-  - fields: Weight, Reps, RIR (any combination);
+  - fields: Weight, Reps, RIR (any combination); on a stable week Weight and
+    RIR only, since the default owns its rep targets (G53);
   - which of this week's workouts (done ones are locked and can't be picked);
   - "Overwrite what's already there": off fills empty boxes only; on replaces
     typed numbers too;
@@ -607,7 +623,8 @@ optional:
   - reps planned as a range: inside the range counts as planned; outside → item;
   - reps planned as AMRAP: reps never count; weight still does;
   - a planned set skipped, or left unlogged when the session finished → item
-    "Skipped" or "Not logged".
+    "Skipped" or "Not logged". A session skipped as a whole gives no items
+    (G52).
   - Text: "Lat Pulldown · set 02 — did 57.5 kg × 11 (planned 55 kg × 8–10)". When
     a set has an item, RIR is shown alongside; RIR alone never makes an item
     (13b).
@@ -694,7 +711,9 @@ optional:
 - "Apply to all sets" fills one cue across an exercise's sets.
 - Shown on the set's row during the workout. Never tracked. Never copied.
 - [1.2] Reached from the set type picker's Cues row in Plan (board 5 → 8), and
-  from the set's ⋯ during a workout (W7).
+  from the set's ⋯ during a workout (W7). A cue edited during a workout changes
+  that set in this week's plan; a workout on days that share one plan shows it
+  on both.
 
 ### Tempo [P1]
 
@@ -926,7 +945,9 @@ optional:
   was already done earlier this week, those too (W16, W17).
 - [1.2] **Rest timer (C5):** no inline rest under the last logged set; the rest
   timer is the pinned bar (W1, W4). Today's inline timer goes.
-- [1.2] **Current set** = the first unlogged set in the session's order.
+- [1.2] **Current set** = the first unlogged working set or stage in the
+  session's order. Warmup sets never take part in the current set or the lock;
+  a warmup's LOG never asks (G54).
 - [1.2] **Log lock (18a):** every row can be typed into. With the lock on, only
   the current set's LOG logs straight away; LOG on any other row asks first:
   "Log A2 before set 03?" with LOG A2 / CANCEL, and a line saying the lock can
@@ -1113,6 +1134,8 @@ layout and wording come from the boards.
   RIR, its type tag and cues. Weight is typed; reps open the rep target picker
   (6); RIR opens the RIR target picker (17); the set's ⋯ opens the set type
   picker (5) with rest after this set (week-dependent), Cues and REMOVE THIS SET.
+  A warmup row's ⋯ offers Normal and Warmup only; stage rows have no ⋯, the
+  head's stepper changes how many (G55).
   "+ ADD SET" adds a Normal set with the previous set's rep target and no weight
   or RIR (Defaults, 8). Cell and row states, including the "changed since"
   marks: board 9.
