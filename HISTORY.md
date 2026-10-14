@@ -24772,3 +24772,9 @@ Current state, one line per part. Migrations are `supabase/migrations/NNN_*.sql`
 
 ### From CONTEXT.md: Staging and the 1.2 build → "Staging matches production" bullet (shortened)
 - Staging matches production in Postgres version, pg-safeupdate behaviour and migration history (checked at setup, not assumed: "Staging verification" below). It holds no real person's data — never Adam's friend's, never Northstar's, not Adam's own either (the repo is public and the seed is committed). Sign-ups are off; only accounts the setup creates sign in. The test account's password never enters the repo. It looks different (badge, PWA name and icon). It proves mechanics and screens; a week of real use still follows the release.
+
+## 2026-10-14 TASKS-1.2 staging patch session — Moved out of CONTEXT.md (no longer true), word for word
+*This session (PR #86, Fable 5.1): merged `staging` into the PR branch, pruned CONTEXT.md to 59 KB, replaced SPEC.md with the 2026-10-14 copy, patched TASKS-1.2.md for the build on staging, added `.claude/agents/builder.md`, retargeted PR #86 to `staging`.*
+
+### From CONTEXT.md: Where the build is → the 1.2 line before the TASKS patch
+- **1.2 (TASKS-1.2.md, chunks 36–69, migrations 042–044): not started.** Staging set up and verified 2026-10-14 (next section). PR #86 (into `staging`, Adam's merge) holds the 1.2 spec, the 83 boards and TASKS-1.2.md; this session patches TASKS-1.2 for the build on staging (G46–G51, R1–R5, the staging process). Then: the data-model review, then the build (Adam's 1.2 sequence, steps 4–5).
