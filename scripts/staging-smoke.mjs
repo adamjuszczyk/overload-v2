@@ -10,7 +10,8 @@
 //      "weak_password" and creates nothing, so the probe never makes an account).
 //   2. The test account signs in.
 //   3. The seed is there: the account's saved programs, runs (one active),
-//      sessions and set logs, against supabase/seed.sql's shapes.
+//      sessions and set logs, against supabase/seed.sql's shapes; and none of
+//      the second synthetic account's rows are visible to it.
 //   4. pg-safeupdate behaves as in production: a DELETE with no WHERE, sent
 //      as the signed-in account, is rejected (Postgres 21000). It is aimed at
 //      v2_coach_notes, where the seed puts no rows, so even a wrongly accepted
@@ -76,7 +77,12 @@ async function main() {
     ['in-progress session', 'v2_sessions?select=id&status=eq.in_progress', (n) => n === 1],
     ['superset blocks', 'v2_program_superset_blocks?select=id', (n) => n > 0],
     ['old-table marks (pre-1.1 run)', 'v2_coach_meso_tag_priorities?select=id', (n) => n > 0],
-    ['rows owned by anyone else', `v2_set_logs?select=id&user_id=neq.${uid}`, (n) => n === 0],
+    // staging-other@example.com owns rows in each of these (seed.sql); the
+    // test account must see none of them.
+    ['other account\'s programs visible', `v2_programs?select=id&user_id=neq.${uid}`, (n) => n === 0],
+    ['other account\'s set logs visible', `v2_set_logs?select=id&user_id=neq.${uid}`, (n) => n === 0],
+    ['other account\'s exercises visible', `exercises?select=id&user_id=neq.${uid}`, (n) => n === 0],
+    ['other account\'s notes visible', `v2_coach_notes?select=id&user_id=neq.${uid}`, (n) => n === 0],
   ];
   for (const [name, path, ok] of shapes) {
     const n = await count(path);

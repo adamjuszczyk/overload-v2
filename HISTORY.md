@@ -24463,3 +24463,41 @@ Cost of deferral: n/a (blocking).
   migration goes live (merged, deploy succeeded) before the
   code that needs it.
 
+
+## 2026-10-14 staging setup, Adam's answers (117–120) — Moved out of DECISIONS.md and CONTEXT.md, word for word
+
+### From DECISIONS.md: 120, full text (answered 2026-10-14)
+### 120 Models for the 1.2 reviewer and builders
+**Ask:** which model (and effort) runs the 1.2 reviewer session, and which runs the builders?
+**Recommendation:** your choice (the build process leaves it to you). Facts for it: subagents can be pinned to a model here (probed 2026-10-14), and worktree isolation works.
+**Blocks:** the build.
+**Answer:**
+
+### From DECISIONS.md: 119, full text (answered 2026-10-14)
+### 119 Which database Vercel Preview deployments use
+**Ask:** set the Preview environment's `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_APP_ENV=staging` for **all** preview branches (not only `staging`) to the staging branch's values?
+**Recommendation:** yes. A builder's PR gets a Vercel preview of unreleased 1.2 code; with production's values it would run against real data if anyone signed in to it. With staging's values every preview is badged and synthetic.
+**Blocks:** nothing (safety). **Options:** (a) all preview branches use staging's values; (b) only `staging` does (116 (g) as written).
+**Evidence:** which values Preview uses today can't be read from here (vercel.com is blocked). Vercel applies a branch-specific value over the Preview value of the same name, so (a) is three more variables, Preview, no branch.
+
+### From DECISIONS.md: 118, full text (answered 2026-10-14)
+### 118 A second synthetic account on staging for verify-rls
+**Ask:** may the seed add a second account (`staging-other@example.com`, a random password nobody knows, never signed in) owning a few rows, so verify-rls run as the staging test account has foreign rows it must not see?
+**Recommendation:** yes. Today the seed puts everything on one account (your instruction), so on staging verify-rls's signed-in "foreign rows = 0" can't fail even if RLS broke (unreachable and passing look the same). The anon probe still works without it.
+**Blocks:** nothing.
+**Answer:**
+
+### From DECISIONS.md: 117, full text (answered 2026-10-14)
+### 117 How the reviewer's browser reaches the staging app
+**Ask:** which route past Vercel's login for the staging domain?
+**Recommendation:** (a) Protection Bypass for Automation: one secret, kept in this environment's secrets, sent as `x-vercel-protection-bypass` (Playwright: open the page once with `?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true`, or send the header on every request). Every other preview stays protected.
+**Options:** (a) the bypass secret; (b) turn Vercel Authentication off for the project (every preview deployment public; the repo is public anyway, but previews of builder branches would be too); (c) a Deployment Protection Exception for the staging domain (reported as Enterprise / paid add-on only).
+**Blocks:** the reviewer's live checks on staging (Escalation 1), so the build.
+**Evidence:** Vercel docs (read through search results; vercel.com is blocked from here): new projects get Standard Protection by default, which "protects all domains except production domains", including branch URLs and a domain assigned to a preview branch. Protection Bypass for Automation is listed as available on all plans (changelog "automation testing now available on all plans"); it bypasses Vercel Authentication and Password Protection. Not confirmed on this project's settings page; if the Create button isn't there on Hobby, (b) is the fallback.
+
+### From CONTEXT.md: Live checks (1.2), verify-rls line
+- `verify-rls` has a standing go-ahead; on staging it can't reach anyone else's data (run it with the staging URL/key and the staging test account as `RLS_TEST_*`; its foreign-row probe proves nothing there until a second account owns rows: DECISIONS 118).
+
+### From CONTEXT.md: Models line
+- Models (Adam chooses before the build): reviewer and builders — DECISIONS 120.
+
