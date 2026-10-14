@@ -1,12 +1,13 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-12, hotfix 041 (#85) waiting on your merge (115); before it the sync-queue order fix (#83, DECISIONS 114), which followed the fix session (B3–B6, Plan read-only; #72–#81, DECISIONS 111): code only, no migration, no data change. Before that, revision 1.1 was complete (chunks 27–35, migrations 038–040) with one known gap (106). The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. `staging` exists (from master `a3ffbe8`); the seed, guard, STAGING flag and 1.2 rules are merged into it. Next: your dashboard list (116) and four decisions; then I verify staging end to end. Each list is ordered by what it blocks.*
 
-Blocking:
-- **115** — merge #85 (migration 041): starting a run fails in production until it's deployed. check-migration flags it (create or replace function, grants, notify: the same as 034–040). Recommendation: merge; the bodies are 034/040's verbatim plus ` where true` on 7 temp-table deletes (diffed in the PR). After: read every `Supabase Preview` run on the merge commit, then start a run. Blocks: starting a run, and Plan's week planning and make-default wherever safeupdate applies.
-
-Decisions (provisional under D31: each is built as written unless you change it):
+Decisions:
+- **117** — How does the reviewer's browser get past Vercel's login on staging? Recommendation: Protection Bypass for Automation (Vercel Authentication stays on). Blocks: the reviewer's live checks on staging, so the build.
+- **120** — Which models for the 1.2 reviewer and builders? Recommendation: your choice; 1.1 ran builders as subagents at max effort in worktrees, which this environment still supports with a pinned model. Blocks: the build.
+- **119** — Point every Vercel Preview deployment, not only `staging`'s, at the staging database? Recommendation: yes. Blocks: nothing (safety).
+- **118** — A second synthetic account on staging so verify-rls's foreign-row probe can catch a leak there? Recommendation: yes. Blocks: nothing (the anon probe works without it).
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
 - **83** — the same exercise twice in one workout, for highlighting. Provisional: matched in order of position. Blocks: nothing.
 - **84** — how Plan knows a week started empty. Provisional: Settings → NEW WEEK STARTS is "empty" (week-dependent runs); exact would need a new column, which is yours to choose. Blocks: nothing.
@@ -23,54 +24,91 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **104** — how differences show. Provisional: a changed number cell gets an accent border/muted fill; an added set marks its number and reps (weight/RIR only if last week's set at that position differs or is missing; never on week 1); an added/moved exercise's header is accent on the muted band; a removed exercise is a dim struck-through line in STRUCTURE after the exercise it followed (a swap: old directly above new); a removed working set shows in SETS with what it held, a removed warmup/stage in STRUCTURE; a changed kind puts a dot on the set's ⋯; the unit isn't compared. On a stable run, a set the default has but last week lacks gets weight/RIR marked. Blocks: nothing.
 - **109** — chunk 33's wording and placement. Provisional: START disabled with "Schedule at least one workout to start" under it (planner, and the Programs sheet's START RUN; the row's START still opens the sheet); Plan: "NO WORKOUTS SCHEDULED" + "Programs →"; deload line "Deload rules (this run's | your default): …" under the deload button (also when it reads UNMARK; none on a past week); refusal "THIS PROGRAM IS A RUN'S COPY" with "← Back to programs". Blocks: nothing.
 - **110** — two program-tab conveniences have no one-to-one equivalent in Plan: one-tap ALL SETS rep target, and turning an existing set into a warmup (the per-row WARMUP toggle was already dropped from the week on 2026-10-10). Both outcomes stay reachable per set (or delete + ADD WARMUP SETS), then Make default. Provisional: leave as is. Blocks: nothing.
-
 - **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
 
 To-dos:
-- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) The docs-only merge that carries these notes is the first push under the new `ignoreCommand`: Vercel should show it skipped if the code before it deployed. (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
-- **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
+- **116** — Set up staging in the dashboards: the steps (a)–(k) in entry 116, with the values to enter. When: now. Blocks: staging's database, app and checks, so the 1.2 build.
+- **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
+- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
+- **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
+
+## For the release
+*Every migration `check-migration` flags during the 1.2 build, one line each (number, PR, what it flags). At the release Adam gets one blocking decision covering all of them (CONTEXT.md, "Staging and the 1.2 build").*
+
+Nothing yet.
 
 ## Format for all new entries
 
-An open entry starts with the ask; the reasoning comes after it, under "Evidence".
+Every entry opens with the ask and a recommendation; evidence comes after it, short.
 
 ```
 ### [n] [One-line summary]
-Severity: blocking | deferred
-Chunk: [n]
 **Ask:** [the question or task, in plain words]
+**Recommendation:** [mine, and why in one line] — for a to-do: **When:** [e.g. now, before the release]
+**Blocks:** [what stops until it's answered or done; "nothing" if nothing]
 **Options:** [each option, one line] — decisions only
-**Recommendation:** [mine, and why in one line] — decisions only
-**When:** [e.g. next session] — to-dos only
-**Blocked until answered/done:** [what stops]
 **Answer:** [Adam's]
-**Evidence:**
-What happened: [the situation, with full reasoning]
-A competent default would: [what anything competent would have
-  just done here] — doesn't apply because: [why this is a real
-  decision and not a default]
-Cost of deferral: [what gets redone if the answer goes against
-  the provisional path] — blocking entries: n/a
+**Evidence:** [what happened and why this isn't a default anyone competent would just take; for deferred decisions, what gets redone if the answer goes against the provisional path]
 ```
 
-Deferred is only allowed when the work can continue without committing to the answer. If continuing means guessing at something expensive to undo, it's blocking.
+Blocking vs deferred: an entry is blocking when continuing means guessing at something expensive to undo; otherwise it is deferred and the work continues on the recommendation. Entries written before 2026-10-14 keep the older layout (Severity, Chunk, Ask, Options, Recommendation, …, Evidence); it carries the same information.
 
-When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
+When an entry is answered or done, it shrinks to three lines (what, answer, date) and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. "Waiting on Adam" is rewritten at every boundary; if both lists are empty it says "Nothing."
 
 ## Open
 
-### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
-Severity: blocking
-Chunk: hotfix
-**Ask:** merge #85. Merging deploys 041.
-**Options:** merge as is / ask for changes.
-**Recommendation:** merge. Each function body is its latest definition (034, 040, 040) with only ` where true` added to its bare `delete from tmp_...;` (4 + 1 + 2), proven by a run diff in the PR; same grants and the schema reload.
-**Blocked until answered/done:** starting a new run in production.
+### 121 Before the release: prove production's migration history
+**Ask:** run, from your worktree `overload-v2-switch` on an up-to-date `master`: `npx --yes supabase@2.119.0 migration list --linked` and paste the output here. Expected: every version `000`–`041` in both the Local and Remote columns, nothing local-only.
+**Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
+**Blocks:** the release's migrations-first PR to master.
+**Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
+
+### 120 Models for the 1.2 reviewer and builders
+**Ask:** which model (and effort) runs the 1.2 reviewer session, and which runs the builders?
+**Recommendation:** your choice (the build process leaves it to you). Facts for it: subagents can be pinned to a model here (probed 2026-10-14), and worktree isolation works.
+**Blocks:** the build.
 **Answer:**
-**Evidence:**
-What happened: Adam saw "DELETE requires a WHERE clause" from `v2_start_run` in the Supabase Postgres log. pg-safeupdate rejects DELETE/UPDATE without WHERE on API requests; `v2_copy_program` clears four temp tables with bare deletes. A scan of every function's latest definition (5 functions: 021 `reassign_exercise_history`, 028 `v2_start_run`, 034 `v2_copy_program`, 040 `v2_plan_week`, `v2_make_week_default`) found 7 bare DELETEs, no bare UPDATE, all in the three re-created. `check-migration`: exit 1 (flagged, the same statement kinds as 034–040; script unchanged); `check-migration-order`: OK. Not done: a local replay with safeupdate loaded (image pull refused: Docker Hub 429, ECR data limit); CI's `migration-replay` applies the file but doesn't load safeupdate.
-A competent default would: merge it at once — doesn't apply because: check-migration flags it, so the merge is Adam's (Escalation 8), and merging deploys.
-Cost of deferral: n/a (blocking).
+
+### 119 Which database Vercel Preview deployments use
+**Ask:** set the Preview environment's `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and `VITE_APP_ENV=staging` for **all** preview branches (not only `staging`) to the staging branch's values?
+**Recommendation:** yes. A builder's PR gets a Vercel preview of unreleased 1.2 code; with production's values it would run against real data if anyone signed in to it. With staging's values every preview is badged and synthetic.
+**Blocks:** nothing (safety). **Options:** (a) all preview branches use staging's values; (b) only `staging` does (116 (g) as written).
+**Evidence:** which values Preview uses today can't be read from here (vercel.com is blocked). Vercel applies a branch-specific value over the Preview value of the same name, so (a) is three more variables, Preview, no branch.
+
+### 118 A second synthetic account on staging for verify-rls
+**Ask:** may the seed add a second account (`staging-other@example.com`, a random password nobody knows, never signed in) owning a few rows, so verify-rls run as the staging test account has foreign rows it must not see?
+**Recommendation:** yes. Today the seed puts everything on one account (your instruction), so on staging verify-rls's signed-in "foreign rows = 0" can't fail even if RLS broke (unreachable and passing look the same). The anon probe still works without it.
+**Blocks:** nothing.
+**Answer:**
+
+### 117 How the reviewer's browser reaches the staging app
+**Ask:** which route past Vercel's login for the staging domain?
+**Recommendation:** (a) Protection Bypass for Automation: one secret, kept in this environment's secrets, sent as `x-vercel-protection-bypass` (Playwright: open the page once with `?x-vercel-protection-bypass=<secret>&x-vercel-set-bypass-cookie=true`, or send the header on every request). Every other preview stays protected.
+**Options:** (a) the bypass secret; (b) turn Vercel Authentication off for the project (every preview deployment public; the repo is public anyway, but previews of builder branches would be too); (c) a Deployment Protection Exception for the staging domain (reported as Enterprise / paid add-on only).
+**Blocks:** the reviewer's live checks on staging (Escalation 1), so the build.
+**Evidence:** Vercel docs (read through search results; vercel.com is blocked from here): new projects get Standard Protection by default, which "protects all domains except production domains", including branch URLs and a domain assigned to a preview branch. Protection Bypass for Automation is listed as available on all plans (changelog "automation testing now available on all plans"); it bypasses Vercel Authentication and Password Protection. Not confirmed on this project's settings page; if the Create button isn't there on Hobby, (b) is the fallback.
+
+### 116 Set up staging in the dashboards (Adam's list)
+**Ask:** the steps below, in order; each is one dashboard step with the values to enter. Then tell me "the list is done".
+**Recommendation:** all of them now. **When:** now. Values in `<…>` come from an earlier step.
+**Blocks:** everything on staging: its database, app, checks and the 1.2 build.
+- **(a) Supabase branch.** Supabase dashboard → org "business" → project Overload → branch dropdown in the top bar → **Create branch**: name `staging`; **Sync with Git branch** `staging`; **Include data** off → Create. Then **Branches** → `staging` → ⋯ → **Switch to persistent** → confirm. (If Create branch is missing: avatar menu → Feature previews → "Branching via dashboard" → Enable.) It builds from migrations `000`–`041`; no seed yet (that waits for my config change after (j)). Cost: Micro compute, about $0.0134/hour (~$10/month), not covered by the spend cap.
+- **(b) Sign-ups off on the branch only.** Switch the dashboard to branch `staging` → Authentication → Sign In / Providers → **Allow new users to sign up**: off → Save. (Production is not touched; my config change keeps it off on every deploy.)
+- **(c) The staging test account.** Still on branch `staging` → Authentication → Users → **Add user → Create new user**: Email `staging-test@example.com`; Password: a new random password of 20+ characters from your password manager (used nowhere else); **Auto Confirm User** ticked → Create user. Do this before (k): the seed attaches its data to this account and keeps its password.
+- **(d) The branch's API values.** Still on branch `staging` → Project Settings → API (Data API / API keys): note the Project URL `https://<branch-ref>.supabase.co` and the **anon** (publishable) key. Never the service-role key.
+- **(e) This cloud environment's secrets.** Claude Code session title bar → environment menu → Edit → environment variables (Network secrets where offered): `STAGING_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `STAGING_SUPABASE_ANON_KEY` = `<anon key>`; `STAGING_TEST_PASSWORD` = the password from (c); `VERCEL_AUTOMATION_BYPASS_SECRET` = the secret from (i) (if 117 is (a)). New sessions pick them up, so step 6 runs in a new session.
+- **(f) This cloud environment's network allowlist.** Same Edit screen → Network access → Allowed domains, "Allow package managers" left ticked: add `overload-v2-staging.vercel.app` and `<branch-ref>.supabase.co`. Optional, same screen → Setup script: `npm ci` (fresh containers have no `node_modules`).
+- **(g) Vercel env vars for `staging`.** Vercel → project overload-v2 → Settings → Environment Variables → Add, Environment **Preview** only, Git branch **`staging`**: `VITE_SUPABASE_URL` = `https://<branch-ref>.supabase.co`; `VITE_SUPABASE_ANON_KEY` = `<anon key>`; `VITE_APP_ENV` = `staging`. Production's variables untouched. (If 119 is yes: the same three again for Preview with no branch.)
+- **(h) Vercel domain for `staging`.** Vercel → overload-v2 → Settings → Domains → Add `overload-v2-staging.vercel.app` → environment **Preview**, Git branch **`staging`** → Save. (If Vercel refuses that name, take the one it offers and put it in (f) instead.)
+- **(i) Vercel bypass secret** (if 117 is (a)). Vercel → overload-v2 → Settings → Deployment Protection → Protection Bypass for Automation → Create → copy it into (e). Vercel Authentication stays on.
+- **(j) A ruleset for `staging` matching master's.** GitHub → adamjuszczyk/overload-v2 → Settings → Rules → Rulesets → New branch ruleset: name `staging protection`; Enforcement **Active**; Target branches → Add target → Include by pattern `staging`; tick **Restrict deletions**, **Block force pushes**, **Require a pull request before merging** (required approvals 0; allowed merge methods Merge and Squash), **Require status checks to pass** → Add checks → `migration-replay` (GitHub Actions); Bypass list: Repository admin (as master's "master needs migration-replay") → Create. (Master's two rulesets hold exactly these rules between them; read 2026-10-14.)
+- **(k) Then tell me "the list is done".** I add `[remotes.staging]` to `supabase/config.toml` (the branch ref, seed on, sign-ups off, the staging site URL) in a PR into `staging`. Its merge is the first push that should deploy config and seed to the branch; it also shows whether pushes deploy with Automatic branching off. Then I verify staging end to end (step 6) and report each result.
+**Evidence:** Supabase docs (read from the docs source on GitHub; supabase.com is blocked from here): a persistent branch linked to a git branch runs "the same deployment workflow … on every commit pushed to your git branch"; Automatic branching only creates branches for new git branches/PRs, so with it off nothing else gets billed. The docs don't say outright that a linked branch deploys with Automatic branching off; (k)'s merge is the test, and if it doesn't deploy, the fallback is a decision (Automatic branching on with "Supabase changes only", which bills a branch per PR touching `supabase/`, or a GitHub Action running `supabase db push` with a database-password secret). Persistent branches, production included, skip seed and `[auth]` config unless a `[remotes.<name>]` block names their ref; production deploys never seed. A branch is built from the migrations, not cloned: its Postgres version may be newer than production's (the API defaults to the latest) and is checked in step 6. Northstar's tables aren't in the migration history, so they don't exist on staging.
+
+### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
+- What: 041 re-creates `v2_copy_program`, `v2_plan_week`, `v2_make_week_default` with ` where true` on 7 bare temp-table deletes that pg-safeupdate rejected.
+- Answer: merged by Adam (#85, `6e5f654`); `Supabase Preview` success on the merge commit (2026-10-12). Full text in HISTORY.md.
+- Date: 2026-10-12
 
 ### 114 Sync queue: writes to the same record keep their order (#83)
 - What: the open item from the fix session. A failed queued write no longer lets later writes to the same record overtake it: it holds back every later write to that record until it succeeds; a set log is also held behind its session row and a stage behind its head (they would only fail on the foreign key); other records still go. Retry limit 5 failed passes (was 3; one attempt per flush pass: reconnect, app start, finish, retry tap). After that the write stops retrying but stays queued (`gaveUp`, never deleted, was dropped before) and `SyncFailedNotice` shows "N changes couldn't sync. Tap to retry." on its session's workout, finished and History screens, `/coach` for a note with no session; reloaded on app start.

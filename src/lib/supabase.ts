@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { APP_ENV, assertStagingNotOnProduction } from './appEnv'
 
 // Strip any invisible/non-ASCII characters (BOM, zero-width spaces, etc.) that
 // can be accidentally introduced when copy-pasting values into a hosting dashboard.
@@ -16,5 +17,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
     'Missing Supabase env vars. Copy .env.example to .env.local and fill in your project values.',
   )
 }
+
+assertStagingNotOnProduction(APP_ENV, supabaseUrl)
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)

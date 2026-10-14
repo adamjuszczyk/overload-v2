@@ -24290,3 +24290,176 @@ Same-record order (#83): a failed write holds back later writes to its record (a
 
 ## 2026-10-14 — Supabase integration check
 - 2026-10-14: docs-only merge to master after the project moved to the "business" org and its GitHub integration was reconnected (Automatic branching off, Deploy to production on), to see what the integration reports on a merge.
+
+## 2026-10-14 staging setup — Moved out of CONTEXT.md (no longer true, or superseded for 1.2 by Adam's staging build process), word for word
+
+### From CONTEXT.md: What this is
+Phase 1 of the Overload Planner Extension (the [P1] items in SPEC.md) is built and closed out (2026-10-09). SPEC change 1.1 (2026-10-10, from the phase 1 review; [P1.1] in SPEC.md, planned in TASKS-1.1.md chunks 27–35) is **built and live (2026-10-11): all nine chunks and migrations 038–040 merged**, with one known gap: no "Apply this change to planned weeks ahead" after "Make this week the new default" (DECISIONS 106). Rest, tempo, the warmup routine and grouping are run-wide; per-week storage is a later revision (TASKS-1.1 appendix). Display-only choices are provisional under D31. 1.1 live checks are Adam's (this container can't reach the app). Phase 2 and SPEC's "Later" list are not being done.
+
+### From CONTEXT.md: Where the build is (revision 1.1 build and SPEC change 1.1)
+- **Revision 1.1 build (started 2026-10-10; TASKS-1.1 chunks 27–35; reviewer session, builders are subagents on Sonnet at max effort in isolated worktrees):**
+  - **Merged and live (PRs #60–#70; one DECISIONS entry each: 89, 92, 93, 96, 97, 100, 101, 103, 107, 108):** 27 "only this week" removed; 28 priorities view-only; 29 SETS / STRUCTURE; 30 run-wide fields in STRUCTURE; 31 highlighting; 34 stable weight pairing (039); 35 sequence current cycle. State is under What exists.
+  - **32** "Make this week the new default": migration 040 (#66; DECISIONS 100) and code (#69; 105–107) merged; **no apply-ahead offer after it (known gap 106)**. State: Plan / Program → "Make default".
+  - **33** program tab removed (#70 `a75d681`, merged by Adam; DECISIONS 108, provisional 109): planner refuses a run's copy; every START needs a schedule (`hasSchedule.ts`); Plan's no-schedule line; the deload rules in effect under the deload action. **Revision 1.1 is complete.**
+- **SPEC change 1.1 (2026-10-10):** SPEC.md [P1.1] (change `ac48b66` plus Adam's answers to G16–G45); planned in `TASKS-1.1.md` (chunks 27–35, migrations 038–040; per-week structure is its appendix). Rest, tempo, the warmup routine and grouping stay run-wide (Structure view, chunk 30). Display-only choices are provisional under D31. D29 covers 038–040.
+  - **Step 5 checklist:** generate it from SPEC.md as is; every [P1.1] rule is built except the apply-ahead offer after making the default (DECISIONS 106).
+
+### From CONTEXT.md: Where the build is (verify-rls)
+- `verify-rls.mjs` last run 2026-10-09 on 30 tables (DECISIONS 74: no leak); owner-aware since #53. Each run needs Adam's go-ahead.
+
+### From CONTEXT.md: Repo facts (Supabase integration, before the org move)
+- Supabase deploys migrations from main: yes — Supabase's GitHub integration on project `imhsawrghteqsmpklofv`, production branch `master`, working directory `.`, **Deploy to production on**, automatic branching off (Free plan: no preview branches). Every push to master runs a production deploy that applies the files in `supabase/migrations` not yet in `supabase_migrations.schema_migrations`, in order. Switched 2026-10-04 (`MIGRATION-SWITCH.md`): `000_v1_baseline.sql` (Overload v1's six tables as before 001) + 001–026 replay to the live schema (Northstar/Atlas excluded), and production's history lists `000`–`026` as applied.
+
+### From CONTEXT.md: Repo facts (ignoreCommand)
+- `vercel.json` `ignoreCommand` (166 characters; limit 256; D28, B4 #81): `test -n "$VERCEL_GIT_PREVIOUS_SHA" && git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null && git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- . ':(exclude)*.md'`. It skips the build only when nothing but `.md` files changed since the last deployed commit; an empty variable or a SHA outside the shallow clone builds. `scripts/vercel-ignore.test.mjs` runs it in throwaway repos. Not yet seen on a real push (Adam's check).
+
+### From CONTEXT.md: Repo facts (standing answers and migration flow, superseded for 1.2 by the staging build)
+- Standing answers for this build (Adam, 2026-10-03; DECISIONS.md 30–32):
+  - The reviewer may push any `build/chunk-N` branch, and opens a PR to master for each finished chunk; if the reviewer can't merge it, Adam merges it. A chunk with a migration follows the migration flow above.
+  - `verify-rls.mjs` still needs a go-ahead before every run.
+  - **Display-only edge cases (Adam, 2026-10-10; DECISIONS D31):** take the simplest option consistent with SPEC, record it as a provisional decision in DECISIONS.md's "Waiting on Adam", and continue. Stop only for something that changes data or behaviour.
+- **Migration flow** (automatic deploys; Adam, 2026-10-04):
+  - Additive migrations that `scripts/check-migration.mjs` passes are merged by the reviewer without Adam, once the PR's `migration-replay` check is green.
+  - Anything it flags, plus any new policy on an existing table, comes to Adam as a blocking DECISIONS.md entry, and the merge is his.
+  - A chunk with both a migration and code: merge the migration on its own first, wait for the production database deploy on master to succeed, then merge the code. A failed deploy is blocking, and the code is not merged.
+  - After merging any migration, the reviewer checks the production deploy on master (see "Where a production deploy's result shows"). A failed deploy is a blocking DECISIONS.md entry and stops the build.
+  - A green replay (or preview) proves the migration runs, not that real data survives it.
+  - Live before/after counts (Adam, standing): he runs `scripts/live-counts.sql` before and after **only** for migrations that change or remove existing data. Add-only migrations are proven by `migration-replay` plus the reviewer's scratch-copy check (row counts and per-row md5 fingerprints unchanged).
+  - Every PR's required `migration-replay` check also runs `bash scripts/check-embeds-local.sh` (PR #20, 2026-10-04; first GitHub run resolved 25/25), so every app embed must still resolve through PostgREST on the replayed schema before anything merges. After its deploy: `node scripts/check-embeds.mjs` live. A new FK between two tables that already have one makes every un-hinted embed between them ambiguous (`PGRST201`) — hint them (`table!fkey_name(…)`) in the same change (027 → DECISIONS 38).
+  - Migrations are forward-only: never edit one that has been applied; fix forward with a new file.
+  - Never apply a migration by hand: the next deploy would run it again. If an emergency hand-apply ever happens, follow it at once with `npx --yes supabase@2.119.0 migration repair --linked --status applied <version>` from a checkout holding that exact file (Adam). Never run `migration repair` without a version list (it wipes the history).
+  - Ruleset on master requiring `migration-replay`: **yes** (Adam, 2026-10-04, C8). Branch ruleset `master needs migration-replay` on the default branch, "Require status checks to pass" with `migration-replay` (GitHub Actions); steps and reversal in `MIGRATION-SWITCH.md` section 7. No PR merges into master with that check red or missing.
+
+### From CONTEXT.md: Escalation 1
+1. **Live verification is required and browser tooling is unavailable.** Probe it before starting the build (`requestAnimationFrame` probe or a real navigation — never assume from a prior session). Same weight as a failing test. Only exception: Adam, in-session, told plainly what won't be verified, overrides it for that step.
+
+### From CONTEXT.md: Escalation 8
+8. **`node scripts/check-migration.mjs` exits 1 or 2:** don't merge; the merge is Adam's, with a blocking DECISIONS.md entry.
+
+### From CONTEXT.md: Escalation 12
+12. Any migration scripts/check-migration flags. Every
+
+### From CONTEXT.md: Escalation 12 (second line)
+   destructive one is flagged.
+
+### From CONTEXT.md: Escalation 15
+15. A failed production database deploy after any merge.
+
+### From CONTEXT.md: Escalation 17
+17. Any live check that writes (a throwaway program, run, session or set).
+
+### From CONTEXT.md: Escalation 18
+18. Any run of `scripts/verify-rls.mjs`.
+
+### From CONTEXT.md: Reviewer's own rules (boundary rule)
+- At every chunk boundary: update this file, move anything no
+  longer true into HISTORY.md, then compact. Rules discovered
+  during this build are never pruned — they don't stop being
+  true.
+
+### From CONTEXT.md: Rules discovered (network policy)
+- The cloud environment's network policy denies `overload-v2-sage.vercel.app` (403 to CONNECT; Chromium `ERR_TUNNEL_CONNECTION_FAILED`, probed 2026-10-03); the Supabase host is reachable. Live-app checks can't run from this container (DECISIONS.md 31); Adam does the live checks.
+### From CONTEXT.md: Tooling (verify-rls)
+- `scripts/verify-rls.mjs` — committed RLS check (needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `RLS_TEST_EMAIL`, `RLS_TEST_PASSWORD`; never Adam's account): anon select per table in `TABLES` (any row = LEAK, except `PUBLIC_BY_DESIGN`) plus head-only total and foreign counts as the test account (foreign > 0 = LEAK). Prints no row contents. **New tables must be added to `TABLES`.** Last run 2026-10-09 (30 tables, no leak — DECISIONS 74). Each run needs Adam's go-ahead.
+
+### From CONTEXT.md: Tooling (scripts list)
+- `scripts/`: `check-context-size.mjs` (CONTEXT.md ≤ 75 KB), `check-migration.mjs` + `migration-rules.mjs` (safe-list classifier, tested by `migration-rules.test.mjs`), `gen-icons.mjs`, `verify-rls.mjs` + `verify-rls-tables.test.mjs` (below). `transport-collapse.mjs` + `transport-collapse.test.mjs` (below), `check-frozen-code.mjs` + test (below), and the migration-switch scripts (below): `replay-migrations.sh`, `schema-snapshot.sql`, `compare-schema.mjs` + test, `schema-compare-exclude.txt`, `check-migration-order.mjs` + test, `live-counts.sql`. Run the tests with `node --test "scripts/*.test.mjs"` (141 on master `320a6b0`+#81, including `vercel-ignore.test.mjs`; not part of `npm test`, which is Vitest over `src/`).
+
+### From CONTEXT.md: Tooling (Vitest count)
+- Vitest (node env; component tests opt into jsdom per file); 2369 tests in 176 files pass on master after #83 (2026-10-11). Pure logic lives in testable modules (`setGroupLogic`, `referenceLogic`, `e1rm`, `positionMatch`, `weightUnit`, `qa*`, `*Input`).
+
+### From CONTEXT.md: Where the build is (fixes after 1.1)
+- **2026-10-10 bug fixes:** B2 (#55: MOVE offers only today and later) and B1 (#54: REDO SESSION removed, DECISIONS 78). Open: DECISIONS 79.
+- **2026-10-11 fix session (live-app bugs, no features):** B3–B6, Plan read-only, sync-queue order, all code only (#72–#84; DECISIONS 111, 112, 114). Live checks are Adam's (113).
+- **2026-10-12 hotfix (DECISIONS 115):** starting a run failed under pg-safeupdate (rule below). 041 (#85, Adam's merge) re-creates `v2_copy_program`, `v2_plan_week`, `v2_make_week_default` verbatim plus ` where true` on their 7 bare deletes.
+
+### From CONTEXT.md: What exists → Sequence runs (chunk 25), full line (still true)
+- Sequence runs (chunk 25): planner step 2 sets WEEKDAY/SEQUENCE and edits `v2_program_sequence_items` (workout and rest slots; a workout may repeat). 037: `v2_week_plans` unique on `(mesocycle_id, workout_day_id, week_number, sequence_position) nulls not distinct`; `v2_plan_week` plans one row per slot (weekday rows keep `sequence_position` null). Cycles are week plans (`week_number` = cycle). `sequenceSchedule.ts` (pure): next slot after the last done or skipped; rests counted from the last done; Train anyway drops remaining rests; Skip makes the next due the same day; repeated workouts resolve by position. Today (`SequenceTodayPage`): next workout and due date, TRAIN ANYWAY, SKIP. Plan: `SequenceSlotSwitcher` (SLOT n), each slot its own row by `(workout_day_id, sequence_position)`; Cycle n labels; MARK CYCLE AS DELOAD; per-slot copy, apply-ahead and deload base. **Every slot-position wiring has a test where the wrong slot changes the result** (chunk 25's review). **Current cycle (chunk 35):** Plan's current cycle on a sequence run is the next due slot's cycle (`resolveNextSlot(items, lastEvent).next.weekNumber`, `sequenceLastEvent.ts` shared with Today; 1 with no workout); it drives the opening view, marker, read-only gates and auto-planning. `PlanPage` is a wrapper: spinner while the programs read is out; a sequence run waits in `SequencePlanPage` for the sequence, week plans and last event; a failed read with nothing to show → "COULDN'T LOAD PLAN" (provisional 95); weekday runs render `PlanScreen` on the calendar week.
+
+### From CONTEXT.md: What exists → Moving sessions (chunk 24), full line (still true)
+- Moving sessions (chunk 24, weekday runs): `scheduler.ts` due today = `moved_to_date ?? date` equals today (moved away excluded, moved here included); several sessions a day listed on Today; missed-session prompt is current-week only, its DO IT NOW keeps `date` and sets `moved_to_date` = today (works offline). MOVE THIS SESSION (Today; Plan for the current week) creates or updates one `planned` row per slot (moving back deletes it); started sessions can't move; disabled offline. Starting a moved-here session updates its row (offline via the sync queue). **Only today and later days are offered (B2, 2026-10-10):** `moveSession.ts` `movableDatesForWeekOf(anchor, today)` (the days of the session's original week from today on) and `resolveMove(original, target, today)` → `invalid_cross_week | invalid_past | clear | set` (moving back to an original day that has passed is `invalid_past`); `MoveSessionSheet` takes a required `today` ("NO DAYS LEFT THIS WEEK" when none); Plan's `MoveSessionControl` gets it from `PlanPage` (`useToday`). A `planned` row moved to a past day before B2 hides that day's own session on Today until it is moved back or deleted. History shows `moved_to_date ?? date` (list, detail, session-type history; bounded per-page lookups); the week a session belongs to still comes from `date`. 036 set the legacy L4 session's `moved_to_date`.
+
+
+## 2026-10-14 staging setup — Moved out of DECISIONS.md (restructured: Waiting on Adam, For the release, entries), word for word
+
+### From DECISIONS.md: the previous "Waiting on Adam" and entry format
+## Waiting on Adam
+*Rewritten at every chunk boundary. Last: 2026-10-12, hotfix 041 (#85) waiting on your merge (115); before it the sync-queue order fix (#83, DECISIONS 114), which followed the fix session (B3–B6, Plan read-only; #72–#81, DECISIONS 111): code only, no migration, no data change. Before that, revision 1.1 was complete (chunks 27–35, migrations 038–040) with one known gap (106). The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+
+Blocking:
+- **115** — merge #85 (migration 041): starting a run fails in production until it's deployed. check-migration flags it (create or replace function, grants, notify: the same as 034–040). Recommendation: merge; the bodies are 034/040's verbatim plus ` where true` on 7 temp-table deletes (diffed in the PR). After: read every `Supabase Preview` run on the merge commit, then start a run. Blocks: starting a run, and Plan's week planning and make-default wherever safeupdate applies.
+
+Decisions (provisional under D31: each is built as written unless you change it):
+- **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
+- **83** — the same exercise twice in one workout, for highlighting. Provisional: matched in order of position. Blocks: nothing.
+- **84** — how Plan knows a week started empty. Provisional: Settings → NEW WEEK STARTS is "empty" (week-dependent runs); exact would need a new column, which is yours to choose. Blocks: nothing.
+- **85** — START when the program has no schedule. Provisional: disabled, with a one-line reason. Blocks: nothing.
+- **86** — Plan for a run with no schedule. Provisional: "NO WORKOUTS SCHEDULED" and "Programs →". Blocks: nothing.
+- **87** — the deload rules in Plan. Provisional: one read-only line under MARK WEEK AS DELOAD. Blocks: nothing.
+- **90** — after START on the Programs page, the app still opens the run's priorities, now read-only. Provisional: leave it (it shows what the run copied); alternative: open Plan. Blocks: nothing.
+- **91** — how marks show in Plan's priorities. Provisional: a small accent label on the row only where a mark is stored; a subgroup that only inherits its group's mark shows nothing. Blocks: nothing.
+- **94** — Plan while its reads are out. Provisional: the existing spinner until the programs read (and, on a sequence run, the sequence, week plans and last event) answer; weekday runs also wait for programs now. Blocks: nothing.
+- **95** — Plan when a read fails with nothing to show. Provisional: "COULDN'T LOAD PLAN" / "Check your connection and try again." (the priorities screen's error markup); nothing is planned. Blocks: nothing.
+- **98** — Plan's SETS / STRUCTURE details. Provisional: opens on SETS; the choice is kept across week/workout switches, not across reloads; a STRUCTURE set row shows number, kind marker and ⋯ only; a stage row has no ⋯ in SETS; an empty workout's SETS view says "NO EXERCISES IN THIS DAY" (add from STRUCTURE). Blocks: nothing.
+- **99** — "Make this week the new default": does an empty (non-deload) session count as the week's content? Provisional: no — skipped like a deload, so that workout keeps its current default (matches how copying skips empty weeks). Changes data, so say if you want the other reading; nothing has used the action yet. Blocks: nothing.
+- **102** — how run-wide fields show in STRUCTURE. Provisional: tag-style chips under the exercise or set where set (`REST 2min 45s`, `TEMPO 3-1-1-0`, `UNIT LBS` only when it differs from Settings, `STAGE REST 20s`); one EVERY WEEK label over each group; exercise ⋯ order swap/move/warmups, EVERY WEEK group, UNIT, remove; the routine as a card above the exercises (text-only on a past week, absent if empty). Blocks: nothing.
+- **104** — how differences show. Provisional: a changed number cell gets an accent border/muted fill; an added set marks its number and reps (weight/RIR only if last week's set at that position differs or is missing; never on week 1); an added/moved exercise's header is accent on the muted band; a removed exercise is a dim struck-through line in STRUCTURE after the exercise it followed (a swap: old directly above new); a removed working set shows in SETS with what it held, a removed warmup/stage in STRUCTURE; a changed kind puts a dot on the set's ⋯; the unit isn't compared. On a stable run, a set the default has but last week lacks gets weight/RIR marked. Blocks: nothing.
+- **109** — chunk 33's wording and placement. Provisional: START disabled with "Schedule at least one workout to start" under it (planner, and the Programs sheet's START RUN; the row's START still opens the sheet); Plan: "NO WORKOUTS SCHEDULED" + "Programs →"; deload line "Deload rules (this run's | your default): …" under the deload button (also when it reads UNMARK; none on a past week); refusal "THIS PROGRAM IS A RUN'S COPY" with "← Back to programs". Blocks: nothing.
+- **110** — two program-tab conveniences have no one-to-one equivalent in Plan: one-tap ALL SETS rep target, and turning an existing set into a warmup (the per-row WARMUP toggle was already dropped from the week on 2026-10-10). Both outcomes stay reachable per set (or delete + ADD WARMUP SETS), then Make default. Provisional: leave as is. Blocks: nothing.
+
+- **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
+
+To-dos:
+- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) The docs-only merge that carries these notes is the first push under the new `ignoreCommand`: Vercel should show it skipped if the code before it deployed. (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
+- **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
+
+## Format for all new entries
+
+An open entry starts with the ask; the reasoning comes after it, under "Evidence".
+
+```
+### [n] [One-line summary]
+Severity: blocking | deferred
+Chunk: [n]
+**Ask:** [the question or task, in plain words]
+**Options:** [each option, one line] — decisions only
+**Recommendation:** [mine, and why in one line] — decisions only
+**When:** [e.g. next session] — to-dos only
+**Blocked until answered/done:** [what stops]
+**Answer:** [Adam's]
+**Evidence:**
+What happened: [the situation, with full reasoning]
+A competent default would: [what anything competent would have
+  just done here] — doesn't apply because: [why this is a real
+  decision and not a default]
+Cost of deferral: [what gets redone if the answer goes against
+  the provisional path] — blocking entries: n/a
+```
+
+Deferred is only allowed when the work can continue without committing to the answer. If continuing means guessing at something expensive to undo, it's blocking.
+
+When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
+
+### From DECISIONS.md: 115, full text (closed: merged by Adam, #85)
+### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
+Severity: blocking
+Chunk: hotfix
+**Ask:** merge #85. Merging deploys 041.
+**Options:** merge as is / ask for changes.
+**Recommendation:** merge. Each function body is its latest definition (034, 040, 040) with only ` where true` added to its bare `delete from tmp_...;` (4 + 1 + 2), proven by a run diff in the PR; same grants and the schema reload.
+**Blocked until answered/done:** starting a new run in production.
+**Answer:**
+**Evidence:**
+What happened: Adam saw "DELETE requires a WHERE clause" from `v2_start_run` in the Supabase Postgres log. pg-safeupdate rejects DELETE/UPDATE without WHERE on API requests; `v2_copy_program` clears four temp tables with bare deletes. A scan of every function's latest definition (5 functions: 021 `reassign_exercise_history`, 028 `v2_start_run`, 034 `v2_copy_program`, 040 `v2_plan_week`, `v2_make_week_default`) found 7 bare DELETEs, no bare UPDATE, all in the three re-created. `check-migration`: exit 1 (flagged, the same statement kinds as 034–040; script unchanged); `check-migration-order`: OK. Not done: a local replay with safeupdate loaded (image pull refused: Docker Hub 429, ECR data limit); CI's `migration-replay` applies the file but doesn't load safeupdate.
+A competent default would: merge it at once — doesn't apply because: check-migration flags it, so the merge is Adam's (Escalation 8), and merging deploys.
+Cost of deferral: n/a (blocking).
+### From CONTEXT.md: Repo facts (file layout, DECISIONS.md structure before 2026-10-14)
+- File layout: CONTEXT.md is current state only, ≤ 75 KB, enforced by `scripts/check-context-size.mjs`; HISTORY.md is the prior CONTEXT.md verbatim plus everything moved out of this file later. DECISIONS.md (restructured 2026-10-04 at Adam's instruction): "Waiting on Adam" at the top (Decisions and To-dos, one line each: number, plain-words ask, recommendation or when, what's blocked; "Nothing." if empty) — **rewritten at every chunk boundary**; then the entry format (ask first, reasoning under "Evidence"); "Open" entries; "Closed" entries shrunk to three lines (what, answer, date) with their full text moved to HISTORY.md; superseded procedures go straight to HISTORY.md; D1–D28 under "Settled decisions" at the bottom, unchanged.
+
+### From CONTEXT.md: Reviewer's own rules (migrations bullet)
+- Migrations follow the migration flow in Repo facts:
+  additive ones that check-migration passes merge once
+  `migration-replay` is green; everything else is mine. A
+  migration goes live (merged, deploy succeeded) before the
+  code that needs it.
+
