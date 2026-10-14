@@ -134,10 +134,14 @@ describe('captureRender: where it writes by default', () => {
     const existedBefore = existsSync(fixtures)
     const { container } = render(<Demo />)
     const expected = join(fixtures, 'capturerender-selftest.html')
+    let written: string | null = null
     try {
-      expect(captureRender('capturerender-selftest', container)).toBe(expected)
+      written = captureRender('capturerender-selftest', container)
+      expect(written).toBe(expected)
       expect(readFileSync(expected, 'utf8')).toBe(container.innerHTML)
     } finally {
+      // remove what was written even when it landed somewhere it should not have
+      if (written) rmSync(written, { force: true })
       rmSync(expected, { force: true })
       if (!existedBefore && existsSync(fixtures) && readdirSync(fixtures).length === 0) rmdirSync(fixtures)
     }

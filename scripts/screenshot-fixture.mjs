@@ -16,12 +16,15 @@
 //            → src/**/__fixtures__/<name>.html).
 //   out.png  a full-page PNG at a 390 x 844 viewport, light theme (data-theme="light"
 //            on <html>, as the app sets it). Next to it, out.txt = document.body.innerText,
-//            the visible text in DOM order. Parent folders are created.
+//            the visible text in DOM order. Parent folders are created. On a screen taller
+//            than 844 px a `position: fixed` bar is drawn at the bottom of the first 844 px
+//            (that is how a full-page capture works), not at the end of the picture.
 //   --dark   data-theme="dark" instead.
 //   --css    the built stylesheet; default: the one file matching dist/assets/index-*.css
-//            (run `npm run build` first). The Google Fonts @import is stripped from it,
-//            and every network request the page makes is blocked: the render never
-//            touches the network.
+//            (run `npm run build` first; a source file edited after the build is warned
+//            about, because the picture would show the old styles). The Google Fonts
+//            @import is stripped from it, and every network request the page makes is
+//            blocked: the render never touches the network.
 //   --width  the viewport width in px (default 390). `--width 375` is the standing
 //            375 px overflow check; give it a scratch out.png, not the committed one.
 // Prints:  the files written, then `scrollWidth <n> (viewport <w>): ok` or `... OVERFLOW`.
@@ -34,8 +37,8 @@
 //          scrollWidth exceeds the viewport; 2 = couldn't run (usage, fixture, stylesheet,
 //          browser or render error).
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -148,6 +151,31 @@ export function resolveCss(cssArg, cwd = process.cwd()) {
   return join(dir, matches[0]);
 }
 
+/**
+ * A source file under <cwd>/src that was edited after the stylesheet was built, or null. The stylesheet is
+ * built from the classes the sources use, so a picture rendered with an older one can show styles the app
+ * no longer has. Tests, fixtures and src/testing don't contribute classes and are not looked at.
+ */
+export function staleSource(cssPath, cwd = process.cwd()) {
+  const srcDir = join(cwd, 'src');
+  if (!existsSync(srcDir)) return null;
+  const builtAt = statSync(cssPath).mtimeMs;
+  let newest = null;
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!['__fixtures__', 'node_modules', 'testing'].includes(entry.name)) walk(path);
+      } else if (/\.(tsx?|css|html)$/.test(entry.name) && !/\.test\./.test(entry.name)) {
+        const editedAt = statSync(path).mtimeMs;
+        if (editedAt > builtAt && (newest === null || editedAt > newest.editedAt)) newest = { path, editedAt };
+      }
+    }
+  };
+  walk(srcDir);
+  return newest ? newest.path : null;
+}
+
 /** The preinstalled Chromium (highest chromium-<build> under the browsers folder). Never downloads one. */
 export function findChromium(env = process.env) {
   const root = env.PLAYWRIGHT_BROWSERS_PATH || DEFAULT_BROWSERS_PATH;
@@ -181,8 +209,9 @@ export async function renderFixture({ html, outPng, outTxt, width, executablePat
   let chromium;
   try {
     ({ chromium } = await import('playwright-core'));
-  } catch {
-    throw new Error('playwright-core is not installed: run `npm ci`');
+  } catch (err) {
+    if (err?.code === 'ERR_MODULE_NOT_FOUND') throw new Error('playwright-core is not installed: run `npm ci`');
+    throw err;
   }
   const browser = await chromium.launch({ executablePath, headless: true });
   try {
@@ -235,6 +264,8 @@ export async function main(argv, cwd = process.cwd()) {
   if (result.text.trim() === '') console.log('warning: the page has no visible text; is the fixture an empty render?');
   const stillImported = remainingImports(css);
   if (stillImported.length > 0) console.log(`warning: ${stillImported.length} @import rule(s) remain in the stylesheet (blocked)`);
+  const stale = staleSource(cssPath, cwd);
+  if (stale) console.log(`warning: ${relative(cwd, stale)} was edited after ${relative(cwd, cssPath)} was built; run \`npm run build\` or this picture may show stale styles`);
   if (result.blocked > 0) console.log(`blocked ${result.blocked} network request(s) to: ${result.blockedHosts.join(', ')}`);
   const overflow = result.scrollWidth > opts.width;
   console.log(`scrollWidth ${result.scrollWidth} (viewport ${opts.width}): ${overflow ? 'OVERFLOW' : 'ok'}`);

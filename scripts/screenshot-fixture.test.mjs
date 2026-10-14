@@ -9,7 +9,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ import {
   readFragment,
   remainingImports,
   resolveCss,
+  staleSource,
   stripFontImports,
   textPathFor,
   wrapDocument,
@@ -186,7 +187,7 @@ test('wrapDocument: the fragment in the root element, the theme on <html> as App
   assert.match(light, /<style>p\{color:red\}<\/style>/);
   assert.match(light, /<body><div id="root"><p>HELLO<\/p><\/div><\/body>/);
   assert.match(wrapDocument({ fragment: '', css: '', theme: 'dark' }), /data-theme="dark"/);
-  assert.throws(() => wrapDocument({ fragment: '', css: '', theme: 'sepia' }), /light or dark/);
+  assert.throws(() => wrapDocument({ fragment: '', css: '', theme: 'solarized' }), /light or dark/);
 });
 
 test('readFragment: a body fragment passes; a missing, empty or whole-document fixture is refused', () => {
@@ -212,6 +213,42 @@ test('resolveCss: the single dist/assets/index-*.css by default, --css as given,
   assert.equal(resolveCss(own, cwd), own);
   assert.equal(resolveCss('dist/assets/index-d*.css', cwd), join(cwd, 'dist/assets/index-def456.css'));
   assert.throws(() => resolveCss('nope.css', cwd), /stylesheet not found: nope\.css$/);
+});
+
+// A repo-shaped folder: a stylesheet built at `builtAt`, and sources edited at the times given (seconds before / after it).
+function repoWithBuild(label, edits) {
+  const cwd = scratchDir(label);
+  const builtAt = 1_800_000_000;
+  const css = writeFile(cwd, 'dist/assets/index-abc.css', TEST_CSS);
+  utimesSync(css, builtAt, builtAt);
+  for (const [path, secondsAfterBuild] of Object.entries(edits)) {
+    const file = writeFile(cwd, path, '// source');
+    utimesSync(file, builtAt + secondsAfterBuild, builtAt + secondsAfterBuild);
+  }
+  return { cwd, css };
+}
+
+test('staleSource: a source edited after the build is named; older sources, tests, fixtures and src/testing are not', () => {
+  const clean = repoWithBuild('fresh-build', {
+    'src/App.tsx': -60,
+    'src/features/plan/PlanPage.tsx': -5,
+    'src/features/plan/PlanPage.test.tsx': 120,
+    'src/features/plan/__fixtures__/plan.html': 120,
+    'src/testing/captureRender.ts': 120,
+  });
+  assert.equal(staleSource(clean.css, clean.cwd), null);
+
+  const stale = repoWithBuild('stale-build', {
+    'src/App.tsx': -60,
+    'src/features/plan/PlanPage.tsx': 30,
+    'src/features/gym/GymSession.tsx': 90,
+    'src/features/plan/PlanPage.test.tsx': 500,
+  });
+  assert.equal(staleSource(stale.css, stale.cwd), join(stale.cwd, 'src/features/gym/GymSession.tsx'), 'the newest one');
+
+  const noSrc = scratchDir('no-src');
+  const lone = writeFile(noSrc, 'x.css', 'a{}');
+  assert.equal(staleSource(lone, noSrc), null, 'no src folder, nothing to compare');
 });
 
 test('findChromium: the highest chromium-<build> under the browsers folder; never a download', () => {
@@ -274,14 +311,15 @@ test('a screen taller than the viewport is captured whole, not cut at 844 px', (
 });
 
 test('animations are stopped at their first frame, so a spinner is the same picture every run', () => {
+  // Halfway through a 1000 s loop from the start (the negative delay): left alone, the square would be drawn at x = 100.
   const fragment =
-    '<style>@keyframes slide{from{margin-left:0}to{margin-left:200px}}.mover{width:50px;height:50px;background:#000;animation:slide 1s linear infinite}</style><div class="mover"></div>';
+    '<style>@keyframes slide{from{margin-left:0}to{margin-left:200px}}.mover{width:50px;height:50px;background:#000;animation:slide 1000s linear -500s infinite}</style><div class="mover"></div>';
   const first = shoot('anim-1', fragment);
   const second = shoot('anim-2', fragment);
   for (const r of [first, second]) {
     assert.equal(r.status, 0, r.out.join('\n'));
     assert.deepEqual(readPng(r.png).pixel(10, 10), [0, 0, 0], 'the square is where the animation starts');
-    assert.deepEqual(readPng(r.png).pixel(150, 10), LIGHT_BASE);
+    assert.deepEqual(readPng(r.png).pixel(110, 10), LIGHT_BASE, 'and not where it would be half way through');
   }
   assert.ok(readFileSync(first.png).equals(readFileSync(second.png)), 'two runs, the same bytes');
 });
@@ -370,6 +408,22 @@ test('the stylesheet: --css beats the default dist/assets/index-*.css, which is 
   assert.deepEqual(readPng(join(cwd, 'explicit.png')).pixel(0, 0), [0x12, 0x34, 0x56]);
 });
 
+test('a stylesheet older than the sources is warned about, and the picture is still made', () => {
+  const stale = repoWithBuild('e2e-stale', { 'src/features/plan/PlanPage.tsx': 60 });
+  const fresh = repoWithBuild('e2e-fresh', { 'src/features/plan/PlanPage.tsx': -60 });
+  const results = [stale, fresh].map(({ cwd }) => {
+    const fixture = writeFile(cwd, 'fixture.html', '<div>STALE</div>');
+    return { ...run([fixture, join(cwd, 'out.png')], { cwd }), cwd };
+  });
+  assert.equal(results[0].status, 0, results[0].err.join('\n'));
+  assert.ok(existsSync(join(results[0].cwd, 'out.png')));
+  const warning = results[0].out.find((l) => l.startsWith('warning:'));
+  assert.ok(warning, results[0].out.join('\n'));
+  assert.ok(warning.includes('src/features/plan/PlanPage.tsx') && warning.includes('dist/assets/index-abc.css') && warning.includes('npm run build'), warning);
+  assert.equal(results[1].status, 0);
+  assert.ok(!results[1].out.some((l) => l.startsWith('warning:')), results[1].out.join('\n'));
+});
+
 test('out.png may sit in folders that do not exist yet', () => {
   const dir = scratchDir('nested');
   const fixture = writeFile(dir, 'fixture.html', '<div>NESTED</div>');
@@ -399,6 +453,20 @@ test('no preinstalled Chromium: exit 2, says where it looked, downloads nothing'
   assert.equal(r.status, 2);
   assert.deepEqual(r.err, [`screenshot-fixture: no preinstalled Chromium under ${empty} (set PLAYWRIGHT_BROWSERS_PATH); this script never downloads a browser`]);
   assert.deepEqual(readdirSync(empty), [], 'nothing was downloaded into the browsers folder');
+});
+
+test('playwright-core missing (npm ci not run): exit 2 with the one-line fix, not a stack trace', () => {
+  const dir = scratchDir('no-playwright');
+  // a copy of the script with no node_modules above it
+  const copy = join(dir, 'screenshot-fixture.mjs');
+  writeFileSync(copy, readFileSync(SCRIPT));
+  const fixture = writeFile(dir, 'fixture.html', '<p>x</p>');
+  const childEnv = { ...process.env };
+  delete childEnv.NODE_USE_ENV_PROXY;
+  const r = spawnSync(process.execPath, [copy, fixture, join(dir, 'out.png'), '--css', TEST_CSS_FILE], { env: childEnv, encoding: 'utf8', cwd: dir });
+  assert.equal(r.status, 2);
+  assert.deepEqual(r.stderr.split('\n').filter((l) => l.trim() !== '' && !/^\(node:\d+\)|^\(Use `node/.test(l)), ['screenshot-fixture: playwright-core is not installed: run `npm ci`']);
+  assert.ok(!existsSync(join(dir, 'out.png')));
 });
 
 test('a browser that fails to start: only the first line of Playwright\'s error is printed, not its call log', async () => {
