@@ -134,6 +134,27 @@ guessed. Each is written into the rules below as stated here.
     their order, set counts and set kinds. Tempo, rest, supersets and the warmup
     routine are stored once per program, not per week, so they aren't in it.
 
+### Answers to TASKS-1.2's spec gaps — Adam, 2026-10-13
+
+Each is written into the rules below as stated here.
+
+- **G46 — How unlog is stored:** unlog deletes the set's log (its stages' logs
+  first). The numbers stay in the row as a draft on that phone (Dexie, like
+  warmup ticks) until the set is logged again, which writes a new log, or the
+  session ends. Nothing on the server changes shape, so nothing that counts
+  logged sets changes, Coach included.
+- **G47 — Offline:** logging, delete set and unlog work offline and sync later
+  through the sync queue. A set type change on a logged set and the edit
+  panel's SAVE need a connection, as editing a logged set does today.
+- **G48 — Stable weeks' legend:** "CHANGED SINCE WEEK N", the same as other
+  weeks. "THIS WEEK ONLY" is only the per-exercise line.
+- **G49 — Warmup rows in Plan:** no RIR target.
+- **G50 — Pre-1.1 finished programs:** PR14's PRIORITIES row opens today's
+  completed-run priorities page as it is, wording included. It is the one
+  exception to the "program" wording sweep.
+- **G51 — "Drops and stages count as":** applies to the VOLUME sheet only.
+  History, Progress and the finish screen count as they do today.
+
 ---
 
 ## Design boards [1.2]
@@ -188,6 +209,10 @@ Known gaps between boards and this spec (the spec wins):
   (Volume per muscle).
 - PR14's example lists a tempo change and a superset change; the history shows
   only what weeks store (Defaults, 11).
+- Board 1a's legend reads "THIS WEEK ONLY"; a stable week's legend is "CHANGED
+  SINCE WEEK N" like every other week's (G48).
+- Boards 1 and 1c show RIR on a warmup row; warmup rows have no RIR target
+  (G49).
 
 The light-theme board is the reference; every board also has a dark version on
 the canvas, which `design/1.2/` doesn't copy because the app's dark tokens
@@ -225,8 +250,10 @@ already produce it.
   depends on a set being logged (session status, history, "last time",
   sync queue), so unlog doesn't leave anything pointing at a log that no
   longer counts.
-- [1.2] Which existing programs or runs have a deload-rules override (Adam's and
-  his friend's accounts), so the fallback to Settings is known before it happens.
+- [1.2] Which of Adam's programs or runs have a deload-rules override, so the
+  fallback to Settings is known before it happens. Read on production, read-only,
+  filtered to Adam's user id; other users' rows are never read, and the fallback
+  is silent either way.
 - [1.2] What the start-program path does after starting (today it opens
   priorities), so it lands on Plan instead.
 
@@ -309,7 +336,8 @@ the current program while it runs and a finished program afterwards; the word
 - [1.2] set kind and stage kind as done: a set type changed during the workout
   (19) is recorded on the session's set, never on the plan
 - [1.2] unlogged again (18c): a logged set can return to unlogged, keeping its
-  numbers
+  numbers. Unlog deletes the log; the numbers are kept as a draft on that phone,
+  not on the server (G46).
 - [P2] side split: when split, L and R values for every tracked field
 - [P2] for bodyweight exercises: weight is signed added load (0 = bodyweight)
 
@@ -434,7 +462,8 @@ optional:
     row (PR14). It shows and edits the run's own priorities (the ones copied at
     its start). A run finished before 1.1, whose marks exist only in the old
     priorities table, shows and edits that table, as today's completed-run page
-    does. `TASKS` verifies which runs have which.
+    does: PRIORITIES opens that page as it is, wording included (G50). `TASKS`
+    verifies which runs have which.
 - **Existing programs and runs:** every program a run already points at becomes
   that run's copy (no existing ids change), and a saved program is cloned from it
   to be the reusable template.
@@ -549,7 +578,8 @@ optional:
   moves only that day's session.
 - [1.2] **Changes since the source** (P1.1's highlighting, kept): anything in a
   week that differs from its source is highlighted, with the legend "CHANGED
-  SINCE WEEK N" (boards 1, 1d, 9).
+  SINCE WEEK N" (boards 1, 1d, 9), on stable weeks too; "THIS WEEK ONLY" is
+  only the per-exercise line (G48).
   - Week-dependent: compared with last week's plan. Stable: set counts, kinds,
     stages and rep targets compared with the default; weight and RIR compared
     with last week's plan. Week 1 is compared with nothing.
@@ -633,6 +663,8 @@ optional:
   count in the existing "Other" group. Board 3's subgroup rows are sample data.
 - Warmups don't count. Drops and stages count per the Settings rule (14b),
   default ½ per drop, the same rule for dropsets, rest-pause, myo and cluster.
+  The rule applies to this sheet only; History, Progress and the finish screen
+  count as they do today (G51).
 
 ### Targets [P1]
 
@@ -743,6 +775,7 @@ optional:
   "add warmup sets" action (5a).
 - Never counted in volume, set counts, or "last time" matching.
 - Logged values: weight and reps, both optional; plus a rest timer. Nothing else.
+- [1.2] A warmup row in Plan has no RIR target (G49).
 - Display setting: `rows` (default; numbers optional) or `tick` (tick-off only).
 - [P2] Mandatory fields never apply to warmup sets.
 - Coach stays untouched, so its own summaries will count logged warmups as
@@ -860,7 +893,8 @@ optional:
 ### Volume [P1/P2]
 
 - Warmup sets: never counted.
-- Staged-set stages: count in volume only, [1.2] per the Settings rule (14b).
+- Staged-set stages: count in volume only, [1.2] per the Settings rule (14b) in
+  the VOLUME sheet; everywhere else as today (G51).
 - [P2] Unilateral: weight × the sum of both sides' reps; still one set.
 - [P2] Bodyweight: added load only (pure bodyweight contributes 0).
 
@@ -905,11 +939,17 @@ optional:
   confirm; logging again undoes it. A set with logged drops or stages after it
   can't be unlogged until they are (UNLOG is disabled and says so). Unlogging
   never restarts the rest timer and never changes the session's status; in a
-  reopened session it works the same (Defaults, 6).
+  reopened session it works the same (Defaults, 6). Unlog deletes the set's log
+  (its stages' logs first); its numbers stay in the row as a draft on that
+  phone until it is logged again (a new log) or the session ends (G46).
 - [1.2] **Delete set (18b):** with a confirmation (W9). An unlogged set's DELETE
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
   deletes its stages, and the confirm says so. The remaining sets renumber.
+- [1.2] **Offline (G47):** logging, delete set and unlog work offline and sync
+  later through the sync queue. A set type change on a logged set and the edit
+  panel's SAVE need a connection, as editing a logged set does today; offline
+  they say so (W6, Errors).
 - [1.2] **Set type during a workout (19):** through the set's ⋯ for upcoming and
   current sets, through the edit panel for a logged set (W7a). Session-only;
   next week sees it only through REVIEW (13d). Making a logged set a dropset adds
@@ -1009,7 +1049,8 @@ optional:
   change. This is a text change on every screen, including the ones whose look
   1.2 doesn't touch (Today, History, Progress, Settings): "NO MESO", "ALL
   MESOS", "DELETE MESO", "MESO OVERVIEW", "Search sessions or mesos…", and the
-  like.
+  like. The one exception is a pre-1.1 finished program's priorities page, which
+  opens as it is (G50).
 - [1.2] **Tags are "cues"** in the UI.
 - [1.2] The planner screen and its button say "change the program", never
   "change the plan".
@@ -1183,7 +1224,8 @@ layout and wording come from the boards.
 
 - [P1] Warmup display; default deload rules.
 - [1.2] Keeps its current look. Adds two rows: "Drops and stages count as" (whole
-  set = 1 / each drop = 1 / each drop = ½, default ½) and "Log sets in order"
+  set = 1 / each drop = 1 / each drop = ½, default ½; the VOLUME sheet only,
+  G51) and "Log sets in order"
   (on by default; off means LOG never asks). Removes "New week starts"; users
   who had it on "empty" get auto-copy, with no message.
 - [P2] Grouped as above, with tracked-field switches, effort scale, pre-fill,
