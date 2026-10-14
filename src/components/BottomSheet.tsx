@@ -30,14 +30,14 @@ import { X } from 'lucide-react'
 //
 // Colours are the app's custom properties, none written here. The one exception is the scrim: no
 // token exists for it. The boards draw black at 45 % in the light theme and 70 % in the dark one;
-// the app draws two values of its own (near-black at 88 % behind the Plan, Programs and Library
-// sheets, black at 60 % behind the workout screen's), and SPEC maps a board colour that has no
-// token to the nearest existing one (Design boards [1.2]): the 60 %. Provisional under D31: a
-// scrim token in tokens.css would change it in this one place.
+// the app draws two values of its own (near-black at 88 % behind the Plan, Programs, planner and
+// Library sheets, black at 60 % behind the Today and workout sheets), and SPEC maps a board colour
+// that has no token to the nearest existing one (Design boards [1.2]): the 60 %. Provisional under
+// D31: a scrim token in tokens.css would change it in this one place.
 //
 // Layout follows the boards: one frame, a 16 px rhythm between its parts, and content that scrolls
 // inside the sheet (the header and the footer stay put) once it outgrows the screen below a 64 px
-// gap (where the boards' tall sheets stop). Boards space a sheet's own sections 12, 14, 16 or 18 px
+// gap (where PL4-PL6, the boards' tall sheets, stop). Boards space a sheet's own sections 12, 14, 16 or 18 px
 // apart; 16 is board 2's and the most common, and a caller that wants another wraps its sections
 // in a container of its own. Style values are written the way jsdom keeps them (longhand borders,
 // the safe-area padding after its shorthand) so a captured render still carries them.
