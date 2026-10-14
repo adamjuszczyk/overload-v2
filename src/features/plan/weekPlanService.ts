@@ -60,6 +60,11 @@ export type DbWeekPlanSet = {
   // at the call site (weekPlanService.test.ts's own "never includes tags in
   // the payload" test pins this).
   tags?: string[] | null
+  // Migration 042 (TASKS-1.2 chunk 36) — the RIR range's high end (SPEC [1.2]
+  // "Targets"); target_rir stays the number / the low end. Read by toSet()
+  // below; nothing writes it yet (chunk 54a's RIR picker does), and no copy
+  // here carries it, so the legacy copy paths still produce plain numbers.
+  target_rir_max?: number | null
 }
 
 // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
@@ -202,6 +207,9 @@ function toSet(row: DbWeekPlanSet): WeekPlanSet {
     // and tags. Same "may not exist yet" fallback as the fields above.
     targetWeight: row.target_weight ?? null,
     tags: row.tags ?? null,
+    // Migration 042 — the RIR range's high end; null on a plain number and
+    // while the column is absent. Read only (no writer yet).
+    targetRirMax: row.target_rir_max ?? null,
   }
 }
 

@@ -15,6 +15,8 @@ type DbSettings = {
   week_start?: string  // absent until migration 027 has been applied
   warmup_display?: string  // absent until migration 027 has been applied
   deload_rules?: unknown  // absent until migration 027 has been applied; jsonb, validated on read
+  stage_volume_rule?: string  // absent until migration 042 has been applied; read only, not sent yet (chunk 49)
+  log_in_order?: boolean  // absent until migration 042 has been applied; read only, not sent yet (chunk 49)
 }
 
 function toUserSettings(row: DbSettings): UserSettings {
@@ -42,6 +44,14 @@ function toUserSettings(row: DbSettings): UserSettings {
     // both before migration 027 (key absent) and for a malformed stored
     // value, same posture as every other "may not exist yet" field above.
     deloadRules: validateDeloadRules(row.deload_rules),
+    // Migration 042 (TASKS-1.2 chunk 36) — SPEC [1.2] "Settings": how drops
+    // and stages count in volume (default each drop = ½) and the log lock
+    // (default on). Same "key missing" fallback to the column defaults as the
+    // fields above, until 042 has been applied. Read only here: upsertSettings
+    // below does not send either yet (chunk 49 does, after 042 is live), so a
+    // stored value is never overwritten by this build.
+    stageVolumeRule: (row.stage_volume_rule as UserSettings['stageVolumeRule'] | undefined) ?? 'half',
+    logInOrder: row.log_in_order ?? true,
   }
 }
 
