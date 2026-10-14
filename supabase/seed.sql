@@ -9,51 +9,78 @@
 --     enabled. Only [remotes.staging] does; scripts/staging-config.test.mjs
 --     fails if any remote names production's ref.
 --   * The guard below refuses to run on a database that holds any account
---     other than the two staging accounts (production holds real accounts),
+--     other than the five staging accounts (production holds real accounts),
 --     and on one that holds production's known owner id.
 --
--- Two synthetic accounts (example.com is reserved by IANA, so no real person
--- can own either):
---   staging-test@example.com   the test account: owns everything below. Its
---     password is never in this repository: if the account doesn't exist yet
---     the seed creates it with a random password nobody knows; the password
---     that works is set on the staging branch by Adam (CONTEXT.md,
+-- Five synthetic accounts (example.com is reserved by IANA, so no real person
+-- can own any of them):
+--   staging-test@example.com      the test account: owns most of what is below.
+--     Its password is never in this repository: if the account doesn't exist
+--     yet the seed creates it with a random password nobody knows; the
+--     password that works is set on the staging branch by Adam (CONTEXT.md,
 --     "Accounts") and kept in the cloud environment's secret
 --     STAGING_TEST_PASSWORD.
---   staging-other@example.com  never signs in (random password nobody
+--   staging-other@example.com     never signs in (random password nobody
 --     knows): owns a small program, run, session, logs, a note and a mark, so
 --     verify-rls run as the test account has foreign rows it must not see
 --     (DECISIONS 118).
+--   staging-stable@example.com    (TASKS-1.2 chunk 36) its own STG Full Body,
+--     started as an active STABLE run: week 1 done, week 2 (this week)
+--     planned, nothing done in it.
+--   staging-sequence@example.com  its own STG Rotation, started as an active
+--     SEQUENCE run: cycle 1 done, cycle 2 planned and current, Rotation A next
+--     due.
+--   staging-empty@example.com     the account and nothing else (no programs,
+--     runs, exercises or settings row).
+--   The three newer accounts sign in with the test account's password: when
+--   one is created, its password hash is copied from the test account's row
+--   (so STAGING_TEST_PASSWORD signs in to all four). On a database with no
+--   test account yet they get the same random password, and Adam sets it in
+--   the dashboard as he did for the test account. An existing account is
+--   never touched.
 --
 -- Dates are relative to the day the seed runs (Monday of that week = week
 -- start). Supabase runs a seed file once; to re-seed (for example after the
--- active run's weeks have gone by), paste this file into the staging
--- branch's SQL editor: it deletes both accounts' data and rebuilds it,
--- keeping the accounts and the test account's password.
+-- active run's weeks have gone by, or after this file changes), paste it into
+-- the staging branch's SQL editor: it deletes all five accounts' data and
+-- rebuilds it, keeping the accounts and their passwords.
 --
 -- Data shapes covered (SPEC.md [P1]/[P1.1]/[1.2] and TASKS-1.2's F1–F6, G50):
 --   STG Upper/Lower   saved, weekday, week-dependent, with a non-empty
 --                     deload-rules override (F5); template of the ACTIVE run
 --   STG Upper/Lower run  active, week 3 is the current week:
 --                     week 1 all done (a skipped set, a swap, a session done
---                     on a moved day), week 2 (Wed deload, Fri skipped
+--                     on a moved day), week 2 (Mon Upper A done differently
+--                     from its plan, see below; Wed deload; Fri skipped
 --                     session), week 3 Monday in progress with logged and
 --                     unlogged sets, weeks 4+ unplanned
 --                     warmup sets, a superset, all four stage kinds,
 --                     AMRAP, tempo, rest overrides, rest after, a lbs
 --                     exercise, tags, weight and RIR targets, the warmup
 --                     routine, priorities (focus / don't care)
+--   Week 2 Upper A    (REVIEW's and VOLUME's last week) five differences from
+--                     its plan: bench working set 2 logged 82.5 kg x 7
+--                     (planned 80 kg, 6-8 reps), bench working set 3 logged
+--                     80 kg x 5 (below the range), seated cable row set 3
+--                     skipped, lateral raise set 1 logged as a dropset with one
+--                     logged drop, a cable pushdown head logged with no planned
+--                     set behind it (20 kg x 15). Everything else as planned.
+--                     Sets are numbered the way the workout screen numbers
+--                     them: 1-based per exercise, warmups apart.
 --   STG Full Body     saved, weekday, STABLE, one workout on two weekdays
 --                     (G14); its run finished (1.1-era: marks in
---                     v2_program_priorities), last week a deload
+--                     v2_program_priorities), last week a deload. Also owned
+--                     by staging-stable, as an active run.
 --   STG PPL           saved; its run finished BEFORE 1.1: marks only in the
 --                     old v2_coach_meso_tag_priorities table (G50), plan rows
 --                     with RIR only, legacy null-kind dropset logs (D30), an
 --                     all-skipped session
---   STG Rotation      saved, SEQUENCE (workout and rest slots, a repeat)
+--   STG Rotation      saved, SEQUENCE (workout and rest slots, a repeat).
+--                     Also owned by staging-sequence, as an active run.
 --   STG Empty         saved, no workouts, no schedule (empty states)
 --   STG No exercises  saved, one workout with no exercises, no schedule
--- Settings: global deload rules on (so the override and the default differ).
+-- Settings: global deload rules on (so the override and the default differ),
+-- on the test account and on staging-stable.
 
 -- ── Privileges a new branch lacks ───────────────────────────────────────────
 -- Supabase creates a branch "without default privileges on the public
@@ -81,12 +108,22 @@ declare
   c_new_id  constant uuid := '7e57ac00-0000-4000-8000-000000000001';
   c_other_email constant text := 'staging-other@example.com';
   c_other_id    constant uuid := '7e57ac00-0000-4000-8000-000000000002';
+  c_stable_email constant text := 'staging-stable@example.com';
+  c_stable_id    constant uuid := '7e57ac00-0000-4000-8000-000000000003';
+  c_seq_email    constant text := 'staging-sequence@example.com';
+  c_seq_id       constant uuid := '7e57ac00-0000-4000-8000-000000000004';
+  c_empty_email  constant text := 'staging-empty@example.com';
+  c_empty_id     constant uuid := '7e57ac00-0000-4000-8000-000000000005';
   -- Production's owner account. Its presence means this is not staging.
   c_prod_marker constant uuid := '12e79b69-9891-4f53-a7cf-650edd83659f';
   t   uuid;
   o   uuid;   -- the other account
+  u_stable uuid;  -- staging-stable
+  u_seq    uuid;  -- staging-sequence
+  u_empty  uuid;  -- staging-empty
   acct record;
   d0  date := date_trunc('week', current_date)::date;  -- this Monday
+  d_today date := current_date;                        -- the seed's day
   tbl text;
   pass int;
   left_over int;
@@ -105,24 +142,42 @@ declare
   -- runs
   m_fb uuid; m_ppl uuid; m_ul uuid; run_prog uuid;
   r record; s uuid; hl uuid;
+  -- staging-stable: its own STG Full Body, active stable run
+  se_leg_press uuid; se_incline uuid; se_pulldown uuid; se_plank uuid; se_curl uuid; se_dip uuid;
+  sp_fb uuid; sw_fb uuid; sw_arms uuid; m_st uuid;
+  -- staging-sequence: its own STG Rotation, active sequence run
+  qe_squat uuid; qe_bench uuid; qe_farmer uuid;
+  qp_rot uuid; qw_ra uuid; qw_rb uuid; qw_rc uuid; m_q uuid;
 begin
   -- ── Guard ────────────────────────────────────────────────────────────────
   if exists (select 1 from auth.users where id = c_prod_marker) then
     raise exception 'seed.sql refuses to run: this database holds production''s owner account';
   end if;
-  if exists (select 1 from auth.users where email is null or email not in (c_email, c_other_email)) then
-    raise exception 'seed.sql refuses to run: this database holds an account other than % and %', c_email, c_other_email;
+  if exists (select 1 from auth.users
+             where email is null
+                or email not in (c_email, c_other_email, c_stable_email, c_seq_email, c_empty_email)) then
+    raise exception 'seed.sql refuses to run: this database holds an account other than the five staging accounts (%, %, %, %, %)',
+      c_email, c_other_email, c_stable_email, c_seq_email, c_empty_email;
   end if;
 
-  -- ── The two staging accounts (created only if missing) ──────────────────
-  for acct in select * from (values (c_email, c_new_id), (c_other_email, c_other_id)) as a(email, id) loop
+  -- ── The five staging accounts (each created only if missing) ────────────
+  -- The test account is created first. The stable, sequence and empty accounts
+  -- take a copy of its password hash, so one password signs in to all four
+  -- accounts that sign in (staging-other keeps a hash nobody knows).
+  for acct in
+    select * from (values (1, c_email, c_new_id), (2, c_other_email, c_other_id), (3, c_stable_email, c_stable_id),
+                          (4, c_seq_email, c_seq_id), (5, c_empty_email, c_empty_id)) as a(ord, email, id)
+    order by ord
+  loop
     if not exists (select 1 from auth.users where email = acct.email) then
       insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
                               email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
                               created_at, updated_at, confirmation_token, recovery_token,
                               email_change_token_new, email_change)
       values ('00000000-0000-0000-0000-000000000000', acct.id, 'authenticated', 'authenticated', acct.email,
-              extensions.crypt(gen_random_uuid()::text || gen_random_uuid()::text, extensions.gen_salt('bf')),
+              case when acct.ord >= 3
+                   then (select u.encrypted_password from auth.users u where u.email = c_email)
+                   else extensions.crypt(gen_random_uuid()::text || gen_random_uuid()::text, extensions.gen_salt('bf')) end,
               now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
       insert into auth.identities (id, user_id, provider_id, identity_data, provider,
                                    last_sign_in_at, created_at, updated_at)
@@ -133,8 +188,11 @@ begin
   end loop;
   select id into t from auth.users where email = c_email;
   select id into o from auth.users where email = c_other_email;
+  select id into u_stable from auth.users where email = c_stable_email;
+  select id into u_seq from auth.users where email = c_seq_email;
+  select id into u_empty from auth.users where email = c_empty_email;
 
-  -- ── Start clean: delete both accounts' data, keep the accounts ──────────
+  -- ── Start clean: delete all five accounts' data, keep the accounts ──────
   -- Every public table with a user_id column, repeated until foreign keys
   -- stop getting in the way (cascades do most of it on the first pass).
   for pass in 1..6 loop
@@ -146,7 +204,7 @@ begin
       order by c.table_name
     loop
       begin
-        execute format('delete from public.%I where user_id = any($1)', tbl) using array[t, o];
+        execute format('delete from public.%I where user_id = any($1)', tbl) using array[t, o, u_stable, u_seq, u_empty];
       exception when foreign_key_violation then
         left_over := left_over + 1;
       end;
@@ -388,22 +446,119 @@ begin
   where user_id = t and target_weight > 0 and not is_warmup
     and week_plan_id in (select id from v2_week_plans where mesocycle_id = m_ul and week_number = 3);
 
+  -- ═══ staging-stable: its own STG Full Body, an active STABLE run ═════════
+  -- Started 7 days before this Monday: week 1 (last week) is done, week 2 is
+  -- this week, planned and not started, with no this-week-only change (a
+  -- reviewer makes those in the app). The same program as the test account's
+  -- STG Full Body, on this account's own exercises. The sessions and logs of
+  -- week 1 come from the loop below.
+  perform set_config('request.jwt.claim.sub', u_stable::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', u_stable::text, 'role', 'authenticated')::text, true);
+  insert into v2_user_settings (user_id, deload_rules)
+  values (u_stable, '{"sets":{"mode":"percent","value":50,"rounding":"down"},"weight":{"percent":75,"rounding":"down","step":2.5,"stepUnit":"kg"}}');
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_stable, 'Leg Press', 'quads', 'squat') returning id into se_leg_press;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_stable, 'Incline Dumbbell Press', 'chest', 'horizontal_push') returning id into se_incline;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_stable, 'Lat Pulldown', 'back', 'vertical_pull') returning id into se_pulldown;
+  insert into exercises (user_id, name, muscle_group) values (u_stable, 'Plank', 'core') returning id into se_plank;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_stable, 'EZ-Bar Curl', 'biceps', 'isolation') returning id into se_curl;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_stable, 'Parallel Bar Dip', 'triceps', 'vertical_push') returning id into se_dip;
+
+  insert into v2_programs (user_id, name, kind, schedule_type, planning_type)
+  values (u_stable, 'STG Full Body', 'saved', 'weekday', 'stable') returning id into sp_fb;
+  insert into v2_workout_days (program_id, user_id, name, position) values (sp_fb, u_stable, 'Full Body', 1) returning id into sw_fb;
+  insert into v2_workout_days (program_id, user_id, name, position) values (sp_fb, u_stable, 'Arms', 2) returning id into sw_arms;
+  update v2_programs set schedule = jsonb_build_object('tuesday', sw_fb, 'thursday', sw_fb, 'saturday', sw_arms) where id = sp_fb;
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (sw_fb, u_stable, se_leg_press, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_stable, pe, 1, 10, 12), (u_stable, pe, 2, 10, 12), (u_stable, pe, 3, 10, 12);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (sw_fb, u_stable, se_incline, 2) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_stable, pe, 1, 8, 10), (u_stable, pe, 2, 8, 10);
+  insert into v2_program_superset_blocks (user_id, workout_day_id, rest_after_round_seconds) values (u_stable, sw_fb, 90) returning id into blk;
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position, superset_block_id) values (sw_fb, u_stable, se_pulldown, 3, blk) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_stable, pe, 1, 10, 12), (u_stable, pe, 2, 10, 12);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position, superset_block_id) values (sw_fb, u_stable, se_plank, 4, blk) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, is_amrap) values (u_stable, pe, 1, true), (u_stable, pe, 2, true);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (sw_arms, u_stable, se_curl, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_stable, pe, 1, 10, 12);
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max, stage_kind) values (u_stable, pe, 2, 10, 12, 'dropset') returning id into h;
+  insert into v2_program_sets (user_id, program_exercise_id, position, parent_program_set_id, stage_index, rep_min, rep_max) values (u_stable, pe, 2, h, 1, 8, 10);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (sw_arms, u_stable, se_dip, 2) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_stable, pe, 1, 8, 12), (u_stable, pe, 2, 8, 12);
+  insert into v2_program_priorities (user_id, program_id, tag_type, tag_value, mark) values
+    (u_stable, sp_fb, 'muscle_group', 'quads', 'focus');
+
+  m_st := v2_start_run(sp_fb, 'STG Full Body run', d0 - 7);
+  perform v2_plan_week(m_st, 1);
+  perform v2_plan_week(m_st, 2);
+
+  -- ═══ staging-sequence: its own STG Rotation, an active SEQUENCE run ═══════
+  -- A, B, rest, A, C, rest. Cycle 1's four workouts are done (the A repeat
+  -- included), on the six days before the day the seed runs: A six days ago, B
+  -- five, rest, A three, C two days ago, rest yesterday. So cycle 2 is the
+  -- current cycle (it holds the next due workout), planned and not started,
+  -- and Rotation A is due today. The sessions and logs come from the loop
+  -- below.
+  perform set_config('request.jwt.claim.sub', u_seq::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', u_seq::text, 'role', 'authenticated')::text, true);
+  insert into exercises (user_id, name, muscle_group, muscle_subgroup, movement_pattern)
+  values (u_seq, 'Barbell Bench Press', 'chest', '{mid_chest}', 'horizontal_push') returning id into qe_bench;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_seq, 'Back Squat', 'quads', 'squat') returning id into qe_squat;
+  insert into exercises (user_id, name, muscle_group) values (u_seq, 'Farmer Carry', 'other') returning id into qe_farmer;
+
+  insert into v2_programs (user_id, name, kind, schedule_type, planning_type)
+  values (u_seq, 'STG Rotation', 'saved', 'sequence', 'week_dependent') returning id into qp_rot;
+  insert into v2_workout_days (program_id, user_id, name, position) values (qp_rot, u_seq, 'Rotation A', 1) returning id into qw_ra;
+  insert into v2_workout_days (program_id, user_id, name, position) values (qp_rot, u_seq, 'Rotation B', 2) returning id into qw_rb;
+  insert into v2_workout_days (program_id, user_id, name, position) values (qp_rot, u_seq, 'Rotation C', 3) returning id into qw_rc;
+  insert into v2_program_sequence_items (user_id, program_id, position, workout_day_id) values
+    (u_seq, qp_rot, 1, qw_ra), (u_seq, qp_rot, 2, qw_rb), (u_seq, qp_rot, 3, null), (u_seq, qp_rot, 4, qw_ra), (u_seq, qp_rot, 5, qw_rc), (u_seq, qp_rot, 6, null);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (qw_ra, u_seq, qe_squat, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_seq, pe, 1, 5, 5), (u_seq, pe, 2, 5, 5);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (qw_rb, u_seq, qe_bench, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, rep_min, rep_max) values (u_seq, pe, 1, 5, 5), (u_seq, pe, 2, 5, 5);
+  insert into v2_program_exercises (workout_day_id, user_id, exercise_id, position) values (qw_rc, u_seq, qe_farmer, 1) returning id into pe;
+  insert into v2_program_sets (user_id, program_exercise_id, position, is_amrap) values (u_seq, pe, 1, true);
+
+  m_q := v2_start_run(qp_rot, 'STG Rotation run', d_today - 6);
+  perform v2_plan_week(m_q, 1);
+  perform v2_plan_week(m_q, 2);
+
+  -- staging-empty owns nothing: no programs, runs, exercises or settings row.
+
   -- ═══ Sessions and set logs ════════════════════════════════════════════════
   -- One session per planned slot and scheduled weekday (a workout on two
   -- weekdays, G14, gets two sessions on one shared plan row), dated by the
   -- run's schedule; logs follow the plan (target weight, rep_max or 8 reps,
-  -- target RIR).
+  -- target RIR). A sequence run has no weekdays: its sessions are the four
+  -- workouts of cycle 1, dated back from the seed's day.
   for r in
-    select wp.id as wp_id, wp.mesocycle_id, wp.workout_day_id, wp.week_number, wp.is_deload,
-           m.start_date, wd.name as wd_name, j.k as day_name,
-           array_position(array['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], j.k) as dow
-    from v2_week_plans wp
-    join v2_mesocycles m on m.id = wp.mesocycle_id
-    join v2_workout_days wd on wd.id = wp.workout_day_id
-    join v2_programs p on p.id = m.program_id
-    cross join lateral jsonb_each_text(p.schedule) as j(k, v)
-    where wp.user_id = t and j.v = wp.workout_day_id::text
-    order by m.start_date, wp.week_number, 9
+    select * from (
+      -- weekday runs (the test account's and staging-stable's): one row per
+      -- planned workout and scheduled weekday
+      select wp.id as wp_id, wp.user_id as uid, wp.mesocycle_id, wp.workout_day_id, wp.week_number, wp.is_deload,
+             m.start_date, wd.name as wd_name,
+             array_position(array['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], j.k) as dow,
+             m.start_date + (wp.week_number - 1) * 7
+               + array_position(array['monday','tuesday','wednesday','thursday','friday','saturday','sunday'], j.k) - 1 as sess_date,
+             wp.sequence_position as seq_pos
+      from v2_week_plans wp
+      join v2_mesocycles m on m.id = wp.mesocycle_id
+      join v2_workout_days wd on wd.id = wp.workout_day_id
+      join v2_programs p on p.id = m.program_id
+      cross join lateral jsonb_each_text(p.schedule) as j(k, v)
+      where wp.user_id in (t, u_stable) and j.v = wp.workout_day_id::text
+      union all
+      -- staging-sequence's run: cycle 1's four workouts (slots 1, 2, 4, 5), the
+      -- rests (slots 3 and 6) are the days between; cycle 2 has no sessions
+      select wp.id, wp.user_id, wp.mesocycle_id, wp.workout_day_id, wp.week_number, wp.is_deload,
+             m.start_date, wd.name, 0,
+             d_today - case wp.sequence_position when 1 then 6 when 2 then 5 when 4 then 3 when 5 then 2 end,
+             wp.sequence_position
+      from v2_week_plans wp
+      join v2_mesocycles m on m.id = wp.mesocycle_id
+      join v2_workout_days wd on wd.id = wp.workout_day_id
+      where wp.mesocycle_id = m_q and wp.week_number = 1
+    ) x
+    order by x.start_date, x.week_number, x.dow, x.seq_pos
   loop
     declare
       sess_date date;
@@ -411,28 +566,34 @@ begin
       upto int := null;          -- log only the first N heads (in-progress session)
       skip_set int := null;      -- this head is logged as skipped
       moved date := null;
+      diffs boolean := false;    -- the test account's week 2 Upper A: five differences from its plan
       logged_at timestamptz;
       head record; st record; i int := 0;
       n int;                     -- the log's set_number, as the app numbers it
+      lw numeric; lr int; lk text;  -- the head log's weight, reps and stage kind
     begin
-      sess_date := r.start_date + (r.week_number - 1) * 7 + r.dow - 1;
+      sess_date := r.sess_date;
 
       if r.mesocycle_id = m_ul and r.week_number = 1 and r.wd_name = 'Upper B' then
         moved := sess_date + 1; skip_set := 3;            -- done on Saturday; one set skipped
       elsif r.mesocycle_id = m_ul and r.week_number = 2 and r.wd_name = 'Upper B' then
         sess_status := 'skipped';                          -- a skipped session, no logs
+      elsif r.mesocycle_id = m_ul and r.week_number = 2 and r.wd_name = 'Upper A' then
+        diffs := true;                                     -- done differently from its plan (below)
       elsif r.mesocycle_id = m_ul and r.week_number = 3 then
         if r.wd_name = 'Upper A' then sess_status := 'in_progress'; upto := 3;
         else continue;                                     -- not trained yet
         end if;
       elsif r.mesocycle_id = m_ppl and r.week_number = 4 and r.wd_name = 'Legs' then
         skip_set := -1;                                    -- every set skipped
+      elsif r.mesocycle_id = m_st and r.week_number = 2 then
+        continue;                                          -- staging-stable's current week: nothing done yet
       end if;
 
       logged_at := (coalesce(moved, sess_date) + time '18:00') at time zone 'UTC';
       insert into v2_sessions (user_id, mesocycle_id, week_plan_id, workout_day_id, date, moved_to_date,
                                status, started_at, completed_at, energy_rating, pump_rating, note)
-      values (t, r.mesocycle_id, r.wp_id, r.workout_day_id, sess_date, moved, sess_status,
+      values (r.uid, r.mesocycle_id, r.wp_id, r.workout_day_id, sess_date, moved, sess_status,
               case when sess_status = 'skipped' then null else logged_at end,
               case when sess_status = 'completed' then logged_at + interval '70 minutes'
                    when sess_status = 'skipped' then null end,
@@ -457,19 +618,42 @@ begin
         -- not by the plan's set_number.
         select count(*) + 1 into n from v2_set_logs
         where session_id = s and exercise_id = head.exercise_id and is_warmup = head.is_warmup and parent_set_id is null;
+        -- The head log is the plan, except in the test account's week 2 Upper A
+        -- (REVIEW's and VOLUME's last week). Its differences, by the set number
+        -- the workout screen shows (warmups apart):
+        --   bench set 2   82.5 kg x 7   (planned 80 kg, 6-8 reps: the weight differs)
+        --   bench set 3   80 kg x 5     (reps below the 6-8 range)
+        --   cable row 3   skipped
+        --   lateral raise set 1   logged as a dropset, with one drop (below)
+        --   cable pushdown   a third head nobody planned (after this loop)
+        -- Lower A (the deload) and Upper B (skipped) stay as planned.
+        if diffs and head.exercise_id = e_row and n = 3 then
+          insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, is_skipped, logged_at, is_warmup)
+          values (r.uid, s, head.exercise_id, head.id, n, true, logged_at, head.is_warmup);
+          continue;
+        end if;
         if skip_set = -1 or skip_set = i then
           insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, is_skipped, logged_at, is_warmup)
-          values (t, s, head.exercise_id, head.id, n, true, logged_at, head.is_warmup);
+          values (r.uid, s, head.exercise_id, head.id, n, true, logged_at, head.is_warmup);
           continue;
+        end if;
+        lw := coalesce(head.target_weight, 50);
+        lr := coalesce(head.rep_max, head.rep_min, 8);
+        -- pre-1.1 logs carry no stage kind (legacy dropsets read as dropset)
+        lk := case when r.mesocycle_id = m_ppl then null else head.stage_kind end;
+        if diffs and not head.is_warmup then
+          if head.exercise_id = e_bench and n = 2 then lw := 82.5; lr := 7;
+          elsif head.exercise_id = e_bench and n = 3 then lr := 5;
+          elsif head.exercise_id = e_lat_raise and n = 1 then lk := 'dropset';
+          end if;
         end if;
         insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
                                  logged_at, rest_seconds, is_warmup, stage_kind, entered_unit, form_rating)
-        values (t, s, head.exercise_id, head.id, n,
-                coalesce(head.target_weight, 50), coalesce(head.rep_max, head.rep_min, 8),
+        values (r.uid, s, head.exercise_id, head.id, n,
+                lw, lr,
                 case when head.is_warmup then null else coalesce(head.target_rir, 2) end,
                 logged_at, case when i > 1 then 150 end, head.is_warmup,
-                -- pre-1.1 logs carry no stage kind (legacy dropsets read as dropset)
-                case when r.mesocycle_id = m_ppl then null else head.stage_kind end,
+                lk,
                 -- a warmup log carries no unit or form rating (SetRow.tsx)
                 case when head.is_warmup then null else 'kg' end,
                 case when i % 3 = 0 and not head.is_warmup then 'controlled' end)
@@ -480,10 +664,31 @@ begin
           logged_at := logged_at + interval '20 seconds';
           insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
                                    logged_at, is_dropset, parent_set_id, stage_index, entered_unit)
-          values (t, s, head.exercise_id, st.id, n, coalesce(st.target_weight, head.target_weight, 40),
+          values (r.uid, s, head.exercise_id, st.id, n, coalesce(st.target_weight, head.target_weight, 40),
                   coalesce(st.rep_max, 6), 0, logged_at, true, hl, st.stage_index, 'kg');
         end loop;
+        if diffs and head.exercise_id = e_lat_raise and n = 1 and not head.is_warmup then
+          -- Set 1 was made a dropset during the session and one drop was logged:
+          -- the way the app writes it, a stage log under the head with no
+          -- planned stage behind it.
+          logged_at := logged_at + interval '20 seconds';
+          insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
+                                   logged_at, is_dropset, parent_set_id, stage_index, entered_unit)
+          values (r.uid, s, head.exercise_id, null, n, lw - 2, 10, 0, logged_at, true, hl, 1, 'kg');
+        end if;
       end loop;
+
+      if diffs then
+        -- A cable pushdown set nobody planned: the exercise's third head, logged
+        -- with no planned set behind it (week_plan_set_id null), 20 kg x 15.
+        logged_at := logged_at + interval '3 minutes';
+        insert into v2_set_logs (user_id, session_id, exercise_id, week_plan_set_id, set_number, weight, reps, rir,
+                                 logged_at, rest_seconds, entered_unit)
+        select r.uid, s, e_pushdown, null,
+               (select count(*) + 1 from v2_set_logs
+                where session_id = s and exercise_id = e_pushdown and not is_warmup and parent_set_id is null),
+               20, 15, 2, logged_at, 150, 'kg';
+      end if;
     end;
   end loop;
 
@@ -514,6 +719,12 @@ begin
     (select count(*) from v2_programs where user_id = t), (select count(*) from v2_mesocycles where user_id = t),
     (select count(*) from v2_sessions where user_id = t), (select count(*) from v2_set_logs where user_id = t), c_email,
     (select count(*) from v2_set_logs where user_id = o), c_other_email;
+  raise notice 'staging seed: % (% sessions, % set logs, run %), % (% sessions, % set logs, run %), % (% program rows)',
+    c_stable_email, (select count(*) from v2_sessions where user_id = u_stable), (select count(*) from v2_set_logs where user_id = u_stable),
+    (select status || ' ' || start_date from v2_mesocycles where id = m_st),
+    c_seq_email, (select count(*) from v2_sessions where user_id = u_seq), (select count(*) from v2_set_logs where user_id = u_seq),
+    (select status || ' ' || start_date from v2_mesocycles where id = m_q),
+    c_empty_email, (select count(*) from v2_programs where user_id = u_empty);
 end
 $seed$;
 

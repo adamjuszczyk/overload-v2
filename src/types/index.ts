@@ -3,6 +3,7 @@ import type { WeekAnalysisInput } from '../features/coach/weekAnalysisInput'
 import type { QaContext } from '../features/coach/qaContext'
 import type { MesoAnalysisPromptPayload } from '../features/coach/coachMesoPrompt'
 import type { DeloadRules, DeloadRestoreEntry } from '../lib/deloadRules'
+import type { StageKind } from '../lib/plannerVocabulary'
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -477,6 +478,16 @@ export interface WeekPlanSet {
   // same fallback convention as the fields above; absent/undefined reads as
   // "no tags" (an empty list) everywhere this is used.
   tags?: string[] | null
+  // v2_week_plan_sets.target_rir_max (migration 042, TASKS-1.2 chunk 36 —
+  // SPEC [1.2] "Targets": the RIR target is "a number or a range (min–max)";
+  // "a second, additive column holds the range's upper end"). `targetRir`
+  // stays the number, or the range's low end; this is the high end. A number
+  // is `targetRirMax` null. The DB check (v2_week_plan_sets_target_rir_max_
+  // check) allows a high end only with a low end, and not below it. Read-only
+  // for now: no writer yet (the week view's RIR picker writes it, chunk 54a).
+  // Optional, same "may not exist yet" convention as the fields above:
+  // absent/undefined reads as null (a number, not a range).
+  targetRirMax?: number | null
 }
 
 // ─── Session (Layer 3 — what actually happened) ───────────────────────────────
@@ -687,6 +698,79 @@ export interface UserSettings {
   // switched off, the same canonicalisation deloadRules.ts's own
   // validateDeloadRules applies on read.
   deloadRules: DeloadRules | null
+  // v2_user_settings.stage_volume_rule (migration 042, TASKS-1.2 chunk 36 —
+  // SPEC [1.2] "Settings": how drops and stages count in volume, "whole set
+  // = 1 | each drop = 1 | each drop = ½", default each drop = ½; G51: the
+  // VOLUME sheet only). Falls back to 'half' while the column is absent
+  // (settingsService.ts). Not sent by upsertSettings yet: chunk 49 does, once
+  // 042 is live on staging.
+  stageVolumeRule: StageVolumeRule
+  // v2_user_settings.log_in_order (migration 042 — SPEC [1.2] "Settings":
+  // "Log sets in order" (the log lock, 18a), on by default). Falls back to
+  // true while the column is absent. Not sent by upsertSettings yet (chunk 49).
+  logInOrder: boolean
+}
+
+// 'whole' = a staged set counts 1; 'each' = every drop counts 1; 'half' =
+// every drop counts one half (v2_user_settings.stage_volume_rule's check).
+export type StageVolumeRule = 'whole' | 'each' | 'half'
+
+// ─── 1.2 tables (migration 042; nothing reads or writes them yet) ──────────────
+
+// v2_week_review_decisions — SPEC [1.2] "Review": a decided item never comes
+// back. `itemKey` is built by the one function in review.ts (chunk 43), never
+// from a set log id; unique per (weekPlanId, itemKey).
+export type ReviewDecision = 'used' | 'ignored'
+
+export interface WeekReviewDecision {
+  id: string
+  userId: string
+  weekPlanId: string         // the shown week's own session row
+  itemKey: string
+  decision: ReviewDecision
+  createdAt: string
+}
+
+// What a 'retyped' change records. v2_session_set_changes can store exactly
+// this much (is_warmup, stage_kind, stage_count): no rest between stages. A
+// SetType from the shared pickers (chunk 39) is assignable to it.
+export type SessionSetChangeType =
+  | { kind: 'normal' }
+  | { kind: 'warmup' }
+  | { kind: 'staged'; stageKind: StageKind; stageCount: number }
+
+// v2_session_set_changes — a set changed or removed during a workout, held on
+// the session and never on the plan. One variant per `kind`, each carrying
+// only the key and fields its row may have (the table's checks refuse the
+// rest), so an impossible row can't be built:
+//   deleted         a planned set removed before it was logged
+//   retyped         a planned set given another type before it was logged
+//   pending_stages  a logged head whose pending drops still need their count
+export type SessionSetChange =
+  | { kind: 'deleted'; weekPlanSetId: string }
+  | { kind: 'retyped'; weekPlanSetId: string; type: SessionSetChangeType }
+  | { kind: 'pending_stages'; setLogId: string; stageKind: StageKind; stageCount: number }
+
+// A stored change: the union above plus what every row has.
+export type SessionSetChangeRecord = SessionSetChange & {
+  id: string
+  userId: string
+  sessionId: string
+  createdAt: string
+  updatedAt: string
+}
+
+// v2_run_schedules — a weekday run's schedule history (SPEC [1.2] "Weekdays
+// storage"). The schedule in force for a week is the row with the greatest
+// `fromWeek` <= that week, else the run copy's own v2_programs.schedule
+// (runSchedule.ts, chunk 45). Weekday runs only.
+export interface RunSchedule {
+  id: string
+  userId: string
+  mesocycleId: string
+  fromWeek: number           // >= 1; unique per mesocycle
+  schedule: WeeklySchedule
+  createdAt: string
 }
 
 // ─── Coach (Daily Session Analysis) ────────────────────────────────────────────

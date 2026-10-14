@@ -43,7 +43,9 @@
 //
 // TABLES must list every table or view the app reads or writes — find them with
 //   grep -rhoE "\.from\('[a-z_0-9]+'\)" src api | sort -u
-// A new table that is not added here is not checked.
+// A new table that is not added here is not checked. A table a migration has
+// created but no app code uses yet goes in TABLES_AHEAD_OF_THE_APP below, and
+// is probed the same way.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -79,6 +81,20 @@ const TABLES = [
   'v2_week_plans',
   'v2_workout_days',
   'v2_workout_warmup_items',
+];
+
+// Tables a migration has already created that no app code reads or writes yet
+// (migration 042, TASKS-1.2 chunk 36). They are probed exactly like TABLES from
+// the day they exist, so a missing policy or grant shows on staging before any
+// screen depends on them. They are kept apart from TABLES because
+// verify-rls-tables.test.mjs fails on a TABLES name no `.from()` in src/ or
+// api/ uses. The chunk whose code first calls `.from()` on one of them moves
+// its name into TABLES (the same test fails until it does) and deletes it here
+// (verify-rls-ahead.test.mjs fails until it does).
+export const TABLES_AHEAD_OF_THE_APP = [
+  'v2_run_schedules',
+  'v2_session_set_changes',
+  'v2_week_review_decisions',
 ];
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on
@@ -237,9 +253,10 @@ async function main() {
   }
   if (signInError) console.error(`verify-rls: could not sign in as the test account: ${signInError}`);
 
-  const pad = Math.max(...TABLES.map((t) => t.length));
+  const probed = [...TABLES, ...TABLES_AHEAD_OF_THE_APP];
+  const pad = Math.max(...probed.map((t) => t.length));
   const results = [];
-  for (const table of TABLES) {
+  for (const table of probed) {
     const anonResult = await probe(anon, table);
     const authResult = signInError
       ? { status: 'FAIL', detail: `not probed, sign-in failed: ${signInError}` }
@@ -255,7 +272,7 @@ async function main() {
   const leaks = probes.filter((p) => p.status === 'LEAK').length;
   const fails = probes.filter((p) => p.status === 'FAIL').length;
   console.log(
-    `\nverify-rls: ${TABLES.length} tables, ${probes.length} probes — ` +
+    `\nverify-rls: ${probed.length} tables, ${probes.length} probes — ` +
       `${probes.length - leaks - fails} pass, ${leaks} leak, ${fails} fail`,
   );
   if (leaks > 0 || fails > 0) {
