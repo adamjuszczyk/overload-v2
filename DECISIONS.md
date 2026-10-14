@@ -1,7 +1,7 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2 complete: staging verified end to end; 122 (bypass secret rotated) and 123 (Postgres 17.6 vs 17.11, accepted) closed. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-14, chunk 36 merged (#95, `8aeff32`): migration 042 live on staging; its seed revision waits for your re-seed (124). Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. Each list is ordered by what it blocks.*
 
 Decisions:
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
@@ -23,6 +23,7 @@ Decisions:
 - **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
 
 To-dos:
+- **124** — Re-seed staging: paste `supabase/seed.sql` (as on `staging` since #95) into the staging branch's SQL editor, run it, then confirm in entry 124 with the date. When: before chunk 51b starts. Blocks: chunk 51b first (the stable account), then every later staging step that uses the new accounts or week 2's differences, and chunk 36's last staging step (the smoke and the four sign-ins on staging).
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -30,7 +31,7 @@ To-dos:
 ## For the release
 *Every migration `check-migration` flags during the 1.2 build, one line each (number, PR, what it flags). At the release Adam gets one blocking decision covering all of them (CONTEXT.md, "Staging and the 1.2 build").*
 
-Nothing yet.
+- **042** — chunk 36 (#95): `check-migration` exit 1 on three statements: two `ADD COLUMN` carrying a CHECK (`v2_week_plan_sets.target_rir_max`, `v2_user_settings.stage_volume_rule`: "new column carries a constraint or generated value") and `notify pgrst, 'reload schema'` ("not on the safe list"). Add-only: 3 columns, nullable or defaulted, whose checks every existing row satisfies, and 3 empty tables; no existing row changes.
 
 ## Format for all new entries
 
@@ -51,6 +52,12 @@ Blocking vs deferred: an entry is blocking when continuing means guessing at som
 When an entry is answered or done, it shrinks to three lines (what, answer, date) and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. "Waiting on Adam" is rewritten at every boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 124 Re-seed staging after chunk 36
+**Ask:** run the seed once more on staging: Supabase → the `staging` branch → SQL Editor, paste all of `supabase/seed.sql` as it is on the `staging` branch now (since #95), run it, then write "done" and the date here. If the editor answers with an error, paste its first line here instead: the seed runs as one block, so a failure changes nothing.
+**Recommendation:** do it any time before chunk 51b starts. **When:** before chunk 51b.
+**Blocks:** chunk 51b first (the stable account); after it the staging steps that use the new accounts or week 2's differences (TASKS-1.2 "Seed": stable 51b, 52, 53, 54a, 54b, 65; sequence 52, 54b; empty 65, 68, 69; week 2's differences 55, 56, 58b); and chunk 36's last staging step, "after the re-seed: `staging-smoke.mjs` passes on staging and each of the four accounts signs in", which the next reviewer runs once this says done. Nothing before 51b.
+**Evidence:** Supabase runs a seed file once, so the revision chunk 36 merged reaches staging only through the SQL editor (CONTEXT.md, "What staging is made of"). It keeps the existing accounts, rebuilds all five accounts' data (rows reviewers created, the 042 tables included, go too) and creates `staging-stable`, `staging-sequence` and `staging-empty` with the test account's password hash, so `STAGING_TEST_PASSWORD` signs in to all four. It refuses to run if the branch holds any other account or production's owner id. On a local stack (the real image, GoTrue, PostgREST) it ran over the old seed, the three new accounts signed in with the test account's password and `staging-smoke.mjs` passed 55 of 55; on staging today the smoke passes 18 and fails exactly the 9 checks the re-seed fixes (three sign-ins, six week-2 differences). Its dates are relative to the day it runs: the test account's week 3 and the stable account's week 2 become the week you run it in.
 
 ### 123 Postgres version: staging branch vs production
 - What: the Postgres version of the staging branch and of production.
