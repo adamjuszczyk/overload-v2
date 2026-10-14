@@ -20,6 +20,7 @@ import PrioritiesEditor from './features/plan/PrioritiesEditor'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
+import StagingBadge from './components/StagingBadge'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
@@ -44,6 +45,7 @@ export default function App() {
               authenticated) means it can't be blocked on a test/verification
               path that needs to reach a logged-in screen. */}
           <PwaUpdateNotice />
+          <StagingBadge />
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>

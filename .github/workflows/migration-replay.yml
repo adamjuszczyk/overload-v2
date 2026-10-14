@@ -1,14 +1,14 @@
 # The `migration-replay` check: replays every migration in supabase/migrations,
 # in order, on an empty Supabase Postgres at production's version, and fails on
-# any error. Runs on every PR into master, not only PRs touching supabase/, so
-# that a ruleset can require it without blocking PRs it would otherwise skip
-# (MIGRATION-SWITCH.md, section 2). It touches no Supabase project and uses no
-# secrets.
+# any error. Runs on every PR into master or staging, not only PRs touching
+# supabase/, so that a ruleset can require it without blocking PRs it would
+# otherwise skip (MIGRATION-SWITCH.md, section 2; staging: CONTEXT.md). It
+# touches no Supabase project and uses no secrets.
 name: migration-replay
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch:
 
 permissions:

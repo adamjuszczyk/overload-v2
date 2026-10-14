@@ -1,12 +1,9 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every chunk boundary. Last: 2026-10-12, hotfix 041 (#85) waiting on your merge (115); before it the sync-queue order fix (#83, DECISIONS 114), which followed the fix session (B3–B6, Plan read-only; #72–#81, DECISIONS 111): code only, no migration, no data change. Before that, revision 1.1 was complete (chunks 27–35, migrations 038–040) with one known gap (106). The step 5 review is Adam's, against a checklist generated from SPEC.md.*
+*Rewritten at every boundary. Last: 2026-10-14, staging setup for 1.2 complete: staging verified end to end; 122 (bypass secret rotated) and 123 (Postgres 17.6 vs 17.11, accepted) closed. Items 82–112 are 1.1's provisional display choices (D31), each built as written unless you change it. Each list is ordered by what it blocks.*
 
-Blocking:
-- **115** — merge #85 (migration 041): starting a run fails in production until it's deployed. check-migration flags it (create or replace function, grants, notify: the same as 034–040). Recommendation: merge; the bodies are 034/040's verbatim plus ` where true` on 7 temp-table deletes (diffed in the PR). After: read every `Supabase Preview` run on the merge commit, then start a run. Blocks: starting a run, and Plan's week planning and make-default wherever safeupdate applies.
-
-Decisions (provisional under D31: each is built as written unless you change it):
+Decisions:
 - **82** — which exercises count as "moved" in a reorder. Provisional: every one outside the largest groups that kept their order (two neighbours that traded places: both). Blocks: nothing.
 - **83** — the same exercise twice in one workout, for highlighting. Provisional: matched in order of position. Blocks: nothing.
 - **84** — how Plan knows a week started empty. Provisional: Settings → NEW WEEK STARTS is "empty" (week-dependent runs); exact would need a new column, which is yours to choose. Blocks: nothing.
@@ -23,54 +20,82 @@ Decisions (provisional under D31: each is built as written unless you change it)
 - **104** — how differences show. Provisional: a changed number cell gets an accent border/muted fill; an added set marks its number and reps (weight/RIR only if last week's set at that position differs or is missing; never on week 1); an added/moved exercise's header is accent on the muted band; a removed exercise is a dim struck-through line in STRUCTURE after the exercise it followed (a swap: old directly above new); a removed working set shows in SETS with what it held, a removed warmup/stage in STRUCTURE; a changed kind puts a dot on the set's ⋯; the unit isn't compared. On a stable run, a set the default has but last week lacks gets weight/RIR marked. Blocks: nothing.
 - **109** — chunk 33's wording and placement. Provisional: START disabled with "Schedule at least one workout to start" under it (planner, and the Programs sheet's START RUN; the row's START still opens the sheet); Plan: "NO WORKOUTS SCHEDULED" + "Programs →"; deload line "Deload rules (this run's | your default): …" under the deload button (also when it reads UNMARK; none on a past week); refusal "THIS PROGRAM IS A RUN'S COPY" with "← Back to programs". Blocks: nothing.
 - **110** — two program-tab conveniences have no one-to-one equivalent in Plan: one-tap ALL SETS rep target, and turning an existing set into a warmup (the per-row WARMUP toggle was already dropped from the week on 2026-10-10). Both outcomes stay reachable per set (or delete + ADD WARMUP SETS), then Make default. Provisional: leave as is. Blocks: nothing.
-
 - **112** — a finished session's rows in Plan on a shared (G14) row. Provisional: if any session on that row is completed or skipped, the row is read-only for every weekday that shares it. Behaviour only; no data. Alternative: lock only when every sharing weekday's session is done (then a finished Monday leaves Thursday editable but the shared plan changes under Monday). Blocks: nothing.
 
 To-dos:
-- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) The docs-only merge that carries these notes is the first push under the new `ignoreCommand`: Vercel should show it skipped if the code before it deployed. (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
-- **79** — confirm REDO SESSION is gone on a finished session's Today screen, after today's session. When: after today's session. Blocks: nothing. (The Move check and the Legs-row question are answered.)
+- **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
+- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
+- **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
+
+## For the release
+*Every migration `check-migration` flags during the 1.2 build, one line each (number, PR, what it flags). At the release Adam gets one blocking decision covering all of them (CONTEXT.md, "Staging and the 1.2 build").*
+
+Nothing yet.
 
 ## Format for all new entries
 
-An open entry starts with the ask; the reasoning comes after it, under "Evidence".
+Every entry opens with the ask and a recommendation; evidence comes after it, short.
 
 ```
 ### [n] [One-line summary]
-Severity: blocking | deferred
-Chunk: [n]
 **Ask:** [the question or task, in plain words]
+**Recommendation:** [mine, and why in one line] — for a to-do: **When:** [e.g. now, before the release]
+**Blocks:** [what stops until it's answered or done; "nothing" if nothing]
 **Options:** [each option, one line] — decisions only
-**Recommendation:** [mine, and why in one line] — decisions only
-**When:** [e.g. next session] — to-dos only
-**Blocked until answered/done:** [what stops]
 **Answer:** [Adam's]
-**Evidence:**
-What happened: [the situation, with full reasoning]
-A competent default would: [what anything competent would have
-  just done here] — doesn't apply because: [why this is a real
-  decision and not a default]
-Cost of deferral: [what gets redone if the answer goes against
-  the provisional path] — blocking entries: n/a
+**Evidence:** [what happened and why this isn't a default anyone competent would just take; for deferred decisions, what gets redone if the answer goes against the provisional path]
 ```
 
-Deferred is only allowed when the work can continue without committing to the answer. If continuing means guessing at something expensive to undo, it's blocking.
+Blocking vs deferred: an entry is blocking when continuing means guessing at something expensive to undo; otherwise it is deferred and the work continues on the recommendation. Entries written before 2026-10-14 keep the older layout (Severity, Chunk, Ask, Options, Recommendation, …, Evidence); it carries the same information.
 
-When an entry is answered or done, it shrinks to three lines (what, answer, date) under "Closed", and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. The "Waiting on Adam" section is rewritten at every chunk boundary; if both lists are empty it says "Nothing."
+When an entry is answered or done, it shrinks to three lines (what, answer, date) and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. "Waiting on Adam" is rewritten at every boundary; if both lists are empty it says "Nothing."
 
 ## Open
 
+### 123 Postgres version: staging branch vs production
+- What: the Postgres version of the staging branch and of production.
+- Answer: both Postgres 17 (production 17.6, staging 17.11): same major version, minor releases only. Accepted, closed (Adam).
+- Date: 2026-10-14
+
+### 122 Rotate the Vercel bypass secret
+- What: rotate the Protection Bypass for Automation secret, printed into the setup session's log by a Playwright error.
+- Answer: done (Adam); the new secret is in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET`.
+- Date: 2026-10-14
+
+### 121 Before the release: prove production's migration history
+**Ask:** run, from your worktree `overload-v2-switch` on an up-to-date `master`: `npx --yes supabase@2.119.0 migration list --linked` and paste the output here. Expected: every version `000`–`041` in both the Local and Remote columns, nothing local-only.
+**Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
+**Blocks:** the release's migrations-first PR to master.
+**Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
+
+### 120 Models for the 1.2 reviewer and builders
+- What: which models run the 1.2 reviewer (coordinator and batch reviewers) and the builders.
+- Answer: Adam's choice, recorded in the 1.2 build-process file in the project (models and effort for the coordinator, batch reviewers and builders). Nothing to do at setup.
+- Date: 2026-10-14
+
+### 119 Which database Vercel Preview deployments use
+- What: whether every Vercel Preview deployment, not only `staging`'s, uses the staging database.
+- Answer: yes, every preview deployment uses the staging database (116 (g)).
+- Date: 2026-10-14
+
+### 118 A second synthetic account on staging for verify-rls
+- What: a second synthetic account so verify-rls's foreign-row probe can catch a leak on staging.
+- Answer: yes, in the seed: `staging-other@example.com` (random password nobody knows) owns a program, run, session, logs, a note and a mark. On the local stack verify-rls passes, and with RLS off on `v2_programs` it reports both probes as LEAK.
+- Date: 2026-10-14
+
+### 117 How the reviewer's browser reaches the staging app
+- What: the route past Vercel's login for the reviewer's browser on staging.
+- Answer: (a) Protection Bypass for Automation; the secret goes in this environment's `VERCEL_AUTOMATION_BYPASS_SECRET` (116 (e), (i)).
+- Date: 2026-10-14
+
+### 116 Set up staging in the dashboards (Adam's list)
+- What: the dashboard steps (a)–(k) for staging: the persistent Supabase branch, sign-ups off, the test account, this environment's secrets and allowlist, Vercel env vars (all preview branches) and domain, the bypass secret, the `staging` ruleset (no bypass actor).
+- Answer: done by Adam 2026-10-14; (k): `[remotes.staging]` (#90, fixed in #91), seed numbering (#92); staging verified end to end (CONTEXT.md, "Staging verification"); open: 122, 123.
+- Date: 2026-10-14
 ### 115 Hotfix: starting a run fails in production (pg-safeupdate) — merge 041 (#85)
-Severity: blocking
-Chunk: hotfix
-**Ask:** merge #85. Merging deploys 041.
-**Options:** merge as is / ask for changes.
-**Recommendation:** merge. Each function body is its latest definition (034, 040, 040) with only ` where true` added to its bare `delete from tmp_...;` (4 + 1 + 2), proven by a run diff in the PR; same grants and the schema reload.
-**Blocked until answered/done:** starting a new run in production.
-**Answer:**
-**Evidence:**
-What happened: Adam saw "DELETE requires a WHERE clause" from `v2_start_run` in the Supabase Postgres log. pg-safeupdate rejects DELETE/UPDATE without WHERE on API requests; `v2_copy_program` clears four temp tables with bare deletes. A scan of every function's latest definition (5 functions: 021 `reassign_exercise_history`, 028 `v2_start_run`, 034 `v2_copy_program`, 040 `v2_plan_week`, `v2_make_week_default`) found 7 bare DELETEs, no bare UPDATE, all in the three re-created. `check-migration`: exit 1 (flagged, the same statement kinds as 034–040; script unchanged); `check-migration-order`: OK. Not done: a local replay with safeupdate loaded (image pull refused: Docker Hub 429, ECR data limit); CI's `migration-replay` applies the file but doesn't load safeupdate.
-A competent default would: merge it at once — doesn't apply because: check-migration flags it, so the merge is Adam's (Escalation 8), and merging deploys.
-Cost of deferral: n/a (blocking).
+- What: 041 re-creates `v2_copy_program`, `v2_plan_week`, `v2_make_week_default` with ` where true` on 7 bare temp-table deletes that pg-safeupdate rejected.
+- Answer: merged by Adam (#85, `6e5f654`); `Supabase Preview` success on the merge commit (2026-10-12). Full text in HISTORY.md.
+- Date: 2026-10-12
 
 ### 114 Sync queue: writes to the same record keep their order (#83)
 - What: the open item from the fix session. A failed queued write no longer lets later writes to the same record overtake it: it holds back every later write to that record until it succeeds; a set log is also held behind its session row and a stage behind its head (they would only fail on the foreign key); other records still go. Retry limit 5 failed passes (was 3; one attempt per flush pass: reconnect, app start, finish, retry tap). After that the write stops retrying but stays queued (`gaveUp`, never deleted, was dropped before) and `SyncFailedNotice` shows "N changes couldn't sync. Tap to retry." on its session's workout, finished and History screens, `/coach` for a note with no session; reloaded on app start.
