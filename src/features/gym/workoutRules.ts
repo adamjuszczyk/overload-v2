@@ -38,24 +38,54 @@
 // - With the lock on (`logInOrder`) only the current set's LOG logs straight away; LOG on any other row
 //   asks "Log A2 before set 03?" (board W7b); with it off every LOG logs.
 //
+// ─── The session's change rows (042; Adam's data-model rules, 2026-10-14 and 15) ─────────────────
+// `v2_session_set_changes` holds what a session did to a set that its log can't say. The rules every
+// writer here follows, so that chunks 61 to 63 only have to carry them out:
+//   - ONE change row per planned set per session (`deleted` or `retyped`; a partial unique index refuses
+//     a second one), and one `pending_stages` row per log;
+//   - a `retyped` row is keyed by the planned set WHETHER OR NOT THE SET IS LOGGED (141 (a)); an added set
+//     never gets one (it has no planned set; its log carries its type);
+//   - a later delete turns the `retyped` row into `deleted` in ONE write that clears the type, with the
+//     row's own id (a second row for the set is refused, and a kind-only update of a row that holds a
+//     warmup or a stage kind is refused by 042's checks): `ChangeWrite.id` is that id (null: a new row,
+//     the writer makes the id) and `changeColumns` is the whole row to write;
+//   - every function that writes reads the changes AS THE SESSION HOLDS THEM (`HeldChange`: the change
+//     with the stored row's id) and says which row each change it returns replaces.
+//
 // ─── What a set type change writes ───────────────────────────────────────────────────────────────
 // `applySetTypeChange` is the one place a picked type becomes storage (Checks that lied #15: no writer
 // maps a type on its own). `typeColumns` / `typeOfColumns` are the same mapping for a change row.
 //   - an upcoming planned set: a `retyped` change keyed by the planned set (nothing on the plan);
 //   - a logged head: its log's `is_warmup` / `stage_kind` are patched and, for a staged type, a
 //     `pending_stages` change keyed by the log holds the head's total drop count; Normal and Warmup
-//     remove the drops, and logged drops are deleted only after the confirm (19c);
-//   - an added set that is not logged yet has no row to write: its type is local state.
+//     remove the drops, and logged drops are deleted only after the confirm (19c). A logged PLANNED head
+//     also gets the `retyped` change, keyed by its planned set (141 (a): next week's REVIEW reads the
+//     type as done through the change rows);
+//   - an added set that is not logged yet has no row to write: its type is local state;
+//   - a logged set switched to or from Warmup renumbers the working sets as a delete does (DECISIONS 146
+//     (a)): `renumber` lists the logs whose `set_number` changes (an upcoming set has none to change:
+//     its number is worked out from the logged ones).
 //
 // ─── Delete, unlog, finish ───────────────────────────────────────────────────────────────────────
-// - `deleteEffects`: the drops from the last, then the head (the cascade order of `setGroupLogic.ts`);
-//   every later head of the same exercise and its drops take the numbers that close the gap (F4: a
-//   renumbered head's drops used to keep their old number). A lone drop renumbers nothing.
+// - `deleteEffects` says everything DELETE does, so that a deleted set never comes back as an open row
+//   (SPEC 18b: "The remaining sets renumber", 13c: a deleted planned set counts as Skipped):
+//     * a set that has logs: the drops from the last, then the head (the cascade order of
+//       `setGroupLogic.ts`); every later head of the same exercise and its drops take the numbers that
+//       close the gap (F4: a renumbered head's drops used to keep their old number);
+//     * a planned set, logged or not: a `deleted` change that replaces its `retyped` change (the plan has
+//       the slot, and only the change row says it is gone). An added set needs none: the card lowers its
+//       count of added sets;
+//     * a drop on its own, logged or not (board W8): its set has one drop fewer, kept by the change rows
+//       (a `pending_stages` row for a logged head, the `retyped` row for a planned one); a set left with
+//       no drop is a Normal set (DECISIONS 147 (a)): a logged head loses its stage kind and a planned
+//       set gets a `retyped` Normal row. The drops left are the first ones: rows read them by count.
 // - `canUnlog` / `unlogEffects`: a set with logged (done) drops after it cannot be unlogged; skipped
-//   drops go with it. The kept numbers are a draft on the phone (G46), never a server row; the draft's
-//   key is the planned set, or for an added set its local id, exercise and position. A type the set was
-//   logged with, and the plan doesn't have, travels as a `retyped` change so unlog never loses it. Nothing
-//   it returns touches the rest timer or the session's status (Defaults 6).
+//   drops go with it. A logged drop can be unlogged under the same rule (DECISIONS 147 (b)): not while a
+//   later drop of its set is logged. The kept numbers are a draft on the phone (G46), never a server
+//   row; the draft's key is the set's own (the planned set, or for an added set its local id, exercise and
+//   position) and, for a drop, its number under the set. A type the set was logged with, and the plan
+//   doesn't have, travels as a `retyped` change so unlog never loses it. Nothing it returns touches the
+//   rest timer or the session's status (Defaults 6).
 // - `finishWarning`: the unlogged planned sets, by exercise and number (board W18); deleted sets are not
 //   in the order, skipped ones are settled.
 //
@@ -64,31 +94,43 @@
 //   const rows = resolveRows(order, logs, changes)         // what every card draws; one list
 //   const current = currentSet(order, logs, changes)       // the first unlogged working set or drop of `rows`
 //   lockDecision({ logInOrder, current, tapped })          // 'log', or the question's words for the sheet
-//   applySetTypeChange({ row, pick, loggedStages })        // a picked type -> the log patch, drops, change row
-//   deleteEffects(group, siblings) / canUnlog / unlogEffects(group, row)
+//   const session = { rows, logs, changes }                // `changes` with the stored rows' ids (`HeldChange`)
+//   applySetTypeChange({ row, pick, session })             // a picked type -> the log patch, drops, change rows, numbers
+//   deleteEffects(row, session) / canUnlog(row, session) / unlogEffects(row, session)
 //   finishWarning(order, logs, changes) / addRound(order, rows, blockId)
-// None of them writes: each returns what the caller writes.
+// None of them writes: each returns what the caller writes. The order of the writes is the caller's
+// (chunk 61 chooses it for the offline queue: until a deleted set's change row has landed, a refetch
+// draws the set as an open row).
 //
 // ─── Where SPEC is silent (readings built; DECISIONS asks) ─────────────────────────────────────────
-// - Delete of a logged planned set: the log goes and the later sets renumber (TASKS 46); nothing here
-//   records the planned set as deleted, so its slot comes back as an open set (as today's delete does)
-//   unless chunk 61 also writes a `deleted` change.
 // - Finish: an unlogged planned warmup and an unlogged drop of a logged set are not listed (warmups are
 //   never counted in set counts; stages are never separate sets).
-// - Unlog: a skipped drop doesn't stop it and goes with the set; a drop itself can't be unlogged here
-//   (what its draft is keyed by is not defined).
+// - Unlog: a skipped drop doesn't stop the unlog of its set and goes with it; the same for the skipped drops
+//   after a drop that is unlogged (rows read a set's drops by count, so a log left after it would move up
+//   into the place of the drop that is open again).
 // - A set type pick with fewer drops than are logged deletes the extra logged drops after the question
-//   (19c asks for Normal; the same question is asked here). Switching a logged set to or from Warmup
-//   patches its log and renumbers nothing (warmups are numbered apart).
+//   (19c asks for Normal; the same question is asked here).
 // - An added set that is not logged yet keeps its type as local state; once logged, the caller writes its
 //   `pending_stages`. An added set unlogged again loses a type it was given: no planned set to key it on.
+//   An added set can be switched to Warmup like any set: its log stays a row, drawn as a warmup.
+// - The stored `stage_index` of the drops left after a drop is deleted is not renumbered (rows read the
+//   drops by count, and `nextStageIndex` already allows gaps); a warmup's stored `set_number` is not
+//   kept (warmups are numbered by their place), so switching a set to Warmup leaves its own number alone.
 //
 // ─── Provisional, D31 (display wording where no board gives it) ───────────────────────────────────
 // A plain row is called "set 03" in the lock's question (the board names a superset member "A2"); a drop
 // "set 03 drop 1" ("stage 1" for the kinds that are not dropsets); the finish sentence joins the numbers
 // of one exercise with "and" and separates exercises with a semicolon.
 
-import type { FormRating, SessionSetChange, SessionSetChangeType, SetLog, WeekPlanSet, WeightUnit } from '../../types'
+import type {
+  FormRating,
+  SessionSetChange,
+  SessionSetChangeRecord,
+  SessionSetChangeType,
+  SetLog,
+  WeekPlanSet,
+  WeightUnit,
+} from '../../types'
 import { resolveStageKind, type StageKind } from '../../lib/plannerVocabulary'
 import { buildSupersetRounds } from './supersetRounds'
 import { cascadeDeleteOrder, groupByParent, type SetGroup } from './setGroupLogic'
@@ -105,6 +147,27 @@ export type LoggedSet = Pick<
   SetLog,
   'id' | 'sessionId' | 'exerciseId' | 'weekPlanSetId' | 'setNumber' | 'parentSetId' | 'stageIndex' | 'isWarmup' | 'isSkipped' | 'stageKind'
 >
+
+/** A change as the session holds it: the union of chunk 36, with the id of the stored row it came from. */
+export type HeldChange = SessionSetChange & Pick<SessionSetChangeRecord, 'id'>
+
+/**
+ * A `v2_session_set_changes` row to write. `id` is the id of the row the session already holds for the same
+ * planned set (or, for `pending_stages`, the same log), which this write replaces; null when there is none and
+ * the writer makes the id. A second row for one planned set is refused (23505), and the sync queue upserts by
+ * id, so a write that replaces a row must carry that row's id. `changeColumns(change)` is the whole row.
+ */
+export interface ChangeWrite {
+  change: SessionSetChange
+  id: string | null
+}
+
+/** What the rules that write need to read: the rows as drawn (`resolveRows`), the logs and the changes held. */
+export interface SessionView {
+  rows: readonly ResolvedRow[]
+  logs: readonly LoggedSet[]
+  changes: readonly HeldChange[]
+}
 
 /** One card of the workout: an exercise with its planned sets. */
 export interface OrderExercise {
@@ -152,6 +215,13 @@ export interface ResolvedRow {
   added: boolean
   /** What the row shows (see the header); a drop shows its head's. */
   number: number
+  /**
+   * The set's place among its exercise's sets in the order the plan gives them (warmups and working sets
+   * together, then the sets added in the session), counted from 1 over the sets that are left; a drop has its
+   * head's. Only the order means anything. It does not change when a set is switched to or from Warmup, which
+   * is what places a set among the working numbers when it joins them (DECISIONS 146 (a)).
+   */
+  planIndex: number
   /** The log behind a logged or skipped row. */
   logId: string | null
   /** A head's type as it is now (plan, change and log together); null on a drop. */
@@ -234,8 +304,64 @@ function plannedTypeOf(planned: PlannedSet, plannedStages: number): SessionSetCh
   return NORMAL
 }
 
+/**
+ * The columns of a `v2_session_set_changes` row, whole: every column the type touches is named, so a write
+ * that turns a `retyped` row into `deleted` clears the warmup flag, the stage kind and the stage count in the
+ * same statement (042 refuses a `deleted` row that still holds a type, and a kind-only update of such a row).
+ */
+export interface ChangeColumns extends TypeColumns {
+  kind: SessionSetChange['kind']
+  weekPlanSetId: string | null
+  setLogId: string | null
+}
+
+export function changeColumns(change: SessionSetChange): ChangeColumns {
+  switch (change.kind) {
+    case 'deleted':
+      return { kind: 'deleted', weekPlanSetId: change.weekPlanSetId, setLogId: null, ...typeColumns(NORMAL) }
+    case 'retyped':
+      return { kind: 'retyped', weekPlanSetId: change.weekPlanSetId, setLogId: null, ...typeColumns(change.type) }
+    case 'pending_stages':
+      return {
+        kind: 'pending_stages',
+        weekPlanSetId: null,
+        setLogId: change.setLogId,
+        isWarmup: false,
+        stageKind: change.stageKind,
+        stageCount: change.stageCount,
+      }
+  }
+}
+
+// The row the session holds for a planned set (`deleted` or `retyped`: one per set) and for a log
+// (`pending_stages`), and the write that replaces it. A change with no row yet is written with no id.
+const heldForPlannedSet = (changes: readonly HeldChange[], weekPlanSetId: string): HeldChange | undefined =>
+  changes.find((c) => (c.kind === 'deleted' || c.kind === 'retyped') && c.weekPlanSetId === weekPlanSetId)
+
+const heldForLog = (changes: readonly HeldChange[], setLogId: string): HeldChange | undefined =>
+  changes.find((c) => c.kind === 'pending_stages' && c.setLogId === setLogId)
+
+function retypedWrite(weekPlanSetId: string, type: SessionSetChangeType, changes: readonly HeldChange[]): ChangeWrite {
+  return { change: { kind: 'retyped', weekPlanSetId, type }, id: heldForPlannedSet(changes, weekPlanSetId)?.id ?? null }
+}
+
+function deletedWrite(weekPlanSetId: string, changes: readonly HeldChange[]): ChangeWrite {
+  return { change: { kind: 'deleted', weekPlanSetId }, id: heldForPlannedSet(changes, weekPlanSetId)?.id ?? null }
+}
+
+function pendingWrite(setLogId: string, stageKind: StageKind, stageCount: number, changes: readonly HeldChange[]): ChangeWrite {
+  return { change: { kind: 'pending_stages', setLogId, stageKind, stageCount }, id: heldForLog(changes, setLogId)?.id ?? null }
+}
+
 // The type of a head that has a log: the log is authoritative for the kind, the change or the plan only
 // say how many drops (see the header). `planned` is null for an added set.
+//   - A log with a stage kind is a staged set of that kind; how many drops it has is the most specific
+//     count that names the same kind: the `pending_stages` row (keyed by the log), else the `retyped` row
+//     (keyed by the planned set), else the plan's, never fewer than the drops logged.
+//   - A log with no kind is Normal, unless the head is a pre-1.1 dropset (drops planned for a head with no
+//     kind, or drops logged under it): then it reads as a dropset, counted the same way. A `retyped` row that
+//     says Normal settles it the other way (a kindless dropset switched to Normal, or whose last drop was
+//     deleted: DECISIONS 141 (b), 147 (a)) unless drops are logged: a drop that exists is never hidden.
 function loggedHeadType(
   log: LoggedSet,
   planned: { stageKind: StageKind | null; stageCount: number } | null,
@@ -244,19 +370,19 @@ function loggedHeadType(
   loggedStages: number,
 ): SessionSetChangeType {
   if (log.isWarmup) return WARMUP
-  const kind = log.stageKind ?? null
-  if (kind !== null) {
-    let said = 0
-    if (pending !== undefined && pending.stageKind === kind) said = pending.stageCount
-    else if (retyped !== undefined && retyped.type.kind === 'staged' && retyped.type.stageKind === kind) said = retyped.type.stageCount
-    else if (planned !== null && planned.stageKind === kind) said = planned.stageCount
-    const count = Math.max(said, loggedStages)
-    return count > 0 ? { kind: 'staged', stageKind: kind, stageCount: count } : NORMAL
-  }
-  // A null kind: Normal, unless the head is a pre-1.1 dropset (drops planned or logged under it).
-  const legacy = planned !== null && planned.stageKind === null ? planned.stageCount : 0
-  const count = Math.max(legacy, loggedStages)
-  return count > 0 ? { kind: 'staged', stageKind: resolveStageKind(null), stageCount: count } : NORMAL
+  const logKind = log.stageKind ?? null
+  if (logKind === null && loggedStages === 0 && retyped !== undefined && retyped.type.kind === 'normal') return NORMAL
+  const plannedKind = planned !== null ? planned.stageKind : null
+  const plannedCount = planned !== null ? planned.stageCount : 0
+  const legacy = logKind === null && plannedKind === null && plannedCount > 0
+  const kind: StageKind | null = logKind ?? (legacy || loggedStages > 0 ? resolveStageKind(null) : null)
+  if (kind === null) return NORMAL
+  let said = 0
+  if (pending !== undefined && pending.stageKind === kind) said = pending.stageCount
+  else if (retyped !== undefined && retyped.type.kind === 'staged' && retyped.type.stageKind === kind) said = retyped.type.stageCount
+  else if (plannedKind === logKind) said = plannedCount
+  const count = Math.max(said, loggedStages)
+  return count > 0 ? { kind: 'staged', stageKind: kind, stageCount: count } : NORMAL
 }
 
 // ─── The session's structure ─────────────────────────────────────────────────────────────────────
@@ -351,6 +477,7 @@ interface Head {
   plannedType: SessionSetChangeType | null
   retyped: boolean
   number: number
+  planIndex: number
 }
 
 function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmups: Head[]; workings: Head[] } {
@@ -387,12 +514,14 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType,
       retyped: retyped !== undefined,
       number: 0,
+      planIndex: heads.length + 1,
     })
   }
 
   // The sets added in the session come after the planned ones; the n-th added row is the n-th added log.
+  // A set added and then switched to Warmup is still that row (drawn as a warmup: the type is the log's).
   const addedLogs = session.headLogs
-    .filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null && !log.isWarmup)
+    .filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null)
     .sort((a, b) => a.setNumber - b.setNumber)
   const addedCount = Math.max(exercise.addedSets ?? 0, addedLogs.length)
   for (let i = 0; i < addedCount; i++) {
@@ -409,6 +538,7 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType: null,
       retyped: false,
       number: 0,
+      planIndex: heads.length + 1,
     })
   }
 
@@ -432,7 +562,15 @@ type Block = NonNullable<ResolvedRow['block']>
 function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
   const state: RowState = head.log === null ? 'unlogged' : head.log.isSkipped ? 'skipped' : 'logged'
   const stageKind = head.type.kind === 'staged' ? head.type.stageKind : null
-  const common = { exerciseKey: head.exercise.key, exerciseId: head.exercise.exerciseId, exerciseName: head.exercise.name, added: head.added, number: head.number, block }
+  const common = {
+    exerciseKey: head.exercise.key,
+    exerciseId: head.exercise.exerciseId,
+    exerciseName: head.exercise.name,
+    added: head.added,
+    number: head.number,
+    planIndex: head.planIndex,
+    block,
+  }
   const rows: ResolvedRow[] = [
     {
       ...common,
@@ -547,6 +685,67 @@ export function lockDecision({
   return { ask: `Log ${rowLabel(tapped)} before ${rowLabel(current)}?`, next: nextName(current), label: rowLabel(tapped) }
 }
 
+// ─── What the writing rules read ─────────────────────────────────────────────────────────────────
+
+/** A log whose `set_number` changes, with the number it takes. */
+export interface NumberPatch {
+  id: string
+  setNumber: number
+}
+
+/** The log a row stands for. A row that has none, or one the session doesn't hold, is a caller bug. */
+function logOf<L extends LoggedSet>(row: Pick<ResolvedRow, 'key' | 'logId'>, logs: readonly L[]): L {
+  if (row.logId === null) throw new RangeError(`the row ${row.key} has no log`)
+  const log = logs.find((l) => l.id === row.logId)
+  if (log === undefined) throw new RangeError(`the log ${row.logId} of the row ${row.key} is not among the session's logs`)
+  return log
+}
+
+/** The logs under a head, by stage index. */
+const stagesOf = <L extends LoggedSet>(logs: readonly L[], headId: string): L[] =>
+  logs.filter((log) => log.parentSetId === headId).sort((a, b) => a.stageIndex - b.stageIndex)
+
+/** The session's head logs, each with its drops. */
+const groupsOf = (logs: readonly LoggedSet[]): SetGroup<LoggedSet>[] =>
+  groupByParent(
+    [...logs],
+    (l) => l.id,
+    (l) => l.parentSetId,
+    (l) => l.stageIndex,
+  )
+
+// A head and its drops all carry the head's number (the app writes a drop with its head's `set_number`).
+function numbersOf(group: SetGroup<LoggedSet>, setNumber: number): NumberPatch[] {
+  const patches: NumberPatch[] = []
+  if (group.head.setNumber !== setNumber) patches.push({ id: group.head.id, setNumber })
+  for (const stage of group.stages) if (stage.setNumber !== setNumber) patches.push({ id: stage.id, setNumber })
+  return patches
+}
+
+/** SPEC 18b: `gone` leaves its exercise's working sets, and every later head and its drops take the numbers that close the gap. */
+function closeGap(gone: LoggedSet, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
+  return groups
+    .filter((g) => g.head.exerciseId === gone.exerciseId && !g.head.isWarmup && g.head.setNumber > gone.setNumber)
+    .sort((a, b) => a.head.setNumber - b.head.setNumber)
+    .flatMap((g, i) => numbersOf(g, gone.setNumber + i))
+}
+
+/**
+ * DECISIONS 146 (a): `entering` (a warmup's log and the drops under it) joins its exercise's working sets as number
+ * `place`, and the working heads from there on move up one.
+ */
+function makeRoom(entering: SetGroup<LoggedSet>, place: number, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
+  const after = groups
+    .filter((g) => g.head.exerciseId === entering.head.exerciseId && !g.head.isWarmup && g.head.setNumber >= place)
+    .sort((a, b) => a.head.setNumber - b.head.setNumber)
+  return [...numbersOf(entering, place), ...after.flatMap((g) => numbersOf(g, g.head.setNumber + 1))]
+}
+
+// Where a set that joins the working sets takes its number: after the logged working sets that come before it
+// in the plan's order (a warmup is planned first, so a warmup made Normal is usually the first).
+const placeAmongLogged = (row: ResolvedRow, rows: readonly ResolvedRow[]): number =>
+  1 + rows.filter((r) => r.exerciseKey === row.exerciseKey && r.kind === 'working' && r.state !== 'unlogged' && r.planIndex < row.planIndex).length
+
 // ─── A set type changed during a workout ─────────────────────────────────────────────────────────
 
 export interface SetTypeChange {
@@ -564,23 +763,34 @@ export interface SetTypeChange {
   needsConfirm: boolean
   /** How many done drops the question names. */
   confirmCount: number
-  /** The `v2_session_set_changes` row to upsert: `retyped` for a planned set not logged yet, `pending_stages` for a logged head. */
-  change?: SessionSetChange
+  /**
+   * The `v2_session_set_changes` rows to write. A planned set gets a `retyped` row keyed by it, logged or not
+   * (141 (a)); a logged head given a staged type also gets a `pending_stages` row keyed by its log (the head's
+   * total drops); an added set gets no `retyped` row. Each says which stored row it replaces.
+   */
+  changes: ChangeWrite[]
+  /**
+   * A logged set switched to or from Warmup: the logs whose `set_number` changes (DECISIONS 146 (a)). To Warmup the
+   * working sets after it close the gap, as a delete does; from Warmup it takes its place among the working sets
+   * and the ones after it move up one. Online-only with the type change itself (G47).
+   */
+  renumber: NumberPatch[]
 }
 
 /**
  * SPEC 19: a set's type changed for this workout only. `row` is the set's row (from `resolveRows`), `pick`
- * the type chosen (a picker's `SetType` is accepted; its rest between stages is not stored), `loggedStages`
- * the logged drops under a logged head. Writes nothing; the caller applies what it returns.
+ * the type chosen (a picker's `SetType` is accepted; its rest between stages is not stored), `session` what
+ * the session holds (the logged drops under a logged head are read from its logs). Writes nothing; the
+ * caller applies what it returns.
  */
 export function applySetTypeChange({
   row,
   pick,
-  loggedStages = [],
+  session,
 }: {
-  row: Pick<ResolvedRow, 'state' | 'weekPlanSetId' | 'logId' | 'type'>
+  row: ResolvedRow
   pick: SessionSetChangeType
-  loggedStages?: ReadonlyArray<Pick<LoggedSet, 'id' | 'stageIndex' | 'isSkipped'>>
+  session: SessionView
 }): SetTypeChange {
   if (row.type === null) throw new RangeError('only a set has a type; a drop follows its head')
   if (row.state === 'skipped') throw new RangeError('a skipped set has no type to change')
@@ -591,26 +801,33 @@ export function applySetTypeChange({
   }
   const current = row.type
   if (sameType(current, next)) {
-    return { type: current, changed: false, headPatch: null, stagesToAdd: [], stagesToDelete: [], needsConfirm: false, confirmCount: 0 }
+    return { type: current, changed: false, headPatch: null, stagesToAdd: [], stagesToDelete: [], needsConfirm: false, confirmCount: 0, changes: [], renumber: [] }
   }
   const before = current.kind === 'staged' ? current.stageCount : 0
   const after = next.kind === 'staged' ? next.stageCount : 0
   const stagesToAdd = Array.from({ length: Math.max(0, after - before) }, (_, i) => before + i + 1)
+  // A planned set records its type on the session, keyed by the planned set, whether or not it is logged.
+  const retyped: ChangeWrite[] = row.weekPlanSetId === null ? [] : [retypedWrite(row.weekPlanSetId, next, session.changes)]
 
   if (row.state === 'unlogged') {
     // No log row yet: a planned set records the change on the session, an added set keeps it as local state.
-    const change: SessionSetChange | undefined =
-      row.weekPlanSetId === null ? undefined : { kind: 'retyped', weekPlanSetId: row.weekPlanSetId, type: next }
-    return { type: next, changed: true, headPatch: null, stagesToAdd, stagesToDelete: [], needsConfirm: false, confirmCount: 0, change }
+    return { type: next, changed: true, headPatch: null, stagesToAdd, stagesToDelete: [], needsConfirm: false, confirmCount: 0, changes: retyped, renumber: [] }
   }
 
-  if (row.logId === null) throw new RangeError('a logged set has its log')
-  const logged = [...loggedStages].sort((a, b) => a.stageIndex - b.stageIndex)
+  const log = logOf(row, session.logs)
+  const logged = stagesOf(session.logs, log.id)
   const stagesToDelete = logged.slice(Math.min(logged.length, after)).reverse()
   const confirmCount = stagesToDelete.filter((stage) => !stage.isSkipped).length
   const columns = typeColumns(next)
-  const change: SessionSetChange | undefined =
-    next.kind === 'staged' ? { kind: 'pending_stages', setLogId: row.logId, stageKind: next.stageKind, stageCount: next.stageCount } : undefined
+  const pending: ChangeWrite[] = next.kind === 'staged' ? [pendingWrite(log.id, next.stageKind, next.stageCount, session.changes)] : []
+  let renumber: NumberPatch[] = []
+  if ((next.kind === 'warmup') !== (current.kind === 'warmup')) {
+    const groups = groupsOf(session.logs)
+    const patches = next.kind === 'warmup' ? closeGap(log, groups) : makeRoom({ head: log, stages: logged }, placeAmongLogged(row, session.rows), groups)
+    // A log that is being deleted has no number to change.
+    const going = new Set(stagesToDelete.map((stage) => stage.id))
+    renumber = patches.filter((patch) => !going.has(patch.id))
+  }
   return {
     type: next,
     changed: true,
@@ -619,7 +836,8 @@ export function applySetTypeChange({
     stagesToDelete,
     needsConfirm: confirmCount > 0,
     confirmCount,
-    change,
+    changes: [...retyped, ...pending],
+    renumber,
   }
 }
 
@@ -631,40 +849,74 @@ export interface DeleteEffects {
   /** How many logged drops go with the head: the confirm says so (W9). */
   stageCount: number
   /** Later heads of the same exercise, and their drops, with the number that closes the gap. */
-  renumber: Array<{ id: string; setNumber: number }>
+  renumber: NumberPatch[]
+  /**
+   * The `v2_session_set_changes` rows that keep what was deleted out of the session. A planned set (logged or
+   * not): `deleted`, replacing its `retyped` row. A drop of a planned set: the set's `retyped` row with one drop
+   * fewer; of a logged set: its `pending_stages` row with one drop fewer, none when it was the last. An added
+   * set needs none (its card lowers its count of added sets).
+   */
+  changes: ChangeWrite[]
+  /** The last drop of a logged set deleted: the set is a normal set, so its log loses its stage kind (147 (a)). */
+  headPatch: { id: string; stageKind: null } | null
+  /** A drop deleted: its set's type afterwards. A set added in the session and not logged yet keeps its type as the card's own state, which this is. */
+  type: SessionSetChangeType | null
 }
 
 /**
- * SPEC 18b: deleting a logged set. `group` is the set's head and drops, `siblings` the exercise's head
- * groups (the deleted one may be among them). Every later head takes the numbers that close the gap and its
- * drops take its number (a drop carries its head's `set_number`). A drop deleted on its own, and a warmup,
- * renumber nothing.
+ * SPEC 18b: deleting a set or a drop, logged or not (`row` from `resolveRows`, `session` as the rest of the
+ * module reads it). The deleted set never comes back: its log is deleted and the later heads take the numbers
+ * that close the gap (a drop carries its head's `set_number`), and the change rows say it is gone. A drop
+ * deleted on its own, and a warmup, renumber nothing.
  */
-export function deleteEffects(group: SetGroup<LoggedSet>, siblings: readonly SetGroup<LoggedSet>[]): DeleteEffects {
-  const gone = group.head
-  const renumber: DeleteEffects['renumber'] = []
-  if (gone.parentSetId === null && !gone.isWarmup) {
-    const later = siblings
-      .filter(
-        (sibling) =>
-          sibling.head.exerciseId === gone.exerciseId &&
-          !sibling.head.isWarmup &&
-          sibling.head.setNumber > gone.setNumber,
-      )
-      .sort((a, b) => a.head.setNumber - b.head.setNumber)
-    later.forEach((sibling, i) => {
-      const setNumber = gone.setNumber + i
-      if (sibling.head.setNumber !== setNumber) renumber.push({ id: sibling.head.id, setNumber })
-      for (const stage of sibling.stages) if (stage.setNumber !== setNumber) renumber.push({ id: stage.id, setNumber })
-    })
+export function deleteEffects(row: ResolvedRow, session: SessionView): DeleteEffects {
+  return row.kind === 'stage' ? deleteDropEffects(row, session) : deleteSetEffects(row, session)
+}
+
+function deleteSetEffects(row: ResolvedRow, session: SessionView): DeleteEffects {
+  const effects: DeleteEffects = { deleteOrder: [], stageCount: 0, renumber: [], changes: [], headPatch: null, type: null }
+  if (row.logId !== null) {
+    const gone = logOf(row, session.logs)
+    const stages = stagesOf(session.logs, gone.id)
+    effects.deleteOrder = cascadeDeleteOrder({ head: gone, stages }, (log) => log.stageIndex)
+    effects.stageCount = stages.length
+    if (!gone.isWarmup) effects.renumber = closeGap(gone, groupsOf(session.logs))
   }
-  return { deleteOrder: cascadeDeleteOrder(group, (log) => log.stageIndex), stageCount: group.stages.length, renumber }
+  if (row.weekPlanSetId !== null) effects.changes.push(deletedWrite(row.weekPlanSetId, session.changes))
+  return effects
+}
+
+function deleteDropEffects(row: ResolvedRow, session: SessionView): DeleteEffects {
+  const head = session.rows.find((r) => r.key === row.headKey)
+  if (head === undefined || head.type === null || head.type.kind !== 'staged') {
+    throw new RangeError(`the drop ${row.key} has no staged set to belong to`)
+  }
+  const left = head.type.stageCount - 1
+  const type: SessionSetChangeType = left > 0 ? { kind: 'staged', stageKind: head.type.stageKind, stageCount: left } : NORMAL
+  const effects: DeleteEffects = {
+    deleteOrder: row.logId === null ? [] : [logOf(row, session.logs)],
+    stageCount: 0,
+    renumber: [],
+    changes: [],
+    headPatch: null,
+    type,
+  }
+  if (head.weekPlanSetId !== null) effects.changes.push(retypedWrite(head.weekPlanSetId, type, session.changes))
+  if (head.logId !== null) {
+    const headLog = logOf(head, session.logs)
+    if (type.kind === 'staged') effects.changes.push(pendingWrite(headLog.id, type.stageKind, type.stageCount, session.changes))
+    else if (headLog.stageKind !== null) effects.headPatch = { id: headLog.id, stageKind: null }
+  }
+  return effects
 }
 
 // ─── Unlog ───────────────────────────────────────────────────────────────────────────────────────
 
 /** A set log with the numbers a draft keeps. */
 export type UnloggableSet = LoggedSet & Pick<SetLog, 'weight' | 'reps' | 'rir' | 'formRating' | 'enteredUnit'>
+
+/** The session as `unlogEffects` reads it: its logs carry the numbers the draft keeps. */
+export type UnlogView = Omit<SessionView, 'logs'> & { logs: readonly UnloggableSet[] }
 
 /** The numbers kept on the phone when a set is unlogged (G46 (a)). */
 export interface SetDraft {
@@ -676,50 +928,74 @@ export interface SetDraft {
 }
 
 /** A planned set's draft is keyed by it; an added set's by its local id with its exercise and position. */
-export type SetDraftKey =
-  | { sessionId: string; weekPlanSetId: string }
-  | { sessionId: string; localId: string; exerciseId: string; position: number }
+export type PlannedSetKey = { sessionId: string; weekPlanSetId: string }
+export type AddedSetKey = { sessionId: string; localId: string; exerciseId: string; position: number }
+/** A drop's draft is keyed by its set's key plus its number under the set (DECISIONS 147 (b)). */
+export type SetDraftKey = PlannedSetKey | AddedSetKey | (PlannedSetKey & { drop: number }) | (AddedSetKey & { drop: number })
 
 export interface UnlogEffects {
-  /** The logs to delete: skipped drops from the last, then the head. */
+  /** The logs to delete: a set's skipped drops from the last, then the set; a drop, the skipped drops after it from the last, then the drop. */
   deleteOrder: LoggedSet[]
   draft: { key: SetDraftKey; values: SetDraft }
-  /** A type the set was logged with and the plan doesn't have: a `retyped` change keyed by the planned set. */
-  change?: SessionSetChange
-}
-
-/** SPEC 18c: a set with done drops after it can't be unlogged until they are gone (UNLOG is disabled and says so). */
-export function canUnlog(group: SetGroup<LoggedSet>): boolean {
-  return group.stages.every((stage) => stage.isSkipped)
+  /** A type the set was logged with and the plan doesn't have: its `retyped` row, replacing the one it holds. */
+  changes: ChangeWrite[]
 }
 
 /**
- * SPEC 18c, G46: what unlogging a logged set does. `row` is the set's row (from `resolveRows`). The log is
- * deleted (its skipped drops first) and its numbers become a draft. A set unlogged after its type was
+ * SPEC 18c: a set with done drops after it can't be unlogged until they are gone (UNLOG is disabled and says
+ * so); a drop can't be unlogged while a later drop of its set is done (DECISIONS 147 (b)). Skipped drops are not
+ * done. A row with no log has nothing to unlog.
+ */
+export function canUnlog(row: ResolvedRow, session: Pick<SessionView, 'logs'>): boolean {
+  if (row.logId === null) return false
+  const log = logOf(row, session.logs)
+  if (row.kind === 'stage') {
+    return session.logs.every((other) => other.parentSetId !== log.parentSetId || other.stageIndex <= log.stageIndex || other.isSkipped)
+  }
+  return stagesOf(session.logs, log.id).every((stage) => stage.isSkipped)
+}
+
+// A set's draft key: the planned set, or for an added set its local id (its log's), exercise and position.
+function setKeyOf(head: Pick<ResolvedRow, 'weekPlanSetId'>, log: LoggedSet): PlannedSetKey | AddedSetKey {
+  return head.weekPlanSetId !== null
+    ? { sessionId: log.sessionId, weekPlanSetId: head.weekPlanSetId }
+    : { sessionId: log.sessionId, localId: log.id, exerciseId: log.exerciseId, position: log.setNumber }
+}
+
+/**
+ * SPEC 18c, G46, DECISIONS 147 (b): what unlogging a logged set or drop does (`row` from `resolveRows`). The log
+ * is deleted (a set's skipped drops first) and its numbers become a draft. A set unlogged after its type was
  * changed keeps that type as a `retyped` change, so the retype survives; a set logged as planned adds none.
  * It says nothing about the rest timer or the session's status: unlogging never touches either.
  */
-export function unlogEffects(
-  group: SetGroup<UnloggableSet>,
-  row: Pick<ResolvedRow, 'weekPlanSetId' | 'type' | 'plannedType' | 'retyped'>,
-): UnlogEffects {
-  if (group.head.parentSetId !== null) throw new RangeError('unlog is for a set; the draft key of a drop is not defined')
-  if (!canUnlog(group)) throw new RangeError('a set with logged drops after it cannot be unlogged')
-  const head = group.head
-  const key: SetDraftKey =
-    row.weekPlanSetId !== null
-      ? { sessionId: head.sessionId, weekPlanSetId: row.weekPlanSetId }
-      : { sessionId: head.sessionId, localId: head.id, exerciseId: head.exerciseId, position: head.setNumber }
+export function unlogEffects(row: ResolvedRow, session: UnlogView): UnlogEffects {
+  if (row.logId === null) throw new RangeError('only a logged set can be unlogged')
+  if (!canUnlog(row, session)) {
+    throw new RangeError(row.kind === 'stage' ? 'a drop with a later drop logged cannot be unlogged' : 'a set with logged drops after it cannot be unlogged')
+  }
+  const log = logOf(row, session.logs)
+  const values: SetDraft = { weight: log.weight, reps: log.reps, rir: log.rir, formRating: log.formRating, enteredUnit: log.enteredUnit }
+  if (row.kind === 'stage') {
+    const head = session.rows.find((r) => r.key === row.headKey)
+    const headLog = session.logs.find((l) => l.id === log.parentSetId)
+    if (head === undefined || headLog === undefined || row.stageNumber === null) throw new RangeError(`the drop ${row.key} has no set to belong to`)
+    // The drops after it are all skipped (`canUnlog`) and go first, last to first: rows read a set's drops by
+    // count, so a skipped log left behind would move up into the place of the drop that is open again.
+    const after = stagesOf(session.logs, headLog.id).filter((stage) => stage.stageIndex > log.stageIndex)
+    return {
+      deleteOrder: [...after.reverse(), log],
+      draft: { key: { ...setKeyOf(head, headLog), drop: row.stageNumber }, values },
+      changes: [],
+    }
+  }
   const effects: UnlogEffects = {
-    deleteOrder: cascadeDeleteOrder(group, (log) => log.stageIndex),
-    draft: {
-      key,
-      values: { weight: head.weight, reps: head.reps, rir: head.rir, formRating: head.formRating, enteredUnit: head.enteredUnit },
-    },
+    deleteOrder: cascadeDeleteOrder({ head: log, stages: stagesOf(session.logs, log.id) }, (stage) => stage.stageIndex),
+    draft: { key: setKeyOf(row, log), values },
+    changes: [],
   }
   const differs = row.type !== null && row.plannedType !== null && !sameType(row.type, row.plannedType)
   if (row.weekPlanSetId !== null && row.type !== null && (differs || row.retyped)) {
-    effects.change = { kind: 'retyped', weekPlanSetId: row.weekPlanSetId, type: row.type }
+    effects.changes.push(retypedWrite(row.weekPlanSetId, row.type, session.changes))
   }
   return effects
 }

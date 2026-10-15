@@ -4,7 +4,16 @@
 
 import type { SessionSetChange, SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary'
-import { sessionOrder, type OrderExercise, type OrderSuperset, type ResolvedRow, type SessionOrder } from './workoutRules'
+import {
+  resolveRows,
+  sessionOrder,
+  type HeldChange,
+  type OrderExercise,
+  type OrderSuperset,
+  type ResolvedRow,
+  type SessionOrder,
+  type SessionView,
+} from './workoutRules'
 
 export const SESSION = 's1'
 
@@ -167,6 +176,23 @@ export const pending = (log: SetLog, stageKind: StageKind, stageCount: number): 
 })
 
 export const staged = (stageKind: StageKind, stageCount: number): SessionSetChangeType => ({ kind: 'staged', stageKind, stageCount })
+
+/** A change as the session holds it: the change with the id of its stored row. */
+export const held = (change: SessionSetChange, id: string): HeldChange => ({ ...change, id })
+
+// ─── The session as the writing rules read it ───────────────────────────────────────────────────
+
+/** The rows as `resolveRows` draws them from the order, the logs and the changes held, with the logs and changes themselves. */
+export function viewOf(order: SessionOrder, logs: SetLog[], changes: HeldChange[] = []): SessionView & { logs: SetLog[] } {
+  return { rows: resolveRows(order, logs, changes), logs, changes }
+}
+
+/** The row with this key, or an error naming the keys there are. */
+export function rowKeyed(view: Pick<SessionView, 'rows'>, key: string): ResolvedRow {
+  const found = view.rows.find((r) => r.key === key)
+  if (!found) throw new Error(`no row ${key}; the rows are ${view.rows.map((r) => r.key).join(', ')}`)
+  return found
+}
 
 /** Freezes a value and everything inside it: a function handed this can read it and nothing else. */
 export function deepFreeze<T>(value: T): T {

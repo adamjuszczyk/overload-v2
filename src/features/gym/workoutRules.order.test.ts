@@ -388,6 +388,111 @@ describe('resolveRows: a logged set takes its type from its log', () => {
   })
 })
 
+describe('resolveRows: the place of a set in the plan (what places a set among the working numbers)', () => {
+  it('counts the exercise\'s sets in the plan\'s order, warmups and drops included in their head\'s place; added sets come after', () => {
+    const rows = rowsOf(orderOf([card('bench', 'w n d1 n', { added: 2 }), card('row', 'n')]))
+    expect(rows.map((r) => [r.key, r.planIndex])).toEqual([
+      ['set:bench.1', 1],
+      ['set:bench.2', 2],
+      ['set:bench.3', 3],
+      ['set:bench.3:stage:1', 3],
+      ['set:bench.4', 4],
+      ['added:bench:1', 5],
+      ['added:bench:2', 6],
+      ['set:row.1', 1],
+    ])
+  })
+
+  it('a set switched to or from Warmup keeps its place in the plan (the rows move, its place does not)', () => {
+    const plain = rowsOf(orderOf([card('bench', 'w n n')]))
+    const switched = rowsOf(orderOf([card('bench', 'w n n')]), [], [retyped('bench', 1, { kind: 'normal' }), retyped('bench', 3, { kind: 'warmup' })])
+    const place = (rows: typeof plain) => Object.fromEntries(rows.map((r) => [r.key, r.planIndex]))
+    expect(place(switched)).toEqual(place(plain))
+    expect(switched.map((r) => r.key)).toEqual(['set:bench.3', 'set:bench.1', 'set:bench.2'])
+  })
+
+  it('increases along the plan whatever order the plan comes in', () => {
+    const exercise = card('bench', 'n n n n')
+    const rows = resolveRows(sessionOrder([{ ...exercise, plannedSets: [...exercise.plannedSets].reverse() }]), [], [])
+    expect(rows.map((r) => r.planIndex)).toEqual([1, 2, 3, 4])
+  })
+})
+
+describe('resolveRows: a log with no stage kind (a pre-1.1 dropset, or a set made Normal)', () => {
+  it('a "retyped" Normal row settles a pre-1.1 dropset the way the log alone cannot: it is plain now (141 (b), 147 (a))', () => {
+    const head = headLog('pushdown', 1)
+    const rows = rowsOf(orderOf([card('pushdown', 'l1')]), [head], [retyped('pushdown', 1, { kind: 'normal' })])
+    expect(rows.map(brief)).toEqual(['pushdown 01✓'])
+    expect(rows[0]).toMatchObject({ type: { kind: 'normal' }, plannedType: staged('dropset', 1), retyped: true })
+    // with no row it is still the dropset it was logged as
+    expect(rowsOf(orderOf([card('pushdown', 'l1')]), [head]).map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·'])
+  })
+
+  it('…but a drop that is logged is never hidden: the drops are still there', () => {
+    const head = headLog('pushdown', 1)
+    const rows = rowsOf(orderOf([card('pushdown', 'l1')]), [head, dropLog(head, 1)], [retyped('pushdown', 1, { kind: 'normal' })])
+    expect(rows.map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1✓'])
+  })
+
+  it('…and it settles nothing for a log that carries a stage kind: the log is the kind, a Normal row is not read', () => {
+    const head = headLog('pushdown', 1, { stageKind: 'dropset' })
+    const rows = rowsOf(orderOf([card('pushdown', 'd2')]), [head], [retyped('pushdown', 1, { kind: 'normal' })])
+    expect(rows.map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·', 'pushdown 01.2·'])
+  })
+
+  it('the plan\'s drops are not taken for a log of another kind: a planned dropset logged as rest-pause, with no row for its drops, reads plain', () => {
+    const head = headLog('pushdown', 1, { stageKind: 'rest_pause' })
+    expect(rowsOf(orderOf([card('pushdown', 'd2')]), [head]).map(brief)).toEqual(['pushdown 01✓'])
+  })
+
+  it('a "retyped" row that says a staged type does not make a kindless log staged on its own', () => {
+    const head = headLog('pushdown', 1)
+    expect(rowsOf(orderOf([card('pushdown', 'n')]), [head], [retyped('pushdown', 1, staged('dropset', 2))]).map(brief)).toEqual(['pushdown 01✓'])
+  })
+
+  it('a pre-1.1 dropset\'s drop count is the "pending_stages" row\'s when there is one, else the "retyped" row\'s, else the plan\'s', () => {
+    const head = headLog('pushdown', 1)
+    const cards = [card('pushdown', 'l2')]
+    expect(rowsOf(orderOf(cards), [head]).map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·', 'pushdown 01.2·'])
+    expect(rowsOf(orderOf(cards), [head], [retyped('pushdown', 1, staged('dropset', 1))]).map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·'])
+    const both = [retyped('pushdown', 1, staged('dropset', 1)), pending(head, 'dropset', 3)]
+    expect(rowsOf(orderOf(cards), [head], both).map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·', 'pushdown 01.2·', 'pushdown 01.3·'])
+  })
+
+  it('a pre-1.1 dropset with one of its two drops logged and the count lowered to one reads one drop, logged', () => {
+    const head = headLog('pushdown', 1)
+    const rows = rowsOf(orderOf([card('pushdown', 'l2')]), [head, dropLog(head, 1)], [pending(head, 'dropset', 1)])
+    expect(rows.map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1✓'])
+  })
+
+  it('a stale "pending_stages" row under a plain log does not make it a dropset', () => {
+    const head = headLog('bench', 1)
+    expect(rowsOf(orderOf([card('bench', 'n')]), [head], [pending(head, 'dropset', 2)]).map(brief)).toEqual(['bench 01✓'])
+  })
+})
+
+describe('resolveRows: a "retyped" row takes a drop count only from a change that names the log\'s own stage kind (X5)', () => {
+  it('a logged rest-pause head whose "retyped" row says a dropset of three, with no "pending_stages" row: no drops from that row', () => {
+    const head = headLog('bench', 1, { stageKind: 'rest_pause' })
+    const rows = rowsOf(orderOf([card('bench', 'n')]), [head], [retyped('bench', 1, staged('dropset', 3))])
+    expect(rows.map(brief)).toEqual(['bench 01✓'])
+    expect(rows[0].type).toEqual({ kind: 'normal' })
+  })
+
+  it('the control: a "retyped" row of the same kind gives its count', () => {
+    const head = headLog('bench', 1, { stageKind: 'rest_pause' })
+    const rows = rowsOf(orderOf([card('bench', 'n')]), [head], [retyped('bench', 1, staged('rest_pause', 3))])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 01.1·', 'bench 01.2·', 'bench 01.3·'])
+    expect(rows[0].type).toEqual(staged('rest_pause', 3))
+  })
+
+  it('a mismatched row does not hide the plan\'s own drops either: the plan\'s count of the log\'s kind still stands', () => {
+    const head = headLog('pushdown', 1, { stageKind: 'dropset' })
+    const rows = rowsOf(orderOf([card('pushdown', 'd2')]), [head], [retyped('pushdown', 1, staged('rest_pause', 5))])
+    expect(rows.map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1·', 'pushdown 01.2·'])
+  })
+})
+
 describe('resolveRows: which change speaks last, and what order the plan comes in', () => {
   it('a change on the log, made after the set was logged, wins over the one made on the plan before', () => {
     // retyped to a dropset with two drops before it was logged; after it was logged, made a dropset with three
@@ -440,11 +545,12 @@ describe('resolveRows: sets added in the session', () => {
     expect(rows[3].logId).toBe('log.bench.added2')
   })
 
-  it('every logged added set is a row even when the screen counts fewer, and an added log of a warmup is not one', () => {
+  it('every logged added set is a row even when the screen counts fewer, and an added log of a warmup is a warmup row (146: any set can be switched to Warmup)', () => {
     const logs = [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 2, { number: 3 }), addedLog('bench', 3, { warmup: true })]
     const rows = rowsOf(orderOf([card('bench', 'n', { added: 0 })]), logs)
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓'])
-    expect(rows.map((r) => r.added)).toEqual([false, true, true])
+    expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓'])
+    expect(rows.map((r) => r.added)).toEqual([true, false, true, true])
+    expect(rows[0]).toMatchObject({ kind: 'warmup', key: 'added:bench:3', type: { kind: 'warmup' } })
   })
 
   it('a set added to one exercise is not a row of another', () => {

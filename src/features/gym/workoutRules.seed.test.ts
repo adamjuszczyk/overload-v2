@@ -2,9 +2,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { groupSetLogs } from './setGroupLogic'
 import { currentSet, finishWarning, lockDecision, resolveRows, unlogEffects, type ResolvedRow } from './workoutRules'
-import { brief, card, dropLog, headLog, orderOf, staged } from './workoutRules.testutil'
+import { brief, card, dropLog, headLog, orderOf, rowKeyed, staged, viewOf } from './workoutRules.testutil'
 
 // Chunk 46 (TASKS-1.2, "Seed"): the shapes the staging checks of chunks 58a to 64 rely on, built from
 // supabase/seed.sql as chunk 36 left it and counted by hand.
@@ -127,9 +126,9 @@ describe('the seed\'s week 2 Upper A, done differently from its plan', () => {
     expect(rows.map(brief)).toEqual(['lat 01✓', 'lat 01.1✓', 'lat 02✓', 'lat 03✓'])
     expect(rows[0]).toMatchObject({ type: staged('dropset', 1), plannedType: { kind: 'normal' } })
 
-    const group = groupSetLogs([...logs, drop]).find((g) => g.head.id === head.id)!
     // a logged drop follows: it has to go first
-    expect(() => unlogEffects(group, rows[0])).toThrow(RangeError)
+    const view = viewOf(orderOf([LAT]), [...logs, drop])
+    expect(() => unlogEffects(rowKeyed(view, 'set:lat.1'), view)).toThrow(RangeError)
   })
 
   it('a skipped set is settled; nothing in a finished session is left to do', () => {

@@ -29,6 +29,14 @@ describe('workoutRules.ts is a pure module', () => {
   })
 })
 
+describe('the fixtures\' dates', () => {
+  it('log on a weekday, printed: Monday 2026-10-12, the seed\'s week 3 Monday (Checks that lied #21)', () => {
+    const at = headLog('bench', 1).loggedAt
+    const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    expect(`${at.slice(0, 10)} is a ${names[new Date(at).getUTCDay()]}`).toBe('2026-10-12 is a Monday')
+  })
+})
+
 describe('the words are the boards\'', () => {
   it('W7b: the lock\'s question, the set that is next and the button', () => {
     const w7b = board('WorkoutLogOrder.dc.html')
