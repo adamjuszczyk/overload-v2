@@ -16,6 +16,7 @@
 import type { PlanningType, RunSchedule, ScheduleType, WeeklySchedule } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
+  type SavedPlanSet,
   type ChangeSession,
   type ChangeSessionSet,
   type DraftExercise,
@@ -115,6 +116,8 @@ export interface DbWeekPlan {
   week_number: number
   is_deload: boolean
   sequence_position: number | null
+  // The saved pre-deload plan (migration 027): there while the session is marked deload with rules on.
+  deload_restore?: SavedPlanSet[] | null
 }
 export interface DbWeekPlanExercise {
   id: string
@@ -191,6 +194,7 @@ const OP_TABLES: ReadonlySet<string> = new Set<OpTable>([
   'v2_workout_days',
   'v2_programs',
   'v2_run_schedules',
+  'v2_week_plans',
   'v2_week_plan_exercises',
   'v2_week_plan_sets',
   'v2_week_review_decisions',
@@ -212,6 +216,9 @@ const PATCH_COLUMNS: Record<string, readonly string[]> = {
   v2_program_superset_blocks: ['workout_day_id', 'rest_within_round_seconds', 'rest_after_round_seconds'],
   v2_workout_warmup_items: ['workout_day_id', 'position', 'body'],
   v2_run_schedules: ['mesocycle_id', 'from_week', 'schedule'],
+  // 043 lets an op write ONE column of `v2_week_plans`, as an update only (DECISIONS 142): any other column is refused
+  // like `id` and `user_id`, and the table takes no insert and no delete.
+  v2_week_plans: ['deload_restore'],
   v2_week_plan_exercises: ['week_plan_id', 'program_exercise_id', 'position'],
   v2_week_plan_sets: [
     'week_plan_id', 'program_exercise_id', 'set_number', 'target_rir', 'target_rir_max', 'is_dropset',
@@ -356,6 +363,13 @@ function deleteRow(db: Db, table: TableName, id: string): void {
   }
 }
 
+// A plain INSERT outside an op list (the app's own write functions insert set rows one by one): the row goes in, and the
+// foreign keys, checks and unique indexes are the table's (an OpsError otherwise).
+export function checkInserted(db: Db, table: TableName, row: object): void {
+  ;(db[table] as unknown[]).push(row)
+  checkRow(db, table, row as Record<string, unknown>)
+}
+
 // `v2_apply_ops(p_ops)`: the ops in order, all or none (the input db is left as it was and a copy is returned).
 export function applyOpsToDb(input: Db, ops: readonly Op[], userId: string = USER): Db {
   const db = cloneDb(input)
@@ -377,6 +391,7 @@ export function applyOpsToDb(input: Db, ops: readonly Op[], userId: string = USE
         const patch = op.patch as Record<string, unknown>
         for (const c of Object.keys(patch)) {
           if (c === 'id' || c === 'user_id') fail('patch sets a protected column')
+          if (op.table === 'v2_week_plans' && c !== 'deload_restore') fail('patch sets a protected column')
           if (!PATCH_COLUMNS[op.table]?.includes(c)) fail(`the patch names an unknown column ${c}`)
         }
         const row = (db[op.table as TableName] as unknown as Array<Record<string, unknown>>).find((r) => r.id === op.id && r.user_id === userId)
@@ -384,6 +399,7 @@ export function applyOpsToDb(input: Db, ops: readonly Op[], userId: string = USE
         Object.assign(row, patch)
         checkRow(db, op.table, row)
       } else {
+        if ((op.table as string) === 'v2_week_plans') fail('delete not allowed')
         const row = (db[op.table as TableName] as unknown as Array<Record<string, unknown>>).find((r) => r.id === op.id && r.user_id === userId)
         if (!row) fail(`row not found: ${op.table}/${op.id}`)
         deleteRow(db, op.table as TableName, op.id)
@@ -470,6 +486,7 @@ export function sessionsOf(db: Db, mesocycleId: string, statuses: Record<string,
       weekNumber: p.week_number,
       sequencePosition: p.sequence_position,
       status: statuses[p.id] ?? 'not_started',
+      deloadRestore: p.deload_restore ?? null,
       exercises: db.v2_week_plan_exercises
         .filter((e) => e.week_plan_id === p.id)
         .map((e) => ({ weekPlanExerciseId: e.id, programExerciseId: e.program_exercise_id, position: e.position })),

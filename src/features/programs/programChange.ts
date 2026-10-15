@@ -64,15 +64,22 @@
 // the change; a set that differs from the old default (changed that week only) or has no counterpart is left exactly
 // as it is. A default set that is added lands in a session only where the session still has the default's count.
 //
-// Not decided here, on purpose (SPEC is silent; each is asked in chunk 45's report):
-//   - which exercise rows a session may hold that the run copy doesn't list (weeks planned in 1.1 can hold a week-only
-//     row): they are never touched and keep their place after the rows this save orders;
-//   - a not-started session that is marked as a deload week: it is a session like any other here. Its pre-deload sets
-//     are saved in `v2_week_plans.deload_restore`, which 043 lets no op write, so a save that removes or swaps an
-//     exercise in it leaves that saved copy as it was;
-//   - what a week-dependent run's NEXT week gets: it is copied from the workout's previous planned occurrence
-//     (weekPlanning.ts `chooseAutoCopySource`, whatever that occurrence's status), not from the run copy; so a change
-//     reaches a week-dependent workout's future weeks only through the sessions already planned and not started.
+// Two answers of Adam's (2026-10-15) shape what a save writes beyond the sessions' own rows:
+//   - DECISIONS 142: a not-started session marked as a deload week keeps its pre-deload sets in
+//     `v2_week_plans.deload_restore`, and UNMARK writes them back whole. The save applies the same landing rules to that
+//     saved copy (section 15), so UNMARK restores the plan with the change in it. The op is an update of that one column
+//     of that one table (043 may write nothing else of `v2_week_plans`, and no insert or delete);
+//   - DECISIONS 143: what a week-dependent run's NEXT week gets. It is copied from the workout's last planned occurrence
+//     (weekPlanning.ts `chooseAutoCopySource`), which may be a done or an in-progress session that no save touches. So
+//     the copy takes its exercise list and order from the run copy, which the save did change (weekPlanning.ts
+//     `autoCopy`): a removed exercise is left out, an added one arrives with no sets, a kept one brings its sets from
+//     that occurrence and a swapped one brings the old exercise's. The run copy already says the first three. The last
+//     needs the new row to say which row it replaced, and `v2_program_exercises` has no column for that (a migration,
+//     outside chunk 45), so nothing writes it: until it exists a swapped-in exercise is copied like an added one.
+//
+// Not decided here, on purpose (SPEC is silent; asked in chunk 45's report): which exercise rows a session may hold that
+// the run copy doesn't list (weeks planned in 1.1 can hold a week-only row): they are never touched and keep their
+// place after the rows this save orders.
 
 import type {
   DayOfWeek,
@@ -88,6 +95,7 @@ import type {
   WeightUnit,
   WorkoutDay,
 } from '../../types'
+import type { DeloadRestoreEntry } from '../../lib/deloadRules'
 import {
   columnsToRepTarget,
   formatRepTarget,
@@ -143,6 +151,14 @@ export type WarmupItemColumns = { workout_day_id: string; position: number; body
 export type WorkoutDayColumns = { name: string }
 export type ProgramColumns = { schedule: WeeklySchedule }
 export type RunScheduleColumns = { mesocycle_id: string; from_week: number; schedule: WeeklySchedule }
+// A saved pre-deload set as `v2_week_plans.deload_restore` holds it (lib/deloadRules.ts `DeloadRestoreEntry`: no ids, grouped
+// by exercise row and set number, a head has stage index 0). `targetRirMax` is optional: a copy saved before the RIR range
+// existed doesn't carry it, and the type before chunk 48 doesn't name it.
+export type SavedPlanSet = DeloadRestoreEntry & { targetRirMax?: number | null }
+// The ONE column of `v2_week_plans` an op may write, and only as an update (DECISIONS 142, Adam 2026-10-15): "043's
+// executor may write v2_week_plans for that one column only, as an update only: no insert or delete on v2_week_plans, no
+// other column. A patch touching any other v2_week_plans column is rejected like a protected column."
+export type WeekPlanColumns = { deload_restore: SavedPlanSet[] | null }
 export type WeekPlanExerciseColumns = { week_plan_id: string; program_exercise_id: string; position: number }
 export type WeekPlanSetColumns = {
   week_plan_id: string
@@ -174,14 +190,17 @@ export interface OpColumns {
   v2_workout_days: WorkoutDayColumns
   v2_programs: ProgramColumns
   v2_run_schedules: RunScheduleColumns
+  v2_week_plans: WeekPlanColumns
   v2_week_plan_exercises: WeekPlanExerciseColumns
   v2_week_plan_sets: WeekPlanSetColumns
   v2_week_review_decisions: OtherColumns
   v2_session_set_changes: OtherColumns
 }
 export type OpTable = keyof OpColumns
-// 043: "an insert into v2_programs raises" (and v2_workout_days): those two take updates only.
-export type InsertableTable = Exclude<OpTable, 'v2_programs' | 'v2_workout_days'>
+// 043: "an insert into v2_programs raises" (and v2_workout_days): those two take no inserts. `v2_week_plans` takes an update
+// of `deload_restore` and nothing else: no insert, no delete (DECISIONS 142).
+export type InsertableTable = Exclude<OpTable, 'v2_programs' | 'v2_workout_days' | 'v2_week_plans'>
+export type DeletableTable = Exclude<OpTable, 'v2_week_plans'>
 
 // An insert row names every NOT NULL column: `jsonb_populate_record` fills a column the row leaves out with NULL, not with
 // its default. Four of the tables have `created_at timestamptz not null default now()` (a patch never names it), so the
@@ -202,7 +221,7 @@ export type InsertOp = {
 export type UpdateOp = {
   [T in OpTable]: { op: 'update'; table: T; id: string; patch: Partial<OpColumns[T]> }
 }[OpTable]
-export type DeleteOp = { [T in OpTable]: { op: 'delete'; table: T; id: string } }[OpTable]
+export type DeleteOp = { [T in DeletableTable]: { op: 'delete'; table: T; id: string } }[DeletableTable]
 export type Op = InsertOp | UpdateOp | DeleteOp
 
 // ═══ 2. What goes in ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -242,6 +261,10 @@ export interface ChangeSession {
   status: RunChangeStatus
   exercises: readonly ChangeSessionExercise[] // this session's own list
   sets: readonly ChangeSessionSet[]
+  // The session's saved pre-deload plan (`v2_week_plans.deload_restore`): there when it was marked deload with rules on, null
+  // or absent otherwise. UNMARK deletes the session's sets and writes this copy back whole, so a save that changes the session
+  // changes the copy the same way (DECISIONS 142). A `WeekPlan.deloadRestore` fits as it is.
+  deloadRestore?: readonly SavedPlanSet[] | null
 }
 
 export type RunCopyExerciseRow = Pick<
@@ -903,7 +926,7 @@ class Rows {
     }
   }
 
-  remove<T extends OpTable>(table: T, id: string): void {
+  remove<T extends DeletableTable>(table: T, id: string): void {
     this.updates.delete(`${table}/${id}`)
     this.deletes.push({ op: 'delete', table, id } as Op)
   }
@@ -1199,6 +1222,11 @@ export function planProgramChange(input: ProgramChangeInput): ProgramChangePlan 
     }
     const rows = new Rows()
     setsLeftAlone += landSession(rows, { userId, now, newId, stable }, s, plan)
+    // A deload session's saved pre-deload plan changes the way its sets do, so UNMARK restores the plan with the change in it.
+    if (s.deloadRestore) {
+      const saved = landSavedCopy({ userId, now, stable }, s, plan, s.deloadRestore)
+      if (!sameSavedSets(saved, s.deloadRestore)) rows.update('v2_week_plans', s.id, { deload_restore: saved })
+    }
     if (!rows.empty) {
       changedSessions.push(sessionRef(s))
       sessionOps.push(...rows.ops())
@@ -1729,3 +1757,137 @@ function landChangedHead(out: Rows, env: LandEnv, s: ChangeSession, p: PlannedEn
   const gone = [...rowByIndex.entries()].filter(([index]) => !kept.has(index)).sort(([a], [b]) => b - a)
   for (const [, row] of gone) out.remove('v2_week_plan_sets', row.id)
 }
+
+// ═══ 15. A session's saved pre-deload plan ═══════════════════════════════════════════════════════════════════════
+//
+// DECISIONS 142 (Adam, 2026-10-15): "A CHANGE THE PROGRAM save also applies its landing rules to the saved pre-deload copy
+// of a not-started deload session, so UNMARK restores the plan with the change in it."
+//
+// A session marked deload with rules on keeps the sets it had before in `v2_week_plans.deload_restore`, and UNMARK
+// (weekPlanService.ts `applyDeloadRestore`) deletes the session's sets and inserts that copy by `program_exercise_id`.
+// The copy has no ids: an entry is a set under an exercise row, a head with stage index 0 and its stages sharing its set
+// number (lib/deloadRules.ts `groupDeloadRestoreEntries`). Left as it is, a save that removed or swapped an exercise
+// would have UNMARK write back sets of a row the session no longer lists, and an exercise the save swapped in or added
+// would come back with no sets.
+//
+// The copy goes through the code a session's own rows go through, so the two can't disagree: its entries become planned
+// sets with ids of their own, `landSession` lands the save on them (the same removal, swap, added exercise and default-set
+// matching), and the set ops it makes are applied to the entries. The one op written is an update of `deload_restore` on
+// the session's `v2_week_plans` row (043 may write that one column of that table, as an update only), and only when the
+// save changes the copy.
+//
+// What this does not do: a deload session's own rows are changed as any not-started session's are. A set the rules
+// recalculated no longer equals the default, so a default-set change usually leaves the session's own row alone (counted
+// in `setsLeftAlone`) while the copy, which does equal the default, takes it. A stable exercise added to a deload session
+// gets the default's sets, in the session and in the copy, not a deload calculation.
+
+const SAVED_ID = 'saved:'
+
+type SavedWork = { id: string | null; entry: SavedPlanSet } // id null = not a planned set to land on (a stage with no head)
+
+// Entries as planned sets (ids `saved:<index>`; a stage is the child of the head of its exercise row and set number, the
+// first such head when there are two). A stage with no head is never restored (groupDeloadRestoreEntries drops it): it is
+// set aside, left as it is.
+function savedAsPlannedSets(entries: readonly SavedPlanSet[]): { work: SavedWork[]; sets: ChangeSessionSet[] } {
+  const key = (e: SavedPlanSet) => `${e.programExerciseId}::${e.setNumber}`
+  const headOf = new Map<string, string>()
+  entries.forEach((e, i) => {
+    if (e.stageIndex === 0 && !headOf.has(key(e))) headOf.set(key(e), `${SAVED_ID}${i}`)
+  })
+  const work: SavedWork[] = []
+  const sets: ChangeSessionSet[] = []
+  entries.forEach((entry, i) => {
+    const head = headOf.get(key(entry)) ?? null
+    if (entry.stageIndex !== 0 && head === null) {
+      work.push({ id: null, entry })
+      return
+    }
+    const id = `${SAVED_ID}${i}`
+    work.push({ id, entry })
+    sets.push({
+      id,
+      programExerciseId: entry.programExerciseId,
+      setNumber: entry.setNumber,
+      parentWeekPlanSetId: entry.stageIndex === 0 ? null : head,
+      stageIndex: entry.stageIndex,
+      isWarmup: entry.isWarmup,
+      stageKind: entry.stageKind,
+      programSetId: entry.programSetId,
+      repMin: entry.repMin,
+      repMax: entry.repMax,
+      isAmrap: entry.isAmrap,
+    })
+  })
+  return { work, sets }
+}
+
+// A planned set a save inserted, as an entry: no weight, no RIR, no cues.
+function savedFromRow(r: WeekSetRow): SavedPlanSet {
+  return {
+    programExerciseId: r.program_exercise_id,
+    setNumber: r.set_number,
+    stageIndex: r.stage_index,
+    isWarmup: r.is_warmup,
+    isDropset: r.is_dropset,
+    stageKind: r.stage_kind,
+    programSetId: r.program_set_id,
+    repMin: r.rep_min,
+    repMax: r.rep_max,
+    isAmrap: r.is_amrap,
+    targetWeight: r.target_weight,
+    targetRir: r.target_rir,
+    tags: r.tags,
+  }
+}
+
+// An update `landSession` made to a planned set, applied to its entry. Only the columns it ever writes on a set are named
+// (a swap's re-pointing and clearing, a set's link, kind and rep target); `targetRirMax` is cleared only where the entry
+// carries it (a copy saved before the RIR range existed has none, and none is the same as null).
+function patchSaved(entry: SavedPlanSet, patch: Partial<WeekPlanSetColumns>): SavedPlanSet {
+  const next: SavedPlanSet = { ...entry }
+  if ('program_exercise_id' in patch) next.programExerciseId = patch.program_exercise_id!
+  if ('target_weight' in patch) next.targetWeight = patch.target_weight ?? null
+  if ('target_rir' in patch) next.targetRir = patch.target_rir ?? null
+  if ('target_rir_max' in patch && ('targetRirMax' in next || patch.target_rir_max != null)) next.targetRirMax = patch.target_rir_max ?? null
+  if ('tags' in patch) next.tags = patch.tags ?? null
+  if ('program_set_id' in patch) next.programSetId = patch.program_set_id ?? null
+  if ('is_warmup' in patch) next.isWarmup = patch.is_warmup!
+  if ('stage_kind' in patch) next.stageKind = patch.stage_kind ?? null
+  if ('rep_min' in patch) next.repMin = patch.rep_min ?? null
+  if ('rep_max' in patch) next.repMax = patch.rep_max ?? null
+  if ('is_amrap' in patch) next.isAmrap = patch.is_amrap!
+  return next
+}
+
+// The copy after the save: what `landSession` does to a session with these sets, done to the entries. Entries keep their
+// order; the sets the save adds come after them.
+function landSavedCopy(env: Omit<LandEnv, 'newId'>, s: ChangeSession, plan: WorkoutPlan, entries: readonly SavedPlanSet[]): SavedPlanSet[] {
+  const { work, sets } = savedAsPlannedSets(entries)
+  const byId = new Map<string, SavedWork>()
+  for (const w of work) if (w.id !== null) byId.set(w.id, w)
+  const gone = new Set<string>()
+  let drawn = 0 // ids of rows inserted into the copy are the copy's own: the save's ids are drawn for the real rows only
+  const sink = new Rows()
+  landSession(sink, { ...env, newId: () => `${SAVED_ID}new${++drawn}` }, { ...s, sets }, plan)
+  for (const op of sink.ops()) {
+    if (op.table !== 'v2_week_plan_sets') continue
+    if (op.op === 'insert') {
+      const added: SavedWork = { id: op.row.id, entry: savedFromRow(op.row) }
+      work.push(added)
+      byId.set(op.row.id, added)
+    } else if (op.op === 'update') {
+      const at = byId.get(op.id)!
+      at.entry = patchSaved(at.entry, op.patch)
+    } else {
+      gone.add(op.id)
+    }
+  }
+  return work.filter((w) => w.id === null || !gone.has(w.id)).map((w) => w.entry)
+}
+
+// Whether two copies are the same list of entries (key order aside): a save that changes nothing in it writes nothing.
+function sameSavedSets(a: readonly SavedPlanSet[], b: readonly SavedPlanSet[]): boolean {
+  const key = (e: SavedPlanSet) => JSON.stringify(Object.entries(e).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)))
+  return a.length === b.length && a.every((e, i) => key(e) === key(b[i]))
+}
+

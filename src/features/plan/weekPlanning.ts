@@ -107,13 +107,20 @@ export function weekTiles(input: { plannedWeeks: Iterable<number>; currentWeek: 
 // skipping deload and empty occurrences stay"; "Week 1 of any run starts from the program."
 //
 // This is the exact rule migration 044 (chunk 53) implements; autoCopy is its twin and the
-// harness scripts/plan-week-parity.mjs runs both on one fixture. The one reading to know:
+// harness scripts/plan-week-parity.mjs runs both on one fixture. Two readings to know:
 //   - rep targets travel with the SOURCE, not with the planning type. The program's rep targets
 //     are copied wherever the source is the program (week 1 of any run; every stable week) and
 //     never from a week, so a week-dependent week after week 1 gets none ("does not fall back to
 //     the run copy's (week 1's) target") while week 1 of a week-dependent run keeps the program's.
 //     That is what 041's 'program' branch does today and 044's stays ("unchanged for structure and
 //     rep targets", TASKS 53).
+//   - a week-dependent week copied from a week takes its EXERCISE LIST from the run copy and its
+//     SETS from that week (DECISIONS 143, Adam 2026-10-15: "A week-dependent week copied after a save
+//     follows the run copy's current exercise list and order"). Why: SPEC says CHANGE THE PROGRAM
+//     applies "to what later weeks are copied from", but the week a new week is copied from may be
+//     done or in progress, and a save never touches that ("Done sessions keep their plan"; "a session
+//     in progress is left exactly as it is"), so without this a removed exercise came back, an added
+//     one was missing and a swap was undone. See copyFromWeek.
 
 export type AutoCopySource =
   | { kind: 'program' } // the run copy: the program's own exercises and sets, read as they are now
@@ -167,6 +174,13 @@ export interface RunCopyExercise extends Pick<ProgramExercise, 'id' | 'exerciseI
   exercise?: { name: string }
   weekOnly?: boolean
   removedAt?: string | null
+  // CHANGE THE PROGRAM's SWAP puts a new row where the old one was and soft-removes the old (a done session keeps
+  // pointing at the old row, so the row can't be changed in place). This is the old row the new one took the place of:
+  // the week-dependent copy gives the new exercise the old one's sets ("the new exercise takes the old one's sets").
+  // NOTHING STORES THIS LINK YET: `v2_program_exercises` has no column for it (a migration, outside chunk 45's scope), so
+  // until it exists no caller can pass it and a swapped-in exercise is copied like an added one (no sets). The rule is
+  // here, tested with the link given, so that adding the column is the only thing left to do.
+  replacesProgramExerciseId?: string | null
 }
 export type RunCopySet = Pick<
   ProgramSet,
@@ -251,9 +265,11 @@ export interface AutoCopyResult {
 }
 
 // What a new week of one slot gets: the source, then its exercises and sets with no numbers.
-//   - `runCopy`: the slot's workout in the run copy (a stable week and week 1 read it);
+//   - `runCopy`: the slot's workout in the run copy, every row of it (the removed and the week-only
+//     ones too, which say what to leave out and what to keep). A stable week and week 1 copy it; a
+//     week-dependent week takes its exercise list and order from it (DECISIONS 143);
 //   - `priorWeeks`: the slot's earlier planned weeks with their rows (a week-dependent week reads
-//     the last usable one).
+//     the last usable one for its sets).
 export function autoCopy(input: {
   planningType: PlanningType
   weekNumber: number
@@ -269,7 +285,7 @@ export function autoCopy(input: {
   if (source.kind === 'program') return { source, ...copyFromRunCopy(input.runCopy) }
   const from = input.priorWeeks.find((w) => w.weekNumber === source.weekNumber)
   if (!from) throw new Error(`autoCopy: week ${source.weekNumber} was chosen as the source but isn't among priorWeeks`)
-  return { source, ...copyFromWeek(from) }
+  return { source, ...copyFromWeek(from, input.runCopy) }
 }
 
 // Heads before stages, then by the position (set number) and stage index: 041's own `order by`.
@@ -320,21 +336,61 @@ function copyFromRunCopy(runCopy: RunCopy): { exercises: AutoCopiedExercise[]; s
   return { exercises: live.exercises.map((e) => ({ programExerciseId: e.id, position: e.position })), sets }
 }
 
-// 041's 'week' branch with 044's change: every structure column rides along from the source week
-// (kind, stages, counts, `program_set_id`, `is_dropset`, `set_number`) and every number is dropped:
-// no weight, no RIR (either end), no rep target (`rep_min` / `rep_max` null, `is_amrap` false), no
-// tags. The source week's own exercise list and order are kept as they are.
-function copyFromWeek(week: PlannedWeekRows): { exercises: AutoCopiedExercise[]; sets: AutoCopiedSet[] } {
-  const seen = new Set<string>()
-  const exercises: AutoCopiedExercise[] = []
+// 041's 'week' branch with 044's change (the numbers are dropped) and DECISIONS 143's (the exercise list
+// follows the run copy).
+//
+// THE SETS come from the source week, as 041 copies them: every structure column rides along (kind,
+// stages, counts, `set_number`, `program_set_id`, `is_dropset`) and every number is dropped: no weight,
+// no RIR (either end), no rep target (`rep_min` / `rep_max` null, `is_amrap` false), no tags.
+//
+// THE EXERCISE LIST comes from the run copy, in its order and with its positions, as a stable week's
+// does (copyFromRunCopy). Each live exercise of the run copy is one of:
+//   - kept ...... the source week lists it too: it brings that week's sets;
+//   - added ..... the source week doesn't list it (a save added it after that week was planned): it
+//                 arrives with no sets (SPEC: "Week-dependent: no sets");
+//   - swapped ... it replaced an exercise the source week lists (`replacesProgramExerciseId`, followed
+//                 through swaps of swaps): it brings that exercise's sets, pointed at the new row
+//                 (SPEC: "the new exercise takes the old one's sets (count, kinds, stages, rep targets)").
+// An exercise the source week lists whose run-copy row was removed, and that no swap took the place of,
+// is removed: it is left out, with its sets (`removed_at` decides). Two kinds of source row the run copy
+// doesn't list as live stay exactly as the source week has them, after the run copy's own rows: a
+// week-only slot that wasn't removed (a 1.1 week-level add or swap: "copying uses each week's actual
+// content") and a row the run copy doesn't know at all (nothing says it was removed). Positions are
+// the run copy's, a swapped-in row's being the old row's; the rows kept as they were are numbered after
+// the last.
+function copyFromWeek(week: PlannedWeekRows, runCopy: RunCopy): { exercises: AutoCopiedExercise[]; sets: AutoCopiedSet[] } {
+  const sourceRows: Array<Pick<ProgramExercise, 'id' | 'position'>> = []
+  const listed = new Set<string>()
   for (const e of [...week.exercises].sort((a, b) => a.position - b.position)) {
-    if (seen.has(e.id)) continue // 041: `on conflict (week_plan_id, program_exercise_id) do nothing`
-    seen.add(e.id)
-    exercises.push({ programExerciseId: e.id, position: e.position })
+    if (listed.has(e.id)) continue // 041: `on conflict (week_plan_id, program_exercise_id) do nothing`
+    listed.add(e.id)
+    sourceRows.push(e)
   }
-  const taken = new Set(week.sets.map((s) => s.id))
+  const rowOf = new Map(runCopy.exercises.map((e) => [e.id, e]))
+  const live = liveRunCopy(runCopy).exercises
+
+  // The program exercise each source exercise's sets end up under: itself (kept), or the swapped-in row that took its place.
+  const setsGoTo = new Map<string, string>()
+  for (const x of live) if (listed.has(x.id)) setsGoTo.set(x.id, x.id)
+  for (const x of live) {
+    if (listed.has(x.id)) continue
+    const old = replacedAndListed(x, rowOf, listed, setsGoTo)
+    if (old !== null) setsGoTo.set(old, x.id)
+  }
+
+  const exercises: AutoCopiedExercise[] = live.map((x) => ({ programExerciseId: x.id, position: x.position }))
+  let next = live.reduce((top, x) => Math.max(top, x.position + 1), 0)
+  for (const e of sourceRows) {
+    if (setsGoTo.has(e.id)) continue
+    if (rowOf.get(e.id)?.removedAt) continue // removed from the program, or swapped out
+    exercises.push({ programExerciseId: e.id, position: next++ })
+    setsGoTo.set(e.id, e.id)
+  }
+
+  const copied = week.sets.filter((s) => setsGoTo.has(s.programExerciseId))
+  const taken = new Set(copied.map((s) => s.id))
   const sets = copyOrder(
-    week.sets,
+    copied,
     (s) => s.parentWeekPlanSetId != null,
     (s) => s.setNumber,
     (s) => s.stageIndex,
@@ -342,7 +398,7 @@ function copyFromWeek(week: PlannedWeekRows): { exercises: AutoCopiedExercise[];
     (s): AutoCopiedSet => ({
       sourceId: s.id,
       parentSourceId: s.parentWeekPlanSetId != null && taken.has(s.parentWeekPlanSetId) ? s.parentWeekPlanSetId : null,
-      programExerciseId: s.programExerciseId,
+      programExerciseId: setsGoTo.get(s.programExerciseId)!,
       setNumber: s.setNumber,
       isDropset: s.isDropset,
       isWarmup: s.isWarmup,
@@ -359,6 +415,26 @@ function copyFromWeek(week: PlannedWeekRows): { exercises: AutoCopiedExercise[];
     }),
   )
   return { exercises, sets }
+}
+
+// The source-week exercise a swapped-in exercise took the place of: the nearest row on its
+// `replacesProgramExerciseId` chain (a swap of a swap included) that the source week lists. null when
+// the chain ends or loops first, or reaches a row another exercise already took (`taken` holds the
+// source exercises whose sets are already spoken for).
+function replacedAndListed(
+  x: RunCopyExercise,
+  rowOf: ReadonlyMap<string, RunCopyExercise>,
+  listed: ReadonlySet<string>,
+  taken: ReadonlyMap<string, string>,
+): string | null {
+  const walked = new Set<string>([x.id])
+  let id = x.replacesProgramExerciseId ?? null
+  while (id !== null && !walked.has(id)) {
+    if (listed.has(id)) return taken.has(id) ? null : id
+    walked.add(id)
+    id = rowOf.get(id)?.replacesProgramExerciseId ?? null
+  }
+  return null
 }
 
 // ═══ 3. COPY: last week's numbers into this week ═════════════════════════════════════════════
