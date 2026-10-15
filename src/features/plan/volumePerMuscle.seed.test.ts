@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { addDays, format, parseISO } from 'date-fns'
+import { addDays, differenceInCalendarWeeks, format, parseISO } from 'date-fns'
 import type { SessionStatus, SetLog, StageVolumeRule } from '../../types'
 import { volumeRows } from './volumePerMuscle'
 import { exercise, logHead, session, setId, weekPlan } from './volumePerMuscle.testutil'
@@ -15,6 +15,12 @@ import { exercise, logHead, session, setId, weekPlan } from './volumePerMuscle.t
 //   Upper B, Friday, skipped, no logs.
 // Week 3 is planned with the same structure. Every expected number is counted by hand, in the
 // comments: warmups out, a drop at the rule's value.
+//
+// A second week 2 (DECISIONS 133): the same Upper A, but Lower A started on the Wednesday and never
+// finished (only the squat logged) and Upper B never started (no session at all). Whether last week
+// has ended depends on the day: Plan on week 3 sees week 2 still running until the end of Sunday
+// 2026-10-11, and over from Monday 2026-10-12 (the seed's own day). The days are derived from the run's
+// Monday, and the queue and the verdicts are printed in the tests.
 
 // ─── The queue: weekdays derived from the run's Monday, and printed ──────────────────────────────
 
@@ -103,25 +109,27 @@ const lowerALogs = [
   ...logged('sla', 'w2-la', 'calf', 'calf', 'n d1'),
 ]
 
-function seedWeek2To3(rule: StageVolumeRule) {
-  const [ua, la, ub] = QUEUE
-  return volumeRows({
-    lastWeek: {
-      sessions: [
-        session('sua', 'w2-ua', ua.status, upperALogs, { date: day(ua.date) }),
-        session('sla', 'w2-la', la.status, lowerALogs, { date: day(la.date) }),
-        session('sub', 'w2-ub', ub.status, [], { date: day(ub.date) }),
-      ],
-      plan: plansOfWeek(2),
-    },
-    thisWeek: plansOfWeek(3),
-    exercises: EXERCISES,
-    rule,
-  })
+// Week 3's VOLUME as Plan shows it, from week 2's sessions and whether week 2 has ended.
+function weekTwoRows(sessions: ReturnType<typeof session>[], ended: boolean, rule: StageVolumeRule) {
+  return volumeRows({ lastWeek: { sessions, plan: plansOfWeek(2), ended }, thisWeek: plansOfWeek(3), exercises: EXERCISES, rule })
 }
 
+// The seed's own week 2: Upper A and Lower A completed, Upper B skipped.
+function seededSessions() {
+  const [ua, la, ub] = QUEUE
+  return [
+    session('sua', 'w2-ua', ua.status, upperALogs, { date: day(ua.date) }),
+    session('sla', 'w2-la', la.status, lowerALogs, { date: day(la.date) }),
+    session('sub', 'w2-ub', ub.status, [], { date: day(ub.date) }),
+  ]
+}
+
+// On the seed's own day, Monday 2026-10-12, Plan shows week 3 (the current week) and week 2 has ended.
+const seedWeek2To3 = (rule: StageVolumeRule) => weekTwoRows(seededSessions(), true, rule)
+
 type Expected = Array<[muscle: string, last: number, thisWeek: number, delta: number, note: string | undefined]>
-const table = (rule: StageVolumeRule) => seedWeek2To3(rule).map((r): Expected[number] => [r.muscle, r.last, r.this, r.delta, r.note])
+const toTable = (rows: ReturnType<typeof weekTwoRows>) => rows.map((r): Expected[number] => [r.muscle, r.last, r.this, r.delta, r.note])
+const table = (rule: StageVolumeRule) => toTable(seedWeek2To3(rule))
 
 describe('the seed\'s week 2 → week 3 (the test account), counted by hand', () => {
   it('the queue: Monday Upper A done, Wednesday Lower A done, Friday Upper B skipped, on the weekdays the seed makes them', () => {
@@ -188,5 +196,85 @@ describe('the seed\'s week 2 → week 3 (the test account), counted by hand', ()
     const each = table('each')
     const changed = half.filter((row, i) => JSON.stringify(row) !== JSON.stringify(each[i])).map((row) => row[0])
     expect(changed).toEqual(['back', 'shoulders', 'triceps', 'hamstrings', 'calves'])
+  })
+})
+
+// ─── DECISIONS 133: the same week 2 with two workouts not done ─────────────────────────────────
+
+// Plan on week 3 sees week 2 behind it once today is in week 3, and still running before that (calendar weeks,
+// Monday-anchored, as the app counts a weekday run's weeks: CONTEXT.md). Chunk 55 passes this verdict.
+const weekOf = (today: Date) => differenceInCalendarWeeks(today, RUN_MONDAY, { weekStartsOn: 1 }) + 1
+const lastWeekHasEnded = (shownWeek: number, today: Date) => shownWeek - 1 < weekOf(today)
+
+const WEDNESDAY = parseISO('2026-10-07') // Lower A was started today and is still open
+const SUNDAY = parseISO('2026-10-11')    // the last day of week 2: Friday's workout could still be done
+const MONDAY = parseISO('2026-10-12')    // week 3 begins: the seed's own day
+
+// What week 2's sessions are in the unfinished version: Upper A as seeded, Lower A started with only the squat
+// logged (never finished), Upper B never started: no session exists.
+const UNFINISHED_QUEUE: Array<{ workout: string; date: Date; session: SessionStatus | 'none' }> = [
+  { workout: 'Upper A', date: week2(0), session: 'completed' },
+  { workout: 'Lower A', date: week2(2), session: 'in_progress' },
+  { workout: 'Upper B', date: week2(4), session: 'none' },
+]
+const unfinishedSessions = () => [
+  session('sua', 'w2-ua', 'completed', upperALogs, { date: day(UNFINISHED_QUEUE[0].date) }),
+  session('sla', 'w2-la', 'in_progress', logged('sla', 'w2-la', 'squat', 'squat', 'w w n n n'), { date: day(UNFINISHED_QUEUE[1].date) }),
+]
+const fromUnfinished = (today: Date) => toTable(weekTwoRows(unfinishedSessions(), lastWeekHasEnded(3, today), 'half'))
+
+describe('the seed\'s week 2 with Lower A never finished and Upper B never started (DECISIONS 133)', () => {
+  it('the queue and the days: week 2 is running through Sunday 2026-10-11 and has ended on Monday 2026-10-12', () => {
+    expect(UNFINISHED_QUEUE.map((q) => `${format(q.date, 'EEEE')} ${day(q.date)} ${q.workout} ${q.session}`)).toEqual([
+      'Monday 2026-10-05 Upper A completed',
+      'Wednesday 2026-10-07 Lower A in_progress',
+      'Friday 2026-10-09 Upper B none',
+    ])
+    expect([WEDNESDAY, SUNDAY, MONDAY].map((today) => `${format(today, 'EEEE yyyy-MM-dd')}: week ${weekOf(today)}, week 2 ${lastWeekHasEnded(3, today) ? 'has ended' : 'is still running'}`)).toEqual([
+      'Wednesday 2026-10-07: week 2, week 2 is still running',
+      'Sunday 2026-10-11: week 2, week 2 is still running',
+      'Monday 2026-10-12: week 3, week 2 has ended',
+    ])
+  })
+
+  // Counted by hand at ½ a drop. Planned (week 2's plan, and week 3's): chest 3, back 7, shoulders 6, biceps 2, triceps 3,
+  // quads 3, hamstrings 5½, calves 2½. Done by Upper A as in the seed: chest 3, back 2, shoulders 3½, triceps 4.
+  it('on Wednesday 2026-10-07, week 2 is still running: Lower A and Upper B count their plans', () => {
+    // Lower A (open today) counts its plan, not the squat it logged: quads 3, hamstrings 5½, calves 2½; Upper B (no session
+    // yet) its plan: back + 4 (the cluster pull-up 1 + 2 × ½, and two sets), shoulders + 3, biceps + 2.
+    expect(fromUnfinished(WEDNESDAY)).toEqual([
+      ['chest', 3, 3, 0, undefined],
+      ['back', 6, 7, 1, 'YOU PLANNED 7 LAST WEEK · DID 6'],           // 2 + 4
+      ['shoulders', 6.5, 6, -0.5, 'YOU PLANNED 6 LAST WEEK · DID 6½'], // 3½ + 3
+      ['biceps', 2, 2, 0, undefined],
+      ['triceps', 4, 3, -1, 'YOU PLANNED 3 LAST WEEK · DID 4'],
+      ['quads', 3, 3, 0, undefined],
+      ['hamstrings', 5.5, 5.5, 0, undefined],
+      ['calves', 2.5, 2.5, 0, undefined],
+    ])
+  })
+
+  it('on Sunday 2026-10-11, the last day of week 2, it is still running: the same as Wednesday', () => {
+    expect(fromUnfinished(SUNDAY)).toEqual(fromUnfinished(WEDNESDAY))
+  })
+
+  it('on Monday 2026-10-12, week 2 has ended: Upper B counts 0, Lower A the squat it logged, and the notes show what was missed', () => {
+    // Lower A counts what it logged (the squat's 3 working sets, the warmups out): quads 3, hamstrings 0, calves 0; Upper B nothing.
+    expect(fromUnfinished(MONDAY)).toEqual([
+      ['chest', 3, 3, 0, undefined],
+      ['back', 2, 7, 5, 'YOU PLANNED 7 LAST WEEK · DID 2'],
+      ['shoulders', 3.5, 6, 2.5, 'YOU PLANNED 6 LAST WEEK · DID 3½'],
+      ['biceps', 0, 2, 2, 'YOU PLANNED 2 LAST WEEK · DID 0'],
+      ['triceps', 4, 3, -1, 'YOU PLANNED 3 LAST WEEK · DID 4'],
+      ['quads', 3, 3, 0, undefined],                                    // the squat's three working sets were all that was planned
+      ['hamstrings', 0, 5.5, 5.5, 'YOU PLANNED 5½ LAST WEEK · DID 0'], // Lower A's other exercises were never logged
+      ['calves', 0, 2.5, 2.5, 'YOU PLANNED 2½ LAST WEEK · DID 0'],
+    ])
+  })
+
+  it('the seed\'s own week 2 reads the same on either side of its end: its Friday is a skipped session, which counts 0 either way', () => {
+    for (const rule of ['whole', 'half', 'each'] as const) {
+      expect(weekTwoRows(seededSessions(), true, rule), rule).toEqual(weekTwoRows(seededSessions(), false, rule))
+    }
   })
 })

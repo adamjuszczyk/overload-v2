@@ -14,6 +14,7 @@ import type {
   WeekPlan,
   WeekPlanSet,
 } from '../../types'
+import { addDays, format, parseISO } from 'date-fns'
 import type { VolumePlan, VolumeSession } from './volumePerMuscle'
 
 export function exercise(id: string, muscleGroup: MuscleGroup | null): Exercise {
@@ -190,13 +191,24 @@ export function orphanDropset(id: string, sessionId: string, exerciseId: string)
   return { ...baseLog(id, sessionId, exerciseId, {}), isDropset: true }
 }
 
+export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+const WEEKDAYS: Weekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
+/**
+ * The date of a weekday in the fixtures' week: its Monday, 2026-10-05 (week 2 of the seed's run), plus the weekday's
+ * place in the week, so a session named for a Wednesday is dated a Wednesday (Checks that lied #21).
+ */
+export function dateOf(day: Weekday): string {
+  return format(addDays(parseISO('2026-10-05'), WEEKDAYS.indexOf(day)), 'yyyy-MM-dd')
+}
+
 /** A session (a real `Session` with its logs) plus the changes volumeRows reads off it. */
 export function session(
   id: string,
   planId: string | null,
   status: SessionStatus,
   logs: SetLog[] = [],
-  opts: { changes?: SessionSetChange[]; date?: string } = {},
+  opts: { changes?: SessionSetChange[]; date?: string; day?: Weekday } = {},
 ): Session & Pick<VolumeSession, 'sessionSetChanges'> {
   return {
     id,
@@ -204,7 +216,7 @@ export function session(
     mesocycleId: 'm1',
     weekPlanId: planId,
     workoutDayId: planId === null ? null : `wd-${planId}`,
-    date: opts.date ?? '2026-10-05',
+    date: opts.date ?? dateOf(opts.day ?? 'monday'),
     status,
     note: null,
     startedAt: status === 'planned' ? null : '2026-10-05T18:00:00Z',

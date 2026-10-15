@@ -2,11 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { format, parseISO } from 'date-fns'
 import { MUSCLE_GROUPS } from '../../lib/exerciseTags'
 import { DEFAULT_SETTINGS, useSettingsStore } from '../settings/settingsStore'
 import type { MuscleGroup, StageVolumeRule } from '../../types'
-import { formatVolumeCount, formatVolumeDelta, volumeRows, type VolumeRow, type VolumeRowsInput } from './volumePerMuscle'
-import { deepFreeze, exercise, logHead, logStage, orphanDropset, session, setId, weekPlan, type PlannedExercise } from './volumePerMuscle.testutil'
+import { formatVolumeCount, formatVolumeDelta, volumeRows, type VolumePlan, type VolumeRow, type VolumeRowsInput, type VolumeSession } from './volumePerMuscle'
+import { dateOf, deepFreeze, exercise, logHead, logStage, orphanDropset, session, setId, weekPlan, type PlannedExercise, type Weekday } from './volumePerMuscle.testutil'
 
 // Chunk 44 (TASKS-1.2): VOLUME as a pure function. Every expected number below is
 // counted by hand in the comment beside it: warmups out, a drop at the rule's value.
@@ -26,11 +27,17 @@ const EXERCISES = [
   exercise('carry', 'other'),
 ]
 
-const NOTHING = { sessions: [], plan: [] }
+// Last week as a test hands it over: `ended` may be left out, and then last week is still running. Every test
+// about a workout that was not done says which it is (DECISIONS 133); `volumeRows` itself refuses a call without it.
+type LastWeekArg = { sessions: VolumeSession[]; plan: VolumePlan[]; ended?: boolean }
+type CallOverrides = Partial<Omit<VolumeRowsInput, 'lastWeek'>> & { lastWeek?: LastWeekArg }
+
+const NOTHING: LastWeekArg = { sessions: [], plan: [] }
 
 // The call, with the parts a test doesn't care about filled in.
-function volume(over: Partial<VolumeRowsInput> = {}): VolumeRow[] {
-  return volumeRows({ lastWeek: NOTHING, thisWeek: [], exercises: EXERCISES, rule: 'half', ...over })
+function volume(over: CallOverrides = {}): VolumeRow[] {
+  const { lastWeek = NOTHING, ...rest } = over
+  return volumeRows({ thisWeek: [], exercises: EXERCISES, rule: 'half', ...rest, lastWeek: { ended: false, ...lastWeek } })
 }
 
 // A muscle's row (the test names which one it is looking at).
@@ -42,6 +49,16 @@ function rowOf(rows: VolumeRow[], muscle: MuscleGroup): VolumeRow {
 
 const ex = (row: string, exerciseId: string, sets: string): PlannedExercise => ({ row, exerciseId, sets })
 const nSets = (n: number) => Array.from({ length: n }, () => 'n').join(' ')
+
+describe('the fixtures\' dates', () => {
+  it('a session named for a weekday is dated that weekday, in the week of Monday 2026-10-05 (week 2 of the seed\'s run)', () => {
+    const days: Weekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    expect(days.map((d) => `${format(parseISO(dateOf(d)), 'EEEE').toLowerCase()} ${dateOf(d)}`)).toEqual([
+      'monday 2026-10-05', 'tuesday 2026-10-06', 'wednesday 2026-10-07', 'thursday 2026-10-08',
+      'friday 2026-10-09', 'saturday 2026-10-10', 'sunday 2026-10-11',
+    ])
+  })
+})
 
 describe('volumeRows — what a set counts as', () => {
   it('a normal working set counts 1, and so does an AMRAP set', () => {
@@ -196,6 +213,15 @@ describe('volumeRows — this week is its plan', () => {
 describe('volumeRows — last week is what was actually done', () => {
   const PLAN4 = () => weekPlan('p1', [ex('r1', 'bench', 'w n n n n')]) // four working sets planned
   const planned = (n: number) => setId('p1', 'r1', n)
+  // Monday (3 bench sets planned) done with one set logged; Wednesday (2 row sets) started and one set logged; Friday
+  // (4 lateral raise sets) with no session at all.
+  const mondayWednesdayFriday = () => ({
+    sessions: [
+      session('s1', 'mon', 'completed', logHead('l1', 's1', 'bench', { planned: setId('mon', 'm1', 1) })),
+      session('s2', 'wed', 'in_progress', logHead('l2', 's2', 'row', { planned: setId('wed', 'w1', 1) }), { day: 'wednesday' }),
+    ],
+    plan: [weekPlan('mon', [ex('m1', 'bench', 'n n n')]), weekPlan('wed', [ex('w1', 'row', 'n n')]), weekPlan('fri', [ex('f1', 'lat', 'n n n n')])],
+  })
 
   it('a done session counts the sets it logged, not its plan', () => {
     const logs = [
@@ -248,34 +274,108 @@ describe('volumeRows — last week is what was actually done', () => {
     expect(rowOf(rows, 'chest').last).toBe(0)
   })
 
-  describe('a session not done yet counts its plan, whatever it has logged', () => {
+  describe('while last week is still running (Plan on a week planned ahead), a session not done yet counts its plan, whatever it has logged', () => {
     it('in progress', () => {
       const logs = logHead('l1', 's1', 'bench', { planned: planned(2) }) // one set logged so far
-      const row = rowOf(volume({ lastWeek: { sessions: [session('s1', 'p1', 'in_progress', logs)], plan: [PLAN4()] } }), 'chest')
+      const row = rowOf(volume({ lastWeek: { sessions: [session('s1', 'p1', 'in_progress', logs)], plan: [PLAN4()], ended: false } }), 'chest')
       expect(row.last).toBe(4)
       expect(row.note).toBeUndefined()
     })
 
     it('planned (moved, not started)', () => {
-      expect(rowOf(volume({ lastWeek: { sessions: [session('s1', 'p1', 'planned')], plan: [PLAN4()] } }), 'chest').last).toBe(4)
+      expect(rowOf(volume({ lastWeek: { sessions: [session('s1', 'p1', 'planned')], plan: [PLAN4()], ended: false } }), 'chest').last).toBe(4)
     })
 
     it('no session created for its plan yet', () => {
-      expect(rowOf(volume({ lastWeek: { sessions: [], plan: [PLAN4()] } }), 'chest').last).toBe(4)
+      expect(rowOf(volume({ lastWeek: { sessions: [], plan: [PLAN4()], ended: false } }), 'chest').last).toBe(4)
     })
 
     it('mixed: Monday done, Wednesday in progress, Friday not started', () => {
-      const mon = weekPlan('mon', [ex('m1', 'bench', 'n n n')])
-      const wed = weekPlan('wed', [ex('w1', 'row', 'n n')])
-      const fri = weekPlan('fri', [ex('f1', 'lat', 'n n n n')])
-      const logs = [...logHead('l1', 's1', 'bench', { planned: setId('mon', 'm1', 1) })] // Monday did one of three
-      const rows = volume({
-        lastWeek: {
-          sessions: [session('s1', 'mon', 'completed', logs), session('s2', 'wed', 'in_progress', logHead('l2', 's2', 'row'))],
-          plan: [mon, wed, fri],
-        },
-      })
+      const { sessions, plan } = mondayWednesdayFriday()
+      const rows = volume({ lastWeek: { sessions, plan, ended: false } })
       expect(rows.map((r) => [r.muscle, r.last])).toEqual([['chest', 1], ['back', 2], ['shoulders', 4]])
+    })
+  })
+
+  describe('once last week has ended (Plan on the current week), a workout never done counts 0 and one never finished what it logged (DECISIONS 133)', () => {
+    const MISSED = 'YOU PLANNED 4 LAST WEEK · DID 0'
+
+    it('no session was ever created for it: 0, and the note shows what was missed', () => {
+      const rows = volume({ lastWeek: { sessions: [], plan: [PLAN4()], ended: true } })
+      expect(rowOf(rows, 'chest')).toEqual({ muscle: 'chest', last: 0, this: 0, delta: 0, note: MISSED })
+    })
+
+    it('moved and never started (a planned session): 0', () => {
+      const rows = volume({ lastWeek: { sessions: [session('s1', 'p1', 'planned')], plan: [PLAN4()], ended: true } })
+      expect(rowOf(rows, 'chest')).toEqual({ muscle: 'chest', last: 0, this: 0, delta: 0, note: MISSED })
+    })
+
+    it('started and never finished with nothing logged: 0', () => {
+      const rows = volume({ lastWeek: { sessions: [session('s1', 'p1', 'in_progress')], plan: [PLAN4()], ended: true } })
+      expect(rowOf(rows, 'chest')).toEqual({ muscle: 'chest', last: 0, this: 0, delta: 0, note: MISSED })
+    })
+
+    it('started and never finished counts the sets it logged, as a done session does: warmups and skipped sets out, an added set in', () => {
+      const logs = [
+        ...logHead('l0', 's1', 'bench', { planned: planned(1), warmup: true }),
+        ...logHead('l1', 's1', 'bench', { planned: planned(2) }),
+        ...logHead('l2', 's1', 'bench', { planned: planned(3), skipped: true }),
+        ...logHead('extra', 's1', 'bench'),
+      ]
+      const rows = volume({ lastWeek: { sessions: [session('s1', 'p1', 'in_progress', logs)], plan: [PLAN4()], ended: true } })
+      expect(rowOf(rows, 'chest')).toMatchObject({ last: 2, note: 'YOU PLANNED 4 LAST WEEK · DID 2' }) // the planned set 2 and the added one
+    })
+
+    it('a planned set it deleted is out of what it logged, and its drops with it', () => {
+      const plan = weekPlan('p1', [ex('r1', 'bench', 'n d1 n')])
+      const logs = [
+        ...logHead('l1', 's1', 'bench', { planned: planned(1) }),
+        ...logHead('l2', 's1', 'bench', { planned: planned(2), drops: 1 }),
+      ]
+      const changes = [{ kind: 'deleted' as const, weekPlanSetId: planned(2) }]
+      const rows = volume({ lastWeek: { sessions: [session('s1', 'p1', 'in_progress', logs, { changes })], plan: [plan], ended: true } })
+      expect(rowOf(rows, 'chest').last).toBe(1)
+    })
+
+    it('a finished session counts what it did either way: completed by its logs, skipped as 0', () => {
+      const logs = [1, 2, 3].flatMap((n) => logHead(`l${n}`, 's1', 'bench', { planned: setId('mon', 'm1', n) }))
+      const mon = weekPlan('mon', [ex('m1', 'bench', 'n n n n')])
+      const tue = weekPlan('tue', [ex('t1', 'row', 'n n')])
+      const sessions = [session('s1', 'mon', 'completed', logs), session('s2', 'tue', 'skipped')]
+      const running = volume({ lastWeek: { sessions, plan: [mon, tue], ended: false } })
+      const ended = volume({ lastWeek: { sessions, plan: [mon, tue], ended: true } })
+      expect(ended).toEqual(running)
+      expect(ended.map((r) => [r.muscle, r.last, r.note])).toEqual([
+        ['chest', 3, 'YOU PLANNED 4 LAST WEEK · DID 3'],
+        ['back', 0, 'YOU PLANNED 2 LAST WEEK · DID 0'],
+      ])
+    })
+
+    it('the same sessions and plans read differently on either side of the week\'s end: Monday done, Wednesday in progress, Friday never created', () => {
+      const { sessions, plan } = mondayWednesdayFriday()
+      // The queue, printed: the weekdays are the dates' own (Friday has no session at all).
+      expect(sessions.map((s) => `${format(parseISO(s.date), 'EEEE')} ${s.date} ${s.status}`)).toEqual([
+        'Monday 2026-10-05 completed',
+        'Wednesday 2026-10-07 in_progress',
+      ])
+      const running = volume({ lastWeek: { sessions, plan, ended: false } })
+      const ended = volume({ lastWeek: { sessions, plan, ended: true } })
+      // Running: Wednesday and Friday still count their plans (back 2, shoulders 4). Over: Wednesday what it logged (1 row set), Friday nothing.
+      expect(running.map((r) => [r.muscle, r.last, r.note])).toEqual([['chest', 1, 'YOU PLANNED 3 LAST WEEK · DID 1'], ['back', 2, undefined], ['shoulders', 4, undefined]])
+      expect(ended.map((r) => [r.muscle, r.last, r.note])).toEqual([
+        ['chest', 1, 'YOU PLANNED 3 LAST WEEK · DID 1'],
+        ['back', 1, 'YOU PLANNED 2 LAST WEEK · DID 1'],
+        ['shoulders', 0, 'YOU PLANNED 4 LAST WEEK · DID 0'],
+      ])
+    })
+
+    it('a week nobody planned is empty: no plan rows and no sessions, so no muscle has a last week or a note (131)', () => {
+      const thisWeek = [weekPlan('t', [ex('t1', 'bench', 'n n n'), ex('t2', 'row', 'n n')])]
+      const rows = volume({ lastWeek: { sessions: [], plan: [], ended: true }, thisWeek })
+      expect(rows).toEqual([
+        { muscle: 'chest', last: 0, this: 3, delta: 3 },
+        { muscle: 'back', last: 0, this: 2, delta: 2 },
+      ])
     })
   })
 
@@ -296,8 +396,8 @@ describe('volumeRows — last week is what was actually done', () => {
     it('only the change of its own session applies (two sessions on one shared plan row)', () => {
       const shared = weekPlan('p1', [ex('r1', 'bench', 'n n n')], { occurrences: 2 })
       const all = (sessionId: string) => [1, 2, 3].flatMap((n) => logHead(`${sessionId}-l${n}`, sessionId, 'bench', { planned: setId('p1', 'r1', n) }))
-      const tuesday = session('tue', 'p1', 'completed', all('tue'), { changes: [{ kind: 'deleted', weekPlanSetId: setId('p1', 'r1', 2) }] })
-      const thursday = session('thu', 'p1', 'completed', all('thu'))
+      const tuesday = session('tue', 'p1', 'completed', all('tue'), { day: 'tuesday', changes: [{ kind: 'deleted', weekPlanSetId: setId('p1', 'r1', 2) }] })
+      const thursday = session('thu', 'p1', 'completed', all('thu'), { day: 'thursday' })
       const row = rowOf(volume({ lastWeek: { sessions: [tuesday, thursday], plan: [shared] } }), 'chest')
       expect(row.last).toBe(5) // Tuesday 2, Thursday 3
       expect(row.note).toBe('YOU PLANNED 6 LAST WEEK · DID 5')
@@ -324,24 +424,39 @@ describe('volumeRows — last week is what was actually done', () => {
     const shared = () => weekPlan('p1', [ex('r1', 'bench', 'n n n')], { occurrences: 2 })
     const logsOf = (sessionId: string, n: number) => Array.from({ length: n }, (_, i) => logHead(`${sessionId}-${i}`, sessionId, 'bench', { planned: setId('p1', 'r1', i + 1) })).flat()
 
+    it('the fixture\'s days: Tuesday and Thursday are dated a Tuesday and a Thursday', () => {
+      const queue = [session('tue', 'p1', 'completed', [], { day: 'tuesday' }), session('thu', 'p1', 'completed', [], { day: 'thursday' })]
+      expect(queue.map((s) => `${format(parseISO(s.date), 'EEEE')} ${s.date}`)).toEqual(['Tuesday 2026-10-06', 'Thursday 2026-10-08'])
+    })
+
     it('both sessions done: each counts what it did; the plan counts twice', () => {
-      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 3)), session('thu', 'p1', 'completed', logsOf('thu', 2))], plan: [shared()] } })
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 3), { day: 'tuesday' }), session('thu', 'p1', 'completed', logsOf('thu', 2), { day: 'thursday' })], plan: [shared()] } })
       expect(rowOf(rows, 'chest')).toMatchObject({ last: 5, note: 'YOU PLANNED 6 LAST WEEK · DID 5' })
     })
 
-    it('Thursday not created yet: it counts its plan', () => {
-      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2))], plan: [shared()] } })
+    it('while the week runs, Thursday not created yet: it counts its plan', () => {
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2), { day: 'tuesday' })], plan: [shared()], ended: false } })
       expect(rowOf(rows, 'chest')).toMatchObject({ last: 5, note: 'YOU PLANNED 6 LAST WEEK · DID 5' }) // 2 done + 3 planned
     })
 
-    it('Thursday in progress: it counts its plan, not its logs', () => {
-      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2)), session('thu', 'p1', 'in_progress', logsOf('thu', 1))], plan: [shared()] } })
+    it('while the week runs, Thursday in progress: it counts its plan, not its logs', () => {
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2), { day: 'tuesday' }), session('thu', 'p1', 'in_progress', logsOf('thu', 1), { day: 'thursday' })], plan: [shared()], ended: false } })
       expect(rowOf(rows, 'chest').last).toBe(5)
+    })
+
+    it('once the week has ended, Thursday never created was never done: 0', () => {
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2), { day: 'tuesday' })], plan: [shared()], ended: true } })
+      expect(rowOf(rows, 'chest')).toMatchObject({ last: 2, note: 'YOU PLANNED 6 LAST WEEK · DID 2' }) // Tuesday's 2; the plan still counts twice for the note
+    })
+
+    it('once the week has ended, Thursday started and never finished counts the one set it logged', () => {
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 2), { day: 'tuesday' }), session('thu', 'p1', 'in_progress', logsOf('thu', 1), { day: 'thursday' })], plan: [shared()], ended: true } })
+      expect(rowOf(rows, 'chest')).toMatchObject({ last: 3, note: 'YOU PLANNED 6 LAST WEEK · DID 3' })
     })
 
     it('with no count given, the sessions it has are its weekdays', () => {
       const plan = weekPlan('p1', [ex('r1', 'bench', 'n n n')]) // occurrences left out
-      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 3)), session('thu', 'p1', 'completed', logsOf('thu', 3))], plan: [plan] } })
+      const rows = volume({ lastWeek: { sessions: [session('tue', 'p1', 'completed', logsOf('tue', 3), { day: 'tuesday' }), session('thu', 'p1', 'completed', logsOf('thu', 3), { day: 'thursday' })], plan: [plan] } })
       expect(rowOf(rows, 'chest')).toMatchObject({ last: 6 })
       expect(rowOf(rows, 'chest').note).toBeUndefined() // 6 planned, 6 done
     })
@@ -360,14 +475,15 @@ describe('volumeRows — last week is what was actually done', () => {
     expect(rowOf(rows, 'chest')).toMatchObject({ last: 2, note: 'YOU PLANNED 0 LAST WEEK · DID 2' })
   })
 
-  it('a session that is not done, with no plan row at all or one that is not among last week\'s plans, counts nothing', () => {
-    expect(volume({ lastWeek: { sessions: [session('s1', null, 'in_progress', logHead('l1', 's1', 'bench'))], plan: [] } })).toEqual([])
-    expect(volume({ lastWeek: { sessions: [session('s1', 'gone', 'in_progress', logHead('l1', 's1', 'bench'))], plan: [] } })).toEqual([])
+  it('while the week runs, a session that is not done, with no plan row at all or one that is not among last week\'s plans, counts nothing (there is no plan to count)', () => {
+    expect(volume({ lastWeek: { sessions: [session('s1', null, 'in_progress', logHead('l1', 's1', 'bench'))], plan: [], ended: false } })).toEqual([])
+    expect(volume({ lastWeek: { sessions: [session('s1', 'gone', 'in_progress', logHead('l1', 's1', 'bench'))], plan: [], ended: false } })).toEqual([])
   })
 
-  it('a plan row listed twice is two occurrences: both count their plan when neither has a session', () => {
+  it('a plan row listed twice is two occurrences: while the week runs both count their plan when neither has a session, once it has ended neither was done', () => {
     const plan = weekPlan('p1', [ex('r1', 'bench', 'n n n')])
-    expect(rowOf(volume({ lastWeek: { sessions: [], plan: [plan, plan] } }), 'chest')).toEqual({ muscle: 'chest', last: 6, this: 0, delta: -6 })
+    expect(rowOf(volume({ lastWeek: { sessions: [], plan: [plan, plan], ended: false } }), 'chest')).toEqual({ muscle: 'chest', last: 6, this: 0, delta: -6 })
+    expect(rowOf(volume({ lastWeek: { sessions: [], plan: [plan, plan], ended: true } }), 'chest')).toEqual({ muscle: 'chest', last: 0, this: 0, delta: 0, note: 'YOU PLANNED 6 LAST WEEK · DID 0' })
   })
 
   it('what was planned is last week\'s plan, whatever this week holds', () => {
@@ -393,7 +509,7 @@ describe('volumeRows — the rows', () => {
 
   it('a muscle gets a row when either week has volume in it, and no row when neither has', () => {
     const rows = volume({
-      lastWeek: { sessions: [], plan: [weekPlan('l', [ex('l1', 'row', 'n n n')])] },
+      lastWeek: { sessions: [], plan: [weekPlan('l', [ex('l1', 'row', 'n n n')])], ended: false }, // still running: its plan counts
       thisWeek: [weekPlan('t', [ex('t1', 'bench', 'n n')])],
     })
     expect(rows.map((r) => [r.muscle, r.last, r.this])).toEqual([['chest', 0, 2], ['back', 3, 0]])
@@ -408,6 +524,7 @@ describe('volumeRows — the rows', () => {
     const rows = volume({
       lastWeek: {
         sessions: [],
+        ended: false, // still running: no session yet, so each plan counts
         plan: [weekPlan('l', [
           ex('a', 'bench', nSets(9)),    // chest 9
           ex('b', 'row', nSets(10)),     // back 10
@@ -498,15 +615,33 @@ describe('volumeRows — a pure function', () => {
       ...logHead('l3', 's1', 'row'),
     ]
     const changes = [{ kind: 'deleted' as const, weekPlanSetId: setId('p1', 'r2', 2) }]
-    const input = deepFreeze({
-      lastWeek: { sessions: [session('s1', 'p1', 'completed', logs, { changes }), session('s2', 'p1', 'in_progress')], plan: [plan] },
-      thisWeek: [plan],
-      exercises: EXERCISES,
-      rule: 'half' as const,
-    })
-    const first = volumeRows(input)
-    expect(first.length).toBeGreaterThan(0)
-    expect(volumeRows(input)).toEqual(first)
+    for (const ended of [false, true]) {
+      const input = deepFreeze({
+        lastWeek: { sessions: [session('s1', 'p1', 'completed', logs, { changes }), session('s2', 'p1', 'in_progress')], plan: [plan], ended },
+        thisWeek: [plan],
+        exercises: EXERCISES,
+        rule: 'half' as const,
+      })
+      const first = volumeRows(input)
+      expect(first.length, `ended ${ended}`).toBeGreaterThan(0)
+      expect(volumeRows(input), `ended ${ended}`).toEqual(first)
+    }
+  })
+})
+
+describe('volumeRows — whether last week has ended is the caller\'s to say (DECISIONS 133)', () => {
+  it('refuses a call that does not say, at compile time and when it runs', () => {
+    const omitted = () => {
+      // @ts-expect-error last week must say whether it has ended
+      return volumeRows({ lastWeek: { sessions: [], plan: [] }, thisWeek: [], exercises: [], rule: 'half' })
+    }
+    expect(omitted).toThrow(/lastWeek\.ended must say whether last week has ended/)
+  })
+
+  it('the answer follows the flag and nothing else: one plan, no session, two answers', () => {
+    const plan = weekPlan('p1', [ex('r1', 'bench', 'n n n')])
+    const at = (ended: boolean) => rowOf(volume({ lastWeek: { sessions: [], plan: [plan], ended } }), 'chest').last
+    expect([at(false), at(true)]).toEqual([3, 0])
   })
 })
 

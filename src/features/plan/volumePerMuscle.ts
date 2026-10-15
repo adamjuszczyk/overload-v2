@@ -27,15 +27,21 @@
 //   or `skipped`, the two states Plan calls DONE and SKIPPED) counts its done sets:
 //   its logs, added sets in (a log with no planned set behind it), skipped ones out,
 //   and a planned set the session deleted (a `deleted` change, TASKS 44) out. A
-//   session skipped as a whole has no done sets, so it counts 0. A session NOT done
-//   yet (`planned`, `in_progress`, or none created for its plan) counts its plan,
-//   whatever it has logged so far (SPEC: "sessions not done yet count their plan").
-//   The module doesn't know today's date, so it can't tell a session still to come
-//   from one missed in a week that is over: a workout that was never started and
-//   never marked skipped has no session and counts its plan too. A caller that
-//   wants a missed workout to count 0 passes it as a `skipped` session.
+//   session skipped as a whole has no done sets, so it counts 0. What a workout NOT
+//   done counts depends on whether last week is still running, which the caller says
+//   (`lastWeek.ended`: true exactly when Plan shows the current week, so last week is
+//   behind it; false on a week planned ahead; DECISIONS 133, Adam's answer):
+//   - running: a session `planned`, `in_progress`, or none created for its plan counts
+//     its plan, whatever it has logged so far (SPEC: "sessions not done yet count their
+//     plan");
+//   - ended: nothing is "yet" any more, so a workout counts what was actually done: a
+//     session never created, or `planned` (moved and never started), counts 0, the same
+//     as a skipped one; an `in_progress` one never finished counts the sets it logged,
+//     as a done session does. A week nobody planned has no plan rows and no sessions:
+//     it is empty (131).
 // - "What you planned" for the note is last week's plan, every row of it, whatever
-//   its sessions did.
+//   its sessions did and whether or not the week has ended, so a missed workout reads
+//   "YOU PLANNED 4 LAST WEEK · DID 0".
 //
 // ─── One workout on several weekdays (G14) ────────────────────────────────────
 // One plan row can stand for several sessions in a week: a workout on Tuesday and
@@ -44,8 +50,9 @@
 // (default 1; the caller reads it off the schedule in force that week; a row
 // listed twice is two). This week's plan counts once per occurrence. Last week,
 // every session linked to the plan row is one occurrence by itself; an occurrence
-// with no session yet counts the plan; a row with more sessions than `occurrences`
-// says is counted for the sessions it has.
+// with no session yet counts the plan while the week runs and 0 once it has ended;
+// a row with more sessions than `occurrences` says is counted for the sessions it
+// has.
 //
 // ─── Which row a set belongs to ───────────────────────────────────────────────
 // A muscle GROUP (not a subgroup: SPEC's known gap with board 3's sample rows),
@@ -112,7 +119,17 @@ export interface VolumeSession {
 }
 
 export interface VolumeRowsInput {
-  lastWeek: { sessions: VolumeSession[]; plan: VolumePlan[] }
+  lastWeek: {
+    sessions: VolumeSession[]
+    plan: VolumePlan[]
+    /**
+     * Whether last week is over: true exactly when Plan shows the current week (last week is the
+     * one behind it), false on a week planned ahead (last week is still running, or not started).
+     * Over: a workout never done counts 0 and an unfinished one what it logged; running: a workout
+     * not done counts its plan (DECISIONS 133). Required: left out, the answer would be a guess.
+     */
+    ended: boolean
+  }
   /** This week's plan rows. */
   thisWeek: VolumePlan[]
   exercises: VolumeExercise[]
@@ -175,7 +192,7 @@ function doneTally(session: VolumeSession, drop: number, muscleOf: (exerciseId: 
   return tally
 }
 
-// A session that is over: counted by what it did, not by its plan.
+// A finished session (completed or skipped): counted by what it did, in a running week too.
 const isDone = (status: SessionStatus): boolean => status === 'completed' || status === 'skipped'
 
 function groupOf(raw: string | null | undefined): MuscleGroup {
@@ -190,6 +207,7 @@ function groupOf(raw: string | null | undefined): MuscleGroup {
 export function volumeRows({ lastWeek, thisWeek, exercises, rule }: VolumeRowsInput): VolumeRow[] {
   const drop = DROP_COUNT[rule]
   if (drop === undefined) throw new RangeError(`unknown stage volume rule: ${String(rule)}`)
+  if (typeof lastWeek.ended !== 'boolean') throw new TypeError('lastWeek.ended must say whether last week has ended')
 
   const muscleByExercise = new Map(exercises.map((e) => [e.id, groupOf(e.muscleGroup)]))
   const muscleOf = (exerciseId: string): MuscleGroup => muscleByExercise.get(exerciseId) ?? 'other'
@@ -209,7 +227,8 @@ export function volumeRows({ lastWeek, thisWeek, exercises, rule }: VolumeRowsIn
   const did: Tally = new Map()
   for (const session of lastWeek.sessions) {
     if (session.weekPlanId !== null) sessionsOf.set(session.weekPlanId, (sessionsOf.get(session.weekPlanId) ?? 0) + 1)
-    if (isDone(session.status)) addTally(did, doneTally(session, drop, muscleOf))
+    // Over: nothing is "yet" any more, so a session counts what it logged, done or not (a `planned` one logged nothing).
+    if (lastWeek.ended || isDone(session.status)) addTally(did, doneTally(session, drop, muscleOf))
     else if (session.weekPlanId !== null && planOf.has(session.weekPlanId)) addTally(did, planOf.get(session.weekPlanId)!)
   }
   const planned: Tally = new Map()
@@ -217,7 +236,8 @@ export function volumeRows({ lastWeek, thisWeek, exercises, rule }: VolumeRowsIn
     const sessions = sessionsOf.get(planId) ?? 0
     const times = Math.max(occurrences.get(planId)!, sessions)
     addTally(planned, tally, times)
-    addTally(did, tally, times - sessions) // an occurrence with no session yet counts its plan
+    // An occurrence with no session counts its plan while the week runs; once it is over it was never done.
+    if (!lastWeek.ended) addTally(did, tally, times - sessions)
   }
 
   const rows: VolumeRow[] = []
