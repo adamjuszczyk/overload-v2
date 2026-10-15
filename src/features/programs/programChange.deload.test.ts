@@ -357,7 +357,8 @@ describe('what a save leaves alone', () => {
     const w = await stableDeloadWorld()
     const copy = w.db.v2_week_plans.find((p) => p.id === 'p3-fb')!.deload_restore!
     for (const e of copy.filter((x) => x.programExerciseId === 'pe-leg')) Object.assign(e, { targetRir: 1, targetRirMax: 3 })
-    // Incline's entries carry no `targetRirMax` key (an older copy)
+    // Incline's entries carry no `targetRirMax` key: a copy saved before chunk 48
+    for (const e of copy.filter((x) => x.programExerciseId === 'pe-inc')) delete (e as { targetRirMax?: number | null }).targetRirMax
     const { ops } = planOf(w, swapExerciseIn(swapExerciseIn(draftOf(w), 'fb', 'pe-leg', 'ex-hack'), 'fb', 'pe-inc', 'ex-fly'))
     const after = (copyOps(ops)[0].patch as { deload_restore: SavedPlanSet[] }).deload_restore
     const hack = after.filter((e) => e.programExerciseId === newRow(ops, 'ex-hack'))
@@ -365,6 +366,27 @@ describe('what a save leaves alone', () => {
     const fly = after.filter((e) => e.programExerciseId === newRow(ops, 'ex-fly'))
     expect(fly).toHaveLength(2)
     for (const e of fly) expect('targetRirMax' in e).toBe(false)
+  })
+
+  it('a copy that holds a RIR range keeps it through a save that does not touch the exercise, and UNMARK brings the range back', async () => {
+    const w = stableWorld()
+    Object.assign(weekSetOf(w, 'p3-fb', 'pe-leg-s1'), { target_rir: 1, target_rir_max: 3 })
+    await markDeload(w.db, 'p3-fb')
+    const kept = entriesOf(copyOf(w.db, 'p3-fb'), 'pe-leg')[0]
+    expect([kept.targetRir, kept.targetRirMax]).toEqual([1, 3]) // the copy the app saved holds the range
+    const { ops } = planOf(w, removeExerciseFrom(draftOf(w), 'fb', 'pe-inc'))
+    const after = applyOpsToDb(w.db, ops)
+    expect(entriesOf(copyOf(after, 'p3-fb'), 'pe-leg')[0]).toMatchObject({ targetRir: 1, targetRirMax: 3 })
+    await unmarkDeload(after, 'p3-fb')
+    expect(after.v2_week_plan_sets.find((s) => s.week_plan_id === 'p3-fb' && s.program_exercise_id === 'pe-leg' && s.set_number === 1)).toMatchObject({ target_rir: 1, target_rir_max: 3 })
+  })
+
+  it('the entries a save makes carry the key too, as null: no weight, no RIR at either end', async () => {
+    const w = await stableDeloadWorld()
+    const { ops } = planOf(w, addExerciseTo(draftOf(w), 'fb', { exerciseId: 'ex-new', sets: [newSet('10')] }))
+    const added = entriesOf((copyOps(ops)[0].patch as { deload_restore: SavedPlanSet[] }).deload_restore, newRow(ops, 'ex-new'))
+    expect(added).toHaveLength(1)
+    expect(added[0]).toHaveProperty('targetRirMax', null)
   })
 })
 

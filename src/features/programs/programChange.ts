@@ -152,9 +152,10 @@ export type WorkoutDayColumns = { name: string }
 export type ProgramColumns = { schedule: WeeklySchedule }
 export type RunScheduleColumns = { mesocycle_id: string; from_week: number; schedule: WeeklySchedule }
 // A saved pre-deload set as `v2_week_plans.deload_restore` holds it (lib/deloadRules.ts `DeloadRestoreEntry`: no ids, grouped
-// by exercise row and set number, a head has stage index 0). `targetRirMax` is optional: a copy saved before the RIR range
-// existed doesn't carry it, and the type before chunk 48 doesn't name it.
-export type SavedPlanSet = DeloadRestoreEntry & { targetRirMax?: number | null }
+// by exercise row and set number, a head has stage index 0). `targetRirMax`, the RIR range's high end, is on every copy saved
+// since chunk 48 and missing on an older one, where it reads as null: a rewrite keeps the key on every entry that has it and
+// gives the entries it makes the key too.
+export type SavedPlanSet = DeloadRestoreEntry
 // The ONE column of `v2_week_plans` an op may write, and only as an update (DECISIONS 142, Adam 2026-10-15): "043's
 // executor may write v2_week_plans for that one column only, as an update only: no insert or delete on v2_week_plans, no
 // other column. A patch touching any other v2_week_plans column is rejected like a protected column."
@@ -1820,7 +1821,7 @@ function savedAsPlannedSets(entries: readonly SavedPlanSet[]): { work: SavedWork
   return { work, sets }
 }
 
-// A planned set a save inserted, as an entry: no weight, no RIR, no cues.
+// A planned set a save inserted, as an entry: no weight, no RIR (either end), no cues.
 function savedFromRow(r: WeekSetRow): SavedPlanSet {
   return {
     programExerciseId: r.program_exercise_id,
@@ -1835,13 +1836,15 @@ function savedFromRow(r: WeekSetRow): SavedPlanSet {
     isAmrap: r.is_amrap,
     targetWeight: r.target_weight,
     targetRir: r.target_rir,
+    targetRirMax: r.target_rir_max,
     tags: r.tags,
   }
 }
 
 // An update `landSession` made to a planned set, applied to its entry. Only the columns it ever writes on a set are named
-// (a swap's re-pointing and clearing, a set's link, kind and rep target); `targetRirMax` is cleared only where the entry
-// carries it (a copy saved before the RIR range existed has none, and none is the same as null).
+// (a swap's re-pointing and clearing, a set's link, kind and rep target). A swap clears the RIR range's high end with the low
+// end: `targetRirMax` is set to null on an entry that carries the key, and an entry from a copy saved before chunk 48, which
+// has none, stays without one (none is the same as null).
 function patchSaved(entry: SavedPlanSet, patch: Partial<WeekPlanSetColumns>): SavedPlanSet {
   const next: SavedPlanSet = { ...entry }
   if ('program_exercise_id' in patch) next.programExerciseId = patch.program_exercise_id!
