@@ -451,6 +451,9 @@ optional:
     - Rest, tempo, unit, superset rests, superset grouping and the warmup routine
       are run-wide: one value, every not-done session.
     - Weekdays: see below.
+    - A not-started session marked deload (DECISIONS 142, Adam 2026-10-15): the
+      save also applies these rules to its saved pre-deload copy, so UNMARK
+      restores the plan with the change in it.
   - **Weekdays storage:** this week's not-done sessions keep their days; the new
     days apply from next week, including a week already planned forward. How
     that is stored (an effective-from week, or this week's sessions recorded as
@@ -560,6 +563,11 @@ optional:
   - Source, `stable`: the run's default (the run copy), always.
   - Source, `week-dependent`: the last planned normal occurrence; the existing
     rules for skipping deload and empty occurrences stay.
+    After a CHANGE THE PROGRAM save (DECISIONS 143, Adam 2026-10-15), a copied
+    week follows the run copy's current exercise list and order: an exercise
+    still in the program brings its sets from the source session, a removed one
+    is dropped, an added one arrives with no sets, and a swapped one brings the
+    old exercise's sets (How a save lands → Swapped exercise).
   - Week 1 of any run starts from the program.
   - Rest, tempo, the warmup routine and superset grouping are run-wide, so
     there's nothing to copy.
