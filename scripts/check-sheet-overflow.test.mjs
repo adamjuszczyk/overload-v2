@@ -4,7 +4,11 @@
 // real command in the preinstalled Chromium on tiny fixtures that carry their own stylesheet
 // (--css), so no `npm run build` is needed. Each measure is shown failing on the case it
 // exists for, and the control (--wide) is shown failing where the document's own width,
-// the standing check, still reads the viewport. A missing Chromium fails here, it does not skip.
+// the standing check, still reads the viewport. A deliberate sideways scroller (chunk 41's
+// review: the exercise picker's chip row) is shown allowed, and every way of being something
+// else (clipped, scrolling both ways, a vertical scroller, too wide itself, set by a rule that
+// doesn't apply) shown failing; the control is shown failing on the picker's own shape, where
+// the first group is that row. A missing Chromium fails here, it does not skip.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -111,6 +115,70 @@ test('a text field holding more text than it shows is fine (it scrolls its own t
   const wideField = run(['--css', CSS_FILE, fixture(sheet('<input type="text" style="width: 600px" value="x">'))]);
   assert.equal(wideField.status, 1, wideField.out + wideField.err);
   assert.match(wideField.out, /sticks out: <input>/);
+});
+
+// The exercise picker's shape (chunk 41): a row of 13 chips, wider than the sheet, over a content
+// region that scrolls vertically, as BottomSheet draws it.
+const ROW = 'display: flex; gap: 6px';
+const chips = (rowAttrs) =>
+  `<div role="group" aria-label="Muscle group" ${rowAttrs}>${Array.from({ length: 13 }, (_, i) => `<button type="button" style="flex: 0 0 auto; width: 80px; height: 44px">G${i}</button>`).join('')}</div>`;
+const content = (inner, layout = 'display: grid; grid-template-columns: minmax(0, 1fr)') => `<div style="${layout}; overflow-y: auto; max-height: 300px">${inner}</div>`;
+const LIST = '<button type="button" style="width: 100%">Lat Pulldown</button>';
+const picker = (rowAttrs) => sheet(chips(rowAttrs) + content(LIST));
+
+test('a row that asks to scroll sideways (overflow-x: auto) may hold more than the sheet shows: ok, and listed as such', () => {
+  const r = run(['--css', CSS_FILE, fixture(picker(`style="${ROW}; overflow-x: auto"`))]);
+  assert.equal(r.status, 0, r.out + r.err);
+  assert.match(r.out, /^ok {3}375px .*document 375; scrolls sideways by design: <div aria-label="Muscle group"> \d+>343$/m);
+});
+
+test('the same row clipped, asking to scroll both ways, or not scrolling is no sideways scroller: its chips stick out', () => {
+  for (const rowStyle of [`${ROW}; overflow: hidden`, `${ROW}; overflow: auto`, ROW]) {
+    const r = run(['--css', CSS_FILE, fixture(picker(`style="${rowStyle}"`))]);
+    assert.equal(r.status, 1, `${rowStyle}\n${r.out}${r.err}`);
+    assert.match(r.out, /sticks out: <button> "G\d+"/, rowStyle);
+    assert.doesNotMatch(r.out, /scrolls sideways by design/, rowStyle);
+  }
+});
+
+test('a vertical scroller computes overflow-x: auto too, but asks for nothing sideways: a block too wide for it fails', () => {
+  const r = run(['--css', CSS_FILE, fixture(sheet(content('<div style="width: 700px; height: 10px"></div>')))]);
+  assert.equal(r.status, 1, r.out + r.err);
+  assert.match(r.out, /sticks out: <div> ""/);
+  assert.doesNotMatch(r.out, /scrolls sideways by design/);
+});
+
+test("a sideways scroller's own box is measured: one wider than the sheet fails", () => {
+  const r = run(['--css', CSS_FILE, fixture(sheet(chips(`style="${ROW}; overflow-x: auto; width: 600px"`)))]);
+  assert.equal(r.status, 1, r.out + r.err);
+  assert.match(r.out, /sticks out: <div> "G0G1/);
+});
+
+test('inside a sideways scroller, a chip too narrow for its own label still fails: wider inside', () => {
+  const narrow = 'flex: 0 0 auto; width: 30px; height: 44px; white-space: nowrap';
+  const r = run(['--css', CSS_FILE, fixture(sheet(`<div role="group" aria-label="Muscle group" style="${ROW}; overflow-x: auto"><span style="${narrow}">HAMSTRINGS</span></div>`))]);
+  assert.equal(r.status, 1, r.out + r.err);
+  assert.match(r.out, /wider inside: <span> "HAMSTRINGS"/);
+});
+
+test('a stylesheet rule can ask for it too, but not one inside an @media that does not apply', () => {
+  const css = writeFile(TMP, 'rules.css', '*{margin:0;box-sizing:border-box}html,body{background:#fff}.chips{overflow-x:auto}@media (min-width: 5000px){.chips-later{overflow-x:auto}}');
+  const byRule = run(['--css', css, fixture(picker(`class="chips" style="${ROW}"`))]);
+  assert.equal(byRule.status, 0, byRule.out + byRule.err);
+  assert.match(byRule.out, /scrolls sideways by design: <div aria-label="Muscle group">/);
+  // overflow-y: hidden makes overflow-x compute to auto; only the rule that doesn't apply asks for it
+  const notApplying = run(['--css', css, fixture(picker(`class="chips-later" style="${ROW}; overflow-y: hidden"`))]);
+  assert.equal(notApplying.status, 1, notApplying.out + notApplying.err);
+  assert.doesNotMatch(notApplying.out, /scrolls sideways by design/);
+});
+
+test('the control goes into the content region: it fails where the first group is a sideways chip row, and where a flex row would squeeze it', () => {
+  const pickerShape = run(['--css', CSS_FILE, '--wide', fixture(picker(`style="${ROW}; overflow-x: auto"`))]);
+  assert.equal(pickerShape.status, 1, pickerShape.out + pickerShape.err);
+  assert.match(pickerShape.out, /^FAIL 375px \[wide\] .*sticks out: <div> ""/m);
+  const flexRow = run(['--css', CSS_FILE, '--wide', fixture(sheet(content(LIST, 'display: flex')))]);
+  assert.equal(flexRow.status, 1, flexRow.out + flexRow.err);
+  assert.match(flexRow.out, /sticks out: <div> ""/);
 });
 
 test('a fixture with no dialog fails and says so', () => {

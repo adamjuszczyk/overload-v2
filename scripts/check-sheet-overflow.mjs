@@ -11,9 +11,19 @@
 //      scrolls sideways, or that overflow clips). Check 2 alone misses this: a flex item that
 //      can't get narrower keeps its own box in place while its parent scrolls. A text field's
 //      typed text is not counted here (a field scrolls its own text by design); the field's
-//      box is, by check 2. Something meant to scroll sideways is reported too: say so in the
-//      review rather than silencing the check.
-// Written by chunk 39's reviewer (2026-10-15), committed by chunk 40's.
+//      box is, by check 2.
+// A deliberate sideways scroller is allowed, and listed so the review can hold it against its
+// board (chunk 41's review: the exercise picker's muscle-group chips, which every board draws as
+// one line cut off at the sheet's edge). It is an element whose own style attribute, or a
+// stylesheet rule that matches it, asks for sideways scrolling (`overflow-x: auto` or `scroll`)
+// and not for vertical scrolling, and that does scroll sideways. What it holds may lie past the
+// dialog's edges (check 2) and it may be wider inside than it shows (check 3); its own box is
+// still measured, and so is every element in it for check 3 (a chip too narrow for its label).
+// Its computed style can't say this alone: a vertical scroller (`overflow-y: auto`, BottomSheet's
+// content region) computes `overflow-x: auto` too, and stays measured. `overflow: auto` asks for
+// both directions and is not taken for a sideways scroller.
+// Written by chunk 39's reviewer (2026-10-15), committed by chunk 40's; the sideways scroller and
+// the control's place: chunk 41's.
 //
 // Usage:  node scripts/check-sheet-overflow.mjs [--width <px>] [--css <built.css>] [--wide] [--long] [fixture.html ...]
 //   fixtures  body fragments written by src/testing/captureRender.ts; none given: every
@@ -22,13 +32,16 @@
 //   --css     the built stylesheet; default: the one file matching dist/assets/index-*.css
 //             (run `npm run build` first; a source edited after the build is warned about).
 //   --wide    the control: adds a 700 px block inside every dialog, so every fixture must FAIL.
-//             A check that passes its control is blind.
+//             A check that passes its control is blind. The block goes where a sheet's content
+//             lives, the first element in the dialog that asks for vertical scrolling
+//             (BottomSheet's content region), or the dialog itself when none does; it can't
+//             shrink, so a flex row can't squeeze it, and it never goes into a sideways scroller.
 //   --long    swaps the boards' sample exercise names (Lat Pulldown, Incline Dumbbell Press,
 //             Seated Cable Row) for 80 X's: a word with no break opportunity (a hyphenated
 //             name breaks at its hyphens and proves nothing).
-// Prints:  one line per fixture, `ok` or `FAIL`, with the dialog's box and the first problems.
-//          Only the first line of any error is printed (Playwright's call logs carry request
-//          headers, CONTEXT.md "Reviewer's own rules").
+// Prints:  one line per fixture, `ok` or `FAIL`, with the dialog's box, the sideways scrollers it
+//          allowed and the first problems. Only the first line of any error is printed
+//          (Playwright's call logs carry request headers, CONTEXT.md "Reviewer's own rules").
 // Exit:    0 = every fixture ok; 1 = a fixture failed; 2 = couldn't run (usage, no fixture,
 //          stylesheet or browser).
 
@@ -86,42 +99,95 @@ export function lengthen(fragment) {
   return SAMPLE_NAMES.reduce((text, name) => text.split(name).join(LONG_NAME), fragment);
 }
 
-// Runs in the page. Returns the dialogs' boxes and every problem found, or an error.
+// Runs in the page. Returns the dialogs' boxes, the sideways scrollers allowed and every problem
+// found, or an error.
 function measureInPage(injectWide) {
   const dialogs = [...document.querySelectorAll('[role="dialog"]')];
   if (dialogs.length === 0) return { error: 'no role="dialog" in the fixture' };
   const problems = [];
   const boxes = [];
+  const allowed = [];
   const describe = (el) => `<${el.tagName.toLowerCase()}> "${(el.textContent || '').trim().slice(0, 24)}"`;
+  const named = (el) => (el.hasAttribute('aria-label') ? `<${el.tagName.toLowerCase()} aria-label="${el.getAttribute('aria-label')}">` : describe(el));
+  const scrolls = (value) => value === 'auto' || value === 'scroll';
+
+  // Every stylesheet rule that asks for scrolling in either direction, and which (a shorthand asks
+  // for both). A rule inside an @media or @supports that doesn't apply asks for nothing.
+  const rules = [];
+  const collect = (list) => {
+    for (const rule of list) {
+      if (rule instanceof CSSStyleRule) {
+        const x = scrolls(rule.style.getPropertyValue('overflow-x'));
+        const y = scrolls(rule.style.getPropertyValue('overflow-y'));
+        if (x || y) rules.push({ selector: rule.selectorText, x, y });
+      } else if (rule instanceof CSSMediaRule) {
+        if (window.matchMedia(rule.media.mediaText).matches) collect(rule.cssRules);
+      } else if (rule instanceof CSSSupportsRule) {
+        if (CSS.supports(rule.conditionText)) collect(rule.cssRules);
+      } else if (rule.cssRules) {
+        collect(rule.cssRules);
+      }
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    try {
+      collect(sheet.cssRules);
+    } catch {
+      // a stylesheet that can't be read asks for nothing
+    }
+  }
+  const matches = (el, selector) => {
+    try {
+      return el.matches(selector);
+    } catch {
+      return false;
+    }
+  };
+  // Whether the element's own style attribute, or a stylesheet rule matching it, asks for scrolling
+  // along one axis ('x' or 'y').
+  const asks = (el, axis) => scrolls(el.style.getPropertyValue(`overflow-${axis}`)) || rules.some((r) => r[axis] && matches(el, r.selector));
+  // A deliberate sideways scroller (header).
+  const sideways = (el) => scrolls(getComputedStyle(el).overflowX) && asks(el, 'x') && !asks(el, 'y');
+
   for (const dialog of dialogs) {
     if (injectWide) {
-      const target = dialog.querySelector('[role="group"]') ?? dialog;
+      const target = [...dialog.querySelectorAll('*')].find((el) => asks(el, 'y')) ?? dialog;
       const wideBlock = document.createElement('div');
       wideBlock.setAttribute('data-control', 'wide');
+      wideBlock.style.flex = 'none';
       wideBlock.style.width = '700px';
+      wideBlock.style.minWidth = '700px';
       wideBlock.style.height = '10px';
       target.appendChild(wideBlock);
     }
+    const all = [dialog, ...dialog.querySelectorAll('*')];
+    const scrollers = all.filter(sideways);
+    const inScroller = (el) => scrollers.some((s) => s !== el && s.contains(el));
+    for (const s of scrollers) allowed.push(`${named(s)} ${s.scrollWidth}>${s.clientWidth}`);
     const box = dialog.getBoundingClientRect();
     boxes.push(`${Math.round(box.left)}..${Math.round(box.right)}`);
     if (box.left < -0.5 || box.right > window.innerWidth + 0.5) problems.push(`dialog ${Math.round(box.left)}..${Math.round(box.right)} outside the viewport (${window.innerWidth})`);
     for (const el of dialog.querySelectorAll('*')) {
       if (el.closest('svg') && el.tagName.toLowerCase() !== 'svg') continue;
+      // scrolled into view by the user; the scroller's own box is measured
+      if (inScroller(el)) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) continue;
       if (r.left < box.left - 0.5 || r.right > box.right + 0.5) {
         problems.push(`sticks out: ${describe(el)} ${Math.round(r.left)}..${Math.round(r.right)} vs ${Math.round(box.left)}..${Math.round(box.right)}`);
       }
     }
-    for (const el of [dialog, ...dialog.querySelectorAll('*')]) {
+    for (const el of all) {
       const tag = el.tagName.toLowerCase();
       if (tag === 'input' || tag === 'textarea') continue;
       if (getComputedStyle(el).display === 'inline') continue;
+      // holds more than it shows by design
+      if (scrollers.includes(el)) continue;
       if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 0.5) problems.push(`wider inside: ${describe(el)} ${el.scrollWidth}>${el.clientWidth}`);
     }
   }
   const documentWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
-  return { dialogs: boxes, documentWidth, count: problems.length, problems: problems.slice(0, 4) };
+  return { dialogs: boxes, documentWidth, allowed, count: problems.length, problems: problems.slice(0, 4) };
 }
 
 /** Measures each fixture in one browser; returns one result per fixture. */
@@ -172,7 +238,8 @@ export async function main(argv, cwd = process.cwd()) {
   const results = await checkFixtures({ fixtures, css, width: opts.width, wide: opts.wide, long: opts.long, executablePath: findChromium() });
   const tags = `${opts.wide ? '[wide] ' : ''}${opts.long ? '[long] ' : ''}`;
   for (const r of results) {
-    const detail = r.error ? r.error : `dialog ${r.dialogs.join(', ')}; document ${r.documentWidth}${r.count ? `; ${r.count} problem(s): ${r.problems.join(' | ')}` : ''}`;
+    const scrollers = r.allowed?.length ? `; scrolls sideways by design: ${r.allowed.join(' | ')}` : '';
+    const detail = r.error ? r.error : `dialog ${r.dialogs.join(', ')}; document ${r.documentWidth}${scrollers}${r.count ? `; ${r.count} problem(s): ${r.problems.join(' | ')}` : ''}`;
     const shown = relative(cwd, r.file).startsWith('..') ? r.file : relative(cwd, r.file);
     console.log(`${r.ok ? 'ok  ' : 'FAIL'} ${opts.width}px ${tags}${shown} ${detail}`);
   }
