@@ -28,9 +28,11 @@ import type { DeloadRules } from '../../lib/deloadRules'
 // Chunk 22 extends every mutate-arg assertion below for the new `rules`
 // field (the screen-resolved effective rules — "Lessons": a screen-layer
 // test asserting the exact arguments the UI hands to each hook or
-// mutation, ids/week numbers/rules object included) and adds: the program
-// override winning over the global default, and the "already started"
-// notice. PlanPage.tsx reads the global default via useSettingsStore
+// mutation, ids/week numbers/rules object included) and adds the "already
+// started" notice; chunk 48 makes the rules the Settings rules and nothing
+// else (a program that stored an override is not read: the call-site tests
+// below give it one and assert Settings' reach the mutation).
+// PlanPage.tsx reads the Settings rules via useSettingsStore
 // directly (not useSettings' own query — no QueryClientProvider wraps this
 // render, same as every other PlanPage test file), so this file drives
 // that real Zustand singleton directly and resets it afterward.
@@ -58,12 +60,20 @@ const EX_A: Exercise = {
 const pe1: ProgramExercise = { id: 'pe-1', workoutDayId: 'wd-1', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null, exercise: EX_A }
 const pe2: ProgramExercise = { id: 'pe-2', workoutDayId: 'wd-2', userId: 'user-1', exerciseId: 'ex-a', position: 0, weightUnit: null, exercise: EX_A }
 
-function makeProgram(schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday: 'wd-1' }, deloadRules: DeloadRules | null = null): Program {
+function makeProgram(schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday: 'wd-1' }): Program {
   return {
     id: 'prog-1', userId: 'user-1', name: 'Test Program', schedule,
     workoutDays: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
-    kind: 'run', planningType: 'week_dependent', deloadRules,
+    kind: 'run', planningType: 'week_dependent',
   }
+}
+
+// A run whose program STORED a deload-rules override of its own, as an older version
+// left it in v2_programs.deload_rules. The Program type has no such field any more
+// (chunk 48: SPEC Deload [1.2], "programs have no override"), so it rides along outside
+// the type, the way a stale row or a regression would carry it: nothing may read it.
+function withStoredOverride(program: Program, override: DeloadRules): Program {
+  return Object.assign(program, { deloadRules: override })
 }
 
 function makePlan(weekNumber: number, workoutDayId: string, pe: ProgramExercise, opts: { isDeload?: boolean; id?: string } = {}): WeekPlan {
@@ -269,30 +279,42 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
   // Chunk 22 — "the screen-layer argument assertions from Lessons":
   // the exact rules OBJECT handed to the mutation, not just that one was
   // passed.
-  it('passes the global default as `rules` when the program has no override', () => {
-    const globalRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
-    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
-    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, null)
+  it('passes the Settings rules as `rules`', () => {
+    const settingsRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: settingsRules })
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' })
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
-    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: globalRules })
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: settingsRules })
   })
 
-  // Chunk 22 — "a program override wins over the global rules" (TASKS.md
-  // verbatim). Two DIFFERENT rules objects in play; only the program's own
-  // must reach the mutation.
-  it('a program override wins over the global default rules', () => {
-    const globalRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
-    const programOverride: DeloadRules = { weight: { percent: 80, rounding: 'up', step: 5, stepUnit: 'kg' } }
-    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
-    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, programOverride)
+  // Chunk 48 — "Deload rules are read from Settings and nowhere else" (SPEC Deload [1.2], 16b;
+  // before it, chunk 22's "a program override wins over the global rules"). Two DIFFERENT
+  // rules objects in play, the stored override and Settings': only Settings' reaches the
+  // mutation, and nothing says an override was set aside ("falls back to Settings silently").
+  it('a run whose program stored an override still marks with the Settings rules', () => {
+    const settingsRules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+    const storedOverride: DeloadRules = { weight: { percent: 80, rounding: 'up', step: 5, stepUnit: 'kg' } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: settingsRules })
+    mockState.program = withStoredOverride(makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }), storedOverride)
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
-    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: programOverride })
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: settingsRules })
+    expect(screen.queryByText(/deload.*override|override.*deload/i)).toBeNull() // silent: no notice that one was set aside
+  })
+
+  it('with no rules in Settings the stored override is not a fallback either: marking is flag-only (rules null)', () => {
+    const storedOverride: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+    mockState.program = withStoredOverride(makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }), storedOverride)
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
+    expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: null })
   })
 
   // Chunk 22, reviewer's note 5 — "Default: flag-only plus a one-line
@@ -351,18 +373,27 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     expect(firstArg(setDeloadMutate, 1)).toEqual({ weekPlanId: 'wp-pull', isDeload: true, rules: null })
   })
 
-  // Chunk 22 — the per-session toggle resolves and passes the SAME
-  // effective-rules precedence as the week-level action above.
-  it('a program override wins over the global default for the per-session toggle too', () => {
-    const globalRules: DeloadRules = { reps: { delta: -2 } }
-    const programOverride: DeloadRules = { rir: { delta: 1 } }
-    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: globalRules })
-    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }, programOverride)
+  // Chunk 22, chunk 48 — the per-session toggle passes the SAME Settings rules as the
+  // week-level action above (a stored override on the program is not read here either).
+  it('a run whose program stored an override marks a session with the Settings rules too', () => {
+    const settingsRules: DeloadRules = { reps: { delta: -2 } }
+    const storedOverride: DeloadRules = { rir: { delta: 1 } }
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: settingsRules })
+    mockState.program = withStoredOverride(makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }), storedOverride)
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
     renderPlanPage()
 
     fireEvent.click(screen.getByLabelText('Mark this session as deload'))
-    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: programOverride })
+    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: settingsRules })
+  })
+
+  it('... and with no rules in Settings the session is marked flag-only (rules null), whatever the program stored', () => {
+    mockState.program = withStoredOverride(makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1' }), { rir: { delta: 1 } })
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: null })
   })
 
   it('shows the "already started" notice when the per-session outcome says so', () => {

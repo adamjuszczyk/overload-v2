@@ -1,7 +1,7 @@
 // Chunk 22 (TASKS.md "Deload rules" / SPEC.md "Deload [P1]") — the pure
 // deload-rules engine: validating the stored shape, resolving which rules
-// are effective (program override vs. global default), finding the base
-// occurrence a deload session is calculated from, and the calculator
+// are effective (Settings only since chunk 48: SPEC [1.2] 16b), finding the
+// base occurrence a deload session is calculated from, and the calculator
 // itself. No React, no Supabase — same precedent as plannerVocabulary.ts/
 // weekSources.ts/applyAhead.ts (this codebase's existing pure-logic
 // modules); the I/O that gathers what these functions need, and the writes
@@ -64,7 +64,7 @@ export interface DeloadRules {
 // own parseRepTarget/normaliseTempo): a value that doesn't match the shape
 // rejects the WHOLE object (returns null), rather than silently dropping
 // just the bad key and keeping the rest. This column is written only by
-// this app's own editor (DeloadRulesEditor.tsx / the program override), so
+// this app's own editor (DeloadRulesEditor.tsx, in Settings), so
 // a malformed value only ever means corrupted/foreign data — treating it
 // the same as "no rules on" is the safe default, never a guess at which
 // part of it might still be trustworthy.
@@ -108,11 +108,7 @@ function validateDeltaRule(v: unknown): { delta: number } | null {
 // `null`/`undefined` input is valid and means "no rules on" (not rejected).
 // A valid object with every key absent (`{}`) canonicalises to null too —
 // same "nothing on" value either way, so a caller never has to treat the
-// two differently (resolveEffectiveDeloadRules below relies on exactly
-// this: a program override that is a *present but empty* object still
-// validates to null, meaning "this program's own rules are all off",
-// distinct from the override column itself being null, "use the global
-// default" — see that function's own comment).
+// two differently (Settings' editor writes null the moment every rule is off).
 export function validateDeloadRules(raw: unknown): DeloadRules | null {
   if (raw === null || raw === undefined) return null
   if (!isPlainObject(raw)) return null
@@ -146,19 +142,14 @@ export function validateDeloadRules(raw: unknown): DeloadRules | null {
   return result
 }
 
-// Resolves which rules are effective (reviewer's note 1): "the run's
-// v2_programs.deload_rules if non-null, else the user's
-// v2_user_settings.deload_rules, else none." The precedence is decided on
-// the RAW column values first (so a program override that is a validly
-// *empty* object, `{}` — "this program's rules are all off" — still wins
-// over a global default that has real rules on, since `{}` is non-null);
-// validation runs once, after that choice, on whichever raw value won.
-export function resolveEffectiveDeloadRules(
-  programDeloadRules: unknown,
-  userDeloadRules: unknown,
-): DeloadRules | null {
-  const chosenRaw = programDeloadRules ?? userDeloadRules ?? null
-  return validateDeloadRules(chosenRaw)
+// The rules a deload applies (SPEC Deload [1.2], 16b: "Settings only;
+// programs have no override"): the user's Settings rules, validated, else
+// none. There is no program argument any more (chunk 48): the stored
+// v2_programs.deload_rules column stays in the database and nothing reads it,
+// so a run whose program stored an override falls back to Settings, silently.
+// The argument is `unknown` because Settings' own column is jsonb.
+export function resolveEffectiveDeloadRules(userDeloadRules: unknown): DeloadRules | null {
+  return validateDeloadRules(userDeloadRules)
 }
 
 // ─── Exercise-slot mapping, base occurrence → marked week (review fix) ─────
@@ -319,6 +310,13 @@ export interface DeloadSourceSet {
   repMax: number | null
   isAmrap: boolean
   targetRir: number | null
+  // The RIR range's high end (migration 042, SPEC [1.2] 17); null for a plain
+  // number, whose value is targetRir. Required, with no default (chunk 48): a
+  // caller that left it out would turn every ranged set into a plain number —
+  // and the snapshot taken from the same rows could never restore the range —
+  // with nothing to show for it. `tsc` refuses the caller, and
+  // calculateDeloadSets refuses a set that lacks it at run time.
+  targetRirMax: number | null
   tags: string[] | null
   isDropset: boolean
   // This set's own planned weight (kg) — the weight rule's fallback base,
@@ -347,6 +345,7 @@ export interface DeloadCalculatedSet {
   repMax: number | null
   isAmrap: boolean
   targetRir: number | null
+  targetRirMax: number | null
   tags: string[] | null
   isDropset: boolean
   targetWeight: number | null
@@ -407,13 +406,28 @@ export function calculateDeloadRepTarget(target: RepTarget, rule: DeloadRepsRule
   }
 }
 
-// RIR rule: +n. No stated floor (unlike sets/reps' explicit "never below
-// 1") — applied as a plain addition. A set with no RIR target has nothing
-// to add to and stays null ("no base weight means none is set" is this
-// module's own weight-specific wording; the same "nothing there, nothing
-// to adjust" posture applies to RIR here, by the same reasoning).
-export function calculateDeloadRir(targetRir: number | null, rule: DeloadRirRule): number | null {
-  return targetRir == null ? null : targetRir + rule.delta
+// A RIR target as the plan stores it (week sets, migration 042): targetRir is
+// a number, or a range's low end; targetRirMax is a range's high end, null for
+// a number.
+export interface RirColumns {
+  targetRir: number | null
+  targetRirMax: number | null
+}
+
+// RIR rule (SPEC Deload [1.2]: "a range shifts both ends, floor 0"; "a range
+// whose ends meet becomes a number"): +n on the target, each end floored at 0,
+// a plain number being the range with one end. One shift for both ends keeps
+// the low end at or under the high end, so the ends meet only where the floor
+// has clamped them to the same value: that is a number again (targetRirMax
+// null), as the RIR picker stores one. A set with no RIR target has nothing to
+// add to and stays without one ("nothing there, nothing to adjust", this
+// module's posture for the weight rule too).
+export function calculateDeloadRir(target: RirColumns, rule: DeloadRirRule): RirColumns {
+  if (target.targetRir == null) return { targetRir: null, targetRirMax: null }
+  const low = Math.max(0, target.targetRir + rule.delta)
+  if (target.targetRirMax == null) return { targetRir: low, targetRirMax: null }
+  const high = Math.max(0, target.targetRirMax + rule.delta)
+  return high === low ? { targetRir: low, targetRirMax: null } : { targetRir: low, targetRirMax: high }
 }
 
 function transformOne(s: DeloadSourceSet, rules: DeloadRules): DeloadCalculatedSet {
@@ -440,6 +454,7 @@ function transformOne(s: DeloadSourceSet, rules: DeloadRules): DeloadCalculatedS
       repMax: s.repMax,
       isAmrap: s.isAmrap,
       targetRir: s.targetRir,
+      targetRirMax: s.targetRirMax,
       targetWeight: s.plannedWeight,
     }
   }
@@ -448,7 +463,8 @@ function transformOne(s: DeloadSourceSet, rules: DeloadRules): DeloadCalculatedS
   const newTarget = rules.reps ? calculateDeloadRepTarget(currentTarget, rules.reps) : currentTarget
   const newCols = repTargetToColumns(newTarget)
 
-  const newRir = rules.rir ? calculateDeloadRir(s.targetRir, rules.rir) : s.targetRir
+  const currentRir: RirColumns = { targetRir: s.targetRir, targetRirMax: s.targetRirMax }
+  const newRir = rules.rir ? calculateDeloadRir(currentRir, rules.rir) : currentRir
 
   let newWeight: number | null
   if (rules.weight) {
@@ -463,7 +479,8 @@ function transformOne(s: DeloadSourceSet, rules: DeloadRules): DeloadCalculatedS
     repMin: newCols.repMin,
     repMax: newCols.repMax,
     isAmrap: newCols.isAmrap,
-    targetRir: newRir,
+    targetRir: newRir.targetRir,
+    targetRirMax: newRir.targetRirMax,
     targetWeight: newWeight,
   }
 }
@@ -484,6 +501,10 @@ function transformOne(s: DeloadSourceSet, rules: DeloadRules): DeloadCalculatedS
 export function calculateDeloadSets(sourceSets: readonly DeloadSourceSet[], rules: DeloadRules): DeloadCalculatedSet[] {
   const byExercise = new Map<string, DeloadSourceSet[]>()
   for (const s of sourceSets) {
+    // A set read without its RIR range's high end would come out a plain number.
+    if (s.targetRirMax === undefined) {
+      throw new TypeError(`calculateDeloadSets: set ${s.id} has no targetRirMax (null for a plain RIR number)`)
+    }
     const list = byExercise.get(s.programExerciseId)
     if (list) list.push(s)
     else byExercise.set(s.programExerciseId, [s])
@@ -539,6 +560,11 @@ export interface DeloadRestoreEntry {
   isAmrap: boolean
   targetWeight: number | null
   targetRir: number | null
+  // The RIR range's high end (migration 042). Optional here only because a
+  // snapshot saved before RIR ranges existed has no such key: it reads as
+  // null (no range could exist then), and the restore writes null. Every
+  // snapshot built from now on carries it (buildDeloadRestoreSnapshot).
+  targetRirMax?: number | null
   tags: string[] | null
 }
 
@@ -560,25 +586,34 @@ export interface DeloadSnapshotSourceRow {
   isAmrap: boolean
   targetWeight: number | null
   targetRir: number | null
+  // Required, no default (chunk 48): a row read without it would be saved
+  // as a plain number, and the unmark could never bring the range back.
+  targetRirMax: number | null
   tags: string[] | null
 }
 
 export function buildDeloadRestoreSnapshot(rows: readonly DeloadSnapshotSourceRow[]): DeloadRestoreEntry[] {
-  return rows.map((r) => ({
-    programExerciseId: r.programExerciseId,
-    setNumber: r.setNumber,
-    stageIndex: r.stageIndex,
-    isWarmup: r.isWarmup,
-    isDropset: r.isDropset,
-    stageKind: r.stageKind,
-    programSetId: r.programSetId,
-    repMin: r.repMin,
-    repMax: r.repMax,
-    isAmrap: r.isAmrap,
-    targetWeight: r.targetWeight,
-    targetRir: r.targetRir,
-    tags: r.tags,
-  }))
+  return rows.map((r) => {
+    if (r.targetRirMax === undefined) {
+      throw new TypeError('buildDeloadRestoreSnapshot: a row has no targetRirMax (null for a plain RIR number)')
+    }
+    return {
+      programExerciseId: r.programExerciseId,
+      setNumber: r.setNumber,
+      stageIndex: r.stageIndex,
+      isWarmup: r.isWarmup,
+      isDropset: r.isDropset,
+      stageKind: r.stageKind,
+      programSetId: r.programSetId,
+      repMin: r.repMin,
+      repMax: r.repMax,
+      isAmrap: r.isAmrap,
+      targetWeight: r.targetWeight,
+      targetRir: r.targetRir,
+      targetRirMax: r.targetRirMax,
+      tags: r.tags,
+    }
+  })
 }
 
 // Organises a flat snapshot back into heads (stageIndex 0) + each head's

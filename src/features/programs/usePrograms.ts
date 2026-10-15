@@ -4,7 +4,6 @@ import { useAuth } from '../auth/useAuth'
 import type { QueryKey } from '@tanstack/react-query'
 import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem, WeekPlan } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
-import type { DeloadRules } from '../../lib/deloadRules'
 import {
   fetchPrograms,
   fetchSavedPrograms,
@@ -13,7 +12,6 @@ import {
   updateSchedule,
   updatePlanningType,
   updateScheduleType,
-  updateProgramDeloadRules,
   fetchWorkoutDays,
   createWorkoutDay,
   updateWorkoutDayName,
@@ -113,19 +111,6 @@ export function useUpdateScheduleType() {
     networkMode: 'always',
     mutationFn: ({ id, scheduleType }: { id: string; scheduleType: ScheduleType }) =>
       updateScheduleType(id, scheduleType),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
-  })
-}
-
-// Chunk 22 — the program tab's / planner step 3's deload-rules override
-// (StepVolume.tsx). Same networkMode: 'always' posture as
-// useUpdatePlanningType above (reviewer's note 7); plain invalidate, same
-// shape — this control sits right next to PLANNING in the same step.
-export function useUpdateProgramDeloadRules() {
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({ id, deloadRules }: { id: string; deloadRules: DeloadRules | null }) =>
-      updateProgramDeloadRules(id, deloadRules),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }

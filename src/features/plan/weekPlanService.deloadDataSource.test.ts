@@ -99,6 +99,9 @@ interface WorldSet {
   programExerciseId: string
   setNumber: number
   targetRir: number
+  // Chunk 48 — the RIR range's high end (migration 042). Left out of the row
+  // entirely when a fixture doesn't set it, like a database without the column.
+  targetRirMax?: number | null
   repMin?: number | null
   repMax?: number | null
   targetWeight?: number | null
@@ -135,6 +138,7 @@ function toSetRow(s: WorldSet) {
     program_exercise_id: s.programExerciseId,
     set_number: s.setNumber,
     target_rir: s.targetRir,
+    ...(s.targetRirMax !== undefined ? { target_rir_max: s.targetRirMax } : {}),
     is_dropset: false,
     parent_week_plan_set_id: null,
     stage_index: 0,
@@ -291,6 +295,51 @@ describe('markSessionDeload — the matched branch genuinely uses the BASE occur
     const bySetNumber = (n: number) => insertedSets.find((s) => s.set_number === n)!
     expect(bySetNumber(1)).toMatchObject({ program_exercise_id: 'pe-A', rep_min: 7, rep_max: 12, target_rir: 4, target_weight: 97.5 }) // logged 110
     expect(bySetNumber(2)).toMatchObject({ program_exercise_id: 'pe-A', rep_min: 7, rep_max: 12, target_rir: 4, target_weight: 107.5 }) // no log -> planned 120
+  })
+})
+
+// Chunk 48 (SPEC Deload [1.2]: "RIR rule: a range shifts both ends, floor 0"; TASKS: "`calculateDeloadSets`
+// and the restore snapshot carry `target_rir_max`"). Through the real executor, over rows as the database
+// returns them: the calculation reads each BASE set's high end (so a ranged base set is shifted at both
+// ends, a plain one stays a number), and the snapshot taken before the mark holds the MARKED week's own
+// range (so an unmark can bring it back) — two weeks whose ranges differ, so the two can't be confused.
+describe('markSessionDeload — the RIR range (target_rir_max): read from the base set, snapshotted from the marked week', () => {
+  it('base 1–2 and a plain 2, RIR +2 → 3–4 and 4 (max null); the snapshot holds the marked week\'s own 0–1 and 5', async () => {
+    fromMock.mockImplementation(
+      buildFromMock({
+        weekPlans: [
+          {
+            id: 'wp-base', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1,
+            exercises: [{ programExerciseId: 'pe-A', exerciseId: 'ex-A' }],
+            sets: [
+              { id: 'base-s1', programExerciseId: 'pe-A', setNumber: 1, targetRir: 1, targetRirMax: 2, repMin: 8, repMax: 8, targetWeight: 100 },
+              { id: 'base-s2', programExerciseId: 'pe-A', setNumber: 2, targetRir: 2, targetRirMax: null, repMin: 8, repMax: 8, targetWeight: 100 },
+            ],
+          },
+          {
+            id: 'wp-marked', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 2,
+            exercises: [{ programExerciseId: 'pe-A', exerciseId: 'ex-A' }],
+            sets: [
+              { id: 'marked-s1', programExerciseId: 'pe-A', setNumber: 1, targetRir: 0, targetRirMax: 1, repMin: 5, repMax: 5, targetWeight: 40 },
+              { id: 'marked-s2', programExerciseId: 'pe-A', setNumber: 2, targetRir: 5, targetRirMax: null, repMin: 5, repMax: 5, targetWeight: 40 },
+            ],
+          },
+        ],
+        logs: [{ weekPlanSetId: 'base-s1', weight: 100 }], // week 1 happened, so it is the base
+      }),
+    )
+
+    const outcome = await markSessionDeload('u1', 'wp-marked', { rir: { delta: 2 } })
+    expect(outcome).toBe('calculated')
+
+    const bySetNumber = (n: number) => insertedSets.find((s) => s.set_number === n)!
+    expect(insertedSets).toHaveLength(2)
+    expect(bySetNumber(1)).toMatchObject({ target_rir: 3, target_rir_max: 4 }) // the base's 1–2, both ends +2
+    expect(bySetNumber(2)).toMatchObject({ target_rir: 4, target_rir_max: null }) // the base's plain 2
+
+    const snapshotWrite = calls.find((c) => c.table === 'v2_week_plans' && c.method === 'update')!
+    const snapshot = (snapshotWrite.args[0] as { deload_restore: { setNumber: number; targetRir: number; targetRirMax: number | null }[] }).deload_restore
+    expect(snapshot.map((e) => [e.setNumber, e.targetRir, e.targetRirMax])).toEqual([[1, 0, 1], [2, 5, null]]) // the marked week's own, pre-mark
   })
 })
 

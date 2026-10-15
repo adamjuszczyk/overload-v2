@@ -379,11 +379,11 @@ export default function SettingsPage() {
         </section>
 
         {/* ── Deload rules ─────────────────────────────────────────────── */}
-        {/* Chunk 22 (SPEC.md "Settings" — "default deload rules"; "Deload
-            rules": "global default in settings, override per program").
+        {/* Chunk 22 (SPEC.md "Settings" — "default deload rules"); since chunk
+            48 (SPEC Deload [1.2], 16b) these are the deload rules, Settings'
+            alone: programs have no override.
             Off by default (settings.deloadRules is null until any rule is
-            switched on) — DeloadRulesEditor.tsx is the one shared editor,
-            reused as-is by the program override (StepVolume.tsx). Purely
+            switched on) — DeloadRulesEditor.tsx edits them. Purely
             additive: nothing above this section changed (D30 — "with
             rules off, Settings renders as on master, except this new
             section"). */}
