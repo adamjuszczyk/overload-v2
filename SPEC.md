@@ -538,6 +538,12 @@ optional:
   so weeks can be planned ahead one at a time. Nothing beyond the first
   unplanned week is reachable. (Adam: "you can't go to week 4, but after you
   click plan forward on week 3, you can go to week 4.")
+  - **A past week that was never planned** (the answer to DECISIONS 131, G56;
+    Adam, 2026-10-15): the week tiles always reach the current week. A past
+    week that was never planned shows NOT PLANNED, read-only and empty, with
+    no PLAN FORWARD, and nothing is written for it. The current week copies
+    from the last planned normal week, as the copy rules already say. REVIEW
+    and VOLUME treat the missed week as a week with nothing in it.
 - [1.2] **A planned week is never updated by later edits in an earlier week's
   view.** It was copied when it was planned and is changed in its own view.
   CHANGE THE PROGRAM is the exception: it applies to every not-done session.
