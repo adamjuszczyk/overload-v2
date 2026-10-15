@@ -189,6 +189,9 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   matching. Boards use the app's existing tokens (Archivo, Archivo Expanded,
   JetBrains Mono, the accent variables in `src/styles/global.css`); a board
   colour or size that has no token maps to the nearest existing one.
+  - Text on the accent (DECISIONS 128 (g), 129 (d), 130 (j); Adam
+    2026-10-15): a new token, `--on-accent`, in global.css for both themes, set
+    to the near-black the boards draw, used wherever text sits on the accent.
 - **Sample data is sample data.** Names, numbers and dates on boards are
   examples. "Week 2", "Push Pull Legs", "Bulk" and so on are never literals.
 - **Scope of the look.** The screens 1.2 touches are rebuilt to their boards in
@@ -608,9 +611,12 @@ optional:
   marking it deload marks every day sharing it (board 10); MOVE THIS SESSION
   moves only that day's session.
 - [1.2] **Changes since the source** (P1.1's highlighting, kept): anything in a
-  week that differs from its source is highlighted, with the legend "CHANGED
-  SINCE WEEK N" (boards 1, 1d, 9), on stable weeks too; "THIS WEEK ONLY" is
-  only the per-exercise line (G48).
+  week that differs from its source is highlighted, a box only when it holds a
+  value that differs from its source (an empty box is never marked, so a week
+  planned forward shows no marks until numbers are typed or copied in;
+  DECISIONS 132, Adam 2026-10-15), with the legend "CHANGED SINCE WEEK N"
+  (boards 1, 1d, 9), on stable weeks too; "THIS WEEK ONLY" is only the
+  per-exercise line (G48).
   - Week-dependent: compared with last week's plan. Stable: set counts, kinds,
     stages and rep targets compared with the default; weight and RIR compared
     with last week's plan. Week 1 is compared with nothing.
@@ -643,11 +649,10 @@ optional:
   - Text: "Lat Pulldown · set 02 — did 57.5 kg × 11 (planned 55 kg × 8–10)". When
     a set has an item, RIR is shown alongside; RIR alone never makes an item
     (13b).
-  - USE writes what was done into this week's matching set, exactly (a range
-    becomes the number done). Matching: exercise, then position, warmups to
-    warmups.
-    - A set planned AMRAP (DECISIONS 137, Adam 2026-10-15): USE writes the done
-      weight only, and this week's set stays AMRAP.
+  - USE writes what was done into this week's matching set: the done weight
+    and reps, exactly (a range becomes the number done), or, on a set planned
+    AMRAP, the done weight only, so this week's set stays AMRAP (DECISIONS 137,
+    Adam 2026-10-15). Matching: exercise, then position, warmups to warmups.
 - **Structural items (13d)**, for everyone, including people who plan no
   numbers:
   - a set added during a session → "Face Pull · added a set — set 03, 15 kg ×
@@ -659,6 +664,10 @@ optional:
       switched to Normal, are items too. Both are seen through the session's
       change rows, which also record a type change made on a logged set; USE
       writes the stage count set in the workout.
+    - A type change made during a workout (DECISIONS 150, Adam 2026-10-15) is
+      listed even when that set was then skipped or never logged, alongside its
+      "Skipped" / "Not logged" item, and for everyone, also when the plan gave
+      the set no weight or reps.
   - an exercise added or swapped → "Added: Cable fly, 3 sets" / "Swapped Dips →
     Machine Dips". Its action is a CHANGE THE PROGRAM change, so it applies from
     this week forward and says so.
@@ -672,8 +681,9 @@ optional:
 - **Actions** (Defaults, 4). Each writes to the week shown, at once (it isn't a
   CHANGE THE PROGRAM change unless stated). In a stable week a write is a
   this-week change, so it shows "THIS WEEK ONLY" like any other.
-  - USE: writes the done weight and reps into this week's matching set. With no
-    matching set (this week has fewer), it becomes ADD THIS SET.
+  - USE: writes the done weight and reps into this week's matching set, or the
+    done weight only on a set planned AMRAP, which stays AMRAP (DECISIONS 137).
+    With no matching set (this week has fewer), it becomes ADD THIS SET.
   - ADD THIS SET: appends a set at the end of that exercise's sets, with the done
     weight and reps as its targets and the done set's kind.
   - "You made set 02 a dropset" USE: gives this week's matching set that kind and
