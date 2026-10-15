@@ -6,17 +6,18 @@ import { fileURLToPath } from 'node:url'
 // Chunk 33 (SPEC Programs and runs [P1.1], G30): "fixed for the run: the schedule
 // (schedule type, a weekday per workout, the sequence order), the workouts, and
 // the deload-rules override"; "The planner refuses to open a run's copy". No
-// screen edits a running program's schedule, workouts or deload-rules override.
+// screen edits a running program's schedule or workouts. (The override itself is
+// gone since chunk 48: SPEC Objects stored → Program [1.2], "no longer read or
+// written"; programDeloadOverrideUnused.static.test.ts pins that.)
 //
 // The behavioural halves are screen tests: PlannerPage.test.tsx (a run's copy is
 // refused: no step, no editor) and PlanPage.programTabRemoved.test.tsx (nothing of
 // the old tab, or of an editor for any of these, in Plan). This is the structural
 // half, and it's by construction rather than by a list of words: every write to
-// a program's schedule, workouts or deload-rules override is made by a hook only
-// the planner's two step components call, and only PlannerPage mounts them. Plan
-// (and everything else) can't edit a run's schedule because nothing there can reach
-// a hook that does. (Chunk 28's PrioritiesEditor test pins the same kind of
-// fact for the priorities.)
+// a program's schedule or workouts is made by a hook only the planner's two step
+// components call, and only PlannerPage mounts them. Plan (and everything else)
+// can't edit a run's schedule because nothing there can reach a hook that does.
+// (Chunk 28's PrioritiesEditor test pins the same kind of fact for the priorities.)
 //
 // Source text, not behaviour: it reads every non-test file under src/. A new
 // screen that needs one of these writers has to be added here on purpose.
@@ -35,8 +36,8 @@ function sourceFiles(dir: string): string[] {
 const FILES = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path).split(sep).join('/'), text: readFileSync(path, 'utf8') }))
 const filesMentioning = (pattern: RegExp) => FILES.filter((f) => pattern.test(f.text)).map((f) => f.path).sort()
 
-// What edits a program's schedule, its workouts or its deload-rules override
-// (usePrograms.ts and usePlanner.ts define them; the planner's steps call them).
+// What edits a program's schedule or its workouts (usePrograms.ts and usePlanner.ts
+// define them; the planner's steps call them).
 const WRITERS = [
   'useUpdateScheduleType',      // weekday / sequence
   'useAssignWorkoutWeekday',    // a weekday per workout
@@ -49,7 +50,6 @@ const WRITERS = [
   'useUpdateWorkoutDayName',
   'useDeleteWorkoutDay',
   'useSplitSharedWeekdayWorkouts',
-  'useUpdateProgramDeloadRules', // the deload-rules override
   'useUpdatePlanningType',
 ]
 
@@ -60,7 +60,7 @@ const PLANNER_ONLY = [
 ]
 const DEFINITIONS = ['features/programs/usePrograms.ts', 'features/planner/usePlanner.ts']
 
-describe('a running program\'s schedule, workouts and deload-rules override are fixed for the run (chunk 33)', () => {
+describe('a running program\'s schedule and workouts are fixed for the run (chunk 33)', () => {
   it('the planner\'s steps are mounted by the planner and by nothing else (the program tab was the only other)', () => {
     expect(filesMentioning(/from '[^']*\/StepExercises'|from '\.\/StepExercises'/)).toEqual(['features/planner/PlannerPage.tsx'])
     expect(filesMentioning(/from '[^']*\/StepVolume'|from '\.\/StepVolume'/)).toEqual(['features/planner/PlannerPage.tsx'])

@@ -62,8 +62,10 @@ export type DbWeekPlanSet = {
   tags?: string[] | null
   // Migration 042 (TASKS-1.2 chunk 36) — the RIR range's high end (SPEC [1.2]
   // "Targets"); target_rir stays the number / the low end. Read by toSet()
-  // below; nothing writes it yet (chunk 54a's RIR picker does), and no copy
-  // here carries it, so the legacy copy paths still produce plain numbers.
+  // below. The only writers so far are the deload mark and its unmark
+  // (chunk 48: the RIR rule shifts both ends, and the restore snapshot keeps
+  // the range); chunk 54a's RIR picker is the next. No copy here carries it, so
+  // the legacy copy paths still produce plain numbers.
   target_rir_max?: number | null
 }
 
@@ -1319,6 +1321,8 @@ function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null, programExerc
     repMax: s.rep_max ?? null,
     isAmrap: s.is_amrap ?? false,
     targetRir: s.target_rir,
+    // The RIR range's high end (042): the deload's RIR rule shifts both ends.
+    targetRirMax: s.target_rir_max ?? null,
     tags: s.tags ?? null,
     isDropset: s.is_dropset,
     plannedWeight: s.target_weight ?? null,
@@ -1384,6 +1388,7 @@ export async function insertCalculatedPlanSets(
       program_exercise_id: s.programExerciseId,
       set_number: s.setNumber,
       target_rir: s.targetRir,
+      target_rir_max: s.targetRirMax,
       is_dropset: s.isDropset,
       stage_index: s.stageIndex,
       is_warmup: s.isWarmup,
@@ -1406,6 +1411,7 @@ export async function insertCalculatedPlanSets(
       program_exercise_id: s.programExerciseId,
       set_number: s.setNumber,
       target_rir: s.targetRir,
+      target_rir_max: s.targetRirMax,
       is_dropset: s.isDropset,
       parent_week_plan_set_id: newParentId ?? null,
       stage_index: s.stageIndex,
@@ -1454,6 +1460,8 @@ export async function applyCalculatedDeloadMark(
       isAmrap: s.is_amrap ?? false,
       targetWeight: s.target_weight ?? null,
       targetRir: s.target_rir,
+      // Without it an unmark could never bring a RIR range back (042).
+      targetRirMax: s.target_rir_max ?? null,
       tags: s.tags ?? null,
     })),
   )
@@ -1490,6 +1498,8 @@ export async function insertRestoredPlanSets(
       program_exercise_id: head.programExerciseId,
       set_number: head.setNumber,
       target_rir: head.targetRir,
+      // A snapshot saved before RIR ranges existed has no key: null.
+      target_rir_max: head.targetRirMax ?? null,
       is_dropset: head.isDropset,
       stage_index: head.stageIndex,
       is_warmup: head.isWarmup,
@@ -1509,6 +1519,7 @@ export async function insertRestoredPlanSets(
         program_exercise_id: stage.programExerciseId,
         set_number: stage.setNumber,
         target_rir: stage.targetRir,
+        target_rir_max: stage.targetRirMax ?? null,
         is_dropset: stage.isDropset,
         parent_week_plan_set_id: headRow.id,
         stage_index: stage.stageIndex,
@@ -1567,8 +1578,8 @@ export async function applyDeloadRestore(
 // end-to-end against real Postgres (this chunk's scratch-SQL verification).
 
 // Marks one session deload. `rules` is the EFFECTIVE rules already resolved
-// by the caller (program override, else the global default, else none —
-// PlanPage.tsx/StepVolume.tsx compute this once, the same "screen resolves
+// by the caller (the Settings rules, else none: programs have no override
+// since chunk 48 — PlanPage.tsx computes this once, the same "screen resolves
 // it, hook/executor just uses it" split this chunk's report explains) —
 // this function has no notion of settings or program rows at all.
 export async function markSessionDeload(
@@ -1681,7 +1692,7 @@ async function withoutGoneProgramSets(snapshot: DeloadRestoreEntry[]): Promise<D
 // this is literally markSessionDeload/unmarkSessionDeload run once per row
 // of the week, never a bulk statement once rules are on (each row can
 // resolve a different base occurrence). `rules` is the SAME effective
-// rules object for every row (one run, one program, one global default).
+// rules object for every row (one user's Settings rules).
 // Returns whether ANY row hit the started guard, so the week-level action
 // can show one combined notice the same way the per-session one does.
 export async function markWeekDeload(
