@@ -1,10 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-15, your third batch of answers recorded (docs only). 150 (b): a type change made during a workout is listed in REVIEW also when that set was then skipped or never logged, so chunk 43 gets its fourth builder attempt, as you allowed. 128: its other choices are accepted, except that a picker opens on the set's current target; that change and the new `--on-accent` token for text on the accent join the display follow-up. The SPEC sentences that 137 (a) and 132 narrowed now state your answers. 149 was held against SPEC's [P1.1] "Existing data" line, as you asked: the line doesn't fully answer it, so it stays open, with the case the line doesn't cover. One detail of the `--on-accent` answer comes back to you (128 (g) below); it blocks nothing. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-15, chunk 46's second review (the workout logging rules): not merged. The second attempt fixes the first review's bug (a deleted set no longer comes back as an open row) and builds your 146 (a), 147 (a, b) and your rule for change rows as you gave them. The reviewer checked each, and the change rows also on a real database. Running the rules raised two new questions, both new below. 151 (what UNLOG does to the set numbers) holds chunk 46 itself: after an unlog, the module's own rows show two sets with the same number, and every answer but "as built" changes the module. 152 (a warmup logged with no weight or reps, made a working set, which the database refuses) holds chunk 62 only. Nothing before chunk 58a uses the module, so the build goes on meanwhile. Each list is ordered by what it blocks.*
 
 Decisions:
+- **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
 - **149** — weeks a week-dependent run changed in 1.1's week view (chunk 45). In 1.1 such a run's exercise changes lived in its weeks: SWAP or ADD made a week-only exercise, REMOVE took one out of that week, and the run's program never changed (the program tab went in 1.1; Make default is stable-only). From 044 on (chunk 53; production at the release), 143's copy follows the program's list. So the first copy from such a week brings back an exercise removed in 1.1 (with no sets) and takes the program's order. The week-only exercises stay in every later week, and nothing in 1.2 can remove them (executed probe). Held against [P1.1]'s "Existing data" line, as you asked, it isn't fully answered: "copying uses each week's actual content" keeps a week-only exercise, as built, but for an exercise 1.1 removed from a week while the program still lists it, and for a week whose order 1.1 changed, the line gives the week's content and 143's line the program's list, and neither says which wins; nor does the line say how a week-only exercise is ever removed. Recommended: (c) once, at the release, make each active week-dependent run's program match its last planned week, so nothing you see changes. Blocks: chunk 53 and the release; nothing before 53.
+- **152** — a warmup logged with no weight or reps, made a working set during the workout (chunk 46, for 62). SPEC lets a warmup be logged without numbers, and its edit panel has SET TYPE. The database refuses a working set without both numbers (executed: `23514`). Recommended: (a), ask for the numbers first: the working type is saved together with the weight and reps typed in the panel, in one write. Blocks: chunk 62; chunk 46 only if answered (c), where the switch makes it a set still to do.
 - **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. Recommended: as `--accent` itself is done, the value in tokens.css and its Tailwind mapping in global.css. Blocks: nothing. It is display only (D31): without your word, the display follow-up picks one and records it here.
 
 To-dos:
@@ -37,6 +39,46 @@ Blocking vs deferred: an entry is blocking when continuing means guessing at som
 When an entry is answered or done, it shrinks to three lines (what, answer, date) and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. "Waiting on Adam" is rewritten at every boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 151 UNLOG of a set that isn't the last one logged: what happens to the set numbers (chunk 46)
+**Ask:** During a workout a logged set can be unlogged (SPEC 18c). Its log is deleted, and its weight, reps and RIR stay on the phone as a draft. A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves a hole in the logged numbers, and two rows show the same number. With bench 01–03 logged and 04 open, UNLOG on 02 shows 01 ✓, 03 (the unlogged set, open), 03 ✓, 04. The finish warning then says "Bench 03 and 04", and the lock asks "Log set 04 before set 03?". Logging it again stores a second set 3, so History shows sets 1, 3 and 3. SPEC 18c says only that the set "goes back to unlogged with its numbers kept" and that "logging again undoes it". What should unlog do to the set numbers?
+**Recommendation:** (a), the rule that a delete (18b) and a switch to or from Warmup (146 (a)) already follow. The logged sets after it close the gap at once, and logging it again gives it the next number. No two rows or logs then share a number, and History has no hole. The set's own number can change: unlog 02 of 01–03 and log it again, and it is 03 (the old 03 became 02). Chunk 46 returns the number patches with the unlog (heads and their drops). Chunk 63 writes them with the delete, offline too, as chunk 61 does for delete.
+**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it and write what it returns; 63 writes the answer. As built, after its own unlog the module's own rows show two sets with one number, and every option but (c) changes the module. Nothing before 58a waits: 47–57 don't use it.
+**Options:**
+- (a) As recommended: the logged sets after it move down one; logging it again gives it the next number.
+- (b) The set keeps its number. The draft also keeps the number it was logged with, the open row shows it, and LOG writes it again, so logging again restores exactly what was there. The other sets don't move. A set logged while it is unlogged takes the number after the highest one in use. If it is still unlogged when the session ends, its number is missing in History.
+- (c) As built: nothing renumbers. While the set is unlogged two rows show one number, and logging it again stores a duplicate number. Not recommended.
+**Answer:**
+**Evidence:** Executed through the module's own outputs in chunk 46's second review, on `5b09cec` squashed onto staging `4e7205b`:
+- `unlogEffects` on 02 returns the log's delete and the draft, nothing else.
+- Applied, `resolveRows` reads `01✓ 03· 03✓ 04·`, and the current set is the unlogged 02, shown as 03.
+- Logged again the way chunk 58a keeps writing a head (`totalLoggedHeads + 1`; TASKS 58a, "Writes unchanged"), the stored numbers are 1, 3, 3.
+- Unlogging the last logged set leaves no hole.
+
+Why SPEC doesn't settle it:
+- SPEC 18b's "The remaining sets renumber" is about delete.
+- 146 (a) answered the Warmup switch only (RULES.md: an answer covers the cases its question held).
+- G46's draft (TASKS 63) holds weight, reps, RIR, form and unit, and no set number.
+
+It is the defect 146 was asked about (two rows with one number), here for unlog. The builder raised it (its report, A8) and built nothing for it. Redone if the answer is (b): the draft's shape and how the rows number a set with a draft (46), and what LOG writes (63).
+
+### 152 A warmup logged with no weight or reps, made a working set during the workout (chunk 46, for 62)
+**Ask:** SPEC lets a warmup be logged with no weight and no reps (Warmup sets: "weight and reps, both optional"). Its boxes may be left empty, and a warmup ticked off in the tick list has none. A logged set's type can be changed from its edit panel (SPEC 19; board W2b's EDITING A WARMUP has a SET TYPE row). The database refuses a working set without both numbers (`v2_set_logs_check`: `is_skipped or is_warmup or (weight is not null and reps is not null)`). So making such a warmup Normal, or a staged set, fails. What should happen?
+**Recommendation:** (a), ask for the numbers first. A working type on such a warmup is saved together with the weight and reps typed in its edit panel, in one write. If a box is empty, SAVE says "Enter weight and reps." and sends nothing. Nothing is refused and nothing done is lost.
+**Blocks:** chunk 62 (SET TYPE on a logged set). It blocks chunk 46's merge only under (c). Under (a), (b) and (d), the type patch chunk 46 returns stands: 62 sends the numbers with it, or doesn't offer the pick. Under (c), `applySetTypeChange` returns a delete for such a warmup instead of a patch.
+**Options:**
+- (a) As recommended: the numbers first, saved with the type in one write.
+- (b) Not offered: for a logged warmup with no weight or reps, SET TYPE offers Warmup only (as G55 limits Plan's picker) until its numbers are saved.
+- (c) The switch makes it a set still to do. Its warmup log is deleted (it holds nothing), and the set becomes an open working set of the picked type (its `retyped` row), current or upcoming like any open set.
+- (d) As built: the write is refused and the error shows; the set stays a warmup.
+**Answer:**
+**Evidence:** Executed on a replay of migrations 000–042 (`supabase/postgres:17.6.1.155`), rolled back:
+- A warmup was logged with weight and reps null, as `SetRow.tsx` writes an empty box ("an empty field is simply null").
+- The patch chunk 46 returns for Normal (`is_warmup false, stage_kind null`) was refused: `23514 v2_set_logs_check`. The patch for Dropset was refused the same way.
+- The control, a warmup logged 20 × 12, was accepted.
+- The builder's walk, replayed on the real tables with warmups logged without numbers: 35 of 2230 writes refused, all by this check. With numbers, none of 4334.
+
+Chunk 46's rules read no weight or reps, and their stand-in doesn't model this check, so their own tests can't see it. TASKS 62 patches `is_warmup`, `stage_kind` and `stage_index` only. The builder raised it (its report, A9).
 
 ### 150 A set whose type was changed during a workout and then skipped or never logged: a REVIEW item? (chunk 43)
 - What: whether REVIEW also lists a type change made during a workout on a set that was then skipped or never logged, beside its "Skipped" / "Not logged"; as chunk 43's third attempt built it (`a62a20b`), it didn't, and a set the plan gave no weight or reps got no item at all.
