@@ -19,7 +19,7 @@ import {
   setDays,
   swapExerciseIn,
 } from './programChange.testutil'
-import { autoCopy, type PlannedWeekRows, type RunCopy } from '../plan/weekPlanning'
+import { autoCopy, weeksOfSlot, type PlannedWeekRows, type RunCopy } from '../plan/weekPlanning'
 
 // DECISIONS 143 (Adam, 2026-10-15), end to end: a save, then the copy of the next week, over the tables the save left.
 //
@@ -233,6 +233,67 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     expect(fromThree.exercises).toEqual(fromTwo.exercises)
     const shape = (r: typeof fromTwo) => r.exercises.map((e) => [e.programExerciseId, r.sets.filter((s) => s.programExerciseId === e.programExerciseId).map((s) => [s.setNumber, s.stageIndex, s.isWarmup, s.stageKind])])
     expect(shape(fromThree)).toEqual(shape(fromTwo))
+  })
+})
+
+// A sequence run repeats one workout in several slots: one run copy, one history per slot (weeksOfSlot: "a slot's source is
+// the same slot's last normal occurrence"). After a save every slot of the workout takes the run copy's list, and each takes
+// its sets from its OWN last cycle.
+describe('on a week-dependent sequence run every slot follows the one run copy, from its own last cycle (DECISIONS 143)', () => {
+  // Rotation A is in slots 0 and 1 (Rotation B in slot 2); cycle 2 is planned for all three. In cycle 2 slot 0's Squat was given
+  // four sets in Plan and slot 1's kept its two: the two slots hold two different histories of one exercise.
+  function rotationWorld(): World {
+    const w = newWorld({ planningType: 'week_dependent', scheduleType: 'sequence', currentWeek: 2 })
+    addWorkout(w, 'a', 'Rotation A', 0)
+    addWorkout(w, 'b', 'Rotation B', 1)
+    addExercise(w, 'pe-squat', 'a', 'ex-squat', 0, [{ reps: '5' }, { reps: '5' }])
+    addExercise(w, 'pe-row', 'a', 'ex-row', 1, [{ reps: '8' }, { reps: '8' }])
+    addExercise(w, 'pe-bench', 'b', 'ex-bench', 0, [{ reps: '5' }, { reps: '5' }])
+    planSession(w, 'c2-s0', 'a', 2, { sequencePosition: 0 })
+    planSession(w, 'c2-s1', 'a', 2, { sequencePosition: 1 })
+    planSession(w, 'c2-s2', 'b', 2, { sequencePosition: 2 })
+    const second = w.db.v2_week_plan_sets.find((s) => s.id === 'c2-s0-pe-squat-s2')!
+    for (const n of [3, 4]) w.db.v2_week_plan_sets.push({ ...second, id: `c2-s0-squat-extra-${n}`, set_number: n, program_set_id: null })
+    return w
+  }
+  const editA = (w: World) => addExerciseTo(removeExerciseFrom(draftOf(w), 'a', 'pe-row'), 'a', { exerciseId: 'ex-curl' })
+
+  // What the app does for one slot of Rotation A in cycle 3 (PlanPage's slotWeeks): the slot's own earlier weeks, and the one run copy.
+  function cycleThree(db: Db, w: World, slot: number) {
+    const all = db.v2_week_plans.map((p) => ({ id: p.id, workoutDayId: p.workout_day_id, sequencePosition: p.sequence_position }))
+    const priorWeeks = weeksOfSlot(all, 'a', slot).map((p) => plannedWeekRows(db, p.id))
+    return autoCopy({ planningType: 'week_dependent', weekNumber: 3, runCopy: runCopyOfWorkout(db, w, 'a'), priorWeeks })
+  }
+  const heads = (r: ReturnType<typeof cycleThree>, programExerciseId: string) => r.sets.filter((s) => s.programExerciseId === programExerciseId && s.parentSourceId === null)
+
+  it('both slots are done: each has the run copy\'s list (Squat, the added Curl, no Row), and Squat has the sets of its own slot', () => {
+    const w = rotationWorld()
+    const { ops, after, summary } = saveOf(w, editA(w), { 'c2-s0': 'done', 'c2-s1': 'done', 'c2-s2': 'done' })
+    expect(summary.changedSessions).toEqual([]) // the save changes no session: next cycle is where it has to arrive
+    const curl = inserts(ops, 'v2_program_exercises').find((o) => o.row.exercise_id === 'ex-curl')!.row.id
+    const slot0 = cycleThree(after, w, 0)
+    const slot1 = cycleThree(after, w, 1)
+    for (const r of [slot0, slot1]) {
+      expect(r.source).toEqual({ kind: 'week', weekNumber: 2 })
+      expect(r.exercises.map((e) => e.programExerciseId)).toEqual(['pe-squat', curl])
+      expect(r.sets.some((s) => s.programExerciseId === 'pe-row')).toBe(false)
+      expect(r.sets.some((s) => s.programExerciseId === curl)).toBe(false)
+    }
+    expect(heads(slot0, 'pe-squat').map((s) => s.sourceId)).toEqual(['c2-s0-pe-squat-s1', 'c2-s0-pe-squat-s2', 'c2-s0-squat-extra-3', 'c2-s0-squat-extra-4']) // slot 0's four
+    expect(heads(slot1, 'pe-squat').map((s) => s.sourceId)).toEqual(['c2-s1-pe-squat-s1', 'c2-s1-pe-squat-s2']) // slot 1's two, not slot 0's four
+  })
+
+  it('slot 1 is not started, so the save changes its cycle-2 session: its copy and the copy of the slot the save left alone have the same list', () => {
+    const w = rotationWorld()
+    const { ops, after, summary } = saveOf(w, editA(w), { 'c2-s0': 'done', 'c2-s1': 'not_started', 'c2-s2': 'done' })
+    expect(summary.changedSessions.map((s) => s.weekPlanId)).toEqual(['c2-s1'])
+    const curl = inserts(ops, 'v2_program_exercises').find((o) => o.row.exercise_id === 'ex-curl')!.row.id
+    const slot0 = cycleThree(after, w, 0)
+    const slot1 = cycleThree(after, w, 1)
+    expect(slot0.exercises).toEqual(slot1.exercises)
+    expect(slot1.exercises.map((e) => e.programExerciseId)).toEqual(['pe-squat', curl])
+    expect(heads(slot0, 'pe-squat')).toHaveLength(4)
+    expect(heads(slot1, 'pe-squat')).toHaveLength(2)
   })
 })
 

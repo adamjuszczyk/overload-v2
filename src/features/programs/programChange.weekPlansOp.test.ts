@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { Op, SavedPlanSet } from './programChange'
+import type { WeekPlan } from '../../types'
+import type { ChangeSession, Op, SavedPlanSet } from './programChange'
 import { type Db, USER, applyOpsToDb, cloneDb } from './programChange.testutil'
 import { stableWorld } from './programChange.worlds.testutil'
 
@@ -46,6 +47,17 @@ describe('the op type', () => {
     const fine: Op = { op: 'update', table: 'v2_week_plans', id: 'p3-fb', patch: { deload_restore: SAVED } }
     const cleared: Op = { op: 'update', table: 'v2_week_plans', id: 'p3-fb', patch: { deload_restore: null } }
     expect([insert, del, flag, both, wrongShape, fine, cleared]).toHaveLength(7)
+  })
+})
+
+describe('the saved plan an op writes is the one the app reads', () => {
+  it('a WeekPlan.deloadRestore is a ChangeSession.deloadRestore as it is, and what an op writes is a WeekPlan.deloadRestore as it is', () => {
+    // Type-level, held by `npm run typecheck`: the app's own type on each side, not a copy of it here that could drift unseen.
+    const read = (plan: WeekPlan): ChangeSession['deloadRestore'] => plan.deloadRestore
+    const written = (op: Extract<Op, { op: 'update'; table: 'v2_week_plans' }>): WeekPlan['deloadRestore'] => op.patch.deload_restore
+    const plan = { deloadRestore: SAVED } as WeekPlan
+    expect(read(plan)).toBe(SAVED)
+    expect(written({ op: 'update', table: 'v2_week_plans', id: 'p3-fb', patch: { deload_restore: SAVED } })).toBe(SAVED)
   })
 })
 
