@@ -157,6 +157,12 @@ describe('CuesSheet: the list', () => {
     expect(rows().map(marker)).toEqual([null, null, null, null, 'YOURS', 'YOURS'])
   })
 
+  it("lists a cue of the set's own after the run's, when the run's tags don't hold it", () => {
+    render(<CuesSheet {...props({ value: ['my own cue', 'push here'], runCues: ['pause at the end', '1-sec pause at the bottom'] })} />)
+    expect(rowLabels()).toEqual(['Push here', 'Maintain strength', 'Focus on execution', 'Push back', 'Pause at the end', '1-sec pause at the bottom', 'My own cue'])
+    expect(tickedLabels()).toEqual(['Push here', 'My own cue'])
+  })
+
   it("lists a cue the set has although the run's tags don't hold it, ticked and YOURS, and gives it back as it was stored", () => {
     const result = doneWith({ value: ['push back', 'my own cue'], runCues: [] }, () => {
       expect(rowLabels()).toEqual(['Push here', 'Maintain strength', 'Focus on execution', 'Push back', 'My own cue'])
