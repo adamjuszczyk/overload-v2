@@ -189,6 +189,9 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   matching. Boards use the app's existing tokens (Archivo, Archivo Expanded,
   JetBrains Mono, the accent variables in `src/styles/global.css`); a board
   colour or size that has no token maps to the nearest existing one.
+  - Text on the accent (DECISIONS 128 (g), 129 (d), 130 (j); Adam
+    2026-10-15): a new token, `--on-accent`, in global.css for both themes, set
+    to the near-black the boards draw, used wherever text sits on the accent.
 - **Sample data is sample data.** Names, numbers and dates on boards are
   examples. "Week 2", "Push Pull Legs", "Bulk" and so on are never literals.
 - **Scope of the look.** The screens 1.2 touches are rebuilt to their boards in
@@ -451,6 +454,9 @@ optional:
     - Rest, tempo, unit, superset rests, superset grouping and the warmup routine
       are run-wide: one value, every not-done session.
     - Weekdays: see below.
+    - A not-started session marked deload (DECISIONS 142, Adam 2026-10-15): the
+      save also applies these rules to its saved pre-deload copy, so UNMARK
+      restores the plan with the change in it.
   - **Weekdays storage:** this week's not-done sessions keep their days; the new
     days apply from next week, including a week already planned forward. How
     that is stored (an effective-from week, or this week's sessions recorded as
@@ -560,6 +566,11 @@ optional:
   - Source, `stable`: the run's default (the run copy), always.
   - Source, `week-dependent`: the last planned normal occurrence; the existing
     rules for skipping deload and empty occurrences stay.
+    After a CHANGE THE PROGRAM save (DECISIONS 143, Adam 2026-10-15), a copied
+    week follows the run copy's current exercise list and order: an exercise
+    still in the program brings its sets from the source session, a removed one
+    is dropped, an added one arrives with no sets, and a swapped one brings the
+    old exercise's sets (How a save lands → Swapped exercise).
   - Week 1 of any run starts from the program.
   - Rest, tempo, the warmup routine and superset grouping are run-wide, so
     there's nothing to copy.
@@ -600,9 +611,12 @@ optional:
   marking it deload marks every day sharing it (board 10); MOVE THIS SESSION
   moves only that day's session.
 - [1.2] **Changes since the source** (P1.1's highlighting, kept): anything in a
-  week that differs from its source is highlighted, with the legend "CHANGED
-  SINCE WEEK N" (boards 1, 1d, 9), on stable weeks too; "THIS WEEK ONLY" is
-  only the per-exercise line (G48).
+  week that differs from its source is highlighted, a box only when it holds a
+  value that differs from its source (an empty box is never marked, so a week
+  planned forward shows no marks until numbers are typed or copied in;
+  DECISIONS 132, Adam 2026-10-15), with the legend "CHANGED SINCE WEEK N"
+  (boards 1, 1d, 9), on stable weeks too; "THIS WEEK ONLY" is only the
+  per-exercise line (G48).
   - Week-dependent: compared with last week's plan. Stable: set counts, kinds,
     stages and rep targets compared with the default; weight and RIR compared
     with last week's plan. Week 1 is compared with nothing.
@@ -635,15 +649,25 @@ optional:
   - Text: "Lat Pulldown · set 02 — did 57.5 kg × 11 (planned 55 kg × 8–10)". When
     a set has an item, RIR is shown alongside; RIR alone never makes an item
     (13b).
-  - USE writes what was done into this week's matching set, exactly (a range
-    becomes the number done). Matching: exercise, then position, warmups to
-    warmups.
+  - USE writes what was done into this week's matching set: the done weight
+    and reps, exactly (a range becomes the number done), or, on a set planned
+    AMRAP, the done weight only, so this week's set stays AMRAP (DECISIONS 137,
+    Adam 2026-10-15). Matching: exercise, then position, warmups to warmups.
 - **Structural items (13d)**, for everyone, including people who plan no
   numbers:
   - a set added during a session → "Face Pull · added a set — set 03, 15 kg ×
     18", ADD THIS SET or IGNORE;
   - a drop or stage added, or a set type changed (19) → "You made set 02 a
     dropset", USE or IGNORE;
+    - Type changes REVIEW sees (DECISIONS 141, Adam 2026-10-15): a set given a
+      stage kind whose drops or stages weren't done, and a dropset with no kind
+      switched to Normal, are items too. Both are seen through the session's
+      change rows, which also record a type change made on a logged set; USE
+      writes the stage count set in the workout.
+    - A type change made during a workout (DECISIONS 150, Adam 2026-10-15) is
+      listed even when that set was then skipped or never logged, alongside its
+      "Skipped" / "Not logged" item, and for everyone, also when the plan gave
+      the set no weight or reps.
   - an exercise added or swapped → "Added: Cable fly, 3 sets" / "Swapped Dips →
     Machine Dips". Its action is a CHANGE THE PROGRAM change, so it applies from
     this week forward and says so.
@@ -657,8 +681,9 @@ optional:
 - **Actions** (Defaults, 4). Each writes to the week shown, at once (it isn't a
   CHANGE THE PROGRAM change unless stated). In a stable week a write is a
   this-week change, so it shows "THIS WEEK ONLY" like any other.
-  - USE: writes the done weight and reps into this week's matching set. With no
-    matching set (this week has fewer), it becomes ADD THIS SET.
+  - USE: writes the done weight and reps into this week's matching set, or the
+    done weight only on a set planned AMRAP, which stays AMRAP (DECISIONS 137).
+    With no matching set (this week has fewer), it becomes ADD THIS SET.
   - ADD THIS SET: appends a set at the end of that exercise's sets, with the done
     weight and reps as its targets and the done set's kind.
   - "You made set 02 a dropset" USE: gives this week's matching set that kind and
@@ -983,6 +1008,10 @@ optional:
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
   deletes its stages, and the confirm says so. The remaining sets renumber.
+  - A drop on its own (DECISIONS 147, Adam 2026-10-15): deleting a set's last
+    drop makes it a normal set. A logged drop can be unlogged under the same
+    rule as any set: not while a later drop or stage of that set is logged. Its
+    draft is keyed by its set's key plus its drop number.
 - [1.2] **Offline (G47):** logging, delete set and unlog work offline and sync
   later through the sync queue. A set type change on a logged set and the edit
   panel's SAVE need a connection, as editing a logged set does today; offline
@@ -994,6 +1023,9 @@ optional:
   is still unlogged, in which case logging it follows the lock. Switching a set
   back to Normal when some of its drops are already logged asks before deleting
   them (19c). ADD STAGE, "Mark as dropset" and "+ DROP OR STAGE" are removed.
+  - A set switched to or from Warmup (DECISIONS 146, Adam 2026-10-15)
+    renumbers the sets as a delete does: the sets after it close the gap or
+    move up one.
 - [1.2] **Stage rows** open by themselves once the row before them is logged
   (C8).
 - [1.2] **The set's ⋯ during a workout (C9):** SET TYPE, CUES, FORM, a per-set

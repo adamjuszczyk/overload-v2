@@ -10,14 +10,16 @@ vi.mock('../../lib/supabase', () => ({
 }))
 vi.mock('../../lib/muscleGroup', () => ({ toMuscleGroup: (v: unknown) => v }))
 
-const { fetchPrograms, fetchSavedPrograms, updatePlanningType } = await import('./programService')
+const { fetchPrograms, fetchSavedPrograms, createProgram, updatePlanningType } = await import('./programService')
 
 function makeChain(result: { data?: unknown; error?: unknown }) {
   const chain: Record<string, unknown> = {
     select: vi.fn(() => chain),
+    insert: vi.fn(() => chain),
     update: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     order: vi.fn(() => chain),
+    single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   }
@@ -93,6 +95,63 @@ describe('fetchPrograms — stays unfiltered (PlanPage/the planner need a run\'s
     const result = await fetchPrograms()
 
     expect(result[0].kind).toBe('run')
+  })
+})
+
+// Chunk 48 (SPEC Objects stored → Program [1.2]: "The stored deload-rules override is no longer
+// read or written (16b). The column stays; ... Any existing override falls back to Settings
+// silently."): a program row that still carries one reads as a Program without it, through every
+// read this service makes, and no read asks for the column (TASKS: "the column is simply not
+// selected"). The row holds a non-empty override, so a mapper that kept reading it would show.
+describe('v2_programs.deload_rules is not read (chunk 48)', () => {
+  const rowWithOverride = {
+    id: 'prog-1', user_id: 'user-1', name: 'STG Upper/Lower', schedule: {},
+    created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    kind: 'saved', planning_type: 'week_dependent', schedule_type: 'weekday',
+    deload_rules: { sets: { mode: 'count', value: 1, rounding: 'down' }, rir: { delta: 2 } },
+  }
+  const selectedColumns = (chain: Record<string, unknown>) => (chain.select as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string
+
+  it.each([
+    ['fetchPrograms', () => fetchPrograms()],
+    ['fetchSavedPrograms', () => fetchSavedPrograms()],
+  ])('%s: the row\'s stored override does not reach the Program', async (_name, call) => {
+    fromMock.mockReturnValue(makeChain({ data: [rowWithOverride], error: null }))
+
+    const [program] = await call()
+
+    expect(program.id).toBe('prog-1')
+    expect(program).not.toHaveProperty('deloadRules')
+    expect(Object.values(program)).not.toContainEqual(rowWithOverride.deload_rules)
+  })
+
+  it('createProgram: the inserted row\'s stored override does not reach the Program either', async () => {
+    fromMock.mockReturnValue(makeChain({ data: rowWithOverride, error: null }))
+
+    const program = await createProgram('user-1', 'STG Upper/Lower')
+
+    expect(program).not.toHaveProperty('deloadRules')
+  })
+
+  it.each([
+    ['fetchPrograms', () => fetchPrograms()],
+    ['fetchSavedPrograms', () => fetchSavedPrograms()],
+    ['createProgram', () => createProgram('user-1', 'x')],
+  ])('%s asks for named columns: not `*`, and not deload_rules', async (_name, call) => {
+    const chain = makeChain({ data: [rowWithOverride], error: null })
+    fromMock.mockReturnValue(chain)
+    ;(chain.single as ReturnType<typeof vi.fn>).mockResolvedValue({ data: rowWithOverride, error: null })
+
+    await call()
+
+    const columns = selectedColumns(chain)
+    expect(columns).toBeTruthy()
+    expect(columns.trim()).not.toBe('*')
+    expect(columns).not.toContain('deload_rules')
+    // ... and still every column Program is built from (nothing the app reads was dropped).
+    for (const column of ['id', 'user_id', 'name', 'schedule', 'created_at', 'updated_at', 'kind', 'planning_type', 'schedule_type']) {
+      expect(columns.split(',').map((c) => c.trim()), column).toContain(column)
+    }
   })
 })
 

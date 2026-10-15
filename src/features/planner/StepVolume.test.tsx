@@ -11,15 +11,11 @@ const setCountMutateMock = vi.fn()
 const updateTargetMutateMock = vi.fn()
 const setAllTargetMutateMock = vi.fn()
 const updateRestMutateMock = vi.fn()
-const updateDeloadRulesMutateMock = vi.fn()
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays, isLoading: false }),
   useProgramExercises: (workoutDayId: string) => ({ data: exercisesByDay[workoutDayId] ?? [], isLoading: false }),
   useUpdatePlanningType: () => ({ mutate: updatePlanningTypeMutateMock, isPending: false }),
-  // Chunk 22 — the program-tab/planner deload-rules override, mounted
-  // unconditionally right alongside the PLANNING picker above.
-  useUpdateProgramDeloadRules: () => ({ mutate: updateDeloadRulesMutateMock, isPending: false }),
 }))
 
 vi.mock('./usePlanner', async () => {
@@ -59,7 +55,6 @@ afterEach(() => {
   updateTargetMutateMock.mockReset()
   setAllTargetMutateMock.mockReset()
   updateRestMutateMock.mockReset()
-  updateDeloadRulesMutateMock.mockReset()
 })
 
 beforeEach(() => {
@@ -364,69 +359,45 @@ describe('StepVolume — planning type picker', () => {
   })
 })
 
-// Chunk 22 — the per-program deload-rules override (reviewer's note 7:
-// "a per-program override, either 'Use my default' (null) or its own
-// rules... a design field, editable for both planning types"). Mounted
-// unconditionally (never gated by volumeReadOnly/canChangePlanningType),
-// same posture the rest-override block below already takes.
-describe('StepVolume — deload rules override (chunk 22)', () => {
-  it('shows USE MY DEFAULT active when the program has no override (null)', () => {
+// Chunk 48 (SPEC Stepped program planner [1.2]: "No deload-rules control"; SPEC Deload [1.2]: "Settings
+// only; programs have no override"). Step 3 has no DELOAD RULES section, no USE MY DEFAULT / CUSTOM chooser
+// and no rules editor: for either planning type, editable or read-only, and for a program that stored an
+// override of its own (which nothing reads: the old section would have opened the editor on it). Each
+// absence is asserted beside what is there (the PLANNING picker, the exercise, its sets), so none is vacuous.
+describe('StepVolume — no deload-rules control (chunk 48)', () => {
+  const SECTION_TEXT = ['DELOAD RULES', 'USE MY DEFAULT', 'CUSTOM']
+  // What the override's editor showed once a program had one (DeloadRulesEditor, sets rule on).
+  const EDITOR_TEXT = ['PERCENT', 'COUNT', 'ROUNDING', 'VALUE (%)']
+  // A program as an older version left it: its stored override rides along outside the Program type.
+  const withStoredOverride = (p: Program): Program => Object.assign(p, { deloadRules: { sets: { mode: 'percent', value: 50, rounding: 'down' } } })
+
+  function expectNoDeloadControl() {
+    expect(screen.getByText('STABLE')).toBeTruthy() // the step rendered
+    expect(screen.getByLabelText('More sets for Bench Press')).toBeTruthy()
+    for (const text of [...SECTION_TEXT, ...EDITOR_TEXT]) expect(screen.queryByText(text), text).toBeNull()
+    // the editor's four rule toggles
+    for (const name of ['Sets', 'Weight', 'Reps', 'RIR']) expect(screen.queryByRole('button', { name }), name).toBeNull()
+  }
+
+  it('a program with no override: no section, no chooser, no editor', () => {
     setup()
-    render(<StepVolume program={program({ deloadRules: null })} volumeReadOnly={false} canChangePlanningType />)
-    expect(screen.queryByText('PERCENT')).toBeNull() // the editor itself is hidden under "use my default"
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={program()} volumeReadOnly={false} canChangePlanningType />)
+    expectNoDeloadControl()
   })
 
-  it('tapping CUSTOM writes an explicit empty override ({}), not null — distinct from "use my default"', () => {
+  it('a program that stored an override: still none (the editor never opens on it)', () => {
     setup()
-    render(<StepVolume program={program({ deloadRules: null })} volumeReadOnly={false} canChangePlanningType />)
-    fireEvent.click(screen.getByText('CUSTOM'))
-    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: {} })
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={withStoredOverride(program())} volumeReadOnly={false} canChangePlanningType />)
+    expectNoDeloadControl()
   })
 
-  it('once the program already has an override, the editor shows it and edits write back through the SAME program id', () => {
+  it('a stable program with the volume read-only (never gated by it before, so never there now): none', () => {
     setup()
-    render(
-      <StepVolume
-        program={program({ deloadRules: { sets: { mode: 'percent', value: 50, rounding: 'down' } } })}
-        volumeReadOnly={false}
-        canChangePlanningType
-      />,
-    )
-    expect(screen.getByText('PERCENT')).toBeTruthy() // the editor is showing, not "use my default"
-
-    fireEvent.click(screen.getByText('COUNT'))
-    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({
-      id: 'prog-1',
-      deloadRules: { sets: { mode: 'count', value: 50, rounding: 'down' } },
-    })
-  })
-
-  it('tapping USE MY DEFAULT from a custom override clears it back to null', () => {
-    setup()
-    render(
-      <StepVolume
-        program={program({ deloadRules: { sets: { mode: 'percent', value: 50, rounding: 'down' } } })}
-        volumeReadOnly={false}
-        canChangePlanningType
-      />,
-    )
-    fireEvent.click(screen.getByText('USE MY DEFAULT'))
-    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: null })
-  })
-
-  // Design field — SPEC "Programs and runs": editable for BOTH planning
-  // types, never gated the way the PLANNING picker itself is.
-  it('is editable even when canChangePlanningType is false (a stable run\'s ProgramTab usage)', () => {
-    setup()
-    render(
-      <StepVolume
-        program={program({ planningType: 'stable', deloadRules: null })}
-        volumeReadOnly
-        canChangePlanningType={false}
-      />,
-    )
-    fireEvent.click(screen.getByText('CUSTOM'))
-    expect(updateDeloadRulesMutateMock).toHaveBeenCalledWith({ id: 'prog-1', deloadRules: {} })
+    setsByExercise['pe-1'] = [set({ id: 'ps-1', position: 1 })]
+    render(<StepVolume program={withStoredOverride(program({ planningType: 'stable' }))} volumeReadOnly canChangePlanningType={false} />)
+    expectNoDeloadControl()
   })
 })
 

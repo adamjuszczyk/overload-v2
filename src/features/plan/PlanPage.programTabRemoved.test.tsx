@@ -22,9 +22,10 @@ import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 //     fixed for the run);
 //   - a run with no schedule gets one line linking to the Programs page, for a
 //     weekday run and a sequence run alike, and nothing of the old two;
-//   - the deload rules in effect show read-only under the deload action: the run's
-//     own override, else the Settings default as it is now, nothing when no rule
-//     is on, and exactly the rules a tap on the action hands to marking.
+//   - the deload rules in effect show read-only under the deload action: the Settings
+//     rules as they are now ("from Settings", chunk 48: programs have no override, a
+//     stored one is not read), nothing when no rule is on, and exactly the rules a
+//     tap on the action hands to marking.
 
 const START_DATE = format(new Date(), 'yyyy-MM-dd') // the viewed week is week 1, the current one
 
@@ -35,6 +36,7 @@ let sequenceItems: SequenceItem[] = []
 let weekPlans: WeekPlan[] = []
 let daysLoading = false
 const setWeekDeloadMutate = vi.fn()
+const setDeloadMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [activeMeso], isLoading: false }),
@@ -63,7 +65,7 @@ vi.mock('./useWeekPlan', () => ({
   useAllWeekPlans: () => ({ data: weekPlans, isLoading: false }),
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSetDeload: () => ({ mutate: vi.fn() }),
+  useSetDeload: () => ({ mutate: setDeloadMutate }),
   useSetWeekDeload: () => ({ mutate: setWeekDeloadMutate, isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
   useAddStage: () => ({ mutate: vi.fn() }),
@@ -84,6 +86,7 @@ const { default: PlanPage } = await import('./PlanPage')
 afterEach(() => {
   cleanup()
   setWeekDeloadMutate.mockClear()
+  setDeloadMutate.mockClear()
   useSettingsStore.setState({ deloadRules: DEFAULT_SETTINGS.deloadRules })
 })
 beforeEach(() => {
@@ -109,7 +112,7 @@ function makeProgram(overrides: Partial<Program> = {}): Program {
   return {
     id: 'prog-1', userId: 'user-1', name: 'Test Program', schedule: MONDAY, workoutDays: [],
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
-    kind: 'run', planningType: 'week_dependent', scheduleType: 'weekday', deloadRules: null,
+    kind: 'run', planningType: 'week_dependent', scheduleType: 'weekday',
     ...overrides,
   }
 }
@@ -117,12 +120,19 @@ const sequenceProgram = (overrides: Partial<Program> = {}) => makeProgram({ sche
 const slot = (position: number, workoutDayId: string | null): SequenceItem =>
   ({ id: `si-${position}`, userId: 'user-1', programId: 'prog-1', position, workoutDayId })
 
+// A program that STORED a deload-rules override of its own, as an older version left it in
+// v2_programs.deload_rules. The Program type has no such field any more (chunk 48), so it
+// rides along outside the type, the way a stale row or a regression would carry it.
+function withStoredOverride(program: Program, override: DeloadRules): Program {
+  return Object.assign(program, { deloadRules: override })
+}
+
 const SETS_RULE = { mode: 'percent', value: 50, rounding: 'down' } as const
 const WEIGHT_RULE = { percent: 75, rounding: 'down', step: 2.5, stepUnit: 'kg' } as const
-const RUN_RULES: DeloadRules = { sets: SETS_RULE, weight: WEIGHT_RULE }
-const RUN_RULES_TEXT = "Deload rules (this run's): sets −50% (rounded down) · weight 75% (rounded down to 2.5 kg)"
-const DEFAULT_RULES: DeloadRules = { sets: { mode: 'count', value: 1, rounding: 'down' }, reps: { delta: -2 }, rir: { delta: 1 } }
-const DEFAULT_RULES_TEXT = 'Deload rules (your default): sets −1 · reps −2 · RIR +1'
+// What a program stored (never shown, never used) and what Settings holds (what Plan shows and marking applies).
+const STORED_OVERRIDE: DeloadRules = { sets: SETS_RULE, weight: WEIGHT_RULE }
+const SETTINGS_RULES: DeloadRules = { sets: { mode: 'count', value: 1, rounding: 'down' }, reps: { delta: -2 }, rir: { delta: 1 } }
+const SETTINGS_RULES_TEXT = 'Deload rules (from Settings): sets −1 · reps −2 · RIR +1'
 const anyRulesLine = () => screen.queryByText(/^Deload rules \(/)
 
 function LocationProbe() {
@@ -330,54 +340,46 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
 
 // ─── The deload rules in effect ──────────────────────────────────────────────
 
-describe('PlanPage — the deload rules in effect show read-only under the deload action (chunk 33)', () => {
+describe('PlanPage — the deload rules in effect show read-only under the deload action (chunk 33; from Settings, chunk 48)', () => {
   // The line sits directly under the page-level action (DECISIONS 87, provisional).
   const markButton = (label = 'MARK WEEK AS DELOAD') => screen.getByText(label).closest('button') as HTMLButtonElement
 
-  it('a run with its own rules shows them as this run\'s, under MARK WEEK AS DELOAD', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
+  it('the Settings rules show as "from Settings", under MARK WEEK AS DELOAD', () => {
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    const line = screen.getByText(RUN_RULES_TEXT)
+    const line = screen.getByText(SETTINGS_RULES_TEXT)
     expect(markButton().nextElementSibling).toBe(line)
   })
 
-  it('a run\'s own rules win over a different Settings default (the default\'s are not shown)', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
-    useSettingsStore.setState({ deloadRules: DEFAULT_RULES })
+  it('a run whose program stored an override shows the Settings rules, never the stored ones (and never "this run\'s")', () => {
+    program = withStoredOverride(makeProgram(), STORED_OVERRIDE)
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    expect(screen.getByText(RUN_RULES_TEXT)).toBeTruthy()
-    expect(screen.queryByText(DEFAULT_RULES_TEXT)).toBeNull()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
     expect(screen.queryAllByText(/^Deload rules \(/)).toHaveLength(1)
+    expect(screen.queryByText(/weight 75%/)).toBeNull() // the stored override's own words
+    expect(screen.queryByText(/sets −50%/)).toBeNull()
+    expect(screen.queryByText(/this run's|your default/)).toBeNull()
   })
 
-  it('a run on the default shows the Settings rules as your default', () => {
-    program = makeProgram({ deloadRules: null })
-    useSettingsStore.setState({ deloadRules: DEFAULT_RULES })
+  it('follows a change in Settings, with no reload: new rules, then none (a stored override never takes over)', () => {
+    program = withStoredOverride(makeProgram(), STORED_OVERRIDE)
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
-
-    const line = screen.getByText(DEFAULT_RULES_TEXT)
-    expect(markButton().nextElementSibling).toBe(line)
-    expect(screen.queryByText(/this run's/)).toBeNull()
-  })
-
-  it('a run on the default follows a change in Settings, with no reload: new rules, then none', () => {
-    program = makeProgram({ deloadRules: null })
-    useSettingsStore.setState({ deloadRules: DEFAULT_RULES })
-    renderPlan()
-    expect(screen.getByText(DEFAULT_RULES_TEXT)).toBeTruthy()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
 
     act(() => useSettingsStore.setState({ deloadRules: { weight: WEIGHT_RULE } }))
-    expect(screen.getByText('Deload rules (your default): weight 75% (rounded down to 2.5 kg)')).toBeTruthy()
-    expect(screen.queryByText(DEFAULT_RULES_TEXT)).toBeNull()
+    expect(screen.getByText('Deload rules (from Settings): weight 75% (rounded down to 2.5 kg)')).toBeTruthy()
+    expect(screen.queryByText(SETTINGS_RULES_TEXT)).toBeNull()
 
     act(() => useSettingsStore.setState({ deloadRules: null }))
     expect(anyRulesLine()).toBeNull()
   })
 
-  it('a run on the default whose Settings have no rules shows no line', () => {
-    program = makeProgram({ deloadRules: null })
+  it('no rules in Settings shows no line, even for a run whose program stored an override', () => {
+    program = withStoredOverride(makeProgram(), STORED_OVERRIDE)
     renderPlan()
 
     expect(anyRulesLine()).toBeNull()
@@ -386,19 +388,11 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
     expect(markButton().nextElementSibling).not.toBeInstanceOf(HTMLParagraphElement)
   })
 
-  it('a run with its own rules shows them even when the Settings default has none', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
-    useSettingsStore.setState({ deloadRules: null })
-    renderPlan()
-
-    expect(screen.getByText(RUN_RULES_TEXT)).toBeTruthy()
-  })
-
   it('is read-only text: it holds no button or field, and a tap on it marks nothing', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    const line = screen.getByText(RUN_RULES_TEXT)
+    const line = screen.getByText(SETTINGS_RULES_TEXT)
     expect(line.tagName).toBe('P')
     expect(line.querySelector('button, input, select, textarea')).toBeNull()
     expect(line.closest('button')).toBeNull()
@@ -406,22 +400,23 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
     expect(setWeekDeloadMutate).not.toHaveBeenCalled()
   })
 
-  it('shows exactly the rules a tap on the action hands to marking: the run\'s override', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
-    useSettingsStore.setState({ deloadRules: DEFAULT_RULES })
+  it('shows exactly the rules a tap on the action hands to marking: the Settings rules, whatever the program stored', () => {
+    program = withStoredOverride(makeProgram(), STORED_OVERRIDE)
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
 
     fireEvent.click(markButton())
 
     expect(setWeekDeloadMutate).toHaveBeenCalledTimes(1)
-    expect(setWeekDeloadMutate.mock.calls[0][0]).toEqual({ isDeload: true, rules: RUN_RULES })
+    expect(setWeekDeloadMutate.mock.calls[0][0]).toEqual({ isDeload: true, rules: SETTINGS_RULES })
   })
 
-  it('... and, for a run on the default, the Settings rules as they are now', () => {
-    program = makeProgram({ deloadRules: null })
-    useSettingsStore.setState({ deloadRules: DEFAULT_RULES })
+  it('... and the Settings rules as they are now, after a change', () => {
+    program = withStoredOverride(makeProgram(), STORED_OVERRIDE)
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
-    expect(screen.getByText(DEFAULT_RULES_TEXT)).toBeTruthy()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
 
     act(() => useSettingsStore.setState({ deloadRules: { weight: WEIGHT_RULE } }))
     fireEvent.click(markButton())
@@ -430,16 +425,35 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
   })
 
   it('a sequence run: under MARK CYCLE AS DELOAD', () => {
-    program = sequenceProgram({ deloadRules: RUN_RULES })
+    program = withStoredOverride(sequenceProgram(), STORED_OVERRIDE)
     sequenceItems = [slot(0, 'wd-1')]
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    const line = screen.getByText(RUN_RULES_TEXT)
+    const line = screen.getByText(SETTINGS_RULES_TEXT)
     expect(markButton('MARK CYCLE AS DELOAD').nextElementSibling).toBe(line)
   })
 
+  // The sequence run's slot panel is its own call site for the per-session toggle (the weekday panel's is
+  // proven in PlanPage.deload.test.tsx): it, too, hands marking the Settings rules and never the stored ones.
+  it('a sequence run: the slot\'s own session toggle marks with the Settings rules, whatever the program stored', () => {
+    program = withStoredOverride(sequenceProgram(), STORED_OVERRIDE)
+    sequenceItems = [slot(0, 'wd-1')]
+    weekPlans = [{
+      id: 'wp-slot', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1, sequencePosition: 0,
+      isDeload: false, notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
+    }]
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
+    renderPlan()
+
+    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+
+    expect(setDeloadMutate).toHaveBeenCalledTimes(1)
+    expect(setDeloadMutate.mock.calls[0][0]).toEqual({ weekPlanId: 'wp-slot', isDeload: true, rules: SETTINGS_RULES })
+  })
+
   it('stays with the action when the week is marked (UNMARK THIS WEEK)', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     weekPlans = [{
       id: 'wp-1', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1,
       isDeload: true, notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
@@ -447,15 +461,15 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
     renderPlan()
 
     expect(screen.getByText('UNMARK THIS WEEK')).toBeTruthy()
-    expect(markButton('UNMARK THIS WEEK').nextElementSibling).toBe(screen.getByText(RUN_RULES_TEXT))
+    expect(markButton('UNMARK THIS WEEK').nextElementSibling).toBe(screen.getByText(SETTINGS_RULES_TEXT))
   })
 
   it('a past week has no deload action, so no line either', () => {
-    program = makeProgram({ deloadRules: RUN_RULES })
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     activeMeso = { ...activeMeso, startDate: format(subWeeks(new Date(), 2), 'yyyy-MM-dd') } // week 3 is the current one
     renderPlan()
     expect(screen.getByText('WEEK 3')).toBeTruthy()
-    expect(screen.getByText(RUN_RULES_TEXT)).toBeTruthy()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
 
     fireEvent.click(screen.getByLabelText('Previous week')) // week 2: read-only
 
@@ -465,7 +479,8 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
   })
 
   it('a run with no schedule has no deload action, so no line', () => {
-    program = makeProgram({ schedule: EMPTY_SCHEDULE, deloadRules: RUN_RULES })
+    program = makeProgram({ schedule: EMPTY_SCHEDULE })
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
     expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
@@ -494,9 +509,10 @@ describe('PlanPage — 375px (chunk 33)', () => {
     expect(fixedWidthOffenders(first.container)).toEqual([])
     first.unmount()
 
-    program = makeProgram({ deloadRules: RUN_RULES })
+    program = makeProgram()
+    useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     const second = renderPlan()
-    expect(screen.getByText(RUN_RULES_TEXT)).toBeTruthy()
+    expect(screen.getByText(SETTINGS_RULES_TEXT)).toBeTruthy()
     expect(fixedWidthOffenders(second.container)).toEqual([])
   })
 })

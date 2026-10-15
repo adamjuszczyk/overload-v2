@@ -4,7 +4,7 @@ import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadR
 import { DEFAULT_DELOAD_SETS_RULE, DEFAULT_DELOAD_WEIGHT_RULE } from '../../lib/plannerVocabulary.js'
 
 // Chunk 33 (SPEC Deload [P1.1], G43; DECISIONS 87): the one read-only line under
-// the deload action — the rules in effect, and whose they are.
+// the deload action — the rules in effect.
 
 describe('describeDeloadRules — every rule that is on, in the shape\'s order, with its rounding', () => {
   it('sets as a percentage: the percentage and how it rounds', () => {
@@ -58,28 +58,45 @@ describe('describeDeloadRules — every rule that is on, in the shape\'s order, 
   })
 })
 
-describe('deloadRulesLine — the line, and whose rules it names', () => {
+// Chunk 48 (SPEC Deload [1.2], 16b: "Plan shows them, read-only, in WEEK ⋯ ('Deload
+// rules (from Settings)', board 1e)"): the rules are the Settings rules and nothing
+// else, so the line always says so and never whose they are.
+describe('deloadRulesLine — the line, always "from Settings"', () => {
   const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
 
-  it('names the run\'s own rules as this run\'s', () => {
-    expect(deloadRulesLine(rules, 'run')).toBe("Deload rules (this run's): sets −50% (rounded down)")
+  it('says the rules are from Settings', () => {
+    expect(deloadRulesLine(rules)).toBe('Deload rules (from Settings): sets −50% (rounded down)')
   })
 
-  it('names the Settings default as your default', () => {
-    expect(deloadRulesLine(rules, 'default')).toBe('Deload rules (your default): sets −50% (rounded down)')
+  it("never names a run's own rules or a default (the old owner words are gone)", () => {
+    const line = deloadRulesLine({ sets: { mode: 'count', value: 1, rounding: 'down' }, rir: { delta: 2 } })!
+    expect(line).not.toMatch(/this run's|your default|override/i)
+    expect(line.startsWith('Deload rules (from Settings): ')).toBe(true)
   })
 
-  it('is nothing when no rule is on (an unset feature shows nothing)', () => {
-    expect(deloadRulesLine(null, 'run')).toBeNull()
-    expect(deloadRulesLine(null, 'default')).toBeNull()
-    expect(deloadRulesLine({}, 'default')).toBeNull()
+  it("is board 1e's wording, word for word (design/1.2/source/PlanWeekMenu.dc.html)", () => {
+    expect(deloadRulesLine({ sets: { mode: 'percent', value: 50, rounding: 'down' }, rir: { delta: 2 } })).toBe(
+      'Deload rules (from Settings): sets −50% (rounded down) · RIR +2',
+    )
+    expect(deloadRulesLine({ sets: { mode: 'count', value: 1, rounding: 'down' }, weight: { percent: 90, rounding: 'down', step: 2.5, stepUnit: 'kg' } })).toBe(
+      'Deload rules (from Settings): sets −1 · weight 90% (rounded down to 2.5 kg)',
+    )
+  })
+
+  it('is nothing when no rule is on (an unset feature shows nothing — board 1e\'s "all off")', () => {
+    expect(deloadRulesLine(null)).toBeNull()
+    expect(deloadRulesLine({})).toBeNull()
+  })
+
+  it('takes the rules alone: the owner argument is gone (a second one is a type error)', () => {
+    expect(deloadRulesLine).toHaveLength(1)
+    // @ts-expect-error the old (rules, owner) call no longer compiles
+    deloadRulesLine(rules, 'run')
   })
 
   it('words what resolveEffectiveDeloadRules resolves, the very value marking is given', () => {
-    const mine: DeloadRules = { reps: { delta: -1 } }
     const settings: DeloadRules = { rir: { delta: 2 } }
-    expect(deloadRulesLine(resolveEffectiveDeloadRules(mine, settings), 'run')).toBe("Deload rules (this run's): reps −1")
-    expect(deloadRulesLine(resolveEffectiveDeloadRules(null, settings), 'default')).toBe('Deload rules (your default): RIR +2')
-    expect(deloadRulesLine(resolveEffectiveDeloadRules(null, null), 'default')).toBeNull()
+    expect(deloadRulesLine(resolveEffectiveDeloadRules(settings))).toBe('Deload rules (from Settings): RIR +2')
+    expect(deloadRulesLine(resolveEffectiveDeloadRules(null))).toBeNull()
   })
 })

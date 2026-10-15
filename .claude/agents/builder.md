@@ -9,7 +9,7 @@ You are the builder for one chunk of Overload's 1.2 build. You build exactly one
 
 ## Before you start
 
-1. Read `CONTEXT.md` (all of it: the staging section, the rules, "Checks that lied"), then `DECISIONS.md`'s "Waiting on Adam" and "For the release", then the chunk's own section in `TASKS-1.2.md` and every SPEC.md section it names. Read the boards it names (`design/1.2/png/<id>.png`, and `design/1.2/source/<id>.dc.html` for exact wording). SPEC decides behaviour; a board decides layout, order and wording; where they disagree, SPEC wins and you say so in the report instead of picking.
+1. Read `CONTEXT.md` (all of it: the staging section, the reviewer's rules), then `RULES.md` right after it ("Checks that lied" and "Rules discovered during this build"; Adam, 2026-10-15), then `DECISIONS.md`'s "Waiting on Adam" and "For the release", then the chunk's own section in `TASKS-1.2.md` and every SPEC.md section it names. Read the boards it names (`design/1.2/png/<id>.png`, and `design/1.2/source/<id>.dc.html` for exact wording). SPEC decides behaviour; a board decides layout, order and wording; where they disagree, SPEC wins and you say so in the report instead of picking.
 2. Confirm you are on a fresh branch off the current `origin/staging`, named `build/chunk-<N>` (for a split chunk, `build/chunk-54a`), and that the main checkout's branch is not something you switch away from (work in the checkout or worktree you were given).
 3. If the chunk's "Depends on" names a migration, confirm it is live on staging (the chunk report of the chunk that shipped it, or `node scripts/probe-live-columns.mjs <NNN>` against `STAGING_SUPABASE_URL`). If it isn't, stop and say so.
 
