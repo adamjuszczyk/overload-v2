@@ -269,7 +269,7 @@ describe('the stable default\'s sets reach the saved plan set by set, where it s
     expect(summary.setsLeftAlone).toBe(1) // the session's own: the third set is not added where the count is not the default's
   })
 
-  it('a set\'s kind and a dropset\'s drop change in the copy the way they change in a session: Curl\'s drop to 6–8, its head to a warmup-free rest-pause', async () => {
+  it('a set\'s kind and a dropset\'s drop change in the copy the way they change in a session: Curl\'s dropset becomes a rest-pause set and its drop 6–8', async () => {
     const w = stableWorld()
     await markDeload(w.db, 'p3-arms') // Curl: the deload keeps one of its two sets
     const d = editSetsOf(draftOf(w), 'arms', 'pe-curl', (sets) =>
@@ -457,7 +457,7 @@ describe('the saved plan\'s part of the op list', () => {
     expect(withCopy.summary).toEqual(without.summary)
   })
 
-  it('the update comes after the session\'s own set ops of its plan and is the only op on `v2_week_plans`, whatever the save', async () => {
+  it('whatever the save, the only op on `v2_week_plans` is one update of `deload_restore`', async () => {
     const w = await stableDeloadWorld()
     for (const make of [
       (d: ProgramEdit) => removeExerciseFrom(d, 'fb', 'pe-inc'),
