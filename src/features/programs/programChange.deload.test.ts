@@ -158,7 +158,7 @@ describe('a save that changes the exercises of a session marked deload: UNMARK r
     let d = draftOf(w)
     d = removeExerciseFrom(d, 'pull', 'pe-face')
     d = swapExerciseIn(d, 'pull', 'pe-pd', 'ex-row')
-    d = addExerciseTo(d, 'pull', { exerciseId: 'ex-curl' })
+    d = addExerciseTo(d, 'pull', { exerciseId: 'ex-curl', sets: [newSet('10')] }) // a week-dependent run "holds no sets": the draft's are ignored
     const { ops } = planOf(w, d)
     const row = newRow(ops, 'ex-row')
     const curl = newRow(ops, 'ex-curl')
@@ -176,6 +176,8 @@ describe('a save that changes the exercises of a session marked deload: UNMARK r
       [3, 1, false, null, true],
     ])
     expect(taken.every((e) => e.targetWeight === null && e.targetRir === null && e.tags === null)).toBe(true)
+    // A week-dependent swap leaves each set's link to its program set as it is (the run copy holds no sets of the new row's own).
+    expect(taken.map((e) => e.programSetId)).toEqual(['pe-pd-s1', 'pe-pd-s2', 'pe-pd-s3', 'pe-pd-s3-t1'])
     await unmarkDeload(after, 'p3-pull')
     const shape = shapeOf(after, 'p3-pull')
     expect(shape.orphanSets).toEqual([])
@@ -341,15 +343,14 @@ describe('what a save leaves alone', () => {
     expect(copyOps(ops)).toEqual([])
   })
 
-  it('a stage with no head in the copy (never restored) is passed through untouched while the rest of the copy changes', async () => {
+  it('a stage with no head in the copy (it is never restored) is passed through untouched, even under an exercise the save removes', async () => {
     const w = await stableDeloadWorld()
     const copy = w.db.v2_week_plans.find((p) => p.id === 'p3-fb')!.deload_restore!
-    const stray: SavedPlanSet = { ...copy[0], programExerciseId: 'pe-lat', setNumber: 9, stageIndex: 2, isDropset: true }
+    const stray: SavedPlanSet = { ...copy[0], programExerciseId: 'pe-inc', setNumber: 9, stageIndex: 2, isDropset: true }
     copy.push(stray)
     const { ops } = planOf(w, removeExerciseFrom(draftOf(w), 'fb', 'pe-inc'))
     const after = (copyOps(ops)[0].patch as { deload_restore: SavedPlanSet[] }).deload_restore
-    expect(after).toContainEqual(stray)
-    expect(after.some((e) => e.programExerciseId === 'pe-inc')).toBe(false)
+    expect(after.filter((e) => e.programExerciseId === 'pe-inc')).toEqual([stray]) // its heads went, it stays
   })
 
   it('an RIR range\'s high end is cleared with the low end by a swap where the entry carries it, and a copy saved without it gains no key', async () => {
@@ -375,9 +376,12 @@ describe('the saved plan takes the save exactly as a plain session does (the twi
     ['an exercise swapped', (d) => swapExerciseIn(d, 'fb', 'pe-leg', 'ex-hack')],
     ['a superset member swapped', (d) => swapExerciseIn(d, 'fb', 'pe-lat', 'ex-row')],
     ['an exercise added with sets, between two others', (d) => addExerciseTo(d, 'fb', { exerciseId: 'ex-new', sets: [newSet('10'), newSet('12', { isWarmup: true })] }, 1)],
+    ['an exercise added whose default has a dropset with two drops', (d) => addExerciseTo(d, 'fb', { exerciseId: 'ex-new', sets: [newSet('8-10', { stageKind: 'rest_pause', stages: [{ id: null, repMin: 4, repMax: 6, isAmrap: false }, { id: null, repMin: null, repMax: null, isAmrap: true }] })] })],
     ['the exercises reordered', (d) => moveExercise(d, 'fb', 0, 1)],
     ['a rep target changed on every set of one exercise', (d) => editSetsOf(d, 'fb', 'pe-leg', (sets) => sets.map((s) => withReps(s, '6-8')))],
     ['a default set dropped and one added', (d) => editSetsOf(d, 'fb', 'pe-inc', (sets) => [sets[0], newSet('12-15'), newSet('15')])],
+    ['a default set made a warmup', (d) => editSetsOf(d, 'fb', 'pe-leg', (sets) => sets.map((s, i) => (i === 2 ? { ...s, isWarmup: true } : s)))],
+    ['a default set\'s rep target made AMRAP', (d) => editSetsOf(d, 'fb', 'pe-inc', (sets) => sets.map((s, i) => (i === 1 ? withReps(s, 'amrap') : s)))],
     ['a default set made a dropset with a stage', (d) => editSetsOf(d, 'fb', 'pe-leg', (sets) => sets.map((s, i) => (i === 2 ? { ...s, stageKind: 'dropset' as const, stages: [{ id: null, repMin: 6, repMax: 8, isAmrap: false }] } : s)))],
     ['everything at once', (d) => editSetsOf(addExerciseTo(removeExerciseFrom(swapExerciseIn(d, 'fb', 'pe-leg', 'ex-hack'), 'fb', 'pe-inc'), 'fb', { exerciseId: 'ex-new', sets: [newSet('10')] }), 'fb', 'pe-plank', (sets) => [...sets, newSet('amrap')])],
   ]
@@ -417,13 +421,15 @@ describe('the saved plan takes the save exactly as a plain session does (the twi
 
 describe('the saved plan\'s part of the op list', () => {
   it('draws no id: the save\'s ids are the same with and without saved plans, and so are all its other ops', async () => {
-    const w = await stableDeloadWorld()
+    const w = stableWorld()
+    await markDeload(w.db, 'p2-fb') // the earlier of the two sessions, so an id its saved plan drew would shift the later one's
     let d = draftOf(w)
     d = swapExerciseIn(d, 'fb', 'pe-leg', 'ex-hack')
     d = addExerciseTo(d, 'fb', { exerciseId: 'ex-new', sets: [newSet('10'), newSet('10')] })
     const input = inputOf(w, d)
     const withCopy = planProgramChange({ ...input, newId: idGen() })
     const without = planProgramChange({ ...input, newId: idGen(), sessions: input.sessions.map((s) => ({ ...s, deloadRestore: null })) })
+    expect(copyOps(withCopy.ops).map((o) => o.id)).toEqual(['p2-fb'])
     expect(withCopy.ops.filter((o) => o.table !== 'v2_week_plans')).toEqual(without.ops)
     expect(withCopy.ops.length).toBe(without.ops.length + 1)
     expect(withCopy.summary).toEqual(without.summary)

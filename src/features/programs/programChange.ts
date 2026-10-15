@@ -1785,14 +1785,13 @@ const SAVED_ID = 'saved:'
 
 type SavedWork = { id: string | null; entry: SavedPlanSet } // id null = not a planned set to land on (a stage with no head)
 
-// Entries as planned sets (ids `saved:<index>`; a stage is the child of the head of its exercise row and set number, the
-// first such head when there are two). A stage with no head is never restored (groupDeloadRestoreEntries drops it): it is
-// set aside, left as it is.
+// Entries as planned sets (ids `saved:<index>`; a stage is the child of the head of its exercise row and set number). A
+// stage with no head is never restored (groupDeloadRestoreEntries drops it): it is set aside, left as it is.
 function savedAsPlannedSets(entries: readonly SavedPlanSet[]): { work: SavedWork[]; sets: ChangeSessionSet[] } {
   const key = (e: SavedPlanSet) => `${e.programExerciseId}::${e.setNumber}`
   const headOf = new Map<string, string>()
   entries.forEach((e, i) => {
-    if (e.stageIndex === 0 && !headOf.has(key(e))) headOf.set(key(e), `${SAVED_ID}${i}`)
+    if (e.stageIndex === 0) headOf.set(key(e), `${SAVED_ID}${i}`)
   })
   const work: SavedWork[] = []
   const sets: ChangeSessionSet[] = []

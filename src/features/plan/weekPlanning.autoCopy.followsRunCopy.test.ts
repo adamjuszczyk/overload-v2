@@ -205,6 +205,22 @@ describe('a week-dependent week copied after a save: the run copy\'s exercise li
     expect(new Set(idsOf(r.sets)).size).toBe(r.sets.length) // no source set is copied twice
   })
 
+  it('a live exercise the source week lists keeps its own sets, even when it names a row the source week lists too as the one it replaced', () => {
+    // Week 2 lists the swapped-in Hammer Curl (with one set of its own) and EZ Curl, the row Hammer Curl replaced (with three).
+    const week = plan(
+      2,
+      [pe('pe-lat', 'lat', 0), pe('pe-ham', 'ham', 1), pe('pe-curl', 'curl', 2)],
+      [wset('w2-lat-1', 'pe-lat', 1), wset('w2-ham-1', 'pe-ham', 1), wset('w2-curl-1', 'pe-curl', 1), wset('w2-curl-2', 'pe-curl', 2), wset('w2-curl-3', 'pe-curl', 3)],
+    )
+    const both = runCopy({
+      exercises: [rc('pe-lat', 'lat', 0), rc('pe-ham', 'ham', 1, { replacesProgramExerciseId: 'pe-curl' }), rc('pe-curl', 'curl', 2, { removedAt: REMOVED })],
+    })
+    const r = copyOf(both, week)
+    expect(idsOf(setsOf(r.sets, 'pe-ham'))).toEqual(['w2-ham-1']) // only its own
+    expect(r.exercises.map((e) => e.programExerciseId)).toEqual(['pe-lat', 'pe-ham']) // and EZ Curl, removed, is gone with its sets
+    expect(r.sets.some((s) => s.sourceId.startsWith('w2-curl'))).toBe(false)
+  })
+
   it('an exercise that is live and listed is kept, whatever a later row says it replaced', () => {
     const stillThere = runCopy({
       exercises: [rc('pe-lat', 'lat', 0), rc('pe-curl', 'curl', 2), rc('pe-ham', 'ham', 3, { replacesProgramExerciseId: 'pe-curl' })],
@@ -258,6 +274,15 @@ describe('what the run copy does not list as live: week-only slots and unknown r
     ])
   })
 
+  it('a week-only slot the source week lists twice is copied once (041: on conflict do nothing)', () => {
+    const week = plan(2, [pe('pe-lat', 'lat', 0), pe('pe-wo', 'wo', 1), pe('pe-wo', 'wo', 2)], [wset('a', 'pe-lat', 1), wset('w', 'pe-wo', 1)])
+    const r = copyOf(runCopy({ exercises: [rc('pe-lat', 'lat', 0), rc('pe-wo', 'wo', 5, { weekOnly: true })] }), week)
+    expect(r.exercises).toEqual([
+      { programExerciseId: 'pe-lat', position: 0 },
+      { programExerciseId: 'pe-wo', position: 1 },
+    ])
+  })
+
   it('a row the run copy does not know at all is kept too: nothing says it was removed', () => {
     const week = plan(2, [pe('pe-lat', 'lat', 0), pe('pe-ghost', 'ghost', 1)], [wset('a', 'pe-lat', 1), wset('g', 'pe-ghost', 1)])
     const r = copyOf(runCopy({ exercises: [rc('pe-lat', 'lat', 0)] }), week)
@@ -275,6 +300,17 @@ describe('what the run copy does not list as live: week-only slots and unknown r
     )
     expect(r.exercises).toEqual([{ programExerciseId: 'pe-lat', position: 0 }])
     expect(r.sets.some((s) => s.programExerciseId === 'pe-dip')).toBe(false)
+  })
+
+  it('a stage whose head is a set of an exercise left out has no parent link (the head is not among the rows copied)', () => {
+    const week = plan(
+      2,
+      [pe('pe-lat', 'lat', 0), pe('pe-face', 'face', 1)],
+      [wset('lat-1', 'pe-lat', 1), wset('face-head', 'pe-face', 1, { stageKind: 'dropset' }), stage('lat-stage', 'face-head', 'pe-lat', 1)],
+    )
+    const r = copyOf(runCopy({ exercises: [rc('pe-lat', 'lat', 0), rc('pe-face', 'face', 1, { removedAt: REMOVED })] }), week)
+    expect(idsOf(r.sets).sort()).toEqual(['lat-1', 'lat-stage'])
+    expect(r.sets.find((s) => s.sourceId === 'lat-stage')).toMatchObject({ isDropset: true, parentSourceId: null })
   })
 
   it('a removed row is gone even when the source week lists nothing else of the workout', () => {
@@ -358,8 +394,42 @@ describe('links that loop end the walk', () => {
     expect(setsOf(r.sets, 'pe-b')).toEqual([])
   })
 
+  it('a chain that runs into a loop it is not part of ends too: X replaces A, A replaces B, B replaces A', () => {
+    let reads = 0
+    const counted = (id: string, replaces: string, position: number): RunCopyExercise => ({
+      id,
+      exerciseId: id,
+      position,
+      removedAt: REMOVED,
+      get replacesProgramExerciseId() {
+        if (++reads > 25) throw new Error('the walk went round in circles')
+        return replaces
+      },
+    })
+    const loop: RunCopy = {
+      exercises: [rc('pe-lat', 'lat', 0), rc('pe-x', 'x', 1, { replacesProgramExerciseId: 'pe-a' }), counted('pe-a', 'pe-b', 2), counted('pe-b', 'pe-a', 3)],
+      sets: [],
+    }
+    const r = copyOf(loop, weekTwoOnly('pe-lat'))
+    expect(r.exercises).toEqual([
+      { programExerciseId: 'pe-lat', position: 0 },
+      { programExerciseId: 'pe-x', position: 1 },
+    ])
+    expect(setsOf(r.sets, 'pe-x')).toEqual([])
+  })
+
   it('a row that replaces itself ends the walk the same way', () => {
-    const selfish: RunCopy = { exercises: [rc('pe-lat', 'lat', 0), rc('pe-a', 'a', 1, { replacesProgramExerciseId: 'pe-a' })], sets: [] }
-    expect(copyOf(selfish, weekTwoOnly('pe-lat')).exercises.map((e) => e.programExerciseId)).toEqual(['pe-lat', 'pe-a'])
+    let reads = 0
+    const selfish: RunCopyExercise = {
+      id: 'pe-a',
+      exerciseId: 'a',
+      position: 1,
+      get replacesProgramExerciseId() {
+        if (++reads > 25) throw new Error('the walk went round in circles')
+        return 'pe-a'
+      },
+    }
+    const r = copyOf({ exercises: [rc('pe-lat', 'lat', 0), selfish], sets: [] }, weekTwoOnly('pe-lat'))
+    expect(r.exercises.map((e) => e.programExerciseId)).toEqual(['pe-lat', 'pe-a'])
   })
 })

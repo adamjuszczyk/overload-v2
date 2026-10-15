@@ -359,13 +359,10 @@ function copyFromRunCopy(runCopy: RunCopy): { exercises: AutoCopiedExercise[]; s
 // the run copy's, a swapped-in row's being the old row's; the rows kept as they were are numbered after
 // the last.
 function copyFromWeek(week: PlannedWeekRows, runCopy: RunCopy): { exercises: AutoCopiedExercise[]; sets: AutoCopiedSet[] } {
-  const sourceRows: Array<Pick<ProgramExercise, 'id' | 'position'>> = []
-  const listed = new Set<string>()
-  for (const e of [...week.exercises].sort((a, b) => a.position - b.position)) {
-    if (listed.has(e.id)) continue // 041: `on conflict (week_plan_id, program_exercise_id) do nothing`
-    listed.add(e.id)
-    sourceRows.push(e)
-  }
+  // The source week's own list in its own order. An exercise it lists twice (the table's key forbids it; 041 has `on conflict
+  // (week_plan_id, program_exercise_id) do nothing`) is copied once: whichever loop below meets it first takes it.
+  const sourceRows = [...week.exercises].sort((a, b) => a.position - b.position)
+  const listed = new Set(sourceRows.map((e) => e.id))
   const rowOf = new Map(runCopy.exercises.map((e) => [e.id, e]))
   const live = liveRunCopy(runCopy).exercises
 
