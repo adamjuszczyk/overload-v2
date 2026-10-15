@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SessionSetChange, SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
+import type { SessionSetChange, SessionSetChangeType, SessionStatus, SetLog, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   itemKey,
@@ -613,16 +613,193 @@ describe('type items seen through the session\'s change rows and the log (DECISI
     expect(review({ last: [shared], sessions: sessions([], dropset) }).map((g) => [g.heading, keysOf([g])])).toEqual([['THU · FULL BODY', ['type:s-thu:ps-1']]])
   })
 
-  it('a retyped set that was skipped or never logged is "Skipped" / "Not logged" alone: a type item needs a set done', () => {
-    const planned = [wset('ps-1', 'pe-1', 1, { targetWeight: 60, repMin: 10, repMax: 12 })]
-    const rows = [retypedRow('ps-1', toStaged('dropset', 2))]
-    const skippedLog = head({ stageKind: 'dropset', isSkipped: true, weight: null, reps: null })
-    expect(kinds(retyped(planned, [skippedLog], rows))).toEqual(['skipped'])
-    expect(kinds(retyped(planned, [], rows))).toEqual(['skipped'])
-    expect((items(retyped(planned, [], rows))[0] as ReviewSkippedItem).reason).toBe('not_logged')
-    // deleted afterwards (the table keeps one row per set, so a delete replaces the retype; both given: the delete stands)
-    const deleted: SessionSetChange = { kind: 'deleted', weekPlanSetId: 'ps-1' }
-    expect(kinds(retyped(planned, [head({ stageKind: 'dropset' })], [...rows, deleted]))).toEqual(['skipped'])
+  // DECISIONS 150 (b), Adam 2026-10-15: "A type change made during a workout is listed in REVIEW even when that set was then
+  // skipped or never logged, alongside its "Skipped" / "Not logged" item, and for everyone (13d) — also when the plan gave the
+  // set no weight or reps." (Before it, such a set was "Skipped" / "Not logged" alone, and a test here pinned that.)
+  // Nothing was done on such a set to read a kind from, so the item comes from its `retyped` row. Each fixture differs from the
+  // next in ONE thing (retyped or not, skipped or never logged, planned with numbers or without), so an item that is left out
+  // in one case, read from the wrong place or given to the wrong set shows.
+  describe('DECISIONS 150 (b): a type change made in the workout is listed also on a set then skipped or never logged', () => {
+    const withNumbers: Partial<WeekPlanSet> = { targetWeight: 60, repMin: 10, repMax: 12 }
+    const noNumbers: Partial<WeekPlanSet> = { targetWeight: null, repMin: null, repMax: null, isAmrap: false, targetRir: null }
+    const dropsetTwo = toStaged('dropset', 2)
+    const sets = (n: number, over: Partial<WeekPlanSet> = {}) => Array.from({ length: n }, (_, i) => wset(`ps-${i + 1}`, 'pe-1', i + 1, over))
+    // the nth planned set's log, `lg-<n>` on `ps-<n>`, and the same skipped
+    const logOf = (n: number, over: Partial<SetLog> = {}) => setLog(`lg-${n}`, 's1', 'ex-1', { weekPlanSetId: `ps-${n}`, setNumber: n, ...over })
+    const skippedOf = (n: number, over: Partial<SetLog> = {}) => logOf(n, { isSkipped: true, weight: null, reps: null, rir: null, ...over })
+    const typeItems = (groups: ReturnType<typeof review>) => items(groups).filter((i): i is ReviewRetypedItem => i.kind === 'retyped')
+    // each item as "kind:planned set", in the order listed
+    const listed = (groups: ReturnType<typeof review>) => items(groups).map((i) => `${i.kind}:${'plannedSetId' in i ? i.plannedSetId : '-'}`)
+    const dones = (groups: ReturnType<typeof review>) => typeItems(groups).map((i) => i.doneType)
+    const deleted = (n: number): SessionSetChange => ({ kind: 'deleted', weekPlanSetId: `ps-${n}` })
+
+    it('retyped, then skipped or never logged: the type item beside "Skipped" / "Not logged"; the same set with no row is "Skipped" / "Not logged" alone; with no numbers planned, the type item alone or nothing', () => {
+      // sets 1–4 are planned with numbers, 5–8 with none; 1, 2, 5 and 6 have a skipped log, 3, 4, 7 and 8 no log at all;
+      // 1, 3, 5 and 7 are the ones the workout retyped
+      const planned = [...sets(4, withNumbers), ...[5, 6, 7, 8].map((n) => wset(`ps-${n}`, 'pe-1', n, noNumbers))]
+      const logs = [1, 2, 5, 6].map((n) => skippedOf(n))
+      const rows = [1, 3, 5, 7].map((n) => retypedRow(`ps-${n}`, dropsetTwo))
+      const found = retyped(planned, logs, rows)
+      expect(listed(found)).toEqual([
+        'skipped:ps-1', 'retyped:ps-1', // skipped, retyped
+        'skipped:ps-2', // skipped, plain
+        'skipped:ps-3', 'retyped:ps-3', // never logged, retyped
+        'skipped:ps-4', // never logged, plain
+        'retyped:ps-5', // no numbers, skipped, retyped: the type item alone
+        'retyped:ps-7', // no numbers, never logged, retyped: the type item alone
+      ]) // sets 6 and 8 (no numbers, no row) give nothing
+      expect(items(found).flatMap((i) => (i.kind === 'skipped' ? [i.reason] : []))).toEqual(['skipped', 'skipped', 'not_logged', 'not_logged'])
+      expect(typeItems(found).map((i) => [i.plannedSetId, i.setNumber, i.plannedType, i.doneType])).toEqual(
+        [1, 3, 5, 7].map((n) => [`ps-${n}`, n, { kind: 'normal' }, dropsetTwo]),
+      )
+      // the item holds a copy of the row's type, never the caller's own object
+      const row1 = rows[0] as Extract<SessionSetChange, { kind: 'retyped' }>
+      expect(typeItems(found)[0].doneType).not.toBe(row1.type)
+      // without the rows the same sets give "Skipped" / "Not logged" and nothing else
+      expect(listed(retyped(planned, logs))).toEqual(['skipped:ps-1', 'skipped:ps-2', 'skipped:ps-3', 'skipped:ps-4'])
+    })
+
+    it('the two items of one set keep their own keys, none of them a set log id, and are decided apart', () => {
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], sets(1, withNumbers))
+      const rows = [retypedRow('ps-1', dropsetTwo)]
+      const list = (decisions: Array<{ weekPlanId: string; itemKey: string }> = []) =>
+        review({ last: [last], sessions: [session('s1', last.id, 'completed', [skippedOf(1)], { sessionSetChanges: rows })], decisions })
+      expect(keysOf(list())).toEqual(['skipped:s1:ps-1', 'type:s1:ps-1'])
+      for (const key of keysOf(list())) expect(key).not.toContain('lg-1')
+      const decide = (itemKey: string) => list([{ weekPlanId: 'wp-a-1@2', itemKey }])
+      expect(keysOf(decide('type:s1:ps-1'))).toEqual(['skipped:s1:ps-1'])
+      expect(keysOf(decide('skipped:s1:ps-1'))).toEqual(['type:s1:ps-1'])
+      expect(list([{ weekPlanId: 'wp-a-1@2', itemKey: 'type:s1:ps-1' }, { weekPlanId: 'wp-a-1@2', itemKey: 'skipped:s1:ps-1' }])).toEqual([])
+    })
+
+    it('the item comes from the retyped row alone: what a skipped log carries is no type change, and a pending-stages row is only a count', () => {
+      const planned = sets(1, withNumbers)
+      // no row: a skipped log that holds a stage kind or a warmup flag, or has a pending-stages row of its own, is a skipped set and nothing more
+      expect(kinds(retyped(planned, [skippedOf(1, { stageKind: 'dropset' })]))).toEqual(['skipped'])
+      expect(kinds(retyped(planned, [skippedOf(1, { isWarmup: true })]))).toEqual(['skipped'])
+      expect(kinds(retyped(planned, [skippedOf(1)], [pendingRow('lg-1', 'dropset', 2)]))).toEqual(['skipped'])
+      // a row and a skipped log that disagree: the row's kind and count
+      expect(dones(retyped(planned, [skippedOf(1, { stageKind: 'rest_pause' })], [retypedRow('ps-1', dropsetTwo)]))).toEqual([dropsetTwo])
+      // a row of another planned set, or of a set the plan doesn't have, is not this set's
+      expect(listed(retyped(sets(2, withNumbers), [skippedOf(1)], [retypedRow('ps-2', dropsetTwo), retypedRow('ps-x', dropsetTwo)]))).toEqual([
+        'skipped:ps-1',
+        'skipped:ps-2',
+        'retyped:ps-2',
+      ])
+    })
+
+    it('its count is the count set in the workout: the retyped row\'s, not the plan\'s own and not a pending-stages row\'s', () => {
+      // a dropset of one drop made rest-pause with three: three, not the plan's one, and not another count a pending-stages row holds
+      const rest3 = retypedRow('ps-1', toStaged('rest_pause', 3))
+      expect(dones(retyped(stagedPlan('dropset', 1), [skippedOf(1)], [rest3]))).toEqual([toStaged('rest_pause', 3)])
+      expect(dones(retyped(stagedPlan('dropset', 1), [skippedOf(1)], [rest3, pendingRow('lg-1', 'rest_pause', 5)]))).toEqual([toStaged('rest_pause', 3)])
+      // a plain set made a dropset, one drop and four
+      expect(dones(retyped(plain(), [skippedOf(1)], [retypedRow('ps-1', toStaged('dropset', 1))]))).toEqual([toStaged('dropset', 1)])
+      expect(dones(retyped(plain(), [], [retypedRow('ps-1', toStaged('dropset', 4))]))).toEqual([toStaged('dropset', 4)])
+    })
+
+    it('every change of type is an item, a skipped set and a never-logged one alike; the plan\'s own type, or the same kind with another count, is none', () => {
+      const warmup = [wset('ps-1', 'pe-1', 1, { isWarmup: true, targetRir: null })]
+      // [what it is, the plan, what the row says, the type items it gives]
+      const cases: Array<[string, WeekPlanSet[], SessionSetChangeType, SessionSetChangeType[]]> = [
+        ['a plain set made a dropset', plain(), toStaged('dropset', 2), [toStaged('dropset', 2)]],
+        ['a plain set made a warmup', plain(), { kind: 'warmup' }, [{ kind: 'warmup' }]],
+        ['a warmup made a working set', warmup, { kind: 'normal' }, [{ kind: 'normal' }]],
+        ['a dropset made a normal set', stagedPlan('dropset'), { kind: 'normal' }, [{ kind: 'normal' }]],
+        ['a kindless dropset made a normal set', stagedPlan(null), { kind: 'normal' }, [{ kind: 'normal' }]],
+        ['a dropset made a warmup', stagedPlan('dropset'), { kind: 'warmup' }, [{ kind: 'warmup' }]],
+        ['a dropset made rest-pause', stagedPlan('dropset', 2), toStaged('rest_pause', 1), [toStaged('rest_pause', 1)]],
+        ['a kindless dropset made rest-pause', stagedPlan(null), toStaged('rest_pause', 1), [toStaged('rest_pause', 1)]],
+        ['a plain set kept plain', plain(), { kind: 'normal' }, []],
+        ['a warmup kept a warmup', warmup, { kind: 'warmup' }, []],
+        ['a dropset kept as it was', stagedPlan('dropset', 2), toStaged('dropset', 2), []],
+        ['a kindless dropset made a dropset', stagedPlan(null), toStaged('dropset', 1), []],
+        ['the same kind with more drops, none of them done', stagedPlan('dropset', 1), toStaged('dropset', 3), []],
+        ['the same kind with fewer drops', stagedPlan('dropset', 3), toStaged('dropset', 1), []],
+      ]
+      const whatBecameOfIt: Array<[string, SetLog[]]> = [
+        ['skipped', [skippedOf(1)]],
+        ['never logged', []],
+      ]
+      for (const [name, planned, given, expected] of cases) {
+        for (const [what, logs] of whatBecameOfIt) {
+          expect(dones(retyped(planned, logs, [retypedRow('ps-1', given)])), `${name}, ${what}`).toEqual(expected)
+        }
+      }
+    })
+
+    it('the row is compared with LAST week\'s plan for the set, never this week\'s', () => {
+      // last week the set was a dropset of two drops; this week's matching set is a plain one
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], [wset('ps-1', 'pe-1', 1, { ...withNumbers, stageKind: 'dropset' }), stage('ps-s1', 'ps-1', 'pe-1', 1), stage('ps-s2', 'ps-1', 'pe-1', 2)])
+      const thisWeek = weekPlan('a', 2, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], [wset('ts-1', 'pe-1', 1, withNumbers)])
+      const list = (type: SessionSetChangeType) =>
+        review({ last: [last], thisWeek: [thisWeek], sessions: [session('s1', last.id, 'completed', [skippedOf(1)], { sessionSetChanges: [retypedRow('ps-1', type)] })] })
+      // the workout left it a dropset of two, as last week planned it: no type item, whatever this week's set is
+      expect(kinds(list(dropsetTwo))).toEqual(['skipped'])
+      // the workout made it Normal: an item against last week's dropset, though this week's set is plain already
+      expect(kinds(list({ kind: 'normal' }))).toEqual(['skipped', 'retyped'])
+      expect(dones(list({ kind: 'normal' }))).toEqual([{ kind: 'normal' }])
+      expect(typeItems(list({ kind: 'normal' }))[0].plannedType).toEqual(dropsetTwo)
+    })
+
+    it('a set deleted afterwards is "Skipped" only: its row is then `deleted`, and a delete stands over a retyped row given with it', () => {
+      const planned = sets(2, withNumbers)
+      // set 1: retyped and then deleted (the table keeps one row per planned set, so a delete replaces the retype; both given: the
+      // delete stands); set 2: retyped, never logged
+      const rows = [retypedRow('ps-1', dropsetTwo), deleted(1), retypedRow('ps-2', dropsetTwo)]
+      const expected = ['skipped:ps-1', 'skipped:ps-2', 'retyped:ps-2']
+      expect(listed(retyped(planned, [], rows))).toEqual(expected)
+      // a stale log of the deleted set, done or skipped, changes nothing
+      expect(listed(retyped(planned, [logOf(1, { stageKind: 'dropset' })], rows))).toEqual(expected)
+      expect(listed(retyped(planned, [skippedOf(1)], rows))).toEqual(expected)
+      // the delete alone: "Skipped", as ever
+      expect(listed(retyped(planned, [], [deleted(1)]))).toEqual(['skipped:ps-1', 'skipped:ps-2'])
+      // planned with no numbers a deleted set gives nothing, and its neighbour's retype is still its own item
+      expect(listed(retyped(sets(2, noNumbers), [], rows))).toEqual(['retyped:ps-2'])
+    })
+
+    it('a session that is not done gives nothing, type change or not: skipped as a whole (G52), in progress, planned', () => {
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], sets(2, withNumbers))
+      const rows = [retypedRow('ps-1', dropsetTwo), retypedRow('ps-2', dropsetTwo)]
+      const list = (status: SessionStatus) => review({ last: [last], sessions: [session('s1', last.id, status, [skippedOf(1)], { sessionSetChanges: rows })] })
+      // the same fixture finished lists all four; the status is the only difference
+      expect(listed(list('completed'))).toEqual(['skipped:ps-1', 'retyped:ps-1', 'skipped:ps-2', 'retyped:ps-2'])
+      for (const status of ['skipped', 'in_progress', 'planned'] as const) expect(list(status), status).toEqual([])
+    })
+
+    it('on a swapped slot the swap takes over "Skipped" and not the type item: a set retyped before the swap still has its own', () => {
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Dips')], sets(3, withNumbers))
+      const logs = [
+        logOf(1, { weight: 60, reps: 10 }), // done as planned, before the swap
+        skippedOf(2), // skipped by the swap
+        // set 3 never logged
+        setLog('lg-m1', 's1', 'ex-md', { setNumber: 1 }),
+        setLog('lg-m2', 's1', 'ex-md', { setNumber: 2 }),
+      ]
+      const swaps = [swapRecord({ programExerciseId: 'pe-1', originalExerciseId: 'ex-1', originalExerciseName: 'Dips', replacementExerciseId: 'ex-md', replacementExerciseName: 'Machine Dips' })]
+      const list = (changes: SessionSetChange[]) => review({ last: [last], sessions: [session('s1', last.id, 'completed', logs, { swaps, sessionSetChanges: changes })] })
+      expect(listed(list([]))).toEqual(['swapped:-'])
+      expect(listed(list([retypedRow('ps-2', dropsetTwo)]))).toEqual(['swapped:-', 'retyped:ps-2'])
+      expect(listed(list([retypedRow('ps-3', dropsetTwo)]))).toEqual(['swapped:-', 'retyped:ps-3'])
+    })
+
+    it('G14: of two sessions on one shared plan row, only the one whose row says retyped has the type item, each under its own day', () => {
+      const shared = weekPlan('fb', 1, [row('pe-1', 'ex-1', 1, 'Squat')], [wset('ps-1', 'pe-1', 1, withNumbers)], { workoutDay: workoutDay('wd-fb', 'Full Body') })
+      const sessions = (tue: SessionSetChange[], thu: SessionSetChange[]) => [
+        session('s-tue', shared.id, 'completed', [], { date: '2026-10-06', sessionSetChanges: tue }), // a Tuesday; the set never logged
+        session('s-thu', shared.id, 'completed', [], { date: '2026-10-08', sessionSetChanges: thu }), // a Thursday
+      ]
+      const found = (tue: SessionSetChange[], thu: SessionSetChange[]) => review({ last: [shared], sessions: sessions(tue, thu) }).map((g) => [g.heading, keysOf([g])])
+      const dropset = [retypedRow('ps-1', dropsetTwo)]
+      expect(found(dropset, [])).toEqual([
+        ['TUE · FULL BODY', ['skipped:s-tue:ps-1', 'type:s-tue:ps-1']],
+        ['THU · FULL BODY', ['skipped:s-thu:ps-1']],
+      ])
+      expect(found([], dropset)).toEqual([
+        ['TUE · FULL BODY', ['skipped:s-tue:ps-1']],
+        ['THU · FULL BODY', ['skipped:s-thu:ps-1', 'type:s-thu:ps-1']],
+      ])
+    })
   })
 
   it('the number item and the type item of one set both carry the type the workout gave it', () => {
@@ -1285,7 +1462,7 @@ describe('the module reads its input and never changes it', () => {
       decisions: [],
     }
     const expected = reviewItems(structuredCloneJson(input))
-    expect(kinds(expected)).toEqual(['number', 'skipped', 'skipped', 'added_set'])
+    expect(kinds(expected)).toEqual(['number', 'skipped', 'skipped', 'retyped', 'added_set']) // set 3: never logged, retyped (DECISIONS 150)
     expect(reviewItems(deepFreeze(input))).toEqual(expected)
   })
 })

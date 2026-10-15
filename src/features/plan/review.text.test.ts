@@ -291,6 +291,31 @@ describe('the wording where the board draws no such item (provisional, D31)', ()
     expect(reviewItemText(asDropset, ctx)).toMatchObject({ headline: 'You made set 01 a dropset', detail: '2 drops' })
   })
 
+  // DECISIONS 150 (b): the same wording again, from a type given to a set then skipped or never logged (no new string)
+  it('a type given to a set then skipped or never logged reads as any type item, the count being the one set in the workout, beside "Skipped" / "Not logged" when the plan had numbers', () => {
+    const planned = (over: Partial<ReturnType<typeof wset>>) => [wset('ps-1', 'pe-1', 1, over), wset('ps-2', 'pe-1', 2, over)]
+    const rows: SessionSetChange[] = [
+      { kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 } },
+      { kind: 'retyped', weekPlanSetId: 'ps-2', type: { kind: 'staged', stageKind: 'rest_pause', stageCount: 3 } },
+    ]
+    const texts = (sets: ReturnType<typeof wset>[]) => {
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], sets)
+      const logs = [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', isSkipped: true, weight: null, reps: null, rir: null })] // set 2 never logged
+      return itemsOf(review({ last: [last], sessions: [session('s1', last.id, 'completed', logs, { sessionSetChanges: rows })] })).map((i) => reviewItemText(i, ctx))
+    }
+    expect(texts(planned({ targetWeight: 9, repMin: 12, repMax: 15, targetRir: 2 }))).toEqual([
+      { eyebrow: 'LATERAL RAISE · SET 01', headline: 'Skipped', detail: 'planned 9 kg × 12–15 · RIR 2', note: null, action: 'REMOVE THIS SET' },
+      { eyebrow: 'LATERAL RAISE · SET 01', headline: 'You made set 01 a dropset', detail: '2 drops', note: null, action: 'USE' },
+      { eyebrow: 'LATERAL RAISE · SET 02', headline: 'Not logged', detail: 'planned 9 kg × 12–15 · RIR 2', note: null, action: 'REMOVE THIS SET' },
+      { eyebrow: 'LATERAL RAISE · SET 02', headline: 'You made set 02 a rest-pause set', detail: '3 pauses', note: null, action: 'USE' },
+    ])
+    // planned with no numbers: only the type items, worded the same
+    expect(texts(planned({ targetWeight: null, repMin: null, repMax: null, isAmrap: false, targetRir: null }))).toEqual([
+      { eyebrow: 'LATERAL RAISE · SET 01', headline: 'You made set 01 a dropset', detail: '2 drops', note: null, action: 'USE' },
+      { eyebrow: 'LATERAL RAISE · SET 02', headline: 'You made set 02 a rest-pause set', detail: '3 pauses', note: null, action: 'USE' },
+    ])
+  })
+
   it('a kindless dropset switched to Normal reads as "a normal set", like any dropset switched back', () => {
     const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], [wset('ps-1', 'pe-1', 1, { stageKind: null }), stage('ps-s1', 'ps-1', 'pe-1', 1)])
     const logs = [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', stageKind: null })]

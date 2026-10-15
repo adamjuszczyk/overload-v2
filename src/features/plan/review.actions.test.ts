@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SessionSetChange, SetLog, WeekPlan, WeekPlanSet } from '../../types'
+import type { SessionSetChange, SessionSetChangeType, SetLog, WeekPlan, WeekPlanSet } from '../../types'
 import {
   applyReviewAction,
   itemKey,
@@ -554,6 +554,103 @@ describe('USE on a type item: this week\'s matching set takes the kind and the n
       const kinded = weekPlan('a', 2, [exercises[0]], [wset('ts-1', 'pe-1', 1, { stageKind: 'dropset' }), stage('ts-s1', 'ts-1', 'pe-1', 1), wset('ts-2', 'pe-1', 2)])
       const itemKinded = retypedItem(last, kinded, [head({ stageKind: null }), ...rest], [toNormal])
       expect(shape(applyReviewAction(itemKinded, 'use', kinded, counter()).writes)).toEqual([['update', 'ts-1', { stageKind: null }], ['delete', 'ts-s1']])
+    })
+  })
+
+  // DECISIONS 150, option (b), which Adam chose (2026-10-15): "Its USE gives this week's matching set that type, and "Skipped" keeps
+  // its own REMOVE THIS SET." The type item of a set then skipped or never logged is applied like any other type item (the kind
+  // and the count set in the workout, into THIS week's set at the same planned position); the fixtures are built through
+  // `reviewItems`, so the item is the one the module lists for such a set, and this week's set ids differ from last week's.
+  describe('DECISIONS 150 (b): USE on the type item of a set then skipped or never logged, beside its own REMOVE THIS SET', () => {
+    const numbers = { targetWeight: 60, repMin: 10, repMax: 12 }
+    const noNumbers = { targetWeight: null, repMin: null, repMax: null, isAmrap: false, targetRir: null }
+    const lastOf = (over: Partial<WeekPlanSet> = {}) => weekPlan('a', 1, [exercises[0]], [1, 2, 3].map((n) => wset(`ps-${n}`, 'pe-1', n, over)))
+    const weekTwoOf = (over: Partial<WeekPlanSet> = {}) => weekPlan('a', 2, [exercises[0]], [1, 2, 3].map((n) => wset(`ts-${n}`, 'pe-1', n, over)))
+    const skippedLog = (n: number) => setLog(`lg-${n}`, 's1', 'ex-1', { weekPlanSetId: `ps-${n}`, setNumber: n, isSkipped: true, weight: null, reps: null, rir: null })
+    const doneLog = (n: number) => setLog(`lg-${n}`, 's1', 'ex-1', { weekPlanSetId: `ps-${n}`, setNumber: n, weight: 60, reps: 10 })
+    const retypedTo = (n: number, type: SessionSetChangeType): SessionSetChange => ({ kind: 'retyped', weekPlanSetId: `ps-${n}`, type })
+    const dropsetOf = (stageCount: number): SessionSetChangeType => ({ kind: 'staged', stageKind: 'dropset', stageCount })
+    const shapeOf = (writes: ReviewWrite[]) =>
+      writes.map((w) => (w.kind === 'update_set' ? ['update', w.setId, w.changes] : w.kind === 'insert_set' ? ['insert', w.set.parentWeekPlanSetId, w.set.stageIndex] : w.kind === 'delete_set' ? ['delete', w.setId] : [w.kind]))
+    // set 1: retyped, then skipped; set 2: done as planned; set 3: retyped, never logged
+    const scenario = (over: Partial<WeekPlanSet> = {}) => {
+      const last = lastOf(over)
+      const week2 = weekTwoOf(over)
+      const found = itemsFor([skippedLog(1), doneLog(2)], { last, thisWeek: week2, changes: [retypedTo(1, dropsetOf(2)), retypedTo(3, { kind: 'warmup' })] })
+      return { week2, found }
+    }
+
+    it('the module lists each set\'s two items, and USE on the type item gives this week\'s matching set the kind and the row\'s count', () => {
+      const { week2, found } = scenario(numbers)
+      expect(found.map((i) => `${i.kind}:${'plannedSetId' in i ? i.plannedSetId : '-'}`)).toEqual(['skipped:ps-1', 'retyped:ps-1', 'skipped:ps-3', 'retyped:ps-3'])
+      const type1 = first<ReviewRetypedItem>(found, 'retyped')
+      const result = applyReviewAction(type1, 'use', week2, counter())
+      // this week's set 1 (ts-1, not last week's ps-1): the kind, then the two drops under it, in order
+      expect(shapeOf(result.writes)).toEqual([['update', 'ts-1', { stageKind: 'dropset' }], ['insert', 'ts-1', 1], ['insert', 'ts-1', 2]])
+      expect(result.decision).toEqual({ weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'used' })
+      const after = applyWrites(week2, result.writes)
+      expect(after.sets.find((s) => s.id === 'ts-1')).toMatchObject({ stageKind: 'dropset' })
+      expect(after.sets.filter((s) => s.parentWeekPlanSetId === 'ts-1').map((s) => s.stageIndex)).toEqual([1, 2])
+      expect(after.sets.filter((s) => s.id !== 'ts-1' && s.parentWeekPlanSetId === null)).toEqual(week2.sets.filter((s) => s.id !== 'ts-1')) // the other sets as they were
+    })
+
+    it('a set retyped to Warmup and never logged: USE makes this week\'s matching set a warmup and writes nothing else', () => {
+      const { week2, found } = scenario(numbers)
+      const type3 = found.filter((i): i is ReviewRetypedItem => i.kind === 'retyped')[1]
+      expect(type3.plannedSetId).toBe('ps-3')
+      expect(shapeOf(applyReviewAction(type3, 'use', week2, counter()).writes)).toEqual([['update', 'ts-3', { isWarmup: true }]])
+    })
+
+    it('with no numbers planned there is no "Skipped" item and USE on the type item writes the same', () => {
+      const { week2, found } = scenario(noNumbers)
+      expect(found.map((i) => `${i.kind}:${'plannedSetId' in i ? i.plannedSetId : '-'}`)).toEqual(['retyped:ps-1', 'retyped:ps-3'])
+      const writes = applyReviewAction(first<ReviewRetypedItem>(found, 'retyped'), 'use', week2, counter()).writes
+      expect(shapeOf(writes)).toEqual([['update', 'ts-1', { stageKind: 'dropset' }], ['insert', 'ts-1', 1], ['insert', 'ts-1', 2]])
+    })
+
+    it('REMOVE THIS SET on the "Skipped" item and USE on the type item are each their own: either order, the removed set takes its drops with it', () => {
+      const { week2, found } = scenario(numbers)
+      const skipped1 = first<ReviewSkippedItem>(found, 'skipped')
+      const type1 = first<ReviewRetypedItem>(found, 'retyped')
+      expect([itemKey(skipped1), itemKey(type1)]).toEqual(['skipped:s1:ps-1', 'type:s1:ps-1'])
+      // USE first, then REMOVE: the set and the drops USE inserted under it are gone
+      const used = applyWrites(week2, applyReviewAction(type1, 'use', week2, counter()).writes)
+      const removeAfter = applyReviewAction(skipped1, 'remove_set', used, counter())
+      expect(shapeOf(removeAfter.writes)).toEqual([['delete', 'ts-1']])
+      expect(removeAfter.decision).toEqual({ weekPlanId: 'wp-a-2', itemKey: 'skipped:s1:ps-1', decision: 'used' })
+      expect(applyWrites(used, removeAfter.writes).sets.map((s) => s.id)).toEqual(['ts-2', 'ts-3'])
+      // REMOVE first, then USE: this week no longer has the set, so USE writes nothing and still leaves its decision
+      const removed = applyWrites(week2, applyReviewAction(skipped1, 'remove_set', week2, counter()).writes)
+      expect(applyReviewAction(type1, 'use', removed, counter())).toEqual({ decision: { weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'used' }, writes: [] })
+    })
+
+    it('IGNORE on the type item leaves an `ignored` decision under its own key and writes nothing', () => {
+      const { week2, found } = scenario(numbers)
+      expect(applyReviewAction(first<ReviewRetypedItem>(found, 'retyped'), 'ignore', week2, counter())).toEqual({
+        decision: { weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'ignored' },
+        writes: [],
+      })
+    })
+
+    it('the count is the row\'s, whatever drops this week\'s sets have', () => {
+      // the workout set three pauses on set 1 and two drops on set 3; this week's set 1 has one drop already, and set 3 has none
+      const last = lastOf(numbers)
+      const week2 = weekPlan('a', 2, [exercises[0]], [
+        wset('ts-1', 'pe-1', 1, { ...numbers, stageKind: 'dropset' }),
+        stage('ts-s1', 'ts-1', 'pe-1', 1),
+        wset('ts-2', 'pe-1', 2, numbers),
+        wset('ts-3', 'pe-1', 3, numbers),
+      ])
+      const retypedItems = (type: SessionSetChangeType) =>
+        itemsFor([skippedLog(1), doneLog(2)], { last, thisWeek: week2, changes: [retypedTo(1, type)] }).filter((i): i is ReviewRetypedItem => i.kind === 'retyped')
+      // dropset ×1 → rest-pause ×3: the kind, then the missing two drops after the one it has
+      const toRestPause = retypedItems({ kind: 'staged', stageKind: 'rest_pause', stageCount: 3 })
+      expect(toRestPause).toHaveLength(1)
+      expect(shapeOf(applyReviewAction(toRestPause[0], 'use', week2, counter()).writes)).toEqual([['update', 'ts-1', { stageKind: 'rest_pause' }], ['insert', 'ts-1', 2], ['insert', 'ts-1', 3]])
+      // a plain set 3 never logged, made a dropset ×2: two drops, this week's set 1 having one makes no difference
+      const itemsThree = itemsFor([skippedLog(1), doneLog(2)], { last, thisWeek: week2, changes: [retypedTo(3, dropsetOf(2))] }).filter((i): i is ReviewRetypedItem => i.kind === 'retyped')
+      expect(itemsThree).toHaveLength(1)
+      expect(shapeOf(applyReviewAction(itemsThree[0], 'use', week2, counter()).writes)).toEqual([['update', 'ts-3', { stageKind: 'dropset' }], ['insert', 'ts-3', 1], ['insert', 'ts-3', 2]])
     })
   })
 })

@@ -14,7 +14,7 @@
 // SPEC lists "Skipped" with the number items ("only where last week had a planned weight or reps") and sets
 // the structural items apart as "for everyone, including people who plan no numbers", so a set the plan
 // gave neither a weight nor a rep target (a number, a range or AMRAP) is no number item and no "Skipped",
-// and is still a type item when its kind changed.
+// and is still a type item when its kind changed, done or not (DECISIONS 150).
 //   - "Skipped" (a skipped log, or a `deleted` session set change: SPEC 18b "counts as Skipped") or
 //     "Not logged" (no log in a completed session);
 //   - a NUMBER item: the done weight differs from the planned one (as the exercise's unit shows them: the
@@ -34,6 +34,14 @@
 //     Plan's ADD STAGE still leaves) switched to Normal from one logged as planned: both leave a null kind.
 //     The stage count its USE writes is the count set in the workout: the drops done when some were, else
 //     the `retyped` row's count, else the `pending_stages` row's (keyed by the logged head), else 1.
+//     A planned set that was then skipped or never logged keeps its type item (DECISIONS 150, Adam 2026-10-15:
+//     "A type change made during a workout is listed in REVIEW even when that set was then skipped or never
+//     logged, alongside its "Skipped" / "Not logged" item, and for everyone (13d) — also when the plan gave
+//     the set no weight or reps"). Nothing was done on it to read a kind from, so the item comes from its
+//     `retyped` row alone (its kind, and the count set in the workout), by the same comparison with the plan
+//     as a set that was done; and it is the set's own item, beside "Skipped" / "Not logged" and not in
+//     place of it. A set deleted afterwards is "Skipped" only: a delete turns the set's row into `deleted`
+//     (Adam's change-row rule), and a `deleted` row stands over a `retyped` one given with it.
 // Per exercise: a set added during the session (a log with no planned set, on an exercise of the plan)
 // is an ADDED SET item, never a type item: it has no planned set, so no `retyped` row (Adam's data-model
 // rule), and the stage kind it was given, drops done or not, is part of the added set (the drops done, else
@@ -159,7 +167,8 @@ export interface ReviewSession extends Pick<Session, 'id' | 'weekPlanId' | 'stat
   /**
    * This session's own `v2_session_set_changes`, all three kinds: `deleted` (a planned set removed: "Skipped"),
    * `retyped` (the type the workout gave a planned set, keyed by it whether or not it was logged: it wins over
-   * the log) and `pending_stages` (the drops still to do under a logged head, keyed by its log: a count).
+   * the log, and it is the type item of a set then skipped or never logged, DECISIONS 150) and
+   * `pending_stages` (the drops still to do under a logged head, keyed by its log: a count).
    */
   sessionSetChanges?: readonly SessionSetChange[]
 }
@@ -410,7 +419,9 @@ function doneTypeOf(head: ReviewLog, drops: number, given: GivenType | undefined
 // more drops DONE than planned (`drops`, never the count set: the kind is the same and nothing more was done).
 // Fewer drops than planned are not an item. A planned staged set done without its drops reads as a plain one,
 // and that is an item only when the workout switched it to Normal (`given`): the log's null kind under a kindless
-// planned head, with no row to say so, is a set logged as planned.
+// planned head, with no row to say so, is a set logged as planned. A set that was not done has no drops done
+// (`drops` is 0) and its row is both the type as done and the type given, so the same rule decides it
+// (DECISIONS 150): another kind is an item, another count of the same kind is not.
 function typeChanged(planned: SessionSetChangeType, done: SessionSetChangeType, drops: number, given: GivenType | undefined): boolean {
   if (planned.kind !== done.kind) return planned.kind === 'staged' && done.kind === 'normal' ? given?.kind === 'normal' : true
   if (planned.kind === 'staged' && done.kind === 'staged') {
@@ -604,6 +615,8 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
       }
 
       const log = headLogOf(logsOfPlannedSet.get(head.id))
+      const plannedType = plannedTypeOf(head, stageRowsOf(head))
+      const retyped = retypedOf.get(head.id)
       // A set the session deleted is Skipped whatever a stale log says; no log in a finished session is
       // Not logged. On a swapped slot the original's remaining sets are the swap's (it skips them), and a
       // set the plan gave no numbers is no Skipped item (SPEC lists it with the number items).
@@ -611,14 +624,21 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
         if (!swapped && hasPlannedNumbers(planned)) {
           items.push({ kind: 'skipped', ...common, reason: deleted.has(head.id) || log !== undefined ? 'skipped' : 'not_logged', planned })
         }
+        // DECISIONS 150 (b): a type given during the workout is listed whatever became of the set, after its
+        // "Skipped" / "Not logged" (13c's items come before 13d's, as they do for a set that was done), also when
+        // the plan had no numbers and so there is no such item, and also on a swapped slot (the swap takes over
+        // the "Skipped" items alone). The type is the `retyped` row's and nothing else: a skipped log holds no
+        // type as done, and `pending_stages` is a count. A `deleted` set has the delete only.
+        if (retyped !== undefined && !deleted.has(head.id) && typeChanged(plannedType, retyped, 0, retyped)) {
+          items.push({ kind: 'retyped', ...common, plannedType, doneType: { ...retyped } })
+        }
         continue
       }
       // A log of another exercise (the seed relabels a swap's logs, keeping the planned set) is no comparison.
       if (log.exerciseId !== row.exerciseId) continue
 
-      const plannedType = plannedTypeOf(head, stageRowsOf(head))
       const drops = dropsDone(stageLogsOf.get(log.id) ?? [])
-      const given = givenType({ head, type: plannedType }, log, retypedOf.get(head.id))
+      const given = givenType({ head, type: plannedType }, log, retyped)
       const done = doneSetOf(log, doneTypeOf(log, drops, given, pendingDropsOf.get(log.id)))
       const differs = numbersDiffer(planned, log, unit)
       if (differs.weight || differs.reps) {

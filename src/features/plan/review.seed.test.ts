@@ -241,6 +241,39 @@ describe('the seed\'s week 2 → week 3 (the test account), REVIEW on week 3', (
     expect(flat(listWeek3([], rows)).map((i) => i.kind)).toEqual(['number', 'number', 'skipped', 'retyped', 'added_set'])
   })
 
+  it('DECISIONS 150: a type the workout gave the skipped Seated Cable Row set 03 (chunk 62\'s `retyped` row) is a sixth item beside its "Skipped"; the skipped Upper B gives none however many rows it has', () => {
+    const rowSet3: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'w2-ua-pe-row-3', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 } }
+    const groups = listWeek3([], [rowSet3])
+    expect(groups.map((g) => [g.heading, g.items.length])).toEqual([['MON · UPPER A', 6]])
+    // the workout's order: the row's two items after bench, before the lateral raise; "Skipped" first, then the type
+    expect(flat(groups).map((item) => {
+      const t = reviewItemText(item, { fromWeek: 3 })
+      return [item.kind, t.eyebrow, t.headline, t.detail, t.action]
+    })).toEqual([
+      ['number', 'BARBELL BENCH PRESS · SET 02', 'Did 82.5 kg × 7', 'planned 80 kg × 6–8 · RIR 2', 'USE 82.5 × 7'],
+      ['number', 'BARBELL BENCH PRESS · SET 03', 'Did 80 kg × 5', 'planned 80 kg × 6–8 · RIR 2', 'USE 80 × 5'],
+      ['skipped', 'SEATED CABLE ROW · SET 03', 'Skipped', 'planned 60 kg × 10–12 · RIR 2', 'REMOVE THIS SET'],
+      ['retyped', 'SEATED CABLE ROW · SET 03', 'You made set 03 a dropset', '2 drops', 'USE'],
+      ['retyped', 'DUMBBELL LATERAL RAISE · SET 01', 'You made set 01 a dropset', '1 drop', 'USE'],
+      ['added_set', 'CABLE TRICEPS PUSHDOWN · ADDED A SET', 'Set 03 · 20 kg × 15', 'RIR 2', 'ADD THIS SET'],
+    ])
+    expect(groups.flatMap((g) => g.items.map((e) => e.key)).slice(2, 4)).toEqual(['skipped:s2-ua:w2-ua-pe-row-3', 'type:s2-ua:w2-ua-pe-row-3'])
+    // USE on it types week 3's row set 3 (its own id, not week 2's) as a dropset of two drops
+    const typeItem = flat(groups)[3]
+    const used = applyWrites(week3.ua, applyReviewAction(typeItem, 'use', week3.ua, ids()).writes)
+    expect(used.sets.find((s) => s.id === 'w3-ua-pe-row-3')).toMatchObject({ stageKind: 'dropset' })
+    expect(used.sets.filter((s) => s.parentWeekPlanSetId === 'w3-ua-pe-row-3').map((s) => s.stageIndex)).toEqual([1, 2])
+    // Friday's Upper B was skipped as a whole (G52): a row on its first set adds nothing
+    const upperBRow: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'w2-ub-pe-pullup-1', type: { kind: 'normal' } }
+    const withUpperBRow = sessionsOfWeek2().map((s) => (s.id === 's2-ub' ? { ...s, sessionSetChanges: [upperBRow] } : s))
+    const upperB = reviewItems({ weekNumber: 3, lastWeek: { sessions: withUpperBRow, plan: [week2.ua, week2.la, week2.ub] }, thisWeek: [week3.ua, week3.la, week3.ub], decisions: [] })
+    expect(upperB.map((g) => [g.heading, g.items.length])).toEqual([['MON · UPPER A', 5]])
+    // the control: finished instead of skipped, the same row is the pull-up's type item (the status is the only difference)
+    const finished = sessionsOfWeek2().map((s) => (s.id === 's2-ub' ? { ...s, status: 'completed' as const, sessionSetChanges: [upperBRow] } : s))
+    const control = reviewItems({ weekNumber: 3, lastWeek: { sessions: finished, plan: [week2.ua, week2.la, week2.ub] }, thisWeek: [week3.ua, week3.la, week3.ub], decisions: [] })
+    expect(control.find((g) => g.heading.startsWith('FRI'))?.items.map((e) => e.key)).toContain('type:s2-ub:w2-ub-pe-pullup-1')
+  })
+
   it('the five keys, none of them a set log id', () => {
     const groups = listWeek3()
     const keys = groups.flatMap((g) => g.items.map((e) => e.key))
