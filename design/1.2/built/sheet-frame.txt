@@ -1,0 +1,6 @@
+PLAN
+WEEK 2 · FROM WEEK 1'S PLAN
+Copy last week's numbers
+Push 1
+Pull 1
+COPY INTO 4 WORKOUTS
