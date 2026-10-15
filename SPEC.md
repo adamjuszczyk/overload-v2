@@ -646,12 +646,19 @@ optional:
   - USE writes what was done into this week's matching set, exactly (a range
     becomes the number done). Matching: exercise, then position, warmups to
     warmups.
+    - A set planned AMRAP (DECISIONS 137, Adam 2026-10-15): USE writes the done
+      weight only, and this week's set stays AMRAP.
 - **Structural items (13d)**, for everyone, including people who plan no
   numbers:
   - a set added during a session → "Face Pull · added a set — set 03, 15 kg ×
     18", ADD THIS SET or IGNORE;
   - a drop or stage added, or a set type changed (19) → "You made set 02 a
     dropset", USE or IGNORE;
+    - Type changes REVIEW sees (DECISIONS 141, Adam 2026-10-15): a set given a
+      stage kind whose drops or stages weren't done, and a dropset with no kind
+      switched to Normal, are items too. Both are seen through the session's
+      change rows, which also record a type change made on a logged set; USE
+      writes the stage count set in the workout.
   - an exercise added or swapped → "Added: Cable fly, 3 sets" / "Swapped Dips →
     Machine Dips". Its action is a CHANGE THE PROGRAM change, so it applies from
     this week forward and says so.
@@ -991,6 +998,10 @@ optional:
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
   deletes its stages, and the confirm says so. The remaining sets renumber.
+  - A drop on its own (DECISIONS 147, Adam 2026-10-15): deleting a set's last
+    drop makes it a normal set. A logged drop can be unlogged under the same
+    rule as any set: not while a later drop or stage of that set is logged. Its
+    draft is keyed by its set's key plus its drop number.
 - [1.2] **Offline (G47):** logging, delete set and unlog work offline and sync
   later through the sync queue. A set type change on a logged set and the edit
   panel's SAVE need a connection, as editing a logged set does today; offline
@@ -1002,6 +1013,9 @@ optional:
   is still unlogged, in which case logging it follows the lock. Switching a set
   back to Normal when some of its drops are already logged asks before deleting
   them (19c). ADD STAGE, "Mark as dropset" and "+ DROP OR STAGE" are removed.
+  - A set switched to or from Warmup (DECISIONS 146, Adam 2026-10-15)
+    renumbers the sets as a delete does: the sets after it close the gap or
+    move up one.
 - [1.2] **Stage rows** open by themselves once the row before them is logged
   (C8).
 - [1.2] **The set's ⋯ during a workout (C9):** SET TYPE, CUES, FORM, a per-set
