@@ -41,6 +41,11 @@ import { X } from 'lucide-react'
 // apart; 16 is board 2's and the most common, and a caller that wants another wraps its sections
 // in a container of its own. Style values are written the way jsdom keeps them (longhand borders,
 // the safe-area padding after its shorthand) so a captured render still carries them.
+//
+// Two options for the exercise picker (chunk 41; the 38 review's note for it): `height="tall"` makes
+// the sheet fill that whole height instead of sizing to its content, and `toolbar` pins a row (the
+// picker's muscle-group chips) between the header and the content, outside the scroll, so it stays in
+// view while a long list scrolls. A sheet that gives neither is drawn exactly as before.
 export interface BottomSheetProps {
   /** The small mono line above the title (`WEEK 2 · FROM WEEK 1'S PLAN`). Leave it out for none: PR8 and PR13 have no eyebrow. */
   eyebrow?: string
@@ -50,9 +55,21 @@ export interface BottomSheetProps {
   children: ReactNode
   /** Pinned under the content, outside its scroll: the primary button the pickers use. */
   footer?: ReactNode
+  /** Pinned between the header and the content, outside the scroll: a row of filter chips that stays in view while the list under it scrolls (PL4-PL6, PP2d, W11, W13). */
+  toolbar?: ReactNode
+  /**
+   * `content` (the default): as tall as the content, up to the screen minus 64 px. `tall`: always that
+   * tall, from 64 px below the top of the screen to its bottom edge (PL4-PL6 stand there; W11 and PP2d
+   * are tall too), for a list whose length changes with a filter, so the sheet doesn't jump. The content
+   * scrolls inside it either way.
+   */
+  height?: 'content' | 'tall'
 }
 
 const SCRIM = 'rgba(0,0,0,0.6)'
+
+// Where the boards' tall sheets stop: 64 px below the top of the screen.
+const TALLEST = 'calc(100dvh - 64px)'
 
 // Below the toast and the STAGING badge (z-index 50 in both) so they stay readable over a sheet;
 // above the update notice (40) and the workout screen's own floating bar (30). A sheet drawn
@@ -78,7 +95,7 @@ const SHEET_STYLE: CSSProperties = {
   position: 'relative',
   boxSizing: 'border-box',
   width: '100%',
-  maxHeight: 'calc(100dvh - 64px)',
+  maxHeight: TALLEST,
   display: 'flex',
   flexDirection: 'column',
   gap: 16,
@@ -148,6 +165,14 @@ const CLOSE_STYLE: CSSProperties = {
   borderRadius: 10,
   color: 'var(--text-secondary)',
   cursor: 'pointer',
+}
+
+const TOOLBAR_STYLE: CSSProperties = {
+  flex: '0 0 auto',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  minWidth: 0,
 }
 
 // A grid, not a flex column: a flex item shrinks when the sheet is held to its maximum height,
@@ -237,7 +262,7 @@ function keepTabInside(event: KeyboardEvent, dialog: HTMLElement): void {
 
 // ─── The sheet ────────────────────────────────────────────────────────────────────────────────
 
-export default function BottomSheet({ eyebrow, title, onClose, children, footer }: BottomSheetProps) {
+export default function BottomSheet({ eyebrow, title, onClose, children, footer, toolbar, height = 'content' }: BottomSheetProps) {
   const titleId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -289,7 +314,14 @@ export default function BottomSheet({ eyebrow, title, onClose, children, footer 
   return createPortal(
     <div ref={rootRef} data-bottom-sheet="" style={ROOT_STYLE}>
       <div aria-hidden="true" data-bottom-sheet-scrim="" onClick={() => onClose()} style={SCRIM_STYLE} />
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} style={SHEET_STYLE}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        style={height === 'tall' ? { ...SHEET_STYLE, height: TALLEST } : SHEET_STYLE}
+      >
         <div aria-hidden="true" style={HANDLE_STYLE} />
         <div style={{ ...HEADER_STYLE, alignItems: eyebrow ? 'flex-start' : 'center' }}>
           <div style={HEADING_BLOCK_STYLE}>
@@ -302,6 +334,7 @@ export default function BottomSheet({ eyebrow, title, onClose, children, footer 
             <X size={16} strokeWidth={2.2} aria-hidden="true" />
           </button>
         </div>
+        {toolbar ? <div style={TOOLBAR_STYLE}>{toolbar}</div> : null}
         <div style={BODY_STYLE}>{children}</div>
         {footer ? <div style={FOOTER_STYLE}>{footer}</div> : null}
       </div>

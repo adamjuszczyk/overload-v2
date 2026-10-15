@@ -339,6 +339,86 @@ describe('BottomSheet: content taller than the screen', () => {
   })
 })
 
+describe('BottomSheet: tall, and a toolbar (chunk 41: the exercise picker)', () => {
+  const sheet = (props: { height?: 'content' | 'tall'; toolbar?: ReactNode; footer?: ReactNode } = {}) => (
+    <BottomSheet title="Pick" onClose={() => {}} {...props}>
+      <p>list</p>
+    </BottomSheet>
+  )
+
+  it('is as tall as its content by default: no height of its own, only the cap', () => {
+    render(sheet())
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.style.height).toBe('')
+    expect(dialog.style.maxHeight).toBe('calc(100dvh - 64px)')
+  })
+
+  it('"tall" fills the whole height below the 64 px gap: the height is the cap, and the content still scrolls inside', () => {
+    render(sheet({ height: 'tall' }))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.style.height).toBe('calc(100dvh - 64px)')
+    expect(dialog.style.maxHeight).toBe('calc(100dvh - 64px)')
+    const content = screen.getByText('list').parentElement as HTMLElement
+    expect(content.style.overflowY).toBe('auto')
+  })
+
+  it('"content" says the same as leaving it out, and the height follows the prop while the sheet stays open', () => {
+    const { rerender } = render(sheet({ height: 'content' }))
+    expect(screen.getByRole('dialog').style.height).toBe('')
+    rerender(sheet({ height: 'tall' }))
+    expect(screen.getByRole('dialog').style.height).toBe('calc(100dvh - 64px)')
+    rerender(sheet({ height: 'content' }))
+    expect(screen.getByRole('dialog').style.height).toBe('')
+  })
+
+  it('draws the toolbar between the header and the content, outside the content\'s scroll', () => {
+    render(
+      sheet({
+        toolbar: <button type="button">ALL</button>,
+        footer: <button type="button">SWAP</button>,
+      }),
+    )
+    const dialog = screen.getByRole('dialog')
+    const toolbar = screen.getByRole('button', { name: 'ALL' })
+    const parts = [
+      screen.getByRole('heading', { level: 2, name: 'Pick' }),
+      screen.getByRole('button', { name: 'Close' }),
+      toolbar,
+      screen.getByText('list'),
+      screen.getByRole('button', { name: 'SWAP' }),
+    ]
+    for (let i = 1; i < parts.length; i++) expect(follows(parts[i - 1], parts[i])).toBe(true)
+    const content = screen.getByText('list').parentElement as HTMLElement
+    expect(content.contains(toolbar)).toBe(false)
+    // handle, header, toolbar, content, footer
+    expect(dialog.children).toHaveLength(5)
+  })
+
+  it('draws no toolbar region when none is given', () => {
+    render(sheet())
+    // handle, header and content: the same three as before the toolbar existed
+    expect(screen.getByRole('dialog').children).toHaveLength(3)
+  })
+
+  it('keeps the toolbar inside the sheet\'s Tab ring: with nothing after it, Tab on it goes round to the ×', () => {
+    render(
+      <BottomSheet title="Pick" onClose={() => {}} toolbar={<button type="button">ALL</button>}>
+        <p>list</p>
+      </BottomSheet>,
+    )
+    const chip = screen.getByRole('button', { name: 'ALL' })
+    const close = screen.getByRole('button', { name: 'Close' })
+    close.focus()
+    // between two controls inside, the browser moves focus; the trap only acts on the ends of the ring
+    expect(press('Tab')).toBe(true)
+    chip.focus()
+    expect(press('Tab')).toBe(false)
+    expect(document.activeElement).toBe(close)
+    expect(press('Tab', { shiftKey: true })).toBe(false)
+    expect(document.activeElement).toBe(chip)
+  })
+})
+
 describe('BottomSheet: focus', () => {
   it('moves into the sheet when it opens and back to the opener when it closes', () => {
     const opener = openHarness()
