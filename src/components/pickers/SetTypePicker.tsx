@@ -31,7 +31,8 @@ import {
 // (a tap on the row already picked asks for nothing); the caller writes it and passes the new value
 // back, or doesn't, and the sheet keeps showing what is true (a workout asks before it deletes logged
 // drops, so an answer of "no" leaves the old type drawn). The caller mounts the sheet to open it and
-// unmounts it to close it (BottomSheet's contract); `onClose` is asked for by ×, the scrim and Escape.
+// unmounts it to close it (BottomSheet's contract; mount it outside clickable parents: React events from
+// inside its portal still bubble to whatever rendered it); `onClose` is asked for by ×, the scrim and Escape.
 //
 // Which rows a variant shows is `setTypePickerRows` (the rule, tested); a row that needs a handler
 // (Rest after this set, Cues, REMOVE THIS SET) is drawn only when the caller gave one, so no control

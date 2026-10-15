@@ -331,7 +331,7 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
             >
               {useForAll ? <Check size={12} strokeWidth={3.5} aria-hidden="true" /> : null}
             </span>
-            <span style={{ fontSize: 14, color: 'var(--text-primary)' }}>{useForAllLabel(reachable, exerciseName)}</span>
+            <span style={{ minWidth: 0, fontSize: 14, color: 'var(--text-primary)', overflowWrap: 'break-word' }}>{useForAllLabel(reachable, exerciseName)}</span>
           </button>
         ) : null}
       </div>

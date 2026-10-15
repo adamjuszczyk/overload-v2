@@ -15,6 +15,8 @@ import {
 // button hands the caller a `RirTarget` and whether "Use for all" was ticked. The caller writes
 // `rirTargetToColumns(target)` to the set, or to `applyToAllTargets(sets, ...)` when it was; the
 // heads that list holds never include a warmup (SPEC, G49: a warmup row in Plan has no RIR target).
+// The caller mounts the sheet to open it and unmounts it to close it (outside clickable parents: React
+// events from inside BottomSheet's portal still bubble to whatever rendered it).
 export interface RirTargetPickerResult {
   target: RirTarget
   /** "Use for all N sets of [exercise]" was ticked (it starts ticked, and isn't drawn when fewer than two sets would take it). */

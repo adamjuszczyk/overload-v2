@@ -186,6 +186,15 @@ describe('RepTargetPicker: the segments', () => {
     expect(screen.queryAllByRole('status')).toHaveLength(0)
   })
 
+  it('RANGE grows from the number as it was stepped to, not as the set opened', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    tap('More reps', 3)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('15')
+    expect(box('To')).toBe('17')
+    expect(button('SET 15–17 REPS')).toBeTruthy()
+  })
+
   it('has no range helper line: that is the RIR picker\'s', () => {
     render(<RepTargetPicker {...repProps()} />)
     expect(screen.queryByText('Either number is on plan. Pick on the day.')).toBeNull()
@@ -340,6 +349,27 @@ describe('RirTargetPicker: the frame', () => {
   })
 })
 
+describe('RirTargetPicker: closing', () => {
+  it('× , a tap on the scrim and Escape ask to close and send nothing; the footer button does not close it', () => {
+    const onClose = vi.fn()
+    const onSubmit = vi.fn()
+    render(<RirTargetPicker {...rirProps({ onClose, onSubmit })} />)
+    fireEvent.click(button('Close'))
+    fireEvent.click(document.querySelector('[data-bottom-sheet-scrim]') as HTMLElement)
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(3)
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.click(button('SET RIR 1–2'))
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(3)
+  })
+
+  it('says CYCLE N on a sequence program', () => {
+    render(<RirTargetPicker {...rirProps({ isCycle: true })} />)
+    expect(screen.getByText('Seated Cable Row · SET 01 · CYCLE 2')).toBeTruthy()
+  })
+})
+
 describe('RirTargetPicker: the segments', () => {
   it('has NONE, NUMBER and RANGE and no AMRAP', () => {
     render(<RirTargetPicker {...rirProps()} />)
@@ -373,6 +403,15 @@ describe('RirTargetPicker: the segments', () => {
     expect(screen.queryByText(helper)).toBeNull()
     fireEvent.click(segment('RANGE'))
     expect(screen.getByText(helper)).toBeTruthy()
+  })
+
+  it('RANGE grows from the number as it was stepped to, not as the set opened', () => {
+    render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 2 } })} />)
+    tap('More RIR', 1)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('3')
+    expect(box('To')).toBe('4')
+    expect(button('SET RIR 3–4')).toBeTruthy()
   })
 
   it('the footer button follows the choice', () => {

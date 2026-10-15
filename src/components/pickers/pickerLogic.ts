@@ -120,7 +120,7 @@ export function sameSetType(a: SetType, b: SetType): boolean {
   return a.stageKind === b.stageKind && a.stageCount === b.stageCount && a.stageRestSeconds === b.stageRestSeconds
 }
 
-// Provisional (DECISIONS, D31): SPEC gives the stepper no top end. A set has at least one stage;
+// Provisional under D31: SPEC gives the stepper no top end. A set has at least one stage;
 // ten is far past any real dropset, rest-pause, myo-reps or cluster scheme.
 export const STAGE_COUNT_MIN = 1
 export const STAGE_COUNT_MAX = 10

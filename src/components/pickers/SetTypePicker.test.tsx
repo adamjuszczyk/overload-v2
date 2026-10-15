@@ -241,6 +241,13 @@ describe('SetTypePicker: what a tap asks for', () => {
     expect(onChange).toHaveBeenCalledWith(staged('cluster', 3, null))
   })
 
+  it("keeps a set's own rest between stages when the kind changes", () => {
+    const onChange = vi.fn()
+    render(<SetTypePicker {...props({ context: 'planner', value: staged('dropset', 2, 45), onChange })} />)
+    fireEvent.click(option(/^Myo-reps/))
+    expect(onChange).toHaveBeenCalledWith(staged('myo_reps', 2, 45))
+  })
+
   it('a tap on the row already picked asks for nothing', () => {
     const onChange = vi.fn()
     render(<SetTypePicker {...props({ value: staged('dropset', 2), onChange })} />)
@@ -261,6 +268,11 @@ describe('SetTypePicker: the rows each variant draws', () => {
 
   it('Plan, week-dependent, on a set with no program set of its own exercise: no rest row and no REST BETWEEN', () => {
     render(<SetTypePicker {...fullProps({ context: 'plan-week-dependent', canEditRest: false, value: staged('dropset') })} />)
+    expect(drawn()).toEqual({ restBetween: false, restAfter: false, cues: true, remove: true, workoutNote: false, stageStepper: true })
+  })
+
+  it('Plan, week-dependent: the caller has to say the set can edit rest; without it there is no rest row and no REST BETWEEN', () => {
+    render(<SetTypePicker {...props({ context: 'plan-week-dependent', value: staged('dropset'), restAfterSeconds: null, onRestAfterChange: noop, onCues: noop, onRemove: noop })} />)
     expect(drawn()).toEqual({ restBetween: false, restAfter: false, cues: true, remove: true, workoutNote: false, stageStepper: true })
   })
 
@@ -386,6 +398,22 @@ describe('SetTypePicker: REST BETWEEN', () => {
     rerender(<SetTypePicker {...props({ context: 'change-program', value: staged('cluster'), onChange })} />)
     fireEvent.click(button('Rest between: more'))
     expect(onChange).toHaveBeenLastCalledWith(staged('cluster', 1, 30))
+  })
+})
+
+describe('SetTypePicker: the rest steppers stop at 10 minutes', () => {
+  it('REST BETWEEN: + does nothing at 10:00 and - still works', () => {
+    render(<SetTypePicker {...props({ context: 'planner', value: staged('cluster', 1, 600) })} />)
+    expect(screen.getByText('10:00')).toBeTruthy()
+    expect(button('Rest between: more').disabled).toBe(true)
+    expect(button('Rest between: less').disabled).toBe(false)
+  })
+
+  it('Rest after this set: + does nothing at 10:00 and - still works', () => {
+    render(<SetTypePicker {...fullProps({ restAfterSeconds: 600 })} />)
+    expect(screen.getByText('10:00')).toBeTruthy()
+    expect(button('Rest after this set: more').disabled).toBe(true)
+    expect(button('Rest after this set: less').disabled).toBe(false)
   })
 })
 

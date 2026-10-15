@@ -13,7 +13,8 @@ import {
 // NUMBER / RANGE / AMRAP, then the numbers; 'Use for all N sets of [exercise]' applies it to every set
 // of that exercise"). It writes nothing: the footer button hands the caller a `RepTarget` and whether
 // "Use for all" was ticked, and the caller writes it to the set, or to `applyToAllTargets(sets, ...)`
-// when it was. The caller mounts the sheet to open it and unmounts it to close it.
+// when it was. The caller mounts the sheet to open it and unmounts it to close it (outside clickable
+// parents: React events from inside BottomSheet's portal still bubble to whatever rendered it).
 export interface RepTargetPickerResult {
   target: RepTarget
   /** "Use for all N sets of [exercise]" was ticked (it starts ticked, and isn't drawn when there is only one set). */
