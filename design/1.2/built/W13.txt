@@ -1,0 +1,27 @@
+PULL 1
+PULL 1 · TODAY
+Add an exercise
+ALL
+CHEST
+BACK
+SHOULDERS
+BICEPS
+TRICEPS
+FOREARMS
+QUADS
+HAMSTRINGS
+GLUTES
+CALVES
+CORE
+OTHER
+Barbell Row
+Bulgarian Split Squat
+Cable Crunch
+Chest-Supported Row
+Dips
+Hammer Curl
+Incline Dumbbell Press
+Lateral Raise
+Leg Press
+
+Pick a muscle group to create a new exercise.

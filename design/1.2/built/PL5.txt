@@ -1,0 +1,34 @@
+CHANGE THE PROGRAM
+PULL 1 · FROM WEEK 2
+Add exercise
+ALL
+CHEST
+BACK
+SHOULDERS
+BICEPS
+TRICEPS
+FOREARMS
+QUADS
+HAMSTRINGS
+GLUTES
+CALVES
+CORE
+OTHER
+Back Squat
+QUADS
+Cable Curl
+BICEPS
+Chest-Supported Row
+BACK
+Hammer Curl
+BICEPS
+Hanging Leg Raise
+CORE
+Incline Dumbbell Press
+CHEST
+Lateral Raise
+SHOULDERS
+Machine Pulldown
+BACK
+Pec Deck Fly
+CHEST
