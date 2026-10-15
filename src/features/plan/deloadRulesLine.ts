@@ -3,9 +3,11 @@ import type { DeloadRules } from '../../lib/deloadRules'
 // Chunk 33 (SPEC.md Deload [P1.1], G43; DECISIONS 87, provisional): "Plan shows
 // the rules in effect, read-only, next to the deload action." The one line under
 // MARK WEEK AS DELOAD (MARK CYCLE AS DELOAD): the rules deload marking will
-// apply, and whose they are. PlanPage hands it the rules it already resolves for
-// marking (resolveEffectiveDeloadRules), so what's shown is exactly what a tap
-// applies; this only words them.
+// apply. PlanPage hands it the rules it already resolves for marking
+// (resolveEffectiveDeloadRules), so what's shown is exactly what a tap applies;
+// this only words them. Chunk 48 (SPEC Deload [1.2], 16b): the rules are the
+// Settings rules and nothing else, so the line always says so ("from Settings",
+// board 1e's wording) and never whose they are.
 
 const MINUS = '−'
 
@@ -36,15 +38,11 @@ export function describeDeloadRules(rules: DeloadRules): string {
   return parts.join(' · ')
 }
 
-// 'run' = the run's own override; 'default' = the Settings default as it is now
-// (a run without an override uses it, so a change in Settings reaches it).
-export type DeloadRulesOwner = 'run' | 'default'
-
 // The line, or null when no rule is on (an unset feature shows nothing — the
 // standing UI rule).
-export function deloadRulesLine(rules: DeloadRules | null, owner: DeloadRulesOwner): string | null {
+export function deloadRulesLine(rules: DeloadRules | null): string | null {
   if (!rules) return null
   const described = describeDeloadRules(rules)
   if (described === '') return null
-  return `Deload rules (${owner === 'run' ? "this run's" : 'your default'}): ${described}`
+  return `Deload rules (from Settings): ${described}`
 }

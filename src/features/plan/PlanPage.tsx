@@ -49,7 +49,7 @@ import {
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadRules'
-import { deloadRulesLine, type DeloadRulesOwner } from './deloadRulesLine'
+import { deloadRulesLine } from './deloadRulesLine'
 import { useSettingsStore } from '../settings/settingsStore'
 import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
@@ -110,10 +110,11 @@ const DOW_SHORT_TITLE: Record<DayOfWeek, string> = {
 //     then "Make this week the new default" (chunk 32);
 //   - priorities → shown view-only (chunk 28), set in the planner;
 //   - fixed for the run (G30): the schedule (its type, a weekday per workout,
-//     the sequence order), the workouts and the deload-rules override. No
-//     screen edits them; the planner refuses a run's copy (PlannerPage.tsx);
+//     the sequence order) and the workouts. No screen edits them; the planner
+//     refuses a run's copy (PlannerPage.tsx);
 //   - the planning type was already fixed (the tab never offered it);
-//   - the rules in effect → one read-only line under the deload action.
+//   - the deload rules are the Settings rules (programs have no override since
+//     chunk 48) → one read-only line under the deload action.
 
 // Plan's week panel shows one week in two views (chunk 29, SPEC Plan screen
 // [P1.1], G16): SETS (how many sets, and each set's weight, reps and RIR, tags
@@ -281,10 +282,12 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // as they were for a weekday run; a sequence run never reads them at all.
   const isSequence = (program?.scheduleType ?? 'weekday') === 'sequence'
 
-  // Chunk 22 — the EFFECTIVE deload rules for this run: the program's own
-  // override if it has one, else the global default (deloadRules.ts's
-  // resolveEffectiveDeloadRules — "a program override wins over the global
-  // rules"). Resolved once, here at the screen layer, and handed to every
+  // Chunk 22, chunk 48 — the EFFECTIVE deload rules for this run: the Settings
+  // rules and nothing else (deloadRules.ts's resolveEffectiveDeloadRules; SPEC
+  // Deload [1.2], 16b: "Settings only; programs have no override"). A program
+  // that stored an override of its own (v2_programs.deload_rules, which stays
+  // in the database) is never read: the run falls back to Settings, silently.
+  // Resolved once, here at the screen layer, and handed to every
   // mark/unmark call below as a plain argument — the executor
   // (weekPlanService.ts) has no notion of settings or programs at all.
   // Read via useSettingsStore (the hydrated Zustand store), not useSettings
@@ -295,16 +298,14 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // this page needs no QueryClientProvider of its own in tests that mock
   // every other Supabase-touching hook already (every existing PlanPage
   // jsdom test file).
-  const globalDeloadRules = useSettingsStore((s) => s.deloadRules)
-  const effectiveDeloadRules = resolveEffectiveDeloadRules(program?.deloadRules, globalDeloadRules)
+  const settingsDeloadRules = useSettingsStore((s) => s.deloadRules)
+  const effectiveDeloadRules = resolveEffectiveDeloadRules(settingsDeloadRules)
   // Chunk 33 (SPEC Deload [P1.1], G43): "Plan shows the rules in effect,
   // read-only, next to the deload action." The line under MARK WEEK AS DELOAD
   // shows exactly what marking is handed (effectiveDeloadRules above, never a
-  // second resolution), and says whose they are: the run's own override, else
-  // the Settings default as it is now. A run on "use my default" follows a
-  // change in Settings because this reads the store live.
-  const deloadRulesOwner: DeloadRulesOwner = program?.deloadRules != null ? 'run' : 'default'
-  const deloadRulesText = deloadRulesLine(effectiveDeloadRules, deloadRulesOwner)
+  // second resolution) and says they are from Settings (board 1e). It follows
+  // a change in Settings with no reload because this reads the store live.
+  const deloadRulesText = deloadRulesLine(effectiveDeloadRules)
 
   // Chunk 22 (reviewer's note 5) — "Already started — sets left as they
   // are", shown after a mark/unmark that the started guard caught. Cleared
@@ -850,9 +851,9 @@ interface PanelProps {
   // above (null when not shared), for the per-session DELOAD toggle's own
   // note ("Marks Mon, Tue, Wed, Thu, Fri — they share one plan").
   sharedWeekdays: DayOfWeek[] | null
-  // Chunk 22 — the screen-resolved effective deload rules (program
-  // override, else the global default, else none — PlanPage.tsx's own
-  // resolveEffectiveDeloadRules call, computed once for the whole page).
+  // Chunk 22 — the screen-resolved effective deload rules (the Settings
+  // rules, else none — PlanPage.tsx's own resolveEffectiveDeloadRules call,
+  // computed once for the whole page).
   deloadRules: DeloadRules | null
   // Chunk 31 — the run's planning type, which decides what this week is compared
   // with (weekDiff.ts's chooseDiffSources): undefined on the program reads as

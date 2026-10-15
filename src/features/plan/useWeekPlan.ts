@@ -123,8 +123,8 @@ export async function planWeekThenFindId(
 }
 
 // Chunk 22 — extends chunk 21's flag-only toggle: `rules` is the EFFECTIVE
-// rules already resolved by the caller (PlanPage.tsx — program override,
-// else the global default, else none; see deloadRules.ts's
+// rules already resolved by the caller (PlanPage.tsx — the Settings rules,
+// else none: programs have no override since chunk 48; see deloadRules.ts's
 // resolveEffectiveDeloadRules), handed straight to the executor
 // (weekPlanService.ts's markSessionDeload/unmarkSessionDeload), which
 // alone decides flag-only vs. calculated/restored vs. the started guard.
