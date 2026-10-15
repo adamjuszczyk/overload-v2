@@ -6,11 +6,10 @@ import { DEFAULT_SETTINGS } from './settingsStore'
 import { DEFAULT_DELOAD_SETS_RULE } from '../../lib/plannerVocabulary.js'
 
 // Chunk 22 — Settings' own DELOAD RULES section (SPEC.md "Settings" —
-// "default deload rules"), off by default. Renders the REAL
-// DeloadRulesEditor.tsx (the same component the program override mounts —
-// reviewer's note 7: "same editor component"); only useSettings/useAuth
-// are mocked, same minimal seam every other page-level test in this app
-// uses.
+// "default deload rules"; since chunk 48 the deload rules, Settings only),
+// off by default. Renders the REAL DeloadRulesEditor.tsx; only
+// useSettings/useAuth are mocked, same minimal seam every other
+// page-level test in this app uses.
 
 afterEach(() => cleanup())
 beforeEach(() => {

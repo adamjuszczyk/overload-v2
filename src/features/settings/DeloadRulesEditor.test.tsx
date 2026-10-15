@@ -5,8 +5,8 @@ import DeloadRulesEditor from './DeloadRulesEditor'
 import { DEFAULT_DELOAD_SETS_RULE, DEFAULT_DELOAD_WEIGHT_RULE } from '../../lib/plannerVocabulary.js'
 import type { DeloadRules } from '../../lib/deloadRules'
 
-// Chunk 22 — the ONE shared rules editor (Settings' own global-default
-// section and the program override both mount this unchanged). UI rule
+// Chunk 22 — the deload rules editor (Settings' own section mounts it; the
+// program override that mounted it a second time is gone since chunk 48). UI rule
 // (reviewer's note 10): existing components and tokens only; checked at
 // 375px below, same convention as every other planner/settings control.
 

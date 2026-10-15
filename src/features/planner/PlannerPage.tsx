@@ -31,9 +31,10 @@ import StepVolume from './StepVolume'
 // "saved programs" list and its "+" create flow, since chunk 26 — formerly
 // ProgramPage.tsx's "my programs"). A run's copy is refused (chunk 33, SPEC
 // Programs and runs [P1.1]: "The planner refuses to open a run's copy"): a
-// running program's schedule, workouts and deload-rules override are fixed for
-// the run, and the rest of what Plan's program tab used to edit (which was the
-// only other place these steps were shown) happens in the week.
+// running program's schedule and workouts are fixed for the run (its deload
+// rules are Settings', since chunk 48), and the rest of what Plan's program tab
+// used to edit (which was the only other place these steps were shown) happens
+// in the week.
 //
 // Starting needs a schedule (chunk 33, G39): START is disabled while the program
 // has no scheduled workout, with the reason under it (programs/hasSchedule.ts is

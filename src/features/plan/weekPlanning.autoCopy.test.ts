@@ -254,12 +254,12 @@ describe('autoCopy — from last week (a week-dependent week after week 1)', () 
   const weekDependentWeekTwo = () =>
     autoCopy({ planningType: 'week_dependent', weekNumber: 2, runCopy: runCopy(), priorWeeks: [weekOne()] })
 
-  it('takes last week\'s structure as it is: its exercises and order, every set, the added one included', () => {
+  it('takes last week\'s sets as they are, every one, the added one included; the exercise list is the run copy\'s (its positions: 1 and 2, last week\'s were 0 and 1)', () => {
     const r = weekDependentWeekTwo()
     expect(r.source).toEqual({ kind: 'week', weekNumber: 1 })
     expect(r.exercises).toEqual([
-      { programExerciseId: 'pe-lat', position: 0 },
-      { programExerciseId: 'pe-face', position: 1 },
+      { programExerciseId: 'pe-lat', position: 1 },
+      { programExerciseId: 'pe-face', position: 2 },
     ])
     expect(r.sets.map((s) => s.sourceId).sort()).toEqual(
       ['w1-face-1', 'w1-face-2', 'w1-face-3', 'w1-lat-1', 'w1-lat-d', 'w1-lat-d1', 'w1-lat-w'],
@@ -305,7 +305,12 @@ describe('autoCopy — from last week (a week-dependent week after week 1)', () 
   it('an exercise listed twice in the source week is copied once (041: on conflict do nothing; the table\'s key forbids it anyway)', () => {
     const doubled = plan(1, [pe('pe-lat', 'lat', 0), pe('pe-lat', 'lat', 1)], [wset('a', 'pe-lat', 1)])
     const r = autoCopy({ planningType: 'week_dependent', weekNumber: 2, runCopy: runCopy(), priorWeeks: [doubled] })
-    expect(r.exercises).toEqual([{ programExerciseId: 'pe-lat', position: 0 }])
+    // Lat Pulldown once, with its one set; Face Pull is in the run copy and not in that week: added, no sets.
+    expect(r.exercises).toEqual([
+      { programExerciseId: 'pe-lat', position: 1 },
+      { programExerciseId: 'pe-face', position: 2 },
+    ])
+    expect(r.sets.map((s) => s.sourceId)).toEqual(['a'])
   })
 
   it('drops every rep target and the AMRAP flag — week 1\'s 9–11 and its AMRAP drop do not come along', () => {
@@ -384,10 +389,11 @@ describe('autoCopy after a missed week — the current week copies from the last
   it('weeks 1 and 2 planned, week 3 never planned: week 4 takes week 2 whole — not week 1 (older, different) and not week 3 (nothing)', () => {
     const r = weekFour([weekOne(), weekTwo()])
     expect(r.source).toEqual({ kind: 'week', weekNumber: 2 })
+    // The run copy's list (Lat Pulldown 1, Face Pull 2), then the week-only Curl week 2 had (DECISIONS 143: a week-only slot stays as it was).
     expect(r.exercises).toEqual([
-      { programExerciseId: 'pe-lat', position: 0 },
-      { programExerciseId: 'pe-face', position: 1 },
-      { programExerciseId: 'pe-curl', position: 2 },
+      { programExerciseId: 'pe-lat', position: 1 },
+      { programExerciseId: 'pe-face', position: 2 },
+      { programExerciseId: 'pe-curl', position: 3 },
     ])
     expect(r.sets.map((s) => s.sourceId).sort()).toEqual(WEEK_TWO_SETS)
     expect(r.sets.some((s) => s.sourceId.startsWith('w1-'))).toBe(false) // none of week 1's seven sets

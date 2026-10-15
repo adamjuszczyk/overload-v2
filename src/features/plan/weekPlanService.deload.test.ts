@@ -35,7 +35,7 @@ function calcSet(overrides: Partial<DeloadCalculatedSet>): DeloadCalculatedSet {
   return {
     sourceId: 'src', parentSourceId: null, programExerciseId: 'pe1', setNumber: 1, stageIndex: 0,
     isWarmup: false, stageKind: null, programSetId: null, repMin: null, repMax: null, isAmrap: false,
-    targetRir: null, tags: null, isDropset: false, targetWeight: null,
+    targetRir: null, targetRirMax: null, tags: null, isDropset: false, targetWeight: null,
     ...overrides,
   }
 }
@@ -75,6 +75,20 @@ describe('insertCalculatedPlanSets — id remap (mirrors copySetsWithGrouping\'s
     const { insertOneSet, calls } = makeFakeInsertOneSet()
     await insertCalculatedPlanSets('u1', 'wp1', [warmup], insertOneSet)
     expect(calls[0]).toMatchObject({ is_warmup: true, target_weight: 40, program_set_id: 'ps1', tags: ['push here'] })
+  })
+
+  // Chunk 48 — the writer of the RIR range's high end (migration 042): a head and
+  // a stage each write target_rir and target_rir_max as calculated.
+  it('writes target_rir_max on a head and on a stage (a range 3–4 on the head, a number on the stage)', async () => {
+    const head = calcSet({ sourceId: 'h1', setNumber: 1, stageKind: 'dropset', targetRir: 3, targetRirMax: 4 })
+    const stage = calcSet({ sourceId: 's1', parentSourceId: 'h1', setNumber: 1, stageIndex: 1, isDropset: true, targetRir: 2, targetRirMax: null })
+    const { insertOneSet, calls } = makeFakeInsertOneSet()
+
+    await insertCalculatedPlanSets('u1', 'wp1', [head, stage], insertOneSet)
+
+    expect(calls[0]).toMatchObject({ target_rir: 3, target_rir_max: 4 })
+    expect(calls[1]).toMatchObject({ target_rir: 2, target_rir_max: null })
+    expect(calls[1]).toHaveProperty('target_rir_max') // present (null), never left to a column default
   })
 })
 
@@ -120,6 +134,29 @@ describe('insertRestoredPlanSets — regroups the id-free snapshot and resolves 
     const headBId = calls.find((c) => c.target_weight === 20) // headB inserted second (new-2)
     expect(headBId).toBeDefined()
     expect(stageCall.parent_week_plan_set_id).toBe('new-2') // peB's own head, never peA's
+  })
+
+  // Chunk 48 — the restore is the other writer of target_rir_max: an unmark brings
+  // the range back from the snapshot, for the head and for a stage.
+  it('writes the snapshot\'s RIR range back (target_rir 1, target_rir_max 2 on the head; a number on the stage)', async () => {
+    const head = entry({ setNumber: 1, stageKind: 'dropset', targetWeight: 100, targetRir: 1, targetRirMax: 2 })
+    const stage = entry({ setNumber: 1, stageIndex: 1, isDropset: true, targetWeight: 80, targetRir: 0, targetRirMax: null })
+    const { insertOneSet, calls } = makeFakeInsertOneSet()
+
+    await insertRestoredPlanSets('u1', 'wp1', [head, stage], insertOneSet)
+
+    expect(calls[0]).toMatchObject({ target_rir: 1, target_rir_max: 2 })
+    expect(calls[1]).toMatchObject({ target_rir: 0, target_rir_max: null })
+  })
+
+  it('a snapshot saved before RIR ranges existed (no targetRirMax key at all) restores with target_rir_max null', async () => {
+    const legacy = entry({ targetRir: 2 })
+    expect('targetRirMax' in legacy).toBe(false) // the legacy shape, as stored in deload_restore before 042
+    const { insertOneSet, calls } = makeFakeInsertOneSet()
+
+    await insertRestoredPlanSets('u1', 'wp1', [legacy], insertOneSet)
+
+    expect(calls[0]).toMatchObject({ target_rir: 2, target_rir_max: null })
   })
 })
 
@@ -176,6 +213,27 @@ describe('applyCalculatedDeloadMark — write order (reviewer\'s note 3)', () =>
       expect.objectContaining({ targetRir: 3, programExerciseId: 'pe1', setNumber: 1 }),
     ])
   })
+
+  // Chunk 48 — the snapshot is what an unmark restores from, so it must hold the
+  // plan's RIR range as it stood: a range (1–2) and a number, read from the rows'
+  // own target_rir_max, and a row from a database without the column (absent key) as null.
+  it('the snapshot keeps each row\'s RIR range (target_rir 1, target_rir_max 2) and a plain number as null', async () => {
+    let writtenSnapshot: DeloadRestoreEntry[] = []
+    const ops: DeloadMarkWriteOps = {
+      writeSnapshotAndMark: async (_id, snapshot) => { writtenSnapshot = snapshot },
+      deleteAllSets: async () => {},
+      insertCalculatedSets: async () => {},
+    }
+    const current = [
+      makeDbSet({ id: 'ranged', set_number: 1, target_rir: 1, target_rir_max: 2 }),
+      makeDbSet({ id: 'plain', set_number: 2, target_rir: 2, target_rir_max: null }),
+      makeDbSet({ id: 'no-column', set_number: 3, target_rir: 2 }), // a row read before 042 had the column: no key
+    ]
+
+    await applyCalculatedDeloadMark('u1', 'wp1', current, [], ops)
+
+    expect(writtenSnapshot.map((e) => [e.setNumber, e.targetRir, e.targetRirMax])).toEqual([[1, 1, 2], [2, 2, null], [3, 2, null]])
+  })
 })
 
 describe('applyDeloadRestore — write order (reviewer\'s note 4)', () => {
@@ -225,10 +283,10 @@ describe('applyDeloadRestore — write order (reviewer\'s note 4)', () => {
 describe('the executor writes exactly what the calculator computed (bridges deloadRules.test.ts to the I/O layer)', () => {
   it('insertCalculatedPlanSets\' payloads match calculateDeloadSets\' own output for the same fixture', async () => {
     const base = [
-      { id: 'b1', programExerciseId: 'pe1', setNumber: 1, parentId: null, stageIndex: 0, isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false, targetRir: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: 95 },
-      { id: 'b2', programExerciseId: 'pe1', setNumber: 2, parentId: null, stageIndex: 0, isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false, targetRir: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null },
+      { id: 'b1', programExerciseId: 'pe1', setNumber: 1, parentId: null, stageIndex: 0, isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false, targetRir: 1, targetRirMax: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: 95 },
+      { id: 'b2', programExerciseId: 'pe1', setNumber: 2, parentId: null, stageIndex: 0, isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false, targetRir: 2, targetRirMax: null, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null },
     ]
-    const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' }, weight: { percent: 90, rounding: 'down', step: 2.5, stepUnit: 'kg' } }
+    const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' }, weight: { percent: 90, rounding: 'down', step: 2.5, stepUnit: 'kg' }, rir: { delta: 2 } }
     const calculated = calculateDeloadSets(base, rules)
     expect(calculated).toHaveLength(1) // 2 -> 1
 
@@ -239,5 +297,9 @@ describe('the executor writes exactly what the calculator computed (bridges delo
     expect(calls[0].target_weight).toBe(calculated[0].targetWeight)
     expect(calls[0].rep_min).toBe(calculated[0].repMin)
     expect(calls[0].rep_max).toBe(calculated[0].repMax)
+    // The kept set was the range 1–2: the RIR rule (+2) wrote both ends.
+    expect(calls[0].target_rir).toBe(calculated[0].targetRir)
+    expect(calls[0].target_rir_max).toBe(calculated[0].targetRirMax)
+    expect([calls[0].target_rir, calls[0].target_rir_max]).toEqual([3, 4])
   })
 })
