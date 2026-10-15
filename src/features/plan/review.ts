@@ -22,13 +22,22 @@
 //     planned as a range and done outside it; AMRAP reps never count, its weight still does. RIR is shown
 //     alongside and never makes an item. A done number that was never entered (a ticked warmup's blank
 //     weight and reps) is nothing to take over, so it never differs;
-//   - a TYPE item ("You made set 02 a dropset"): the log's kind differs from the planned kind (warmup,
-//     normal, or a stage kind), or the same stage kind has more drops done than planned. A planned staged
-//     set whose drops weren't done is no item while its log keeps the stage kind (a stage row is no set, and
-//     SPEC lists only "a drop or stage added"), but it is one when the log gave the kind up: the set was
-//     switched back to Normal during the workout (19c; the log's own kind is the type as done).
+//   - a TYPE item ("You made set 02 a dropset"): the type the workout gave the set differs from the planned
+//     type (warmup, normal, or a stage kind), or the same stage kind has more drops DONE than planned. The
+//     workout's type is read from the session's change rows and the log (DECISIONS 141, Adam 2026-10-15):
+//     the set's `retyped` row (keyed by the planned set, logged or not) when it has one, else its log's own
+//     kind (the type as done). So a set given a stage kind it didn't have is an item whether or not its
+//     drops were done (a plain set made a dropset, a dropset made rest-pause); one that keeps the planned
+//     kind with its drops not done is not (a stage row is no set, and SPEC lists only "a drop or stage
+//     added"); a planned staged set switched back to Normal is one (19c) when its log gave the kind up or
+//     its `retyped` row says normal, and only the row can tell a kindless dropset (before 1.1, and what
+//     Plan's ADD STAGE still leaves) switched to Normal from one logged as planned: both leave a null kind.
+//     The stage count its USE writes is the count set in the workout: the drops done when some were, else
+//     the `retyped` row's count, else the `pending_stages` row's (keyed by the logged head), else 1.
 // Per exercise: a set added during the session (a log with no planned set, on an exercise of the plan)
-// is an ADDED SET item; the sets of an exercise that isn't in the plan are one ADDED EXERCISE item; a
+// is an ADDED SET item, never a type item: it has no planned set, so no `retyped` row (Adam's data-model
+// rule), and the stage kind it was given, drops done or not, is part of the added set (the drops done, else
+// its `pending_stages` row's count, else 1); the sets of an exercise that isn't in the plan are one ADDED EXERCISE item; a
 // recorded swap (`v2_session_exercise_swaps`) is one SWAPPED item, and the original's sets that the swap
 // skipped (or never logged) are part of it, not "Skipped" items of their own.
 //
@@ -147,7 +156,11 @@ export interface ReviewSession extends Pick<Session, 'id' | 'weekPlanId' | 'stat
   workoutDay?: { name: string }
   setLogs?: readonly ReviewLog[]
   swaps?: readonly ReviewSwap[]
-  /** This session's own `v2_session_set_changes`: only a `deleted` one is read (a type change is on the log). */
+  /**
+   * This session's own `v2_session_set_changes`, all three kinds: `deleted` (a planned set removed: "Skipped"),
+   * `retyped` (the type the workout gave a planned set, keyed by it whether or not it was logged: it wins over
+   * the log) and `pending_stages` (the drops still to do under a logged head, keyed by its log: a count).
+   */
   sessionSetChanges?: readonly SessionSetChange[]
 }
 
@@ -343,37 +356,65 @@ function plannedTypeOf(head: ReviewSetRow, stageRows: readonly ReviewSetRow[]): 
   return { kind: 'normal' }
 }
 
-// A logged head's type as it was DONE (SPEC Objects stored: "set kind and stage kind as done" is on the
-// log): a warmup, a staged set with the drops that were logged (a skipped drop is not done), or a plain one.
-// The drops give the staged set its count, so with none logged the set is plain here whatever stage kind its
-// log carries: that kind is a drop done only once a drop was. `switchedToNormal` is where the log's own kind
-// is read against the plan's, for a planned staged set.
-function doneTypeOf(head: ReviewLog, stageLogs: readonly ReviewLog[]): SessionSetChangeType {
-  if (head.isWarmup) return { kind: 'warmup' }
-  const drops = stageLogs.filter((s) => !s.isSkipped).length
-  if (drops > 0) return { kind: 'staged', stageKind: resolveStageKind(head.stageKind ?? null), stageCount: drops }
+// The type the WORKOUT gave a set, where something recorded it; undefined where nothing says it changed
+// (done as planned, or the record can't tell). A staged kind may come without a count (`stageCount: null`):
+// the count is then read from the drops done and the `pending_stages` row (`doneTypeOf`).
+type GivenType =
+  | { kind: 'warmup' }
+  | { kind: 'normal' }
+  | { kind: 'staged'; stageKind: StageKind; stageCount: number | null }
+
+// DECISIONS 141 (Adam, 2026-10-15): "Both cases are seen through the session's change rows"; SPEC Objects
+// stored: the type changed during the workout "is recorded on the session's set" (the log's `is_warmup` and
+// `stage_kind`). Read in this order:
+//   1. The set's `retyped` row, keyed by the planned set whether or not it is logged (one per planned set per
+//      session, so the latest type): that is the type the workout gave it, and it wins over the log. It is
+//      the only record that tells a kindless dropset (a planned head with stage rows and no kind, which reads
+//      as a dropset) switched to Normal from one logged as planned: the log's kind is null both ways.
+//   2. The log: a warmup flag; a stage kind other than the one the plan holds for the set (a staged set's own,
+//      a null kind reading as a dropset, or a plain set's raw head kind, which shows nowhere) is a kind it was
+//      given, drops done or not; the plan's kind kept, or a null/null pair, is the set as planned.
+//   3. A planned staged set whose head has a kind and whose log has none was switched back to Normal (19c;
+//      TASKS 62 leaves the log's `stage_kind` null). An added set (no `planned`) has nothing to be switched from.
+function givenType(
+  planned: { head: ReviewSetRow; type: SessionSetChangeType } | undefined,
+  log: ReviewLog,
+  retyped: SessionSetChangeType | undefined,
+): GivenType | undefined {
+  if (retyped !== undefined) return retyped
+  if (log.isWarmup) return { kind: 'warmup' }
+  const logged = log.stageKind ?? null
+  const held = planned === undefined ? null : planned.type.kind === 'staged' ? planned.type.stageKind : (planned.head.stageKind ?? null)
+  if (logged !== null) return logged === held ? undefined : { kind: 'staged', stageKind: logged, stageCount: null }
+  return planned !== undefined && planned.type.kind === 'staged' && (planned.head.stageKind ?? null) !== null ? { kind: 'normal' } : undefined
+}
+
+// A drop is done when it was logged and not skipped.
+const dropsDone = (stageLogs: readonly ReviewLog[]): number => stageLogs.filter((s) => !s.isSkipped).length
+
+// A logged head's type as it was DONE: a warmup, a staged set, or a plain one. Drops done give a staged set its
+// count ("USE writes the stage count set in the workout: … the drops done when some were"); with none done, a
+// stage kind the workout gave the set still makes it a staged one, with the count the `retyped` row holds, else
+// the `pending_stages` row of the head (the set's total drops), else 1 (picking a staged kind adds its first
+// stage). A stage kind the log merely keeps (the plan's own), with no drop done, is a plain set: a stage row is no set.
+function doneTypeOf(head: ReviewLog, drops: number, given: GivenType | undefined, pending: number | undefined): SessionSetChangeType {
+  if (given?.kind === 'warmup') return { kind: 'warmup' }
+  if (drops > 0) {
+    return { kind: 'staged', stageKind: given?.kind === 'staged' ? given.stageKind : resolveStageKind(head.stageKind ?? null), stageCount: drops }
+  }
+  if (given?.kind === 'staged') return { kind: 'staged', stageKind: given.stageKind, stageCount: given.stageCount ?? pending ?? 1 }
   return { kind: 'normal' }
 }
 
-// SPEC 19c, 13d ("a set type changed (19)"): a planned staged set switched back to Normal during the workout.
-// A head's log carries its stage kind as done: the app logs the plan's kind as it is (SetRow writes
-// `plannedSet.stageKind`), and the switch to Normal leaves the log's `stage_kind` null (TASKS 62). So it was
-// switched when the plan's head has a stage kind and its log has none. The log with its kind kept is a set whose
-// drops were simply not done, and a null on both sides is a set logged as planned: before 1.1 a planned
-// dropset's head had no kind, and its log has none either (a switch to Normal of such a set leaves the log
-// the same, so it gives no item). Another stage kind on the log, with no drop logged, is not read either: it
-// has no stage count (the drops give it), so it stays as it was before this rule.
-function switchedToNormal(plannedHead: ReviewSetRow, log: ReviewLog): boolean {
-  return (plannedHead.stageKind ?? null) !== null && (log.stageKind ?? null) === null
-}
-
-// "You made set 02 a dropset": the kinds differ, or the same stage kind has more drops than planned. Fewer
-// drops than planned are not an item, and neither is a planned staged set done without its drops (done plain,
-// `doneTypeOf`) unless it was switched to Normal.
-function typeChanged(planned: SessionSetChangeType, done: SessionSetChangeType, switched: boolean): boolean {
-  if (planned.kind !== done.kind) return planned.kind === 'staged' && done.kind === 'normal' ? switched : true
+// "You made set 02 a dropset": the type the workout gave differs from the planned one, or the same stage kind has
+// more drops DONE than planned (`drops`, never the count set: the kind is the same and nothing more was done).
+// Fewer drops than planned are not an item. A planned staged set done without its drops reads as a plain one,
+// and that is an item only when the workout switched it to Normal (`given`): the log's null kind under a kindless
+// planned head, with no row to say so, is a set logged as planned.
+function typeChanged(planned: SessionSetChangeType, done: SessionSetChangeType, drops: number, given: GivenType | undefined): boolean {
+  if (planned.kind !== done.kind) return planned.kind === 'staged' && done.kind === 'normal' ? given?.kind === 'normal' : true
   if (planned.kind === 'staged' && done.kind === 'staged') {
-    return planned.stageKind !== done.stageKind || done.stageCount > planned.stageCount
+    return planned.stageKind !== done.stageKind || drops > planned.stageCount
   }
   return false
 }
@@ -433,8 +474,8 @@ interface Context {
   weightUnit: WeightUnit
 }
 
-function doneSetOf(head: ReviewLog, stageLogs: readonly ReviewLog[]): DoneSet {
-  return { weight: head.weight ?? null, reps: head.reps ?? null, rir: head.rir ?? null, type: doneTypeOf(head, stageLogs) }
+function doneSetOf(head: ReviewLog, type: SessionSetChangeType): DoneSet {
+  return { weight: head.weight ?? null, reps: head.reps ?? null, rir: head.rir ?? null, type }
 }
 
 // Every item of one done session of last week, in the order the workout was laid out: each exercise's
@@ -459,10 +500,29 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
     if (log.weekPlanSetId != null) pushTo(logsOfPlannedSet, log.weekPlanSetId, log)
   }
 
+  // The session's change rows (042), each kind by its own key: a planned set deleted (before it was logged, or
+  // after: a stale log of it is not read), the type the workout gave a planned set (the row is keyed by it
+  // whether or not it was logged), and the drops still to do under a logged head (the set's total, keyed by its log).
   const deleted = new Set<string>()
+  const retypedOf = new Map<string, SessionSetChangeType>()
+  const pendingDropsOf = new Map<string, number>()
   for (const change of session.sessionSetChanges ?? []) {
-    if (change.kind === 'deleted') deleted.add(change.weekPlanSetId)
+    switch (change.kind) {
+      case 'deleted':
+        deleted.add(change.weekPlanSetId)
+        break
+      case 'retyped':
+        retypedOf.set(change.weekPlanSetId, change.type)
+        break
+      case 'pending_stages':
+        pendingDropsOf.set(change.setLogId, change.stageCount)
+        break
+    }
   }
+  // A set nobody planned has no plan to differ from, and so no `retyped` row: its stage kind is the kind it was
+  // given, and its type is shown with the added set (REVIEW lists it as an added set, never as a type change).
+  const addedDoneSet = (head: ReviewLog): DoneSet =>
+    doneSetOf(head, doneTypeOf(head, dropsDone(stageLogsOf.get(head.id) ?? []), givenType(undefined, head, undefined), pendingDropsOf.get(head.id)))
 
   const exerciseRows = [...lastPlan.exercises].sort((a, b) => a.position - b.position)
   const planNames = new Map<string, string>()
@@ -556,13 +616,15 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
       // A log of another exercise (the seed relabels a swap's logs, keeping the planned set) is no comparison.
       if (log.exerciseId !== row.exerciseId) continue
 
-      const done = doneSetOf(log, stageLogsOf.get(log.id) ?? [])
+      const plannedType = plannedTypeOf(head, stageRowsOf(head))
+      const drops = dropsDone(stageLogsOf.get(log.id) ?? [])
+      const given = givenType({ head, type: plannedType }, log, retypedOf.get(head.id))
+      const done = doneSetOf(log, doneTypeOf(log, drops, given, pendingDropsOf.get(log.id)))
       const differs = numbersDiffer(planned, log, unit)
       if (differs.weight || differs.reps) {
         items.push({ kind: 'number', ...common, planned, done, weightDiffers: differs.weight, repsDiffer: differs.reps })
       }
-      const plannedType = plannedTypeOf(head, stageRowsOf(head))
-      if (typeChanged(plannedType, done.type, switchedToNormal(head, log))) {
+      if (typeChanged(plannedType, done.type, drops, given)) {
         items.push({ kind: 'retyped', ...common, plannedType, doneType: done.type })
       }
     }
@@ -587,7 +649,7 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
         exerciseName,
         setNumber: log.setNumber,
         unit,
-        done: doneSetOf(log, stageLogsOf.get(log.id) ?? []),
+        done: addedDoneSet(log),
         target: { programExerciseId: thisRowId },
       })
     }
@@ -606,7 +668,7 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
   for (const { exerciseId, list, first } of addedExercises) {
     const sets = [...list]
       .sort((a, b) => Number(b.isWarmup) - Number(a.isWarmup) || a.setNumber - b.setNumber || time(a.loggedAt) - time(b.loggedAt))
-      .map((l) => doneSetOf(l, stageLogsOf.get(l.id) ?? []))
+      .map(addedDoneSet)
     items.push({
       kind: 'added_exercise',
       sessionId,
@@ -811,7 +873,11 @@ function sentence(text: string): string {
 const targetWeightOf = (weight: number | null): number | null => (weight !== null && weight >= 0 ? weight : null)
 const targetRepsOf = (reps: number | null): number | null => (reps !== null && reps >= 1 ? reps : null)
 
-/** What a USE on a number item shows and writes: the done weight and, unless AMRAP was planned, the done reps. */
+/**
+ * What a USE on a number item shows and writes: the done weight and, unless AMRAP was planned, the done reps. A set
+ * planned AMRAP keeps AMRAP and takes the weight only (DECISIONS 137 (a), Adam 2026-10-15: "Keep AMRAP; USE on a
+ * planned AMRAP set writes the weight only"), because its reps "never count".
+ */
 function numbersToTake(item: ReviewNumberItem): { weight: number | null; reps: number | null } {
   return {
     weight: targetWeightOf(item.done.weight),
@@ -1099,10 +1165,14 @@ function useTypeWrites(item: ReviewRetypedItem, plan: ReviewPlan, newId: () => s
 
   const isWarmup = type.kind === 'warmup'
   const stageKind = type.kind === 'staged' ? type.stageKind : null
-  const currentKind = stages.length > 0 ? resolveStageKind(head.stageKind ?? null) : (head.stageKind ?? null)
+  const storedKind = head.stageKind ?? null
+  // The kind the set has now, as Plan shows it (a kindless head with stages reads as a dropset). A kind is written
+  // only when the row's own column changes: a kindless dropset made Normal is already null there, and USE only
+  // takes its stage rows away.
+  const currentKind = stages.length > 0 ? resolveStageKind(storedKind) : storedKind
   const changes: ReviewSetChanges = {}
   if (head.isWarmup !== isWarmup) changes.isWarmup = isWarmup
-  if (currentKind !== stageKind) changes.stageKind = stageKind
+  if (currentKind !== stageKind && storedKind !== stageKind) changes.stageKind = stageKind
   if (Object.keys(changes).length > 0) writes.push({ kind: 'update_set', weekPlanId: plan.id, setId: head.id, changes })
 
   for (let i = stages.length; i > wanted; i--) writes.push({ kind: 'delete_set', weekPlanId: plan.id, setId: stages[i - 1].id })

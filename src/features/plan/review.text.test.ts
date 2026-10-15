@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
-import type { SetLog } from '../../types'
+import type { SessionSetChange, SetLog } from '../../types'
 import {
   reviewItemText,
   reviewItems,
@@ -268,6 +268,35 @@ describe('the wording where the board draws no such item (provisional, D31)', ()
       note: null,
       action: 'USE',
     })
+  })
+
+  // DECISIONS 141: the same board 4 wording, from a type the workout gave a set whose drops were not done (no new string)
+  it('a type given with no drop done reads as the type, with the count the item carries: from the log alone one drop, from a change row its count', () => {
+    const typed = (planned: ReturnType<typeof wset>[], logs: SetLog[], changes: SessionSetChange[] = []) => {
+      const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], planned)
+      return itemsOf(review({ last: [last], sessions: [session('s1', last.id, 'completed', logs, { sessionSetChanges: changes })] })).filter((i) => i.kind === 'retyped')[0] as ReviewRetypedItem
+    }
+    const dropset = [wset('ps-1', 'pe-1', 1, { stageKind: 'dropset' }), stage('ps-s1', 'ps-1', 'pe-1', 1)]
+    const restPauseLog = [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', stageKind: 'rest_pause' })]
+    expect(reviewItemText(typed(dropset, restPauseLog), ctx)).toEqual({
+      eyebrow: 'LATERAL RAISE · SET 01',
+      headline: 'You made set 01 a rest-pause set',
+      detail: '1 pause',
+      note: null,
+      action: 'USE',
+    })
+    const three: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'staged', stageKind: 'rest_pause', stageCount: 3 } }
+    expect(reviewItemText(typed(dropset, restPauseLog, [three]), ctx)).toMatchObject({ headline: 'You made set 01 a rest-pause set', detail: '3 pauses' })
+    const asDropset = typed([wset('ps-1', 'pe-1', 1)], [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', stageKind: 'dropset' })], [{ kind: 'pending_stages', setLogId: 'lg-1', stageKind: 'dropset', stageCount: 2 }])
+    expect(reviewItemText(asDropset, ctx)).toMatchObject({ headline: 'You made set 01 a dropset', detail: '2 drops' })
+  })
+
+  it('a kindless dropset switched to Normal reads as "a normal set", like any dropset switched back', () => {
+    const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], [wset('ps-1', 'pe-1', 1, { stageKind: null }), stage('ps-s1', 'ps-1', 'pe-1', 1)])
+    const logs = [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', stageKind: null })]
+    const toNormal: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'normal' } }
+    const item = itemsOf(review({ last: [last], sessions: [session('s1', last.id, 'completed', logs, { sessionSetChanges: [toNormal] })] }))[0] as ReviewRetypedItem
+    expect(reviewItemText(item, ctx)).toEqual({ eyebrow: 'LATERAL RAISE · SET 01', headline: 'You made set 01 a normal set', detail: null, note: null, action: 'USE' })
   })
 
   it('a staged set made another kind, or made a warmup, reads as a new type, not as added drops', () => {

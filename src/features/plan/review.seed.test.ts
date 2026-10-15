@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addDays, format, parseISO } from 'date-fns'
-import type { ProgramExercise, SessionStatus, SetLog, WeekPlan, WeekPlanSet } from '../../types'
+import type { ProgramExercise, SessionSetChange, SessionStatus, SetLog, WeekPlan, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary'
 import { applyReviewAction, reviewItemText, reviewItems, type ReviewGroup, type ReviewItem } from './review'
 import { applyWrites, dropLog, row, session, setLog, stage, swapRecord, weekPlan, workoutDay, wset } from './review.testutil'
@@ -183,15 +183,15 @@ function seedLogs(plan: WeekPlan, sessionId: string, opts: { diffs?: boolean; sk
 
 const week2 = { ua: planOf('ua', 2), la: planOf('la', 2), ub: planOf('ub', 2) }
 const week3 = { ua: planOf('ua', 3), la: planOf('la', 3), ub: planOf('ub', 3) }
-const sessionsOfWeek2 = () => [
-  session('s2-ua', week2.ua.id, 'completed', seedLogs(week2.ua, 's2-ua', { diffs: true }), { date: day(QUEUE_WEEK_2[0].date), workoutDayId: 'wd-ua' }),
+const sessionsOfWeek2 = (changes: SessionSetChange[] = []) => [
+  session('s2-ua', week2.ua.id, 'completed', seedLogs(week2.ua, 's2-ua', { diffs: true }), { date: day(QUEUE_WEEK_2[0].date), workoutDayId: 'wd-ua', sessionSetChanges: changes }),
   session('s2-la', week2.la.id, 'completed', seedLogs(week2.la, 's2-la'), { date: day(QUEUE_WEEK_2[1].date), workoutDayId: 'wd-la' }),
   session('s2-ub', week2.ub.id, 'skipped', [], { date: day(QUEUE_WEEK_2[2].date), workoutDayId: 'wd-ub' }),
 ]
-const listWeek3 = (decisions: Array<{ weekPlanId: string; itemKey: string }> = []): ReviewGroup[] =>
+const listWeek3 = (decisions: Array<{ weekPlanId: string; itemKey: string }> = [], changes: SessionSetChange[] = []): ReviewGroup[] =>
   reviewItems({
     weekNumber: 3,
-    lastWeek: { sessions: sessionsOfWeek2(), plan: [week2.ua, week2.la, week2.ub] },
+    lastWeek: { sessions: sessionsOfWeek2(changes), plan: [week2.ua, week2.la, week2.ub] },
     thisWeek: [week3.ua, week3.la, week3.ub],
     decisions,
   })
@@ -227,6 +227,18 @@ describe('the seed\'s week 2 → week 3 (the test account), REVIEW on week 3', (
       ['retyped', 'DUMBBELL LATERAL RAISE · SET 01', 'You made set 01 a dropset', '1 drop', 'USE'],
       ['added_set', 'CABLE TRICEPS PUSHDOWN · ADDED A SET', 'Set 03 · 20 kg × 15', 'RIR 2', 'ADD THIS SET'],
     ])
+  })
+
+  it('the change rows chunk 62 writes for that lateral raise (a retyped row for the logged planned set, a pending-stages row for its head) leave the five items as they are', () => {
+    // DECISIONS 141: the set was made a dropset after it was logged, so the workout left both rows; the log, its one
+    // drop and the rows all say the same thing and make ONE type item, and the drop done decides the count (1, not 3)
+    const rows: SessionSetChange[] = [
+      { kind: 'retyped', weekPlanSetId: 'w2-ua-pe-lat-1', type: { kind: 'staged', stageKind: 'dropset', stageCount: 3 } },
+      { kind: 'pending_stages', setLogId: 's2-ua-w2-ua-pe-lat-1', stageKind: 'dropset', stageCount: 3 },
+    ]
+    const text = (groups: ReviewGroup[]) => flat(groups).map((item) => [item.kind, reviewItemText(item, { fromWeek: 3 })])
+    expect(text(listWeek3([], rows))).toEqual(text(listWeek3()))
+    expect(flat(listWeek3([], rows)).map((i) => i.kind)).toEqual(['number', 'number', 'skipped', 'retyped', 'added_set'])
   })
 
   it('the five keys, none of them a set log id', () => {

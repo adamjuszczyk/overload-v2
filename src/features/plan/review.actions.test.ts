@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { SetLog, WeekPlan, WeekPlanSet } from '../../types'
+import type { SessionSetChange, SetLog, WeekPlan, WeekPlanSet } from '../../types'
 import {
   applyReviewAction,
   itemKey,
@@ -57,12 +57,15 @@ const thisWeekSets = (): WeekPlanSet[] => [
 const thisWeek = (sets = thisWeekSets(), exs = exercises): WeekPlan => weekPlan('a', 2, exs, sets)
 
 // The items of a completed Upper A with `logs`, listed against this week's plan.
-function itemsFor(logs: SetLog[], opts: { last?: WeekPlan; thisWeek?: WeekPlan; swaps?: ReturnType<typeof swapRecord>[] } = {}): ReviewItem[] {
+function itemsFor(
+  logs: SetLog[],
+  opts: { last?: WeekPlan; thisWeek?: WeekPlan; swaps?: ReturnType<typeof swapRecord>[]; changes?: SessionSetChange[] } = {},
+): ReviewItem[] {
   const last = opts.last ?? lastWeek()
   const groups = review({
     last: [last],
     thisWeek: [opts.thisWeek ?? thisWeek()],
-    sessions: [session('s1', last.id, 'completed', logs, { swaps: opts.swaps ?? [] })],
+    sessions: [session('s1', last.id, 'completed', logs, { swaps: opts.swaps ?? [], sessionSetChanges: opts.changes ?? [] })],
   })
   return groups.flatMap((g) => g.items.map((e) => e.item))
 }
@@ -323,6 +326,19 @@ describe('ADD THIS SET: a new set at the end of the exercise, with the done weig
     expect(stageRow).toMatchObject({ targetWeight: null, repMin: null, repMax: null, isAmrap: false, targetRir: null, tags: null, isWarmup: false })
   })
 
+  it('DECISIONS 141: an added set given a stage kind with no drop done is added as that kind with the count set in the workout: its pending-stages row, else one drop', () => {
+    const logs = [...asPlanned(), extra({ stageKind: 'dropset' })]
+    const stageRows = (changes: SessionSetChange[]) => {
+      const item = first<ReviewAddedSetItem>(itemsFor(logs, { changes }), 'added_set')
+      const writes = applyReviewAction(item, 'add_set', thisWeek(), counter()).writes
+      return writes.map((w) => (w.kind === 'insert_set' ? [w.set.parentWeekPlanSetId, w.set.stageIndex, w.set.stageKind] : w.kind))
+    }
+    expect(stageRows([])).toEqual([[null, 0, 'dropset'], ['new-1', 1, null]])
+    expect(stageRows([{ kind: 'pending_stages', setLogId: 'lg-x', stageKind: 'dropset', stageCount: 2 }])).toEqual([[null, 0, 'dropset'], ['new-1', 1, null], ['new-1', 2, null]])
+    // a pending-stages row of another log is not this set's
+    expect(stageRows([{ kind: 'pending_stages', setLogId: 'lg-other', stageKind: 'dropset', stageCount: 3 }])).toEqual([[null, 0, 'dropset'], ['new-1', 1, null]])
+  })
+
   it('a warmup is added as a warmup; reps never done leave no rep target', () => {
     const warm = extra({ isWarmup: true, weight: 10, reps: null, rir: null })
     const item = first<ReviewAddedSetItem>(itemsFor([...asPlanned(), warm]), 'added_set')
@@ -347,7 +363,8 @@ describe('ADD THIS SET: a new set at the end of the exercise, with the done weig
 
 describe('USE on a type item: this week\'s matching set takes the kind and the number of drops', () => {
   const planned = (): WeekPlan => weekPlan('a', 1, [exercises[0]], [wset('ps-1', 'pe-1', 1), wset('ps-2', 'pe-1', 2)])
-  const retypedItem = (last: WeekPlan, week2: WeekPlan, logs: SetLog[]) => first<ReviewRetypedItem>(itemsFor(logs, { last, thisWeek: week2 }), 'retyped')
+  const retypedItem = (last: WeekPlan, week2: WeekPlan, logs: SetLog[], changes: SessionSetChange[] = []) =>
+    first<ReviewRetypedItem>(itemsFor(logs, { last, thisWeek: week2, changes }), 'retyped')
   const head = (over: Partial<SetLog> = {}) => setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', ...over })
   const done = (n: number) => [head({ stageKind: 'dropset' }), ...Array.from({ length: n }, (_, i) => dropLog(`lg-d${i + 1}`, 's1', 'ex-1', 'lg-1', i + 1))]
   const rest = [setLog('lg-2', 's1', 'ex-1', { weekPlanSetId: 'ps-2', setNumber: 2 })]
@@ -452,6 +469,92 @@ describe('USE on a type item: this week\'s matching set takes the kind and the n
     const item = retypedItem(last, week2, [...done(1), ...rest])
     expect(item.target.setId).toBeNull()
     expect(applyReviewAction(item, 'use', week2, counter())).toMatchObject({ writes: [], decision: { decision: 'used' } })
+  })
+
+  // DECISIONS 141 (a): "USE writes the stage count set in the workout": the drops done when some were, else the
+  // retyped row's count, else the head's pending-stages row, else 1. Each fixture's change row and log differ.
+  describe('DECISIONS 141: the kind and the stage count set in the workout', () => {
+    const dropsetOf = (prefix: 'ps' | 'ts', drops: number, set2 = prefix + '-2') => [
+      wset(`${prefix}-1`, 'pe-1', 1, { stageKind: 'dropset' }),
+      ...Array.from({ length: drops }, (_, i) => stage(`${prefix}-s${i + 1}`, `${prefix}-1`, 'pe-1', i + 1)),
+      wset(set2, 'pe-1', 2),
+    ]
+    const toRestPause = (count: number): SessionSetChange => ({ kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'staged', stageKind: 'rest_pause', stageCount: count } })
+    const shape = (writes: ReviewWrite[]) =>
+      writes.map((w) =>
+        w.kind === 'update_set' ? ['update', w.setId, w.changes] : w.kind === 'insert_set' ? ['insert', w.set.parentWeekPlanSetId, w.set.stageIndex, w.set.stageKind] : w.kind === 'delete_set' ? ['delete', w.setId] : [w.kind],
+      )
+
+    it('a dropset made rest-pause with none done: this week\'s set takes the kind and the retyped row\'s count, inserted in order', () => {
+      const last = weekPlan('a', 1, [exercises[0]], dropsetOf('ps', 1))
+      const week2 = weekPlan('a', 2, [exercises[0]], dropsetOf('ts', 1))
+      const item = retypedItem(last, week2, [head({ stageKind: 'rest_pause' }), ...rest], [toRestPause(3)])
+      expect(item.doneType).toEqual({ kind: 'staged', stageKind: 'rest_pause', stageCount: 3 })
+      const result = applyReviewAction(item, 'use', week2, counter())
+      expect(shape(result.writes)).toEqual([
+        ['update', 'ts-1', { stageKind: 'rest_pause' }],
+        ['insert', 'ts-1', 2, null],
+        ['insert', 'ts-1', 3, null],
+      ])
+      expect(result.decision).toEqual({ weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'used' })
+      const after = applyWrites(week2, result.writes)
+      expect(after.sets.filter((x) => x.parentWeekPlanSetId === 'ts-1').map((x) => x.stageIndex)).toEqual([1, 2, 3])
+      expect(after.sets.find((x) => x.id === 'ts-1')).toMatchObject({ stageKind: 'rest_pause' })
+    })
+
+    it('the count comes from the change row, then the head\'s pending-stages row, then 1; this week\'s own stage count is neither', () => {
+      const last = weekPlan('a', 1, [exercises[0]], dropsetOf('ps', 1))
+      const week2 = weekPlan('a', 2, [exercises[0]], dropsetOf('ts', 3)) // this week's set has three drops already
+      const writes = (changes: SessionSetChange[]) => shape(applyReviewAction(retypedItem(last, week2, [head({ stageKind: 'rest_pause' }), ...rest], changes), 'use', week2, counter()).writes)
+      // no row: one drop, so the two extra ones go, highest first
+      expect(writes([])).toEqual([['update', 'ts-1', { stageKind: 'rest_pause' }], ['delete', 'ts-s3'], ['delete', 'ts-s2']])
+      // the head's pending-stages row: two
+      expect(writes([{ kind: 'pending_stages', setLogId: 'lg-1', stageKind: 'rest_pause', stageCount: 2 }])).toEqual([['update', 'ts-1', { stageKind: 'rest_pause' }], ['delete', 'ts-s3']])
+      // the retyped row: four, the pending-stages row's two not taken
+      expect(writes([{ kind: 'pending_stages', setLogId: 'lg-1', stageKind: 'rest_pause', stageCount: 2 }, toRestPause(4)])).toEqual([
+        ['update', 'ts-1', { stageKind: 'rest_pause' }],
+        ['insert', 'ts-1', 4, null],
+      ])
+    })
+
+    it('a plain set made a dropset with none done: the kind and one drop with nothing recorded, the pending count with a row; the drops done when some were', () => {
+      const last = planned()
+      const week2 = weekPlan('a', 2, [exercises[0]], [wset('ts-1', 'pe-1', 1), wset('ts-2', 'pe-1', 2)])
+      const writes = (logs: SetLog[], changes: SessionSetChange[]) => shape(applyReviewAction(retypedItem(last, week2, logs, changes), 'use', week2, counter()).writes)
+      const kindOnly = [head({ stageKind: 'dropset' }), ...rest]
+      expect(writes(kindOnly, [])).toEqual([['update', 'ts-1', { stageKind: 'dropset' }], ['insert', 'ts-1', 1, null]])
+      expect(writes(kindOnly, [{ kind: 'pending_stages', setLogId: 'lg-1', stageKind: 'dropset', stageCount: 2 }])).toEqual([
+        ['update', 'ts-1', { stageKind: 'dropset' }],
+        ['insert', 'ts-1', 1, null],
+        ['insert', 'ts-1', 2, null],
+      ])
+      // one drop done of the three the retyped row sets: one
+      const oneDone = [...done(1), ...rest]
+      const three: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'staged', stageKind: 'dropset', stageCount: 3 } }
+      expect(writes(oneDone, [three])).toEqual([['update', 'ts-1', { stageKind: 'dropset' }], ['insert', 'ts-1', 1, null]])
+    })
+
+    it('a kindless dropset switched to Normal: this week\'s stage rows go, highest first, and no kind is written where the head has none to clear', () => {
+      const last = weekPlan('a', 1, [exercises[0]], [wset('ps-1', 'pe-1', 1, { stageKind: null }), stage('ps-s1', 'ps-1', 'pe-1', 1), wset('ps-2', 'pe-1', 2)])
+      const kindless = weekPlan('a', 2, [exercises[0]], [wset('ts-1', 'pe-1', 1, { stageKind: null }), stage('ts-s1', 'ts-1', 'pe-1', 1), stage('ts-s2', 'ts-1', 'pe-1', 2), wset('ts-2', 'pe-1', 2)])
+      const toNormal: SessionSetChange = { kind: 'retyped', weekPlanSetId: 'ps-1', type: { kind: 'normal' } }
+      const item = retypedItem(last, kindless, [head({ stageKind: null }), ...rest], [toNormal])
+      expect(item).toMatchObject({ plannedType: { kind: 'staged', stageKind: 'dropset', stageCount: 1 }, doneType: { kind: 'normal' } })
+      const result = applyReviewAction(item, 'use', kindless, counter())
+      expect(result.writes).toEqual([
+        { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s2' },
+        { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s1' },
+      ])
+      expect(result.decision).toEqual({ weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'used' })
+      expect(applyWrites(kindless, result.writes).sets.map((x) => [x.id, x.stageKind ?? null, x.parentWeekPlanSetId])).toEqual([
+        ['ts-1', null, null],
+        ['ts-2', null, null],
+      ])
+      // this week's head DOES carry a kind: that one is cleared, and only that
+      const kinded = weekPlan('a', 2, [exercises[0]], [wset('ts-1', 'pe-1', 1, { stageKind: 'dropset' }), stage('ts-s1', 'ts-1', 'pe-1', 1), wset('ts-2', 'pe-1', 2)])
+      const itemKinded = retypedItem(last, kinded, [head({ stageKind: null }), ...rest], [toNormal])
+      expect(shape(applyReviewAction(itemKinded, 'use', kinded, counter()).writes)).toEqual([['update', 'ts-1', { stageKind: null }], ['delete', 'ts-s1']])
+    })
   })
 })
 
