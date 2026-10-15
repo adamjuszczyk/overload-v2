@@ -532,12 +532,13 @@ optional:
 - [1.2] **When a week (cycle) gets planned (2):** when it starts, or earlier
   when the user taps PLAN FORWARD on it. Opening it doesn't plan it. Planning
   fills it from its source once; from then on it's its own week.
-- [1.2] **How far ahead:** Plan shows every week from week 1 to the last planned
-  week, plus one more: the first week not planned yet, with "Not planned yet"
-  and PLAN FORWARD (1b). Planning it forward makes the week after it reachable,
-  so weeks can be planned ahead one at a time. Nothing beyond the first
-  unplanned week is reachable. (Adam: "you can't go to week 4, but after you
-  click plan forward on week 3, you can go to week 4.")
+- [1.2] **How far ahead:** Plan shows every week from week 1 through the
+  current week, then the weeks planned ahead and the first unplanned one after
+  the current week, with "Not planned yet" and PLAN FORWARD (1b). Planning it
+  forward makes the week after it reachable, so weeks can be planned ahead one
+  at a time. Nothing beyond the first unplanned week after the current one is
+  reachable. (Adam: "you can't go to week 4, but after you click plan forward
+  on week 3, you can go to week 4.")
   - **A past week that was never planned** (the answer to DECISIONS 131, G56;
     Adam, 2026-10-15): the week tiles always reach the current week. A past
     week that was never planned shows NOT PLANNED, read-only and empty, with
@@ -1123,13 +1124,14 @@ layout and wording come from the boards.
 ### Plan screen [P1, rebuilt by 1.2]
 
 - **Header (1, 8a):** PLAN | PROGRAMS tabs, then "[PROGRAM] · CURRENT PROGRAM".
-- **Week row:** a tile per week (cycle) from week 1 to the first unplanned one,
-  scrolling sideways; it opens on the current week. Past weeks say DONE; the
-  current week THIS WEEK; a week planned ahead PLANNED; the first unplanned week
-  NOT PLANNED (lock). Tapping NOT
-  PLANNED opens it with PLAN FORWARD (1b): "Takes week 2's sets and set types.
-  Numbers come with COPY." (stable: "the default's sets, set types and rep
-  targets").
+- **Week row:** a tile per week (cycle) from week 1 through the current week,
+  then the weeks planned ahead and the first unplanned one after the current
+  week, scrolling sideways; it opens on the current week. Past weeks say DONE,
+  or NOT PLANNED for a week nobody planned (131); the current week THIS WEEK; a
+  week planned ahead PLANNED; the first unplanned week after the current one
+  NOT PLANNED (lock). Tapping that tile opens it with PLAN FORWARD (1b): "Takes
+  week 2's sets and set types. Numbers come with COPY." (stable: "the default's
+  sets, set types and rep targets").
 - **Under the header:** COPY (2c, board 2), VOLUME (14, board 3), WEEK ⋯ (week
   deload, the deload-rules line; board 1e). Then the REVIEW line when there is
   one (13, board 4).
