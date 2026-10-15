@@ -36,49 +36,63 @@ import { findLastUsableWeek, type PlannedWeekRecord } from './weekSources'
 //
 // SPEC, Plan screen → Week row: "a tile per week (cycle) from week 1 to the first unplanned one ...
 // Past weeks say DONE; the current week THIS WEEK; a week planned ahead PLANNED; the first
-// unplanned week NOT PLANNED (lock)." And, Weeks and copying → How far ahead: "Nothing beyond the
-// first unplanned week is reachable. (Adam: 'you can't go to week 4, but after you click plan
-// forward on week 3, you can go to week 4.')"
+// unplanned week NOT PLANNED (lock)." Weeks and copying → How far ahead: "Nothing beyond the first
+// unplanned week is reachable. (Adam: 'you can't go to week 4, but after you click plan forward on
+// week 3, you can go to week 4.')" And, under it, Adam's answer to G56 (DECISIONS 131, 2026-10-15):
+// "the week tiles always reach the current week. A past week that was never planned shows NOT
+// PLANNED, read-only and empty, with no PLAN FORWARD, and nothing is written for it. The current
+// week copies from the last planned normal week, as the copy rules already say. REVIEW and VOLUME
+// treat the missed week as a week with nothing in it."
+// Read together: "the first unplanned one" is the first unplanned week at or after the current week.
 
 export type WeekTileState = 'done' | 'this' | 'planned' | 'not_planned'
 
 export interface WeekTile {
   week: number
+  // What the tile says: DONE, THIS WEEK, PLANNED or NOT PLANNED.
   state: WeekTileState
-}
-
-// The first week that has no planned session: the smallest week from 1 on that isn't in the list.
-// (With weeks planned one at a time it is the last planned week + 1; with a gap it is the gap.)
-export function firstUnplannedWeek(plannedWeeks: Iterable<number>): number {
-  const planned = new Set(plannedWeeks)
-  let week = 1
-  while (planned.has(week)) week++
-  return week
+  // Opening it shows a past week (board 1c): read-only, no COPY / VOLUME / WEEK row, no CHANGE THE
+  // PROGRAM and no PLAN FORWARD. True of every week before the current one. A past week nobody
+  // planned (a week off) is such a tile with state 'not_planned': read-only and empty, and nothing
+  // is ever written for it.
+  readOnly: boolean
+  // Opening it offers PLAN FORWARD (board 1b): the first unplanned week after the current one and no
+  // other tile, so never a past week, and never the current week, which Plan plans as it opens
+  // (chunk 52). The week PLAN FORWARD plans is the one tile that has it.
+  planForward: boolean
 }
 
 // `plannedWeeks`: the week numbers (cycle numbers) that have at least one planned session, in any
-// order. `currentWeek`: the calendar week (the current cycle) the run is in. The tiles run from 1
-// up to and including the first unplanned week, and no further, even when a later week is planned.
-//   - a planned week before the current one ... 'done'   (a past week: board 1c)
-//   - the current week, planned ................ 'this'
-//   - a planned week after the current one ..... 'planned'
-//   - an unplanned week (only ever the last tile) 'not_planned'; an unplanned current week reads so
-//     too, for the moment before Plan plans it (chunk 52).
-// A gap (a week nobody planned, say a calendar week the app wasn't opened in) ends the tiles at the
-// gap: every planned week after it, the current one included, is out of reach until the gap is
-// planned forward, as SPEC says ("Nothing beyond the first unplanned week is reachable"). What Plan
-// shows when the current week is not among the tiles is chunk 52's to decide.
+// order. `currentWeek`: the calendar week (the current cycle) the run is in, a whole number from 1;
+// anything else throws, as chooseAutoCopySource does for a week below 1.
+// The tiles run from week 1 to the first unplanned week at or after the current week: they always
+// reach the current week, whatever is planned before it, and go no further than the first week that
+// isn't planned from there on, even when a later week is.
+//   - a planned week before the current one ...... 'done'         read-only
+//   - an unplanned week before the current one ... 'not_planned'  read-only, empty (a week off)
+//   - the current week, planned .................. 'this'
+//   - the current week, not planned yet .......... 'not_planned': Plan plans it as it opens (chunk
+//     52; DECISIONS 132 (b)). It is the first unplanned week, so no tile follows it.
+//   - a planned week after the current one ....... 'planned'
+//   - the first unplanned week after the current one 'not_planned', planForward; the last tile
 export function weekTiles(input: { plannedWeeks: Iterable<number>; currentWeek: number }): WeekTile[] {
+  const { currentWeek } = input
+  // The tiles reach the current week, so it has to be a week: a whole number from 1 (an infinite one would never end).
+  if (!Number.isInteger(currentWeek) || currentWeek < 1) {
+    throw new RangeError(`weekTiles: current week must be an integer >= 1 (got ${currentWeek})`)
+  }
   const planned = new Set(input.plannedWeeks)
-  const last = firstUnplannedWeek(planned)
+  let last = currentWeek
+  while (planned.has(last)) last++
   const tiles: WeekTile[] = []
   for (let week = 1; week <= last; week++) {
+    const isPlanned = planned.has(week)
     let state: WeekTileState
-    if (!planned.has(week)) state = 'not_planned'
-    else if (week < input.currentWeek) state = 'done'
-    else if (week === input.currentWeek) state = 'this'
+    if (!isPlanned) state = 'not_planned'
+    else if (week < currentWeek) state = 'done'
+    else if (week === currentWeek) state = 'this'
     else state = 'planned'
-    tiles.push({ week, state })
+    tiles.push({ week, state, readOnly: week < currentWeek, planForward: week > currentWeek && !isPlanned })
   }
   return tiles
 }
@@ -107,9 +121,10 @@ export type AutoCopySource =
   | { kind: 'empty' } // week-dependent, after week 1, and nothing usable to copy: an empty week
 
 // Which source a week is planned from. `priorWeeks` are the planned occurrences of this ONE slot
-// (the same workout; on a sequence run the same slot): weekSources.ts's search, kept. There is no
-// "week start" setting any more (1.2 removes it), so an empty source only ever means "nothing
-// usable to copy".
+// (the same workout; on a sequence run the same slot): weekSources.ts's search, kept. A week nobody
+// planned (G56) isn't among them, so the week planned after a week off copies the last planned
+// normal week, whatever its number. There is no "week start" setting any more (1.2 removes it), so
+// an empty source only ever means "nothing usable to copy".
 export function chooseAutoCopySource(input: {
   planningType: PlanningType
   weekNumber: number

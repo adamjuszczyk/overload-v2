@@ -98,6 +98,17 @@ describe('chooseAutoCopySource — week 1 and a stable week start from the progr
     expect(chooseAutoCopySource({ planningType: 'week_dependent', weekNumber: 3, priorWeeks: prior([1, false], [2, false]) })).toEqual({ kind: 'week', weekNumber: 2 })
   })
 
+  it('a week nobody planned in between is no source and does not stop the search: weeks 1 and 2 planned, week 3 missed → week 4 copies week 2 (G56)', () => {
+    // Week 3 is simply not in the list. "The week before" would find nothing and the oldest week would be week 1.
+    expect(chooseAutoCopySource({ planningType: 'week_dependent', weekNumber: 4, priorWeeks: prior([1, false], [2, false]) })).toEqual({ kind: 'week', weekNumber: 2 })
+    // Weeks missed one after another: the last planned normal week is still the source.
+    expect(chooseAutoCopySource({ planningType: 'week_dependent', weekNumber: 6, priorWeeks: prior([1, false], [2, false]) })).toEqual({ kind: 'week', weekNumber: 2 })
+    // The week before the missed one is a deload week: it is skipped as ever, and the older normal week is the source.
+    expect(chooseAutoCopySource({ planningType: 'week_dependent', weekNumber: 4, priorWeeks: prior([1, false], [2, true]) })).toEqual({ kind: 'week', weekNumber: 1 })
+    // A stable week is the default whatever was missed.
+    expect(chooseAutoCopySource({ planningType: 'stable', weekNumber: 4, priorWeeks: prior([1, false], [2, false]) })).toEqual({ kind: 'program' })
+  })
+
   it('deload and empty occurrences are skipped, a week after the planned one is never the source', () => {
     const weeks = prior([1, false], [2, true], [3, false, true], [5, false])
     expect(chooseAutoCopySource({ planningType: 'week_dependent', weekNumber: 4, priorWeeks: weeks })).toEqual({ kind: 'week', weekNumber: 1 })
@@ -341,6 +352,98 @@ describe('autoCopy — from last week (a week-dependent week after week 1)', () 
     changedCopy.sets = changedCopy.sets.filter((ps) => ps.id !== 'ps-lat-1')
     const r = autoCopy({ planningType: 'week_dependent', weekNumber: 2, runCopy: changedCopy, priorWeeks: [weekOne()] })
     expect(r.sets.some((s) => s.sourceId === 'w1-lat-1')).toBe(true)
+  })
+})
+
+// ─── After a week nobody planned (G56, DECISIONS 131 (b)) ─────────────────────────────────────────────────────────
+
+// SPEC, Weeks and copying → How far ahead: "The current week copies from the last planned normal week, as the copy rules
+// already say." Pull 1 is planned in weeks 1 and 2, which differ, and never in week 3 (a week off); week 4 is the current
+// week and is planned now. Week 1 is weekOne(); week 2 is this: Lat Pulldown ×2, Face Pull ×1 and Curl ×2, which only
+// week 2 has.
+function weekTwo(over: Partial<WeekPlan> = {}): WeekPlan {
+  return plan(
+    2,
+    [pe('pe-lat', 'lat', 0), pe('pe-face', 'face', 1), pe('pe-curl', 'curl', 2)],
+    [
+      wset('w2-lat-1', 'pe-lat', 1, { programSetId: 'ps-lat-1', targetWeight: 57.5, targetRir: 2, repMin: 8, repMax: 10 }),
+      wset('w2-lat-2', 'pe-lat', 2, { programSetId: null, targetWeight: 57.5, targetRir: 1, repMin: 8, repMax: 10 }),
+      wset('w2-face-1', 'pe-face', 1, { programSetId: 'ps-face-1', targetWeight: 15, targetRir: 1, repMin: 15, repMax: 20 }),
+      wset('w2-curl-1', 'pe-curl', 1, { programSetId: null, targetWeight: 12, targetRir: 2, repMin: 10, repMax: 12 }),
+      wset('w2-curl-2', 'pe-curl', 2, { programSetId: null, targetWeight: 12, targetRir: 2, repMin: 10, repMax: 12 }),
+    ],
+    over,
+  )
+}
+const WEEK_TWO_SETS = ['w2-curl-1', 'w2-curl-2', 'w2-face-1', 'w2-lat-1', 'w2-lat-2']
+
+describe('autoCopy after a missed week — the current week copies from the last planned normal week, whatever its number', () => {
+  const weekFour = (priorWeeks: readonly WeekPlan[], planningType: 'week_dependent' | 'stable' = 'week_dependent') =>
+    autoCopy({ planningType, weekNumber: 4, runCopy: runCopy(), priorWeeks })
+
+  it('weeks 1 and 2 planned, week 3 never planned: week 4 takes week 2 whole — not week 1 (older, different) and not week 3 (nothing)', () => {
+    const r = weekFour([weekOne(), weekTwo()])
+    expect(r.source).toEqual({ kind: 'week', weekNumber: 2 })
+    expect(r.exercises).toEqual([
+      { programExerciseId: 'pe-lat', position: 0 },
+      { programExerciseId: 'pe-face', position: 1 },
+      { programExerciseId: 'pe-curl', position: 2 },
+    ])
+    expect(r.sets.map((s) => s.sourceId).sort()).toEqual(WEEK_TWO_SETS)
+    expect(r.sets.some((s) => s.sourceId.startsWith('w1-'))).toBe(false) // none of week 1's seven sets
+  })
+
+  it('the order the planned weeks come in does not matter', () => {
+    expect(weekFour([weekTwo(), weekOne()]).source).toEqual({ kind: 'week', weekNumber: 2 })
+  })
+
+  it('weeks missed one after another: week 6 still takes week 2, the last planned normal week', () => {
+    const r = autoCopy({ planningType: 'week_dependent', weekNumber: 6, runCopy: runCopy(), priorWeeks: [weekOne(), weekTwo()] })
+    expect(r.source).toEqual({ kind: 'week', weekNumber: 2 })
+    expect(r.sets.map((s) => s.sourceId).sort()).toEqual(WEEK_TWO_SETS)
+  })
+
+  it('a deload week 2 and the missed week 3: the deload week is skipped as ever, so week 4 takes week 1', () => {
+    const r = weekFour([weekOne(), weekTwo({ isDeload: true })])
+    expect(r.source).toEqual({ kind: 'week', weekNumber: 1 })
+    expect(r.sets).toHaveLength(7)
+    expect(r.sets.some((s) => s.sourceId.startsWith('w2-'))).toBe(false)
+  })
+
+  it('an empty week 2 (no set rows) is skipped as ever too: week 4 takes week 1', () => {
+    expect(weekFour([weekOne(), plan(2, [pe('pe-lat', 'lat', 0)], [])]).source).toEqual({ kind: 'week', weekNumber: 1 })
+  })
+
+  it('only weeks before the planned one count: a week 5 planned ahead before week 4 is never its source', () => {
+    const weekFive = plan(5, [pe('pe-lat', 'lat', 0)], [wset('w5-lat-1', 'pe-lat', 1)])
+    expect(weekFour([weekOne(), weekTwo(), weekFive]).source).toEqual({ kind: 'week', weekNumber: 2 })
+  })
+
+  it('nothing planned before it at all (every earlier week missed): an empty week — the copy rules\' own answer, unchanged', () => {
+    expect(weekFour([])).toEqual({ source: { kind: 'empty' }, exercises: [], sets: [] })
+  })
+
+  it('a stable week is the default whatever was missed: the program\'s sets, not week 2\'s', () => {
+    const r = weekFour([weekOne(), weekTwo()], 'stable')
+    expect(r.source).toEqual({ kind: 'program' })
+    expect(r.sets.some((s) => s.sourceId.startsWith('w2-') || s.sourceId.startsWith('w1-'))).toBe(false)
+    expect(r.sets.map((s) => s.sourceId)).toEqual(['ps-lat-w', 'ps-face-1', 'ps-lat-1', 'ps-face-2', 'ps-lat-d', 'ps-lat-d1'])
+  })
+
+  it('on a sequence run a slot takes its own last planned cycle: cycle 3 was never planned, cycle 4 is the current one', () => {
+    // The repeated workout is in slots 1 and 4; each cycle plans both, with a different number of sets each time.
+    const cycle = (n: number, position: number, count: number) =>
+      plan(n, [pe('pe-lat', 'lat', 0)], Array.from({ length: count }, (_, i) => wset(`c${n}-s${position}-${i + 1}`, 'pe-lat', i + 1)), {
+        id: `c${n}-s${position}`,
+        workoutDayId: 'wd-A',
+        sequencePosition: position,
+      })
+    const all = [cycle(1, 1, 1), cycle(1, 4, 2), cycle(2, 1, 4), cycle(2, 4, 3)]
+    const cycleFour = (position: number) =>
+      autoCopy({ planningType: 'week_dependent', weekNumber: 4, runCopy: runCopy(), priorWeeks: weeksOfSlot(all, 'wd-A', position) })
+    expect(cycleFour(1).source).toEqual({ kind: 'week', weekNumber: 2 })
+    expect(cycleFour(1).sets.map((s) => s.sourceId)).toEqual(['c2-s1-1', 'c2-s1-2', 'c2-s1-3', 'c2-s1-4']) // slot 1's cycle 2
+    expect(cycleFour(4).sets.map((s) => s.sourceId)).toEqual(['c2-s4-1', 'c2-s4-2', 'c2-s4-3']) // slot 4's cycle 2, not slot 1's
   })
 })
 

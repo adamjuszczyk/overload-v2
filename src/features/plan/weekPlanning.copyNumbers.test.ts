@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import type { WeekPlanSet } from '../../types'
-import { copyNumbers, type CopyField, type CopyWorkout, type SetNumbersUpdate } from './weekPlanning'
-import { pe, stage, wset } from './weekPlanning.testutil'
+import type { WeekPlan, WeekPlanSet } from '../../types'
+import { copyNumbers, plannedWeekRecords, weeksOfSlot, type CopyField, type CopyWorkout, type SetNumbersUpdate } from './weekPlanning'
+import { findLastUsableWeek } from './weekSources'
+import { pe, plan, stage, wset } from './weekPlanning.testutil'
 
 // Chunk 42 — COPY: last week's numbers into this week (SPEC, Weeks and copying → COPY (2c); G49; G53). copyNumbers
 // returns the update each this-week set would get; chunk 52's sheet turns them into one `applyOps` request and proves
@@ -414,5 +415,46 @@ describe('copyNumbers — reps: a number, a range or AMRAP copies as the target 
 
   it('8 to 8 is 8: a target that shows the same is not an update', () => {
     expect(run({ fields: ['reps'], overwrite: true, last: lastWith({ repMin: 8, repMax: 8 }), this: mineWith({ repMin: 8, repMax: 8 }) })).toEqual([])
+  })
+})
+
+// ─── After a week nobody planned (G56, DECISIONS 131 (b)) ─────────────────────────────────────────────────────────
+
+// SPEC, Weeks and copying → How far ahead: "The current week copies from the last planned normal week, as the copy rules
+// already say." copyNumbers copies from the `lastWeek` it is given: chunk 52 finds each workout's with this module's
+// `weeksOfSlot` and `plannedWeekRecords` and weekSources' `findLastUsableWeek`, the very search a week is planned with, and
+// not simply week N − 1, which a week nobody planned leaves without a plan.
+describe('copyNumbers after a missed week — "last week" is each workout\'s last planned normal week', () => {
+  // Pull: week 1 at 55 kg, week 2 at 60 kg, week 3 never planned; week 4, the current week, is planned and holds no numbers.
+  const week = (n: number, weight: number | null, over: Partial<WeekPlan> = {}) =>
+    plan(n, [pe('pe-lat', 'lat', 0)], [wset(`w${n}-1`, 'pe-lat', 1, weight === null ? NOTHING : { targetWeight: weight })], over)
+  const copyWeight = (planned: WeekPlan[], thisWeek: WeekPlan) => {
+    const slotWeeks = weeksOfSlot(planned, thisWeek.workoutDayId, thisWeek.sequencePosition ?? null)
+    const found = findLastUsableWeek(plannedWeekRecords(slotWeeks), thisWeek.weekNumber)
+    return copyNumbers({
+      fields: ['weight'],
+      workouts: [thisWeek.id],
+      overwrite: false,
+      lastWeek: slotWeeks.filter((w) => w.weekNumber === found),
+      thisWeek: [thisWeek],
+    })
+  }
+
+  it('weeks 1 and 2 planned, week 3 not: COPY on week 4 takes week 2\'s 60 kg — not week 1\'s 55, and not an empty copy for want of a plan in week 3', () => {
+    expect(copyWeight([week(1, 55), week(2, 60)], week(4, null))).toEqual([{ weekPlanId: 'wp-4', setId: 'w4-1', changes: { targetWeight: 60 } }])
+  })
+
+  it('a deload week 2 and the missed week 3: a deload week is never a copy source, so week 4 takes week 1\'s 55 kg', () => {
+    expect(copyWeight([week(1, 55), week(2, 60, { isDeload: true })], week(4, null))).toEqual([
+      { weekPlanId: 'wp-4', setId: 'w4-1', changes: { targetWeight: 55 } },
+    ])
+  })
+
+  it('each slot of a sequence run finds its own last planned cycle: cycle 3 was never planned, cycle 4 is the current one', () => {
+    const slot = (n: number, position: number, weight: number | null) =>
+      week(n, weight, { id: `c${n}-s${position}`, workoutDayId: 'wd-A', sequencePosition: position })
+    const planned = [slot(1, 1, 50), slot(1, 4, 80), slot(2, 1, 52.5), slot(2, 4, 82.5)]
+    expect(copyWeight(planned, slot(4, 1, null))).toEqual([{ weekPlanId: 'c4-s1', setId: 'w4-1', changes: { targetWeight: 52.5 } }])
+    expect(copyWeight(planned, slot(4, 4, null))).toEqual([{ weekPlanId: 'c4-s4', setId: 'w4-1', changes: { targetWeight: 82.5 } }])
   })
 })

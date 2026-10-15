@@ -107,6 +107,17 @@ describe('chooseChangeSources — where each kind of week is compared from', () 
     expect(choose({ weekNumber: 2, priorWeeks: prior([1], [2], [3]) }).numbers).toEqual({ kind: 'week', weekNumber: 1 })
   })
 
+  it('a week nobody planned in between is no source: week 4 after planned weeks 1 and 2 is compared with week 2, either type (G56)', () => {
+    expect(choose({ weekNumber: 4, priorWeeks: prior([1], [2]) })).toEqual({
+      shape: { kind: 'week', weekNumber: 2 },
+      numbers: { kind: 'week', weekNumber: 2 },
+    })
+    expect(choose({ planningType: 'stable', weekNumber: 4, priorWeeks: prior([1], [2]) })).toEqual({
+      shape: { kind: 'default' },
+      numbers: { kind: 'week', weekNumber: 2 },
+    })
+  })
+
   it('a stable week\'s numbers skip a deload or empty week too; with nothing usable before it only the default remains', () => {
     const stable = (weekNumber: number, ...weeks: Parameters<typeof prior>) => choose({ planningType: 'stable', weekNumber, priorWeeks: prior(...weeks) })
     expect(stable(4, [1], [2, { deload: true }], [3, { empty: true }])).toEqual({ shape: { kind: 'default' }, numbers: { kind: 'week', weekNumber: 1 } })
@@ -283,6 +294,17 @@ describe('changesSinceSource — the week against its sources', () => {
     const d = changesSinceSource({ planningType: 'week_dependent', weekNumber: 3, week: { isDeload: false, exercises: ex, sets: w3.sets }, slotWeeks: [w1, w2, w3], runCopy: null })!
     expect(setFlags(d, 'e', 'e-1')?.weight).toBe(false) // against week 1 (100), not the deload week 2 (50)
     expect(d.sourceWeek).toBe(1)
+  })
+
+  it('the week after a week nobody planned is compared with the last planned normal week, and the legend names it (G56)', () => {
+    const w1 = plan(1, ex, sets('e', 1, { targetWeight: 100 }))
+    const w2 = plan(2, ex, sets('e', 1, { targetWeight: 120 }))
+    // Week 3 was never planned. Week 4 holds 120 kg: the same as week 2's, not week 1's.
+    const same = changesSinceSource({ planningType: 'week_dependent', weekNumber: 4, week: { isDeload: false, exercises: ex, sets: sets('e', 1, { targetWeight: 120 }) }, slotWeeks: [w1, w2], runCopy: null })!
+    expect(same.sourceWeek).toBe(2)
+    expect(setFlags(same, 'e', 'e-1')?.weight).toBe(false)
+    const changed = changesSinceSource({ planningType: 'week_dependent', weekNumber: 4, week: { isDeload: false, exercises: ex, sets: sets('e', 1, { targetWeight: 125 }) }, slotWeeks: [w1, w2], runCopy: null })!
+    expect(setFlags(changed, 'e', 'e-1')?.weight).toBe(true) // 125 against week 2's 120
   })
 
   it('past weeks are compared with what came before them; a later week is never a source', () => {
