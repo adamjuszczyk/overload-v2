@@ -1,18 +1,23 @@
 // What the three 1.2 pickers decide (TASKS-1.2 chunk 39; SPEC "Set types and staged sets [1.2]",
 // "Targets [1.2]", "Rest [1.2]", "Warmup sets" (G49), Defaults 7): the set type picker (board 5),
 // the rep target picker (6) and the RIR target picker (7), each one component that Plan, CHANGE THE
-// PROGRAM, the stepped planner and the workout all use. Pure, no React, no I/O; the pickers
-// return a value and the caller decides what to write (the week set, the program set or the
-// session). Imports only `plannerVocabulary.ts`, so a picker never reaches into a feature folder.
+// PROGRAM, the stepped planner and the workout all use; and, since chunk 40, what the cues sheet
+// (board 8) decides. Pure, no React, no I/O; the pickers return a value and the caller decides what
+// to write (the week set, the program set or the session). Imports only `plannerVocabulary.ts`, so a
+// picker never reaches into a feature folder.
 //
 // Wording is the boards' (`design/1.2/source/SetKindPicker.dc.html`, `RepTargetPicker.dc.html`,
-// `RirTargetPicker.dc.html`): `pickerLogic.test.ts` reads those files and checks every string here
-// against them, so a changed board shows up as a failing test rather than as a drift nobody sees.
+// `RirTargetPicker.dc.html`, `TagSheet.dc.html`): `pickerLogic.test.ts` reads those files and checks
+// every string here against them, so a changed board shows up as a failing test rather than as a
+// drift nobody sees.
 
 import {
   DEFAULT_STAGE_REST_SECONDS,
+  PRESET_TAGS,
   STAGE_KINDS,
+  addTag,
   formatRepTarget,
+  removeTag,
   type RepTarget,
   type StageKind,
 } from '../../lib/plannerVocabulary'
@@ -50,6 +55,21 @@ export const RIR_TARGET_TEXT = {
   none: 'No RIR target',
   rangeNote: 'Either number is on plan. Pick on the day.',
   clear: 'CLEAR TARGET',
+} as const
+
+/** Board 8's (`TagSheet.dc.html`): the cues sheet. */
+export const CUES_TEXT = {
+  title: 'Cues for this set',
+  note: "Shown on the set when it's next in the workout. Not copied to next week.",
+  yours: 'YOURS',
+  newCue: '+ NEW CUE',
+  done: 'DONE',
+} as const
+
+/** What the cues sheet says where no board draws it: the input that "+ NEW CUE" opens (provisional under D31). */
+export const CUE_INPUT_TEXT = {
+  label: 'New cue',
+  add: 'ADD',
 } as const
 
 // ─── Set type ────────────────────────────────────────────────────────────────────────────────
@@ -485,13 +505,105 @@ export function useForAllLabel(count: number, exerciseName: string): string {
   return `Use for all ${count} sets of ${exerciseName}`
 }
 
-// ─── The Cues row's second line ──────────────────────────────────────────────────────────────
+// ─── Cues: the Cues row's second line, and the cues sheet (board 8) ─────────────────────────
 
-/** `Push here` (board 5): the set's cues with a capital first letter, as the cues sheet shows them (board 8), joined by commas. */
+/**
+ * A cue as a row reads it: the first letter a capital (board 8: "Push here", "Maintain strength"). What
+ * is stored stays as it is: a preset is stored in lower case (`PRESET_TAGS`), a custom cue as it was typed.
+ */
+export function cueLabel(cue: string): string {
+  const text = cue.trim()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** `Push here` (board 5): the set's cues as the cues sheet shows them (board 8), joined by commas. */
 export function cuesSummary(cues: readonly string[]): string {
   return cues
-    .map((cue) => cue.trim())
-    .filter((cue) => cue.length > 0)
-    .map((cue) => cue.charAt(0).toUpperCase() + cue.slice(1))
+    .map(cueLabel)
+    .filter((label) => label.length > 0)
     .join(', ')
+}
+
+/** A set's cues as the sheet holds them: trimmed, none blank, none twice, in the order the set has them. */
+export function normaliseCues(cues: readonly string[] | null | undefined): string[] {
+  const out: string[] = []
+  for (const raw of cues ?? []) {
+    const cue = raw.trim()
+    if (cue !== '' && !out.includes(cue)) out.push(cue)
+  }
+  return out
+}
+
+/**
+ * The user's own cues (SPEC "Tags": "Preset list ... plus custom text"; TASKS-1.2 chunk 40: "every distinct
+ * non-preset tag on the run's week sets", no new storage): the cues of a flat list that aren't a preset,
+ * trimmed, each once, in the order they are first met. A preset is the text `PRESET_TAGS` stores.
+ */
+export function customCuesOf(cues: readonly string[]): string[] {
+  return normaliseCues(cues).filter((cue) => !(PRESET_TAGS as readonly string[]).includes(cue))
+}
+
+/** What the cues sheet holds while it is open: the set's cues, in the order it has them, and the user's own cues the list offers. */
+export interface CueDraft {
+  ticked: string[]
+  listed: string[]
+}
+
+/** The sheet's first state: the set's cues, and the user's own cues from the run plus any the set has that the run's list lacks. */
+export function cueDraftFrom(setCues: readonly string[] | null | undefined, runCues: readonly string[] = []): CueDraft {
+  const ticked = normaliseCues(setCues)
+  return { ticked, listed: customCuesOf([...runCues, ...ticked]) }
+}
+
+export interface CueRow {
+  /** What is stored: a preset's own text, or a custom cue as it was typed. */
+  cue: string
+  /** What the row reads (`cueLabel`). */
+  label: string
+  /** The user's own cue, which carries the YOURS marker; a preset doesn't. */
+  yours: boolean
+  /** The set has it: the box is ticked. */
+  on: boolean
+}
+
+/** Board 8's list, in its order: the presets (`PRESET_TAGS` order), then the user's own cues. */
+export function cueRows(draft: CueDraft): CueRow[] {
+  const rows = [
+    ...PRESET_TAGS.map((cue): { cue: string; yours: boolean } => ({ cue, yours: false })),
+    ...draft.listed.map((cue): { cue: string; yours: boolean } => ({ cue, yours: true })),
+  ]
+  return rows.map(({ cue, yours }) => ({ cue, label: cueLabel(cue), yours, on: draft.ticked.includes(cue) }))
+}
+
+/**
+ * A row tapped: the cue joins the end of the set's list, or leaves it. `addTag` and `removeTag` are the one
+ * place "trimmed, no blank, none twice" is decided (plannerVocabulary.ts); none left is an empty list.
+ */
+export function toggleCue(draft: CueDraft, cue: string): CueDraft {
+  const ticked = draft.ticked.includes(cue) ? (removeTag(draft.ticked, cue) ?? []) : (addTag(draft.ticked, cue) ?? draft.ticked)
+  return { ...draft, ticked }
+}
+
+/**
+ * "+ NEW CUE" confirmed with `text` typed: the sheet's next state, or null when there is nothing to add (blank).
+ * A text that is already a row, a preset or one of the user's own, ignoring case, ticks that row as the row's
+ * own text: a phone capitalises what is typed, and "Push here" typed is the preset "push here", not a second
+ * cue that reads the same. Any other text is a new row of the user's own at the end of the list, ticked.
+ * Typed twice, it is one row. Provisional under D31 (SPEC: "plus custom text").
+ */
+export function addNewCue(draft: CueDraft, text: string): CueDraft | null {
+  const typed = text.trim()
+  if (typed === '') return null
+  const key = typed.toLowerCase()
+  const row = [...PRESET_TAGS, ...draft.listed].find((cue) => cue.toLowerCase() === key)
+  if (row !== undefined) return draft.ticked.includes(row) ? draft : toggleCue(draft, row)
+  return toggleCue({ ...draft, listed: [...draft.listed, typed] }, typed)
+}
+
+/**
+ * The N of "Use for all N sets of [exercise]" on the cues sheet: the sets `applyTagToAllHeads` writes to.
+ * It skips a warmup, and a stage is never one of the sets passed in (setGroupLogic.ts's `headsOnly`).
+ */
+export function countCueTargets(sets: readonly TargetableSet[]): number {
+  return sets.filter((set) => !set.isWarmup).length
 }

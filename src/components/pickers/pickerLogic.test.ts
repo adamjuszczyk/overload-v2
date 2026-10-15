@@ -2,10 +2,12 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_STAGE_REST_SECONDS, STAGE_KINDS } from '../../lib/plannerVocabulary'
+import { DEFAULT_STAGE_REST_SECONDS, PRESET_TAGS, STAGE_KINDS, applyTagToAllHeads } from '../../lib/plannerVocabulary'
 import type { RepTarget } from '../../lib/plannerVocabulary'
 import type { SessionSetChangeType } from '../../types'
 import {
+  CUES_TEXT,
+  CUE_INPUT_TEXT,
   REP_BOUNDS,
   REP_TARGET_TEXT,
   REST_MAX_SECONDS,
@@ -16,13 +18,20 @@ import {
   STAGE_COUNT_MAX,
   STAGE_COUNT_MIN,
   TARGET_MODES,
+  addNewCue,
   applySetType,
   applyToAllTargets,
   countApplyToAll,
+  countCueTargets,
+  cueDraftFrom,
+  cueLabel,
+  cueRows,
   cuesSummary,
+  customCuesOf,
   draftFromRepTarget,
   draftFromRirTarget,
   formatRestClock,
+  normaliseCues,
   periodTail,
   pickTargetMode,
   pickerEyebrow,
@@ -45,7 +54,9 @@ import {
   stepStageCount,
   stepStageRest,
   stepTargetField,
+  toggleCue,
   useForAllLabel,
+  type CueDraft,
   type RirTarget,
   type SetType,
   type SetTypeId,
@@ -55,7 +66,8 @@ import {
 } from './pickerLogic'
 
 // TASKS-1.2 chunk 39: what the three pickers decide, as pure functions. Each rule is asserted here
-// and again where a picker draws it (SetTypePicker.test.tsx, TargetPickers.test.tsx).
+// and again where a picker draws it (SetTypePicker.test.tsx, TargetPickers.test.tsx). Chunk 40 adds
+// what the cues sheet decides (CuesSheet.test.tsx draws each rule again).
 
 const here = dirname(fileURLToPath(import.meta.url))
 const board = (file: string) => readFileSync(join(here, '..', '..', '..', 'design', '1.2', 'source', file), 'utf8')
@@ -501,6 +513,183 @@ describe('the Cues row\'s second line', () => {
   })
 })
 
+describe('cueLabel: how a cue reads', () => {
+  it('puts a capital on the first letter and leaves the rest as it is', () => {
+    expect(cueLabel('push here')).toBe('Push here')
+    expect(cueLabel('maintain strength')).toBe('Maintain strength')
+    expect(cueLabel('1-sec pause at the bottom')).toBe('1-sec pause at the bottom')
+    expect(cueLabel('elbows IN')).toBe('Elbows IN')
+  })
+
+  it('trims, and a blank cue reads as nothing', () => {
+    expect(cueLabel('  focus  ')).toBe('Focus')
+    expect(cueLabel('')).toBe('')
+    expect(cueLabel('   ')).toBe('')
+  })
+
+  it("is what the Cues row's second line uses (board 5), so the two never read a cue differently", () => {
+    expect(cuesSummary(['push here', 'elbows in'])).toBe(`${cueLabel('push here')}, ${cueLabel('elbows in')}`)
+  })
+
+  it("the four presets read as board 8 shows them", () => {
+    expect(PRESET_TAGS.map(cueLabel)).toEqual(['Push here', 'Maintain strength', 'Focus on execution', 'Push back'])
+  })
+})
+
+describe('normaliseCues: a set\'s cues as the sheet holds them', () => {
+  it('trims, drops blanks and exact repeats, and keeps the order the set has them', () => {
+    expect(normaliseCues(['  push back', 'push here', '', '   ', 'push back', 'my own'])).toEqual(['push back', 'push here', 'my own'])
+  })
+
+  it('none is an empty list', () => {
+    expect(normaliseCues(null)).toEqual([])
+    expect(normaliseCues(undefined)).toEqual([])
+    expect(normaliseCues([])).toEqual([])
+  })
+})
+
+describe("customCuesOf: the user's own cues, from the run's tags (no new storage)", () => {
+  it('keeps the ones that are not a preset, trimmed, each once, in the order they are first met', () => {
+    expect(customCuesOf(['push here', ' 1-sec pause at the bottom ', 'pause at the end', '1-sec pause at the bottom', 'push back', '', '  '])).toEqual([
+      '1-sec pause at the bottom',
+      'pause at the end',
+    ])
+  })
+
+  it('drops every preset, and only the presets (the text PRESET_TAGS stores)', () => {
+    expect(customCuesOf([...PRESET_TAGS])).toEqual([])
+    // "Push here" with a capital is not the stored preset text, so it is a cue of the user's own (old data typed in the old editor)
+    expect(customCuesOf(['Push here'])).toEqual(['Push here'])
+  })
+
+  it('a run with no tags has no cues of its own', () => {
+    expect(customCuesOf([])).toEqual([])
+  })
+})
+
+describe("cueDraftFrom: the sheet's first state", () => {
+  it("ticks the set's own cues, in its order, and lists the run's own cues after the presets", () => {
+    expect(cueDraftFrom(['push back', 'push here'], ['x', 'push back', 'x', 'y'])).toEqual({ ticked: ['push back', 'push here'], listed: ['x', 'y'] })
+  })
+
+  it("lists a cue the set has even when the run's tags don't hold it, after the run's", () => {
+    expect(cueDraftFrom(['push here', 'mine'], ['x'])).toEqual({ ticked: ['push here', 'mine'], listed: ['x', 'mine'] })
+  })
+
+  it('no cues and no run cues is an empty draft', () => {
+    expect(cueDraftFrom(null)).toEqual({ ticked: [], listed: [] })
+    expect(cueDraftFrom(undefined, undefined)).toEqual({ ticked: [], listed: [] })
+  })
+})
+
+describe("cueRows: board 8's list", () => {
+  const draft: CueDraft = { ticked: ['maintain strength', '1-sec pause at the bottom'], listed: ['1-sec pause at the bottom', 'elbows in'] }
+
+  it('is the presets in PRESET_TAGS order, then the user\'s own cues, as stored text and as read', () => {
+    const rows = cueRows(draft)
+    expect(rows.map((row) => row.cue)).toEqual([...PRESET_TAGS, '1-sec pause at the bottom', 'elbows in'])
+    expect(rows.map((row) => row.label)).toEqual(['Push here', 'Maintain strength', 'Focus on execution', 'Push back', '1-sec pause at the bottom', 'Elbows in'])
+  })
+
+  it('marks the user\'s own cues, and only those, as YOURS', () => {
+    expect(cueRows(draft).map((row) => row.yours)).toEqual([false, false, false, false, true, true])
+  })
+
+  it('ticks the rows the set has', () => {
+    expect(cueRows(draft).map((row) => row.on)).toEqual([false, true, false, false, true, false])
+  })
+})
+
+describe('toggleCue: a row tapped', () => {
+  const draft: CueDraft = { ticked: ['maintain strength'], listed: ['mine'] }
+
+  it('adds the cue at the end of the set\'s list', () => {
+    expect(toggleCue(draft, 'push here').ticked).toEqual(['maintain strength', 'push here'])
+    expect(toggleCue(toggleCue(draft, 'mine'), 'push back').ticked).toEqual(['maintain strength', 'mine', 'push back'])
+  })
+
+  it('removes a cue the set has and keeps the order of the rest', () => {
+    const three: CueDraft = { ticked: ['push back', 'mine', 'push here'], listed: ['mine'] }
+    expect(toggleCue(three, 'mine').ticked).toEqual(['push back', 'push here'])
+  })
+
+  it('none left is an empty list, not null', () => {
+    expect(toggleCue(draft, 'maintain strength').ticked).toEqual([])
+  })
+
+  it('a second tap undoes the first, and the list of the user\'s own cues is never touched', () => {
+    const twice = toggleCue(toggleCue(draft, 'push here'), 'push here')
+    expect(twice).toEqual(draft)
+    expect(toggleCue(draft, 'push here').listed).toEqual(['mine'])
+  })
+})
+
+describe('addNewCue: "+ NEW CUE" confirmed', () => {
+  const draft: CueDraft = { ticked: ['maintain strength'], listed: ['1-sec pause at the bottom'] }
+
+  it('adds nothing for a blank text', () => {
+    expect(addNewCue(draft, '')).toBeNull()
+    expect(addNewCue(draft, '   ')).toBeNull()
+  })
+
+  it('a new text is a new row of the user\'s own at the end of the list, ticked, trimmed and kept as typed', () => {
+    expect(addNewCue(draft, '  Elbows IN ')).toEqual({ ticked: ['maintain strength', 'Elbows IN'], listed: ['1-sec pause at the bottom', 'Elbows IN'] })
+  })
+
+  it('typed twice, it is one row and one cue', () => {
+    const once = addNewCue(draft, 'elbows in') as CueDraft
+    const twice = addNewCue(once, 'elbows in') as CueDraft
+    expect(twice.listed).toEqual(['1-sec pause at the bottom', 'elbows in'])
+    expect(twice.ticked).toEqual(['maintain strength', 'elbows in'])
+  })
+
+  it('typed again with another case, it is still the same row (a phone capitalises what is typed)', () => {
+    const once = addNewCue(draft, 'elbows in') as CueDraft
+    const again = addNewCue(once, 'Elbows In') as CueDraft
+    expect(again.listed).toEqual(['1-sec pause at the bottom', 'elbows in'])
+    expect(again.ticked).toEqual(['maintain strength', 'elbows in'])
+  })
+
+  it('"Push here" typed is the preset "push here": it is ticked as the preset, not added as a second cue that reads the same', () => {
+    const next = addNewCue(draft, 'Push here') as CueDraft
+    expect(next.ticked).toEqual(['maintain strength', 'push here'])
+    expect(next.listed).toEqual(draft.listed)
+    expect((addNewCue(draft, 'push here') as CueDraft).ticked).toEqual(['maintain strength', 'push here'])
+  })
+
+  it('one of the user\'s own cues typed in another case is ticked as it is listed', () => {
+    const next = addNewCue(draft, '1-SEC PAUSE AT THE BOTTOM') as CueDraft
+    expect(next.ticked).toEqual(['maintain strength', '1-sec pause at the bottom'])
+    expect(next.listed).toEqual(['1-sec pause at the bottom'])
+  })
+
+  it('a cue the set already has, typed again, stays ticked (it is not a toggle)', () => {
+    expect(addNewCue(draft, 'Maintain Strength')).toEqual(draft)
+  })
+})
+
+describe('countCueTargets: the N of "Use for all N sets of [exercise]"', () => {
+  const sets = (...warmups: boolean[]): TargetableSet[] => warmups.map((isWarmup, i) => ({ id: `s${i + 1}`, isWarmup }))
+
+  it('counts the working heads and skips every warmup', () => {
+    expect(countCueTargets(sets(true, false, false, false))).toBe(3)
+    expect(countCueTargets(sets(true, true, false))).toBe(1)
+    expect(countCueTargets(sets(false, false))).toBe(2)
+  })
+
+  it('is nothing for no sets, or only warmups', () => {
+    expect(countCueTargets([])).toBe(0)
+    expect(countCueTargets(sets(true, true))).toBe(0)
+  })
+
+  it('is the number of heads applyTagToAllHeads writes to, the function the caller writes with', () => {
+    for (const warmups of [[true, false, false, false], [false, false], [true, true, false, true, false, false], [true]]) {
+      const heads = warmups.map((isWarmup, i) => ({ id: `s${i + 1}`, tags: null, isWarmup }))
+      expect(countCueTargets(heads), warmups.join()).toBe(applyTagToAllHeads(heads, 'push here').length)
+    }
+  })
+})
+
 describe("wording: every string here is on the board it comes from", () => {
   const setKind = board('SetKindPicker.dc.html')
   const rep = board('RepTargetPicker.dc.html')
@@ -569,6 +758,27 @@ describe("wording: every string here is on the board it comes from", () => {
     expect(rir).toContain(`'${rirTargetSummary(rirRange(1, 2))}'`)
     expect(rir).toContain(useForAllLabel(3, 'Seated Cable Row'))
     expect(rir).toContain(`${pickerEyebrow({ exerciseName: 'Seated Cable Row', setNumber: 1, tail: periodTail(2) }).toUpperCase()}`)
+  })
+
+  it("board 8's texts: the title, the line under it, YOURS, + NEW CUE, DONE, the presets as they read, the eyebrow and \"Use for all\"", () => {
+    const tag = board('TagSheet.dc.html')
+    expect(tag).toContain(CUES_TEXT.title)
+    expect(tag).toContain(`>${CUES_TEXT.note}<`)
+    expect(tag).toContain(`'${CUES_TEXT.yours}'`)
+    expect(tag).toContain(`>${CUES_TEXT.newCue}<`)
+    expect(tag).toContain(`>${CUES_TEXT.done}<`)
+    for (const preset of PRESET_TAGS) expect(tag).toContain(`['${cueLabel(preset)}', '']`)
+    expect(tag).toContain(`['1-sec pause at the bottom', '${CUES_TEXT.yours}']`)
+    expect(tag).toContain(pickerEyebrow({ exerciseName: 'Lat Pulldown', setNumber: 3, tail: periodTail(2) }).toUpperCase())
+    expect(tag).toContain(useForAllLabel(3, 'Lat Pulldown'))
+    // the board draws the title as the dialog's name too
+    expect(tag).toContain(`aria-label="${CUES_TEXT.title}"`)
+  })
+
+  it("the input \"+ NEW CUE\" opens is on no board: its words are ours", () => {
+    const tag = board('TagSheet.dc.html')
+    expect(tag).not.toContain(CUE_INPUT_TEXT.label)
+    expect(tag).not.toContain(`>${CUE_INPUT_TEXT.add}<`)
   })
 
   it("the boards' aria-labels for the steppers are the ones the pickers use", () => {
