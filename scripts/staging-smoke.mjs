@@ -27,7 +27,21 @@
 //        sequence  exactly one active SEQUENCE run, cycle 1 done (four
 //                  workouts, the A repeat included), cycle 2 planned, nothing
 //                  in it done
-//        empty     owns no rows
+//        empty     no programs, runs or sessions, and its exercises are
+//                  exactly the app's defaults (DECISIONS 125, Adam: "'Empty'
+//                  means no programs, runs or sessions; the smoke asserts
+//                  exactly that, and that the account's exercises are the
+//                  defaults"). The app gives an account with no exercises its
+//                  default ones when it signs in (useSeedDefaultExercisesIfEmpty),
+//                  so the account owns them from the first time anyone signs
+//                  in to the app as it. The list is the app's own
+//                  DEFAULT_EXERCISES (src/features/library/defaultExercises.ts),
+//                  loaded through Vite's SSR loader and never typed here: every
+//                  default once (name and muscle group), nothing else. A
+//                  program's workout days, a run's week plans and a session's
+//                  set logs can't exist without their program, run or session
+//                  (not-null foreign keys), so the three counts cover them; a
+//                  settings row isn't part of "empty".
 //      and none of another account's rows is visible to any of the four
 //      (staging-other, and each of the others, own rows these must not see).
 //   4. pg-safeupdate behaves as in production: a DELETE with no WHERE, sent
@@ -40,14 +54,19 @@
 // the staging app (finishing the stable run, starting another, logging sets)
 // a count can move; the check for a shape the seed alone creates is a floor
 // (">= 1"), not a total, except where the shape is "exactly one active run" or
-// "owns nothing".
+// the empty account's.
 //
 // Env:   STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY, STAGING_TEST_PASSWORD
 //        (STAGING_TEST_EMAIL defaults to staging-test@example.com)
-// Usage: node scripts/staging-smoke.mjs
+// Usage: node scripts/staging-smoke.mjs   (after npm ci: Vite loads the app's
+//        default exercise list)
 // Exit:  0 = every check passed, 1 = any failure or missing variable
 
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertNotProduction } from './staging-guard.mjs';
+
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const url = (process.env.STAGING_SUPABASE_URL ?? '').replace(/[^\x20-\x7E]/g, '').trim().replace(/\/+$/, '');
 const anon = (process.env.STAGING_SUPABASE_ANON_KEY ?? '').replace(/[^\x20-\x7E]/g, '').trim();
@@ -67,6 +86,92 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
 };
 
+// ─── The empty account (DECISIONS 125) ───────────────────────────────────────
+// Exported for staging-smoke.test.mjs, which runs them against a stand-in for
+// the signed-in account; main() runs them against staging.
+
+// The app's default exercises, read from the app's own source through Vite's
+// SSR loader (CONTEXT.md: a Node script that runs the app's TypeScript loads it
+// that way), so the list is the app's and never a copy typed into this script.
+export const DEFAULTS_MODULE = '/src/features/library/defaultExercises.ts';
+
+export async function loadDefaultExercises(root = REPO) {
+  const { createServer } = await import('vite');
+  const server = await createServer({
+    root,
+    configFile: false,
+    appType: 'custom',
+    logLevel: 'silent',
+    server: { middlewareMode: true, hmr: false, watch: null },
+    optimizeDeps: { noDiscovery: true, include: [] },
+  });
+  try {
+    const { DEFAULT_EXERCISES } = await server.ssrLoadModule(DEFAULTS_MODULE);
+    if (!Array.isArray(DEFAULT_EXERCISES) || DEFAULT_EXERCISES.length === 0) {
+      throw new Error(`${DEFAULTS_MODULE} exports no DEFAULT_EXERCISES`);
+    }
+    return DEFAULT_EXERCISES.map(({ name, muscleGroup }) => ({ name, muscleGroup }));
+  } finally {
+    await server.close();
+  }
+}
+
+// The account's exercises against the defaults, as (name, muscle group) pairs
+// with their repeats counted: every default exactly once and nothing else.
+// The detail is counts only, like every line this script prints.
+export function judgeDefaultExercises(rows, defaults) {
+  const tally = (pairs) => {
+    const counts = new Map();
+    for (const pair of pairs) {
+      const key = JSON.stringify(pair);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  };
+  const wanted = tally(defaults.map((d) => [d.name, d.muscleGroup]));
+  const owned = tally(rows.map((r) => [r.name, r.muscle_group]));
+  let missing = 0;
+  for (const [key, n] of wanted) missing += Math.max(0, n - (owned.get(key) ?? 0));
+  let extra = 0;
+  for (const [key, n] of owned) extra += Math.max(0, n - (wanted.get(key) ?? 0));
+  return {
+    ok: defaults.length > 0 && missing === 0 && extra === 0,
+    detail: `${rows.length} exercises, ${defaults.length} defaults: ${missing} default(s) missing, ${extra} not a default or a second copy of one`,
+  };
+}
+
+// Adam's three: no programs, no runs, no sessions.
+export const EMPTY_OWNS_NONE = [
+  ['programs (v2_programs)', 'v2_programs?select=id'],
+  ['runs (v2_mesocycles)', 'v2_mesocycles?select=id'],
+  ['sessions (v2_sessions)', 'v2_sessions?select=id'],
+];
+
+// [name, ok, detail] for each of the empty account's checks. `who` is the
+// signed-in account as signIn returns it (count, rows); `defaults` the loaded
+// list, or null when it couldn't be loaded, which fails the check.
+export async function emptyAccountChecks(who, defaults) {
+  const out = [];
+  for (const [what, path] of EMPTY_OWNS_NONE) {
+    const n = await who.count(path);
+    out.push([`seed: empty: owns no ${what}`, n === 0, n === null ? 'read failed' : `${n}`]);
+  }
+  const name = 'seed: empty: its exercises are exactly the app\'s defaults';
+  if (!defaults) {
+    out.push([name, false, 'the app\'s DEFAULT_EXERCISES could not be loaded']);
+    return out;
+  }
+  const total = await who.count('exercises?select=id');
+  const rows = await who.rows('exercises?select=name,muscle_group');
+  if (total === null || rows === null) out.push([name, false, 'read failed']);
+  else if (rows.length !== total) out.push([name, false, `read ${rows.length} of ${total} rows`]);
+  else {
+    const { ok, detail } = judgeDefaultExercises(rows, defaults);
+    out.push([name, ok, detail]);
+  }
+  return out;
+}
+
 async function main() {
   for (const [k, v] of [['STAGING_SUPABASE_URL', url], ['STAGING_SUPABASE_ANON_KEY', anon], ['STAGING_TEST_PASSWORD', password]]) {
     if (!v) { console.error(`staging-smoke: ${k} is not set`); process.exit(1); }
@@ -74,6 +179,12 @@ async function main() {
   const ref = assertNotProduction(url);
   console.log(`staging-smoke: project ${ref} (not production)`);
   const base = { apikey: anon, 'Content-Type': 'application/json' };
+  let defaults = null;
+  try {
+    defaults = await loadDefaultExercises();
+  } catch (e) {
+    console.error(`staging-smoke: the app's DEFAULT_EXERCISES could not be loaded: ${String(e?.message ?? e).split('\n')[0]}`);
+  }
 
   // 1. Sign-ups off
   const probe = `signup-probe-${Date.now()}@example.com`;
@@ -186,12 +297,11 @@ async function main() {
     await seedCheck(sq, 'sequence: cycle 2 planned (4 workout slots)', 'v2_week_plans?select=id&week_number=eq.2', (n) => n >= 4);
   }
 
-  // 3d. staging-empty owns nothing
+  // 3d. staging-empty: no programs, runs or sessions, and exactly the app's
+  // default exercises (DECISIONS 125)
   const em = others.empty;
   if (em) {
-    for (const table of ['exercises', 'v2_programs', 'v2_workout_days', 'v2_mesocycles', 'v2_week_plans', 'v2_sessions', 'v2_set_logs', 'v2_user_settings']) {
-      await seedCheck(em, `empty: owns no ${table}`, `${table}?select=*`, (n) => n === 0);
-    }
+    for (const [name, ok, detail] of await emptyAccountChecks(em, defaults)) check(name, ok, detail);
   }
 
   // 3e. No account sees another account's programs (RLS), each as itself
@@ -208,10 +318,13 @@ async function main() {
     `HTTP ${del.status} ${delBody.code ?? ''}; v2_coach_notes rows before ${before}, after ${after}`);
 }
 
-main()
-  .catch((e) => { console.error(`staging-smoke: ${e.message}`); results.push(false); })
-  .finally(() => {
-    const failed = results.filter((r) => !r).length;
-    console.log(failed ? `staging-smoke: ${failed} check(s) failed` : 'staging-smoke: all checks passed');
-    process.exit(failed || results.length === 0 ? 1 : 0);
-  });
+// Only when run as a script: staging-smoke.test.mjs imports the empty account's checks.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((e) => { console.error(`staging-smoke: ${e.message}`); results.push(false); })
+    .finally(() => {
+      const failed = results.filter((r) => !r).length;
+      console.log(failed ? `staging-smoke: ${failed} check(s) failed` : 'staging-smoke: all checks passed');
+      process.exit(failed || results.length === 0 ? 1 : 0);
+    });
+}

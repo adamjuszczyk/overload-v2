@@ -683,6 +683,15 @@ optional:
 - Last week's number is what was actually done: done sessions count their done
   sets (added sets in, skipped ones out); sessions not done yet count their plan.
   This week's is its plan.
+  - **A workout of last week that was never done** (the answer to DECISIONS
+    133; Adam, 2026-10-15): "once the week has ended, a workout that was never
+    done counts 0, the same as a skipped one. While the week is still running, a
+    not-done workout counts its plan. VOLUME shows what was actually done,
+    consistent with 131 (a missed week is empty)." So once last week has ended
+    (Plan on the current week), a workout started and never finished counts the
+    sets it logged, and its plan still counts in "YOU PLANNED …", so the note
+    shows what was missed; while it is still running (Plan on a week planned
+    ahead), "not done yet" counts the plan.
 - Rows are muscle groups (each exercise has one). Exercises with no muscle group
   count in the existing "Other" group. Board 3's subgroup rows are sample data.
 - Warmups don't count. Drops and stages count per the Settings rule (14b),
