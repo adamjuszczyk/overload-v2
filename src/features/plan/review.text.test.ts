@@ -256,6 +256,20 @@ describe('the wording where the board draws no such item (provisional, D31)', ()
     expect(reviewItemText(item, ctx)).toMatchObject({ eyebrow: 'BENCH PRESS · WARMUP 01', headline: 'Did 8 reps', detail: 'planned 40 kg × 10', action: 'USE 8 reps' })
   })
 
+  it('a staged set switched back to Normal reads as a new type: "You made set 01 a normal set", no drops under it', () => {
+    const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], [wset('ps-1', 'pe-1', 1, { stageKind: 'dropset' }), stage('ps-s1', 'ps-1', 'pe-1', 1)])
+    const logs = [setLog('lg-1', 's1', 'ex-1', { weekPlanSetId: 'ps-1', stageKind: null })]
+    const item = itemsOf(review({ last: [last], sessions: [session('s1', last.id, 'completed', logs)] }))[0] as ReviewRetypedItem
+    expect(item.kind).toBe('retyped')
+    expect(reviewItemText(item, ctx)).toEqual({
+      eyebrow: 'LATERAL RAISE · SET 01',
+      headline: 'You made set 01 a normal set',
+      detail: null,
+      note: null,
+      action: 'USE',
+    })
+  })
+
   it('a staged set made another kind, or made a warmup, reads as a new type, not as added drops', () => {
     const typed = (planned: ReturnType<typeof wset>[], logs: SetLog[]) => {
       const last = weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Lateral Raise')], planned)

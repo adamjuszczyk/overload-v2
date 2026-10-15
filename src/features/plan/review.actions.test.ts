@@ -14,7 +14,7 @@ import {
   type ReviewSwappedItem,
   type ReviewWrite,
 } from './review'
-import { deepFreeze, dropLog, review, row, session, setLog, stage, swapRecord, weekPlan, wset } from './review.testutil'
+import { applyWrites, deepFreeze, dropLog, review, row, session, setLog, stage, swapRecord, weekPlan, wset } from './review.testutil'
 
 // Chunk 43 (TASKS-1.2 "REVIEW as a pure function"): what each action writes. Every test names what is
 // written (the set's own field names, the ids of THIS week's rows, the decision row) and uses a this
@@ -394,6 +394,30 @@ describe('USE on a type item: this week\'s matching set takes the kind and the n
       { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s3' },
       { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s2' },
       { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s1' },
+    ])
+  })
+
+  it('a dropset switched back to Normal (its log gave up the kind, no drop logged): the kind is cleared and the stage rows are deleted, the highest first', () => {
+    const last = weekPlan('a', 1, [exercises[0]], [wset('ps-1', 'pe-1', 1, { stageKind: 'dropset' }), stage('ps-s1', 'ps-1', 'pe-1', 1), wset('ps-2', 'pe-1', 2)])
+    const week2 = weekPlan('a', 2, [exercises[0]], [
+      wset('ts-1', 'pe-1', 1, { stageKind: 'dropset' }),
+      stage('ts-s1', 'ts-1', 'pe-1', 1),
+      stage('ts-s2', 'ts-1', 'pe-1', 2),
+      wset('ts-2', 'pe-1', 2),
+    ])
+    const item = retypedItem(last, week2, [head({ stageKind: null }), ...rest])
+    expect(item.doneType).toEqual({ kind: 'normal' })
+    const result = applyReviewAction(item, 'use', week2, counter())
+    expect(result.writes).toEqual([
+      { kind: 'update_set', weekPlanId: 'wp-a-2', setId: 'ts-1', changes: { stageKind: null } },
+      { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s2' },
+      { kind: 'delete_set', weekPlanId: 'wp-a-2', setId: 'ts-s1' },
+    ])
+    expect(result.decision).toEqual({ weekPlanId: 'wp-a-2', itemKey: 'type:s1:ps-1', decision: 'used' })
+    // this week's plan after those writes: the set is a plain one with no stage rows, and the set after it is as it was
+    expect(applyWrites(week2, result.writes).sets.map((s) => [s.id, s.stageKind ?? null, s.parentWeekPlanSetId])).toEqual([
+      ['ts-1', null, null],
+      ['ts-2', null, null],
     ])
   })
 

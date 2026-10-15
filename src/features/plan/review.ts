@@ -23,8 +23,10 @@
 //     alongside and never makes an item. A done number that was never entered (a ticked warmup's blank
 //     weight and reps) is nothing to take over, so it never differs;
 //   - a TYPE item ("You made set 02 a dropset"): the log's kind differs from the planned kind (warmup,
-//     normal, or a stage kind), or the same stage kind has more drops done than planned. A planned
-//     staged set done as a plain one is not an item: the drops weren't done, and a stage row is no set.
+//     normal, or a stage kind), or the same stage kind has more drops done than planned. A planned staged
+//     set whose drops weren't done is no item while its log keeps the stage kind (a stage row is no set, and
+//     SPEC lists only "a drop or stage added"), but it is one when the log gave the kind up: the set was
+//     switched back to Normal during the workout (19c; the log's own kind is the type as done).
 // Per exercise: a set added during the session (a log with no planned set, on an exercise of the plan)
 // is an ADDED SET item; the sets of an exercise that isn't in the plan are one ADDED EXERCISE item; a
 // recorded swap (`v2_session_exercise_swaps`) is one SWAPPED item, and the original's sets that the swap
@@ -343,6 +345,9 @@ function plannedTypeOf(head: ReviewSetRow, stageRows: readonly ReviewSetRow[]): 
 
 // A logged head's type as it was DONE (SPEC Objects stored: "set kind and stage kind as done" is on the
 // log): a warmup, a staged set with the drops that were logged (a skipped drop is not done), or a plain one.
+// The drops give the staged set its count, so with none logged the set is plain here whatever stage kind its
+// log carries: that kind is a drop done only once a drop was. `switchedToNormal` is where the log's own kind
+// is read against the plan's, for a planned staged set.
 function doneTypeOf(head: ReviewLog, stageLogs: readonly ReviewLog[]): SessionSetChangeType {
   if (head.isWarmup) return { kind: 'warmup' }
   const drops = stageLogs.filter((s) => !s.isSkipped).length
@@ -350,10 +355,23 @@ function doneTypeOf(head: ReviewLog, stageLogs: readonly ReviewLog[]): SessionSe
   return { kind: 'normal' }
 }
 
+// SPEC 19c, 13d ("a set type changed (19)"): a planned staged set switched back to Normal during the workout.
+// A head's log carries its stage kind as done: the app logs the plan's kind as it is (SetRow writes
+// `plannedSet.stageKind`), and the switch to Normal leaves the log's `stage_kind` null (TASKS 62). So it was
+// switched when the plan's head has a stage kind and its log has none. The log with its kind kept is a set whose
+// drops were simply not done, and a null on both sides is a set logged as planned: before 1.1 a planned
+// dropset's head had no kind, and its log has none either (a switch to Normal of such a set leaves the log
+// the same, so it gives no item). Another stage kind on the log, with no drop logged, is not read either: it
+// has no stage count (the drops give it), so it stays as it was before this rule.
+function switchedToNormal(plannedHead: ReviewSetRow, log: ReviewLog): boolean {
+  return (plannedHead.stageKind ?? null) !== null && (log.stageKind ?? null) === null
+}
+
 // "You made set 02 a dropset": the kinds differ, or the same stage kind has more drops than planned. Fewer
-// drops than planned, and a planned staged set done plain, are not items (the drops weren't done).
-function typeChanged(planned: SessionSetChangeType, done: SessionSetChangeType): boolean {
-  if (planned.kind !== done.kind) return !(planned.kind === 'staged' && done.kind === 'normal')
+// drops than planned are not an item, and neither is a planned staged set done without its drops (done plain,
+// `doneTypeOf`) unless it was switched to Normal.
+function typeChanged(planned: SessionSetChangeType, done: SessionSetChangeType, switched: boolean): boolean {
+  if (planned.kind !== done.kind) return planned.kind === 'staged' && done.kind === 'normal' ? switched : true
   if (planned.kind === 'staged' && done.kind === 'staged') {
     return planned.stageKind !== done.stageKind || done.stageCount > planned.stageCount
   }
@@ -544,7 +562,7 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
         items.push({ kind: 'number', ...common, planned, done, weightDiffers: differs.weight, repsDiffer: differs.reps })
       }
       const plannedType = plannedTypeOf(head, stageRowsOf(head))
-      if (typeChanged(plannedType, done.type)) {
+      if (typeChanged(plannedType, done.type, switchedToNormal(head, log))) {
         items.push({ kind: 'retyped', ...common, plannedType, doneType: done.type })
       }
     }
