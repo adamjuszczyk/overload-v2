@@ -443,9 +443,11 @@ function sameSlot(a: Pick<CopyWorkout, 'workoutDayId' | 'sequencePosition'>, b: 
 
 // The nth occurrence of an exercise this week with the nth of it last week (provisional 83); an
 // exercise last week doesn't have is left alone. Rows in position order on both sides.
-type ExerciseSlot = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position'>
+// Exported since chunk 43: REVIEW matches last week's exercises to this week's with this very
+// pairing (and `pairSets` below), so there is one matcher, not two.
+export type ExerciseSlot = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position'>
 
-function pairByExercise(
+export function pairByExercise(
   thisWeek: readonly ExerciseSlot[],
   lastWeek: readonly ExerciseSlot[],
 ): Array<[ExerciseSlot, ExerciseSlot]> {
@@ -464,8 +466,8 @@ function pairByExercise(
 }
 
 // This week's set rows of one exercise row paired with last week's: heads by (is_warmup, ordinal
-// among those), 039's rule, then each head's stages by stage index.
-function pairSets(thisSets: readonly CopySet[], lastSets: readonly CopySet[]): Array<[CopySet, CopySet]> {
+// among those), 039's rule, then each head's stages by stage index. Exported since chunk 43 (see above).
+export function pairSets(thisSets: readonly CopySet[], lastSets: readonly CopySet[]): Array<[CopySet, CopySet]> {
   const heads = (sets: readonly CopySet[], warmup: boolean) =>
     sets
       .filter((s) => s.parentWeekPlanSetId == null && s.isWarmup === warmup)
