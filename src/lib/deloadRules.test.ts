@@ -14,6 +14,7 @@ import {
   buildDeloadRestoreSnapshot,
   groupDeloadRestoreEntries,
   type DeloadSourceSet,
+  type DeloadSnapshotSourceRow,
   type DeloadExerciseSlot,
   type DeloadRules,
   type DeloadSetsRule,
@@ -68,25 +69,37 @@ describe('validateDeloadRules', () => {
   })
 })
 
-describe('resolveEffectiveDeloadRules', () => {
-  const userRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } }
+// Chunk 48 (SPEC Deload [1.2], 16b: "Settings only; programs have no override"):
+// the rules a deload applies are the user's Settings rules and nothing else.
+// The argument that used to be the program's override is gone, so the pure
+// function can't be handed one; that a run whose program STORES an override
+// still gets Settings is proven where the program is (PlanPage.deload*.test.tsx,
+// PlanPage.deloadFromSettings.test.tsx, programService.test.ts).
+describe('resolveEffectiveDeloadRules — Settings only', () => {
+  const settingsRules = { sets: { mode: 'percent', value: 75, rounding: 'down' }, rir: { delta: 2 } }
 
-  it("the run's program override wins when non-null", () => {
-    const programRules = { weight: { percent: 80, rounding: 'up', step: 5, stepUnit: 'kg' } }
-    expect(resolveEffectiveDeloadRules(programRules, userRules)).toEqual(programRules)
+  it("the user's Settings rules, validated", () => {
+    expect(resolveEffectiveDeloadRules(settingsRules)).toEqual(settingsRules)
   })
 
-  it('falls back to the global default when the program override is null', () => {
-    expect(resolveEffectiveDeloadRules(null, userRules)).toEqual(userRules)
+  it('none in Settings → null (flag-only marking)', () => {
+    expect(resolveEffectiveDeloadRules(null)).toBeNull()
+    expect(resolveEffectiveDeloadRules(undefined)).toBeNull()
   })
 
-  it('a present-but-empty program override ({}) wins too — "no rules for this program", not a fall-through', () => {
-    expect(resolveEffectiveDeloadRules({}, userRules)).toBeNull()
+  it('a present-but-empty object ({}) is "no rules" too: Settings writes null once every rule is off', () => {
+    expect(resolveEffectiveDeloadRules({})).toBeNull()
   })
 
-  it('none at all → null', () => {
-    expect(resolveEffectiveDeloadRules(null, null)).toBeNull()
-    expect(resolveEffectiveDeloadRules(undefined, undefined)).toBeNull()
+  it('a malformed value is "no rules on", never a guess at which part of it is still good', () => {
+    expect(resolveEffectiveDeloadRules({ sets: { mode: 'bogus', value: 50, rounding: 'down' } })).toBeNull()
+  })
+
+  it('takes the Settings rules alone: the program argument is gone (a second one is a type error)', () => {
+    expect(resolveEffectiveDeloadRules).toHaveLength(1)
+    const storedOverride = { weight: { percent: 80, rounding: 'up', step: 5, stepUnit: 'kg' } }
+    // @ts-expect-error the old (programRules, userRules) call no longer compiles
+    resolveEffectiveDeloadRules(storedOverride, settingsRules)
   })
 })
 
@@ -357,17 +370,64 @@ describe('calculateDeloadRepTarget — TASKS cases, verbatim', () => {
   })
 })
 
-describe('calculateDeloadRir', () => {
-  it('RIR: +n', () => {
-    expect(calculateDeloadRir(2, { delta: 1 })).toBe(3)
+// Chunk 48 (SPEC Deload [1.2]: "RIR rule: a range shifts both ends, floor 0";
+// Targets → RIR range: "a range whose ends meet becomes a number"). The RIR
+// target is the pair the plan stores: targetRir (a number, or a range's low end)
+// and targetRirMax (a range's high end, null for a number).
+describe('calculateDeloadRir — the RIR rule on a number and on a range', () => {
+  const rir = (targetRir: number | null, targetRirMax: number | null = null) => ({ targetRir, targetRirMax })
+
+  it('a number: +n, and it stays a number', () => {
+    expect(calculateDeloadRir(rir(2), { delta: 1 })).toEqual(rir(3))
   })
 
-  it('no RIR target means nothing to adjust — stays null', () => {
-    expect(calculateDeloadRir(null, { delta: 1 })).toBeNull()
+  it('TASKS case: RIR 1–2 with +2 → 3–4 (both ends shift)', () => {
+    expect(calculateDeloadRir(rir(1, 2), { delta: 2 })).toEqual(rir(3, 4))
   })
 
-  it('no stated floor — a negative delta can take RIR below 0', () => {
-    expect(calculateDeloadRir(0, { delta: -2 })).toBe(-2)
+  it('TASKS case: RIR 0–1 with a negative shift → the floor, and the ends that meet become a number', () => {
+    // 0 − 1 floors at 0, 1 − 1 is 0: the ends meet, so it is the number 0 (targetRirMax null), not a range 0–0.
+    expect(calculateDeloadRir(rir(0, 1), { delta: -1 })).toEqual(rir(0))
+    expect(calculateDeloadRir(rir(0, 1), { delta: -2 })).toEqual(rir(0)) // a deeper shift: both ends under the floor
+  })
+
+  it('the floor can clamp one end only: 0–2 with −1 → 0–1, still a range', () => {
+    expect(calculateDeloadRir(rir(0, 2), { delta: -1 })).toEqual(rir(0, 1))
+  })
+
+  it('both ends under the floor: 1–2 with −3 → the number 0', () => {
+    expect(calculateDeloadRir(rir(1, 2), { delta: -3 })).toEqual(rir(0))
+  })
+
+  it('a number floors at 0 too (the same rule, a range with one end)', () => {
+    expect(calculateDeloadRir(rir(0), { delta: -2 })).toEqual(rir(0))
+    expect(calculateDeloadRir(rir(1), { delta: -3 })).toEqual(rir(0))
+  })
+
+  it('a range whose ends already meet (the database allows min = max) reads as a number once the rule has run', () => {
+    expect(calculateDeloadRir(rir(2, 2), { delta: 1 })).toEqual(rir(3))
+  })
+
+  it('a rule that is on but adds nothing (delta 0) leaves a range and a number as they are', () => {
+    expect(calculateDeloadRir(rir(1, 2), { delta: 0 })).toEqual(rir(1, 2))
+    expect(calculateDeloadRir(rir(2), { delta: 0 })).toEqual(rir(2))
+  })
+
+  it('no RIR target means nothing to adjust — both stay null, whatever the shift', () => {
+    expect(calculateDeloadRir(rir(null), { delta: 1 })).toEqual(rir(null))
+    expect(calculateDeloadRir(rir(null), { delta: -4 })).toEqual(rir(null))
+  })
+
+  it('whatever the shift, the result honours the database check (042): a high end only above a low end, nothing under 0', () => {
+    for (let low = 0; low <= 4; low++) {
+      for (let high = low + 1; high <= 6; high++) {
+        for (let delta = -7; delta <= 7; delta++) {
+          const out = calculateDeloadRir(rir(low, high), { delta })
+          expect(out.targetRir, `${low}–${high} ${delta}`).toBeGreaterThanOrEqual(0)
+          if (out.targetRirMax !== null) expect(out.targetRirMax, `${low}–${high} ${delta}`).toBeGreaterThan(out.targetRir!)
+        }
+      }
+    }
   })
 })
 
@@ -377,7 +437,7 @@ function set(overrides: Partial<DeloadSourceSet>): DeloadSourceSet {
   return {
     id: 'set', programExerciseId: 'pe1', setNumber: 1, parentId: null, stageIndex: 0,
     isWarmup: false, stageKind: null, programSetId: null, repMin: null, repMax: null,
-    isAmrap: false, targetRir: null, tags: null, isDropset: false, plannedWeight: null,
+    isAmrap: false, targetRir: null, targetRirMax: null, tags: null, isDropset: false, plannedWeight: null,
     loggedWeight: null,
     ...overrides,
   }
@@ -470,6 +530,52 @@ describe('calculateDeloadSets', () => {
     expect(result.filter((r) => r.programExerciseId === 'peA')).toHaveLength(2) // 4 → 2
     expect(result.filter((r) => r.programExerciseId === 'peB')).toHaveLength(1) // 2 → 1
   })
+
+  // Chunk 48 — the calculator carries the RIR range's high end (migration 042).
+  describe('the RIR range (targetRirMax)', () => {
+    const rirRule: DeloadRules = { rir: { delta: 2 } }
+
+    it('the RIR rule shifts both ends of a ranged set (1–2 +2 → 3–4) and of its stage; a number stays a number', () => {
+      const head = set({ id: 'h', setNumber: 1, stageKind: 'dropset', targetRir: 1, targetRirMax: 2 })
+      const stage = set({ id: 's', parentId: 'h', setNumber: 1, stageIndex: 1, isDropset: true, targetRir: 0, targetRirMax: null })
+      const plain = set({ id: 'p', setNumber: 2, targetRir: 2, targetRirMax: null })
+
+      const out = calculateDeloadSets([head, stage, plain], rirRule)
+
+      expect(out.map((r) => [r.sourceId, r.targetRir, r.targetRirMax])).toEqual([['h', 3, 4], ['s', 2, null], ['p', 4, null]])
+    })
+
+    it('the floor and "ends that meet become a number" hold through the whole pass (0–1 with −1 → the number 0)', () => {
+      const out = calculateDeloadSets([set({ id: 'r', targetRir: 0, targetRirMax: 1 })], { rir: { delta: -1 } })
+      expect(out[0]).toMatchObject({ targetRir: 0, targetRirMax: null })
+    })
+
+    it('with no RIR rule a ranged set keeps both ends, whatever the other rules do to it', () => {
+      const ranged = set({ id: 'r', setNumber: 1, targetRir: 1, targetRirMax: 3, plannedWeight: 100, repMin: 8, repMax: 12 })
+      const out = calculateDeloadSets([ranged], { weight: { percent: 90, rounding: 'down', step: 2.5, stepUnit: 'kg' }, reps: { delta: -2 } })
+      // the weight (100 → 90) and reps (8–12 → 6–10) rules did run; the RIR range is untouched
+      expect(out[0]).toMatchObject({ targetRir: 1, targetRirMax: 3, targetWeight: 90, repMin: 6, repMax: 10 })
+    })
+
+    it('a warmup passes its RIR columns through untouched, with the RIR rule on', () => {
+      const warmup = set({ id: 'w', isWarmup: true, targetRir: 3, targetRirMax: 4, plannedWeight: 40 })
+      const out = calculateDeloadSets([warmup], rirRule)
+      expect(out[0]).toMatchObject({ targetRir: 3, targetRirMax: 4 })
+    })
+
+    it('a source set that lacks targetRirMax is refused at run time (it would come out a plain number, silently)', () => {
+      const { targetRirMax: _left, ...missing } = set({ id: 'x', targetRir: 1 })
+      expect(() => calculateDeloadSets([missing as DeloadSourceSet], rirRule)).toThrow(TypeError)
+      expect(() => calculateDeloadSets([missing as DeloadSourceSet], rirRule)).toThrow(/targetRirMax/)
+    })
+
+    it('... and `tsc` refuses the caller (this test fails under npm run typecheck, not in Vitest, if the field becomes optional)', () => {
+      const { targetRirMax: _left, ...missing } = set({ id: 'x' })
+      // @ts-expect-error a DeloadSourceSet without targetRirMax is not a DeloadSourceSet
+      const attempt = () => calculateDeloadSets([missing], rirRule)
+      expect(attempt).toThrow(TypeError)
+    })
+  })
 })
 
 // ─── Snapshot / restore grouping (reviewer's note 3/4) ─────────────────────
@@ -477,12 +583,30 @@ describe('calculateDeloadSets', () => {
 describe('buildDeloadRestoreSnapshot / groupDeloadRestoreEntries', () => {
   it('snapshot carries every restorable column and nothing id-shaped', () => {
     const snapshot = buildDeloadRestoreSnapshot([
-      { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: 'ps1', repMin: 8, repMax: 12, isAmrap: false, targetWeight: 100, targetRir: 2, tags: ['push here'] },
+      { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: 'ps1', repMin: 8, repMax: 12, isAmrap: false, targetWeight: 100, targetRir: 2, targetRirMax: null, tags: ['push here'] },
     ])
     expect(snapshot).toEqual([
-      { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: 'ps1', repMin: 8, repMax: 12, isAmrap: false, targetWeight: 100, targetRir: 2, tags: ['push here'] },
+      { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: 'ps1', repMin: 8, repMax: 12, isAmrap: false, targetWeight: 100, targetRir: 2, targetRirMax: null, tags: ['push here'] },
     ])
     expect(snapshot[0]).not.toHaveProperty('id')
+  })
+
+  // Chunk 48 (TASKS: "the restore snapshot carries target_rir_max"): without it an unmark could never bring a RIR range back.
+  it('snapshot carries a RIR range\'s high end, so an unmark can bring the range back', () => {
+    const row = { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false, targetWeight: 100, targetRir: 1, targetRirMax: 2, tags: null }
+    expect(buildDeloadRestoreSnapshot([row])[0]).toMatchObject({ targetRir: 1, targetRirMax: 2 })
+  })
+
+  it('a row that lacks targetRirMax is refused at run time (it would be saved as a plain number)', () => {
+    const { targetRirMax: _left, ...missing } = { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: null, repMin: null, repMax: null, isAmrap: false, targetWeight: null, targetRir: 1, targetRirMax: 2, tags: null }
+    expect(() => buildDeloadRestoreSnapshot([missing as DeloadSnapshotSourceRow])).toThrow(TypeError)
+  })
+
+  it('... and `tsc` refuses the caller', () => {
+    const { targetRirMax: _left, ...missing } = { programExerciseId: 'pe1', setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: null, repMin: null, repMax: null, isAmrap: false, targetWeight: null, targetRir: 1, targetRirMax: 2, tags: null }
+    // @ts-expect-error a DeloadSnapshotSourceRow without targetRirMax is not a DeloadSnapshotSourceRow
+    const attempt = () => buildDeloadRestoreSnapshot([missing])
+    expect(attempt).toThrow(TypeError)
   })
 
   it('regroups a head + its stages by (programExerciseId, setNumber), ordered by stageIndex, with no ids at all', () => {

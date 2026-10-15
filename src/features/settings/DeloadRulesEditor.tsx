@@ -13,14 +13,12 @@ import type {
 
 // Chunk 22 (TASKS.md "src/features/settings/DeloadRulesEditor.tsx" —
 // "rules calculator and its editor"; SPEC.md "Deload rules" / "Settings" —
-// "default deload rules"). The ONE shared editor for a DeloadRules object
-// — the same component mounted twice: Settings' own global-default section
-// (SettingsPage.tsx, binding straight to settings.deloadRules) and the
-// program override (StepVolume.tsx, which wraps this in its own "USE MY
-// DEFAULT / CUSTOM" chooser and only renders this when CUSTOM is picked —
-// reviewer's note 7: "a per-program override... (same editor component)").
-// This component itself has no notion of which context it's in, no
-// "default vs override" distinction of its own — it just edits whatever
+// "default deload rules"). The editor for a DeloadRules object, mounted by
+// Settings' deload section (SettingsPage.tsx, binding straight to
+// settings.deloadRules) and nowhere else: since chunk 48 (SPEC Deload [1.2],
+// 16b) the deload rules are Settings' alone, and the per-program override that
+// used to mount this a second time (StepVolume.tsx) is gone. This component
+// itself has no notion of which context it's in — it just edits whatever
 // DeloadRules object (or null) it's given, four independent on/off rules.
 //
 // UI rule (reviewer's note 10): existing components and tokens only. The

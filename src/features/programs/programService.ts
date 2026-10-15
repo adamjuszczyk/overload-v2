@@ -14,9 +14,15 @@ import type {
   ProgramSupersetBlock,
 } from '../../types'
 import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgramExercises'
-import { validateDeloadRules, type DeloadRules } from '../../lib/deloadRules'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
+
+// The columns of v2_programs this app reads. v2_programs.deload_rules is not
+// one of them (chunk 48, SPEC Objects stored → Program [1.2]: "The stored
+// deload-rules override is no longer read or written (16b). The column stays"):
+// it holds whatever an earlier version stored, nothing selects it, and a run
+// whose program stored an override simply follows Settings.
+const PROGRAM_COLUMNS = 'id, user_id, name, schedule, created_at, updated_at, kind, planning_type, schedule_type'
 
 type DbProgram = {
   id: string
@@ -35,10 +41,6 @@ type DbProgram = {
   // Absent until migration 027 — chunk 25's own field, same fallback. Reads
   // as 'weekday', 027's own column default.
   schedule_type?: ScheduleType
-  // Absent until migration 027 — chunk 22's own field (jsonb; null = "use
-  // my default", the global v2_user_settings.deload_rules). Validated on
-  // read the same way settingsService.ts validates the user's own column.
-  deload_rules?: unknown
 }
 
 type DbWorkoutDay = {
@@ -106,11 +108,6 @@ function toProgram(row: DbProgram): Program {
     kind: row.kind ?? 'saved',
     planningType: row.planning_type ?? 'week_dependent',
     scheduleType: row.schedule_type ?? 'weekday',
-    // Chunk 22 — absent/undefined (pre-027, or simply never overridden)
-    // reads as null here too, same "use my default" meaning either way;
-    // a malformed stored value degrades to null defensively, same posture
-    // as the user's own global column (settingsService.ts).
-    deloadRules: validateDeloadRules(row.deload_rules),
   }
 }
 
@@ -168,7 +165,7 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
 export async function fetchPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
-    .select('*')
+    .select(PROGRAM_COLUMNS)
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as DbProgram[]).map(toProgram)
@@ -185,7 +182,7 @@ export async function fetchPrograms(): Promise<Program[]> {
 export async function fetchSavedPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
-    .select('*')
+    .select(PROGRAM_COLUMNS)
     .eq('kind', 'saved')
     .order('created_at', { ascending: false })
   if (error) throw error
@@ -196,7 +193,7 @@ export async function createProgram(userId: string, name: string): Promise<Progr
   const { data, error } = await supabase
     .from('v2_programs')
     .insert({ user_id: userId, name: name.trim(), schedule: EMPTY_SCHEDULE })
-    .select()
+    .select(PROGRAM_COLUMNS)
     .single()
   if (error) throw error
   return toProgram(data as DbProgram)
@@ -243,24 +240,6 @@ export async function updateScheduleType(id: string, scheduleType: ScheduleType)
   const { error } = await supabase
     .from('v2_programs')
     .update({ schedule_type: scheduleType, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
-}
-
-// Chunk 22 (SPEC.md "Deload rules": "global default in settings, override
-// per program"; "Programs and runs" — design fields "exist only in the
-// run's copy... editable for both planning types"). A design field, same
-// posture as updateProgramExerciseRest/updateProgramExerciseTempo below:
-// never gated by volumeReadOnly. null writes "use my default" (clears the
-// override back to following the global setting); a validated DeloadRules
-// object writes this program's own override — the caller
-// (DeloadRulesEditor.tsx via StepVolume.tsx) is the one place that
-// constructs it, same division of labour updateProgramExerciseTempo
-// already takes with normaliseTempo (this function trusts its caller).
-export async function updateProgramDeloadRules(id: string, deloadRules: DeloadRules | null): Promise<void> {
-  const { error } = await supabase
-    .from('v2_programs')
-    .update({ deload_rules: deloadRules, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }

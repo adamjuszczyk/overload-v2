@@ -189,7 +189,7 @@ describe('PlannerPage — Save and Start', () => {
 
 // Chunk 33 (SPEC Programs and runs [P1.1]: "The planner refuses to open a run's
 // copy"). This was a defensive fallback that showed steps 2 and 3 with editing
-// on; a run's schedule, workouts and deload-rules override are fixed for the run.
+// on; a run's schedule and workouts are fixed for the run.
 describe('PlannerPage — a run\'s copy is refused (chunk 33)', () => {
   const RUN_COPY_MESSAGE = 'THIS PROGRAM IS A RUN\'S COPY'
 

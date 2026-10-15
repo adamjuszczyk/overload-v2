@@ -326,17 +326,10 @@ export interface Program {
   // above; undefined reads as 'weekday' (the column default) everywhere
   // this is checked.
   scheduleType?: ScheduleType
-  // v2_programs.deload_rules (migration 027; read/written starting chunk 22
-  // — SPEC.md "Deload rules": "global default in settings, override per
-  // program"). Null/undefined = "use my default" (the global
-  // v2_user_settings.deload_rules below); a (validated) DeloadRules object
-  // = this program's own override, same shape either way
-  // (deloadRules.ts's validateDeloadRules). A design field — editable in
-  // the planner's step 3 and the program tab for both planning types
-  // (StepVolume.tsx), carried forward by v2_copy_program (027/028) into
-  // every run's own copy. Optional for the same "may not exist yet"
-  // reason as planningType above.
-  deloadRules?: DeloadRules | null
+  // There is no deloadRules here (chunk 48; SPEC Objects stored → Program
+  // [1.2]): v2_programs.deload_rules stays in the database, unread and
+  // unwritten, and the deload rules are the user's Settings rules
+  // (UserSettings.deloadRules below).
 }
 
 // ─── Mesocycle ────────────────────────────────────────────────────────────────
@@ -691,8 +684,8 @@ export interface UserSettings {
   // convention as measureSetTime.
   warmupDisplay: 'rows' | 'tick'
   // v2_user_settings.deload_rules (migration 027; read/written starting
-  // chunk 22 — SPEC.md "Settings": "default deload rules"; "Deload rules":
-  // "global default in settings, override per program"). Null = no rules
+  // chunk 22 — SPEC.md "Settings": "default deload rules"; since chunk 48 the
+  // deload rules, Settings only, SPEC Deload [1.2] 16b). Null = no rules
   // switched on (the section's own off-by-default state) — never `{}`:
   // DeloadRulesEditor.tsx writes null the moment every individual rule is
   // switched off, the same canonicalisation deloadRules.ts's own
