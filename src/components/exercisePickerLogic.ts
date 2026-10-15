@@ -56,7 +56,7 @@ export function openingGroup(own: MuscleGroup | null | undefined): PickerGroup {
   return own != null && MUSCLE_GROUPS.includes(own) ? own : 'all'
 }
 
-/** A tap on a chip picks it; a tap on the one that is already on goes back to ALL (both pickers this one replaces did). */
+/** A tap on a chip picks it; a tap on the one that is already on goes back to ALL (the pickers this one replaces all did). */
 export function tapGroup(current: PickerGroup, tapped: PickerGroup): PickerGroup {
   return tapped === current ? 'all' : tapped
 }

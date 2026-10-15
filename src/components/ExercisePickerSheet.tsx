@@ -58,7 +58,7 @@ import type { Exercise, MuscleGroup } from '../types'
 // Choices no board makes, provisional under D31: one look for every caller (the hairline rows of
 // W11, W13 and PP2d, a 44 px muted-accent chip, always tall; PL4-PL6 draw bordered cards), the group under each
 // name unless `showGroup` is off (PL4-PL6 draw it; W11, W13 and PP2d draw the name alone), a tap on the chip
-// that is on goes back to ALL (both old pickers did), the words of the loading and failing states.
+// that is on goes back to ALL (the pickers this one replaces all did), the words of the loading and failing states.
 //
 // Mount it outside clickable parents: BottomSheet draws through a portal and React events still bubble.
 export interface ExercisePickerCommonProps {
@@ -413,7 +413,7 @@ export default function ExercisePickerSheet(props: ExercisePickerSheetProps) {
   const [createError, setCreateError] = useState<string | null>(null)
 
   // The sheet can be closed while an exercise is still being saved: nothing is picked for a sheet that is gone.
-  // `inFlight` is the double tap's guard: `saving` only turns true once React has drawn again.
+  // `inFlight` is the double press's guard: `saving` (the mutation's own flag) only turns true once React has drawn again.
   const inFlight = useRef(false)
   const mounted = useRef(true)
   useEffect(() => {
@@ -487,7 +487,7 @@ export default function ExercisePickerSheet(props: ExercisePickerSheetProps) {
   async function submit(event: FormEvent) {
     event.preventDefault()
     const name = creatableName(typed)
-    if (name === null || group === 'all' || saving || inFlight.current) return
+    if (name === null || group === 'all' || inFlight.current) return
     inFlight.current = true
     setCreateError(null)
     try {
@@ -497,7 +497,7 @@ export default function ExercisePickerSheet(props: ExercisePickerSheetProps) {
       closeForm()
       choose(created)
     } catch (error) {
-      if (mounted.current) setCreateError(errorReason(error, isOffline()))
+      setCreateError(errorReason(error, isOffline()))
     } finally {
       inFlight.current = false
     }
@@ -604,7 +604,7 @@ export default function ExercisePickerSheet(props: ExercisePickerSheetProps) {
   const loaded = library !== undefined
   // Under the list: the dashed row that opens the field, or, on ALL where nothing can be created, why not.
   const createRow =
-    !loaded || !canCreate || saving || empty === 'library-empty' ? null : group === 'all' ? (
+    !loaded || !canCreate || empty === 'library-empty' ? null : group === 'all' ? (
       <p style={HINT_STYLE}>{PICKER_TEXT.pickGroupToCreate}</p>
     ) : creating ? null : (
       <button ref={newButtonRef} type="button" onClick={() => setCreating(true)} style={NEW_EXERCISE_BUTTON_STYLE}>

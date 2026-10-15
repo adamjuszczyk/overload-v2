@@ -74,7 +74,7 @@ describe('tapGroup', () => {
     expect(tapGroup('back', 'all')).toBe('all')
   })
 
-  it('goes back to ALL when the chip that is on is tapped again (both pickers this one replaces did)', () => {
+  it('goes back to ALL when the chip that is on is tapped again (the pickers this one replaces all did)', () => {
     expect(tapGroup('back', 'back')).toBe('all')
     expect(tapGroup('all', 'all')).toBe('all')
   })

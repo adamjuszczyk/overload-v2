@@ -392,6 +392,9 @@ describe('BottomSheet: tall, and a toolbar (chunk 41: the exercise picker)', () 
     expect(content.contains(toolbar)).toBe(false)
     // handle, header, toolbar, content, footer
     expect(dialog.children).toHaveLength(5)
+    // pinned: it keeps its own height when the sheet is held to the screen, whatever the content's
+    const region = toolbar.parentElement as HTMLElement
+    expect(region.style.flex).toBe('0 0 auto')
   })
 
   it('draws no toolbar region when none is given', () => {

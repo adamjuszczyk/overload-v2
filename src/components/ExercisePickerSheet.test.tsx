@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useState } from 'react'
+import { StrictMode, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import ExercisePickerSheet from './ExercisePickerSheet'
@@ -214,6 +214,20 @@ describe('the chips', () => {
     expect(pressed()).toEqual(['ALL'])
   })
 
+  it('draw the one that is on as on (an accent outline and a muted accent fill) and the others plain, every one a 44 px target', async () => {
+    await listed(add())
+    const on = chip('ALL')
+    const off = chip('BACK')
+    expect(on.style.borderColor).toBe('var(--accent)')
+    expect(on.style.background).toBe('var(--accent-muted)')
+    expect(off.style.borderColor).toBe('var(--border)')
+    expect(off.style.background).toBe('var(--surface)')
+    for (const c of chips()) expect(c.style.height).toBe('44px')
+    fireEvent.click(off)
+    expect(chip('BACK').style.borderColor).toBe('var(--accent)')
+    expect(chip('ALL').style.borderColor).toBe('var(--border)')
+  })
+
   it('a swap opens on the group of the exercise it replaces, and lists that group alone', async () => {
     await listed(swap({ replacing: { id: 'press', muscleGroup: 'chest' } }))
     expect(pressed()).toEqual(['CHEST'])
@@ -361,14 +375,13 @@ describe('a tap in an add', () => {
       expect(document.activeElement).toBe(row)
     })
 
-    it('leaves the focus alone for an exercise that was just created: it is not a row yet', async () => {
+    it('after an exercise is created here the focus is back on the row that opened the field, as everywhere else', async () => {
       await listed(add({ stayOpenAfterAdd: true, onCreate: noop }))
       fireEvent.click(chip('FOREARMS'))
       fireEvent.click(button('+ NEW FOREARMS EXERCISE'))
       type('Wrist Curl')
       fireEvent.click(button('CREATE'))
       await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())
-      // not pulled to some row: the field's own rule (back on the row that opened it) holds
       expect(document.activeElement).toBe(button('+ NEW FOREARMS EXERCISE'))
     })
   })
@@ -498,6 +511,12 @@ describe('a tap in a swap', () => {
       expect(button('SWAP FOR TODAY').disabled).toBe(true)
       fireEvent.click(button('SWAP FOR TODAY'))
       expect(onPick).not.toHaveBeenCalled()
+    })
+
+    it('tints the row that is picked and no other', async () => {
+      await listed(withConfirm())
+      fireEvent.click(radios()[1])
+      expect(radios().map((r) => r.style.background)).toEqual(['transparent', 'var(--accent-muted)', 'transparent'])
     })
 
     it('a tap picks the row: one radio is on, the confirm is enabled and nothing has been handed over', async () => {
@@ -682,6 +701,19 @@ describe('creating an exercise (the one write)', () => {
     for (let i = 1; i < parts.length; i++) expect(follows(parts[i - 1], parts[i])).toBe(true)
     // the dashed row is the field now
     expect(screen.queryByRole('button', { name: '+ NEW BACK EXERCISE' })).toBeNull()
+  })
+
+  it('the field is 16 px (iOS zooms the page on a smaller one) and can be typed in until the exercise is being saved', async () => {
+    const call = deferred<Exercise>()
+    service.createExercise.mockReturnValue(call.promise)
+    await openField()
+    expect(input().style.fontSize).toBe('16px')
+    expect(input().readOnly).toBe(false)
+    type('Kneeling Pulldown')
+    fireEvent.click(button('CREATE'))
+    await screen.findByRole('button', { name: 'CREATING…' })
+    expect(input().readOnly).toBe(true)
+    await act(async () => call.resolve(ex('made', 'Kneeling Pulldown', 'back')))
   })
 
   it('writes the typed name and the group of the chip that is on: createExercise(user, name, group)', async () => {
@@ -1000,6 +1032,26 @@ describe('when the phone is offline (Errors: "You may be offline" only when that
     service.fetchExercises.mockRejectedValue(new Error(''))
     renderPicker(add())
     expect(within(await screen.findByRole('alert')).getByText('Something went wrong.')).toBeTruthy()
+  })
+})
+
+describe('React StrictMode (the app\'s dev build runs every effect twice)', () => {
+  it('a create still picks the exercise, once, and the field still takes the focus', async () => {
+    const onPick = vi.fn()
+    render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <ExercisePickerSheet {...swap({ onCreate: noop, onPick })} />
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+    await list()
+    fireEvent.click(button('+ NEW BACK EXERCISE'))
+    expect(document.activeElement).toBe(input())
+    type('Kneeling Pulldown')
+    fireEvent.click(button('CREATE'))
+    await waitFor(() => expect(onPick).toHaveBeenCalledTimes(1))
+    expect(service.createExercise).toHaveBeenCalledTimes(1)
   })
 })
 
