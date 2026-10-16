@@ -11,7 +11,7 @@
 //
 // Fixture dates and ids are fixed: nothing here depends on today.
 
-import { INSERTABLE, TABLES, del, ins, jsonSql, opsSql, rows, upd } from './model.mjs'
+import { FIXTURE_COUNTS, INSERTABLE, TABLES, del, ins, jsonSql, opsSql, rows, upd } from './model.mjs'
 
 const A = (s) => `{{a_${s}}}`
 const B = (s) => `{{b_${s}}}`
@@ -43,11 +43,7 @@ const add = (id, title, body, extra = {}) => SCENARIOS.push({ id, title, body, .
   for (const who of ['uA', 'uB']) {
     b += `
   perform pg_temp.zz_as('{{${who}}}');`
-    for (const [t, n] of Object.entries({
-      exercises: 2, v2_programs: 1, v2_workout_days: 2, v2_program_superset_blocks: 1, v2_program_exercises: 3, v2_program_sets: 3,
-      v2_workout_warmup_items: 2, v2_mesocycles: 1, v2_run_schedules: 1, v2_week_plans: 3, v2_week_plan_exercises: 2,
-      v2_week_plan_sets: 3, v2_week_review_decisions: 1, v2_sessions: 1, v2_set_logs: 1, v2_session_set_changes: 1,
-    })) {
+    for (const [t, n] of Object.entries(FIXTURE_COUNTS)) {
       b += `
   select count(*) into k from public.${t} where user_id = auth.uid();
   perform pg_temp.zz_assert(k = ${n}, '${who} sees ' || k || ' rows of ${t}, wanted ${n}');`
