@@ -4,6 +4,7 @@ import { moveUnit } from '../../lib/supersetGroups'
 import {
   type World,
   NOW,
+  addExercise,
   addExerciseTo,
   applyOpsToDb,
   deletes,
@@ -22,7 +23,7 @@ import {
   updates,
   withReps,
 } from './programChange.testutil'
-import { stableWorld, weekDependentWorld } from './programChange.worlds.testutil'
+import { sequenceWorld, stableWorld, weekDependentWorld } from './programChange.worlds.testutil'
 
 // Chunk 45 — how exercise-level changes land (SPEC [1.2] Programs and runs → "How a save lands"): added, removed,
 // swapped and reordered exercises, on the run copy and on every session that has not started. Each fixture checks the
@@ -263,12 +264,71 @@ describe('added exercise — "appended where it was placed, in every not-done se
   })
 })
 
+// DECISIONS 143 (Adam, 2026-10-15) and migration 043: a swap inserts a new run-copy row and soft-removes the old one, so the new
+// row has to say which row it took the place of (`replaces_program_exercise_id`), or a week-dependent week copied after the save
+// can't give the swapped-in exercise the old exercise's sets. The copy itself is proven end to end in
+// programChange.copyAfterSave.test.ts; these are the rows the save writes.
+describe('swapped exercise — the link: the new row names the row it replaced', () => {
+  it.each([
+    ['stable', stableWorld, 'fb', 'pe-inc'],
+    ['week-dependent', weekDependentWorld, 'pull', 'pe-pd'],
+    ['sequence', sequenceWorld, 'a', 'pe-row'],
+  ] as const)('%s: the swap\'s insert carries the old row\'s id, and the old row is soft-removed, not deleted, so the link has a row to point at', (_name, make, workout, oldId) => {
+    const w = make()
+    const { ops } = planOf(w, swapExerciseIn(draftOf(w), workout, oldId, 'ex-new'))
+    const made = inserts(ops, 'v2_program_exercises')
+    expect(made.map((o) => [o.row.exercise_id, o.row.replaces_program_exercise_id])).toEqual([['ex-new', oldId]])
+    expect(updates(ops, 'v2_program_exercises').filter((o) => o.id === oldId).map((o) => o.patch)).toEqual([{ removed_at: NOW }])
+    expect(deletes(ops, 'v2_program_exercises')).toEqual([])
+    const after = applyOpsToDb(w.db, ops)
+    expect(after.v2_program_exercises.find((e) => e.id === made[0].row.id)!.replaces_program_exercise_id).toBe(oldId)
+    expect(after.v2_program_exercises.find((e) => e.id === oldId)).toBeDefined()
+  })
+
+  it('only a swap links: an added exercise names no row, no kept row is given a link, and a removed one is not linked to anything', () => {
+    const w = stableWorld()
+    let d = addExerciseTo(draftOf(w), 'fb', { exerciseId: 'ex-new', sets: [newSet('8-10')] })
+    d = removeExerciseFrom(d, 'fb', 'pe-plank')
+    d = patchExercise(d, 'fb', 'pe-leg', { tempo: '3-0-1-0' })
+    const { ops } = planOf(w, d)
+    expect(inserts(ops, 'v2_program_exercises').map((o) => o.row.replaces_program_exercise_id)).toEqual([null])
+    for (const o of updates(ops, 'v2_program_exercises')) expect(Object.keys(o.patch)).not.toContain('replaces_program_exercise_id')
+  })
+
+  it('two swaps in one save: each new row names its own old row', () => {
+    const w = stableWorld()
+    let d = swapExerciseIn(draftOf(w), 'fb', 'pe-inc', 'ex-new-a')
+    d = swapExerciseIn(d, 'arms', 'pe-dip', 'ex-new-b')
+    const { ops } = planOf(w, d)
+    expect(
+      inserts(ops, 'v2_program_exercises')
+        .map((o) => [o.row.exercise_id, o.row.replaces_program_exercise_id])
+        .sort(),
+    ).toEqual([['ex-new-a', 'pe-inc'], ['ex-new-b', 'pe-dip']])
+  })
+
+  it('a swap of a row that was itself a swap names that row (a chain A <- B <- C), not the one before it', () => {
+    const w = stableWorld()
+    // pe-inc took the place of an older row that a previous save soft-removed
+    addExercise(w, 'pe-first', 'fb', 'ex-first', 9, [], { removed_at: '2026-10-01T00:00:00.000Z' })
+    w.db.v2_program_exercises.find((e) => e.id === 'pe-inc')!.replaces_program_exercise_id = 'pe-first'
+    const { ops } = planOf(w, swapExerciseIn(draftOf(w), 'fb', 'pe-inc', 'ex-third'))
+    const made = inserts(ops, 'v2_program_exercises')
+    expect(made.map((o) => o.row.replaces_program_exercise_id)).toEqual(['pe-inc'])
+    const after = applyOpsToDb(w.db, ops)
+    // the chain is intact: C -> B -> A
+    const byId = new Map(after.v2_program_exercises.map((e) => [e.id, e]))
+    expect(byId.get(made[0].row.id)!.replaces_program_exercise_id).toBe('pe-inc')
+    expect(byId.get('pe-inc')!.replaces_program_exercise_id).toBe('pe-first')
+  })
+})
+
 describe('swapped exercise — "the new exercise takes the old one\'s sets (count, kinds, stages, rep targets); weights, RIR and cues are cleared"', () => {
   it('stable: a new run-copy row at the old position, the old row removed; each session\'s row and sets pointed at the new row, numbers cleared', () => {
     const w = stableWorld()
     const { ops } = planOf(w, swapExerciseIn(draftOf(w), 'fb', 'pe-inc', 'ex-new'), { statuses: { 'p2-fb': 'done' } })
     const created = inserts(ops, 'v2_program_exercises')[0].row
-    expect([created.workout_day_id, created.exercise_id, created.position, created.week_only]).toEqual(['fb', 'ex-new', 1, false]) // the old position
+    expect([created.workout_day_id, created.exercise_id, created.position, created.week_only, created.replaces_program_exercise_id]).toEqual(['fb', 'ex-new', 1, false, 'pe-inc']) // the old position, and the row it replaced
     expect(updates(ops, 'v2_program_exercises')).toEqual([{ op: 'update', table: 'v2_program_exercises', id: 'pe-inc', patch: { removed_at: '2026-10-15T12:00:00.000Z' } }])
 
     // week 3 only
