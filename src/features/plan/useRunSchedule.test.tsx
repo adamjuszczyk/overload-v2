@@ -48,7 +48,8 @@ afterEach(() => {
   queryClient.clear()
 })
 
-const dbRow = (fromWeek: number, schedule: Record<string, string | null>, id = `row-${fromWeek}`) => ({
+// The ids are not shaped like a Tailwind utility on purpose (RULES.md: a numbered id such as a grid row adds a rule to the stylesheet).
+const dbRow = (fromWeek: number, schedule: Record<string, string | null>, id = `stored${fromWeek}`) => ({
   id,
   user_id: 'user-1',
   mesocycle_id: 'meso-1',
@@ -63,7 +64,7 @@ describe('toRunSchedule', () => {
       monday: null, tuesday: 'wd-push', wednesday: null, thursday: null, friday: null, saturday: null, sunday: null,
     }
     expect(toRunSchedule(dbRow(3, full))).toEqual({
-      id: 'row-3', userId: 'user-1', mesocycleId: 'meso-1', fromWeek: 3, schedule: full, createdAt: '2026-09-01T10:00:00Z',
+      id: 'stored3', userId: 'user-1', mesocycleId: 'meso-1', fromWeek: 3, schedule: full, createdAt: '2026-09-01T10:00:00Z',
     })
   })
 
