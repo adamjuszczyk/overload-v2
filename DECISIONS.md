@@ -1,13 +1,22 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, chunk 46's third review (not merged): new 161.*
+*Rewritten at every boundary. Last: 2026-10-16, the 1.2 gap pre-read (your request): new 162–169.*
+- *The gap pre-read read every chunk not yet started (51a to 69) against SPEC, TASKS and your answers, and found eight questions that would change what is written or how the app behaves: 169 (51b), 162 (58a), 163 and 164 (59), 165 and 166 (61), 167 and 168 (62). Each blocks only the chunk it names. No questions for 51a, 52, 65, 66, 53, 54a, 54b, 55, 56, 58b, 60, 63, 64, 67, 68 or 69.*
 - *Chunk 46's third attempt builds your 151 and 152 (a) right, with the second review's two missing proofs. One bug and one gap remain, both about a set added during the workout whose type is changed (161). A behaviour bug on a retry needs your go-ahead (the second-failure rule), so 46 waits for it.*
 - *A question raised for the pre-read is settled by SPEC, not new: what number LOG stores. 151 makes every open row show its own number, so LOG and every skip store the number the row shows; today's "logged heads + 1", which TASKS 58a's "Writes unchanged" keeps, stores a duplicate after an unlog, and also with the lock on after an open set's switch to Warmup and back (executed). RULES.md and the carry notes say so for 58a–64.*
 - *Still waiting on you: 159 and 160, from chunk 50's review, which block nothing in the build (159 needs your answer before the release); and the to-dos (138, 121, 113, 79). Each list is ordered by what it blocks.*
 
 Decisions:
+- **169** — CHANGE THE PROGRAM's DAYS card (pre-read, chunk 51b): a day "another workout already uses" means the saved schedule or the edit as it stands now? With the saved one, two workouts can't trade days in one save. Recommended: (a), the edit as it stands. Blocks: 51b.
 - **161** — an added set's type during a workout (chunk 46; third attempt). (a) A bug SPEC decides: a set added during the workout and not logged yet keeps its type on the phone (TASKS 62), and chunk 46's rules can't see it, so one made a Warmup is still "the current set" (G54: a warmup never is) and leaves a gap in the numbers once logged (146 (a)). (b) A gap: an added set logged, made a Warmup and then unlogged comes back a working set, because its draft keeps numbers only, and the open set after it changes number (151: none does). Recommended: a fourth attempt of 46 that gives its rules each added set's type, with (b) (i): an added set's draft also keeps its type, so an unlog is undone exactly and nothing moves. Blocks: 46's merge, so 58a, 58b and 59–64; nothing before 58a.
+- **162** — what LOG writes from a row nobody typed into (pre-read, chunk 58a): today last time's weight and reps fill the boxes; SPEC C3 puts the plan's rep target in the reps box and leaves the weight box empty when the plan has none. Recommended: (a), the plan's targets are the values; a range or AMRAP is a placeholder, so LOG needs reps typed; last time shows only on the LAST line. Blocks: 58a.
+- **163** — "Skip the rest of this exercise" (pre-read, chunk 59): does it also skip the exercise's open added sets and its unlogged planned warmups? Today it skips neither, so an open added set stays the current set after the skip. Recommended: (a), both. Blocks: 59.
+- **164** — what a swap for today moves (pre-read, chunk 59): W5 draws the new exercise with the original's open set as it was (03, its dropset and drop, its targets); today it gets as many plain sets as the original planned, numbered from 01. Recommended: (a), as W5 draws. Blocks: 59.
+- **165** — CUES on a set with no planned set (pre-read, chunk 61): a set added in the workout, or moved to a swapped-in exercise, has no set in this week's plan for the cue. Recommended: (a), no CUES row in that set's ⋯. Blocks: 61.
+- **166** — auto-finish once a planned set is deleted or retyped in the workout (pre-read, chunk 61): it waits for a log on every planned set id, so from 61 a session with a deleted set never auto-finishes. Recommended: (a), it waits for what the workout's rows say is left. Blocks: 61 (62 and 64 meet it too).
+- **167** — the DROPS stepper on a logged set below the drops already logged (pre-read, chunk 62): chunk 46 asks 19c's question and deletes the extra logged drops; or the stepper stops at the number logged. Recommended: (a), as 46 built. Blocks: 62.
+- **168** — offline, a set not logged yet switched to or from Warmup when logged sets after it move (pre-read, chunk 62): queued like a delete's renumber, or "Requires a connection"? Recommended: (a), queued. Blocks: 62.
 - **159** — Coach's weekly analysis after a weekday change (chunk 50, for 51b; Coach is frozen). Since chunk 50, Today and Plan read each week's own weekdays. From 51b, a weekday change starts next week, and the run copy then holds the new days. Coach's week resolution still reads the run copy for every week (your D15: "derived from `program.schedule`"). Executed: after a week-2 save that also puts Arms on Friday from week 3, Today offers week 2 Tue, Thu and Sat, while Coach expects Friday too. So with every session done, that week is never complete and never analysed. Recommended: (a), Coach resolves each week through the same schedule rows (a Coach change, with the freeze's base moved). Blocks: nothing in the build (Coach runs for your account only, which isn't on staging); answer before the release.
 - **160** — chunk 50's display choices (D31), each as built (#142) unless you change it:
   - (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner, and a failed read keeps it there, as Today already does when its other reads fail (a workout in progress included). Falling back to the run copy's days could show next week's days in this week.
@@ -109,6 +118,115 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (a) Bench 01–03 logged, two added sets open, the first made a Warmup: nothing to write and nothing renumbered; `currentSet` names it; LOG on the second asks "Log set 05 before set 04?"; once both are logged, the working sets read 1, 2, 3, 5. On the builder's own fixture (01 logged, the first added set open, the second logged as 03), a test asserts "switching it moves nothing"; logged as a warmup, the working sets read 01, 03. A planned set in the same place closes the gap (03 → 02). The 400-session walk switches open added sets but drops the type, so it couldn't see this.
 - (b) Bench 01–03 logged, added A logged as 04 and made a Warmup, added B open as 04. UNLOG on A: A is an open 04 at the end, and B is 05. The builder asked it (its report, question 2), and its walk skips the case. 151 was asked about planned sets' numbers (RULES.md: an answer covers the cases its question held).
 - Everything else is right: 151 (TASKS 46's own fixture; the added sets by their drafts), 152 (a), and the second review's two missing proofs; 4341 tests; the reviewer's 25 breaks all caught; the walk's writes replayed on the real tables refused 0 of 4842, and 0 of 2445 with warmups logged without numbers.
+
+### 162 What LOG writes from a row nobody typed into: the plan's targets or last time's numbers (pre-read, chunk 58a)
+**Ask:** From 58a the workout's rows follow SPEC C3: "the reps box shows the plan's rep target (number, range or AMRAP); the weight box is empty when the plan has none; planned RIR is a dim placeholder". Today the current row's weight and reps boxes are filled with last time's numbers for the same set, and LOG writes them as they are. TASKS 58a keeps "Writes unchanged". Which values does LOG accept untouched from 58a on, and does last time still fill the boxes?
+**Recommendation:** (a). It is C3's wording and board W1's drawing. The only number LOG takes without typing is one the plan holds, and last time's numbers stay on the row's LAST line.
+**Blocks:** 58a (and 60, which makes every row typable, and 63, whose draft fills a row the same way).
+**Options:**
+- (a) The plan's targets are the row's values. The weight box holds the plan's target weight, and is empty when the plan has none. The reps box holds a number target. A range or AMRAP is a dim placeholder, so LOG asks for reps ("Enter weight and reps, or tap SKIP", today's line). Drop rows work the same way. Last time's numbers show only as "LAST 52.5 × 10 @ 1".
+- (b) The plan's targets where the plan has them, and last time's numbers where it doesn't: weight with no target weight, reps under a range or AMRAP. This is SPEC's [P2] pre-fill ("Source: planned, otherwise last time") brought forward without its setting.
+- (c) As today: last time's weight and reps are the values, and the plan's targets show as dim placeholders only where last time gave nothing. This keeps "Writes unchanged", but it is against C3's "the weight box is empty when the plan has none".
+**Answer:**
+**Evidence:**
+- Today: `SetRow.tsx`:184–188 sets weight and reps from `lastLog` once it has loaded. `ExerciseCard.tsx`:173 passes `lastLogGroups[displayNumber - 1]?.head`, last time's set at the same position. The plan's weight shows only as a "TARGET WEIGHT" hint (`SetRow.tsx`:1188–1194). `handleLog` (`SetRow.tsx`:940–946) refuses an empty box. So on a set with last time and no planned weight, one tap logs last time's numbers today; under (a) it logs nothing until a weight is typed.
+- Board W1 (`design/1.2/source/Workout.dc.html`:198–201, 222–232): the weight box is drawn in the text colour (a value), a range's reps in the dim colour (`range ? c.td : c.t1`), RIR dim.
+- SPEC lists the pre-fill source as [P2] (Facts: "[P2] Today's pre-fill source for weight and reps"; Logging mechanics: "[P2] Pre-fill … Source: planned, otherwise last time"), so 1.2 has no rule beyond C3. TASKS 58a (line 667) says "Writes unchanged", and RC27 (line 855) checks "empty weight when the plan has none".
+- R4's parity test types its numbers, so it passes under every option. It cannot tell them apart.
+
+### 163 "Skip the rest of this exercise": also its open added sets and its unlogged warmups? (pre-read, chunk 59)
+**Ask:** W10's "Skip the rest of this exercise" says "Sets 02 and 03 will be marked skipped." Today's writer skips the exercise's planned working sets and their planned drops only. It leaves:
+- a set added in the session and not logged yet (+ ADD SET, + ADD ROUND, or an added set unlogged again and kept as a draft);
+- the exercise's planned warmups that aren't logged.
+
+From 58a an open added set is a working row in chunk 46's rules. So after the skip it is still the current set: the lock asks about it and the jump button points at it. Should the skip cover these too?
+**Recommendation:** (a). "The rest of this exercise" is everything still open, so the current set moves on and nothing of the exercise holds up the finish.
+**Blocks:** 59 (the same writer runs when a swap skips the original's sets).
+**Options:**
+- (a) It skips every open row of the exercise. Open added sets get a skipped log with no planned set, which REVIEW never lists. Unlogged planned warmups get a skipped log too (`is_skipped` with `is_warmup` passes 035's check).
+- (b) Added sets are skipped and warmups are left open, as today.
+- (c) As today: planned working sets and their drops only.
+**Answer:**
+**Evidence:**
+- `useExerciseCardState.ts`:523–588 (`handleSkipExercise`) loops over `plannedRows`, built from `plannedSets`, which excludes warmups (`:136`). Its comment says "extra (ADD SET) slots are user-elective … so they're left untouched".
+- TASKS-1.2 F4 (line 121) already lists "auto-finish is blocked by an unlogged planned warmup (skip-whole-exercise never writes warmups)" as not 1.2's to fix "unless a chunk touches it". 59 touches it.
+- REVIEW: an unlogged planned warmup that has planned numbers is "Not logged" in a finished session, and a skipped one is "Skipped" (`review.ts`:619–626). A skipped added set is never an item (`review.ts`:653–660). So (a) changes REVIEW's wording for a warmup and adds no item.
+- W10's count line ("SKIP 2 SETS") is display and stays D31.
+
+### 164 What a swap for today moves to the new exercise (pre-read, chunk 59)
+**Ask:** SPEC C7: "Swap during a workout … moves only the remaining sets". W11's footer: "The set left moves to [exercise]." Board W5 (`WorkoutCards.dc.html`, "SWAPPED · THE SETS LEFT MOVED") draws the new exercise with the original's open set as it was: "03", "DROPSET · 1 DROP", 52.5 kg × 8–10, RIR 1, and its drop "40 kg × AMRAP · AFTER SET 03". Today's swap gives the new exercise something else:
+- as many plain open sets as the original had planned working sets, the logged ones included;
+- numbered from 01;
+- with no type, drops or targets.
+
+TASKS 59 keeps today's swap writes. What does the new exercise get?
+**Recommendation:** (a). It is what C7 and W5 say, and it keeps the plan's targets and type in front of you after a swap.
+**Blocks:** 59 (and chunk 46's rules, which have no input for a moved set, as 161 found for an added set's type).
+**Options:**
+- (a) The original's open working sets only. Each keeps its type as it is now (the plan's, or its `retyped` row's), its drops, its targets as the row showed them, and its number (03 after 01–02). They are logged with no planned set, as today (RULES.md: the swap's logs carry none), with the head's `stage_kind` and drop logs as for any staged set.
+- (b) Only the count changes: one plain Normal set per open set, numbered from 01, with no targets.
+- (c) As today: as many plain sets as the original planned.
+**Answer:**
+**Evidence:**
+- `useExerciseCardState.ts`:200–217 sizes the new exercise's sets as `plannedGroups.length`, every planned working head. `:172–174` and `:395–401` number them from the new exercise's own logged sets + 1. The rows carry no planned set, so no stage rows and no targets.
+- The original's open sets are skipped as today, and their `retyped` rows stay (RULES.md, the `retyped` row rule; REVIEW lists such a set's type item, P1 in chunk 43's fourth review).
+- Chunk 46 (`build/chunk-46`, `workoutRules.ts`:206–224): `OrderExercise` takes a card's planned sets, a count of added sets and their drafts. A swapped card's moved sets can only be added sets, which are Normal and numbered after every set its exercise holds.
+- SPEC's CHANGE THE PROGRAM swap does the same for a program ("the new exercise takes the old one's sets (count, kinds, stages, rep targets)").
+
+### 165 CUES on a set that has no planned set (pre-read, chunk 61)
+**Ask:** CUES in a set's ⋯ during a workout "changes that set in this week's plan, where cues live" (SPEC, Tags; 2026-10-14 answer). Two kinds of set have no set in this week's plan:
+- a set added in the workout (W3b's added rows have a ⋯);
+- a set moved to a swapped-in exercise (164), whose logs carry no planned set.
+
+What does CUES do on these?
+**Recommendation:** (a). Cues live in the plan, and these sets have no row there. A drop's ⋯ already goes without CUES (W8).
+**Blocks:** 61.
+**Options:**
+- (a) No CUES row in the ⋯ of a set with no planned set.
+- (b) A moved set writes its cue on the original's planned set in this week's plan, and an added set has no CUES row.
+- (c) The cue is kept on the phone for the session only, never sent.
+**Answer:**
+**Evidence:** TASKS 61's scope: "CUES → `CuesSheet` writing the planned set's tags through the same service Plan uses … 'Use for all' applies to the exercise's heads". SPEC Tags: "Per set, several allowed, in the week plan … Never copied." W7 (`SetSheet.dc.html`) draws CUES on a planned set and no board draws an added set's sheet. Neither SPEC nor TASKS names the case.
+
+### 166 Auto-finish once a planned set is deleted or retyped during the workout (pre-read, chunk 61)
+**Ask:** Auto-finish (the Settings timer) completes a session once every planned set of its week plan has a log and the last log is old enough. That means heads, drops and warmups, by id. From 61, a planned set deleted during the workout never gets a log: it gets a `deleted` change row. From 62, a planned dropset made Normal or Warmup before it is logged leaves planned drops that never get logs. Either way the session never auto-finishes. The other way round, drops the plan doesn't have (a `retyped` count, or a `pending_stages` row) are not waited for. TASKS keeps the path as it is: 58a's "auto-finish's notice, as today" and 64's "the auto-finish path untouched". Should auto-finish wait for what the workout's rows say is left?
+**Recommendation:** (a). It asks chunk 46's rows, which already leave out deleted sets and count retyped drops, the same question the finish warning and the current set ask. A plain session finishes exactly as today.
+**Blocks:** 61, where a deleted planned set first exists (62 and 64 meet it too).
+**Options:**
+- (a) Auto-finish waits until no row of `resolveRows` is open. That covers working sets, drops and planned warmups, with deleted sets out and retyped drops in. A set added in the session and never logged doesn't hold it, as today.
+- (b) As built: every planned set id needs a log. A session with a set deleted or retyped mid-workout never auto-finishes, and FINISH SESSION still works.
+**Answer:**
+**Evidence:** `useAutoFinishSession.ts`:32–44 (`plannedSetIds = weekPlan?.sets.map((s) => s.id)`, `allLogged = plannedSetIds.every(…)`). TASKS-1.2 F4 (line 112) lists auto-finish among what depends on a log row. Chunk 46's `resolveRows` drops a `deleted` planned set and its drops from the order, and takes a `retyped` set's drops from the change (`build/chunk-46`, `workoutRules.ts` header and `:705`). Under (a) an unlogged planned warmup still holds the finish, as today, unless 163 (a) skips it.
+
+### 167 The DROPS stepper on a logged set, below the drops already logged (pre-read, chunk 62)
+**Ask:** SPEC 19c covers one case: "Switching a set back to Normal when some of its drops are already logged asks before deleting them." In the workout's set type picker, can a logged set's DROPS (PAUSES, MINI-SETS, CLUSTERS) stepper go below the number of drops already logged?
+**Recommendation:** (a). Nothing logged is deleted without 19c's question, and chunk 46 already does it.
+**Blocks:** 62.
+**Options:**
+- (a) As chunk 46 built: the stepper goes down to 1. A count below the drops logged asks "Delete the N logged drops?" and deletes the last ones (skipped drops go without asking).
+- (b) The stepper stops at the number logged. A logged drop goes only by its own DELETE (W8) or by Normal (19c).
+**Answer:**
+**Evidence:** `build/chunk-46`, `workoutRules.ts`:964–965 (`stagesToDelete = logged.slice(…after)`, `confirmCount`) and its header ("A set type pick with fewer drops than are logged deletes the extra logged drops after the question (19c asks for Normal; the same question is asked here)"). Chunk 46's first review: "Whether the stepper stops at the number done is 62's to settle with the screen" (`chunk-46-review-1.md`, item A3). Its builder recommended (b).
+
+### 168 Offline: a set not logged yet switched to or from Warmup when logged sets after it move (pre-read, chunk 62)
+**Ask:** G47: "A set type change on a logged set and the edit panel's SAVE need a connection". A set not logged yet is retyped offline, and its change row queues (TASKS 62). Two answers combine here. Since 151 an open set can have logged sets after it (an unlog, or the lock off). Under 146 (a), those logged sets move up or down one when the open set leaves or joins the working sets. Chunk 46 returns those moves as `set_number` patches of logged sets. Offline, does such a switch work, or does it say "Requires a connection"?
+**Recommendation:** (a). G47 makes only a logged set's own change online-only. A delete already renumbers logged sets offline through the queue (61 builds that path), so this switch would use the same one.
+**Blocks:** 62.
+**Options:**
+- (a) It works offline. The change row and the number patches go through the sync queue, the patches after the change row, as 61's offline renumber after a delete does.
+- (b) It needs a connection only when it moves a logged set ("Requires a connection"). With nothing to move it works offline.
+**Answer:**
+**Evidence:** `build/chunk-46`, `workoutRules.ts`:943–952 (an unlogged planned set's switch to or from Warmup returns `renumber` from `closeGap` / `makeRoom`). Chunk 46's builder (attempt 3, report section 3, for 62) read it as (b): "those are edits of logged sets, so when it isn't empty the switch needs a connection like any edit of a logged set (G47), unlike its own change row, which queues". Chunk 57's note for 61 sets out how an offline renumber goes through the queue: a full-row upsert per log, or a patch item.
+
+### 169 CHANGE THE PROGRAM's DAYS card: "a day another workout already uses", as saved or as edited? (pre-read, chunk 51b)
+**Ask:** "A day another workout already uses can't be picked: the toggle is disabled and the card says whose day it is ("Thu is Push 2's day")" (SPEC, Weekdays storage; Defaults 2). Chunk 45's `validateDays` checks a toggle against whatever schedule its caller passes. The screen can pass the saved schedule (the run copy's newest days) or the edit as it stands after earlier toggles. With the saved schedule, a day another workout gives up in this edit stays refused until SAVE. So two workouts can't trade days in one save (Push Tue → Thu with Pull Thu → Tue): the trade needs a parking day and three saves. Which counts?
+**Recommendation:** (a). The card then refuses only what the save would really clash on, and a trade is one save. The end state is the same either way.
+**Blocks:** 51b.
+**Options:**
+- (a) The edit as it stands: a day is taken when another workout has it in the draft now.
+- (b) The saved schedule: a day is taken when another workout has it in the run copy's newest days, until SAVE.
+**Answer:**
+**Evidence:** `programChange.ts`:578–582 (`validateDays({ schedule /* the weekday map before this change */, workoutId, days })`). Chunk 45's reviewer, for 51a/51b: "`validateDays(schedule)`: the caller chooses which map counts as 'another workout's day' (the run copy's, or the draft's after earlier toggles)". TASKS 51b's verification checks one refusal ("a day another workout uses is disabled") and no trade.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
