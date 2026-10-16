@@ -10,6 +10,7 @@ import type {
   DayOfWeek,
   DueTodayEntry,
   NextScheduledSession,
+  WeeklySchedule,
 } from '../../types'
 import { effectiveDate } from './effectiveDate'
 
@@ -19,6 +20,19 @@ import { effectiveDate } from './effectiveDate'
 // recurs within 7 days of any starting point.
 const NEXT_SCHEDULED_HORIZON_DAYS = 7
 
+// Chunk 50 (SPEC [1.2] Programs and runs → "Weekdays storage", Screens → Today: "it finds sessions by the weekdays in
+// force that week"): which workout is on which weekday is asked PER WEEK. A weekday change saved in week N starts in
+// week N + 1 (`v2_run_schedules`, chunk 51b), so this week's days and next week's differ, and a look-ahead that crosses
+// Sunday (the empty state's "next up") reads the next week's. `scheduleForWeek(week)` is the resolver for the active
+// run (runSchedule.ts' `scheduleForWeek` over the run's rows and the run copy's schedule, built by the caller:
+// useScheduler.ts), called with the run's week number of the date being asked about (the house formula, Monday-
+// anchored). A run with no schedule rows resolves to the run copy's schedule in every week, which is what this
+// function read before chunk 50, so nothing behaves differently until a run has a schedule change.
+//
+// `scheduleForWeek` is required, with no default and no fallback to `program.schedule`: left out, the scheduler would
+// silently show the run copy's (newest) days in a week that had others, a plausible wrong answer (RULES.md, "an input
+// whose omission would silently give plausible numbers is required"). A caller that doesn't pass a function gets a
+// TypeError, and `tsc` refuses the call (scheduler.scheduleForWeek.test.ts proves both).
 export function schedule(
   today: string,
   {
@@ -29,6 +43,7 @@ export function schedule(
     allWeekPlans,
     sessions,
     dismissMissed = false,
+    scheduleForWeek,
   }: {
     activeMeso: Mesocycle | null
     programs: Program[]
@@ -40,8 +55,13 @@ export function schedule(
     // When true, skip straight to today's suggestion even if missed sessions
     // exist — the user closed the missed-sessions prompt without acting on it.
     dismissMissed?: boolean
+    // The weekday schedule in force for a week of the active run (see above).
+    scheduleForWeek: (week: number) => WeeklySchedule
   },
 ): SchedulerResult {
+  if (typeof scheduleForWeek !== 'function') {
+    throw new TypeError('schedule: scheduleForWeek is required (the weekday schedule in force per week; chunk 50)')
+  }
   if (programs.length === 0) return { type: 'no_program' }
   if (!activeMeso) return { type: 'no_active_meso' }
 
@@ -57,6 +77,9 @@ export function schedule(
 
   const todayDate = parseISO(today)
   const mesoStart = parseISO(activeMeso.startDate)
+  // The run's week of a date: the house formula (CONTEXT.md / RULES.md), Monday-anchored calendar weeks from the week
+  // the run started in.
+  const weekOf = (date: Date): number => differenceInCalendarWeeks(date, mesoStart, { weekStartsOn: 1 }) + 1
 
   // ─── Missed sessions: current week only (SPEC — the cross-week 7-day
   // look-back goes) ───────────────────────────────────────────────────────
@@ -73,7 +96,8 @@ export function schedule(
   while (isBefore(cursor, todayDate)) {
     const dateStr = format(cursor, 'yyyy-MM-dd')
     const dow = format(cursor, 'EEEE').toLowerCase() as DayOfWeek
-    const wdId = program.schedule[dow]
+    const weekNum = weekOf(cursor)
+    const wdId = scheduleForWeek(weekNum)[dow]
 
     if (wdId) {
       // Stale guard: workout day may have been deleted from the program
@@ -103,7 +127,6 @@ export function schedule(
             movedAway)
 
         if (!isHandled) {
-          const weekNum = differenceInCalendarWeeks(cursor, mesoStart, { weekStartsOn: 1 }) + 1
           const weekPlan =
             allWeekPlans.find(
               (wp) => wp.workoutDayId === wdId && wp.weekNumber === weekNum,
@@ -140,7 +163,7 @@ export function schedule(
   const dueTodayRows = sessions.filter((s) => s.status !== 'skipped' && effectiveDate(s) === today)
 
   const todayDow = format(todayDate, 'EEEE').toLowerCase() as DayOfWeek
-  const todayWdId = program.schedule[todayDow] ?? null
+  const todayWdId = scheduleForWeek(weekOf(todayDate))[todayDow] ?? null
   // Stale guard, same as before this chunk.
   const todayWorkoutDay = todayWdId ? workoutDays.find((wd) => wd.id === todayWdId) ?? null : null
   const effectiveTodayWdId = todayWorkoutDay ? todayWdId : null
@@ -186,7 +209,7 @@ export function schedule(
   }
 
   if (entries.length === 0) {
-    return { type: 'rest_day', next: findNextScheduled(today, program, workoutDays) }
+    return { type: 'rest_day', next: findNextScheduled(today, weekOf, scheduleForWeek, workoutDays) }
   }
   if (entries.length === 1) {
     // The overwhelmingly common case: exactly the same singular variant
@@ -200,19 +223,23 @@ export function schedule(
 
 // The empty state's own "next scheduled session and when it's due" (SPEC —
 // "no session today -> the next scheduled session and when it's due").
-// Deliberately simple: scans only the program's own weekly template, not
+// Deliberately simple: scans only the run's weekly schedule, not
 // `sessions` — a future day's own session having itself been moved away
 // would still surface here as "next" (a documented simplification for an
 // informational hint, not a hard guarantee — see this chunk's report).
+// Chunk 50: each day it looks at is read in ITS week's schedule, so a look-ahead
+// that crosses Sunday into a week with other days (a weekday change that starts
+// next week) names that week's workout, not this week's.
 function findNextScheduled(
   today: string,
-  program: Program,
+  weekOf: (date: Date) => number,
+  scheduleForWeek: (week: number) => WeeklySchedule,
   workoutDays: WorkoutDay[],
 ): NextScheduledSession | null {
   let cursor = addDays(parseISO(today), 1)
   for (let i = 0; i < NEXT_SCHEDULED_HORIZON_DAYS; i++) {
     const dow = format(cursor, 'EEEE').toLowerCase() as DayOfWeek
-    const wdId = program.schedule[dow]
+    const wdId = scheduleForWeek(weekOf(cursor))[dow]
     const workoutDay = wdId ? workoutDays.find((wd) => wd.id === wdId) : undefined
     if (workoutDay) return { date: format(cursor, 'yyyy-MM-dd'), workoutDay }
     cursor = addDays(cursor, 1)

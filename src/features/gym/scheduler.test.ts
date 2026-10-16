@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { schedule } from './scheduler'
+import { schedule as scheduleWithResolver } from './scheduler'
+import { scheduleForWeek } from '../programs/runSchedule'
 import type { Program, Mesocycle, WorkoutDay, WeekPlan, Session, WeeklySchedule } from '../../types'
 
 // Week of 2026-08-24 (Monday) .. 2026-08-30 (Sunday) — hand-verified via
@@ -49,6 +50,17 @@ function makeSession(overrides: Partial<Session> & Pick<Session, 'date' | 'worko
     pumpRating: null,
     ...overrides,
   }
+}
+
+// Chunk 50: `schedule()` takes the weekday schedule in force per week (`scheduleForWeek`, required). Every scenario in this
+// file is the one it held before chunk 50, with its body unmodified; they run through this wrapper, which injects the
+// real resolver (runSchedule.ts) over NO schedule rows, so every week resolves to the run copy's schedule: a run
+// nobody has changed the days of behaves exactly as before. The rows' own scenarios are in
+// scheduler.scheduleForWeek.test.ts.
+type ScheduleArgs = Omit<Parameters<typeof scheduleWithResolver>[1], 'scheduleForWeek'>
+function schedule(today: string, args: ScheduleArgs) {
+  const runCopy = args.programs.find((p) => p.id === args.activeMeso?.programId)
+  return scheduleWithResolver(today, { ...args, scheduleForWeek: (week) => scheduleForWeek([], runCopy?.schedule ?? EMPTY_SCHEDULE, week) })
 }
 
 const BASE = {
