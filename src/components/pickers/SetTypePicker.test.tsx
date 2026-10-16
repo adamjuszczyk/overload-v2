@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import SetTypePicker from './SetTypePicker'
 import type { SetTypePickerProps } from './SetTypePicker'
-import { STAGE_COUNT_MAX, type SetType } from './pickerLogic'
+import { STAGE_COUNT_MAX, cuesSummary, type SetType } from './pickerLogic'
 import { captureRender } from '../../testing/captureRender'
+import { textOnAccent } from '../../testing/textOnAccent'
 
 // TASKS-1.2 chunk 39: the set type picker (boards 5, PP3c, W7a). It writes nothing; these tests assert
 // what each variant draws (SPEC "Rest [1.2]", "Set types and staged sets [1.2]", G55) and the value
@@ -466,5 +467,34 @@ describe('SetTypePicker: Cues and REMOVE THIS SET', () => {
     render(<SetTypePicker {...fullProps({ onRemove })} />)
     fireEvent.click(option('REMOVE THIS SET'))
     expect(onRemove).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('SetTypePicker: one long word (DECISIONS 128 (i), Adam 2026-10-15)', () => {
+  // A custom cue can be one long word; jsdom lays nothing out, so this holds the rule that wraps it and the fixture it
+  // captures is measured in Chromium at 375 px by `node scripts/check-sheet-overflow.mjs`.
+  const LONG_CUE = 'X'.repeat(60)
+
+  it("the Cues row's second line wraps a cue of one long word inside its row", () => {
+    render(<SetTypePicker {...fullProps({ value: staged('dropset'), cues: [LONG_CUE, 'push here'] })} />)
+    // captured before anything is asserted, so a fixture is written even when a rule is broken (the Chromium check needs one)
+    captureRender('picker-5-long-cue', document.body)
+    const line = screen.getByText(cuesSummary([LONG_CUE, 'push here']))
+    expect(line.style.overflowWrap).toBe('anywhere')
+    // its column can shrink below the word, which is what lets the line wrap beside the chevron
+    expect((line.parentElement as HTMLElement).style.minWidth).toBe('0px')
+  })
+
+  it('the exercise name in the eyebrow is wrapped by the sheet frame', () => {
+    render(<SetTypePicker {...fullProps({ exerciseName: 'X'.repeat(80) })} />)
+    expect(within(screen.getByRole('dialog')).getByText(/^X+ · SET 03 · WEEK 2$/).style.overflowWrap).toBe('anywhere')
+  })
+})
+
+describe('SetTypePicker: text on the accent', () => {
+  it('draws nothing to read on the accent: its only accent fill is the radio dot, which holds nothing', () => {
+    render(<SetTypePicker {...fullProps({ value: staged('dropset') })} />)
+    expect(document.body.querySelectorAll('[style*="var(--accent)"]').length).toBeGreaterThan(0)
+    expect(textOnAccent(document.body)).toEqual([])
   })
 })

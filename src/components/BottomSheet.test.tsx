@@ -41,7 +41,7 @@ const ctaStyle = {
   border: 0,
   borderRadius: 10,
   background: 'var(--accent)',
-  color: 'var(--text-primary)',
+  color: 'var(--on-accent)',
   fontFamily: 'var(--font-display)',
   fontWeight: 800,
   fontSize: 15,
@@ -163,6 +163,21 @@ describe('BottomSheet: the frame', () => {
   it('writes no colour literal of its own (hex)', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'BottomSheet.tsx'), 'utf8')
     expect(source.match(/#[0-9a-fA-F]{3,6}\b/g)).toBeNull()
+  })
+
+  it('wraps an eyebrow or a title that is one long word inside its line (DECISIONS 128 (i), Adam 2026-10-15)', () => {
+    const LONG = 'X'.repeat(80)
+    render(
+      <BottomSheet eyebrow={`${LONG} · SET 01`} title={LONG} onClose={() => {}}>
+        <p>content</p>
+      </BottomSheet>,
+    )
+    // jsdom lays nothing out: this holds the rule that gives the wrap; `check-sheet-overflow.mjs --long` measures it in Chromium
+    const eyebrow = screen.getByText(`${LONG} · SET 01`)
+    expect(eyebrow.style.overflowWrap).toBe('anywhere')
+    expect(screen.getByRole('heading', { level: 2, name: LONG }).style.overflowWrap).toBe('anywhere')
+    // the heading block can shrink below the word, which is what lets it wrap beside the × button
+    expect((eyebrow.parentElement as HTMLElement).style.minWidth).toBe('0px')
   })
 })
 

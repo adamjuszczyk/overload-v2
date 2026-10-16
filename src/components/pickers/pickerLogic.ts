@@ -434,18 +434,93 @@ export function pickTargetMode(draft: TargetDraft, mode: TargetMode, kind: Targe
   return { ...draft, mode }
 }
 
+/** The boxes of the rep and RIR pickers: NUMBER's, and RANGE's FROM and TO. */
+export type TargetField = 'number' | 'from' | 'to'
+
 /**
- * One tap on a box's - or +. A box stays inside the kind's bounds, and FROM never passes TO (nor TO
- * FROM); ends that meet are a number when the sheet is confirmed. Returns the same object when
+ * Where a box may go: the kind's bounds (reps 1-100, RIR 0-20), narrowed by the other end of a range
+ * (FROM never passes TO and TO never goes below FROM; ends that meet are a number when the sheet is
+ * confirmed). The one place those bounds are read, so a tap on - or + and a typed number can't disagree.
+ */
+export function targetFieldRange(draft: TargetDraft, field: TargetField, kind: TargetKind): { low: number; high: number } {
+  const { bounds } = TARGET_SETTINGS[kind]
+  return { low: field === 'to' ? draft.from : bounds.min, high: field === 'from' ? draft.to : bounds.max }
+}
+
+/**
+ * One tap on a box's - or +. A box stays inside `targetFieldRange`. Returns the same object when
  * nothing moves, so a caller can disable the button that would do nothing.
  */
-export function stepTargetField(draft: TargetDraft, field: 'number' | 'from' | 'to', delta: 1 | -1, kind: TargetKind): TargetDraft {
-  const { bounds } = TARGET_SETTINGS[kind]
+export function stepTargetField(draft: TargetDraft, field: TargetField, delta: 1 | -1, kind: TargetKind): TargetDraft {
   const next = draft[field] + delta
-  const low = field === 'to' ? draft.from : bounds.min
-  const high = field === 'from' ? draft.to : bounds.max
+  const { low, high } = targetFieldRange(draft, field, kind)
   if (next < low || next > high) return draft
   return { ...draft, [field]: next }
+}
+
+// ─── Typing into a box ───────────────────────────────────────────────────────────────────────
+//
+// The number boxes are inputs (DECISIONS 128, Adam 2026-10-15: "the number boxes in the rep and RIR
+// pickers are inputs you can type into, with ± steppers beside them (decisions 6 and 17a: choose,
+// then type). Same bounds as built"). Typing is the only thing here that can put a half-written
+// number in a box ("" on the way to "12", "1" in a range that starts at 8), so a box keeps the text
+// being typed apart from the draft: the draft takes a typed number the moment it is a whole number
+// inside the box's range, and a box left (or the sheet confirmed) with anything else in it is held
+// to the nearest number it can hold. Nothing is clamped while typing: "0" on the way to "08" would
+// become 1 and "1" on the way to "12" would become 8.
+
+/** The text of the boxes being typed in, by field: a field is here from its first keystroke until its box is left. */
+export type TypedTexts = Partial<Record<TargetField, string>>
+
+/** The most digits a box takes: the biggest bound is 100. */
+export const TYPED_DIGITS_MAX = 3
+
+/** What a box can hold while someone types: digits only, no leading zeros (a lone 0 stays), three at most. A paste with letters keeps its digits. */
+export function typedDigits(raw: string): string {
+  return raw
+    .replace(/\D/g, '')
+    .replace(/^0+(?=\d)/, '')
+    .slice(0, TYPED_DIGITS_MAX)
+}
+
+/** The whole number a typed text says; null for an empty text. */
+function typedNumber(text: string): number | null {
+  return /^\d+$/.test(text) ? Number(text) : null
+}
+
+/**
+ * A keystroke in a box: the draft with that number in it when `text` is a whole number inside the
+ * box's range, else the draft itself (the box shows what was typed; the draft keeps its last good number).
+ */
+export function typeTargetField(draft: TargetDraft, field: TargetField, text: string, kind: TargetKind): TargetDraft {
+  const typed = typedNumber(text)
+  if (typed === null || typed === draft[field]) return draft
+  const { low, high } = targetFieldRange(draft, field, kind)
+  if (typed < low || typed > high) return draft
+  return { ...draft, [field]: typed }
+}
+
+/**
+ * A box left, or the sheet confirmed, with `text` in it: the nearest number the box can hold, the way
+ * a stepper stops at a bound (150 reps is 100; 0 reps is 1; a FROM past TO is TO). An empty text
+ * changes nothing: the box goes back to the draft's number.
+ */
+export function settleTargetField(draft: TargetDraft, field: TargetField, text: string, kind: TargetKind): TargetDraft {
+  const typed = typedNumber(text)
+  if (typed === null) return draft
+  const { low, high } = targetFieldRange(draft, field, kind)
+  const next = Math.min(high, Math.max(low, typed))
+  return next === draft[field] ? draft : { ...draft, [field]: next }
+}
+
+const FIELD_ORDER: readonly TargetField[] = ['number', 'from', 'to']
+
+/** Every box still holding typed text, settled: what the footer button sets and what a segment or a stepper acts on. */
+export function settleTyped(draft: TargetDraft, typed: TypedTexts, kind: TargetKind): TargetDraft {
+  return FIELD_ORDER.reduce((current, field) => {
+    const text = typed[field]
+    return text === undefined ? current : settleTargetField(current, field, text, kind)
+  }, draft)
 }
 
 // ─── The footer button ───────────────────────────────────────────────────────────────────────

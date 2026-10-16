@@ -8,6 +8,7 @@ import SetTypePicker from './SetTypePicker'
 import type { TargetableSet } from './pickerLogic'
 import { applyTagToAllHeads } from '../../lib/plannerVocabulary'
 import { captureRender } from '../../testing/captureRender'
+import { textOnAccent } from '../../testing/textOnAccent'
 
 // TASKS-1.2 chunk 40: the cues sheet (board 8). It writes nothing: DONE returns the set's cues and whether
 // "Use for all" was ticked. These tests assert what the sheet draws (SPEC "Tags [1.2]"), where each part
@@ -500,5 +501,24 @@ describe('CuesSheet: opened from the set type picker (board 5 → 8)', () => {
     expect(screen.getAllByRole('dialog')).toHaveLength(1)
     expect(screen.getByText('Push here, Maintain strength')).toBeTruthy()
     expect(onClosePicker).not.toHaveBeenCalled()
+  })
+})
+
+describe('CuesSheet: text on the accent is --on-accent, never --base (DECISIONS 129 (d), Adam 2026-10-15)', () => {
+  it('a ticked row\'s check mark and DONE, and nothing else, are drawn on the accent', () => {
+    render(<CuesSheet {...props({ value: ['push here', 'push back'] })} />)
+    const onAccent = textOnAccent(document.body)
+    // two ticked rows (a check mark each) and DONE; an unticked row has no accent behind it
+    expect(onAccent.map((el) => el.textContent)).toEqual(['', '', 'DONE'])
+    for (const el of onAccent) expect(el.style.color, el.textContent || 'the tick').toBe('var(--on-accent)')
+  })
+
+  it('"Use for all" is drawn on the accent once it is ticked, in the same colour', () => {
+    render(<CuesSheet {...props({ value: [] })} />)
+    expect(textOnAccent(document.body).map((el) => el.textContent)).toEqual(['DONE'])
+    fireEvent.click(useForAll() as HTMLElement)
+    const onAccent = textOnAccent(document.body)
+    expect(onAccent.map((el) => el.textContent)).toEqual(['', 'DONE'])
+    for (const el of onAccent) expect(el.style.color).toBe('var(--on-accent)')
   })
 })

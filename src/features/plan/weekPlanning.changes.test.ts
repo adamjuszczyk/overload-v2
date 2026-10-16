@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { ProgramExercise, WeekPlan, WeekPlanSet } from '../../types'
 import {
+  autoCopy,
   changesSinceSource,
   chooseChangeSources,
   movedEntries,
   needsRunCopy,
   weeksOfSlot,
+  type AutoCopyResult,
   type ExerciseChanges,
   type RunCopy,
   type WeekChanges,
@@ -426,8 +428,6 @@ describe('changesSinceSource — sets are matched by position: head ordinal, the
     expect(flags({ repMin: 8, repMax: 12 })).toMatchObject({ weight: false, reps: true, rir: false })
     expect(flags({ isAmrap: true, repMin: null, repMax: null })).toMatchObject({ reps: true })
     expect(flags({ targetRir: 1 })).toMatchObject({ weight: false, reps: false, rir: true })
-    expect(flags({ targetWeight: null })).toMatchObject({ weight: true })
-    expect(flags({ targetRir: null })).toMatchObject({ rir: true })
   })
 
   it('a rep target is compared as it shows: 8 to 8 is 8, and no target equals no target', () => {
@@ -519,7 +519,6 @@ describe('changesSinceSource — sets are matched by position: head ordinal, the
     expect(flags({ repMin: 8, repMax: 10 })).toMatchObject({ weight: false, reps: true, rir: false })
     expect(flags({ isAmrap: true, repMin: null, repMax: null })).toMatchObject({ weight: false, reps: true, rir: false })
     expect(flags({ targetRir: 1 })).toMatchObject({ weight: false, reps: false, rir: true })
-    expect(flags({ targetRir: null })).toMatchObject({ weight: false, reps: false, rir: true })
   })
 
   it('the stages of a set the source doesn\'t have are added with it; the stages of a set the week no longer has go with it', () => {
@@ -709,12 +708,192 @@ describe('what is never compared: cues, rest, tempo, superset grouping, the unit
   })
 })
 
-// ─── What 1.2 leaves as 1.1 had it ────────────────────────────────────────────────────────────────────────────────
+// ─── An empty box is never marked (DECISIONS 132 (a), Adam 2026-10-15) ────────────────────────────────────────────────
 
-describe('changesSinceSource — a box that differs from the source is a change, empty or not (SPEC: "anything ... that differs"; D31 provisional)', () => {
-  it('a week planned forward with no numbers of its own marks every number last week had: the 1.1 rule, kept as built', () => {
-    const ex = [pe('e', 'bench', 0)]
-    const d = between([ex, sets('e', 1, { targetWeight: null, targetRir: null, repMin: null, repMax: null })], [ex, sets('e', 1)])
-    expect(setFlags(d, 'e', 'e-1')).toMatchObject({ weight: true, rir: true, reps: true, added: false })
+describe('changesSinceSource — an empty box is never marked: only a value that is present and differs from its source is (DECISIONS 132 (a))', () => {
+  const ex = [pe('e', 'bench', 0)]
+
+  // One set in the week against last week's, which holds 100 kg × 8, RIR 2 (the builders' defaults).
+  const flags = (over: Partial<WeekPlanSet>, last: Partial<WeekPlanSet> = {}) =>
+    setFlags(between([ex, [wset('e-1', 'e', 1, over)]], [ex, [wset('e-1', 'e', 1, last)]]), 'e', 'e-1')
+
+  it('a box left empty is not marked, however much its source holds: weight, rep target and RIR each', () => {
+    expect(flags({ targetWeight: null })).toEqual(CLEAN)
+    expect(flags({ targetRir: null })).toEqual(CLEAN)
+    expect(flags({ repMin: null, repMax: null })).toEqual(CLEAN)
+    expect(flags({ targetWeight: null, targetRir: null, repMin: null, repMax: null })).toEqual(CLEAN)
+    expect(flags({ targetRir: null, targetRirMax: null }, { targetRir: 1, targetRirMax: 2 })).toEqual(CLEAN) // a source range too
+  })
+
+  it('a value that is present and differs is marked; one that is present and equal is not', () => {
+    expect(flags({ targetWeight: 105 })).toMatchObject({ weight: true, reps: false, rir: false })
+    expect(flags({ targetWeight: 100 })).toEqual(CLEAN)
+    expect(flags({ repMin: 6, repMax: 6 })).toMatchObject({ weight: false, reps: true, rir: false })
+    expect(flags({ targetRir: 1 })).toMatchObject({ weight: false, reps: false, rir: true })
+  })
+
+  it('a value that is present is marked when its source holds none: it differs from nothing', () => {
+    const empty = { targetWeight: null, targetRir: null, repMin: null, repMax: null }
+    expect(flags({}, empty)).toMatchObject({ weight: true, reps: true, rir: true, added: false })
+    expect(flags(empty, empty)).toEqual(CLEAN)
+    expect(flags({ targetWeight: null }, empty)).toMatchObject({ weight: false, reps: true, rir: true }) // the boxes still filled are marked
+  })
+
+  it('0 is a value, not an empty box: a weight or RIR of 0 against one that is not 0 is marked, and 0 against 0 is not', () => {
+    expect(flags({ targetWeight: 0 })).toMatchObject({ weight: true })
+    expect(flags({ targetRir: 0 })).toMatchObject({ rir: true })
+    expect(flags({ targetWeight: 0, targetRir: 0 }, { targetWeight: 0, targetRir: 0 })).toEqual(CLEAN)
+    expect(flags({ targetWeight: 0 }, { targetWeight: null })).toMatchObject({ weight: true })
+  })
+
+  it('AMRAP is a rep target: an AMRAP against a number is marked, an emptied rep target against an AMRAP is not', () => {
+    expect(flags({ isAmrap: true, repMin: null, repMax: null })).toMatchObject({ reps: true })
+    expect(flags({ repMin: null, repMax: null, isAmrap: false }, { isAmrap: true, repMin: null, repMax: null })).toEqual(CLEAN)
+    // a half-set pair shows no target at all, so it is an empty box
+    expect(flags({ repMin: 8, repMax: null })).toEqual(CLEAN)
+  })
+
+  it('a RIR range is a value: a range against a number is marked, and an empty RIR against a range is not', () => {
+    expect(flags({ targetRir: 1, targetRirMax: 2 })).toMatchObject({ rir: true })
+    expect(flags({ targetRir: null, targetRirMax: null }, { targetRir: 1, targetRirMax: 2 })).toEqual(CLEAN)
+  })
+
+  it('a stage\'s empty boxes are not marked, and its present ones are', () => {
+    const source = [wset('s1', 'e', 1, { stageKind: 'dropset' }), stage('s1a', 's1', 'e', 1, { targetWeight: 80, repMin: 6, repMax: 6, targetRir: 0 })]
+    const stageFlags = (over: Partial<WeekPlanSet>) =>
+      setFlags(between([ex, [wset('w1', 'e', 1, { stageKind: 'dropset' }), stage('w1a', 'w1', 'e', 1, { targetWeight: 80, repMin: 6, repMax: 6, targetRir: 0, ...over })]], [ex, source]), 'e', 'w1a')
+    expect(stageFlags({ targetWeight: null })).toEqual(CLEAN)
+    expect(stageFlags({ targetRir: null })).toEqual(CLEAN)
+    expect(stageFlags({ repMin: null, repMax: null })).toEqual(CLEAN)
+    expect(stageFlags({ targetWeight: 70 })).toMatchObject({ weight: true })
+    expect(stageFlags({ targetRir: 1 })).toMatchObject({ rir: true })
+    expect(stageFlags({ repMin: 8, repMax: 10 })).toMatchObject({ reps: true })
+  })
+
+  it('a set with no counterpart in last week is marked for the weight and RIR it holds, and for none it lacks', () => {
+    const grown = (over: Partial<WeekPlanSet>) => setFlags(between([ex, [wset('e-1', 'e', 1), wset('e-2', 'e', 2, over)]], [ex, [wset('e-1', 'e', 1)]]), 'e', 'e-2')
+    expect(grown({})).toMatchObject({ added: true, weight: true, rir: true })
+    expect(grown({ targetWeight: null })).toMatchObject({ added: true, weight: false, rir: true })
+    expect(grown({ targetRir: null })).toMatchObject({ added: true, weight: true, rir: false })
+    // "+ ADD SET" adds a set with no weight or RIR (Defaults 8): the set is marked as added and nothing in it is
+    expect(grown({ targetWeight: null, targetRir: null })).toMatchObject({ added: true, weight: false, rir: false })
+  })
+
+  it('the stages of such a set follow the same rule', () => {
+    const staged = (over: Partial<WeekPlanSet>) =>
+      setFlags(
+        between(
+          [ex, [wset('e-1', 'e', 1), wset('e-2', 'e', 2, { stageKind: 'dropset' }), stage('e-2a', 'e-2', 'e', 1, { targetWeight: 80, targetRir: 0, ...over })]],
+          [ex, [wset('e-1', 'e', 1)]],
+        ),
+        'e',
+        'e-2a',
+      )
+    expect(staged({})).toMatchObject({ added: true })
+    expect(staged({ targetWeight: null })).toMatchObject({ weight: false })
+    expect(staged({ targetRir: null })).toMatchObject({ rir: false })
+    expect(staged({ targetWeight: null, targetRir: null })).toMatchObject({ added: true, weight: false, rir: false })
+  })
+
+  it('a warmup\'s RIR stays no mark whatever it holds (G49), and its empty weight is not one either', () => {
+    const warm = (over: Partial<WeekPlanSet>) =>
+      setFlags(between([ex, [wset('e-w', 'e', 1, { isWarmup: true, targetRir: null, targetWeight: 40, ...over })]], [ex, [wset('e-w', 'e', 1, { isWarmup: true, targetRir: null, targetWeight: 30 })]]), 'e', 'e-w')
+    expect(warm({ targetRir: 3 })?.rir).toBe(false)
+    expect(warm({ targetWeight: null })?.weight).toBe(false)
+    expect(warm({})?.weight).toBe(true)
+  })
+
+  describe('a week planned forward shows no marks until numbers are typed (the auto-copy\'s own rows, against last week)', () => {
+    // One workout: a warmup, a working set and a dropset with one drop. Last week holds every number.
+    const runCopy: RunCopy = {
+      exercises: [{ id: 'e', exerciseId: 'bench', position: 0 }],
+      sets: [
+        pset('pgWarm', 'e', 1, { isWarmup: true, repMin: 12, repMax: 12 }),
+        pset('pgWork', 'e', 2, { repMin: 8, repMax: 10 }),
+        pset('pgDrop', 'e', 3, { stageKind: 'dropset', repMin: 8, repMax: 10 }),
+        pset('pgDropA', 'e', 3, { parentProgramSetId: 'pgDrop', stageIndex: 1, repMin: 12, repMax: 15 }),
+      ],
+    }
+    const lastWeek = plan(1, ex, [
+      wset('lwWarm', 'e', 1, { isWarmup: true, programSetId: 'pgWarm', targetWeight: 40, targetRir: null, repMin: 12, repMax: 12 }),
+      wset('lwWork', 'e', 2, { programSetId: 'pgWork', targetWeight: 100, targetRir: 2, targetRirMax: 3, repMin: 8, repMax: 10 }),
+      wset('lwDrop', 'e', 3, { programSetId: 'pgDrop', stageKind: 'dropset', targetWeight: 100, targetRir: 1, repMin: 8, repMax: 10 }),
+      stage('lwDropA', 'lwDrop', 'e', 1, { programSetId: 'pgDropA', targetWeight: 80, targetRir: 0, repMin: 12, repMax: 15 }),
+    ])
+
+    // The rows planning week 2 forward leaves: autoCopy's, with the numbers it never copies.
+    function plannedForward(copy: AutoCopyResult, typed: Record<string, Partial<WeekPlanSet>> = {}): WeekPlanSet[] {
+      return copy.sets.map((row) =>
+        wset(`n-${row.sourceId}`, row.programExerciseId, row.setNumber, {
+          isDropset: row.isDropset,
+          isWarmup: row.isWarmup,
+          stageKind: row.stageKind,
+          stageIndex: row.stageIndex,
+          parentWeekPlanSetId: row.parentSourceId === null ? null : `n-${row.parentSourceId}`,
+          programSetId: row.programSetId,
+          repMin: row.repMin,
+          repMax: row.repMax,
+          isAmrap: row.isAmrap,
+          targetWeight: row.targetWeight,
+          targetRir: row.targetRir,
+          targetRirMax: row.targetRirMax,
+          tags: null,
+          ...typed[row.sourceId],
+        }),
+      )
+    }
+    const allClean = (d: WeekChanges) => [...flagsOf(d, 'e').sets.values()].every((f) => f.added === false && f.weight === false && f.reps === false && f.rir === false && f.kind === false)
+    // `typed` names the rows by role: the warmup, the working set, the dropset and its drop. A week-dependent week is
+    // copied from last week's rows and a stable one from the program's, so the ids the copy gives them differ by type.
+    type Role = 'warm' | 'work' | 'drop' | 'dropA'
+    const ROLE_ID: Record<Role, string> = { warm: 'Warm', work: 'Work', drop: 'Drop', dropA: 'DropA' }
+    const week2 = (planningType: 'week_dependent' | 'stable', typed: Partial<Record<Role, Partial<WeekPlanSet>>> = {}) => {
+      const prefix = planningType === 'stable' ? 'pg' : 'lw'
+      const idOf = (role: Role) => `${prefix}${ROLE_ID[role]}`
+      const copy = autoCopy({ planningType, weekNumber: 2, runCopy, priorWeeks: [lastWeek] })
+      expect(copy.sets).toHaveLength(4) // the rows the week was planned with: nothing to compare is nothing to find
+      const typedById: Record<string, Partial<WeekPlanSet>> = {}
+      for (const role of Object.keys(typed) as Role[]) typedById[idOf(role)] = typed[role] ?? {}
+      const d = changesSinceSource({
+        planningType,
+        weekNumber: 2,
+        week: { isDeload: false, exercises: ex, sets: plannedForward(copy, typedById) },
+        slotWeeks: [lastWeek],
+        runCopy: planningType === 'stable' ? runCopy : null,
+      })!
+      return { d, flagsOfRole: (role: Role) => setFlags(d, 'e', `n-${idOf(role)}`) }
+    }
+
+    it('a week-dependent week: no marks at all, though last week held a weight, a RIR (a range too) and a rep target on every set', () => {
+      const { d } = week2('week_dependent')
+      expect(d.sourceWeek).toBe(1)
+      expect(flagsOf(d, 'e').sets.size).toBe(4)
+      expect(allClean(d)).toBe(true)
+    })
+
+    it('a stable week: no marks either (its rep targets are the default\'s; its weights and RIR are empty)', () => {
+      const { d } = week2('stable')
+      expect(d.sourceWeek).toBe(1)
+      expect(flagsOf(d, 'e').sets.size).toBe(4)
+      expect(allClean(d)).toBe(true)
+    })
+
+    it('a number typed in that differs from last week\'s is marked, and only that box; one typed equal to last week\'s is not', () => {
+      const { flagsOfRole } = week2('week_dependent', {
+        work: { targetWeight: 105 }, // 105 against 100
+        drop: { targetWeight: 100, repMin: 8, repMax: 10 }, // equal to last week's (the rep target too)
+        dropA: { targetRir: 1 }, // the drop: RIR 1 against 0
+      })
+      expect(flagsOfRole('work')).toMatchObject({ weight: true, rir: false, reps: false })
+      expect(flagsOfRole('drop')).toEqual(CLEAN)
+      expect(flagsOfRole('dropA')).toMatchObject({ weight: false, rir: true, reps: false })
+      expect(flagsOfRole('warm')).toEqual(CLEAN)
+    })
+
+    it('on a stable week a typed weight is compared with last week\'s, and the default\'s rep target is the shape\'s', () => {
+      const { flagsOfRole } = week2('stable', { work: { targetWeight: 102.5, targetRir: 2, targetRirMax: 3 }, drop: { repMin: 6, repMax: 8 } })
+      expect(flagsOfRole('work')).toMatchObject({ weight: true, rir: false, reps: false })
+      expect(flagsOfRole('drop')).toMatchObject({ reps: true, weight: false })
+    })
   })
 })

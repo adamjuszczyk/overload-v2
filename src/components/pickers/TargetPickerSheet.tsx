@@ -9,11 +9,17 @@ import {
   TARGET_MODES,
   countApplyToAll,
   pickTargetMode,
+  settleTargetField,
+  settleTyped,
   stepTargetField,
+  typeTargetField,
+  typedDigits,
   useForAllLabel,
   type TargetDraft,
+  type TargetField,
   type TargetKind,
   type TargetableSet,
+  type TypedTexts,
 } from './pickerLogic'
 
 // The body the rep target picker (board 6, PP3d) and the RIR target picker (board 7) share: the two
@@ -26,8 +32,18 @@ import {
 // "Use for all" starts ticked (SPEC Defaults 7) and is drawn only when there is more than one set it
 // would reach: with one there is nothing to apply it to.
 //
-// The boxes show their number; the − and + beside them change it, one a tap, inside the kind's bounds.
-// The boards draw them as plain boxes and SPEC has "no tap-a-value shortcut", so they are not inputs.
+// The boxes are inputs you can type a number into, with a − and a + to step it, one a tap (DECISIONS
+// 128, Adam 2026-10-15: "the number boxes in the rep and RIR pickers are inputs you can type into, with
+// ± steppers beside them (decisions 6 and 17a: choose, then type). Same bounds as built"). SPEC's "no
+// tap-a-value shortcut" still holds: there is no row of numbers to tap. Typing and stepping share
+// `pickerLogic.ts`'s bounds: reps 1-100, RIR 0-20, FROM never past TO. The text being typed is kept
+// apart from the draft (`TypedTexts`) until its box is left, and the footer button, a segment and a
+// stepper all act on the draft with that text settled, so what the button says is what it sets.
+//
+// A picker opens on the set's current target (`initial`, from the caller's `value`): its segment and
+// its numbers. The boards' example numbers (8, 8-10, RIR 2, 1-2) are only where a segment the set
+// doesn't have starts, and a set with no target shows no number at all until a segment is picked
+// (DECISIONS 128, Adam 2026-10-15; `pickerLogic.ts`'s `draftFromRepTarget`, `pickTargetMode`).
 
 interface TargetPickerSheetProps {
   kind: TargetKind
@@ -87,14 +103,18 @@ const RANGE_PANEL_STYLE: CSSProperties = { display: 'grid', gridTemplateColumns:
 
 const RANGE_COLUMN_STYLE: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, minWidth: 0 }
 
-const BIG_NUMBER_STYLE: CSSProperties = {
+// The boards' 72 px number box. 34 px text is past the 16 px below which iOS zooms the page when a
+// field takes focus.
+const NUMBER_INPUT_STYLE: CSSProperties = {
   boxSizing: 'border-box',
+  minWidth: 0,
   height: 72,
+  margin: 0,
+  padding: 0,
   borderRadius: 12,
   background: 'var(--surface)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  appearance: 'none',
+  textAlign: 'center',
   fontFamily: 'var(--font-display)',
   fontWeight: 900,
   fontSize: 34,
@@ -134,7 +154,7 @@ const SUBMIT_STYLE: CSSProperties = {
   borderRadius: 10,
   borderWidth: 0,
   background: 'var(--accent)',
-  color: 'var(--base)',
+  color: 'var(--on-accent)',
   fontFamily: 'var(--font-display)',
   fontWeight: 800,
   fontSize: 15,
@@ -196,16 +216,95 @@ function SmallStep({ label, glyph, disabled, onClick }: { label: string; glyph: 
   )
 }
 
+/**
+ * A number box: an input for digits in the boards' 72 px box. NUMBER's and FROM's draw the accent
+ * outline at rest, as the boards do (`marked`); a box with focus always has it, so TO shows where the
+ * cursor is. The text is selected when the box takes focus, so typing replaces the number; Enter
+ * leaves the box (the keyboard's Done), and leaving it is what settles what was typed.
+ */
+function NumberBox({
+  label,
+  value,
+  width,
+  marked,
+  onType,
+  onLeave,
+}: {
+  label: string
+  value: string
+  width: number | string
+  marked: boolean
+  onType: (raw: string) => void
+  onLeave: () => void
+}) {
+  const [focused, setFocused] = useState(false)
+  const outlined = focused || marked
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      autoComplete="off"
+      enterKeyHint="done"
+      aria-label={label}
+      value={value}
+      onChange={(event) => onType(event.target.value)}
+      onFocus={(event) => {
+        setFocused(true)
+        event.currentTarget.select()
+      }}
+      onBlur={() => {
+        setFocused(false)
+        onLeave()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return
+        event.preventDefault()
+        event.currentTarget.blur()
+      }}
+      style={{
+        ...NUMBER_INPUT_STYLE,
+        width,
+        borderWidth: outlined ? 2 : 1,
+        borderStyle: 'solid',
+        borderColor: outlined ? 'var(--accent)' : 'var(--border-strong)',
+      }}
+    />
+  )
+}
+
 export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName, sets, summaryOf, onSubmit, onClose }: TargetPickerSheetProps) {
   const [draft, setDraft] = useState(initial)
+  const [typed, setTyped] = useState<TypedTexts>({})
   const [useForAll, setUseForAll] = useState(true)
   const chrome = CHROME[kind]
   const modes = TARGET_MODES[kind]
   const reachable = countApplyToAll(sets, kind)
   const offerUseForAll = reachable >= 2
 
-  const step = (field: 'number' | 'from' | 'to', delta: 1 | -1) => setDraft((current) => stepTargetField(current, field, delta, kind))
-  const cannotStep = (field: 'number' | 'from' | 'to', delta: 1 | -1) => stepTargetField(draft, field, delta, kind) === draft
+  // The draft as it stands once the text still in a box is settled (150 reps is 100): what the footer
+  // button says and sets, and what a segment or a stepper starts from.
+  const settled = settleTyped(draft, typed, kind)
+
+  const step = (field: TargetField, delta: 1 | -1) => {
+    setDraft(stepTargetField(settled, field, delta, kind))
+    setTyped({})
+  }
+  const cannotStep = (field: TargetField, delta: 1 | -1) => stepTargetField(settled, field, delta, kind) === settled
+  const type = (field: TargetField, raw: string) => {
+    const text = typedDigits(raw)
+    // letters alone leave the box as it was; emptying it (nothing left in raw) is allowed
+    if (raw !== '' && text === '') return
+    setTyped((current) => ({ ...current, [field]: text }))
+    setDraft((current) => typeTargetField(current, field, text, kind))
+  }
+  const leave = (field: TargetField) => {
+    const text = typed[field]
+    if (text === undefined) return
+    setDraft((current) => settleTargetField(current, field, text, kind))
+    setTyped(({ [field]: _left, ...rest }) => rest)
+  }
+  const shown = (field: TargetField) => typed[field] ?? String(draft[field])
 
   return (
     <BottomSheet
@@ -213,8 +312,8 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
       title={chrome.title}
       onClose={onClose}
       footer={
-        <button type="button" onClick={() => onSubmit(draft, offerUseForAll && useForAll)} style={SUBMIT_STYLE}>
-          {summaryOf(draft)}
+        <button type="button" onClick={() => onSubmit(settled, offerUseForAll && useForAll)} style={SUBMIT_STYLE}>
+          {summaryOf(settled)}
         </button>
       }
     >
@@ -238,8 +337,11 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
                 key={mode.id}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setDraft((current) => pickTargetMode(current, mode.id, kind))}
-                style={{ ...SEGMENT_BUTTON_STYLE, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? 'var(--base)' : 'var(--text-secondary)' }}
+                onClick={() => {
+                  setDraft(pickTargetMode(settled, mode.id, kind))
+                  setTyped({})
+                }}
+                style={{ ...SEGMENT_BUTTON_STYLE, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? 'var(--on-accent)' : 'var(--text-secondary)' }}
               >
                 {mode.label}
               </button>
@@ -252,12 +354,14 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
             <span style={CAPTION_STYLE}>{chrome.numberLabel}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <RoundStep label={chrome.lessLabel} glyph="−" disabled={cannotStep('number', -1)} onClick={() => step('number', -1)} />
-              <output
-                aria-label={chrome.numberLabel}
-                style={{ ...BIG_NUMBER_STYLE, width: 110, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--accent)' }}
-              >
-                {draft.number}
-              </output>
+              <NumberBox
+                label={chrome.numberLabel}
+                value={shown('number')}
+                width={110}
+                marked
+                onType={(raw) => type('number', raw)}
+                onLeave={() => leave('number')}
+              />
               <RoundStep label={chrome.moreLabel} glyph="+" disabled={cannotStep('number', 1)} onClick={() => step('number', 1)} />
             </div>
           </div>
@@ -267,12 +371,7 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
           <div style={RANGE_PANEL_STYLE}>
             <div style={RANGE_COLUMN_STYLE}>
               <span style={CAPTION_STYLE}>{chrome.from}</span>
-              <output
-                aria-label="From"
-                style={{ ...BIG_NUMBER_STYLE, width: '100%', borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--accent)' }}
-              >
-                {draft.from}
-              </output>
+              <NumberBox label="From" value={shown('from')} width="100%" marked onType={(raw) => type('from', raw)} onLeave={() => leave('from')} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <SmallStep label="From: fewer" glyph="−" disabled={cannotStep('from', -1)} onClick={() => step('from', -1)} />
                 <SmallStep label="From: more" glyph="+" disabled={cannotStep('from', 1)} onClick={() => step('from', 1)} />
@@ -280,12 +379,7 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
             </div>
             <div style={RANGE_COLUMN_STYLE}>
               <span style={CAPTION_STYLE}>{chrome.to}</span>
-              <output
-                aria-label="To"
-                style={{ ...BIG_NUMBER_STYLE, width: '100%', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--border-strong)' }}
-              >
-                {draft.to}
-              </output>
+              <NumberBox label="To" value={shown('to')} width="100%" marked={false} onType={(raw) => type('to', raw)} onLeave={() => leave('to')} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <SmallStep label="To: fewer" glyph="−" disabled={cannotStep('to', -1)} onClick={() => step('to', -1)} />
                 <SmallStep label="To: more" glyph="+" disabled={cannotStep('to', 1)} onClick={() => step('to', 1)} />
@@ -323,7 +417,7 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
                 borderStyle: 'solid',
                 borderColor: useForAll ? 'var(--accent)' : 'var(--border-strong)',
                 background: useForAll ? 'var(--accent)' : 'var(--surface)',
-                color: 'var(--base)',
+                color: 'var(--on-accent)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -331,7 +425,7 @@ export default function TargetPickerSheet({ kind, eyebrow, initial, exerciseName
             >
               {useForAll ? <Check size={12} strokeWidth={3.5} aria-hidden="true" /> : null}
             </span>
-            <span style={{ minWidth: 0, fontSize: 14, color: 'var(--text-primary)', overflowWrap: 'break-word' }}>{useForAllLabel(reachable, exerciseName)}</span>
+            <span style={{ minWidth: 0, fontSize: 14, color: 'var(--text-primary)', overflowWrap: 'anywhere' }}>{useForAllLabel(reachable, exerciseName)}</span>
           </button>
         ) : null}
       </div>

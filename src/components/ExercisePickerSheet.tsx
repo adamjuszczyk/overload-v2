@@ -100,7 +100,9 @@ export type ExercisePickerSheetProps = ExercisePickerCommonProps &
 
 const NOTE_STYLE: CSSProperties = { margin: 0, fontSize: 13, lineHeight: 1.45, color: 'var(--text-secondary)' }
 
-const HINT_STYLE: CSSProperties = { margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)' }
+// The line over a swap's button names the exercise picked (W11), and W14's names the one being added: a
+// name with no break opportunity wraps inside the line (DECISIONS 130 (m), Adam 2026-10-15).
+const HINT_STYLE: CSSProperties = { margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)', overflowWrap: 'anywhere' }
 
 // A row of chips that scrolls sideways by itself (its scrollbar is hidden by the app's own class).
 const CHIP_ROW_STYLE: CSSProperties = { position: 'relative', display: 'flex', gap: 6, overflowX: 'auto' }
@@ -158,7 +160,7 @@ const NAME_STYLE: CSSProperties = {
   fontSize: 15,
   lineHeight: 1.3,
   color: 'var(--text-primary)',
-  overflowWrap: 'break-word',
+  overflowWrap: 'anywhere',
 }
 
 const GROUP_STYLE: CSSProperties = {
@@ -249,7 +251,7 @@ const CANCEL_DISABLED_STYLE: CSSProperties = {
   cursor: 'default',
 }
 
-// Text on the accent is `--base`, as on every accent button (DECISIONS 128 (g)).
+// Text on the accent is `--on-accent`, the boards' near-black (DECISIONS 130 (j), Adam 2026-10-15).
 const CREATE_STYLE: CSSProperties = {
   height: 44,
   borderRadius: 10,
@@ -259,7 +261,7 @@ const CREATE_STYLE: CSSProperties = {
   fontWeight: 700,
   fontSize: 11,
   letterSpacing: '0.15em',
-  color: 'var(--base)',
+  color: 'var(--on-accent)',
   cursor: 'pointer',
 }
 
@@ -267,7 +269,7 @@ const ERROR_STYLE: CSSProperties = { display: 'flex', flexDirection: 'column', g
 
 const ERROR_HEADLINE_STYLE: CSSProperties = { margin: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.4, color: 'var(--error)' }
 
-const ERROR_REASON_STYLE: CSSProperties = { margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)', overflowWrap: 'break-word' }
+const ERROR_REASON_STYLE: CSSProperties = { margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)', overflowWrap: 'anywhere' }
 
 // The footer's and the confirm's primary button: the pickers' 52 px accent button.
 const SUBMIT_STYLE: CSSProperties = {
@@ -275,7 +277,7 @@ const SUBMIT_STYLE: CSSProperties = {
   borderRadius: 10,
   borderWidth: 0,
   background: 'var(--accent)',
-  color: 'var(--base)',
+  color: 'var(--on-accent)',
   fontFamily: 'var(--font-display)',
   fontWeight: 800,
   fontSize: 15,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import RepTargetPicker from './RepTargetPicker'
 import type { RepTargetPickerProps } from './RepTargetPicker'
 import RirTargetPicker from './RirTargetPicker'
@@ -8,6 +8,7 @@ import type { RirTargetPickerProps } from './RirTargetPicker'
 import { RIR_BOUNDS, rirRange, type TargetableSet } from './pickerLogic'
 import type { RepTarget } from '../../lib/plannerVocabulary'
 import { captureRender } from '../../testing/captureRender'
+import { textOnAccent } from '../../testing/textOnAccent'
 
 // TASKS-1.2 chunk 39: the rep target picker (boards 6, PP3d) and the RIR target picker (board 7). They
 // write nothing: the footer button returns a target and whether "Use for all" was ticked. The renders
@@ -68,7 +69,8 @@ const pressedSegments = () =>
   screen
     .getByRole('group', { name: 'Kind of target' })
     .querySelectorAll<HTMLButtonElement>('button[aria-pressed="true"]')
-const box = (name: string) => screen.getByRole('status', { name }).textContent
+const boxEl = (name: string) => screen.getByRole('textbox', { name }) as HTMLInputElement
+const box = (name: string) => boxEl(name).value
 const useForAll = () => screen.queryByRole('checkbox', { name: /^Use for all/ })
 const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
@@ -96,10 +98,10 @@ describe('RepTargetPicker: the frame', () => {
       within(dialog).getByRole('heading', { level: 2, name: 'Rep target' }),
       segment('NONE'),
       within(dialog).getByText('FROM'),
-      screen.getByRole('status', { name: 'From' }),
+      screen.getByRole('textbox', { name: 'From' }),
       button('From: fewer'),
       within(dialog).getByText('TO'),
-      screen.getByRole('status', { name: 'To' }),
+      screen.getByRole('textbox', { name: 'To' }),
       screen.getByRole('checkbox', { name: 'Use for all 3 sets of Lat Pulldown' }),
       button('SET 8–10 REPS'),
     ]
@@ -172,18 +174,18 @@ describe('RepTargetPicker: the segments', () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     expect(screen.getByText('REPS')).toBeTruthy()
     expect(box('REPS')).toBe('12')
-    expect(screen.queryByRole('status', { name: 'From' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'From' })).toBeNull()
     fireEvent.click(segment('RANGE'))
     expect(screen.queryByText('REPS')).toBeNull()
     expect(box('From')).toBe('12')
     expect(box('To')).toBe('14')
     fireEvent.click(segment('NONE'))
     expect(screen.getByText('No rep target')).toBeTruthy()
-    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
     fireEvent.click(segment('AMRAP'))
     expect(screen.getByText('As many reps as possible. An empty RIR becomes 0.')).toBeTruthy()
     expect(screen.queryByText('No rep target')).toBeNull()
-    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
   })
 
   it('RANGE grows from the number as it was stepped to, not as the set opened', () => {
@@ -336,9 +338,9 @@ describe('RirTargetPicker: the frame', () => {
       within(dialog).getByRole('heading', { level: 2, name: 'RIR target' }),
       segment('NONE'),
       within(dialog).getByText('FROM'),
-      screen.getByRole('status', { name: 'From' }),
+      screen.getByRole('textbox', { name: 'From' }),
       within(dialog).getByText('TO'),
-      screen.getByRole('status', { name: 'To' }),
+      screen.getByRole('textbox', { name: 'To' }),
       within(dialog).getByText('Either number is on plan. Pick on the day.'),
       screen.getByRole('checkbox', { name: 'Use for all 3 sets of Seated Cable Row' }),
       button('SET RIR 1–2'),
@@ -510,5 +512,366 @@ describe('RirTargetPicker: Use for all N sets (G49: a warmup has no RIR target)'
     expect(useForAll()).toBeNull()
     fireEvent.click(button('SET RIR 1–2'))
     expect(onSubmit).toHaveBeenCalledWith({ target: { kind: 'range', min: 1, max: 2 }, applyToAll: false })
+  })
+})
+
+// ─── The number boxes are inputs (DECISIONS 128, Adam 2026-10-15) ──────────────────────────────────────────────
+
+/** A whole new value typed into a box, as the browser reports it (the keystroke replaced the selected text). */
+function typeInto(name: string, value: string) {
+  fireEvent.change(boxEl(name), { target: { value } })
+}
+
+/** The box takes focus, then loses it: what tapping into it and then tapping elsewhere does. */
+function enterAndLeave(name: string) {
+  const el = boxEl(name)
+  act(() => el.focus())
+  fireEvent.blur(el)
+}
+
+describe('RepTargetPicker: the number boxes are inputs you can type into (choose a segment, then type)', () => {
+  it('NUMBER, FROM and TO are text boxes with the number in them, and a phone shows its number pad', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    const reps = boxEl('REPS')
+    expect(reps.tagName).toBe('INPUT')
+    expect(reps.value).toBe('12')
+    expect(reps.getAttribute('inputmode')).toBe('numeric')
+    // 16 px is the size below which iOS zooms the page when a field takes focus
+    expect(Number.parseInt(reps.style.fontSize, 10)).toBeGreaterThanOrEqual(16)
+    fireEvent.click(segment('RANGE'))
+    expect(boxEl('From').value).toBe('12')
+    expect(boxEl('To').value).toBe('14')
+    expect(boxEl('From').getAttribute('inputmode')).toBe('numeric')
+    expect(boxEl('To').getAttribute('inputmode')).toBe('numeric')
+  })
+
+  it('a typed number is what the footer button says and returns', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 }, onSubmit })} />)
+    typeInto('REPS', '14')
+    expect(box('REPS')).toBe('14')
+    expect(button('SET 14 REPS')).toBeTruthy()
+    fireEvent.click(button('SET 14 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 14 }, applyToAll: true })
+  })
+
+  it('typing two digits one after the other works: 1, then 12 (the first is not held up to a higher floor)', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 8 }, onSubmit })} />)
+    typeInto('REPS', '1')
+    expect(button('SET 1 REP')).toBeTruthy()
+    typeInto('REPS', '12')
+    fireEvent.click(button('SET 12 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 12 }, applyToAll: true })
+  })
+
+  it('typed text is held to the bounds: 150 is 100 and 0 is 1, in the box once it is left and in the button at once', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 }, onSubmit })} />)
+    typeInto('REPS', '150')
+    expect(box('REPS')).toBe('150') // still being typed
+    expect(button('SET 100 REPS')).toBeTruthy() // what tapping the button would set
+    enterAndLeave('REPS')
+    expect(box('REPS')).toBe('100')
+    typeInto('REPS', '0')
+    expect(button('SET 1 REP')).toBeTruthy()
+    enterAndLeave('REPS')
+    expect(box('REPS')).toBe('1')
+    fireEvent.click(button('SET 1 REP'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 1 }, applyToAll: true })
+  })
+
+  it('the footer button sets what the box will hold even when it is tapped before the box was left', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 }, onSubmit })} />)
+    typeInto('REPS', '150')
+    fireEvent.click(button('SET 100 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 100 }, applyToAll: true })
+  })
+
+  it('a box emptied and left goes back to the number it had; the button never says anything else', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 }, onSubmit })} />)
+    typeInto('REPS', '')
+    expect(box('REPS')).toBe('')
+    expect(button('SET 12 REPS')).toBeTruthy()
+    enterAndLeave('REPS')
+    expect(box('REPS')).toBe('12')
+    typeInto('REPS', '')
+    fireEvent.click(button('SET 12 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 12 }, applyToAll: true })
+  })
+
+  it('only digits go in: letters change nothing, and a paste keeps its digits', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', 'abc')
+    expect(box('REPS')).toBe('12')
+    typeInto('REPS', '1a5')
+    expect(box('REPS')).toBe('15')
+    typeInto('REPS', '0012')
+    expect(box('REPS')).toBe('12')
+    typeInto('REPS', '9999')
+    expect(box('REPS')).toBe('999') // three digits; settled to 100 when the box is left
+    expect(button('SET 100 REPS')).toBeTruthy()
+  })
+
+  it('Enter leaves the box, and leaving it settles what was typed', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    const reps = boxEl('REPS')
+    act(() => reps.focus())
+    typeInto('REPS', '150')
+    fireEvent.keyDown(reps, { key: 'Enter' })
+    expect(document.activeElement).not.toBe(reps)
+    expect(box('REPS')).toBe('100')
+  })
+
+  it('a box takes focus with its number selected, so typing replaces it', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    const reps = boxEl('REPS')
+    act(() => reps.focus())
+    expect(reps.selectionStart).toBe(0)
+    expect(reps.selectionEnd).toBe(2)
+  })
+
+  it('the box with focus has the accent outline, and TO has it only then', () => {
+    render(<RepTargetPicker {...repProps()} />)
+    const to = boxEl('To')
+    expect(to.style.borderColor).toBe('var(--border-strong)')
+    expect(boxEl('From').style.borderColor).toBe('var(--accent)')
+    act(() => to.focus())
+    expect(to.style.borderColor).toBe('var(--accent)')
+    fireEvent.blur(to)
+    expect(to.style.borderColor).toBe('var(--border-strong)')
+  })
+
+  it('a stepper goes on from the typed number, and typing goes on from a stepped one', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', '20')
+    fireEvent.click(button('More reps'))
+    expect(box('REPS')).toBe('21')
+    fireEvent.click(button('Fewer reps'))
+    expect(box('REPS')).toBe('20')
+    typeInto('REPS', '35')
+    enterAndLeave('REPS')
+    fireEvent.click(button('Fewer reps'))
+    expect(box('REPS')).toBe('34')
+  })
+
+  it('a stepper past what was typed stops at the bound, and says so', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', '150')
+    expect(button('More reps').disabled).toBe(true) // the text will be held to 100, where + stops
+    typeInto('REPS', '0')
+    expect(button('Fewer reps').disabled).toBe(true) // held to 1, where - stops
+  })
+
+  it('a segment tapped after typing starts from the typed number: RANGE grows from it', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', '20')
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('20')
+    expect(box('To')).toBe('22')
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('20')
+  })
+
+  it('RANGE: typing TO and FROM sets the two ends', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ onSubmit })} />)
+    typeInto('To', '15')
+    typeInto('From', '6')
+    expect(button('SET 6–15 REPS')).toBeTruthy()
+    fireEvent.click(button('SET 6–15 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'range', min: 6, max: 15 }, applyToAll: true })
+  })
+
+  it('RANGE: FROM typed past TO is held at TO, and ends that meet are a number', () => {
+    const onSubmit = vi.fn()
+    render(<RepTargetPicker {...repProps({ onSubmit })} />)
+    typeInto('From', '12')
+    expect(button('SET 10 REPS')).toBeTruthy()
+    enterAndLeave('From')
+    expect(box('From')).toBe('10')
+    expect(box('To')).toBe('10')
+    fireEvent.click(button('SET 10 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 10 }, applyToAll: true })
+  })
+
+  it('RANGE: TO typed below FROM is held at FROM', () => {
+    render(<RepTargetPicker {...repProps()} />)
+    typeInto('To', '5')
+    enterAndLeave('To')
+    expect(box('To')).toBe('8')
+    expect(box('From')).toBe('8')
+    expect(button('SET 8 REPS')).toBeTruthy()
+  })
+
+  it('RANGE: a number typed in one end moves the other end\'s bound with it', () => {
+    render(<RepTargetPicker {...repProps()} />)
+    typeInto('To', '20')
+    typeInto('From', '15') // inside 1..20 only because TO is 20 now
+    expect(button('SET 15–20 REPS')).toBeTruthy()
+  })
+
+  it('the pick-and-type flow ends in the footer button: AMRAP has no box to type into', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    fireEvent.click(segment('AMRAP'))
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('12')
+  })
+})
+
+describe('RirTargetPicker: the number boxes are inputs you can type into, from 0 to 20', () => {
+  it('0 is a number you can type; 21 is held to 20', () => {
+    const onSubmit = vi.fn()
+    render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 3 }, onSubmit })} />)
+    typeInto('REPS IN RESERVE', '0')
+    expect(box('REPS IN RESERVE')).toBe('0')
+    expect(button('SET RIR 0')).toBeTruthy()
+    typeInto('REPS IN RESERVE', '21')
+    expect(button('SET RIR 20')).toBeTruthy()
+    enterAndLeave('REPS IN RESERVE')
+    expect(box('REPS IN RESERVE')).toBe('20')
+    typeInto('REPS IN RESERVE', '12')
+    fireEvent.click(button('SET RIR 12'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { kind: 'number', value: 12 }, applyToAll: true })
+  })
+
+  it('RANGE: typing both ends returns a range; ends that meet return a number', () => {
+    const onSubmit = vi.fn()
+    render(<RirTargetPicker {...rirProps({ onSubmit })} />)
+    typeInto('To', '12')
+    typeInto('From', '0')
+    expect(button('SET RIR 0–12')).toBeTruthy()
+    fireEvent.click(button('SET RIR 0–12'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { kind: 'range', min: 0, max: 12 }, applyToAll: true })
+    typeInto('From', '15') // past TO (12): held at TO
+    expect(button('SET RIR 12')).toBeTruthy()
+    fireEvent.click(button('SET RIR 12'))
+    expect(onSubmit).toHaveBeenLastCalledWith({ target: { kind: 'number', value: 12 }, applyToAll: true })
+  })
+})
+
+// ─── A picker opens on the set's current target (DECISIONS 128, Adam 2026-10-15) ────────────────────────────────
+
+describe("a picker opens on the set's current target; the boards' examples start only a segment the set doesn't have", () => {
+  // Each target differs from the example it could be mistaken for (reps 8 / 8-10, RIR 2 / 1-2).
+  it('reps: a number, a range and AMRAP open as the set has them', () => {
+    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NUMBER'])
+    expect(box('REPS')).toBe('12')
+    expect(button('SET 12 REPS')).toBeTruthy()
+    unmount()
+
+    const second = render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 6, max: 9 } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['RANGE'])
+    expect(box('From')).toBe('6')
+    expect(box('To')).toBe('9')
+    expect(button('SET 6–9 REPS')).toBeTruthy()
+    second.unmount()
+
+    render(<RepTargetPicker {...repProps({ value: { type: 'amrap' } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['AMRAP'])
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+  })
+
+  it('RIR: a number and a range open as the set has them', () => {
+    const { unmount } = render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 4 } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NUMBER'])
+    expect(box('REPS IN RESERVE')).toBe('4')
+    expect(button('SET RIR 4')).toBeTruthy()
+    unmount()
+
+    render(<RirTargetPicker {...rirProps({ value: rirRange(0, 1) })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['RANGE'])
+    expect(box('From')).toBe('0')
+    expect(box('To')).toBe('1')
+  })
+
+  it('a set with no target opens on NONE with no number anywhere, and nothing is pre-filled until a segment is picked', () => {
+    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'none' } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NONE'])
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(screen.getByText('No rep target')).toBeTruthy()
+    expect(button('CLEAR TARGET')).toBeTruthy()
+    // the examples are only where a segment the set doesn't have starts
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('8')
+    fireEvent.click(segment('NONE'))
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('8')
+    expect(box('To')).toBe('10')
+    unmount()
+
+    render(<RirTargetPicker {...rirProps({ value: { kind: 'none' } })} />)
+    expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NONE'])
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
+    expect(screen.getByText('No RIR target')).toBeTruthy()
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS IN RESERVE')).toBe('2')
+    fireEvent.click(segment('NONE'))
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('1')
+    expect(box('To')).toBe('2')
+  })
+
+  it("a segment the set doesn't have starts from the example, not from a number the set never had: AMRAP then NUMBER or RANGE", () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'amrap' } })} />)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('8')
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('8')
+    expect(box('To')).toBe('10')
+  })
+
+  it("a set's own number or range is what its other segment starts from: 12 grows into 12–14, 6–9 gives 6", () => {
+    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
+    unmount()
+
+    render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 6, max: 9 } })} />)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('6')
+  })
+})
+
+// ─── Text on the accent is --on-accent (DECISIONS 128 (g), Adam 2026-10-15) ─────────────────────────────────────
+
+describe('the target pickers draw their text on the accent in --on-accent, never --base', () => {
+  it('the picked segment, the ticked "Use for all" box and the footer button', () => {
+    render(<RepTargetPicker {...repProps()} />)
+    const onAccent = textOnAccent(document.body)
+    // exactly these three: the picked RANGE segment, the tick box (checked: a check mark on the accent), the footer button
+    expect(onAccent.map((el) => el.textContent)).toEqual(['RANGE', '', 'SET 8–10 REPS'])
+    for (const el of onAccent) expect(el.style.color, el.textContent || 'the tick').toBe('var(--on-accent)')
+  })
+
+  it('moves with the choice: the segment tapped is the one drawn on the accent, the one left is not', () => {
+    render(<RepTargetPicker {...repProps()} />)
+    fireEvent.click(segment('AMRAP'))
+    const texts = textOnAccent(document.body).map((el) => el.textContent)
+    expect(texts).toEqual(['AMRAP', '', 'SET AMRAP'])
+    expect(segment('RANGE').style.color).toBe('var(--text-secondary)')
+    expect(segment('AMRAP').style.color).toBe('var(--on-accent)')
+  })
+
+  it('an unticked "Use for all" box has no accent behind it, so nothing sits on it', () => {
+    render(<RirTargetPicker {...rirProps()} />)
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Use for all/ }))
+    expect(textOnAccent(document.body).map((el) => el.textContent)).toEqual(['RANGE', 'SET RIR 1–2'])
+    for (const el of textOnAccent(document.body)) expect(el.style.color).toBe('var(--on-accent)')
+  })
+})
+
+describe('a name with no break opportunity wraps inside the target pickers', () => {
+  it('"Use for all N sets of [exercise]" wraps a long exercise name inside its row', () => {
+    render(<RepTargetPicker {...repProps({ exerciseName: 'X'.repeat(80) })} />)
+    const label = screen.getByRole('checkbox', { name: /^Use for all/ }).lastElementChild as HTMLElement
+    expect(label.style.overflowWrap).toBe('anywhere')
+    expect(label.style.minWidth).toBe('0px')
   })
 })
