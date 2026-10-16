@@ -4,18 +4,17 @@
 *Rewritten at every boundary. Last: 2026-10-16, your answers of 2026-10-16 to 151, 149, 152, 157, 154, 128 (g), 155, 153 and 158: all written in.*
 - *Each answer is in its entry's Answer field, word for word, and those entries are now three lines (full text in HISTORY.md). SPEC.md has a line for 151, 152, 154 and 149; 155 (a) has no SPEC rule to change. TASKS-1.2.md has them in chunks 46, 53, 62 and 63 and the Release section, and RULES.md has your 1.2 usage rules.*
 - *What follows: chunk 46 goes to its third attempt with 151. Chunk 53 is unblocked and carries 149's data migration, which runs only at the release, as a blocking decision with the manual backup before it ("For the release"). 152 is chunk 62's. A second display follow-up, d31b, is queued for 154 (Coach stays as it is; the screens 1.2 doesn't rebuild go back to their own code), 155 (a) (a segment switch carries the set's own value over) and 157 (c) (the app's op type narrowed; no migration).*
-- *Still waiting on you: 156, which holds 51a; and the to-dos. Each list is ordered by what it blocks.*
+- *Still waiting on you: 159 and 160, from chunk 50's review, which block nothing in the build (159 needs your answer before the release); and the to-dos (138, 121, 113, 79). Each list is ordered by what it blocks.*
 
 Decisions:
-- Nothing open.
+- **159** — Coach's weekly analysis after a weekday change (chunk 50, for 51b; Coach is frozen). Since chunk 50, Today and Plan read each week's own weekdays. From 51b, a weekday change starts next week, and the run copy then holds the new days. Coach's week resolution still reads the run copy for every week (your D15: "derived from `program.schedule`"). Executed: after a week-2 save that also puts Arms on Friday from week 3, Today offers week 2 Tue, Thu and Sat, while Coach expects Friday too. So with every session done, that week is never complete and never analysed. Recommended: (a), Coach resolves each week through the same schedule rows (a Coach change, with the freeze's base moved). Blocks: nothing in the build (Coach runs for your account only, which isn't on staging); answer before the release.
+- **160** — chunk 50's display choices (D31), each as built (#142) unless you change it:
+  - (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner, and a failed read keeps it there, as Today already does when its other reads fail (a workout in progress included). Falling back to the run copy's days could show next week's days in this week.
+  - (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day (the existing rule, now reachable).
+  - Blocks: nothing.
 
 To-dos:
-- **156** — read the log of 043's failed staging deploy (chunk 47).
-  - The `Supabase Preview` run on the merge (#137, `5762d4a`, 2026-10-16 07:10 UTC) failed in four seconds at the config step: "Failed to update config for branch: staging". 043 didn't apply.
-  - The next push's run (#138, `43f1fc8`, 07:26 UTC) succeeded and applied it: the column probe is green, and R2 passed as the test account.
-  - When: now. Please read the Branches log for the failed run, and say "go on" (or what to fix).
-  - Blocks: until you have read it, the chunks that need 043 (51a first; then 52's COPY, 56, 61 and 53). Not 49 or 50.
-- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's and chunk 49's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
+- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's, 49's and 50's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -28,7 +27,7 @@ To-dos:
   - `alter table v2_program_exercises add column if not exists replaces_program_exercise_id uuid references v2_program_exercises(id) on delete set null` ("foreign key action can change existing rows later");
   - `create or replace function v2_apply_ops`, `revoke execute`, `grant execute`, `notify pgrst` (each "not on the safe list").
 
-  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, and the next push's deploy applied it (156).
+  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, a config-sync failure only, and the next push's deploy applied it (156, answered; verified live 2026-10-16).
 - **149's data migration** — chunk 53, its number assigned there (DECISIONS 149 (c), Adam 2026-10-16): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build.
 
 ## Format for all new entries
@@ -51,27 +50,10 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 156 Migration 043's staging deploy failed at the config step; the next push's deploy applied it (chunk 47; to-do, blocking)
-**Ask:** Chunk 47 merged into `staging` as #137 (`5762d4a`) at 07:10 UTC on 2026-10-16. The `Supabase Preview` run on that commit failed in four seconds with "Failed to update config for branch: staging", and migration 043 did not apply. The next push to `staging` was this review's docs merge (#138, `43f1fc8`, 07:25 UTC). Its run succeeded and applied 043, and chunk 47's staging steps then passed. A failed staging deploy is blocking until you have read the Branches log (CONTEXT.md, Repo facts). Please read the log for the failed run (Dashboard → Branches → staging, 07:10 UTC) and say "go on", or what to fix.
-**Recommendation:** "go on", unless the log names something in the repo. The failed step applies `supabase/config.toml` to the branch, before any migration runs. That file hasn't changed since #91 (2026-10-14), and the same file deployed 16 minutes later. So it looks like a passing fault on Supabase's side; only the log can say. — **When:** now.
-**Blocks:**
-- Until you have read it, the chunks that need 043 live: 51a first (its SAVE is the first caller), then 52's COPY, 56, 61, and 53 (044 reads the link column).
-- Not 49 or 50, which don't touch 043.
-- Nothing is left to run for chunk 47: its staging steps passed after the second deploy.
-
-**Evidence:**
-- **The failed run.** `gh api …/check-runs/116857241099`: app `supabase`, 07:10:05 → 07:10:09, `failure`, summary "Failed to update config for branch: staging". Read with `?filter=all`, it is the only run on `5762d4a`. A deploy that works shows three runs (two left `in_progress`, one `success`), as on `43f1fc8`, `e5b90ce` and 042's `8aeff32`.
-- **The earlier runs.** The 13 staging pushes before it (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
-- **043 didn't apply on the failed run.** Before and after it, `probe-live-columns 043` answered the column with `400 42703`, and `rpc/v2_apply_ops` answered `404 PGRST202`, signed out and signed in.
-- **The next run applied it.** `43f1fc8`'s run 116862656011 succeeded (07:26:07 → 07:26:14). At 07:26:36 the probe was green (the column `200 []`, the control `400 42703`), and the live embed check resolved 30 of 30.
-- **R2 on staging**, signed in as `staging-test`, under staging's pg-safeupdate:
-  - `[]` → `0`.
-  - An update of a week 3 Upper A set's `target_weight` (11.5 → 14), then a second update back → `2`; the set reads 11.5 before and after.
-  - A list whose op 2 names a `v2_set_logs` row → `P0001 "table not allowed"`, details "op 2 names v2_set_logs"; op 1's 14 is absent.
-  - Signed out → HTTP 401 `42501`, "permission denied for function v2_apply_ops".
-  - `select=*` on `v2_program_exercises` carries the column on all 49 rows.
-- **The app.** The Vercel staging deploy is BUILD `5762d4a`, stylesheet unchanged. `staging-smoke.mjs` passed 51/51 and the browser smoke opened every tab with no error text, both before and after 043 applied.
-- **The chunk itself passed review on the real image before the merge.** That covered the replay, the embeds, the reviewer's own 29-case SQL proof and its 11 breaks, and every script. Long form: HISTORY.md, "2026-10-16 chunk 47 review" and its follow-up.
+### 156 Migration 043's staging deploy failed at the config step; the next push's deploy applied it (chunk 47)
+- What: chunk 47's merge (#137, `5762d4a`, 2026-10-16) had one `Supabase Preview` run, which failed in four seconds at the config step ("Failed to update config for branch: staging"), so 043 didn't apply; the next push's deploy (#138, `43f1fc8`) succeeded and applied it, and R2 passed. A failed staging deploy is blocking until Adam has read it, so it held the chunks that need 043, 51a first.
+- Answer: (Adam, 2026-10-16: config-sync failure only, 043 verified live) "the failed run on 5762d4a says "Failed to update config for branch: staging" — the config sync step, not the migration step. Later deploys succeeded (chunk 49's), and a successful deploy applies pending migrations." Verified on staging as he asked, signed in as the test account (chunk 50's review, finished after a restart): `v2_apply_ops([])` → 0; one update-and-revert list on week 3 Upper A set 1 (`target_weight` 11.5 → 14 → 11.5) → 2, its `select=*` row (18 columns) the same before and after; `probe-live-columns.mjs` 043 green (the column `200`, the control `400 42703`); sign-ups off (`signup_disabled`), and `staging-smoke.mjs` 51/51. The migration history (`supabase_migrations.schema_migrations`) isn't readable from here: PostgREST answers `406 PGRST106`. Every push since the failed run deployed (three runs, one success), chunk 49's included. Nothing waits on it now. Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 157 043 accepts a delete of a run's workout or program; TASKS says "only an update is allowed" (chunk 47)
 - What: whether `v2_apply_ops` (043) may delete a run's `v2_programs` or `v2_workout_days` row, where TASKS 47 says "only an update is allowed"; as built (#137) it refuses an insert into either and accepts a delete.
@@ -82,6 +64,31 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - What: chunk 49's display choices for Settings' two [1.2] rows (no board): (a) "Log sets in order" in a WORKOUT section after REST TIMER; (b) its label in sentence case; (c) TASKS' explanation lines under the rows; (d) each chip on two lines at phone widths; (e) chunk 60's lock line names the setting as SPEC does, "LOG SETS IN ORDER".
 - Answer: (Adam, 2026-10-16) "all accepted, including (e)." All five stay as built; (e) is chunk 60's to build. Full text in HISTORY.md.
 - Date: 2026-10-16
+
+### 159 Coach's weekly analysis reads the run's newest weekdays for every week (chunk 50, for 51b; Coach is frozen)
+**Ask:** From chunk 51b, CHANGE THE PROGRAM can change a run's weekdays. The new days start next week, stored as `v2_run_schedules` rows, and the run copy's `schedule` holds the new days (chunk 45's writer). Since chunk 50, Today, Plan and the missed-session prompt read each week's own days. Coach doesn't: `weekResolution.ts` takes a week's expected sessions from the run copy's `program.schedule`, for every week (your D15: "By plan resolution derived from `program.schedule`"). Should Coach read the days in force for the week, as Today does? Coach is frozen (Escalation 16), so either way it is your call.
+**Recommendation:** (a). D15 chose `program.schedule` because it is what Today prompts about. The file's own header: "a date the scheduler never prompts about can't be skip-marked through any existing UI, so using the weekly-plan layer instead would risk a permanently unanalyzable week". Since 50, Today prompts by the week's own days, so (a) keeps D15's reason.
+**Blocks:** nothing in the build: Coach runs for your account only, which isn't on staging. Answer before the release, which brings 51b's weekday change to production.
+**Options:**
+- (a) Coach resolves each week through `scheduleForWeek` over the run's rows and the run copy, in its week resolution and in its Q&A context. This is a Coach change: its server-side reads add `v2_run_schedules`, and `check-frozen-code.mjs`'s base moves to it.
+- (b) As built: Coach expects the run's newest days in every week. After a change that adds or moves a day, the week of the change expects a day Today never offered in it. So that week is never complete and never analysed, and the same goes for an earlier week not yet analysed. Q&A's "this week" lists the new days. A day taken off is simply not expected.
+
+**Answer:**
+**Evidence:**
+- Read in the frozen code: `resolveWeek` reads `program.schedule[dow]` for each date of the week, and `isComplete` needs every expected date completed or skipped. `coachWeekService.ts` lists only complete weeks, `api/coach/analyze-week.ts` refuses an incomplete one, and `qaContext.ts` hands Q&A this week's and next week's expected sessions.
+- Executed in chunk 50's review: chunk 45's `planProgramChange` (what 51b's SAVE calls) was applied to the G14 world in week 2, with Arms also on Friday from week 3. It writes rows `from_week` 1 (Tue, Thu, Sat) and `from_week` 3 (Friday added), and puts all four days in the run copy. Today's scheduler then offers week 2 Tue, Thu and Sat, with no Friday. With those three sessions done, `resolveWeek` for week 2 expects Tue, Thu, Fri and Sat, so `isComplete` is false. Against the run copy before the save (the control), the same sessions are complete.
+- Nothing differs until a run has a schedule row: none exists on staging, and no screen writes one until 51b. Flagged by chunk 50's builder (its report, section 3, item 5).
+
+### 160 Chunk 50's display choices (provisional, D31)
+**Ask:** Chunk 50 reads each week's weekdays from the run's schedule rows. Two things it shows have no word in SPEC or TASKS. The builder chose them under D31, and each stays as built (#142) unless you change it:
+- (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner (a sequence run waits for nothing). If the read fails, they stay on it, as Today already does when its other reads fail (programs, sessions, week plans), a workout in progress included. Plan has no load error for this read: board 12's "COULDN'T LOAD PLAN" with the real message is chunk 52's. The alternative, falling back to the run copy's days, would show next week's days in a week that had others once 51b writes rows.
+- (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day. That is the page's existing rule, now reachable: Friday selected in week 3, then back to a week 2 without a Friday.
+
+**Recommendation:** keep both. (a) never shows a wrong day, and (b) is the page's existing rule.
+**Blocks:** nothing.
+**Options:** for each, as built or the alternative named.
+**Answer:**
+**Evidence:** nothing is written either way: the scheduler only reads, and Plan's plan-the-week effect doesn't wait for the rows. On staging no run has rows, and every read answered `200` with none. A failed read was not reproduced live; the hooks' tests hold Today and Plan on the spinner while the rows are `undefined`, which is what a failed first read leaves. The builder's report, section 3, item 3; long form: HISTORY.md, "2026-10-16 chunk 50 review".
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
@@ -171,7 +178,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 ### 138 Re-seed staging on Monday 2026-10-19 (to-do)
 **Ask:** paste `supabase/seed.sql` (as on `staging` then) into the staging branch's SQL editor on Monday 2026-10-19, and say "re-seeded".
 **Recommendation:** as you planned (2026-10-15). — **When:** Monday 2026-10-19, not earlier: the seed's dates are relative to the day it runs, so a re-seed in the week of Monday 2026-10-12 would put the test account's week 3 in that week again.
-**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's (2026-10-16; the account's set logs still 214).
+**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's and chunk 50's (2026-10-16; the account's set logs still 214).
 **Answer:**
 **Evidence:** every merge's smoke logs one set in the in-progress session (week 3 Monday Upper A). Chunk 57's review (2026-10-16) logged the first drop of Cable Triceps Pushdown set 2 (typed 22.5 kg × 8 with the browser offline, then synced on reconnect; set logs 212 → 213, read back as the test account), which opened its second drop. Today now shows 1 LOG button, that drop's, with empty boxes: type the plan's 17.5 kg × 6 before LOG (RULES.md: a row with no prefill; its target is 6–8 reps). It is the session's last open set (Today showed one LOG button before that log and one after it), so the smoke after the next one finds none and is "waiting on re-seed". Since your re-seed of 2026-10-14 (124) the test account's week 3 is Monday 2026-10-12 to Sunday 2026-10-18; from Monday 2026-10-19 it is past, and the checks TASKS-1.2 writes for "week 3 current" read a week later until the re-seed (TASKS-1.2, "Seed").
 
