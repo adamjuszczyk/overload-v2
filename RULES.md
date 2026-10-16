@@ -206,3 +206,10 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **A captured render fixture has no parity test, so a rebase can leave it stale without a sound** (chunk 49's review; executed). `settings-page.html` was captured before #135 changed the shared chip helper. On the rebased tree every script passed, yet a re-capture differed in exactly the four selected chips' text colour: `--base` in the committed file, `--on-accent` in the render.
   - After a rebase onto a staging that changed something a chunk's screen draws, re-capture its fixtures (`CAPTURE_RENDER=1`, then restore the committed ones from a `cp` backup) and diff them.
   - A fixture used only for the layout check stays valid when the diff is colour only. Never take a picture from a stale one.
+
+## The 1.2 usage rules (Adam, 2026-10-16) — cut tokens per chunk without changing what is checked
+- Test output: run vitest with a quiet reporter that prints failures only (e.g. `--reporter=dot`), and pipe long script output through a filter that keeps failures and summary lines. Never paste a full passing test log into context.
+- Builders: run the chunk's own tests while working; the full suite and every script once, at the end, before the report. The reviewer runs them all again anyway.
+- Reviewers: read RULES.md in full, but from CONTEXT.md only the sections the chunk touches plus "Where the build is".
+- Screenshots: compare boards from the text dumps first; open a PNG only where the text dump can't settle it.
+- Never resume a long-running agent; start a fresh one with a short summary file instead (a resumed agent carries its whole earlier run).
