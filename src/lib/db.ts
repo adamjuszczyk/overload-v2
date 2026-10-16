@@ -111,6 +111,20 @@ interface SyncQueueItem {
   // is no longer retried on its own but stays queued, holding back later
   // writes to its record, until the user taps retry. Plain field, no bump.
   gaveUp?: boolean
+  // Chunk 57 (G47). Set just before an upsert is first sent, and again when a
+  // retry resets a write that gave up: from then on the server may already
+  // hold the row (a reply lost on a locked phone), so a later delete of that
+  // row is sent after it instead of cancelling against it. An item without it
+  // and without `attempts` was never sent. Plain field, no bump.
+  sendStarted?: boolean
+  // Chunk 57. A `delete` item's payload is only `{ id }` (the whole request is
+  // `delete().eq('id', id)`), so what an upsert's payload says about where it
+  // belongs is kept beside it: the session it belongs to (the finish waits for
+  // it, the "couldn't sync" notice is shown on its screen) and, for a stage
+  // log, the head it hangs under (the head's delete waits for it). Plain
+  // fields, no bump; written by `queueSetLogDelete` only.
+  sessionId?: string
+  parentSetId?: string
 }
 
 // ─── Database ─────────────────────────────────────────────────────────────────
