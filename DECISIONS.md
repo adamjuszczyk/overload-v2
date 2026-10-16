@@ -1,12 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, the display follow-up's first review (your changes to 128, 129, 130 and 132): not merged; it goes back to its builder.*
-- *What it built is right. The new `--on-accent` is near-black on the accent in both themes. Long words wrap. The rep and RIR boxes take typing beside their ± steppers. A picker opens on the set's target. An empty box is never marked.*
-- *But the token went only on the new 1.2 sheets, and your words were "wherever text sits on the accent". 64 other places outside Coach still draw near-white text on the accent in the light theme, so the next attempt changes them too.*
-- *Coach (15 places) is frozen, so 154 asks whether it is included.*
-- *A picker switched to a segment the set doesn't have will start from the boards' examples, as your words read (155).*
-- *Neither 154 nor 155 blocks anything; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-16, the display follow-up's second review (your changes to 128, 129, 130 and 132): merged (#135).*
+- *Text and icons on the accent are now the near-black `--on-accent` everywhere outside Coach, in both themes. That covers the new 1.2 sheets and the 64 places on the older screens (Today, the workout, Plan, Programs, the planner, History, Progress, Library, Settings, sign-in). The deployed staging screens were checked.*
+- *Long words wrap. The rep and RIR boxes take typing beside their ± steppers. A picker opens on the set's target, and a segment the set doesn't have starts from the boards' examples (155 (a)). An empty box is never marked.*
+- *Coach (15 places) still waits on 154.*
+- *The smoke logged the in-progress session's last open set. Until your re-seed (138), every smoke's log step reads "waiting on re-seed".*
+- *Nothing new blocks; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
 
 Decisions:
 - **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
@@ -17,17 +17,17 @@ Decisions:
   - Coach is frozen (Escalation 16), so no Coach line changes without you.
   - Recommended: (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same.
   - Also read from your words: "wherever" covers the screens 1.2 doesn't rebuild (Today, History, Progress, Library, Settings, sign-in), though SPEC's "Scope of the look" keeps their code. Say so if you meant the 1.2 screens only.
-  - Blocks: nothing. The follow-up merges without Coach, and (a) is a small change of its own afterwards.
+  - Blocks: nothing. The follow-up merged without Coach (#135). (a) is a small change of its own: the 15 colour values, the freeze's base moved, and the Coach exception in `textOnAccent.static.test.ts` deleted.
 - **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. The display follow-up built it as recommended: the value in tokens.css (both theme blocks) and its Tailwind mapping in global.css, as `--accent` itself is done. Blocks: nothing. It is display only (D31): it stays so unless you move it.
-- **155** — the display follow-up's own display choices (D31), each as described unless you change it:
-  - (a) A picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE gives 8–10), and the set's own segment keeps its numbers. That is your words read literally; the first attempt carried the set's number over instead (12–14), and the next attempt builds it this way.
+- **155** — the display follow-up's own display choices (D31), each as built (#135) unless you change it:
+  - (a) A picker switched to a segment the set doesn't have starts from the boards' examples: 12 → RANGE gives 8–10, and 6–9 → NUMBER gives 8. The set's own segment keeps its numbers, so 6–9 → NUMBER → RANGE is 6–9 again. That is your words read literally; the first attempt carried the set's number over instead (12–14).
   - (b) The typed boxes: a number past the bounds is held to the nearest one when the box is left (150 reps → 100), and an emptied box goes back to its number.
   - (c) The cues sheet's rows keep wrapping a long cue as built.
   - Blocks: nothing.
 - **153** — the order of a set's two REVIEW items (chunk 43, for 56; display only). With your 150 (b), a set whose type you change during a workout and then skip or never log gives two items. As built, "Skipped" / "Not logged" comes first and the type item right after it, the order a done set's number item and type item already have (139, accepted). Blocks: nothing. It is display only (D31): as built unless you change it.
 
 To-dos:
-- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed; the in-progress session has 1 LOG button left, the second drop of Cable Triceps Pushdown set 2 (chunk 57's smoke logged the first), the session's last open set, and the seed's week 3 ends Sunday 2026-10-18.
+- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then; the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -58,14 +58,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 ## Open
 
 ### 155 The display follow-up's own display choices (provisional, D31)
-**Ask:** the display follow-up builds your changes to 128, 129, 130 and 132. Three things it needed have no exact word from you. Each stays as described here unless you change it.
+**Ask:** the display follow-up built your changes to 128, 129, 130 and 132 (#135). Three things it needed have no exact word from you. Each stays as described here unless you change it.
 **Recommendation:** keep them. Each is a few lines in `src/components/pickers/`.
 - (a) **Starting numbers on a segment switch.** Your words: "The boards' example values (8, 8–10, RIR 2, 1–2) are only the starting point when you switch to a segment the set doesn't already have". Read literally:
   - a set at 12 reps switched to RANGE starts at 8–10;
   - a set at 6–9 switched to NUMBER starts at 8;
   - each segment keeps its own numbers while the sheet is open, so 6–9 → NUMBER → RANGE is 6–9 again.
 
-  The first attempt carried the set's number over instead (12 → 12–14, 6–9 → 6), and lost the range on the way back (6–9 → NUMBER → RANGE gave 6–8). The review sent it back; the next attempt builds the literal reading.
+  The first attempt carried the set's number over instead (12 → 12–14, 6–9 → 6), and lost the range on the way back (6–9 → NUMBER → RANGE gave 6–8). The review sent it back, and the second attempt built the literal reading (#135).
 - (b) **The typed boxes.**
   - Digits only, at most three, with the number pad.
   - The number is selected when a box takes focus, and Enter leaves the box.
@@ -86,10 +86,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (b): the builder's 35 real-Chromium checks were re-run and passed 35/35.
 - (c): the 375 px sheet check passes on a cues fixture with an 80-letter cue, and its control (the wrap removed) fails.
 
+Its second review, on `7d1367b` (merged as #135, `a97eb8c`):
+- (a) in real Chromium on the built pickers: 12 → RANGE gives 8–10, and 6–9 → NUMBER gives 8. 6–9 → NUMBER → RANGE gives 6–9 back, and confirming it sets 6–9. Of 19 checks, the first attempt's carry-over fails 3 and "RANGE restarts from the example" fails 7.
+- (b): the builder's 48 real-Chromium checks pass 48/48.
+
 ### 154 Text on the accent in Coach, which is frozen: included or not? (the display follow-up)
 **Ask:** your answer puts the new `--on-accent` "wherever text sits on the accent". Coach draws text on the accent in 15 places in 9 files (its buttons and picked tabs), still in `--base`: near-white on the accent in the light theme, as the rest of the app did. Coach has been frozen since `e747183` (Escalation 16; `check-frozen-code.mjs` fails on any change under `src/features/coach/`), so those 15 can't change without your word. Is Coach included?
 **Recommendation:** (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same. It is display only.
-**Blocks:** nothing. The display follow-up merges without Coach; (a) is a small change of its own afterwards.
+**Blocks:** nothing. The display follow-up merged without Coach (#135). (a) is a small change of its own: the 15 colour values, the freeze's base moved, and the Coach exception in `textOnAccent.static.test.ts` deleted.
 **Options:**
 - (a) include Coach, as above;
 - (b) leave Coach on `--base` until Coach is next opened.
@@ -99,9 +103,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - the 1.2 sheets' 7 already use the token;
 - 6 hold nothing to read (dots, a bar, two toggle tracks);
 - 15 are Coach: `CoachMemory.tsx` ×3, `CoachMesoAnalysisTab.tsx`, `CoachPage.tsx`, `CoachSessionAnalysisTab.tsx`, `CoachWeekAnalysisTab.tsx`, `PhaseLog.tsx` ×3, `PrioritySelector.tsx`, `QaComposer.tsx`, `WeightLog.tsx` ×3;
-- the other 64 (39 files) go to `--on-accent` in the follow-up's next attempt.
+- the other 64 (39 files) went to `--on-accent` in the follow-up's second attempt (#135).
 
-Those 64 include the screens 1.2 doesn't rebuild (Today outside the workout, History, Progress, Library, Settings, sign-in, the update notice). SPEC's "Scope of the look" keeps their code, but 128 (g)'s option, which you took, said the token "would fix every accent button", and your words are "wherever". If you meant the 1.2 screens only, say so and the next attempt leaves them.
+Those 64 include the screens 1.2 doesn't rebuild (Today outside the workout, History, Progress, Library, Settings, sign-in, the update notice). SPEC's "Scope of the look" keeps their code, but 128 (g)'s option, which you took, said the token "would fix every accent button", and your words are "wherever". If you meant the 1.2 screens only, say so, and a small change puts those screens' places back on `--base`.
 
 ### 153 Chunk 43's fourth attempt: which of a set's two REVIEW items comes first (provisional, D31)
 **Ask:** your 150 (b) gives a set two REVIEW items when its type was changed during the workout and it was then skipped or never logged: its "Skipped" / "Not logged" and its type item ("You made set 03 a dropset"). Board 4 draws no such pair, and SPEC doesn't say which comes first. As built, "Skipped" / "Not logged" comes first and the type item right after it. That is the order a done set's two items already have: its number item, then its type item, 13c's items before 13d's. It stays as built unless you change it.

@@ -25894,3 +25894,89 @@ Cost of deferral: the order rule in `weekDiff.ts` and its tests.
 ### From DECISIONS.md: "Waiting on Adam"'s header and 128 (g)'s line, before the display follow-up's first review
 *Rewritten at every boundary. Last: 2026-10-16, chunk 57's second review (the sync queue sends deletes, so delete set and unlog can work offline once chunks 61 and 63 use it): merged (#132). The retry was tests only, as the second-failure rule allows: the behaviour had passed the first review, and the new tests prove what that review found unproven. A set deleted offline waits behind an earlier failed write to it, so it can't come back on the server, and the "already sent" mark is saved before each request goes out. The smoke's one set was logged offline and synced on reconnect. Nothing new for you; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
 - **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. Recommended: as `--accent` itself is done, the value in tokens.css and its Tailwind mapping in global.css. Blocks: nothing. It is display only (D31): without your word, the display follow-up picks one and records it here.
+
+## 2026-10-16 the display follow-up's review 2 — merged (#135); moved out of CONTEXT.md, DECISIONS.md and RULES.md (replaced by newer lines there), word for word
+*The D31 display follow-up's second attempt was reviewed on 2026-10-16 and squash-merged as #135 (`a97eb8c`); staging's tree equals the reviewed commit's. The branch `build/chunk-d31` was at `7d1367b` with staging `f7e8a88` merged in, and it was built alone (night mode). The attempt fixed review 1's three findings:*
+- *F1: `--on-accent` at the 64 places in 39 files outside Coach, as 66 colour values (four places keep their text in child spans, and two of those have two spans). Coach is untouched (154). The 6 empty accent backgrounds and the sheets' 2 radio dots are unchanged. The proof is `textOnAccent.static.test.ts` (7 tests), which runs `src/testing/accentSites.ts` (12 tests of its own).*
+- *F2: a segment the set doesn't have starts from the boards' examples, and each segment keeps its own numbers (`draftFromRepTarget`, `draftFromRirTarget`, `pickTargetMode`; `rangeAround` is gone). This is 155 (a).*
+- *F3: two tests of a segment tap's clearing of typed text, and a RIR twin. Review 1's R4 fails 4 of them.*
+
+*Checks on `7d1367b`:*
+- *Every script green: typecheck; 3835 tests in 219 files; script tests 229/229; the five checks.*
+  - *The build's stylesheet `index-ra14cXRp.css` is staging's `index-rvbY4UeW.css` plus the two `--on-accent` declarations, compared character by character.*
+  - *`check-sheet-overflow.mjs`: 25/25 ok, `--long` 25/25 ok, and the `--wide` control fails 25/25.*
+- *F1, the reviewer's own census (`<scratchpad>/build/rd31c/tools/census.mjs`): 94 accent backgrounds. 72 draw text or an icon, all in `--on-accent` in the accent's branch; 7 are empty; 15 are Coach, on `--base`. The 66 changed lines are pure swaps, except ConfirmDialog's ternary.*
+- *F1 on the real screens (`accent-screens.mjs`): a staging-config build of the branch, signed in to staging's data as the test account. 11 screens in both themes gave 60 elements with text or an icon on the accent, none in another colour. The control, the deployed app before the merge, gave 68 runs in other colours.*
+- *F2 in real Chromium (`probe-f2f3.mjs`, 19 checks): 12 → RANGE gives 8–10; 6–9 → NUMBER → RANGE gives 6–9, and confirming it sets 6–9. Breaks CF2 (3 checks fail) and CF2b (7 fail) were caught, and the control passed.*
+- *F3: R4 fails 4 jsdom tests, and 4 Chromium checks when the taps are the element's own `click()` (no focus moved).*
+- *Breaks:*
+  - *Review 1's 13: 12 caught, and the control passed.*
+  - *The builder's kits: F1 had 21 fired and 19 caught, F2/F3 19 fired and 17 caught, as its report says.*
+  - *The reviewer's own 13: 8 caught and 2 controls passed. V4–V6 measure shapes the static test doesn't see: a ternary with swapped branches, a child left on a non-base colour, and the accent through a named constant.*
+  - *The builder's 48 Chromium checks: 48/48.*
+
+*Staging:*
+- *The deploy: BUILD `a97eb8c`, entry `index-DUFCsr4w.js`, stylesheet `index-ra14cXRp.css`.*
+  - *The stylesheet is byte-identical to the branch build's and holds the two `--on-accent` declarations.*
+  - *The entry holds 66 `var(--on-accent)` values and none of the unused sheets' strings.*
+- *`staging-smoke.mjs` passed 51/51, and the browser smoke passed.*
+- *The smoke logged the in-progress session's last open set: the second drop of Cable Triceps Pushdown set 2, 17.5 × 6. Set logs went 213 → 214, read back as the test account. Today shows no LOG button, also in a fresh context.*
+- *The same screen scan on the deployed app: 60 elements in both themes, none in another colour.*
+- *The sheets, which no screen uses on staging, were re-shot from the merged tree in both themes. They are byte-identical to the committed `design/1.2/built` pictures, laid beside boards 6, 7, PP3d, 8, W11, W14 and W15.*
+- *The deployed Plan, workout and Programs screens were laid beside boards 1, W1 and PR1. The text on the accent is the boards' `#0d0d0c` (pixels read).*
+
+*The review's tools and pictures: `<scratchpad>/build/rd31c/`.*
+
+### From CONTEXT.md, before the display follow-up's review 2
+- **1.2 (TASKS-1.2.md, chunks 36–69 with 51a/b, 54a/b, 58a/b; migrations 042–044): being built on `staging` since 2026-10-14, in per-chunk mode; two builders at once allowed since 2026-10-15, one at a time in night mode (staging section, "Where chunks go"). Chunk 57 merged (#132) on its tests-only retry: the sync queue executes `delete` items, which nothing queues until 61 and 63. Chunk 43 merged (#130) with Adam's 141 (a), 137 (a) and 150 (b) built: REVIEW lists a type change made during a workout also when the set was then skipped or never logged. Its one new display choice, which of such a set's two items comes first, is 153 (D31, blocking nothing). Chunk 45 merged (#125) with Adam's 142 and 143 built; the swapped case of 143 waits for its link, a column 043 adds (chunk 47). Chunk 46's second attempt was reviewed: its first review's bug is fixed and Adam's 146 (a) and 147 (a, b) are built. It is blocked on a new gap, 151 (what UNLOG does to the set numbers), because every answer but "as built" changes the module. Open: 151, blocking chunk 46's merge, and so 58a–64; 149 (weeks a week-dependent run changed in 1.1's week view, which 143's copy rule meets once 044 runs), blocking chunk 53 and the release (held against SPEC's [P1.1] "Existing data" line at Adam's instruction, it isn't fully answered by it; DECISIONS 149); 152 (a warmup logged with no weight or reps, made a working set, which the table refuses), blocking chunk 62. Adam's third batch (2026-10-15): 150 (b), built in chunk 43's fourth attempt; 128's other choices accepted, except that a picker opens on the set's current target; text on the accent gets a new token, `--on-accent`; the SPEC sentences 137 (a) and 132 narrowed now state the answers. The display follow-up (Adam's D31 changes to 128, 129, 130 and 132, with `--on-accent` and the pickers' starting values) was reviewed and goes back to its builder: it put `--on-accent` only on the 1.2 sheets, and Adam's "wherever" covers 64 more places outside Coach. New, both blocking nothing: 154 (is frozen Coach included?) and 155 (the follow-up's own display choices, D31).** Build order: 36–50, 51a, 51b, 52, 65, 66, 53, 54a, 54b, 55–57, 58a, 58b, 59–64, 67–69. Chunk records, one line each:
+
+  - **D31 display follow-up** (2026-10-16, first review, **not merged; back to its builder**): Adam's changes in DECISIONS 128, 129, 130 and 132. `build/chunk-d31` is at `b32dfbe`, off staging `3a150f8`, which hasn't moved, so no rebase. Built alone (night mode). Every script is green there (3804 tests in 217 files; the stylesheet `index-ra14cXRp.css` is staging's plus the two `--on-accent` declarations). What was built is right:
+    - Text on the 1.2 sheets' accent is in the new token `--on-accent`, the boards' `#0d0d0c` in both themes. Its value is in `tokens.css` and its Tailwind mapping in `global.css`, as 128 (g) recommends.
+    - An unbroken long word wraps (`overflow-wrap: anywhere`) in the 128 pickers and the 130 picker.
+    - The rep and RIR boxes take typing beside their ± steppers, with the same bounds.
+    - A picker opens on the set's current target.
+    - An empty box is never marked (132 (a), `changesSinceSource`).
+
+    Three findings for the next attempt (`<scratchpad>/build/chunk-d31-review-1.md`):
+    - `--on-accent` also at the 64 places in 39 files outside Coach where text or an icon sits on the accent. Adam's words are "wherever", and Coach waits on 154.
+    - A switch to a segment the set doesn't have starts from the boards' examples, and the set's own segment keeps its numbers (155 (a)). As built, 12 → RANGE gave 12–14, and 6–9 → NUMBER → RANGE gave 6–8.
+    - A test that a segment tap clears a box's typed text: without the clearing, all 181 picker tests pass and the footer can return 100 for a typed 8.
+
+    Display choices: 155.
+
+- **Waiting on re-seed (Adam, 2026-10-15):** until Adam's re-seed on Monday 2026-10-19 (he says "re-seeded"; DECISIONS 138), a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded as "waiting on re-seed" in DECISIONS.md; the chunk still merges if everything else passed, and the check runs after the re-seed. Not a stop.
+
+- **The 1.2 sheets and pickers (chunks 38–41; no screen uses them until 51a; long form: HISTORY.md, "2026-10-15 chunk 43 review 2", and the sections it names):** `src/components/BottomSheet.tsx` (a portal: mount it outside clickable parents; 127), `src/components/pickers/` (none writes: the caller does; no `SetType` ↔ storage mapping yet; 128), `CuesSheet` (129), `src/components/ExercisePickerSheet.tsx` (130).
+- **The 1.2 week rules (chunk 42; nothing imports them until 52, 53, 54a, 54b; long form: HISTORY.md, "2026-10-15 chunk 43 review 2"):** `src/features/plan/weekPlanning.ts`, pure: `weekTiles` (131 (b)), `autoCopy` (044's twin; since chunk 45 a week-dependent week copied from a week takes the run copy's exercise list and order, DECISIONS 143), `copyNumbers`, `thisWeekOnly`, `changesSinceSource`, `addSetDefaults`, `weeksOfSlot`; every "last week" is the slot's last planned normal, non-empty week. DECISIONS 132.
+
+- Vitest (node env; component tests opt into jsdom per file); 3725 tests in 215 files pass (2026-10-16, chunk 57). Pure logic lives in testable modules.
+
+### From DECISIONS.md, before the display follow-up's review 2
+*Rewritten at every boundary. Last: 2026-10-16, the display follow-up's first review (your changes to 128, 129, 130 and 132): not merged; it goes back to its builder.*
+- *What it built is right. The new `--on-accent` is near-black on the accent in both themes. Long words wrap. The rep and RIR boxes take typing beside their ± steppers. A picker opens on the set's target. An empty box is never marked.*
+- *But the token went only on the new 1.2 sheets, and your words were "wherever text sits on the accent". 64 other places outside Coach still draw near-white text on the accent in the light theme, so the next attempt changes them too.*
+- *Coach (15 places) is frozen, so 154 asks whether it is included.*
+- *A picker switched to a segment the set doesn't have will start from the boards' examples, as your words read (155).*
+- *Neither 154 nor 155 blocks anything; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+
+  - Blocks: nothing. The follow-up merges without Coach, and (a) is a small change of its own afterwards.
+
+- **155** — the display follow-up's own display choices (D31), each as described unless you change it:
+  - (a) A picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE gives 8–10), and the set's own segment keeps its numbers. That is your words read literally; the first attempt carried the set's number over instead (12–14), and the next attempt builds it this way.
+
+- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed; the in-progress session has 1 LOG button left, the second drop of Cable Triceps Pushdown set 2 (chunk 57's smoke logged the first), the session's last open set, and the seed's week 3 ends Sunday 2026-10-18.
+
+**Ask:** the display follow-up builds your changes to 128, 129, 130 and 132. Three things it needed have no exact word from you. Each stays as described here unless you change it.
+
+  The first attempt carried the set's number over instead (12 → 12–14, 6–9 → 6), and lost the range on the way back (6–9 → NUMBER → RANGE gave 6–8). The review sent it back; the next attempt builds the literal reading.
+
+**Blocks:** nothing. The display follow-up merges without Coach; (a) is a small change of its own afterwards.
+
+- the other 64 (39 files) go to `--on-accent` in the follow-up's next attempt.
+
+Those 64 include the screens 1.2 doesn't rebuild (Today outside the workout, History, Progress, Library, Settings, sign-in, the update notice). SPEC's "Scope of the look" keeps their code, but 128 (g)'s option, which you took, said the token "would fix every accent button", and your words are "wherever". If you meant the 1.2 screens only, say so and the next attempt leaves them.
+
+### From RULES.md, before the display follow-up's review 2 (two lines updated in place; both rules stand)
+- **Tailwind v4 builds the stylesheet from every file git doesn't ignore — tests, scripts and the docs included** (chunk 37; the docs: chunk 38, reproduced): the word `'sepia'` in a script test put `.sepia{filter:…}` in the production stylesheet, and since #98 this rule's own quote of it does the same: every build since is `index-rvbY4UeW.css` (`index-BwLO1svn.css` with the word gone from every tracked file). After a chunk that adds no UI (tests, scripts, an unused component), the build's stylesheet name equals staging's deployed one, `index-rvbY4UeW.css` since chunk 38 (#99). A docs edit that adds or removes a bare utility name changes the next build's stylesheet: build after editing the docs and compare the name. Numbered ids are utilities too (chunk 43; reproduced in its review): two fixture ids made of `ps` or `pe` (padding-inline start / end), a hyphen and a number built `index-B0sNRcsx.css`; give a fixture id a shape no utility has (and never quote such an id in a tracked file, this one included).
+
+- **A tracked file that quotes a theme variable by its full name puts that variable in the built stylesheet** (the display follow-up's builder; reproduced in its review). On that branch `global.css`'s `@theme inline` maps `--on-accent` to a Tailwind name. A scratch file holding a regex for that name, written out whole, built a stylesheet with the mapping added to its theme layer: `index-B0SnMOUK.css`, where the tree alone builds `index-ra14cXRp.css`. A test id shaped like a utility does the same (the Tailwind rule above). A test or a doc that must name such a variable builds the name from parts, and a UI chunk's stylesheet is compared with staging's deployed one character by character, not only by name.
