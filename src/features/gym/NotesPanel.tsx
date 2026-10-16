@@ -85,7 +85,7 @@ export default function NotesPanel({ sessionId }: NotesPanelProps) {
           className="w-full py-3 rounded-xl font-black text-sm tracking-wider"
           style={{
             backgroundColor: 'var(--accent)',
-            color: 'var(--base)',
+            color: 'var(--on-accent)',
             fontFamily: 'var(--font-mono)',
             opacity: createNote.isPending || !body.trim() ? 0.6 : 1,
           }}

@@ -122,7 +122,7 @@ export default function LibraryPage() {
               border: 'none',
               borderRadius: 11,
               cursor: 'pointer',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               flexShrink: 0,
             }}
           >

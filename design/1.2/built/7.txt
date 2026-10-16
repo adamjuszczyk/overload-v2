@@ -5,11 +5,9 @@ NONE
 NUMBER
 RANGE
 FROM
-1
 −
 +
 TO
-2
 −
 +
 Either number is on plan. Pick on the day.

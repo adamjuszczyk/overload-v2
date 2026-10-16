@@ -40,7 +40,7 @@ export default function MarkSelector({
             style={{
               height: 44,
               backgroundColor: active ? 'var(--accent)' : 'var(--surface)',
-              color: active ? 'var(--base)' : 'var(--text-muted)',
+              color: active ? 'var(--on-accent)' : 'var(--text-muted)',
               border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
               fontFamily: 'var(--font-mono)',
               whiteSpace: 'nowrap',

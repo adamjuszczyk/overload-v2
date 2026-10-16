@@ -319,12 +319,12 @@ export interface TargetBounds {
 export const REP_BOUNDS: TargetBounds = { min: 1, max: 100 }
 export const RIR_BOUNDS: TargetBounds = { min: 0, max: 20 }
 
-// What a box shows when a mode is picked with nothing to start from, and how wide the range a number
-// grows into is. The boards' own examples (8-10 reps, RIR 1-2, "SET 8 REPS", "SET RIR 2"); provisional
-// under D31.
-const TARGET_SETTINGS: Record<TargetKind, { bounds: TargetBounds; defaultNumber: number; defaultFrom: number; defaultTo: number; rangeWidth: number }> = {
-  reps: { bounds: REP_BOUNDS, defaultNumber: 8, defaultFrom: 8, defaultTo: 10, rangeWidth: 2 },
-  rir: { bounds: RIR_BOUNDS, defaultNumber: 2, defaultFrom: 1, defaultTo: 2, rangeWidth: 1 },
+// What a box shows in a segment the set doesn't have: the boards' own examples (8 and 8-10 reps, RIR 2 and
+// 1-2; "SET 8 REPS", "SET RIR 2"). Adam, 2026-10-15: "The boards' example values (8, 8-10, RIR 2, 1-2) are
+// only the starting point when you switch to a segment the set doesn't already have".
+const TARGET_SETTINGS: Record<TargetKind, { bounds: TargetBounds; defaultNumber: number; defaultFrom: number; defaultTo: number }> = {
+  reps: { bounds: REP_BOUNDS, defaultNumber: 8, defaultFrom: 8, defaultTo: 10 },
+  rir: { bounds: RIR_BOUNDS, defaultNumber: 2, defaultFrom: 1, defaultTo: 2 },
 }
 
 /** The segments of each picker (NONE / NUMBER / RANGE / AMRAP for reps; RIR has no AMRAP). */
@@ -344,8 +344,9 @@ export const TARGET_MODES: Record<TargetKind, readonly { id: TargetMode; label: 
 
 /**
  * What the sheet holds while it is open: the segment picked and the numbers behind it. `number` is the
- * NUMBER box, `from` and `to` the RANGE boxes; they are kept apart so a segment tapped and tapped back
- * finds its numbers where they were.
+ * NUMBER box, `from` and `to` the RANGE boxes. Each segment keeps its own numbers: the set's own segment
+ * starts from the set's numbers and every other one from the boards' examples (`draftFromRepTarget`), and
+ * a switch changes no number, so a segment tapped and tapped back finds its numbers where they were.
  */
 export interface TargetDraft {
   mode: TargetMode
@@ -359,14 +360,13 @@ function defaultDraft(kind: TargetKind, mode: TargetMode): TargetDraft {
   return { mode, number: settings.defaultNumber, from: settings.defaultFrom, to: settings.defaultTo }
 }
 
-/** The range a number grows into when RANGE is picked: from the number up by the kind's width, held to the top bound. */
-function rangeAround(kind: TargetKind, number: number): { from: number; to: number } {
-  const { bounds, rangeWidth } = TARGET_SETTINGS[kind]
-  const to = Math.min(bounds.max, number + rangeWidth)
-  return { from: Math.min(number, to), to }
-}
-
-/** A rep target as the sheet's first state. A stored value is shown as it is, even past the bounds: only the steppers are bounded. */
+/**
+ * A rep target as the sheet's first state: it opens on the set's segment with the set's numbers (a stored value
+ * is shown as it is, even past the bounds: only the steppers are bounded). The segments the set doesn't have
+ * start from the boards' examples (8 and 8-10), not from a number the set has: 12 reps gives RANGE 8-10, and
+ * 6-9 gives NUMBER 8. A set with no target (or AMRAP) has no number of its own, so it opens on NONE (or AMRAP)
+ * and both segments start from the examples.
+ */
 export function draftFromRepTarget(target: RepTarget): TargetDraft {
   switch (target.type) {
     case 'none':
@@ -374,20 +374,21 @@ export function draftFromRepTarget(target: RepTarget): TargetDraft {
     case 'amrap':
       return defaultDraft('reps', 'amrap')
     case 'number':
-      return { mode: 'number', number: target.value, ...rangeAround('reps', target.value) }
+      return { ...defaultDraft('reps', 'number'), number: target.value }
     case 'range':
-      return { mode: 'range', number: target.min, from: target.min, to: target.max }
+      return { ...defaultDraft('reps', 'range'), from: target.min, to: target.max }
   }
 }
 
+/** A RIR target as the sheet's first state, on the same rule as `draftFromRepTarget` (examples: RIR 2 and 1-2). */
 export function draftFromRirTarget(target: RirTarget): TargetDraft {
   switch (target.kind) {
     case 'none':
       return defaultDraft('rir', 'none')
     case 'number':
-      return { mode: 'number', number: target.value, ...rangeAround('rir', target.value) }
+      return { ...defaultDraft('rir', 'number'), number: target.value }
     case 'range':
-      return { mode: 'range', number: target.min, from: target.min, to: target.max }
+      return { ...defaultDraft('rir', 'range'), from: target.min, to: target.max }
   }
 }
 
@@ -423,29 +424,104 @@ export function rirTargetFromDraft(draft: TargetDraft): RirTarget {
 }
 
 /**
- * A segment tapped. NUMBER takes the number, or the FROM box when it comes from a range; RANGE grows a
- * number into a range and otherwise finds its last numbers; NONE and AMRAP keep the numbers for later.
+ * A segment tapped: the draft in that segment, with no number changed. A segment shows the numbers it has
+ * (the set's own, or the boards' examples if the set had none there, or what was typed or stepped in it
+ * while the sheet was open); nothing is carried over from the segment left, so 6-9 gone to NUMBER gives 8 and
+ * RANGE tapped again gives 6-9 back.
  */
 export function pickTargetMode(draft: TargetDraft, mode: TargetMode, kind: TargetKind): TargetDraft {
   if (mode === draft.mode) return draft
   if (mode === 'amrap' && kind === 'rir') return draft
-  if (mode === 'number') return { ...draft, mode, number: draft.mode === 'range' ? draft.from : draft.number }
-  if (mode === 'range' && draft.mode === 'number') return { ...draft, mode, ...rangeAround(kind, draft.number) }
   return { ...draft, mode }
 }
 
+/** The boxes of the rep and RIR pickers: NUMBER's, and RANGE's FROM and TO. */
+export type TargetField = 'number' | 'from' | 'to'
+
 /**
- * One tap on a box's - or +. A box stays inside the kind's bounds, and FROM never passes TO (nor TO
- * FROM); ends that meet are a number when the sheet is confirmed. Returns the same object when
+ * Where a box may go: the kind's bounds (reps 1-100, RIR 0-20), narrowed by the other end of a range
+ * (FROM never passes TO and TO never goes below FROM; ends that meet are a number when the sheet is
+ * confirmed). The one place those bounds are read, so a tap on - or + and a typed number can't disagree.
+ */
+export function targetFieldRange(draft: TargetDraft, field: TargetField, kind: TargetKind): { low: number; high: number } {
+  const { bounds } = TARGET_SETTINGS[kind]
+  return { low: field === 'to' ? draft.from : bounds.min, high: field === 'from' ? draft.to : bounds.max }
+}
+
+/**
+ * One tap on a box's - or +. A box stays inside `targetFieldRange`. Returns the same object when
  * nothing moves, so a caller can disable the button that would do nothing.
  */
-export function stepTargetField(draft: TargetDraft, field: 'number' | 'from' | 'to', delta: 1 | -1, kind: TargetKind): TargetDraft {
-  const { bounds } = TARGET_SETTINGS[kind]
+export function stepTargetField(draft: TargetDraft, field: TargetField, delta: 1 | -1, kind: TargetKind): TargetDraft {
   const next = draft[field] + delta
-  const low = field === 'to' ? draft.from : bounds.min
-  const high = field === 'from' ? draft.to : bounds.max
+  const { low, high } = targetFieldRange(draft, field, kind)
   if (next < low || next > high) return draft
   return { ...draft, [field]: next }
+}
+
+// ─── Typing into a box ───────────────────────────────────────────────────────────────────────
+//
+// The number boxes are inputs (DECISIONS 128, Adam 2026-10-15: "the number boxes in the rep and RIR
+// pickers are inputs you can type into, with ± steppers beside them (decisions 6 and 17a: choose,
+// then type). Same bounds as built"). Typing is the only thing here that can put a half-written
+// number in a box ("" on the way to "12", "1" in a range that starts at 8), so a box keeps the text
+// being typed apart from the draft: the draft takes a typed number the moment it is a whole number
+// inside the box's range, and a box left (or the sheet confirmed) with anything else in it is held
+// to the nearest number it can hold. Nothing is clamped while typing: "0" on the way to "08" would
+// become 1 and "1" on the way to "12" would become 8.
+
+/** The text of the boxes being typed in, by field: a field is here from its first keystroke until its box is left. */
+export type TypedTexts = Partial<Record<TargetField, string>>
+
+/** The most digits a box takes: the biggest bound is 100. */
+export const TYPED_DIGITS_MAX = 3
+
+/** What a box can hold while someone types: digits only, no leading zeros (a lone 0 stays), three at most. A paste with letters keeps its digits. */
+export function typedDigits(raw: string): string {
+  return raw
+    .replace(/\D/g, '')
+    .replace(/^0+(?=\d)/, '')
+    .slice(0, TYPED_DIGITS_MAX)
+}
+
+/** The whole number a typed text says; null for an empty text. */
+function typedNumber(text: string): number | null {
+  return /^\d+$/.test(text) ? Number(text) : null
+}
+
+/**
+ * A keystroke in a box: the draft with that number in it when `text` is a whole number inside the
+ * box's range, else the draft itself (the box shows what was typed; the draft keeps its last good number).
+ */
+export function typeTargetField(draft: TargetDraft, field: TargetField, text: string, kind: TargetKind): TargetDraft {
+  const typed = typedNumber(text)
+  if (typed === null || typed === draft[field]) return draft
+  const { low, high } = targetFieldRange(draft, field, kind)
+  if (typed < low || typed > high) return draft
+  return { ...draft, [field]: typed }
+}
+
+/**
+ * A box left, or the sheet confirmed, with `text` in it: the nearest number the box can hold, the way
+ * a stepper stops at a bound (150 reps is 100; 0 reps is 1; a FROM past TO is TO). An empty text
+ * changes nothing: the box goes back to the draft's number.
+ */
+export function settleTargetField(draft: TargetDraft, field: TargetField, text: string, kind: TargetKind): TargetDraft {
+  const typed = typedNumber(text)
+  if (typed === null) return draft
+  const { low, high } = targetFieldRange(draft, field, kind)
+  const next = Math.min(high, Math.max(low, typed))
+  return next === draft[field] ? draft : { ...draft, [field]: next }
+}
+
+const FIELD_ORDER: readonly TargetField[] = ['number', 'from', 'to']
+
+/** Every box still holding typed text, settled: what the footer button sets and what a segment or a stepper acts on. */
+export function settleTyped(draft: TargetDraft, typed: TypedTexts, kind: TargetKind): TargetDraft {
+  return FIELD_ORDER.reduce((current, field) => {
+    const text = typed[field]
+    return text === undefined ? current : settleTargetField(current, field, text, kind)
+  }, draft)
 }
 
 // ─── The footer button ───────────────────────────────────────────────────────────────────────

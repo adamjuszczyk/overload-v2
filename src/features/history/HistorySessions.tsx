@@ -131,7 +131,7 @@ export default function HistorySessions() {
               className="flex-1 py-2 rounded-xl text-xs font-bold"
               style={{
                 backgroundColor: filterStatus === s ? 'var(--accent)' : 'var(--surface)',
-                color: filterStatus === s ? 'var(--base)' : 'var(--text-muted)',
+                color: filterStatus === s ? 'var(--on-accent)' : 'var(--text-muted)',
                 border: `1px solid ${filterStatus === s ? 'transparent' : 'var(--border)'}`,
                 fontFamily: 'var(--font-mono)',
               }}
@@ -205,7 +205,7 @@ export default function HistorySessions() {
                   className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0"
                   style={{
                     backgroundColor: !filterMuscle ? 'var(--accent)' : 'var(--surface)',
-                    color: !filterMuscle ? 'var(--base)' : 'var(--text-muted)',
+                    color: !filterMuscle ? 'var(--on-accent)' : 'var(--text-muted)',
                     border: `1px solid ${!filterMuscle ? 'transparent' : 'var(--border)'}`,
                     fontFamily: 'var(--font-mono)',
                   }}
@@ -219,7 +219,7 @@ export default function HistorySessions() {
                     className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0"
                     style={{
                       backgroundColor: filterMuscle === mg ? 'var(--accent)' : 'var(--surface)',
-                      color: filterMuscle === mg ? 'var(--base)' : 'var(--text-muted)',
+                      color: filterMuscle === mg ? 'var(--on-accent)' : 'var(--text-muted)',
                       border: `1px solid ${filterMuscle === mg ? 'transparent' : 'var(--border)'}`,
                       fontFamily: 'var(--font-mono)',
                     }}

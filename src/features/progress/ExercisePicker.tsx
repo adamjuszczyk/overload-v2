@@ -53,7 +53,7 @@ export default function ExercisePicker({ onSelect }: { onSelect: (ex: Exercise) 
           className="flex-none px-2.5 py-1 rounded-full text-xs font-bold tracking-wide"
           style={{
             backgroundColor: filterGroup === null ? 'var(--accent)' : 'var(--surface)',
-            color: filterGroup === null ? 'var(--base)' : 'var(--text-muted)',
+            color: filterGroup === null ? 'var(--on-accent)' : 'var(--text-muted)',
             border: `1px solid ${filterGroup === null ? 'var(--accent)' : 'var(--border)'}`,
             fontFamily: 'var(--font-mono)',
           }}
@@ -67,7 +67,7 @@ export default function ExercisePicker({ onSelect }: { onSelect: (ex: Exercise) 
             className="flex-none px-2.5 py-1 rounded-full text-xs font-bold tracking-wide"
             style={{
               backgroundColor: filterGroup === mg ? 'var(--accent)' : 'var(--surface)',
-              color: filterGroup === mg ? 'var(--base)' : 'var(--text-muted)',
+              color: filterGroup === mg ? 'var(--on-accent)' : 'var(--text-muted)',
               border: `1px solid ${filterGroup === mg ? 'var(--accent)' : 'var(--border)'}`,
               fontFamily: 'var(--font-mono)',
             }}

@@ -170,7 +170,7 @@ export function ApplyAheadBanner({
               fontWeight: 700,
               fontSize: 9,
               letterSpacing: '1px',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               flexShrink: 0,
             }}
           >

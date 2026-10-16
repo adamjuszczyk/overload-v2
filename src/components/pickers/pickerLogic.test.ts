@@ -18,6 +18,7 @@ import {
   STAGE_COUNT_MAX,
   STAGE_COUNT_MIN,
   TARGET_MODES,
+  TYPED_DIGITS_MAX,
   addNewCue,
   applySetType,
   applyToAllTargets,
@@ -49,12 +50,17 @@ import {
   setTypeId,
   setTypeOptionsFor,
   setTypePickerRows,
+  settleTargetField,
+  settleTyped,
   stageRestText,
   stepRest,
   stepStageCount,
   stepStageRest,
   stepTargetField,
+  targetFieldRange,
   toggleCue,
+  typeTargetField,
+  typedDigits,
   useForAllLabel,
   type CueDraft,
   type RirTarget,
@@ -62,6 +68,8 @@ import {
   type SetTypeId,
   type SetTypePickerContext,
   type TargetDraft,
+  type TargetField,
+  type TargetKind,
   type TargetableSet,
 } from './pickerLogic'
 
@@ -361,11 +369,11 @@ describe('the numbers behind the boxes', () => {
   const repDraft = (mode: TargetDraft['mode'], number = 8, from = 8, to = 10): TargetDraft => ({ mode, number, from, to })
 
   it("opens on the set's own target", () => {
-    expect(draftFromRepTarget({ type: 'range', min: 8, max: 10 })).toEqual(repDraft('range', 8, 8, 10))
+    expect(draftFromRepTarget({ type: 'range', min: 6, max: 9 })).toEqual(repDraft('range', 8, 6, 9))
     expect(draftFromRepTarget({ type: 'number', value: 12 })).toMatchObject({ mode: 'number', number: 12 })
     expect(draftFromRepTarget({ type: 'amrap' }).mode).toBe('amrap')
     expect(draftFromRepTarget({ type: 'none' }).mode).toBe('none')
-    expect(draftFromRirTarget(rirRange(1, 2))).toEqual({ mode: 'range', number: 1, from: 1, to: 2 })
+    expect(draftFromRirTarget(rirRange(0, 1))).toEqual({ mode: 'range', number: 2, from: 0, to: 1 })
     expect(draftFromRirTarget({ kind: 'number', value: 3 })).toMatchObject({ mode: 'number', number: 3 })
     expect(draftFromRirTarget({ kind: 'none' }).mode).toBe('none')
   })
@@ -379,11 +387,17 @@ describe('the numbers behind the boxes', () => {
     expect(draftFromRepTarget({ type: 'number', value: 120 })).toMatchObject({ mode: 'number', number: 120 })
   })
 
-  it('NUMBER takes the number, or the FROM box when it comes from a range; RANGE grows a number into a range', () => {
-    expect(pickTargetMode(repDraft('range', 8, 6, 9), 'number', 'reps')).toMatchObject({ mode: 'number', number: 6 })
-    expect(pickTargetMode(repDraft('none', 12, 8, 10), 'number', 'reps')).toMatchObject({ mode: 'number', number: 12 })
-    expect(pickTargetMode(repDraft('number', 12, 12, 14), 'range', 'reps')).toMatchObject({ mode: 'range', from: 12, to: 14 })
-    expect(pickTargetMode({ mode: 'number', number: 2, from: 2, to: 3 }, 'range', 'rir')).toMatchObject({ mode: 'range', from: 2, to: 3 })
+  it('a segment tapped changes the segment and no number: NUMBER shows the number it has, RANGE the range it has, nothing is carried between them', () => {
+    // each draft below differs in all three numbers, so a number carried from one segment to another shows
+    expect(pickTargetMode(repDraft('range', 8, 6, 9), 'number', 'reps')).toEqual(repDraft('number', 8, 6, 9))
+    expect(pickTargetMode(repDraft('none', 12, 7, 11), 'number', 'reps')).toEqual(repDraft('number', 12, 7, 11))
+    expect(pickTargetMode(repDraft('number', 12, 8, 10), 'range', 'reps')).toEqual(repDraft('range', 12, 8, 10))
+    expect(pickTargetMode(repDraft('amrap', 12, 7, 11), 'range', 'reps')).toEqual(repDraft('range', 12, 7, 11))
+    expect(pickTargetMode({ mode: 'number', number: 4, from: 1, to: 2 }, 'range', 'rir')).toEqual({ mode: 'range', number: 4, from: 1, to: 2 })
+    expect(pickTargetMode({ mode: 'range', number: 2, from: 3, to: 5 }, 'number', 'rir')).toEqual({ mode: 'number', number: 2, from: 3, to: 5 })
+    // a number at the top of the bounds grows nothing: RANGE shows its own 1-2
+    const top = pickTargetMode({ mode: 'number', number: RIR_BOUNDS.max, from: 1, to: 2 }, 'range', 'rir')
+    expect([top.from, top.to]).toEqual([1, 2])
   })
 
   it('a segment tapped away and back finds its numbers where they were', () => {
@@ -397,12 +411,6 @@ describe('the numbers behind the boxes', () => {
     expect(TARGET_MODES.rir.map((mode) => mode.id)).toEqual(['none', 'number', 'range'])
     const draft = repDraft('range')
     expect(pickTargetMode(draft, 'amrap', 'rir')).toBe(draft)
-  })
-
-  it('a range grown from a number at the top of the bounds stays inside them', () => {
-    const grown = pickTargetMode({ mode: 'number', number: RIR_BOUNDS.max, from: 0, to: 1 }, 'range', 'rir')
-    expect(grown.to).toBe(RIR_BOUNDS.max)
-    expect(grown.from).toBeLessThanOrEqual(grown.to)
   })
 
   it('steps one a tap inside the bounds: reps 1-100, RIR 0-20', () => {
@@ -450,6 +458,197 @@ describe('the numbers behind the boxes', () => {
     expect(rirTargetFromDraft({ mode: 'range', number: 1, from: 1, to: 2 })).toEqual({ kind: 'range', min: 1, max: 2 })
     expect(rirTargetFromDraft({ mode: 'range', number: 1, from: 2, to: 2 })).toEqual({ kind: 'number', value: 2 })
     expect(rirTargetFromDraft({ mode: 'number', number: 0, from: 0, to: 1 })).toEqual({ kind: 'number', value: 0 })
+  })
+})
+
+describe("a picker opens on the set's current target; the boards' examples start only a segment the set doesn't have (DECISIONS 128, Adam 2026-10-15)", () => {
+  // Every target here differs from the example it could be mistaken for (reps 8 / 8-10, RIR 2 / 1-2), so
+  // a picker that opened on the examples cannot pass.
+  it('opens on the target the set has, segment and numbers, whatever the examples are', () => {
+    // the set's own segment holds the set's numbers; the segments it doesn't have hold the examples (see the next tests)
+    expect(draftFromRepTarget({ type: 'number', value: 12 })).toEqual({ mode: 'number', number: 12, from: 8, to: 10 })
+    expect(draftFromRepTarget({ type: 'range', min: 6, max: 9 })).toEqual({ mode: 'range', number: 8, from: 6, to: 9 })
+    expect(draftFromRepTarget({ type: 'range', min: 12, max: 15 })).toEqual({ mode: 'range', number: 8, from: 12, to: 15 })
+    expect(draftFromRirTarget({ kind: 'number', value: 4 })).toEqual({ mode: 'number', number: 4, from: 1, to: 2 })
+    expect(draftFromRirTarget(rirRange(0, 1))).toEqual({ mode: 'range', number: 2, from: 0, to: 1 })
+    expect(draftFromRirTarget(rirRange(3, 5))).toEqual({ mode: 'range', number: 2, from: 3, to: 5 })
+  })
+
+  it('a set with no target has no segment picked and nothing in what it would set: NONE, and a target of none', () => {
+    const noReps = draftFromRepTarget({ type: 'none' })
+    const noRir = draftFromRirTarget({ kind: 'none' })
+    expect(noReps.mode).toBe('none')
+    expect(noRir.mode).toBe('none')
+    expect(repTargetFromDraft(noReps)).toEqual({ type: 'none' })
+    expect(rirTargetFromDraft(noRir)).toEqual({ kind: 'none' })
+  })
+
+  it("a segment the set doesn't have starts from the board's example: NUMBER 8 / RIR 2, RANGE 8-10 / RIR 1-2", () => {
+    const noReps = draftFromRepTarget({ type: 'none' })
+    expect(repTargetFromDraft(pickTargetMode(noReps, 'number', 'reps'))).toEqual({ type: 'number', value: 8 })
+    expect(repTargetFromDraft(pickTargetMode(noReps, 'range', 'reps'))).toEqual({ type: 'range', min: 8, max: 10 })
+    const noRir = draftFromRirTarget({ kind: 'none' })
+    expect(rirTargetFromDraft(pickTargetMode(noRir, 'number', 'rir'))).toEqual({ kind: 'number', value: 2 })
+    expect(rirTargetFromDraft(pickTargetMode(noRir, 'range', 'rir'))).toEqual({ kind: 'range', min: 1, max: 2 })
+  })
+
+  it('an AMRAP set has no number or range yet either: NUMBER and RANGE start from the examples, not from stale numbers', () => {
+    const amrap = draftFromRepTarget({ type: 'amrap' })
+    expect(repTargetFromDraft(pickTargetMode(amrap, 'number', 'reps'))).toEqual({ type: 'number', value: 8 })
+    expect(repTargetFromDraft(pickTargetMode(amrap, 'range', 'reps'))).toEqual({ type: 'range', min: 8, max: 10 })
+  })
+
+  it("a segment the set doesn't have starts from the board's example, whatever number the set has: reps 12 gives RANGE 8-10 and 6-9 gives NUMBER 8, RIR 4 gives RANGE 1-2 and 3-5 gives NUMBER 2", () => {
+    const twelve = draftFromRepTarget({ type: 'number', value: 12 })
+    expect(repTargetFromDraft(pickTargetMode(twelve, 'range', 'reps'))).toEqual({ type: 'range', min: 8, max: 10 })
+    const six = draftFromRepTarget({ type: 'range', min: 6, max: 9 })
+    expect(repTargetFromDraft(pickTargetMode(six, 'number', 'reps'))).toEqual({ type: 'number', value: 8 })
+    const four = draftFromRirTarget({ kind: 'number', value: 4 })
+    expect(rirTargetFromDraft(pickTargetMode(four, 'range', 'rir'))).toEqual({ kind: 'range', min: 1, max: 2 })
+    const threeToFive = draftFromRirTarget(rirRange(3, 5))
+    expect(rirTargetFromDraft(pickTargetMode(threeToFive, 'number', 'rir'))).toEqual({ kind: 'number', value: 2 })
+    // through AMRAP on the way (a segment the set doesn't have either) it is the same
+    expect(repTargetFromDraft(pickTargetMode(pickTargetMode(twelve, 'amrap', 'reps'), 'range', 'reps'))).toEqual({ type: 'range', min: 8, max: 10 })
+  })
+
+  it("the set's own segment keeps its numbers wherever the sheet has been: 6-9 to NUMBER to RANGE is 6-9 again, 12 to RANGE to NUMBER is 12 again, and so for RIR", () => {
+    const six = draftFromRepTarget({ type: 'range', min: 6, max: 9 })
+    const sixBack = pickTargetMode(pickTargetMode(six, 'number', 'reps'), 'range', 'reps')
+    expect(repTargetFromDraft(sixBack)).toEqual({ type: 'range', min: 6, max: 9 })
+    const viaNone = pickTargetMode(pickTargetMode(pickTargetMode(pickTargetMode(six, 'amrap', 'reps'), 'number', 'reps'), 'none', 'reps'), 'range', 'reps')
+    expect(repTargetFromDraft(viaNone)).toEqual({ type: 'range', min: 6, max: 9 })
+    const twelve = draftFromRepTarget({ type: 'number', value: 12 })
+    expect(repTargetFromDraft(pickTargetMode(pickTargetMode(twelve, 'range', 'reps'), 'number', 'reps'))).toEqual({ type: 'number', value: 12 })
+    const rirBack = pickTargetMode(pickTargetMode(draftFromRirTarget(rirRange(0, 1)), 'number', 'rir'), 'range', 'rir')
+    expect(rirTargetFromDraft(rirBack)).toEqual({ kind: 'range', min: 0, max: 1 })
+    const rirFour = draftFromRirTarget({ kind: 'number', value: 4 })
+    expect(rirTargetFromDraft(pickTargetMode(pickTargetMode(rirFour, 'range', 'rir'), 'number', 'rir'))).toEqual({ kind: 'number', value: 4 })
+  })
+
+  it('numbers stepped in a segment while the sheet is open stay with that segment, in the set\'s own and in the others', () => {
+    // 12 stepped to 13; RANGE (the example 8-10) stepped to 7-10; back in NUMBER it is 13, back in RANGE 7-10
+    const stepped = stepTargetField(draftFromRepTarget({ type: 'number', value: 12 }), 'number', 1, 'reps')
+    const inRange = stepTargetField(pickTargetMode(stepped, 'range', 'reps'), 'from', -1, 'reps')
+    expect(repTargetFromDraft(inRange)).toEqual({ type: 'range', min: 7, max: 10 })
+    const backInNumber = pickTargetMode(inRange, 'number', 'reps')
+    expect(repTargetFromDraft(backInNumber)).toEqual({ type: 'number', value: 13 })
+    expect(repTargetFromDraft(pickTargetMode(backInNumber, 'range', 'reps'))).toEqual({ type: 'range', min: 7, max: 10 })
+    // the RIR picker the same way: 6-9 reps' twin, RIR 3-5 stepped in RANGE, NUMBER stepped from its example
+    const rirOpen = draftFromRirTarget(rirRange(3, 5))
+    const rirNumber = stepTargetField(pickTargetMode(rirOpen, 'number', 'rir'), 'number', -1, 'rir')
+    expect(rirTargetFromDraft(rirNumber)).toEqual({ kind: 'number', value: 1 })
+    expect(rirTargetFromDraft(pickTargetMode(rirNumber, 'range', 'rir'))).toEqual({ kind: 'range', min: 3, max: 5 })
+  })
+})
+
+describe('typing into a box (DECISIONS 128, Adam 2026-10-15: inputs you can type into, same bounds as built)', () => {
+  const draftOf = (mode: TargetDraft['mode'], number: number, from = number, to = number + 2): TargetDraft => ({ mode, number, from, to })
+
+  it('keeps digits only, drops leading zeros but a lone 0, and takes three at most', () => {
+    expect(typedDigits('12')).toBe('12')
+    expect(typedDigits('1a2b')).toBe('12')
+    expect(typedDigits('abc')).toBe('')
+    expect(typedDigits('')).toBe('')
+    expect(typedDigits('0')).toBe('0')
+    expect(typedDigits('007')).toBe('7')
+    expect(typedDigits('000')).toBe('0')
+    expect(typedDigits('1234')).toBe('123')
+    expect(typedDigits('-5')).toBe('5')
+    expect(typedDigits('8.5')).toBe('85')
+    expect(TYPED_DIGITS_MAX).toBe(3)
+  })
+
+  it("a box's range is the kind's bounds, narrowed by the other end of a range", () => {
+    const range = draftOf('range', 8, 8, 10)
+    expect(targetFieldRange(range, 'number', 'reps')).toEqual({ low: 1, high: 100 })
+    expect(targetFieldRange(range, 'number', 'rir')).toEqual({ low: 0, high: 20 })
+    expect(targetFieldRange(range, 'from', 'reps')).toEqual({ low: 1, high: 10 })
+    expect(targetFieldRange(range, 'to', 'reps')).toEqual({ low: 8, high: 100 })
+    expect(targetFieldRange(range, 'from', 'rir')).toEqual({ low: 0, high: 10 })
+    expect(targetFieldRange(range, 'to', 'rir')).toEqual({ low: 8, high: 20 })
+  })
+
+  it('a typed number inside the box\'s range goes into the draft, as the number typed', () => {
+    expect(typeTargetField(draftOf('number', 8), 'number', '12', 'reps').number).toBe(12)
+    expect(typeTargetField(draftOf('number', 8), 'number', '100', 'reps').number).toBe(100)
+    expect(typeTargetField(draftOf('number', 8), 'number', '1', 'reps').number).toBe(1)
+    expect(typeTargetField(draftOf('number', 2), 'number', '0', 'rir').number).toBe(0)
+    expect(typeTargetField(draftOf('number', 2), 'number', '20', 'rir').number).toBe(20)
+    const range = draftOf('range', 8, 8, 10)
+    expect(typeTargetField(range, 'from', '6', 'reps').from).toBe(6)
+    expect(typeTargetField(range, 'to', '15', 'reps').to).toBe(15)
+    expect(typeTargetField(range, 'from', '10', 'reps').from).toBe(10) // ends that meet are allowed in the boxes, a number once confirmed
+  })
+
+  it('a number outside the range, or no number at all, leaves the draft as it was (nothing is clamped while someone is still typing)', () => {
+    const number = draftOf('number', 8)
+    expect(typeTargetField(number, 'number', '', 'reps')).toBe(number)
+    expect(typeTargetField(number, 'number', '0', 'reps')).toBe(number) // reps start at 1
+    expect(typeTargetField(number, 'number', '101', 'reps')).toBe(number)
+    const rir = draftOf('number', 2)
+    expect(typeTargetField(rir, 'number', '21', 'rir')).toBe(rir) // RIR stops at 20
+    const range = draftOf('range', 8, 8, 10)
+    expect(typeTargetField(range, 'from', '11', 'reps')).toBe(range) // FROM never passes TO
+    expect(typeTargetField(range, 'to', '7', 'reps')).toBe(range) // TO never goes below FROM
+    expect(typeTargetField(number, 'number', 'x', 'reps')).toBe(number)
+  })
+
+  it('the same number typed again is the same draft', () => {
+    const number = draftOf('number', 8)
+    expect(typeTargetField(number, 'number', '8', 'reps')).toBe(number)
+  })
+
+  it("a box left with a number outside its range is held to the nearest number it can take, the way a stepper stops at a bound", () => {
+    expect(settleTargetField(draftOf('number', 8), 'number', '150', 'reps').number).toBe(100)
+    expect(settleTargetField(draftOf('number', 8), 'number', '0', 'reps').number).toBe(1)
+    expect(settleTargetField(draftOf('number', 2), 'number', '99', 'rir').number).toBe(20)
+    expect(settleTargetField(draftOf('number', 2), 'number', '0', 'rir').number).toBe(0)
+    const range = draftOf('range', 8, 8, 10)
+    expect(settleTargetField(range, 'from', '12', 'reps').from).toBe(10) // FROM stops at TO
+    expect(settleTargetField(range, 'to', '5', 'reps').to).toBe(8) // TO stops at FROM
+    expect(settleTargetField(range, 'from', '0', 'reps').from).toBe(1)
+    expect(settleTargetField(range, 'to', '500', 'reps').to).toBe(100)
+  })
+
+  it('a box left empty goes back to the number it had', () => {
+    const number = draftOf('number', 8)
+    expect(settleTargetField(number, 'number', '', 'reps')).toBe(number)
+  })
+
+  it('a typed number that is in range settles to itself', () => {
+    const number = draftOf('number', 8)
+    expect(settleTargetField(number, 'number', '8', 'reps')).toBe(number)
+    expect(settleTargetField(number, 'number', '14', 'reps').number).toBe(14)
+  })
+
+  it('typing and stepping share one set of bounds: where a stepper stops is where a typed number is held', () => {
+    const kinds: TargetKind[] = ['reps', 'rir']
+    const fields: TargetField[] = ['number', 'from', 'to']
+    for (const kind of kinds) {
+      for (const field of fields) {
+        const middle: TargetDraft = { mode: 'range', number: 5, from: 4, to: 7 }
+        let up = middle
+        for (let i = 0; i < 200; i++) up = stepTargetField(up, field, 1, kind)
+        let down = middle
+        for (let i = 0; i < 200; i++) down = stepTargetField(down, field, -1, kind)
+        expect(settleTargetField(middle, field, '999', kind)[field], `${kind} ${field} up`).toBe(up[field])
+        expect(settleTargetField(middle, field, '0', kind)[field], `${kind} ${field} down`).toBe(down[field])
+      }
+    }
+  })
+
+  it('settles every box still holding text, so the footer button sets what it says', () => {
+    const range = draftOf('range', 8, 8, 10)
+    expect(settleTyped(range, {}, 'reps')).toBe(range)
+    expect(settleTyped(range, { to: '15' }, 'reps')).toEqual({ ...range, to: 15 })
+    // FROM typed past TO is held at TO: ends that meet, a number when the sheet is confirmed
+    const met = settleTyped(range, { from: '12' }, 'reps')
+    expect(met.from).toBe(10)
+    expect(repTargetFromDraft(met)).toEqual({ type: 'number', value: 10 })
+    expect(settleTyped(draftOf('number', 8), { number: '150' }, 'reps').number).toBe(100)
+    expect(settleTyped(draftOf('number', 8), { number: '' }, 'reps').number).toBe(8)
+    // two boxes at once: FROM first, then TO against the settled FROM
+    expect(settleTyped(range, { from: '12', to: '9' }, 'reps')).toEqual({ ...range, from: 10, to: 10 })
   })
 })
 

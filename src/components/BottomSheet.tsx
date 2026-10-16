@@ -132,6 +132,9 @@ const HEADING_BLOCK_STYLE: CSSProperties = {
   minWidth: 0,
 }
 
+// The eyebrow carries the exercise's name, which can be one long word: it wraps inside the line (DECISIONS
+// 128 (i), Adam 2026-10-15: "an unbroken long word wraps inside its box (overflow-wrap: anywhere); nothing
+// runs past its line"). So does the title, which names an exercise on the exercise picker.
 const EYEBROW_STYLE: CSSProperties = {
   fontFamily: 'var(--font-mono)',
   fontWeight: 600,
@@ -139,6 +142,7 @@ const EYEBROW_STYLE: CSSProperties = {
   letterSpacing: '0.2em',
   textTransform: 'uppercase',
   color: 'var(--text-muted)',
+  overflowWrap: 'anywhere',
 }
 
 const TITLE_STYLE: CSSProperties = {
@@ -148,7 +152,7 @@ const TITLE_STYLE: CSSProperties = {
   fontSize: 20,
   lineHeight: 1.2,
   color: 'var(--text-primary)',
-  overflowWrap: 'break-word',
+  overflowWrap: 'anywhere',
 }
 
 const CLOSE_STYLE: CSSProperties = {

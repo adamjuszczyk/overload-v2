@@ -305,7 +305,7 @@ export default function SetRow({
                 style={{
                   height: 44,
                   backgroundColor: 'var(--accent)',
-                  color: 'var(--base)',
+                  color: 'var(--on-accent)',
                   fontFamily: 'var(--font-mono)',
                 }}
               >
@@ -367,7 +367,7 @@ export default function SetRow({
           </span>
           <span
             className="text-xs px-1 rounded"
-            style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
           >
             WARMUP
           </span>
@@ -575,7 +575,7 @@ export default function SetRow({
           style={{
             height: 44,
             backgroundColor: 'var(--accent)',
-            color: 'var(--base)',
+            color: 'var(--on-accent)',
             fontFamily: 'var(--font-mono)',
           }}
         >
@@ -709,7 +709,7 @@ export default function SetRow({
               style={{
                 height: 44,
                 backgroundColor: 'var(--accent)',
-                color: 'var(--base)',
+                color: 'var(--on-accent)',
                 fontFamily: 'var(--font-mono)',
               }}
             >
@@ -812,7 +812,7 @@ export default function SetRow({
           {isStage && (
             <span
               className="ml-2 text-xs px-1 rounded"
-              style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
+              style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: 'var(--font-mono)' }}
             >
               {/* Chunk 14 — labelled by kind for rest-pause/myo-reps/
                   cluster; a dropset (stageLabel null, same as before this
@@ -1101,7 +1101,7 @@ export default function SetRow({
             style={{
               height: 44,
               backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
             }}
           >
@@ -1114,7 +1114,7 @@ export default function SetRow({
             style={{
               height: 44,
               backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
             }}
           >
@@ -1127,7 +1127,7 @@ export default function SetRow({
             style={{
               height: 44,
               backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
             }}
           >

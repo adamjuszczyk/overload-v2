@@ -751,7 +751,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             bottom: 'calc(96px + env(safe-area-inset-bottom))',
             padding: '10px 18px',
             backgroundColor: 'var(--accent)',
-            color: 'var(--base)',
+            color: 'var(--on-accent)',
             fontFamily: 'var(--font-mono)',
             boxShadow: '0 4px 14px rgba(0, 0, 0, 0.3)',
             zIndex: 30,
