@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, chunk 47's review (migration 043, the save executor): merged (#137), then its staging deploy failed.*
+*Rewritten at every boundary. Last: 2026-10-16, chunk 47's review (migration 043, the save executor): merged (#137); its own staging deploy failed, and the next one applied it.*
 - *Chunk 47 merged. Migration 043 adds `v2_apply_ops`, which applies a whole save in one request, and a column that records what a swap replaced. Your 142 and 143 rules were proven in SQL before the merge: a week plan takes an update of its saved pre-deload plan and nothing else, and a swap's new row names the row it replaced.*
-- ***Its staging deploy failed (156, the first to-do).** Supabase's check on the merge says "Failed to update config for branch: staging", and staging's database has neither the column nor the function. Only your Branches log says why. Until 043 deploys, 47's own staging check (R2) waits, and so does every chunk that saves through it, from 51a.*
+- ***The merge's own staging deploy failed (156, the first to-do).** Supabase's check said "Failed to update config for branch: staging", and 043 didn't apply. The next push (this review's docs merge, #138) deployed it, and R2 then passed on staging as the test account. Only your Branches log says why the first run failed. Until you have read it, the chunks that save through 043 wait, from 51a.*
 - *One new reading for you, blocking nothing (157): the executor accepts a delete of a run's workout or program, where TASKS says "only an update".*
-- *The smoke passed: 51/51 and every tab. Its log step is "waiting on re-seed" (138). 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+- *The smoke passed: 51/51 and every tab, before and after 043 applied. Its log step is "waiting on re-seed" (138). 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
 
 Decisions:
 - **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
@@ -27,7 +27,11 @@ Decisions:
 - **153** — the order of a set's two REVIEW items (chunk 43, for 56; display only). With your 150 (b), a set whose type you change during a workout and then skip or never log gives two items. As built, "Skipped" / "Not logged" comes first and the type item right after it, the order a done set's number item and type item already have (139, accepted). Blocks: nothing. It is display only (D31): as built unless you change it.
 
 To-dos:
-- **156** — make migration 043's staging deploy succeed (chunk 47). The one `Supabase Preview` run on the merge (#137, `5762d4a`, 2026-10-16 07:10 UTC) failed in four seconds: "Failed to update config for branch: staging". 043 isn't on staging's database: the new column answers `400 42703`, and `v2_apply_ops` isn't found (`PGRST202`). `config.toml` hasn't changed since #91, and every earlier push's check succeeded, 05:21 UTC today included. When: now. Please read the Branches log for that run, make the deploy succeed (re-run it, or fix what the log names), and say "043 deployed". Blocks: 47's staging steps (R2 and the column probe), and every chunk that needs 043 live: 51a first, then 52's COPY, 56, 61 and 53. Not 49 or 50. If the config step keeps failing, every later deploy to staging fails with it, 044's included.
+- **156** — read the log of 043's failed staging deploy (chunk 47).
+  - The `Supabase Preview` run on the merge (#137, `5762d4a`, 2026-10-16 07:10 UTC) failed in four seconds at the config step: "Failed to update config for branch: staging". 043 didn't apply.
+  - The next push's run (#138, `43f1fc8`, 07:26 UTC) succeeded and applied it: the column probe is green, and R2 passed as the test account.
+  - When: now. Please read the Branches log for the failed run, and say "go on" (or what to fix).
+  - Blocks: until you have read it, the chunks that need 043 (51a first; then 52's COPY, 56, 61 and 53). Not 49 or 50.
 - **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's smoke found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
@@ -41,7 +45,7 @@ To-dos:
   - `alter table v2_program_exercises add column if not exists replaces_program_exercise_id uuid references v2_program_exercises(id) on delete set null` ("foreign key action can change existing rows later");
   - `create or replace function v2_apply_ops`, `revoke execute`, `grant execute`, `notify pgrst` (each "not on the safe list").
 
-  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its staging deploy failed (156): read that entry before the release.
+  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, and the next push's deploy applied it (156).
 
 ## Format for all new entries
 
@@ -63,22 +67,27 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 156 Migration 043's staging deploy failed: "Failed to update config for branch: staging" (chunk 47; to-do, blocking)
-**Ask:** Chunk 47 merged into `staging` as #137 (`5762d4a`) at 07:10 UTC on 2026-10-16. The one `Supabase Preview` run on that commit failed in four seconds with "Failed to update config for branch: staging", and migration 043 did not reach the staging database. Please read the staging branch's log for that run (Dashboard → Branches → staging). Make the deploy succeed, by re-running it or by fixing what the log names, then say "043 deployed".
-**Recommendation:** read the log first, then re-run the deploy. What failed is the step that applies `supabase/config.toml` to the branch, before any migration ran. That file hasn't changed since #91 (2026-10-14), and every earlier push's run succeeded, the one at 05:21 UTC today included. So it is either a passing fault or a change on Supabase's side, and nothing in the repo can tell which. — **When:** now. Once you say "043 deployed", the next reviewer runs chunk 47's staging steps: `probe-live-columns.mjs scripts/probe-specs/043.json`, the signed-out call (`42501`), and R2's three calls as the test account.
+### 156 Migration 043's staging deploy failed at the config step; the next push's deploy applied it (chunk 47; to-do, blocking)
+**Ask:** Chunk 47 merged into `staging` as #137 (`5762d4a`) at 07:10 UTC on 2026-10-16. The `Supabase Preview` run on that commit failed in four seconds with "Failed to update config for branch: staging", and migration 043 did not apply. The next push to `staging` was this review's docs merge (#138, `43f1fc8`, 07:25 UTC). Its run succeeded and applied 043, and chunk 47's staging steps then passed. A failed staging deploy is blocking until you have read the Branches log (CONTEXT.md, Repo facts). Please read the log for the failed run (Dashboard → Branches → staging, 07:10 UTC) and say "go on", or what to fix.
+**Recommendation:** "go on", unless the log names something in the repo. The failed step applies `supabase/config.toml` to the branch, before any migration runs. That file hasn't changed since #91 (2026-10-14), and the same file deployed 16 minutes later. So it looks like a passing fault on Supabase's side; only the log can say. — **When:** now.
 **Blocks:**
-- Chunk 47's staging steps: R2 and the column probe.
-- The chunks that need 043 live (TASKS-1.2 Process notes): 51a first (its SAVE is the first caller), then 52's COPY, 56, 61, and 53 (044 reads the link column).
+- Until you have read it, the chunks that need 043 live: 51a first (its SAVE is the first caller), then 52's COPY, 56, 61, and 53 (044 reads the link column).
 - Not 49 or 50, which don't touch 043.
-- If the config step keeps failing, every later deploy to staging fails with it, 044's included.
+- Nothing is left to run for chunk 47: its staging steps passed after the second deploy.
 
 **Evidence:**
-- **The check on the merge commit.** `gh api …/check-runs/116857241099`: app `supabase`, started 07:10:05, completed 07:10:09, conclusion `failure`, summary "Failed to update config for branch: staging". It is the only `Supabase Preview` run on `5762d4a`; none appeared in six minutes of polling.
-- **The checks before it.** The 13 staging pushes before it (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
-- **Before the merge (the control).** `probe-live-columns 043` against staging: the column answered `400 42703`. A signed-out `POST rpc/v2_apply_ops {"p_ops":[]}`: `404 PGRST202`. The same call signed in as `staging-test`: `PGRST202`.
-- **After the merge.** Exactly the same: the column `400 42703`, the function `PGRST202` signed out and signed in, and `select=*` on `v2_program_exercises` without the column. So 043 isn't on staging.
-- **The app.** The Vercel staging deploy is live and fine: BUILD `5762d4a`, stylesheet unchanged; nothing in the app uses 043 yet. The smoke passed: `staging-smoke.mjs` 51/51, and the browser smoke opened every tab with no error text.
-- **The chunk itself passed review on the real image before the merge.** That covered the replay, the embeds, the reviewer's own 29-case SQL proof and its 11 breaks, and every script. Long form: HISTORY.md, "2026-10-16 chunk 47 review".
+- **The failed run.** `gh api …/check-runs/116857241099`: app `supabase`, 07:10:05 → 07:10:09, `failure`, summary "Failed to update config for branch: staging". Read with `?filter=all`, it is the only run on `5762d4a`. A deploy that works shows three runs (two left `in_progress`, one `success`), as on `43f1fc8`, `e5b90ce` and 042's `8aeff32`.
+- **The earlier runs.** The 13 staging pushes before it (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
+- **043 didn't apply on the failed run.** Before and after it, `probe-live-columns 043` answered the column with `400 42703`, and `rpc/v2_apply_ops` answered `404 PGRST202`, signed out and signed in.
+- **The next run applied it.** `43f1fc8`'s run 116862656011 succeeded (07:26:07 → 07:26:14). At 07:26:36 the probe was green (the column `200 []`, the control `400 42703`), and the live embed check resolved 30 of 30.
+- **R2 on staging**, signed in as `staging-test`, under staging's pg-safeupdate:
+  - `[]` → `0`.
+  - An update of a week 3 Upper A set's `target_weight` (11.5 → 14), then a second update back → `2`; the set reads 11.5 before and after.
+  - A list whose op 2 names a `v2_set_logs` row → `P0001 "table not allowed"`, details "op 2 names v2_set_logs"; op 1's 14 is absent.
+  - Signed out → HTTP 401 `42501`, "permission denied for function v2_apply_ops".
+  - `select=*` on `v2_program_exercises` carries the column on all 49 rows.
+- **The app.** The Vercel staging deploy is BUILD `5762d4a`, stylesheet unchanged. `staging-smoke.mjs` passed 51/51 and the browser smoke opened every tab with no error text, both before and after 043 applied.
+- **The chunk itself passed review on the real image before the merge.** That covered the replay, the embeds, the reviewer's own 29-case SQL proof and its 11 breaks, and every script. Long form: HISTORY.md, "2026-10-16 chunk 47 review" and its follow-up.
 
 ### 157 043 accepts a delete of a run's workout or program; TASKS says "only an update is allowed" (chunk 47)
 **Ask:** TASKS-1.2 chunk 47's Scope says, inside its insert clause: "(and, for `v2_programs` / `v2_workout_days`, only an update is allowed — no inserts of those)". As built (#137), `v2_apply_ops` refuses an insert into either table and accepts a delete of a row of either. That is the reading chunk 45's merged op type took: `DeletableTable` is every listed table but `v2_week_plans`, and CONTEXT.md says 47 is written against it. Read literally, "only an update" refuses the delete too. Which did you mean?
