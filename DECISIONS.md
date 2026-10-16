@@ -1,13 +1,29 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, chunk 57's second review (the sync queue sends deletes, so delete set and unlog can work offline once chunks 61 and 63 use it): merged (#132). The retry was tests only, as the second-failure rule allows: the behaviour had passed the first review, and the new tests prove what that review found unproven. A set deleted offline waits behind an earlier failed write to it, so it can't come back on the server, and the "already sent" mark is saved before each request goes out. The smoke's one set was logged offline and synced on reconnect. Nothing new for you; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-16, the display follow-up's first review (your changes to 128, 129, 130 and 132): not merged; it goes back to its builder.*
+- *What it built is right. The new `--on-accent` is near-black on the accent in both themes. Long words wrap. The rep and RIR boxes take typing beside their ± steppers. A picker opens on the set's target. An empty box is never marked.*
+- *But the token went only on the new 1.2 sheets, and your words were "wherever text sits on the accent". 64 other places outside Coach still draw near-white text on the accent in the light theme, so the next attempt changes them too.*
+- *Coach (15 places) is frozen, so 154 asks whether it is included.*
+- *A picker switched to a segment the set doesn't have will start from the boards' examples, as your words read (155).*
+- *Neither 154 nor 155 blocks anything; 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
 
 Decisions:
 - **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
 - **149** — weeks a week-dependent run changed in 1.1's week view (chunk 45). In 1.1 such a run's exercise changes lived in its weeks: SWAP or ADD made a week-only exercise, REMOVE took one out of that week, and the run's program never changed (the program tab went in 1.1; Make default is stable-only). From 044 on (chunk 53; production at the release), 143's copy follows the program's list. So the first copy from such a week brings back an exercise removed in 1.1 (with no sets) and takes the program's order. The week-only exercises stay in every later week, and nothing in 1.2 can remove them (executed probe). Held against [P1.1]'s "Existing data" line, as you asked, it isn't fully answered: "copying uses each week's actual content" keeps a week-only exercise, as built, but for an exercise 1.1 removed from a week while the program still lists it, and for a week whose order 1.1 changed, the line gives the week's content and 143's line the program's list, and neither says which wins; nor does the line say how a week-only exercise is ever removed. Recommended: (c) once, at the release, make each active week-dependent run's program match its last planned week, so nothing you see changes. Blocks: chunk 53 and the release; nothing before 53.
 - **152** — a warmup logged with no weight or reps, made a working set during the workout (chunk 46, for 62). SPEC lets a warmup be logged without numbers, and its edit panel has SET TYPE. The database refuses a working set without both numbers (executed: `23514`). Recommended: (a), ask for the numbers first: the working type is saved together with the weight and reps typed in the panel, in one write. Blocks: chunk 62; chunk 46 only if answered (c), where the switch makes it a set still to do.
-- **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. Recommended: as `--accent` itself is done, the value in tokens.css and its Tailwind mapping in global.css. Blocks: nothing. It is display only (D31): without your word, the display follow-up picks one and records it here.
+- **154** — text on the accent in Coach, which is frozen (the display follow-up). Your answer puts `--on-accent` "wherever text sits on the accent".
+  - Coach draws such text in 15 places (9 files), still `--base`: near-white on the accent in the light theme.
+  - Coach is frozen (Escalation 16), so no Coach line changes without you.
+  - Recommended: (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same.
+  - Also read from your words: "wherever" covers the screens 1.2 doesn't rebuild (Today, History, Progress, Library, Settings, sign-in), though SPEC's "Scope of the look" keeps their code. Say so if you meant the 1.2 screens only.
+  - Blocks: nothing. The follow-up merges without Coach, and (a) is a small change of its own afterwards.
+- **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. The display follow-up built it as recommended: the value in tokens.css (both theme blocks) and its Tailwind mapping in global.css, as `--accent` itself is done. Blocks: nothing. It is display only (D31): it stays so unless you move it.
+- **155** — the display follow-up's own display choices (D31), each as described unless you change it:
+  - (a) A picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE gives 8–10), and the set's own segment keeps its numbers. That is your words read literally; the first attempt carried the set's number over instead (12–14), and the next attempt builds it this way.
+  - (b) The typed boxes: a number past the bounds is held to the nearest one when the box is left (150 reps → 100), and an emptied box goes back to its number.
+  - (c) The cues sheet's rows keep wrapping a long cue as built.
+  - Blocks: nothing.
 - **153** — the order of a set's two REVIEW items (chunk 43, for 56; display only). With your 150 (b), a set whose type you change during a workout and then skip or never log gives two items. As built, "Skipped" / "Not logged" comes first and the type item right after it, the order a done set's number item and type item already have (139, accepted). Blocks: nothing. It is display only (D31): as built unless you change it.
 
 To-dos:
@@ -40,6 +56,52 @@ Blocking vs deferred: an entry is blocking when continuing means guessing at som
 When an entry is answered or done, it shrinks to three lines (what, answer, date) and its full text moves to HISTORY.md. Superseded procedures go straight to HISTORY.md, never kept inline. "Waiting on Adam" is rewritten at every boundary; if both lists are empty it says "Nothing."
 
 ## Open
+
+### 155 The display follow-up's own display choices (provisional, D31)
+**Ask:** the display follow-up builds your changes to 128, 129, 130 and 132. Three things it needed have no exact word from you. Each stays as described here unless you change it.
+**Recommendation:** keep them. Each is a few lines in `src/components/pickers/`.
+- (a) **Starting numbers on a segment switch.** Your words: "The boards' example values (8, 8–10, RIR 2, 1–2) are only the starting point when you switch to a segment the set doesn't already have". Read literally:
+  - a set at 12 reps switched to RANGE starts at 8–10;
+  - a set at 6–9 switched to NUMBER starts at 8;
+  - each segment keeps its own numbers while the sheet is open, so 6–9 → NUMBER → RANGE is 6–9 again.
+
+  The first attempt carried the set's number over instead (12 → 12–14, 6–9 → 6), and lost the range on the way back (6–9 → NUMBER → RANGE gave 6–8). The review sent it back; the next attempt builds the literal reading.
+- (b) **The typed boxes.**
+  - Digits only, at most three, with the number pad.
+  - The number is selected when a box takes focus, and Enter leaves the box.
+  - A number typed past the bounds is held to the nearest one the box can take when the box is left or the sheet is confirmed: 150 reps → 100, 0 → 1, RIR 21 → 20, a FROM typed past TO → TO. Ends that meet are a number, as before.
+  - An emptied box goes back to its number, and the footer button always says what it will set.
+  - Escape in a box closes the sheet, as it does anywhere in it.
+- (c) **The cues sheet's rows (129)** keep wrapping a long cue as built (`overflow-wrap: break-word`), since your long-word answer named 128 and 130. An 80-letter cue wraps inside its row at 375 px.
+
+**Blocks:** nothing. No screen uses the pickers before 51a / 54a.
+**Options:**
+- (a) as described, or the set's own number carried into its other segment (12 → 12–14), as the first attempt had it;
+- (b) as built, or a typed number past the bounds refused instead of held at the bound;
+- (c) as built, or `anywhere` there too.
+
+**Answer:**
+**Evidence:** the display follow-up's first review (`<scratchpad>/build/chunk-d31-review-1.md`), on `build/chunk-d31` at `b32dfbe`:
+- (a) was run in real Chromium on the built pickers.
+- (b): the builder's 35 real-Chromium checks were re-run and passed 35/35.
+- (c): the 375 px sheet check passes on a cues fixture with an 80-letter cue, and its control (the wrap removed) fails.
+
+### 154 Text on the accent in Coach, which is frozen: included or not? (the display follow-up)
+**Ask:** your answer puts the new `--on-accent` "wherever text sits on the accent". Coach draws text on the accent in 15 places in 9 files (its buttons and picked tabs), still in `--base`: near-white on the accent in the light theme, as the rest of the app did. Coach has been frozen since `e747183` (Escalation 16; `check-frozen-code.mjs` fails on any change under `src/features/coach/`), so those 15 can't change without your word. Is Coach included?
+**Recommendation:** (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same. It is display only.
+**Blocks:** nothing. The display follow-up merges without Coach; (a) is a small change of its own afterwards.
+**Options:**
+- (a) include Coach, as above;
+- (b) leave Coach on `--base` until Coach is next opened.
+
+**Answer:**
+**Evidence:** the display follow-up's first review scanned every accent background in `src` and found 94:
+- the 1.2 sheets' 7 already use the token;
+- 6 hold nothing to read (dots, a bar, two toggle tracks);
+- 15 are Coach: `CoachMemory.tsx` ×3, `CoachMesoAnalysisTab.tsx`, `CoachPage.tsx`, `CoachSessionAnalysisTab.tsx`, `CoachWeekAnalysisTab.tsx`, `PhaseLog.tsx` ×3, `PrioritySelector.tsx`, `QaComposer.tsx`, `WeightLog.tsx` ×3;
+- the other 64 (39 files) go to `--on-accent` in the follow-up's next attempt.
+
+Those 64 include the screens 1.2 doesn't rebuild (Today outside the workout, History, Progress, Library, Settings, sign-in, the update notice). SPEC's "Scope of the look" keeps their code, but 128 (g)'s option, which you took, said the token "would fix every accent button", and your words are "wherever". If you meant the 1.2 screens only, say so and the next attempt leaves them.
 
 ### 153 Chunk 43's fourth attempt: which of a set's two REVIEW items comes first (provisional, D31)
 **Ask:** your 150 (b) gives a set two REVIEW items when its type was changed during the workout and it was then skipped or never logged: its "Skipped" / "Not logged" and its type item ("You made set 03 a dropset"). Board 4 draws no such pair, and SPEC doesn't say which comes first. As built, "Skipped" / "Not logged" comes first and the type item right after it. That is the order a done set's two items already have: its number item, then its type item, 13c's items before 13d's. It stays as built unless you change it.
