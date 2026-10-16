@@ -175,12 +175,9 @@ export interface RunCopyExercise extends Pick<ProgramExercise, 'id' | 'exerciseI
   weekOnly?: boolean
   removedAt?: string | null
   // CHANGE THE PROGRAM's SWAP puts a new row where the old one was and soft-removes the old (a done session keeps
-  // pointing at the old row, so the row can't be changed in place). This is the old row the new one took the place of:
-  // the week-dependent copy gives the new exercise the old one's sets ("the new exercise takes the old one's sets").
-  // NOTHING STORES THIS LINK YET: `v2_program_exercises` has no column for it (a migration, outside chunk 45's scope), so
-  // until it exists no caller can pass it and a swapped-in exercise is copied like an added one (no sets). The rule is
-  // here, tested with the link given, so the column, the op that writes it and the read that fills this can be added
-  // without changing the rule.
+  // pointing at the old row, so the row can't be changed in place). This is the old row the new one took the place of
+  // (`v2_program_exercises.replaces_program_exercise_id`): the week-dependent copy gives the new exercise the old one's
+  // sets ("the new exercise takes the old one's sets").
   replacesProgramExerciseId?: string | null
 }
 export type RunCopySet = Pick<

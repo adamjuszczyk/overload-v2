@@ -70,6 +70,7 @@ export interface DbProgramExercise {
   tempo: string | null
   week_only: boolean
   removed_at: string | null
+  replaces_program_exercise_id: string | null
 }
 export interface DbProgramSet {
   id: string
@@ -207,7 +208,7 @@ const PATCH_COLUMNS: Record<string, readonly string[]> = {
   v2_workout_days: ['name', 'position'],
   v2_program_exercises: [
     'workout_day_id', 'exercise_id', 'position', 'weight_unit', 'superset_block_id', 'rest_seconds', 'rest_after_seconds',
-    'tempo', 'week_only', 'removed_at',
+    'tempo', 'week_only', 'removed_at', 'replaces_program_exercise_id',
   ],
   v2_program_sets: [
     'program_exercise_id', 'position', 'is_warmup', 'stage_kind', 'stage_rest_seconds', 'parent_program_set_id',
@@ -269,6 +270,8 @@ function checkRow(db: Db, table: string, row: Record<string, unknown>): void {
     case 'v2_program_exercises': {
       fk(db, 'v2_workout_days', row.workout_day_id, 'workout_day_id')
       fk(db, 'v2_program_superset_blocks', row.superset_block_id, 'superset_block_id', true)
+      // 043's column: the row a swap replaced (a foreign key to this table itself; null on every other row)
+      fk(db, 'v2_program_exercises', row.replaces_program_exercise_id, 'replaces_program_exercise_id', true)
       geq('rest_seconds', 0)
       geq('rest_after_seconds', 0)
       if (row.weight_unit !== null && row.weight_unit !== 'kg' && row.weight_unit !== 'lbs') fail('check violation: weight_unit')
@@ -355,6 +358,8 @@ function deleteRow(db: Db, table: TableName, id: string): void {
     for (const child of db.v2_program_sets.filter((r) => r.parent_program_set_id === id)) deleteRow(db, 'v2_program_sets', child.id)
     for (const w of db.v2_week_plan_sets) if (w.program_set_id === id) w.program_set_id = null
   } else if (table === 'v2_program_exercises') {
+    // `replaces_program_exercise_id` is `on delete set null` (043): the row that replaced this one stays, and no longer says so
+    for (const e of db.v2_program_exercises) if (e.replaces_program_exercise_id === id) e.replaces_program_exercise_id = null
     for (const s of db.v2_program_sets.filter((r) => r.program_exercise_id === id)) deleteRow(db, 'v2_program_sets', s.id)
     for (const r of db.v2_week_plan_exercises.filter((x) => x.program_exercise_id === id)) deleteRow(db, 'v2_week_plan_exercises', r.id)
     for (const r of db.v2_week_plan_sets.filter((x) => x.program_exercise_id === id)) deleteRow(db, 'v2_week_plan_sets', r.id)
@@ -389,6 +394,7 @@ export function applyOpsToDb(input: Db, ops: readonly Op[], userId: string = USE
         checkRow(db, op.table, stored)
       } else if (op.op === 'update') {
         const patch = op.patch as Record<string, unknown>
+        if (Object.keys(patch).length === 0) fail('patch is empty') // 043 refuses a patch with nothing in it (planProgramChange never writes one)
         for (const c of Object.keys(patch)) {
           if (c === 'id' || c === 'user_id') fail('patch sets a protected column')
           if (op.table === 'v2_week_plans' && c !== 'deload_restore') fail('patch sets a protected column')
@@ -584,6 +590,7 @@ export function addExercise(
     tempo: null,
     week_only: false,
     removed_at: null,
+    replaces_program_exercise_id: null,
     ...over,
   })
   sets.forEach((spec, i) => {

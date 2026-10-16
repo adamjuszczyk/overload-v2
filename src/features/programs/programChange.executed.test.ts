@@ -246,6 +246,25 @@ describe('the executor stands in for 043 honestly: it refuses what the database 
     expect(() => applyOpsToDb(w.db, [{ op: 'update', table: 'v2_program_exercises', id: 'pe-leg', patch: { rest_secs: 5 } as never }])).toThrow(/unknown column/)
   })
 
+  it('the swap\'s link (043): a foreign key to the table itself - a link to nothing is refused, and really deleting the replaced row sets the link null but keeps the new row', () => {
+    const w = stableWorld()
+    const base = w.db.v2_program_exercises.find((e) => e.id === 'pe-leg')!
+    const swapIn = (id: string, replaces: string | null): Op => ({ op: 'insert', table: 'v2_program_exercises', row: { ...base, id, replaces_program_exercise_id: replaces } })
+    expect(() => applyOpsToDb(w.db, [swapIn('pe-new', 'nowhere')])).toThrow(/foreign key/)
+    expect(() => applyOpsToDb(w.db, [{ op: 'update', table: 'v2_program_exercises', id: 'pe-leg', patch: { replaces_program_exercise_id: 'nowhere' } }])).toThrow(/foreign key/)
+    expect(() => applyOpsToDb(w.db, [swapIn('pe-b', 'pe-a'), swapIn('pe-a', null)])).toThrow(/foreign key/) // the list is in order: the row it names comes first
+    const linked = applyOpsToDb(w.db, [swapIn('pe-a', null), swapIn('pe-b', 'pe-a')])
+    expect(linked.v2_program_exercises.find((e) => e.id === 'pe-b')!.replaces_program_exercise_id).toBe('pe-a')
+    const gone = applyOpsToDb(linked, [{ op: 'delete', table: 'v2_program_exercises', id: 'pe-a' }])
+    expect(gone.v2_program_exercises.find((e) => e.id === 'pe-b')).toMatchObject({ id: 'pe-b', replaces_program_exercise_id: null })
+    expect(gone.v2_program_exercises.some((e) => e.id === 'pe-a')).toBe(false)
+  })
+
+  it('a patch with nothing in it (043 refuses it; planProgramChange never writes one)', () => {
+    const w = stableWorld()
+    expect(() => applyOpsToDb(w.db, [{ op: 'update', table: 'v2_program_exercises', id: 'pe-leg', patch: {} }])).toThrow(/patch is empty/)
+  })
+
   it('all or none: a list that fails on its last op leaves the database as it was', () => {
     const w = stableWorld()
     const before = JSON.stringify(w.db)
