@@ -144,6 +144,8 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   // Chunk 25 review fix 2 — properly week-aware (filters allPlans by the
   // passed weekNumber) so a test can advance to cycle 2 (NEXT WEEK) and see

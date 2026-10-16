@@ -99,6 +99,8 @@ vi.mock('./useWeekPlan', () => ({
 // the real component.
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => mockState.done }))
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 
 const { default: PlanPage } = await import('./PlanPage')
 const { openSetMenu } = await import('./planMenus.testutil')

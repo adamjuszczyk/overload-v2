@@ -58,15 +58,18 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
   const { data: sessions } = useSessionsInRange(lookbackStart, today)
   // Chunk 50: the run's schedule rows (`v2_run_schedules`), the history of which weekdays hold which workout. `[]` is a
   // real answer (a run nobody changed the days of); `undefined` is "not read yet", and until it is, which workout is on
-  // today's weekday can't be known (the run copy's days are the newest, not necessarily this week's), so Today waits.
+  // today's weekday can't be known (the run copy's days are the newest, not necessarily this week's), so a weekday run
+  // waits. A sequence run has no weekday schedule and no rows (SequenceTodayPage is what Today shows for it), so it
+  // waits for nothing: its Today does not depend on this read, whatever the read does.
   const { data: scheduleRows } = useRunSchedule(activeMeso?.id)
+  const waitsForScheduleRows = (activeProgram?.scheduleType ?? 'weekday') === 'weekday'
 
   const isLoading =
     !mesos ||
     !programs ||
     (!!programId && !workoutDays) ||
     !sessions ||
-    (!!activeMeso && (!currentWeekPlans || !allWeekPlans || !scheduleRows))
+    (!!activeMeso && (!currentWeekPlans || !allWeekPlans || (waitsForScheduleRows && !scheduleRows)))
 
   if (isLoading) {
     return {

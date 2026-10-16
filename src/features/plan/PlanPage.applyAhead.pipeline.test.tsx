@@ -101,6 +101,8 @@ const planWeekMock = vi.fn(async () => 0)
 
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', async () => ({
   ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [program], isLoading: false }),
