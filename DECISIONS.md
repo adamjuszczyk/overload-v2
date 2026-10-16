@@ -74,7 +74,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 **Evidence:**
 - **The check on the merge commit.** `gh api …/check-runs/116857241099`: app `supabase`, started 07:10:05, completed 07:10:09, conclusion `failure`, summary "Failed to update config for branch: staging". It is the only `Supabase Preview` run on `5762d4a`; none appeared in six minutes of polling.
-- **The checks before it.** The last 14 staging pushes (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
+- **The checks before it.** The 13 staging pushes before it (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
 - **Before the merge (the control).** `probe-live-columns 043` against staging: the column answered `400 42703`. A signed-out `POST rpc/v2_apply_ops {"p_ops":[]}`: `404 PGRST202`. The same call signed in as `staging-test`: `PGRST202`.
 - **After the merge.** Exactly the same: the column `400 42703`, the function `PGRST202` signed out and signed in, and `select=*` on `v2_program_exercises` without the column. So 043 isn't on staging.
 - **The app.** The Vercel staging deploy is live and fine: BUILD `5762d4a`, stylesheet unchanged; nothing in the app uses 043 yet. The smoke passed: `staging-smoke.mjs` 51/51, and the browser smoke opened every tab with no error text.
@@ -94,7 +94,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - A delete op on a run's `v2_workout_days` row is accepted, and it cascades through every week plan of that workout: the fixture's week plans went from 2 to 0 and their sets from 3 to 0. The session stays, with `week_plan_id` NULL, and keeps its log.
 - On the run's `v2_programs` row the delete is refused by `v2_mesocycles_program_id_fkey` (`23503`). On a saved program it would land.
 - The builder asserts the delete on purpose (its scenario D05), but did not list it among its judgement calls.
-- Nothing else in the function differs from TASKS' words. Long form: HISTORY.md, "2026-10-16 chunk 47 review".
+- The function's other departures from TASKS' words are the four judgement calls the builder listed (the revoke from anon, the input refusals, NULL rather than the default, the committed proof), all accepted in the review. Long form: HISTORY.md, "2026-10-16 chunk 47 review".
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 **Ask:** the display follow-up built your changes to 128, 129, 130 and 132 (#135). Three things it needed have no exact word from you. Each stays as described here unless you change it.
