@@ -202,6 +202,9 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   current code. Its only 1.2 changes are the wording sweep (Language) and the
   Settings rows listed under Screens → Settings. The canvas also draws those
   screens; those boards are not part of 1.2 and are not copied.
+  - Text on the accent (DECISIONS 154, Adam 2026-10-16): Coach stays exactly as
+    it is. `--on-accent` applies to the screens 1.2 rebuilds and the shared
+    components they use; screens 1.2 doesn't touch keep their current code.
 - **Errors (15).** Wherever an error is shown, the line under its headline is
   the real reason: the message the server or the client actually returned.
   Supabase errors aren't JavaScript `Error` objects, so the check reads their
@@ -629,6 +632,10 @@ optional:
     REVIEW and VOLUME.
 - [P1.1] *Existing data:* "only this week" values already stored are ignored;
   copying uses each week's actual content.
+  - Weeks 1.1 changed in the week view (DECISIONS 149, Adam 2026-10-16): as a
+    release step, not during the build, one data migration at the release
+    makes each active week-dependent run's program match its last planned week
+    (exercises and order), so nothing the user sees changes.
 - The number of weeks stays open-ended, as today.
 
 ### Review: what went differently last week [1.2] (13)
@@ -1004,6 +1011,11 @@ optional:
   reopened session it works the same (Defaults, 6). Unlog deletes the set's log
   (its stages' logs first); its numbers stay in the row as a draft on that
   phone until it is logged again (a new log) or the session ends (G46).
+  - Set numbers on unlog (DECISIONS 151, Adam 2026-10-16): an unlogged set
+    keeps its number and its place. Logging it again stores it with that same
+    number, so unlog then log is an exact undo. No other set's number changes
+    on unlog. The open row shows its own number (a planned set's position; an
+    added set's number from its draft), never "the next after the logged ones".
 - [1.2] **Delete set (18b):** with a confirmation (W9). An unlogged set's DELETE
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
@@ -1026,6 +1038,9 @@ optional:
   - A set switched to or from Warmup (DECISIONS 146, Adam 2026-10-15)
     renumbers the sets as a delete does: the sets after it close the gap or
     move up one.
+  - A numberless logged warmup (DECISIONS 152, Adam 2026-10-16): making it a
+    working set asks for weight and reps in the panel first; type and numbers
+    are saved in one write.
 - [1.2] **Stage rows** open by themselves once the row before them is logged
   (C8).
 - [1.2] **The set's ⋯ during a workout (C9):** SET TYPE, CUES, FORM, a per-set
