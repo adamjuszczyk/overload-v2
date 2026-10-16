@@ -406,6 +406,15 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
     expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓'])
   })
 
+  it('the answer is the same with the logs the other way round', () => {
+    const three = headLog('bench', 3, { stageKind: 'dropset' })
+    const logs = [headLog('bench', 1), three, dropLog(three, 1), headLog('bench', 5)]
+    const order = orderOf([card('bench', 'n n d1 n n')])
+    const forward = viewOf(order, logs)
+    const turned = viewOf(order, [...logs].reverse())
+    expect(deleteEffects(rowKeyed(turned, 'set:bench.2'), turned)).toEqual(deleteEffects(rowKeyed(forward, 'set:bench.2'), forward))
+  })
+
   it('an open warmup is not one of the working numbers: deleting it moves nothing', () => {
     const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
     const { effects, rows } = deleteOn({ cards: [card('bench', 'w n n')], logs, key: 'set:bench.1' })

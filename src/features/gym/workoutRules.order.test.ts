@@ -753,7 +753,8 @@ describe('resolveRows: sets added in the session', () => {
 describe('a pure function changes nothing it is given', () => {
   it('reads frozen inputs and answers the same twice, leaving the logs and the plan in the order they came', () => {
     const head = headLog('pushdown', 1, { stageKind: 'dropset' })
-    const exercises = deepFreeze([card('pushdown', 'n d2', { added: 1 }), card('row', 'n n'), card('lat', 'n n')])
+    const draft: SetDraftKey = { sessionId: 's1', localId: 'log.pushdown.added1', exerciseId: 'ex.pushdown', position: 4 }
+    const exercises = deepFreeze([card('pushdown', 'n d2', { added: 1, drafts: [draft, { ...draft, position: 3 }] }), card('row', 'n n'), card('lat', 'n n')])
     const supersets = deepFreeze([{ id: 'blk', members: ['row', 'lat'] }])
     const logs = deepFreeze([dropLog(head, 2), head, headLog('row', 1)])
     const changes = deepFreeze([deleted('row', 2), pending(head, 'dropset', 3)])
@@ -764,5 +765,8 @@ describe('a pure function changes nothing it is given', () => {
     expect(first.length).toBeGreaterThan(5)
     expect(logs.map((l) => l.id)).toEqual([`${head.id}.d2`, head.id, 'log.row.1'])
     expect(exercises[0].plannedSets.map((s) => s.id)).toEqual(['pushdown.1', 'pushdown.2', 'pushdown.2.1', 'pushdown.2.2'])
+    // the drafts are read in the order of their positions without being sorted where they are
+    expect(exercises[0].drafts!.map((d) => ('position' in d ? d.position : null))).toEqual([4, 3])
+    expect(first.filter((r) => r.added).map((r) => r.draftPosition)).toEqual([3, 4])
   })
 })

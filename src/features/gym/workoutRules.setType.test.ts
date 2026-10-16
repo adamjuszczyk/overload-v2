@@ -610,6 +610,14 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02·', 'bench 03·', 'bench 04✓'])
   })
 
+  it('an open warmup made Normal between two logged sets: the one before it keeps its number, the one after it moves up (NS08)', () => {
+    // the plan is 'n w n': set 1 is logged as 01, the warmup (set 2) is open, set 3 is logged as 02
+    const logs = [headLog('bench', 1), headLog('bench', 3, { number: 2 })]
+    const { effects, rows } = changeOn({ cards: [card('bench', 'n w n')], logs, key: 'set:bench.2', pick: NORMAL })
+    expect(effects.renumber).toEqual([{ id: 'log.bench.3', setNumber: 3 }])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓'])
+  })
+
   it('an open set added in the session has no log and no type a row can read: switching it moves nothing', () => {
     const logs = [headLog('bench', 1), addedLog('bench', 2, { number: 3 })]
     const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 2 } as const
@@ -718,6 +726,21 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     const logged = rows.filter((r) => r.state === 'logged').map((r) => r.number)
     expect(new Set(logged).size).toBe(logged.length)
     expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'set:bench.3', 'set:bench.4'])
+  })
+
+  it('an open set\'s switch is the same with the logs and rows the other way round', () => {
+    const logs = [headLog('bench', 3, { number: 2 }), headLog('bench', 4, { number: 3 }), headLog('bench', 1)]
+    const order = orderOf([card('bench', 'n w n n')])
+    const view = viewOf(order, logs)
+    const forward = applySetTypeChange({ row: rowKeyed(view, 'set:bench.2'), pick: NORMAL, session: view })
+    const turned = applySetTypeChange({ row: rowKeyed(view, 'set:bench.2'), pick: NORMAL, session: { ...view, logs: [...logs].reverse(), rows: [...view.rows].reverse() } })
+    expect(forward.renumber).toEqual([
+      { id: 'log.bench.3', setNumber: 3 },
+      { id: 'log.bench.4', setNumber: 4 },
+    ])
+    expect(turned).toEqual(forward)
+    const toWarmup = applySetTypeChange({ row: rowKeyed(view, 'set:bench.1'), pick: WARMUP, session: view })
+    expect(applySetTypeChange({ row: rowKeyed(view, 'set:bench.1'), pick: WARMUP, session: { ...view, logs: [...logs].reverse() } })).toEqual(toWarmup)
   })
 
   it('is the same with the logs and rows the other way round', () => {
@@ -870,6 +893,19 @@ describe('a warmup logged with no weight or reps, made a working set (DECISIONS 
     // staying a warmup is no change at all
     expect(on(noNumbers(), WARMUP).needs).toBe(false)
     expect(on(noNumbers(), WARMUP).run().changed).toBe(false)
+  })
+
+  it('asks nothing of a working set, a drop or a set that is skipped, whatever its log holds (NZ07)', () => {
+    // a log the table would refuse (a working set with no weight): the rule is about warmups, so it still asks nothing
+    const odd = headLog('bench', 1, { weight: null })
+    const view = viewOf(orderOf([card('bench', 'n d1')]), [odd])
+    expect(typeChangeNeedsNumbers({ row: rowKeyed(view, 'set:bench.1'), pick: NORMAL, session: view })).toBe(false)
+    expect(typeChangeNeedsNumbers({ row: rowKeyed(view, 'set:bench.1'), pick: staged('dropset', 1), session: view })).toBe(false)
+    // a drop has no type of its own
+    expect(typeChangeNeedsNumbers({ row: rowKeyed(viewOf(orderOf([card('bench', 'd1')]), []), 'set:bench.1:stage:1'), pick: NORMAL, session: view })).toBe(false)
+    // a skipped warmup has no type to change
+    const skipped = viewOf(orderOf([card('bench', 'w n')]), [headLog('bench', 1, { warmup: true, skipped: true })])
+    expect(typeChangeNeedsNumbers({ row: rowKeyed(skipped, 'set:bench.1'), pick: NORMAL, session: skipped })).toBe(false)
   })
 
   it('numbers handed over when none are needed are not written: the patch is the type alone', () => {

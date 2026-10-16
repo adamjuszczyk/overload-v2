@@ -562,7 +562,7 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType,
       retyped: retyped !== undefined,
       number: 0,
-      planIndex: heads.length + 1,
+      planIndex: 0, // set below, once the added sets are in their places
       draftPosition: null,
     })
   }
@@ -572,9 +572,7 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
   // slots (ADD SET, or a draft the phone no longer holds). They are numbered with the planned sets below, and then put in
   // the order of their numbers, so a slot keeps its place whichever of them were logged first. A set added and then
   // switched to Warmup is still that row (drawn as a warmup: the type is the log's).
-  const addedLogs = session.headLogs
-    .filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null)
-    .sort((a, b) => a.setNumber - b.setNumber)
+  const addedLogs = session.headLogs.filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null)
   const drafted = (exercise.drafts ?? [])
     .filter((key): key is AddedSetKey => 'localId' in key && !('drop' in key) && key.exerciseId === exercise.exerciseId)
     .sort((a, b) => a.position - b.position)
