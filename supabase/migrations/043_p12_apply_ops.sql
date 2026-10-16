@@ -83,13 +83,17 @@
 -- (production runs it; the replay does not) needs a WHERE, and the caller's rows
 -- are the only ones it can see anyway (security invoker, so RLS applies as well).
 --
--- SECURITY INVOKER with a fixed search_path, like 034-041. The table is only
--- ever taken from the list above, never from the caller's text, and is quoted
--- with %I all the same. Execute is granted to authenticated alone: anon is
--- revoked (Supabase's default privileges grant execute to anon on a new function
--- in public; 028-041 left that, and each of them takes the user from auth.uid()
--- or a parameter; this one is revoked so a signed-out call is refused at the
--- grant, not only by the first check).
+-- No upsert: an insert of a row that exists already (the same id, or a unique key
+-- such as a REVIEW decision for an item already decided) is the table's 23505 and
+-- takes the whole list with it. A caller that may meet one reads first, or deletes
+-- and inserts in the same list.
+--
+-- SECURITY INVOKER with a fixed search_path, like 034-041. A table name is only
+-- ever one of the list above, never the caller's text, and is quoted with %I all
+-- the same; a patch's column names are quoted the same way. Execute is granted to
+-- authenticated alone: Supabase's default privileges give a new function in public
+-- to anon as well (028-041 left that in place), so anon is revoked here and a
+-- signed-out call is refused at the grant, not only by the first check.
 --
 -- Rollback: `drop function v2_apply_ops(jsonb)` in a later migration (nothing
 -- else references it). The column stays (forward-only), or is dropped once no

@@ -201,7 +201,8 @@ async function main() {
     console.log(`apply-ops-proof: the function the replay installed (${REAL_FN}); pg-safeupdate canary: ${canary === true ? 'active (a bare UPDATE is refused)' : canary === false ? 'NOT ACTIVE' : 'no answer'}`)
     printRows(rows)
     const bad = rows.filter((r) => !r.ok)
-    if (canary !== true || rows.find((r) => r.id === 'F00')?.ok !== true) {
+    const fixture = rows.find((r) => r.id === 'F00')
+    if (canary !== true || (fixture && fixture.ok !== true)) {
       console.log('apply-ops-proof: the harness itself is not sound (canary or fixture); nothing below can be read.')
       return 2
     }

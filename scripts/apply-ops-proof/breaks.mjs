@@ -134,6 +134,18 @@ export const BREAKS = [
     fails: ['A02', 'U02', 'W04'],
   },
   {
+    id: 'B64',
+    title: 'the patch\'s column names are spliced in as text (%s) instead of quoted as identifiers (%I)',
+    edits: [["format('%I = (p.r).%I', k, k)", "format('%s = (p.r).%s', k, k)"]],
+    fails: ['U07'],
+  },
+  {
+    id: 'B65',
+    title: 'the table name is spliced in as text in the delete (the list of tables already makes it safe)',
+    edits: [["execute format('delete from public.%I as t where t.id = $1 and t.user_id = $2', v_table)", "execute format('delete from public.%s as t where t.id = $1 and t.user_id = $2', v_table)"]],
+    survives: 'a table name is only ever one of the twelve on the list (B10 and B11 are the breaks of that list); %I is a second lock',
+  },
+  {
     id: 'B39',
     title: 'an update is not limited to its id (every row of the caller\'s table is updated)',
     edits: [["' where t.id = $2 and t.user_id = $3'", "' where t.user_id = $3'"]],

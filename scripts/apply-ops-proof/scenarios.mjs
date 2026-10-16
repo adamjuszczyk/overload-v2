@@ -116,6 +116,8 @@ add('G06', 'an op that is not an object is refused and named by its place (op 1,
 
 add('G07', 'an op that is not insert, update or delete is refused, by name (case counts, a missing "op" reads as none)', `${refused(opsSql({ op: 'upsert', table: 'v2_programs', id: A('prog'), patch: { name: 'x' } }), 'unknown op: upsert')}${refused(opsSql({ op: 'INSERT', table: 'v2_program_exercises', row: rows.v2_program_exercises(N('x')) }), 'unknown op: INSERT')}${refused(opsSql({ table: 'v2_programs', id: A('prog') }), 'unknown op: none')}${refused(opsSql({ op: '', table: 'v2_programs', id: A('prog') }), 'unknown op: ')}`, { group: 'list' })
 
+add('G08', 'an id that is not a uuid is the database\'s own refusal (22P02) for an update and a delete, and an op with no id is "row not found"', `${refused(opsSql({ op: 'delete', table: 'v2_workout_warmup_items', id: 'not-a-uuid' }), 'invalid input syntax for type uuid', '22P02')}${refused(opsSql({ op: 'update', table: 'v2_workout_warmup_items', id: 5, patch: { body: 'x' } }), 'invalid input syntax for type uuid', '22P02')}${refused(opsSql({ op: 'update', table: 'v2_workout_warmup_items', id: ['a'], patch: { body: 'x' } }), 'invalid input syntax for type uuid', '22P02')}${refused(opsSql({ op: 'delete', table: 'v2_workout_warmup_items', id: null }), 'row not found: v2_workout_warmup_items/')}`, { group: 'list' })
+
 // ═══ T  the tables ═══════════════════════════════════════════════════════════════════════════════════════════════════
 {
   const strangers = ['v2_set_logs', 'v2_sessions', 'v2_mesocycles', 'v2_user_settings', 'exercises', 'auth.users', 'v2_programs where true', 'V2_PROGRAMS', 'v2_programs; drop table v2_programs', '"v2_programs"', 'public.v2_programs', '']
@@ -377,6 +379,15 @@ add('U06', 'an update changes exactly its row: every other row of the table, the
   return b
 })(), { group: 'update' })
 
+add('U07', 'a column name is only ever an identifier: a patch key shaped like SQL (a quote, a semicolon, a comment) is the database\'s 42703, not a statement, and a row key like it is refused by name', (() => {
+  const hostile = ["tempo = '1337' --", 'tempo"; delete from v2_programs; --', "x', tempo = '1337' where true --", 'position = position + 1 where true; --']
+  let b = ''
+  for (const key of hostile) b += refused(opsSql(upd('v2_program_exercises', A('pe1'), { [key]: 1 })), 'column', '42703')
+  for (const key of hostile) b += refused(opsSql(ins('v2_program_exercises', { ...freshRow('v2_program_exercises'), [key]: 1 })), 'row names an unknown column: v2_program_exercises.')
+  b += assert(has('v2_program_exercises', A('pe1'), 'x.tempo is null') + ' and ' + has('v2_programs', A('prog')), 'nothing the keys spelt was run')
+  return b
+})(), { group: 'update' })
+
 // ═══ W  v2_week_plans: one column, as an update (DECISIONS 142) ═════════════════════════════════════════════════════
 {
   const SAVED = [{ programExerciseId: A('pe1'), setNumber: 1, stageIndex: 0, isWarmup: false, isDropset: false, stageKind: null, programSetId: A('ps1'), repMin: 8, repMax: 10, isAmrap: false, targetWeight: 50, targetRir: 2, targetRirMax: null, tags: null }]
@@ -455,6 +466,27 @@ add('P01', 'a long list: 1,000 inserts and 1,000 updates in one call finish insi
   select count(*) into k from public.v2_week_plan_sets x where x.set_number > 100 and x.target_weight = 62.5;
   perform pg_temp.zz_assert(k = 1000, 'rows with the second write: ' || k);
   note := '2000 ops in ' || round(extract(epoch from clock_timestamp() - t::timestamptz)::numeric, 2) || ' s';`, { group: 'whole' })
+
+add('D05', 'a delete lands in every table that takes one: a throwaway row of each is made and then deleted by an op (a family tested member by member)', (() => {
+  let b = ''
+  // rows a list cannot insert are made directly, as the user (RLS lets the owner)
+  b += `
+  insert into public.v2_programs (id, user_id, name, kind) values ('${N('t_prog')}', auth.uid(), 'Throwaway', 'saved');
+  insert into public.v2_workout_days (id, program_id, user_id, name, position) values ('${N('t_wd')}', '${N('t_prog')}', auth.uid(), 'Throwaway', 0);`
+  const direct = { v2_programs: N('t_prog'), v2_workout_days: N('t_wd') }
+  for (const t of INSERTABLE) {
+    const over = t === 'v2_session_set_changes' ? { week_plan_set_id: A('ws1'), kind: 'retyped' } : {}
+    b += `
+  perform pg_temp.zz_ok(${opsSql(ins(t, freshRow(t, { user_id: '{{uA}}', ...over })))}, 1);`
+  }
+  for (const t of TABLES.filter((x) => x !== 'v2_week_plans')) {
+    const id = direct[t] ?? idFor(t)
+    b += `
+  perform pg_temp.zz_assert(${has(t, id)}, '${t}: the throwaway row is not there to delete');
+  perform pg_temp.zz_ok(${opsSql(del(t, id))}, 1);${assert(gone(t, id), `${t}: the row is still there`)}`
+  }
+  return b
+})(), { group: 'delete' })
 
 // ═══ S  the function itself ══════════════════════════════════════════════════════════════════════════════════════════
 add('S01', 'the column: nullable uuid with no default, a foreign key to the table itself that sets null on delete', `
