@@ -1,45 +1,20 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, chunk 49's review (Settings' two new rows; "New week starts" gone): merged (#140).*
-- *Chunk 49 merged. Settings has the two rows SPEC adds: "Drops and stages count as" (each drop = ½ by default) and "Log sets in order" (on by default). Both save and read back after a reload, and "New week starts" is gone. A value it held stays stored and is no longer written; no staging account held "empty".*
-- *One new reading for you, blocking nothing (158): the builder's display choices for those rows, since Settings has no board, and the name chunk 60's lock question will use for the setting (SPEC's "Log sets in order", not board W7b's "LOG IN ORDER").*
-- *156 (043's failed staging deploy) still waits on you and still holds 51a. This merge's own deploy worked (three runs, one success), so it adds nothing to 156.*
-- *The smoke passed: 51/51 and every tab. Its log step is "waiting on re-seed" (138). 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-16, your answers of 2026-10-16 to 151, 149, 152, 157, 154, 128 (g), 155, 153 and 158: all written in.*
+- *Each answer is in its entry's Answer field, word for word, and those entries are now three lines (full text in HISTORY.md). SPEC.md has a line for 151, 152, 154 and 149; 155 (a) has no SPEC rule to change. TASKS-1.2.md has them in chunks 46, 53, 62 and 63 and the Release section, and RULES.md has your 1.2 usage rules.*
+- *What follows: chunk 46 goes to its third attempt with 151. Chunk 53 is unblocked and carries 149's data migration, which runs only at the release, as a blocking decision with the manual backup before it ("For the release"). 152 is chunk 62's. A second display follow-up, d31b, is queued for 154 (Coach stays as it is; the screens 1.2 doesn't rebuild go back to their own code), 155 (a) (a segment switch carries the set's own value over) and 157 (c) (the app's op type narrowed; no migration).*
+- *Still waiting on you: 159 and 160, from chunk 50's review, which block nothing in the build (159 needs your answer before the release); and the to-dos (138, 121, 113, 79). Each list is ordered by what it blocks.*
 
 Decisions:
-- **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
-- **149** — weeks a week-dependent run changed in 1.1's week view (chunk 45). In 1.1 such a run's exercise changes lived in its weeks: SWAP or ADD made a week-only exercise, REMOVE took one out of that week, and the run's program never changed (the program tab went in 1.1; Make default is stable-only). From 044 on (chunk 53; production at the release), 143's copy follows the program's list. So the first copy from such a week brings back an exercise removed in 1.1 (with no sets) and takes the program's order. The week-only exercises stay in every later week, and nothing in 1.2 can remove them (executed probe). Held against [P1.1]'s "Existing data" line, as you asked, it isn't fully answered: "copying uses each week's actual content" keeps a week-only exercise, as built, but for an exercise 1.1 removed from a week while the program still lists it, and for a week whose order 1.1 changed, the line gives the week's content and 143's line the program's list, and neither says which wins; nor does the line say how a week-only exercise is ever removed. Recommended: (c) once, at the release, make each active week-dependent run's program match its last planned week, so nothing you see changes. Blocks: chunk 53 and the release; nothing before 53.
-- **152** — a warmup logged with no weight or reps, made a working set during the workout (chunk 46, for 62). SPEC lets a warmup be logged without numbers, and its edit panel has SET TYPE. The database refuses a working set without both numbers (executed: `23514`). Recommended: (a), ask for the numbers first: the working type is saved together with the weight and reps typed in the panel, in one write. Blocks: chunk 62; chunk 46 only if answered (c), where the switch makes it a set still to do.
-- **157** — a delete op on a run's workout or program (chunk 47). For `v2_programs` and `v2_workout_days`, TASKS says "only an update is allowed — no inserts of those". As built, the executor refuses the inserts and accepts a delete, the reading chunk 45's merged op type took. Executed: a delete of a run's workout removes every week plan of that workout (its sessions and logs stay); a delete of the run's program is refused by its run. No 1.2 screen sends either, and the API already lets you make the same delete. Recommended: (a), keep it as built; (c) narrows the app's op type with no migration; (b) refuses it in SQL with a later migration. Blocks: nothing.
-- **154** — text on the accent in Coach, which is frozen (the display follow-up). Your answer puts `--on-accent` "wherever text sits on the accent".
-  - Coach draws such text in 15 places (9 files), still `--base`: near-white on the accent in the light theme.
-  - Coach is frozen (Escalation 16), so no Coach line changes without you.
-  - Recommended: (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same.
-  - Also read from your words: "wherever" covers the screens 1.2 doesn't rebuild (Today, History, Progress, Library, Settings, sign-in), though SPEC's "Scope of the look" keeps their code. Say so if you meant the 1.2 screens only.
-  - Blocks: nothing. The follow-up merged without Coach (#135). (a) is a small change of its own: the 15 colour values, the freeze's base moved, and the Coach exception in `textOnAccent.static.test.ts` deleted.
-- **128 (g)** — where the new `--on-accent` token goes. Your answer says "in global.css for both themes", and SPEC calls global.css the home of the accent variables, but the app declares every colour value, for both themes, in `src/styles/tokens.css`; global.css only maps them to Tailwind classes and has no theme blocks. The display follow-up built it as recommended: the value in tokens.css (both theme blocks) and its Tailwind mapping in global.css, as `--accent` itself is done. Blocks: nothing. It is display only (D31): it stays so unless you move it.
-- **155** — the display follow-up's own display choices (D31), each as built (#135) unless you change it:
-  - (a) A picker switched to a segment the set doesn't have starts from the boards' examples: 12 → RANGE gives 8–10, and 6–9 → NUMBER gives 8. The set's own segment keeps its numbers, so 6–9 → NUMBER → RANGE is 6–9 again. That is your words read literally; the first attempt carried the set's number over instead (12–14).
-  - (b) The typed boxes: a number past the bounds is held to the nearest one when the box is left (150 reps → 100), and an emptied box goes back to its number.
-  - (c) The cues sheet's rows keep wrapping a long cue as built.
-  - Blocks: nothing.
-- **153** — the order of a set's two REVIEW items (chunk 43, for 56; display only). With your 150 (b), a set whose type you change during a workout and then skip or never log gives two items. As built, "Skipped" / "Not logged" comes first and the type item right after it, the order a done set's number item and type item already have (139, accepted). Blocks: nothing. It is display only (D31): as built unless you change it.
-- **158** — chunk 49's display choices (D31), each as built (#140) unless you change it. Settings has no board; SPEC's "keeps its current look" and TASKS' words decided the rest:
-  - (a) "Log sets in order" is in a section of its own titled WORKOUT, right after REST TIMER (the page has no WORKOUT group; TASKS: "in WORKOUT (next to the rest timer rows)").
-  - (b) The toggle reads "Log sets in order" in sentence case, as SPEC spells it and like the page's other toggles; the chip row's label is in capitals like its neighbours.
-  - (c) The two explanation lines are TASKS' words, in small muted text under their rows.
-  - (d) At phone widths each chip takes two lines ("WHOLE SET =" over "1"); nothing is clipped.
-  - (e) For chunk 60: board W7b's question ends `TURN OFF "LOG IN ORDER" IN SETTINGS`, but SPEC calls the setting "Log sets in order" three times, once about that very line. SPEC wins over a board, so 60's line names the row as it reads.
+- **159** — Coach's weekly analysis after a weekday change (chunk 50, for 51b; Coach is frozen). Since chunk 50, Today and Plan read each week's own weekdays. From 51b, a weekday change starts next week, and the run copy then holds the new days. Coach's week resolution still reads the run copy for every week (your D15: "derived from `program.schedule`"). Executed: after a week-2 save that also puts Arms on Friday from week 3, Today offers week 2 Tue, Thu and Sat, while Coach expects Friday too. So with every session done, that week is never complete and never analysed. Recommended: (a), Coach resolves each week through the same schedule rows (a Coach change, with the freeze's base moved). Blocks: nothing in the build (Coach runs for your account only, which isn't on staging); answer before the release.
+- **160** — chunk 50's display choices (D31), each as built (#142) unless you change it:
+  - (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner, and a failed read keeps it there, as Today already does when its other reads fail (a workout in progress included). Falling back to the run copy's days could show next week's days in this week.
+  - (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day (the existing rule, now reachable).
   - Blocks: nothing.
 
 To-dos:
-- **156** — read the log of 043's failed staging deploy (chunk 47).
-  - The `Supabase Preview` run on the merge (#137, `5762d4a`, 2026-10-16 07:10 UTC) failed in four seconds at the config step: "Failed to update config for branch: staging". 043 didn't apply.
-  - The next push's run (#138, `43f1fc8`, 07:26 UTC) succeeded and applied it: the column probe is green, and R2 passed as the test account.
-  - When: now. Please read the Branches log for the failed run, and say "go on" (or what to fix).
-  - Blocks: until you have read it, the chunks that need 043 (51a first; then 52's COPY, 56, 61 and 53). Not 49 or 50.
-- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's and chunk 49's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
+- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's, 49's and 50's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -52,7 +27,8 @@ To-dos:
   - `alter table v2_program_exercises add column if not exists replaces_program_exercise_id uuid references v2_program_exercises(id) on delete set null` ("foreign key action can change existing rows later");
   - `create or replace function v2_apply_ops`, `revoke execute`, `grant execute`, `notify pgrst` (each "not on the safe list").
 
-  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, and the next push's deploy applied it (156).
+  Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, a config-sync failure only, and the next push's deploy applied it (156, answered; verified live 2026-10-16).
+- **149's data migration** — chunk 53, its number assigned there (DECISIONS 149 (c), Adam 2026-10-16): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build.
 
 ## Format for all new entries
 
@@ -74,160 +50,70 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ## Open
 
-### 156 Migration 043's staging deploy failed at the config step; the next push's deploy applied it (chunk 47; to-do, blocking)
-**Ask:** Chunk 47 merged into `staging` as #137 (`5762d4a`) at 07:10 UTC on 2026-10-16. The `Supabase Preview` run on that commit failed in four seconds with "Failed to update config for branch: staging", and migration 043 did not apply. The next push to `staging` was this review's docs merge (#138, `43f1fc8`, 07:25 UTC). Its run succeeded and applied 043, and chunk 47's staging steps then passed. A failed staging deploy is blocking until you have read the Branches log (CONTEXT.md, Repo facts). Please read the log for the failed run (Dashboard → Branches → staging, 07:10 UTC) and say "go on", or what to fix.
-**Recommendation:** "go on", unless the log names something in the repo. The failed step applies `supabase/config.toml` to the branch, before any migration runs. That file hasn't changed since #91 (2026-10-14), and the same file deployed 16 minutes later. So it looks like a passing fault on Supabase's side; only the log can say. — **When:** now.
-**Blocks:**
-- Until you have read it, the chunks that need 043 live: 51a first (its SAVE is the first caller), then 52's COPY, 56, 61, and 53 (044 reads the link column).
-- Not 49 or 50, which don't touch 043.
-- Nothing is left to run for chunk 47: its staging steps passed after the second deploy.
-
-**Evidence:**
-- **The failed run.** `gh api …/check-runs/116857241099`: app `supabase`, 07:10:05 → 07:10:09, `failure`, summary "Failed to update config for branch: staging". Read with `?filter=all`, it is the only run on `5762d4a`. A deploy that works shows three runs (two left `in_progress`, one `success`), as on `43f1fc8`, `e5b90ce` and 042's `8aeff32`.
-- **The earlier runs.** The 13 staging pushes before it (`5ff951d` to `e5b90ce`) and 042's own merge (`8aeff32`, 2026-10-14) all show `success`. No earlier "Failed to update config" is recorded anywhere.
-- **043 didn't apply on the failed run.** Before and after it, `probe-live-columns 043` answered the column with `400 42703`, and `rpc/v2_apply_ops` answered `404 PGRST202`, signed out and signed in.
-- **The next run applied it.** `43f1fc8`'s run 116862656011 succeeded (07:26:07 → 07:26:14). At 07:26:36 the probe was green (the column `200 []`, the control `400 42703`), and the live embed check resolved 30 of 30.
-- **R2 on staging**, signed in as `staging-test`, under staging's pg-safeupdate:
-  - `[]` → `0`.
-  - An update of a week 3 Upper A set's `target_weight` (11.5 → 14), then a second update back → `2`; the set reads 11.5 before and after.
-  - A list whose op 2 names a `v2_set_logs` row → `P0001 "table not allowed"`, details "op 2 names v2_set_logs"; op 1's 14 is absent.
-  - Signed out → HTTP 401 `42501`, "permission denied for function v2_apply_ops".
-  - `select=*` on `v2_program_exercises` carries the column on all 49 rows.
-- **The app.** The Vercel staging deploy is BUILD `5762d4a`, stylesheet unchanged. `staging-smoke.mjs` passed 51/51 and the browser smoke opened every tab with no error text, both before and after 043 applied.
-- **The chunk itself passed review on the real image before the merge.** That covered the replay, the embeds, the reviewer's own 29-case SQL proof and its 11 breaks, and every script. Long form: HISTORY.md, "2026-10-16 chunk 47 review" and its follow-up.
+### 156 Migration 043's staging deploy failed at the config step; the next push's deploy applied it (chunk 47)
+- What: chunk 47's merge (#137, `5762d4a`, 2026-10-16) had one `Supabase Preview` run, which failed in four seconds at the config step ("Failed to update config for branch: staging"), so 043 didn't apply; the next push's deploy (#138, `43f1fc8`) succeeded and applied it, and R2 passed. A failed staging deploy is blocking until Adam has read it, so it held the chunks that need 043, 51a first.
+- Answer: (Adam, 2026-10-16: config-sync failure only, 043 verified live) "the failed run on 5762d4a says "Failed to update config for branch: staging" — the config sync step, not the migration step. Later deploys succeeded (chunk 49's), and a successful deploy applies pending migrations." Verified on staging as he asked, signed in as the test account (chunk 50's review, finished after a restart): `v2_apply_ops([])` → 0; one update-and-revert list on week 3 Upper A set 1 (`target_weight` 11.5 → 14 → 11.5) → 2, its `select=*` row (18 columns) the same before and after; `probe-live-columns.mjs` 043 green (the column `200`, the control `400 42703`); sign-ups off (`signup_disabled`), and `staging-smoke.mjs` 51/51. The migration history (`supabase_migrations.schema_migrations`) isn't readable from here: PostgREST answers `406 PGRST106`. Every push since the failed run deployed (three runs, one success), chunk 49's included. Nothing waits on it now. Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 157 043 accepts a delete of a run's workout or program; TASKS says "only an update is allowed" (chunk 47)
-**Ask:** TASKS-1.2 chunk 47's Scope says, inside its insert clause: "(and, for `v2_programs` / `v2_workout_days`, only an update is allowed — no inserts of those)". As built (#137), `v2_apply_ops` refuses an insert into either table and accepts a delete of a row of either. That is the reading chunk 45's merged op type took: `DeletableTable` is every listed table but `v2_week_plans`, and CONTEXT.md says 47 is written against it. Read literally, "only an update" refuses the delete too. Which did you mean?
-**Recommendation:** (a), keep it as built. No 1.2 chunk builds such an op: SPEC's CHANGE THE PROGRAM never adds or removes a workout, and chunk 66's DELETE goes through `useDeleteMeso`. Row-level security already lets the signed-in user make the same delete through the REST API, so the executor adds no capability; (b) would cost a migration for an op nobody sends.
-**Blocks:** nothing. (b) or (c) can be done any time before the release.
-**Options:**
-- (a) As built: a delete is allowed on both tables, as on every listed table except `v2_week_plans`.
-- (b) Update only, as the words say: a later migration replaces the function with two more refusals (`delete not allowed on v2_programs` / `v2_workout_days`), and `DeletableTable` drops both tables.
-- (c) Refused in TypeScript only: `DeletableTable` drops both tables, so no op list the app builds can hold such a delete. No migration.
-
-**Answer:**
-**Evidence:** executed on a replay of 000–043 (`supabase/postgres:17.6.1.155`), as the signed-in role, rolled back (the reviewer's case R24):
-- A delete op on a run's `v2_workout_days` row is accepted, and it cascades through every week plan of that workout: the fixture's week plans went from 2 to 0 and their sets from 3 to 0. The session stays, with `week_plan_id` NULL, and keeps its log.
-- On the run's `v2_programs` row the delete is refused by `v2_mesocycles_program_id_fkey` (`23503`). On a saved program it would land.
-- The builder asserts the delete on purpose (its scenario D05), but did not list it among its judgement calls.
-- The function's other departures from TASKS' words are the four judgement calls the builder listed (the revoke from anon, the input refusals, NULL rather than the default, the committed proof), all accepted in the review. Long form: HISTORY.md, "2026-10-16 chunk 47 review".
+- What: whether `v2_apply_ops` (043) may delete a run's `v2_programs` or `v2_workout_days` row, where TASKS 47 says "only an update is allowed"; as built (#137) it refuses an insert into either and accepts a delete.
+- Answer: (Adam, 2026-10-16) "(c). Narrow the app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration." Queued for the second display follow-up (d31b). Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 158 Chunk 49's display choices where SPEC and TASKS give no layout (provisional, D31)
-**Ask:** Chunk 49 added Settings' two [1.2] rows. Settings has no board: SPEC says it "keeps its current look", and TASKS gives the words. These choices were the builder's, under D31. Each stays as built (#140) unless you change it:
-- (a) Where "Log sets in order" sits. TASKS says "in WORKOUT (next to the rest timer rows)", but the page has no WORKOUT group: SPEC's grouping into Workout, Planning, Language and Appearance is [P2]. As built, it is a section of its own titled WORKOUT, right after REST TIMER and before SET TIMING. The alternative would be a row inside the REST TIMER card.
-- (b) The toggle's label is "Log sets in order", in sentence case. That is SPEC's spelling and matches the page's other toggles ("Show rest timer"); TASKS writes it in capitals. The chip row's label is in capitals, "DROPS AND STAGES COUNT AS", like the page's other chip labels.
-- (c) The two explanation lines are TASKS' words verbatim: "Off: LOG never asks." and "For Plan's VOLUME sheet. History and Progress count as before." Each is in small muted body text under its row.
-- (d) At phone widths each of the three chips takes two lines ("WHOLE SET =" over "1", at 390, 375 and 320 px). Nothing is clipped or overflows. A non-breaking space before the number would keep "= 1" together.
-- (e) For chunk 60: board W7b's lock question ends `DON'T WANT THIS QUESTION? TURN OFF "LOG IN ORDER" IN SETTINGS.` SPEC names the setting "Log sets in order" three times: under Settings, under Screens → Settings, and in the sentence about this very line ("a line saying the lock can be turned off in Settings ("Log sets in order", W7b)"). SPEC wins over a board ("Design boards [1.2]"), so 60's line names the row as it reads: "LOG SETS IN ORDER".
+- What: chunk 49's display choices for Settings' two [1.2] rows (no board): (a) "Log sets in order" in a WORKOUT section after REST TIMER; (b) its label in sentence case; (c) TASKS' explanation lines under the rows; (d) each chip on two lines at phone widths; (e) chunk 60's lock line names the setting as SPEC does, "LOG SETS IN ORDER".
+- Answer: (Adam, 2026-10-16) "all accepted, including (e)." All five stay as built; (e) is chunk 60's to build. Full text in HISTORY.md.
+- Date: 2026-10-16
 
-**Recommendation:** keep all five as built. (a) to (d) keep the page's look with the least new layout; (e) is SPEC's own wording.
-**Blocks:** nothing. Each is a short change; (e) is chunk 60's to build.
+### 159 Coach's weekly analysis reads the run's newest weekdays for every week (chunk 50, for 51b; Coach is frozen)
+**Ask:** From chunk 51b, CHANGE THE PROGRAM can change a run's weekdays. The new days start next week, stored as `v2_run_schedules` rows, and the run copy's `schedule` holds the new days (chunk 45's writer). Since chunk 50, Today, Plan and the missed-session prompt read each week's own days. Coach doesn't: `weekResolution.ts` takes a week's expected sessions from the run copy's `program.schedule`, for every week (your D15: "By plan resolution derived from `program.schedule`"). Should Coach read the days in force for the week, as Today does? Coach is frozen (Escalation 16), so either way it is your call.
+**Recommendation:** (a). D15 chose `program.schedule` because it is what Today prompts about. The file's own header: "a date the scheduler never prompts about can't be skip-marked through any existing UI, so using the weekly-plan layer instead would risk a permanently unanalyzable week". Since 50, Today prompts by the week's own days, so (a) keeps D15's reason.
+**Blocks:** nothing in the build: Coach runs for your account only, which isn't on staging. Answer before the release, which brings 51b's weekday change to production.
+**Options:**
+- (a) Coach resolves each week through `scheduleForWeek` over the run's rows and the run copy, in its week resolution and in its Q&A context. This is a Coach change: its server-side reads add `v2_run_schedules`, and `check-frozen-code.mjs`'s base moves to it.
+- (b) As built: Coach expects the run's newest days in every week. After a change that adds or moves a day, the week of the change expects a day Today never offered in it. So that week is never complete and never analysed, and the same goes for an earlier week not yet analysed. Q&A's "this week" lists the new days. A day taken off is simply not expected.
+
+**Answer:**
+**Evidence:**
+- Read in the frozen code: `resolveWeek` reads `program.schedule[dow]` for each date of the week, and `isComplete` needs every expected date completed or skipped. `coachWeekService.ts` lists only complete weeks, `api/coach/analyze-week.ts` refuses an incomplete one, and `qaContext.ts` hands Q&A this week's and next week's expected sessions.
+- Executed in chunk 50's review: chunk 45's `planProgramChange` (what 51b's SAVE calls) was applied to the G14 world in week 2, with Arms also on Friday from week 3. It writes rows `from_week` 1 (Tue, Thu, Sat) and `from_week` 3 (Friday added), and puts all four days in the run copy. Today's scheduler then offers week 2 Tue, Thu and Sat, with no Friday. With those three sessions done, `resolveWeek` for week 2 expects Tue, Thu, Fri and Sat, so `isComplete` is false. Against the run copy before the save (the control), the same sessions are complete.
+- Nothing differs until a run has a schedule row: none exists on staging, and no screen writes one until 51b. Flagged by chunk 50's builder (its report, section 3, item 5).
+
+### 160 Chunk 50's display choices (provisional, D31)
+**Ask:** Chunk 50 reads each week's weekdays from the run's schedule rows. Two things it shows have no word in SPEC or TASKS. The builder chose them under D31, and each stays as built (#142) unless you change it:
+- (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner (a sequence run waits for nothing). If the read fails, they stay on it, as Today already does when its other reads fail (programs, sessions, week plans), a workout in progress included. Plan has no load error for this read: board 12's "COULDN'T LOAD PLAN" with the real message is chunk 52's. The alternative, falling back to the run copy's days, would show next week's days in a week that had others once 51b writes rows.
+- (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day. That is the page's existing rule, now reachable: Friday selected in week 3, then back to a week 2 without a Friday.
+
+**Recommendation:** keep both. (a) never shows a wrong day, and (b) is the page's existing rule.
+**Blocks:** nothing.
 **Options:** for each, as built or the alternative named.
 **Answer:**
-**Evidence:** the deployed screen, read by the reviewer as the test account on staging after the merge: the two rows where (a) says, the selected chip's text in `--on-accent` in both themes, no overflow at 390, 375 and 320 px, and both values persisting through a reload. Long form: HISTORY.md, "2026-10-16 chunk 49 review".
+**Evidence:** nothing is written either way: the scheduler only reads, and Plan's plan-the-week effect doesn't wait for the rows. On staging no run has rows, and every read answered `200` with none. A failed read was not reproduced live; the hooks' tests hold Today and Plan on the spinner while the rows are `undefined`, which is what a failed first read leaves. The builder's report, section 3, item 3; long form: HISTORY.md, "2026-10-16 chunk 50 review".
 
 ### 155 The display follow-up's own display choices (provisional, D31)
-**Ask:** the display follow-up built your changes to 128, 129, 130 and 132 (#135). Three things it needed have no exact word from you. Each stays as described here unless you change it.
-**Recommendation:** keep them. Each is a few lines in `src/components/pickers/`.
-- (a) **Starting numbers on a segment switch.** Your words: "The boards' example values (8, 8–10, RIR 2, 1–2) are only the starting point when you switch to a segment the set doesn't already have". Read literally:
-  - a set at 12 reps switched to RANGE starts at 8–10;
-  - a set at 6–9 switched to NUMBER starts at 8;
-  - each segment keeps its own numbers while the sheet is open, so 6–9 → NUMBER → RANGE is 6–9 again.
-
-  The first attempt carried the set's number over instead (12 → 12–14, 6–9 → 6), and lost the range on the way back (6–9 → NUMBER → RANGE gave 6–8). The review sent it back, and the second attempt built the literal reading (#135).
-- (b) **The typed boxes.**
-  - Digits only, at most three, with the number pad.
-  - The number is selected when a box takes focus, and Enter leaves the box.
-  - A number typed past the bounds is held to the nearest one the box can take when the box is left or the sheet is confirmed: 150 reps → 100, 0 → 1, RIR 21 → 20, a FROM typed past TO → TO. Ends that meet are a number, as before.
-  - An emptied box goes back to its number, and the footer button always says what it will set.
-  - Escape in a box closes the sheet, as it does anywhere in it.
-- (c) **The cues sheet's rows (129)** keep wrapping a long cue as built (`overflow-wrap: break-word`), since your long-word answer named 128 and 130. An 80-letter cue wraps inside its row at 375 px.
-
-**Blocks:** nothing. No screen uses the pickers before 51a / 54a.
-**Options:**
-- (a) as described, or the set's own number carried into its other segment (12 → 12–14), as the first attempt had it;
-- (b) as built, or a typed number past the bounds refused instead of held at the bound;
-- (c) as built, or `anywhere` there too.
-
-**Answer:**
-**Evidence:** the display follow-up's first review (`<scratchpad>/build/chunk-d31-review-1.md`), on `build/chunk-d31` at `b32dfbe`:
-- (a) was run in real Chromium on the built pickers.
-- (b): the builder's 35 real-Chromium checks were re-run and passed 35/35.
-- (c): the 375 px sheet check passes on a cues fixture with an 80-letter cue, and its control (the wrap removed) fails.
-
-Its second review, on `7d1367b` (merged as #135, `a97eb8c`):
-- (a) in real Chromium on the built pickers: 12 → RANGE gives 8–10, and 6–9 → NUMBER gives 8. 6–9 → NUMBER → RANGE gives 6–9 back, and confirming it sets 6–9. Of 19 checks, the first attempt's carry-over fails 3 and "RANGE restarts from the example" fails 7.
-- (b): the builder's 48 real-Chromium checks pass 48/48.
+- What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
+- Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, in the second display follow-up (d31b); (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 154 Text on the accent in Coach, which is frozen: included or not? (the display follow-up)
-**Ask:** your answer puts the new `--on-accent` "wherever text sits on the accent". Coach draws text on the accent in 15 places in 9 files (its buttons and picked tabs), still in `--base`: near-white on the accent in the light theme, as the rest of the app did. Coach has been frozen since `e747183` (Escalation 16; `check-frozen-code.mjs` fails on any change under `src/features/coach/`), so those 15 can't change without your word. Is Coach included?
-**Recommendation:** (a) include it: the 15 colour values and nothing else in Coach, with the freeze's base moved to that commit, so the whole app reads the same. It is display only.
-**Blocks:** nothing. The display follow-up merged without Coach (#135). (a) is a small change of its own: the 15 colour values, the freeze's base moved, and the Coach exception in `textOnAccent.static.test.ts` deleted.
-**Options:**
-- (a) include Coach, as above;
-- (b) leave Coach on `--base` until Coach is next opened.
-
-**Answer:**
-**Evidence:** the display follow-up's first review scanned every accent background in `src` and found 94:
-- the 1.2 sheets' 7 already use the token;
-- 6 hold nothing to read (dots, a bar, two toggle tracks);
-- 15 are Coach: `CoachMemory.tsx` ×3, `CoachMesoAnalysisTab.tsx`, `CoachPage.tsx`, `CoachSessionAnalysisTab.tsx`, `CoachWeekAnalysisTab.tsx`, `PhaseLog.tsx` ×3, `PrioritySelector.tsx`, `QaComposer.tsx`, `WeightLog.tsx` ×3;
-- the other 64 (39 files) went to `--on-accent` in the follow-up's second attempt (#135).
-
-Those 64 include the screens 1.2 doesn't rebuild (Today outside the workout, History, Progress, Library, Settings, sign-in, the update notice). SPEC's "Scope of the look" keeps their code, but 128 (g)'s option, which you took, said the token "would fix every accent button", and your words are "wherever". If you meant the 1.2 screens only, say so, and a small change puts those screens' places back on `--base`.
+- What: whether frozen Coach's 15 places with text on the accent (still `--base`) take `--on-accent`, and whether "wherever" also covers the screens 1.2 doesn't rebuild, which the display follow-up (#135) converted.
+- Answer: (Adam, 2026-10-16) "no. Coach stays exactly as it is. --on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code." Written into SPEC.md (Design boards → Scope of the look). The second display follow-up (d31b) takes `--on-accent` back off the screens 1.2 doesn't rebuild and their non-shared components; Coach is untouched. Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 153 Chunk 43's fourth attempt: which of a set's two REVIEW items comes first (provisional, D31)
-**Ask:** your 150 (b) gives a set two REVIEW items when its type was changed during the workout and it was then skipped or never logged: its "Skipped" / "Not logged" and its type item ("You made set 03 a dropset"). Board 4 draws no such pair, and SPEC doesn't say which comes first. As built, "Skipped" / "Not logged" comes first and the type item right after it. That is the order a done set's two items already have: its number item, then its type item, 13c's items before 13d's. It stays as built unless you change it.
-**Recommendation:** keep it: it is the order 139 accepted for a set that was done, and one statement in `sessionItems`.
-**Blocks:** nothing. No screen draws REVIEW before chunk 56.
-**Options:** as built ("Skipped" / "Not logged" first, then the type item), or the type item first.
-**Answer:**
-**Evidence:** `sessionItems` in `src/features/plan/review.ts`, on staging since #130 (`95bbe46`). The seed test lists "SEATED CABLE ROW · SET 03 · Skipped" and then "You made set 03 a dropset · 2 drops", and the builder's break S20 (the type item first) fails 11 tests. The builder's other readings aren't D31 choices. They're recorded so you see them, and SPEC or your answers decide each:
-- On a slot swapped during the workout, the swap item stands for the original's remaining sets in place of their "Skipped" items, as before (139). A set retyped before the swap keeps its type item: the swap item carries no type, and 19 says next week sees a type change only through REVIEW.
-- The same stage kind with another count, on a set not done, is no item. As on a set that was done, only drops done beyond the plan count, and a set not done has none; 150's evidence asked you to say so if you read a count as a type change.
-- The type is read from the set's `retyped` row alone (150 (b)'s words). A skipped log's own kind and a `pending_stages` row (a count) are not read.
-- A session skipped as a whole still gives nothing (G52: "a session marked skipped gives no REVIEW items").
-- A set deleted afterwards is "Skipped" only (your change-row rule: its row becomes `deleted`).
+- What: the order of a set's two REVIEW items when its type was changed during the workout and it was then skipped or never logged (150 (b)); as built (#130), "Skipped" / "Not logged" first and the type item right after it.
+- Answer: (Adam, 2026-10-16) "accepted." It stays as built. Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 151 UNLOG of a set that isn't the last one logged: what happens to the set numbers (chunk 46)
-**Ask:** During a workout a logged set can be unlogged (SPEC 18c). Its log is deleted, and its weight, reps and RIR stay on the phone as a draft. A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves a hole in the logged numbers, and two rows show the same number. With bench 01–03 logged and 04 open, UNLOG on 02 shows 01 ✓, 03 (the unlogged set, open), 03 ✓, 04. The finish warning then says "Bench 03 and 04", and the lock asks "Log set 04 before set 03?". Logging it again stores a second set 3, so History shows sets 1, 3 and 3. SPEC 18c says only that the set "goes back to unlogged with its numbers kept" and that "logging again undoes it". What should unlog do to the set numbers?
-**Recommendation:** (a), the rule that a delete (18b) and a switch to or from Warmup (146 (a)) already follow. The logged sets after it close the gap at once, and logging it again gives it the next number. No two rows or logs then share a number, and History has no hole. The set's own number can change: unlog 02 of 01–03 and log it again, and it is 03 (the old 03 became 02). Chunk 46 returns the number patches with the unlog (heads and their drops). Chunk 63 writes them with the delete, offline too, as chunk 61 does for delete.
-**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it and write what it returns; 63 writes the answer. As built, after its own unlog the module's own rows show two sets with one number, and every option but (c) changes the module. Nothing before 58a waits: 47–57 don't use it.
-**Options:**
-- (a) As recommended: the logged sets after it move down one; logging it again gives it the next number.
-- (b) The set keeps its number. The draft also keeps the number it was logged with, the open row shows it, and LOG writes it again, so logging again restores exactly what was there. The other sets don't move. A set logged while it is unlogged takes the number after the highest one in use. If it is still unlogged when the session ends, its number is missing in History.
-- (c) As built: nothing renumbers. While the set is unlogged two rows show one number, and logging it again stores a duplicate number. Not recommended.
-**Answer:**
-**Evidence:** Executed through the module's own outputs in chunk 46's second review, on `5b09cec` squashed onto staging `4e7205b`:
-- `unlogEffects` on 02 returns the log's delete and the draft, nothing else.
-- Applied, `resolveRows` reads `01✓ 03· 03✓ 04·`, and the current set is the unlogged 02, shown as 03.
-- Logged again the way chunk 58a keeps writing a head (`totalLoggedHeads + 1`; TASKS 58a, "Writes unchanged"), the stored numbers are 1, 3, 3.
-- Unlogging the last logged set leaves no hole.
-
-Why SPEC doesn't settle it:
-- SPEC 18b's "The remaining sets renumber" is about delete.
-- 146 (a) answered the Warmup switch only (RULES.md: an answer covers the cases its question held).
-- G46's draft (TASKS 63) holds weight, reps, RIR, form and unit, and no set number.
-
-It is the defect 146 was asked about (two rows with one number), here for unlog. The builder raised it (its report, A8) and built nothing for it. Redone if the answer is (b): the draft's shape and how the rows number a set with a draft (46), and what LOG writes (63).
+- What: what UNLOG does to the set numbers when the set isn't the last one logged; as chunk 46's second attempt built it, an open set showed the next number after the logged ones, so unlogging 02 of 01–03 showed two rows numbered 03 and logging it again stored a second set 3.
+- Answer: (Adam, 2026-10-16) "not (a). An unlogged set keeps its number and its place. Logging it again stores it with that same number, so unlog then log is an exact undo (SPEC 18c). No other set's number changes on unlog. The open row shows its own number (a planned set's position; an added set's number from its draft), never "the next after the logged ones"." Written into SPEC.md (Logging mechanics → Unlog (18c)) and TASKS-1.2.md (chunks 46 and 63, the Data model's unlog row). Chunk 46 goes to its third attempt with it; chunk 63 writes it. Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 152 A warmup logged with no weight or reps, made a working set during the workout (chunk 46, for 62)
-**Ask:** SPEC lets a warmup be logged with no weight and no reps (Warmup sets: "weight and reps, both optional"). Its boxes may be left empty, and a warmup ticked off in the tick list has none. A logged set's type can be changed from its edit panel (SPEC 19; board W2b's EDITING A WARMUP has a SET TYPE row). The database refuses a working set without both numbers (`v2_set_logs_check`: `is_skipped or is_warmup or (weight is not null and reps is not null)`). So making such a warmup Normal, or a staged set, fails. What should happen?
-**Recommendation:** (a), ask for the numbers first. A working type on such a warmup is saved together with the weight and reps typed in its edit panel, in one write. If a box is empty, SAVE says "Enter weight and reps." and sends nothing. Nothing is refused and nothing done is lost.
-**Blocks:** chunk 62 (SET TYPE on a logged set). It blocks chunk 46's merge only under (c). Under (a), (b) and (d), the type patch chunk 46 returns stands: 62 sends the numbers with it, or doesn't offer the pick. Under (c), `applySetTypeChange` returns a delete for such a warmup instead of a patch.
-**Options:**
-- (a) As recommended: the numbers first, saved with the type in one write.
-- (b) Not offered: for a logged warmup with no weight or reps, SET TYPE offers Warmup only (as G55 limits Plan's picker) until its numbers are saved.
-- (c) The switch makes it a set still to do. Its warmup log is deleted (it holds nothing), and the set becomes an open working set of the picked type (its `retyped` row), current or upcoming like any open set.
-- (d) As built: the write is refused and the error shows; the set stays a warmup.
-**Answer:**
-**Evidence:** Executed on a replay of migrations 000–042 (`supabase/postgres:17.6.1.155`), rolled back:
-- A warmup was logged with weight and reps null, as `SetRow.tsx` writes an empty box ("an empty field is simply null").
-- The patch chunk 46 returns for Normal (`is_warmup false, stage_kind null`) was refused: `23514 v2_set_logs_check`. The patch for Dropset was refused the same way.
-- The control, a warmup logged 20 × 12, was accepted.
-- The builder's walk, replayed on the real tables with warmups logged without numbers: 35 of 2230 writes refused, all by this check. With numbers, none of 4334.
-
-Chunk 46's rules read no weight or reps, and their stand-in doesn't model this check, so their own tests can't see it. TASKS 62 patches `is_warmup`, `stage_kind` and `stage_index` only. The builder raised it (its report, A9).
+- What: what happens when a warmup logged with no weight or reps is made a working set during the workout, which 035's `v2_set_logs_check` refuses without both numbers (`23514`, executed).
+- Answer: (Adam, 2026-10-16) "(a). Making a numberless logged warmup a working set asks for weight and reps in the panel first; type and numbers are saved in one write." Written into SPEC.md (Logging mechanics → Set type during a workout (19)) and TASKS-1.2.md (chunk 62's Scope and Verification). Chunk 46 is unchanged by it (only (c) changed the module). Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 150 A set whose type was changed during a workout and then skipped or never logged: a REVIEW item? (chunk 43)
 - What: whether REVIEW also lists a type change made during a workout on a set that was then skipped or never logged, beside its "Skipped" / "Not logged"; as chunk 43's third attempt built it (`a62a20b`), it didn't, and a set the plan gave no weight or reps got no item at all.
@@ -235,15 +121,9 @@ Chunk 46's rules read no weight or reps, and their stand-in doesn't model this c
 - Date: 2026-10-15
 
 ### 149 Weeks a week-dependent run changed in 1.1's week view, and 143's copy (chunk 45)
-**Ask:** In 1.1 the week view was where a week-dependent run's exercises changed. SWAP or ADD made a "week-only" exercise in that week, REMOVE took one out of that week, and the next week copied the week as it was, so the change carried on. The run's program (its copy) never changed: the program tab went in 1.1, and "Make this week the new default" is for stable runs only. 1.2 has no exercise actions in the week view: exercises change only in CHANGE THE PROGRAM, which edits the program. Your answer to 143 makes a copied week follow the program's list. When 044 brings that rule in (chunk 53 on staging; production at the release), what should the first copy from a week like that take?
-**Recommendation:** (c): once, at the release, make each active week-dependent run's program match its last planned week (each workout's latest planned normal week, the one its next week is copied from). A week-only exercise joins the program, an exercise that week doesn't have leaves it (soft-removed, as everywhere), and the program takes that week's order. Your next week then looks exactly as 1.1 would have made it, and CHANGE THE PROGRAM shows what you are actually doing, so from then on every exercise can be swapped, removed or reordered. Under (a) or (b) the first 1.2 week of such a run changes by itself.
-**Blocks:** chunk 53 (044 runs the copy rule; under (b) its twin changes with it; under (c) chunk 53 or the release plan carries the one-time step) and the release. Not chunks 47–52: none of them runs the copy rule, and no option changes what a CHANGE THE PROGRAM save writes. Staging has no such week (the seed plans every week with `v2_plan_week`), so only production's runs are affected: yours and your friend's, if a week-dependent run changed exercises during 1.1.
-**Options:**
-- (a) As built (chunk 45's copy rule, which 044 will follow): the program's list and order. An exercise removed in 1.1 for that week comes back with no sets. A week-only exercise stays after the program's exercises, with its sets, and stays in every later week: nothing in 1.2 lists it, so it can never be removed.
-- (b) The program's list only: a week-only exercise isn't copied (its sets stay in the weeks that have them), and an exercise removed in 1.1 for that week comes back with no sets. Every exercise of a later week can then be changed in CHANGE THE PROGRAM; a week-only exercise you still want is added there once, with no sets.
-- (c) As recommended: once, at the release, the program is made to match the last planned week. It changes existing rows on production (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it runs with live counts before and after, like any migration that changes data. On a sequence run whose repeated workout differs between its slots, one slot's week (the last) decides.
-**Answer:** Not yet: Adam will answer it directly. At his instruction (2026-10-15) it was held against SPEC's [P1.1] *Existing data* line ("only this week" values already stored are ignored; copying uses each week's actual content), to be closed if that line fully answers it. It doesn't. Its first half doesn't reach these weeks: the stored "only this week" values are P1's tick in the unread `carry_*` columns, while 1.1's week-only rows are part of a week's content. Its second half keeps a 1.1 week-only exercise in the copy, as built. The case it doesn't cover is an exercise 1.1 removed from a week while the program still lists it, or a week whose order 1.1 changed. There the line gives the week's content: the exercise stays out, and the week's order stays. 143's line gives the program's list: the exercise comes back with no sets, in the program's order. 143's line is written for a copy after a CHANGE THE PROGRAM save; as built, chunk 45 applies it to every copy. Neither line says which wins. Nor does the line say how a week-only exercise, once copied, is ever removed: nothing in 1.2 lists it.
-**Evidence:** What 1.1 stored: the week view's SWAP and ADD call `createWeekOnlyProgramExercise` (`week_only = true`, `runProgramExercises.ts`), and REMOVE deletes the week's rows. 041's week branch copies the source week's own rows (SPEC [P1.1]: "copying uses each week's actual content"). The program tab was removed in 1.1 (DECISIONS 108), and 040's header says "Week-dependent programs don't have this action". CHANGE THE PROGRAM's draft (`draftFromRunCopy`) lists only the program's live rows, and a draft that names a week-only row is refused. The reviewer's executed probe (chunk 45's second review): a Pull whose done week 2 had a 1.1 swap (Lat Pulldown → week-only Machine Row), a removal (Face Pull) and an add (week-only Curl), and no save since. As built, week 3 gets Lat Pulldown ×0, Face Pull ×0, Seated Row ×2, Machine Row ×2, Curl ×1; 041 today gives Seated Row ×2, Machine Row ×2, Curl ×1. After a save that removes Lat Pulldown and Face Pull, the two week-only rows are still copied. Two of SPEC's sentences meet here: 143's "a copied week follows the run copy's current exercise list and order" and [P1.1]'s "copying uses each week's actual content". The builder raised it (its report, 3.B) and kept week-only rows under [P1.1]; the review found that nothing in 1.2 can remove them. Cost: (a) nothing; (b) a few lines of `copyFromWeek` and their tests, in chunk 53 with 044; (c) a one-time data step at the release (designed in chunk 53), with live counts.
+- What: what the first copy under 143's rule (044, chunk 53; production at the release) takes from a week a week-dependent run changed in 1.1's week view (a week-only exercise, an exercise removed from the week, a changed order), while the run's program never changed; as built, it follows the program's list and order.
+- Answer: (Adam, 2026-10-16) "(c), as a release step, not during the build. One data migration at the release makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows, so: it's written and tested in chunk 53's scope as its own migration file, rehearsed on staging against a seeded 1.1-shaped run (add that shape to the seed if missing), with before/after counts and a fingerprint, and listed under "For the release" as a blocking decision with the manual backup before it. Chunk 53 is unblocked on that basis." Written into SPEC.md (Weeks and copying → [P1.1] Existing data), TASKS-1.2.md (chunk 53's Scope, Migration and Verification; Release, step 3) and "For the release". Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 146 Set numbers after a logged set is switched to or from Warmup (chunk 46)
 - What: what a logged set switched to or from Warmup during a workout does to the working sets' numbers; as chunk 46 built it nothing was renumbered, so two rows could show the same number (executed probe).
@@ -298,7 +178,7 @@ Chunk 46's rules read no weight or reps, and their stand-in doesn't model this c
 ### 138 Re-seed staging on Monday 2026-10-19 (to-do)
 **Ask:** paste `supabase/seed.sql` (as on `staging` then) into the staging branch's SQL editor on Monday 2026-10-19, and say "re-seeded".
 **Recommendation:** as you planned (2026-10-15). — **When:** Monday 2026-10-19, not earlier: the seed's dates are relative to the day it runs, so a re-seed in the week of Monday 2026-10-12 would put the test account's week 3 in that week again.
-**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's (2026-10-16; the account's set logs still 214).
+**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's and chunk 50's (2026-10-16; the account's set logs still 214).
 **Answer:**
 **Evidence:** every merge's smoke logs one set in the in-progress session (week 3 Monday Upper A). Chunk 57's review (2026-10-16) logged the first drop of Cable Triceps Pushdown set 2 (typed 22.5 kg × 8 with the browser offline, then synced on reconnect; set logs 212 → 213, read back as the test account), which opened its second drop. Today now shows 1 LOG button, that drop's, with empty boxes: type the plan's 17.5 kg × 6 before LOG (RULES.md: a row with no prefill; its target is 6–8 reps). It is the session's last open set (Today showed one LOG button before that log and one after it), so the smoke after the next one finds none and is "waiting on re-seed". Since your re-seed of 2026-10-14 (124) the test account's week 3 is Monday 2026-10-12 to Sunday 2026-10-18; from Monday 2026-10-19 it is past, and the checks TASKS-1.2 writes for "week 3 current" read a week later until the re-seed (TASKS-1.2, "Seed").
 
@@ -349,8 +229,8 @@ Chunk 46's rules read no weight or reps, and their stand-in doesn't model this c
 
 ### 128 The three pickers' display choices where SPEC and the boards give no value (provisional, D31)
 - What: nine choices in the set type, rep target and RIR target pickers (chunk 39, for the screens from 51a and 54a on): (a) the stage stepper runs 1–10; (b) the rest steppers go 15 s a tap up to 10:00; (c) a segment picked with nothing to start from opens on the boards' examples; (d) the number boxes are steppers, not inputs; (e) "Use for all" isn't drawn under two sets; (f) a kind change keeps the stage count and the rest between stages; (g) text on the accent is `--base`; (h) the FROM box's border and the picked radio are `--accent`, REMOVE THIS SET `--error`; (i) a word too long for its line runs past it.
-- Answer: (Adam, 2026-10-15) "128, 129, 130 — text on the accent: not --base. Use the near-black the boards draw (the app's text token that matches it), in both themes, wherever text sits on the accent colour." "128, 130 — an unbroken long word wraps inside its box (overflow-wrap: anywhere); nothing runs past its line." "128 — the number boxes in the rep and RIR pickers are inputs you can type into, with ± steppers beside them (decisions 6 and 17a: choose, then type). Same bounds as built." Then (Adam, 2026-10-15, his third batch) "128, the rest: accepted as built, except: a picker opens on the set's current target. The boards' example values (8, 8–10, RIR 2, 1–2) are only the starting point when you switch to a segment the set doesn't already have; nothing is pre-filled for a set that has no target until you pick a segment." "Text on the accent: add a new token --on-accent in global.css for both themes, set to the near-black the boards draw, and use it wherever text sits on the accent." So (d), (g) and (i) change and (c) is narrowed to his words, in the display follow-up; (a), (b), (e), (f) and (h) stand. The token is in SPEC.md (Design boards → Never pixel-match); no SPEC rule says what a picker opens on, so that change has no SPEC line. Which file holds the token's value: "Waiting on Adam" (the app's colour values are in tokens.css). Full text in HISTORY.md.
-- Date: 2026-10-15
+- Answer: (Adam, 2026-10-15) "128, 129, 130 — text on the accent: not --base. Use the near-black the boards draw (the app's text token that matches it), in both themes, wherever text sits on the accent colour." "128, 130 — an unbroken long word wraps inside its box (overflow-wrap: anywhere); nothing runs past its line." "128 — the number boxes in the rep and RIR pickers are inputs you can type into, with ± steppers beside them (decisions 6 and 17a: choose, then type). Same bounds as built." Then (Adam, 2026-10-15, his third batch) "128, the rest: accepted as built, except: a picker opens on the set's current target. The boards' example values (8, 8–10, RIR 2, 1–2) are only the starting point when you switch to a segment the set doesn't already have; nothing is pre-filled for a set that has no target until you pick a segment." "Text on the accent: add a new token --on-accent in global.css for both themes, set to the near-black the boards draw, and use it wherever text sits on the accent." So (d), (g) and (i) change and (c) is narrowed to his words, in the display follow-up; (a), (b), (e), (f) and (h) stand. The token is in SPEC.md (Design boards → Never pixel-match); no SPEC rule says what a picker opens on, so that change has no SPEC line. Which file holds the token's value, (g): (Adam, 2026-10-16) "accepted (tokens.css for the value, global.css for the mapping)." As built in the display follow-up (#135). Full text in HISTORY.md.
+- Date: 2026-10-15; (g): 2026-10-16
 
 ### 127 The shared sheet frame's look where no token or board value decides it (provisional, D31)
 - What: the look of `BottomSheet` (chunk 38) where no token or board value decides it: (a) the scrim black at 60 %, (b) the sheet `--surface` in the dark theme, (c) z-index 45.
