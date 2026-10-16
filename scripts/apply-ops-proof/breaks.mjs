@@ -29,8 +29,6 @@ export const CONTROLS = [
   },
 ]
 
-const raise = (text) => `raise exception '${text}'`
-
 export const BREAKS = [
   // ── who may call it, and what a list is
   { id: 'B01', title: 'no check that the caller is signed in', edits: [["    raise exception 'not signed in';", '    null;']], fails: ['G02'] },
@@ -239,4 +237,3 @@ export const BREAKS = [
   },
 ]
 
-export { raise }
