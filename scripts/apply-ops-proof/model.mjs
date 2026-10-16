@@ -238,6 +238,16 @@ begin
      and k.conkey = array[(select a.attnum from pg_attribute a where a.attrelid = 'public.v2_program_exercises'::regclass and a.attname = 'replaces_program_exercise_id')];
 end $$;
 
+-- Every row of a table but one (as the signed-in user sees the table), as one hash: what an update or a delete of that row
+-- must leave alone.
+create function pg_temp.zz_others(p_table text, p_id uuid) returns text language plpgsql as $$
+declare v text;
+begin
+  execute format('select md5(coalesce(string_agg(to_jsonb(x)::text, '','' order by x.id), '''')) from public.%I x where x.id <> $1', p_table)
+    into v using p_id;
+  return v;
+end $$;
+
 create function pg_temp.zz_same(p_before text, p_after text, p_what text) returns void language plpgsql as $$
 begin if p_before is distinct from p_after then raise exception 'ROWS CHANGED: %', p_what; end if; end $$;
 
@@ -263,8 +273,16 @@ export function readInstallText(file = MIGRATION) {
 }
 
 // The install text under another name, in pg_temp (a session's own copy: nothing is left in the database).
-export function asCopy(installText, name = 'zz_fn') {
-  return installText.replaceAll('function v2_apply_ops(', `function pg_temp.${name}(`)
+// A function made in public gets execute for anon, authenticated and service_role from Supabase's default privileges, besides
+// PUBLIC's own; one made in pg_temp gets PUBLIC's alone. The copy is given the same three grants right after its body, so
+// the migration's revoke and grant act on the same starting point as they do in public (break B53 needs it).
+// `defaults: false` is a database with no default privileges at all (a new Supabase branch, RULES: staging's first days).
+export function asCopy(installText, name = 'zz_fn', { defaults = true } = {}) {
+  const renamed = installText.replaceAll('function v2_apply_ops(', `function pg_temp.${name}(`)
+  const end = '\n$fn$;'
+  if (renamed.split(end).length !== 2) throw new Error('the function body does not end in exactly one $fn$;')
+  if (!defaults) return renamed
+  return renamed.replace(end, `${end}\ngrant execute on function pg_temp.${name}(jsonb) to anon, authenticated, service_role;`)
 }
 
 // A break: one exact replacement that must match once (RULES: "a break that never fired reads as caught").

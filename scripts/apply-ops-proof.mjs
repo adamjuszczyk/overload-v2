@@ -11,6 +11,8 @@
 //         node scripts/apply-ops-proof.mjs                   the scenarios against the function the replay installed
 //         node scripts/apply-ops-proof.mjs --breaks          every break (and the two controls): each must be caught
 //         node scripts/apply-ops-proof.mjs --break B01,B07   some of them
+//         node scripts/apply-ops-proof.mjs --sweep           a generated sweep: every mutant of the function (raise removed, condition
+//                                                            negated, statement deleted, …) must fail a scenario; survivors are listed
 //         node scripts/apply-ops-proof.mjs --only A01,W02    some scenarios
 //         node scripts/apply-ops-proof.mjs --list            the scenarios and the breaks, no database
 //         --container NAME   needed only when more than one kept replay container is running
@@ -24,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { BREAKS, CONTROLS } from './apply-ops-proof/breaks.mjs'
 import { SCENARIOS } from './apply-ops-proof/scenarios.mjs'
 import { applyBreak, asCopy, fixtureSql, helperSql, readInstallText, resolveIds } from './apply-ops-proof/model.mjs'
+import { mutants } from './apply-ops-proof/sweep.mjs'
 
 export const REAL_FN = 'public.v2_apply_ops'
 export const COPY_FN = 'pg_temp.zz_fn'
@@ -54,15 +57,16 @@ ${s.pre ?? ''}
 insert into auth.users (id, email) values ('{{uA}}', 'proof-a@example.invalid'), ('{{uB}}', 'proof-b@example.invalid');
 select set_config('request.jwt.claim.sub', '{{uA}}', true);
 set local role authenticated;
+set local statement_timeout = '8s';
 ${fixtureSql('a')}
 select set_config('request.jwt.claim.sub', '{{uB}}', true);
 ${fixtureSql('b')}
 select set_config('request.jwt.claim.sub', '{{uA}}', true);
 do $s$
-declare s0 text; s1 text; r record; k bigint;
+declare s0 text; s1 text; r record; k bigint; t text; note text := '';
 begin
 ${s.body}
-  raise notice 'RESULT|${s.id}|PASS';
+  raise notice 'RESULT|${s.id}|PASS|%', note;
 exception when others then
   raise notice 'RESULT|${s.id}|FAIL|%', sqlerrm;
 end $s$;
@@ -122,8 +126,9 @@ export function parseResults(text) {
   return { results, canary, errors }
 }
 
-export function run(container, { installText = null, scenarios = SCENARIOS } = {}) {
-  const r = psql(container, buildScript({ installText, scenarios }))
+export function run(container, { installText = null, scenarios = SCENARIOS, pre = '' } = {}) {
+  // `pre` (a schema break) runs first in every scenario's transaction, before the role switch; the transaction is rolled back.
+  const r = psql(container, buildScript({ installText, scenarios: pre ? scenarios.map((s) => ({ ...s, pre })) : scenarios }))
   const parsed = parseResults(r.text)
   // A scenario with no line printed failed to run at all (its fixture or its wrapper): that is a failure, not a pass.
   const rows = scenarios.map((s) => ({ id: s.id, title: s.title, ...(parsed.results.get(s.id) ?? { ok: false, why: `no result printed${parsed.errors[0] ? ` (${parsed.errors[0]})` : ''}` }) }))
@@ -140,17 +145,18 @@ function functionExists(container) {
 const short = (s, n = 150) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 function printRows(rows) {
-  for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.id.padEnd(15)} ${r.ok ? short(r.title, 120) : `${short(r.title, 80)}  <- ${short(r.why, 220)}`}`)
+  for (const r of rows) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.id.padEnd(15)} ${r.ok ? `${short(r.title, 120)}${r.why ? `  [${r.why}]` : ''}` : `${short(r.title, 80)}  <- ${short(r.why, 220)}`}`)
 }
 
 function parseArgs(argv) {
-  const o = { breaks: false, break: null, only: null, list: false, container: null }
+  const o = { breaks: false, break: null, only: null, list: false, container: null, sweep: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--breaks') o.breaks = true
     else if (a === '--break') o.break = argv[++i].split(',')
     else if (a === '--only') o.only = argv[++i].split(',')
     else if (a === '--list') o.list = true
+    else if (a === '--sweep') o.sweep = true
     else if (a === '--container') o.container = argv[++i]
     else throw new Error(`unknown argument ${a}`)
   }
@@ -168,6 +174,23 @@ async function main() {
   if (o.only && only.length !== o.only.length) throw new Error(`unknown scenario in ${o.only.join(',')}`)
   const container = findContainer(o.container)
   console.log(`apply-ops-proof: container ${container}`)
+
+  if (o.sweep) {
+    const install = readInstallText()
+    const all = mutants(install)
+    let killed = 0, invalid = 0
+    const survivors = []
+    for (const m of all) {
+      const { rows, canary } = run(container, { installText: asCopy(m.text), scenarios: only })
+      if (canary !== true) { console.log('the canary was not active; stopping.'); return 2 }
+      const failed = rows.filter((r) => !r.ok)
+      if (failed.length === rows.length && failed.every((r) => r.why.startsWith('no result printed'))) { invalid++; console.log(`${m.id.padEnd(10)} does not compile   ${m.what}`); continue }
+      if (failed.length > 0) { killed++; console.log(`${m.id.padEnd(10)} killed by ${String(failed.length).padStart(2)}    ${m.what}`) } else { survivors.push(m); console.log(`${m.id.padEnd(10)} SURVIVES          ${m.what}`) }
+    }
+    console.log(`apply-ops-proof: sweep of ${all.length} mutants: ${killed} killed, ${invalid} do not compile, ${survivors.length} survive.`)
+    for (const m of survivors) console.log(`  survivor ${m.id}: ${m.what}`)
+    return survivors.length ? 1 : 0
+  }
 
   if (!o.breaks && !o.break) {
     if (!functionExists(container)) {
@@ -192,8 +215,8 @@ async function main() {
   const wanted = o.break ? [...CONTROLS, ...BREAKS].filter((b) => o.break.includes(b.id)) : [...CONTROLS, ...BREAKS]
   let wrong = 0
   for (const b of wanted) {
-    const text = asCopy(applyBreak(install, b))
-    const { rows, canary } = run(container, { installText: text, scenarios: only })
+    const text = asCopy(applyBreak(install, b), 'zz_fn', { defaults: !b.noDefaults })
+    const { rows, canary } = run(container, { installText: text, scenarios: only, pre: b.pre ?? '' })
     if (canary !== true) { console.log(`${b.id}: the canary was not active; stopping.`); return 2 }
     const failed = rows.filter((r) => !r.ok).map((r) => r.id)
     let verdict

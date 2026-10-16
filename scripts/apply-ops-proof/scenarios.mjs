@@ -268,7 +268,7 @@ add('I02', 'an insert that names another user\'s id lands with the caller\'s (B\
   return b
 })(), { group: 'insert' })
 
-add('I03', 'every insertable table takes its full row (a family tested member by member; v2_program_sets has a dropped column)', (() => {
+add('I03', 'every insertable table takes its full row (a family tested member by member; v2_program_exercises has a dropped column, which a positional insert must step over)', (() => {
   let b = ''
   for (const t of INSERTABLE) b += `
   perform pg_temp.zz_ok(${opsSql(ins(t, freshRow(t, { user_id: '{{uA}}' })))}, 1);${assert(has(t, idFor(t)), `${t}: not inserted`)}`
@@ -287,8 +287,15 @@ add('I05', 'a row that names a column the table hasn\'t got is refused, and the 
     b += refused(opsSql(ins(t, { ...freshRow(t), bogus_column: 1 })), `row names an unknown column: ${t}.bogus_column`)
   }
   b += refused(opsSql(ins('v2_program_exercises', { ...freshRow('v2_program_exercises'), Tempo: '3010', zebra: 1 })), 'row names an unknown column: v2_program_exercises.Tempo')
-  // the dropped column of v2_program_sets (034) is not a column any more
-  b += refused(opsSql(ins('v2_program_sets', { ...freshRow('v2_program_sets'), suggested_reps: 8 })), 'row names an unknown column: v2_program_sets.suggested_reps')
+  // system columns are not columns a row may name either
+  for (const sys of ['ctid', 'tableoid', 'xmin', 'cmax']) b += refused(opsSql(ins('v2_program_exercises', { ...freshRow('v2_program_exercises'), [sys]: '(0,1)' })), `row names an unknown column: v2_program_exercises.${sys}`)
+  // v2_program_exercises has a dropped column (attnum 6, from 027/028): the name Postgres keeps for it is not a column a row may name
+  b += `
+  select attname into t from pg_attribute where attrelid = 'public.v2_program_exercises'::regclass and attisdropped limit 1;
+  perform pg_temp.zz_assert(t is not null, 'v2_program_exercises has no dropped column to try');
+  s0 := pg_temp.zz_snap();
+  perform pg_temp.zz_expect(jsonb_build_array(jsonb_build_object('op', 'insert', 'table', 'v2_program_exercises', 'row', ${jsonSql(freshRow('v2_program_exercises'))} || jsonb_build_object(t, 1))), 'row names an unknown column: v2_program_exercises.' || t);
+  perform pg_temp.zz_same(s0, pg_temp.zz_snap(), 'a row naming a dropped column left rows behind');`
   return b
 })(), { group: 'insert' })
 
@@ -327,13 +334,16 @@ ${refused(opsSql(ins('v2_program_exercises', rows.v2_program_exercises(N('pe_d')
   b += refused(opsSql(upd('v2_program_exercises', A('pe1'), { user_id: null })), 'patch sets a protected column')
   add('U01', 'a patch never sets user_id or id (every table; beside a good column; to its own value; to null)', b, { group: 'update' })
 }
+// A harmless valid patch for a row of each table, and the fixture row it is aimed at.
+const PATCHES = {
+  v2_program_exercises: { tempo: '1111' }, v2_program_sets: { rep_min: 5 }, v2_program_superset_blocks: { rest_within_round_seconds: 5 }, v2_workout_warmup_items: { body: 'Taken' },
+  v2_workout_days: { name: 'Taken' }, v2_programs: { name: 'Taken' }, v2_run_schedules: { from_week: 9 }, v2_week_plans: { deload_restore: null },
+  v2_week_plan_exercises: { position: 9 }, v2_week_plan_sets: { target_weight: 99 }, v2_week_review_decisions: { decision: 'ignored' }, v2_session_set_changes: { kind: 'deleted' },
+}
+const SAMPLE = { v2_program_exercises: 'pe1', v2_program_sets: 'ps1', v2_program_superset_blocks: 'blk', v2_workout_warmup_items: 'wu1', v2_workout_days: 'wd1', v2_programs: 'prog', v2_run_schedules: 'rs', v2_week_plans: 'wp1', v2_week_plan_exercises: 'wpe1', v2_week_plan_sets: 'ws1', v2_week_review_decisions: 'dec', v2_session_set_changes: 'chg' }
 {
-  const patches = {
-    v2_program_exercises: { tempo: '1111' }, v2_program_sets: { rep_min: 5 }, v2_program_superset_blocks: { rest_within_round_seconds: 5 }, v2_workout_warmup_items: { body: 'Taken' },
-    v2_workout_days: { name: 'Taken' }, v2_programs: { name: 'Taken' }, v2_run_schedules: { from_week: 9 }, v2_week_plans: { deload_restore: null },
-    v2_week_plan_exercises: { position: 9 }, v2_week_plan_sets: { target_weight: 99 }, v2_week_review_decisions: { decision: 'ignored' }, v2_session_set_changes: { kind: 'deleted' },
-  }
-  const ids = { v2_program_exercises: 'pe1', v2_program_sets: 'ps1', v2_program_superset_blocks: 'blk', v2_workout_warmup_items: 'wu1', v2_workout_days: 'wd1', v2_programs: 'prog', v2_run_schedules: 'rs', v2_week_plans: 'wp1', v2_week_plan_exercises: 'wpe1', v2_week_plan_sets: 'ws1', v2_week_review_decisions: 'dec', v2_session_set_changes: 'chg' }
+  const patches = PATCHES
+  const ids = SAMPLE
   let b = ''
   for (const t of TABLES) b += refused(opsSql(upd(t, B(ids[t]), patches[t])), `row not found: ${t}/${B(ids[t])}`, 'P0001')
   b += refused(opsSql(upd('v2_programs', N('nobody'), { name: 'x' })), `row not found: v2_programs/${N('nobody')}`)
@@ -354,6 +364,22 @@ add('U03', 'a patch lands as the column\'s type reads it: integer, boolean, text
 add('U04', 'an update needs a patch (missing, null, a list, a string) and the patch needs something in it ({})', `${refused(opsSql(upd('v2_programs', A('prog'), {})), 'patch is empty')}${refused(opsSql({ op: 'update', table: 'v2_programs', id: A('prog') }), 'update needs a patch')}${refused(opsSql({ op: 'update', table: 'v2_programs', id: A('prog'), patch: null }), 'update needs a patch')}${refused(opsSql({ op: 'update', table: 'v2_programs', id: A('prog'), patch: ['name'] }), 'update needs a patch')}${refused(opsSql({ op: 'update', table: 'v2_programs', id: A('prog'), patch: 'name' }), 'update needs a patch')}`, { group: 'update' })
 
 add('U05', 'a column the table hasn\'t got is the database\'s own refusal (42703), a wrong value is 22P02, a CHECK 23514, a foreign key 23503, a unique 23505 - each takes the list with it', `${refused(opsSql(upd('v2_program_exercises', A('pe1'), { tempo: '1', no_such_column: 1 })), 'no_such_column', '42703')}${refused(opsSql(upd('v2_program_exercises', A('pe1'), { position: 'abc' })), 'invalid input syntax for type integer', '22P02')}${refused(opsSql(upd('v2_week_plan_sets', A('ws1'), { rep_min: 0 })), 'violates check constraint', '23514')}${refused(opsSql(upd('v2_week_plan_exercises', A('wpe1'), { program_exercise_id: N('nothing') })), 'violates foreign key constraint', '23503')}${refused(opsSql(upd('v2_workout_warmup_items', A('wu2'), { position: 0 })), 'duplicate key value', '23505')}${refused(opsSql(upd('v2_program_exercises', A('pe1'), { position: null })), 'null value in column "position"', '23502')}${refused(opsSql(upd('v2_programs', A('prog'), { name: 'ok' }), upd('v2_programs', A('prog'), { schedule: null })), 'null value in column "schedule"', '23502')}`, { group: 'update' })
+
+add('U06', 'an update changes exactly its row: every other row of the table, the caller\'s and the stranger\'s, is as it was (each table)', (() => {
+  let b = ''
+  for (const t of TABLES) {
+    const id = A(SAMPLE[t])
+    b += `
+  perform pg_temp.zz_as('{{uA}}'); s0 := pg_temp.zz_others('${t}', '${id}'); perform pg_temp.zz_as('{{uB}}'); s1 := pg_temp.zz_others('${t}', '00000000-0000-4000-8000-000000000000'); perform pg_temp.zz_as('{{uA}}');
+  perform pg_temp.zz_ok(${opsSql(upd(t, id, PATCHES[t]))}, 1);
+  perform pg_temp.zz_same(s0, pg_temp.zz_others('${t}', '${id}'), '${t}: another row of the caller changed');
+  perform pg_temp.zz_as('{{uB}}'); perform pg_temp.zz_same(s1, pg_temp.zz_others('${t}', '00000000-0000-4000-8000-000000000000'), '${t}: the stranger''s rows changed'); perform pg_temp.zz_as('{{uA}}');`
+  }
+  // an id of one table, aimed at another: not found (the table is part of the address)
+  b += refused(opsSql(upd('v2_programs', A('wd1'), { name: 'x' })), `row not found: v2_programs/${A('wd1')}`)
+  b += refused(opsSql(del('v2_workout_days', A('wu1'))), `row not found: v2_workout_days/${A('wu1')}`)
+  return b
+})(), { group: 'update' })
 
 // ═══ W  v2_week_plans: one column, as an update (DECISIONS 142) ═════════════════════════════════════════════════════
 {
@@ -402,6 +428,37 @@ add('D03', 'the swap\'s link (DECISIONS 143): really deleting the replaced row l
   )}, 2);
   perform pg_temp.zz_ok(${opsSql(del('v2_program_exercises', N('pe_b')))}, 1);${assert(has('v2_program_exercises', N('pe_c'), 'x.replaces_program_exercise_id is null'), 'C stays and its link is null')}${assert(has('v2_program_exercises', A('pe3')), 'the oldest row is untouched')}
   perform pg_temp.zz_ok(${opsSql(ins('v2_program_exercises', rows.v2_program_exercises(N('pe_d'), { replaces_program_exercise_id: A('pe3') })), del('v2_program_exercises', A('pe3')))}, 2);${assert(has('v2_program_exercises', N('pe_d'), 'x.replaces_program_exercise_id is null'), 'deleting the replaced row in the same list')}`, { group: 'delete' })
+
+add('D04', 'a delete removes exactly its row: the other rows of the table, the caller\'s and the stranger\'s, are as they were (the tables whose rows nothing else hangs on)', (() => {
+  let b = ''
+  for (const [t, id] of [['v2_workout_warmup_items', 'wu1'], ['v2_week_review_decisions', 'dec'], ['v2_session_set_changes', 'chg'], ['v2_week_plan_exercises', 'wpe1'], ['v2_run_schedules', 'rs'], ['v2_program_sets', 'ps1'], ['v2_week_plan_sets', 'ws2s']]) {
+    b += `
+  perform pg_temp.zz_as('{{uA}}'); s0 := pg_temp.zz_others('${t}', '${A(id)}'); perform pg_temp.zz_as('{{uB}}'); s1 := pg_temp.zz_others('${t}', '00000000-0000-4000-8000-000000000000'); perform pg_temp.zz_as('{{uA}}');
+  perform pg_temp.zz_ok(${opsSql(del(t, A(id)))}, 1);${assert(gone(t, A(id)), `${t}: the row is still there`)}
+  perform pg_temp.zz_same(s0, pg_temp.zz_others('${t}', '${A(id)}'), '${t}: another row of the caller went');
+  perform pg_temp.zz_as('{{uB}}'); perform pg_temp.zz_same(s1, pg_temp.zz_others('${t}', '00000000-0000-4000-8000-000000000000'), '${t}: the stranger''s rows changed'); perform pg_temp.zz_as('{{uA}}');`
+  }
+  return b
+})(), { group: 'delete' })
+
+add('P01', 'a long list: 1,000 inserts and 1,000 updates in one call finish inside the role\'s 8 s statement_timeout, and every op is counted', `
+  perform pg_temp.zz_assert((select setting from pg_settings where name = 'statement_timeout') = '8000', 'statement_timeout is ' || (select setting from pg_settings where name = 'statement_timeout'));
+  t := clock_timestamp()::text;
+  select * into r from pg_temp.zz_run((
+    select jsonb_agg(o order by ord) from (
+      select i as ord, jsonb_build_object('op', 'insert', 'table', 'v2_week_plan_sets', 'row',
+        jsonb_build_object('id', md5('p01:' || i)::uuid, 'user_id', '${'{{uB}}'}', 'week_plan_id', '${A('wp1')}', 'program_exercise_id', '${A('pe1')}', 'set_number', 100 + i,
+          'target_rir', null, 'target_rir_max', null, 'is_dropset', false, 'parent_week_plan_set_id', null, 'stage_index', 0, 'is_warmup', false,
+          'program_set_id', null, 'stage_kind', null, 'target_weight', 60, 'rep_min', 8, 'rep_max', 10, 'is_amrap', false, 'tags', null)) as o
+        from generate_series(1, 1000) i
+      union all
+      select 1000 + i, jsonb_build_object('op', 'update', 'table', 'v2_week_plan_sets', 'id', md5('p01:' || i)::uuid, 'patch', jsonb_build_object('target_weight', 62.5, 'tags', jsonb_build_array('x')))
+        from generate_series(1, 1000) i
+    ) q));
+  perform pg_temp.zz_assert(r.err is null and r.n = 2000, 'got ' || coalesce(r.err, r.n::text));
+  select count(*) into k from public.v2_week_plan_sets x where x.set_number > 100 and x.target_weight = 62.5;
+  perform pg_temp.zz_assert(k = 1000, 'rows with the second write: ' || k);
+  note := '2000 ops in ' || round(extract(epoch from clock_timestamp() - t::timestamptz)::numeric, 2) || ' s';`, { group: 'whole' })
 
 // ═══ S  the function itself ══════════════════════════════════════════════════════════════════════════════════════════
 add('S01', 'the column: nullable uuid with no default, a foreign key to the table itself that sets null on delete', `
