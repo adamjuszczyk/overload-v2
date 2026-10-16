@@ -106,6 +106,17 @@ describe('the stand-in for the table refuses what the table refuses (so applying
     expect(server.rows).toEqual([])
   })
 
+  it('an insert of a log is held to the same checks: a working set with no weight (23514), a reused id (23505), a drop whose head is not there (23503)', () => {
+    const server = new FakeServer({ logs: [head] })
+    expect(() => server.insertLog(headLog('bench', 2, { weight: null }))).toThrow(/23514.*v2_set_logs_check/)
+    expect(() => server.insertLog({ ...head })).toThrow(/23505/)
+    expect(() => server.insertLog(dropLog(headLog('bench', 9), 1))).toThrow(/23503/)
+    // a warmup may hold no numbers, and a drop under a head that is there is taken
+    expect(() => server.insertLog(headLog('bench', 2, { warmup: true, weight: null, reps: null }))).not.toThrow()
+    expect(() => server.insertLog(dropLog(head, 1))).not.toThrow()
+    expect(server.logs).toHaveLength(3)
+  })
+
   it('a pending_stages row for a log that is not there is refused (23503)', () => {
     expect(() => new FakeServer({ logs: [] }).upsertChange({ change: pending(head, 'dropset', 1), id: null })).toThrow(/23503/)
   })
