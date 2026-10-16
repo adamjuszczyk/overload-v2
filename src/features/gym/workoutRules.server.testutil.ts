@@ -11,6 +11,9 @@
 //     a stage kind comes with its count) and the two partial unique indexes: one row per planned set per
 //     session, one per log. An upsert works on the row's own id: the same planned set under a new id is
 //     refused (23505), exactly as the table does.
+//   - v2_set_logs also keeps 035's check (`v2_set_logs_check`: `is_skipped or is_warmup or (weight is not null and reps is
+//     not null)`), which the first version of this stand-in left out: a warmup may be logged with no weight and no reps,
+//     and a patch that makes it a working set without bringing both is refused 23514 (DECISIONS 152).
 // Nothing here decides anything a rule decides: every expectation in a test is written out by hand.
 
 import type { SetLog } from '../../types'
@@ -40,6 +43,13 @@ export interface StoredChange extends ChangeColumns {
   id: string
 }
 
+/** 035's check on one set log: a working set has a weight and reps; a warmup or a skipped set may have none. */
+function checkLog(log: Pick<SetLog, 'id' | 'isSkipped' | 'isWarmup' | 'weight' | 'reps'>): void {
+  if (!(log.isSkipped || log.isWarmup || (log.weight !== null && log.reps !== null))) {
+    throw new PgError('23514', `violates check constraint "v2_set_logs_check" (log ${log.id})`)
+  }
+}
+
 /** 042's checks on one row. */
 function checkRow(row: ChangeColumns): void {
   const keys =
@@ -61,6 +71,7 @@ export class FakeServer {
 
   constructor(init: { logs: SetLog[]; changes?: HeldChange[] }) {
     this.logs = init.logs.map((log) => ({ ...log }))
+    for (const log of this.logs) checkLog(log)
     for (const change of init.changes ?? []) this.rows.push({ ...changeColumns(change), id: change.id })
   }
 
@@ -78,6 +89,14 @@ export class FakeServer {
     })
   }
 
+  /** An insert of one log, as LOG writes it: 035's check, a unique id, a drop's head already there. */
+  insertLog(log: SetLog): void {
+    checkLog(log)
+    if (this.logs.some((l) => l.id === log.id)) throw new PgError('23505', `duplicate key value violates unique constraint "v2_set_logs_pkey" (${log.id})`)
+    if (log.parentSetId !== null && !this.logs.some((l) => l.id === log.parentSetId)) throw new PgError('23503', `log ${log.id} names no head ${log.parentSetId}`)
+    this.logs.push({ ...log })
+  }
+
   deleteLog(id: string): void {
     if (!this.logs.some((l) => l.id === id)) throw new PgError('P0002', `no log ${id}`)
     if (this.logs.some((l) => l.parentSetId === id)) throw new PgError('23503', `log ${id} is deleted before its drops`)
@@ -85,9 +104,12 @@ export class FakeServer {
     this.rows = this.rows.filter((r) => r.setLogId !== id)
   }
 
-  patchLog(id: string, patch: Partial<Pick<SetLog, 'setNumber' | 'isWarmup' | 'stageKind'>>): void {
-    if (!this.logs.some((l) => l.id === id)) throw new PgError('P0002', `no log ${id}`)
-    this.logs = this.logs.map((l) => (l.id === id ? { ...l, ...patch } : l))
+  patchLog(id: string, patch: Partial<Pick<SetLog, 'setNumber' | 'isWarmup' | 'stageKind' | 'weight' | 'reps'>>): void {
+    const current = this.logs.find((l) => l.id === id)
+    if (!current) throw new PgError('P0002', `no log ${id}`)
+    const next = { ...current, ...patch }
+    checkLog(next)
+    this.logs = this.logs.map((l) => (l.id === id ? next : l))
   }
 
   /** An upsert by id, as the sync queue sends it: the whole row, on the row's own id or a new one. */

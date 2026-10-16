@@ -117,21 +117,24 @@ describe('deleteEffects: the sets after it close the gap', () => {
     expect(first.filter((r) => r.id.startsWith('log.bench.2'))).toEqual([{ id: 'log.bench.2', setNumber: 1 }])
   })
 
-  it('closes a gap in the numbers, not just by one: heads 1, 2, 5 after deleting 2 become 1, 2', () => {
-    const logs = [headLog('bench', 1, { number: 1 }), headLog('bench', 2, { number: 2 }), headLog('bench', 3, { number: 5 })]
-    const view = viewOf(orderOf([card('bench', 'n n n')]), logs)
-    expect(deleteEffects(rowKeyed(view, 'set:bench.2'), view).renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+  it('moves each logged set after it down by one, not to the next number: an open set between them holds its place (DECISIONS 151)', () => {
+    // 01, 02 and 05 are logged, 03 and 04 are open: 02 is deleted, so 03 and 04 become 02 and 03 and 05 becomes 04
+    const logs = [headLog('bench', 1), headLog('bench', 2), headLog('bench', 5)]
+    const view = viewOf(orderOf([card('bench', 'n n n n n')]), logs)
+    expect(deleteEffects(rowKeyed(view, 'set:bench.2'), view).renumber).toEqual([{ id: 'log.bench.5', setNumber: 4 }])
+    const { rows } = deleteOn({ cards: [card('bench', 'n n n n n')], logs, key: 'set:bench.2' })
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03·', 'bench 04✓'])
   })
 
-  it('a head that already has its new number is left alone but its stale drops are put right', () => {
-    // two heads numbered 3 (a bug's leftovers): after the delete the first becomes 2, the second keeps 3, its drop says 9
+  it('a later head\'s stale drop is put right with its head: the drop says 9, its head goes from 4 to 3, so the drop is written 3', () => {
     const gone = headLog('bench', 1, { number: 2 })
     const a = headLog('bench', 2, { number: 3 })
-    const b = headLog('bench', 3, { number: 3, stageKind: 'dropset' })
+    const b = headLog('bench', 3, { number: 4, stageKind: 'dropset' })
     const stale = dropLog(b, 1, { number: 9 })
     const view = viewOf(orderOf([card('bench', 'n n n')]), [gone, a, b, stale])
     expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([
       { id: 'log.bench.2', setNumber: 2 },
+      { id: 'log.bench.3', setNumber: 3 },
       { id: stale.id, setNumber: 3 },
     ])
   })
@@ -346,6 +349,85 @@ describe('DELETE on a planned set that is not logged yet: the same change, no lo
     const { effects, rows } = deleteOn({ cards: [card('bench', 'w w n')], key: 'set:bench.1' })
     expect(effects.changes).toEqual([{ change: { kind: 'deleted', weekPlanSetId: 'bench.1' }, id: null }])
     expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01·'])
+  })
+})
+
+// DECISIONS 151: an unlogged set keeps its place, so a logged set can come after an open one (unlog 02 of 01 to 03), and
+// SPEC 18b's "the remaining sets renumber" has to reach it when the open set is deleted: its stored number is the one
+// that would otherwise stay one too high, and History would keep a hole.
+describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 18b)', () => {
+  const cards = [card('bench', 'n n n n')]
+
+  it('02 open between the logged 01 and 03: deleting it moves 03 down to 02, and 04 is 03', () => {
+    const logs = [headLog('bench', 1), headLog('bench', 3)]
+    const { effects, rows, server, current, warning } = deleteOn({ cards, logs, key: 'set:bench.2' })
+    expect(effects.deleteOrder).toEqual([])
+    expect(effects.renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+    expect(effects.changes).toEqual([{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: null }])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(server.logs.map((l) => l.setNumber).sort()).toEqual([1, 2])
+    expect(current!.key).toBe('set:bench.4')
+    expect(warning!.text).toBe("1 planned set isn't logged yet: Bench 03.")
+  })
+
+  it('the control: without the renumbering the logged 03 keeps its number, the open set after it reads 02 and History keeps a hole', () => {
+    const server = new FakeServer({ logs: [headLog('bench', 1), headLog('bench', 3)] })
+    const view = viewOf(orderOf(cards), server.logs, [])
+    const effects = deleteEffects(rowKeyed(view, 'set:bench.2'), view)
+    server.applyDelete({ ...effects, renumber: [] })
+    expect(resolveRows(orderOf(cards), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 03✓', 'bench 02·'])
+  })
+
+  it('every logged set after it moves, each down by one, with its drops; the sets before it, and an open one after, do not', () => {
+    const three = headLog('bench', 3, { stageKind: 'dropset' })
+    const five = headLog('bench', 5)
+    const logs = [headLog('bench', 1), three, dropLog(three, 1), five]
+    const { effects, rows } = deleteOn({ cards: [card('bench', 'n n d1 n n')], logs, key: 'set:bench.2' })
+    expect(effects.renumber).toEqual([
+      { id: 'log.bench.3', setNumber: 2 },
+      { id: 'log.bench.3.d1', setNumber: 2 },
+      { id: 'log.bench.5', setNumber: 4 },
+    ])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 02.1✓', 'bench 03·', 'bench 04✓'])
+  })
+
+  it('an open set with no logged set after it renumbers nothing (as before)', () => {
+    const { effects } = deleteOn({ cards, logs: [headLog('bench', 1), headLog('bench', 2)], key: 'set:bench.4' })
+    expect(effects.renumber).toEqual([])
+    const first = deleteOn({ cards, logs: [], key: 'set:bench.1' })
+    expect(first.effects.renumber).toEqual([])
+  })
+
+  it('an open warmup is not one of the working numbers: deleting it moves nothing', () => {
+    const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
+    const { effects, rows } = deleteOn({ cards: [card('bench', 'w n n')], logs, key: 'set:bench.1' })
+    expect(effects.renumber).toEqual([])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓'])
+  })
+
+  it('an open set of another exercise moves nothing here', () => {
+    const logs = [headLog('row', 2, { number: 2 }), headLog('bench', 3)]
+    const view = viewOf(orderOf([card('bench', 'n n n'), card('row', 'n n n')]), logs)
+    expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+  })
+
+  it('an added set that is open (its draft kept) is deleted like any: the logged added sets after it close the gap', () => {
+    const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 3 } as const
+    const withDraft = [card('bench', 'n n', { added: 3, drafts: [draft] })]
+    const logs = [headLog('bench', 1), headLog('bench', 2), addedLog('bench', 2, { number: 4 }), addedLog('bench', 3, { number: 5 })]
+    const { effects, rows, server } = deleteOn({ cards: withDraft, logs, key: 'added:bench:1', cardsAfter: [card('bench', 'n n', { added: 2 })] })
+    expect(effects.changes).toEqual([])
+    expect(effects.renumber).toEqual([
+      { id: 'log.bench.added2', setNumber: 3 },
+      { id: 'log.bench.added3', setNumber: 4 },
+    ])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
+    expect(server.logs.map((l) => l.setNumber).sort()).toEqual([1, 2, 3, 4])
+  })
+
+  it('a fresh added slot (ADD SET, never logged) goes with nothing to move', () => {
+    const { effects } = deleteOn({ cards: [card('bench', 'n n', { added: 1 })], logs: [headLog('bench', 1), headLog('bench', 2)], key: 'added:bench:1', cardsAfter: [card('bench', 'n n')] })
+    expect(effects.renumber).toEqual([])
   })
 })
 

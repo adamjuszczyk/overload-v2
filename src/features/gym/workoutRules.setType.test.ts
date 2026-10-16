@@ -5,6 +5,7 @@ import {
   applySetTypeChange,
   currentSet,
   resolveRows,
+  typeChangeNeedsNumbers,
   typeColumns,
   typeOfColumns,
   type HeldChange,
@@ -459,14 +460,15 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(current!.number).toBe(3)
   })
 
-  it('the control: without the numbers two rows read 03 (the failure found in the first review of chunk 46)', () => {
+  it('the control: without the numbers the logged set keeps 03, the open set after it reads 02 and History holds 1 and 3 (the failure found in the first review of chunk 46)', () => {
     const logs = [headLog('bench', 1), headLog('bench', 2), headLog('bench', 3)]
     const order = orderOf([card('bench', 'n n n n')])
     const server = new FakeServer({ logs })
     const view = viewOf(order, server.logs, [])
     const row = rowKeyed(view, 'set:bench.2')
     server.applySetType({ ...applySetTypeChange({ row, pick: WARMUP, session: view }), renumber: [] }, row)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 03✓', 'bench 03·'])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 03✓', 'bench 02·'])
+    expect(server.logs.filter((l) => !l.isWarmup).map((l) => l.setNumber)).toEqual([1, 3])
   })
 
   it('a logged warmup made Normal takes its place first among the working sets and the ones after it move up one', () => {
@@ -477,14 +479,14 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
   })
 
-  it('the control: without the numbers two rows read 01 (the failure found in the first review of chunk 46)', () => {
+  it('the control: without the numbers two logged rows read 01 (the failure found in the first review of chunk 46)', () => {
     const logs = [headLog('bench', 1, { warmup: true, number: 1 }), headLog('bench', 2, { number: 1 })]
     const order = orderOf([card('bench', 'w n n')])
     const server = new FakeServer({ logs })
     const view = viewOf(order, server.logs, [])
     const row = rowKeyed(view, 'set:bench.1')
     server.applySetType({ ...applySetTypeChange({ row, pick: NORMAL, session: view }), renumber: [] }, row)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 01✓', 'bench 03·'])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 01✓', 'bench 02·'])
   })
 
   it('the second of two warmups made Normal is the first working set: its own number and the others\' change', () => {
@@ -557,15 +559,64 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(current!.key).toBe('set:bench.1:stage:1')
   })
 
-  it('a set that is not logged yet has no number to change: its number follows the logged sets', () => {
+  it('a set that is not logged yet has no number of its own to change; it moves the logged sets after it only (DECISIONS 151)', () => {
+    // nothing logged after it: nothing to write, the open sets follow by themselves
     const logs = [headLog('bench', 1)]
     const toWarmup = changeOn({ cards: [card('bench', 'n n n')], logs, key: 'set:bench.2', pick: WARMUP })
     expect(toWarmup.effects.renumber).toEqual([])
     expect(toWarmup.rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02·'])
     const fromWarmup = changeOn({ cards: [card('bench', 'w n n')], logs: [headLog('bench', 2, { number: 1 })], key: 'set:bench.1', pick: NORMAL })
-    expect(fromWarmup.effects.renumber).toEqual([])
+    expect(fromWarmup.effects.renumber).toEqual([{ id: 'log.bench.2', setNumber: 2 }])
+    expect(fromWarmup.rows.map(brief)).toEqual(['bench 01·', 'bench 02✓', 'bench 03·'])
     const numbers = fromWarmup.rows.map((r) => r.number)
     expect(new Set(numbers).size).toBe(numbers.length)
+  })
+
+  it('02 open between the logged 01 and 03, made a warmup: the logged 03 closes the gap and the open set after it is 03', () => {
+    const logs = [headLog('bench', 1), headLog('bench', 3)]
+    const { effects, rows, current } = changeOn({ cards: [card('bench', 'n n n n')], logs, key: 'set:bench.2', pick: WARMUP })
+    expect(effects.headPatch).toBeNull()
+    expect(effects.changes).toEqual([{ change: { kind: 'retyped', weekPlanSetId: 'bench.2', type: { kind: 'warmup' } }, id: null }])
+    expect(effects.renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(current!.key).toBe('set:bench.4')
+  })
+
+  it('the control: without the numbers the logged 03 keeps its number and the open set reads 02 after it', () => {
+    const order = orderOf([card('bench', 'n n n n')])
+    const server = new FakeServer({ logs: [headLog('bench', 1), headLog('bench', 3)] })
+    const view = viewOf(order, server.logs, [])
+    const row = rowKeyed(view, 'set:bench.2')
+    server.applySetType({ ...applySetTypeChange({ row, pick: WARMUP, session: view }), renumber: [] }, row)
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 03✓', 'bench 02·'])
+  })
+
+  it('an open warmup made Normal, with logged sets after it: it joins at its place and they move up one', () => {
+    const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
+    const { effects, rows } = changeOn({ cards: [card('bench', 'w n n')], logs, key: 'set:bench.1', pick: NORMAL })
+    expect(effects.headPatch).toBeNull()
+    expect(effects.renumber).toEqual([
+      { id: 'log.bench.2', setNumber: 2 },
+      { id: 'log.bench.3', setNumber: 3 },
+    ])
+    expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02✓', 'bench 03✓'])
+  })
+
+  it('an open warmup made Normal that comes after an open working set takes its place after it: only the logged sets past that move', () => {
+    // set 1 is open (and stays 01), the warmup (plan set 2) becomes the second working set, set 4 was logged as 03 and is now 04
+    const logs = [headLog('bench', 4, { number: 3 })]
+    const { effects, rows } = changeOn({ cards: [card('bench', 'n w n n')], logs, key: 'set:bench.2', pick: NORMAL })
+    expect(effects.renumber).toEqual([{ id: 'log.bench.4', setNumber: 4 }])
+    expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02·', 'bench 03·', 'bench 04✓'])
+  })
+
+  it('an open set added in the session has no log and no type a row can read: switching it moves nothing', () => {
+    const logs = [headLog('bench', 1), addedLog('bench', 2, { number: 3 })]
+    const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 2 } as const
+    const { effects, row } = changeOn({ cards: [card('bench', 'n', { added: 2, drafts: [draft] })], logs, key: 'added:bench:1', pick: WARMUP })
+    expect(row.state).toBe('unlogged')
+    expect(effects.renumber).toEqual([])
+    expect(effects.changes).toEqual([])
   })
 
   it('switching between two working types, or two staged ones, renumbers nothing', () => {
@@ -593,11 +644,16 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓'])
   })
 
-  it('an open working set before it takes no number: it joins after the logged sets that come before it in the plan', () => {
-    const logs = [headLog('bench', 2, { warmup: true, number: 1 }), headLog('bench', 3, { number: 1 })]
+  it('an open working set before it keeps its place: the set joins after it, and the logged one after that moves up (DECISIONS 151)', () => {
+    // the plan is 'n w n': set 1 is open, the warmup (set 2) is logged, set 3 is logged as the second working set
+    const logs = [headLog('bench', 2, { warmup: true, number: 1 }), headLog('bench', 3, { number: 2 })]
     const { effects, rows } = changeOn({ cards: [card('bench', 'n w n')], logs, key: 'set:bench.2', pick: NORMAL })
-    expect(effects.renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
-    expect(rows.map(brief)).toEqual(['bench 03·', 'bench 01✓', 'bench 02✓'])
+    expect(effects.headPatch).toEqual({ isWarmup: false, stageKind: null })
+    expect(effects.renumber).toEqual([
+      { id: 'log.bench.2', setNumber: 2 },
+      { id: 'log.bench.3', setNumber: 3 },
+    ])
+    expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02✓', 'bench 03✓'])
   })
 
   it('only its own exercise\'s sets are counted and moved', () => {
@@ -675,6 +731,169 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
       session: { ...view, logs: [...logs].reverse(), rows: [...view.rows].reverse() },
     })
     expect(turned).toEqual(forward)
+  })
+})
+
+// X21 (chunk 46's second review): where a warmup made Normal lands among the working numbers counts every working set
+// before it in the plan, whatever its state — a skipped set has a number, and since DECISIONS 151 so does an open one.
+describe('a working set made a warmup and then Normal again is back where it was, whatever comes before it (X21, DECISIONS 151)', () => {
+  /** The set `key` made a warmup and then Normal again, each applied to the stand-in; the logs and the rows at each stage. */
+  function roundTrip(o: { cards: OrderExercise[]; logs: SetLog[]; key: string }) {
+    const order = orderOf(o.cards)
+    const server = new FakeServer({ logs: o.logs })
+    const numbers = () => server.logs.map((l) => [l.id, l.setNumber, l.isWarmup] as const)
+    const start = { logs: numbers(), rows: resolveRows(order, server.logs, server.held()).map(brief) }
+    const first = viewOf(order, server.logs, server.held())
+    const toWarmup = rowKeyed(first, o.key)
+    const out = applySetTypeChange({ row: toWarmup, pick: WARMUP, session: first })
+    server.applySetType(out, toWarmup)
+    const middle = { logs: numbers(), rows: resolveRows(order, server.logs, server.held()).map(brief), renumber: out.renumber }
+    const second = viewOf(order, server.logs, server.held())
+    const back = rowKeyed(second, o.key)
+    const undo = applySetTypeChange({ row: back, pick: NORMAL, session: second })
+    server.applySetType(undo, back)
+    return { start, middle, end: { logs: numbers(), rows: resolveRows(order, server.logs, server.held()).map(brief), renumber: undo.renumber } }
+  }
+
+  it('01 skipped, 02 and 03 logged; 02 made a warmup and back: every set gets its number back and the skipped 01 stays first', () => {
+    const logs = [headLog('bench', 1, { skipped: true }), headLog('bench', 2), headLog('bench', 3)]
+    const { start, middle, end } = roundTrip({ cards: [card('bench', 'n n n')], logs, key: 'set:bench.2' })
+    expect(start.rows).toEqual(['bench 01×', 'bench 02✓', 'bench 03✓'])
+    expect(middle.renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+    expect(middle.rows).toEqual(['bench W1✓', 'bench 01×', 'bench 02✓'])
+    expect(end.renumber).toEqual([{ id: 'log.bench.3', setNumber: 3 }])
+    expect(end.logs).toEqual(start.logs)
+    expect(end.rows).toEqual(start.rows)
+  })
+
+  it('01 open, 02 and 03 logged (01 was unlogged); 02 made a warmup and back: it comes back as 02, after the open 01', () => {
+    const logs = [headLog('bench', 2), headLog('bench', 3)]
+    const { start, middle, end } = roundTrip({ cards: [card('bench', 'n n n')], logs, key: 'set:bench.2' })
+    expect(start.rows).toEqual(['bench 01·', 'bench 02✓', 'bench 03✓'])
+    expect(middle.rows).toEqual(['bench W1✓', 'bench 01·', 'bench 02✓'])
+    expect(end.renumber).toEqual([{ id: 'log.bench.3', setNumber: 3 }])
+    expect(end.logs).toEqual(start.logs)
+    expect(end.rows).toEqual(start.rows)
+  })
+
+  it('the same for each state the set before it can be in, and for the set being first, middle or last of four', () => {
+    const states = ['logged', 'skipped', 'open'] as const
+    for (const before of states) {
+      for (const key of ['set:bench.2', 'set:bench.3', 'set:bench.4']) {
+        const at = Number(key.slice(-1))
+        // set 1 is in `before`'s state; the others are logged except 03, which is open when it is not the one switched
+        const logs = [
+          ...(before === 'open' ? [] : [headLog('bench', 1, { skipped: before === 'skipped' })]),
+          headLog('bench', 2),
+          ...(at === 3 ? [headLog('bench', 3)] : []),
+          headLog('bench', 4),
+        ]
+        const { start, end } = roundTrip({ cards: [card('bench', 'n n n n')], logs, key })
+        expect(end.logs, `${before} before ${key}`).toEqual(start.logs)
+        expect(end.rows, `${before} before ${key}`).toEqual(start.rows)
+        const numbers = end.rows.map((r) => r.slice(-4, -1))
+        expect(new Set(numbers).size, `${before} before ${key}`).toBe(numbers.length)
+      }
+    }
+  })
+})
+
+// DECISIONS 152 (a), Adam 2026-10-16: "Making a numberless logged warmup a working set asks for weight and reps in the panel
+// first; type and numbers are saved in one write." The table refuses a working set without both (035's
+// `v2_set_logs_check`); the stand-in models that check, so a patch that leaves the numbers out is refused here too.
+describe('a warmup logged with no weight or reps, made a working set (DECISIONS 152)', () => {
+  const noNumbers = (o: { weight?: number | null; reps?: number | null } = {}) =>
+    headLog('bench', 1, { warmup: true, number: 1, weight: o.weight === undefined ? null : o.weight, reps: o.reps === undefined ? null : o.reps })
+  const cards = [card('bench', 'w n')]
+  const on = (log: SetLog, pick: Parameters<typeof changeOn>[0]['pick'], numbers?: { weight: number; reps: number }) => {
+    const order = orderOf(cards)
+    const server = new FakeServer({ logs: [log] })
+    const view = viewOf(order, server.logs, server.held())
+    const row = rowKeyed(view, 'set:bench.1')
+    return { server, order, row, view, needs: typeChangeNeedsNumbers({ row, pick: pick as never, session: view }), run: () => applySetTypeChange({ row, pick: pick as never, session: view, numbers }) }
+  }
+
+  it('is a case that needs numbers: the panel is told before it saves, for Normal and for a staged type', () => {
+    expect(on(noNumbers(), NORMAL).needs).toBe(true)
+    expect(on(noNumbers(), staged('dropset', 2)).needs).toBe(true)
+    expect(on(noNumbers(), staged('myo_reps', 1)).needs).toBe(true)
+  })
+
+  it('either number missing is enough: weight but no reps, and reps but no weight', () => {
+    expect(on(noNumbers({ weight: 20 }), NORMAL).needs).toBe(true)
+    expect(on(noNumbers({ reps: 12 }), NORMAL).needs).toBe(true)
+  })
+
+  it('refuses to answer without them: the patch the table would refuse is never returned', () => {
+    expect(() => on(noNumbers(), NORMAL).run()).toThrow(RangeError)
+    expect(() => on(noNumbers(), NORMAL).run()).toThrow(/weight or reps/)
+    expect(() => on(noNumbers({ weight: 20 }), NORMAL).run()).toThrow(RangeError)
+  })
+
+  it('with the numbers typed in the panel, one patch carries the type and both numbers, and the table takes it', () => {
+    const { run, server, order, row } = on(noNumbers(), NORMAL, { weight: 62.5, reps: 8 })
+    const effects = run()
+    expect(effects.headPatch).toEqual({ isWarmup: false, stageKind: null, weight: 62.5, reps: 8 })
+    server.applySetType(effects, row)
+    expect(server.logs.map((l) => [l.isWarmup, l.weight, l.reps])).toEqual([[false, 62.5, 8]])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02·'])
+  })
+
+  it('a staged type carries them too, and a log that had one of the numbers takes both from the panel', () => {
+    const dropset = on(noNumbers({ weight: 20 }), staged('dropset', 1), { weight: 25, reps: 10 })
+    const effects = dropset.run()
+    expect(effects.headPatch).toEqual({ isWarmup: false, stageKind: 'dropset', weight: 25, reps: 10 })
+    dropset.server.applySetType(effects, dropset.row)
+    expect(dropset.server.logs.map((l) => [l.weight, l.reps, l.stageKind])).toEqual([[25, 10, 'dropset']])
+  })
+
+  it('the control: the patch without the numbers is refused by the stand-in, as the real table refuses it (23514, v2_set_logs_check)', () => {
+    const { server, row } = on(noNumbers(), NORMAL)
+    expect(() => server.patchLog(row.logId!, { isWarmup: false, stageKind: null })).toThrow(/23514.*v2_set_logs_check/)
+    expect(() => server.patchLog(row.logId!, { isWarmup: false, stageKind: null, weight: 60 })).toThrow(/v2_set_logs_check/)
+    expect(() => new FakeServer({ logs: [headLog('bench', 1, { weight: null })] })).toThrow(/v2_set_logs_check/)
+  })
+
+  it('needs nothing from a warmup that holds both numbers, from a working set, from a skipped one or from one to do', () => {
+    const withNumbers = on(headLog('bench', 1, { warmup: true, number: 1, weight: 20, reps: 12 }), NORMAL)
+    expect(withNumbers.needs).toBe(false)
+    expect(withNumbers.run().headPatch).toEqual({ isWarmup: false, stageKind: null })
+    expect(Object.keys(withNumbers.run().headPatch!).sort()).toEqual(['isWarmup', 'stageKind'])
+    // a working set made a warmup: always accepted
+    const working = rowKeyed(viewOf(orderOf([card('bench', 'n')]), [headLog('bench', 1)]), 'set:bench.1')
+    const logged = viewOf(orderOf([card('bench', 'n')]), [headLog('bench', 1)])
+    expect(typeChangeNeedsNumbers({ row: working, pick: WARMUP, session: logged })).toBe(false)
+    expect(typeChangeNeedsNumbers({ row: working, pick: NORMAL, session: logged })).toBe(false)
+    // a warmup that is still to do has no log to hold numbers
+    const open = viewOf(orderOf(cards), [])
+    expect(typeChangeNeedsNumbers({ row: rowKeyed(open, 'set:bench.1'), pick: NORMAL, session: open })).toBe(false)
+    // staying a warmup is no change at all
+    expect(on(noNumbers(), WARMUP).needs).toBe(false)
+    expect(on(noNumbers(), WARMUP).run().changed).toBe(false)
+  })
+
+  it('numbers handed over when none are needed are not written: the patch is the type alone', () => {
+    const effects = on(headLog('bench', 1, { warmup: true, number: 1, weight: 20, reps: 12 }), NORMAL, { weight: 99, reps: 99 }).run()
+    expect(effects.headPatch).toEqual({ isWarmup: false, stageKind: null })
+  })
+
+  it('numbers that are not numbers are refused, and reps are whole', () => {
+    expect(() => on(noNumbers(), NORMAL, { weight: Number.NaN, reps: 8 }).run()).toThrow(RangeError)
+    expect(() => on(noNumbers(), NORMAL, { weight: 60, reps: Number.NaN }).run()).toThrow(RangeError)
+    expect(() => on(noNumbers(), NORMAL, { weight: 60, reps: 8.5 }).run()).toThrow(RangeError)
+    expect(() => on(noNumbers(), NORMAL, { weight: Number.POSITIVE_INFINITY, reps: 8 }).run()).toThrow(RangeError)
+    // a negative weight is an assisted set's added load: not refused here
+    expect(() => on(noNumbers(), NORMAL, { weight: -10, reps: 8 }).run()).not.toThrow()
+  })
+
+  it('an added set logged as a warmup with no numbers is the same case', () => {
+    const log = addedLog('bench', 1, { warmup: true, number: 1, weight: null, reps: null })
+    const order = orderOf([card('bench', '', { added: 1 })])
+    const view = viewOf(order, [log])
+    const row = rowKeyed(view, 'added:bench:1')
+    expect(typeChangeNeedsNumbers({ row, pick: NORMAL, session: view })).toBe(true)
+    expect(() => applySetTypeChange({ row, pick: NORMAL, session: view })).toThrow(RangeError)
+    expect(applySetTypeChange({ row, pick: NORMAL, session: view, numbers: { weight: 40, reps: 5 } }).headPatch).toEqual({ isWarmup: false, stageKind: null, weight: 40, reps: 5 })
   })
 })
 

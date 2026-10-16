@@ -13,6 +13,7 @@ import {
   type ResolvedRow,
   type SessionOrder,
   type SessionView,
+  type SetDraftKey,
 } from './workoutRules'
 
 export const SESSION = 's1'
@@ -70,10 +71,20 @@ export function plannedSets(key: string, spec: string): WeekPlanSet[] {
   return sets
 }
 
-/** A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. */
-export function card(key: string, spec: string, o: { name?: string; added?: number } = {}): OrderExercise {
+/**
+ * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the screen's count of
+ * added sets, `drafts` the keys of the drafts the phone holds.
+ */
+export function card(key: string, spec: string, o: { name?: string; added?: number; drafts?: readonly SetDraftKey[] } = {}): OrderExercise {
   const name = o.name ?? key.charAt(0).toUpperCase() + key.slice(1)
-  return { key, exerciseId: exerciseIdOf(key), name, plannedSets: plannedSets(key, spec), ...(o.added === undefined ? {} : { addedSets: o.added }) }
+  return {
+    key,
+    exerciseId: exerciseIdOf(key),
+    name,
+    plannedSets: plannedSets(key, spec),
+    ...(o.added === undefined ? {} : { addedSets: o.added }),
+    ...(o.drafts === undefined ? {} : { drafts: o.drafts }),
+  }
 }
 
 export function orderOf(exercises: OrderExercise[], supersets: OrderSuperset[] = []): SessionOrder {

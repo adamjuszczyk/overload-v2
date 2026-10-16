@@ -169,6 +169,12 @@ export interface SessionView {
   changes: readonly HeldChange[]
 }
 
+/** A set log with its weight and reps. */
+export type NumberedSet = LoggedSet & Pick<SetLog, 'weight' | 'reps'>
+
+/** The session as `applySetTypeChange` reads it: its logs carry the weight and reps a warmup made a working set must have. */
+export type TypeChangeView = Omit<SessionView, 'logs'> & { logs: readonly NumberedSet[] }
+
 /** One card of the workout: an exercise with its planned sets. */
 export interface OrderExercise {
   /** The card's identity (the program exercise row's id; an added exercise's card has its own). */
@@ -180,6 +186,14 @@ export interface OrderExercise {
   plannedSets: readonly PlannedSet[]
   /** Sets added in the session (ADD SET, ADD ROUND), logged or not: the screen's `extraSlotCount`. */
   addedSets?: number
+  /**
+   * The drafts the phone holds for the session (G46). Only the key of a set added in the session and unlogged again is
+   * read, and each is a slot of its own, so the set is still a row after a reload and takes its number before a new
+   * slot does (DECISIONS 151: "an added set's number from its draft"; the key's `position` is the number it was logged
+   * with). The row carries `draftPosition`, which is how the screen finds the draft. A key of a planned set, of a drop
+   * or of another exercise is ignored.
+   */
+  drafts?: readonly SetDraftKey[]
 }
 
 /** A superset block as the screen draws it (a member with a swap left its block), members in block order. */
@@ -222,6 +236,12 @@ export interface ResolvedRow {
    * is what places a set among the working numbers when it joins them (DECISIONS 146 (a)).
    */
   planIndex: number
+  /**
+   * A set added in the session that was unlogged and keeps a draft on the phone (G46): the `position` of that draft's
+   * key, which is how the screen finds the draft. The number the row shows is the lowest one free, which is the draft's
+   * position unless the sets before it have been deleted or switched to or from Warmup since. Null on every other row.
+   */
+  draftPosition: number | null
   /** The log behind a logged or skipped row. */
   logId: string | null
   /** A head's type as it is now (plan, change and log together); null on a drop. */
@@ -478,6 +498,7 @@ interface Head {
   retyped: boolean
   number: number
   planIndex: number
+  draftPosition: number | null
 }
 
 function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmups: Head[]; workings: Head[] } {
@@ -515,20 +536,31 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       retyped: retyped !== undefined,
       number: 0,
       planIndex: heads.length + 1,
+      draftPosition: null,
     })
   }
 
-  // The sets added in the session come after the planned ones; the n-th added row is the n-th added log.
-  // A set added and then switched to Warmup is still that row (drawn as a warmup: the type is the log's).
+  // The sets added in the session come after the planned ones. A logged one is the slot of the number it was logged with; an
+  // unlogged one that keeps a draft (DECISIONS 151) is a slot of its own, found by the draft's `position`; the rest are new
+  // slots (ADD SET, or a draft the phone no longer holds). They are numbered with the planned sets below, and then put in
+  // the order of their numbers, so a slot keeps its place whichever of them were logged first. A set added and then
+  // switched to Warmup is still that row (drawn as a warmup: the type is the log's).
   const addedLogs = session.headLogs
     .filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null)
     .sort((a, b) => a.setNumber - b.setNumber)
-  const addedCount = Math.max(exercise.addedSets ?? 0, addedLogs.length)
-  for (let i = 0; i < addedCount; i++) {
-    const log = addedLogs[i] ?? null
+  const drafted = (exercise.drafts ?? [])
+    .filter((key): key is AddedSetKey => 'localId' in key && !('drop' in key) && key.exerciseId === exercise.exerciseId)
+    .sort((a, b) => a.position - b.position)
+  const planned = heads.length
+  const slots: Array<{ log: LoggedSet | null; draftPosition: number | null }> = [
+    ...addedLogs.map((log) => ({ log, draftPosition: null })),
+    ...drafted.map((key) => ({ log: null, draftPosition: key.position })),
+  ]
+  while (slots.length < (exercise.addedSets ?? 0)) slots.push({ log: null, draftPosition: null })
+  for (const { log, draftPosition } of slots) {
     const stageLogs = log ? session.stagesByParent.get(log.id) ?? [] : []
     heads.push({
-      key: addedRowKey(exercise.key, i + 1),
+      key: '',
       exercise,
       weekPlanSetId: null,
       added: true,
@@ -538,19 +570,43 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType: null,
       retyped: false,
       number: 0,
-      planIndex: heads.length + 1,
+      planIndex: 0,
+      draftPosition,
     })
   }
+
+  // DECISIONS 151: a working set that is logged or skipped shows the number it was logged with and holds it; one that is
+  // open takes the lowest number no other working set of its exercise holds, in the order of the plan (a planned set
+  // first, then an added one that keeps a draft, then a new one). So an open set keeps its place whatever is logged around
+  // it (unlog 02 of 01 to 03 and it is still 02), and the numbers of sets logged one after the other (1.1's, and any whose
+  // logs are gapless) read as they always did.
+  const held = new Set<number>()
+  for (const log of session.headLogs) if (log.exerciseId === exercise.exerciseId && !log.isWarmup) held.add(log.setNumber)
+  let free = 0
+  for (const head of heads) {
+    if (head.type.kind === 'warmup') continue
+    if (head.log) {
+      head.number = head.log.setNumber
+    } else {
+      do {
+        free += 1
+      } while (held.has(free))
+      head.number = free
+    }
+  }
+  // The added sets in the order of their numbers (a logged warmup by the number it holds), then each one's key and place.
+  const addedHeads = heads.splice(planned).sort((a, b) => (a.log?.setNumber ?? a.number) - (b.log?.setNumber ?? b.number))
+  addedHeads.forEach((head, i) => {
+    head.key = addedRowKey(exercise.key, i + 1)
+  })
+  heads.push(...addedHeads)
+  heads.forEach((head, i) => {
+    head.planIndex = i + 1
+  })
 
   // A head that is a warmup now (planned so, retyped so, or logged so) is not one of the working sets.
   const warmups = heads.filter((head) => head.type.kind === 'warmup')
   const workings = heads.filter((head) => head.type.kind !== 'warmup')
-  const loggedHeads = session.headLogs.filter((log) => log.exerciseId === exercise.exerciseId && !log.isWarmup).length
-  let unlogged = 0
-  for (const head of workings) {
-    if (head.log) head.number = head.log.setNumber
-    else head.number = loggedHeads + ++unlogged
-  }
   warmups.forEach((head, i) => {
     head.number = i + 1
   })
@@ -585,6 +641,7 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
       stageKind,
       headKey: null,
       stageNumber: null,
+      draftPosition: head.draftPosition,
     },
   ]
   if (head.type.kind === 'staged') {
@@ -607,6 +664,7 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
         stageKind: head.type.stageKind,
         headKey: head.key,
         stageNumber: n,
+        draftPosition: null,
       })
     }
   }
@@ -722,29 +780,40 @@ function numbersOf(group: SetGroup<LoggedSet>, setNumber: number): NumberPatch[]
   return patches
 }
 
-/** SPEC 18b: `gone` leaves its exercise's working sets, and every later head and its drops take the numbers that close the gap. */
-function closeGap(gone: LoggedSet, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
+/**
+ * SPEC 18b: a working set numbered `number` leaves its exercise's working sets (deleted, or switched to Warmup). The
+ * logged sets after it move down one, with their drops; the open ones after it follow by themselves. It is one
+ * less for each, not "consecutive from the gap": an open set between them holds its place (DECISIONS 151).
+ */
+function closeGap(exerciseId: string, number: number, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
   return groups
-    .filter((g) => g.head.exerciseId === gone.exerciseId && !g.head.isWarmup && g.head.setNumber > gone.setNumber)
+    .filter((g) => g.head.exerciseId === exerciseId && !g.head.isWarmup && g.head.setNumber > number)
     .sort((a, b) => a.head.setNumber - b.head.setNumber)
-    .flatMap((g, i) => numbersOf(g, gone.setNumber + i))
+    .flatMap((g) => numbersOf(g, g.head.setNumber - 1))
 }
 
 /**
- * DECISIONS 146 (a): `entering` (a warmup's log and the drops under it) joins its exercise's working sets as number
- * `place`, and the working heads from there on move up one.
+ * DECISIONS 146 (a): a set joins its exercise's working sets as number `place`, and the logged working sets from there on
+ * move up one. `entering` is its log with the drops under it, when it has a log (a warmup that is still to do has
+ * none, and its number is worked out when it is logged).
  */
-function makeRoom(entering: SetGroup<LoggedSet>, place: number, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
+function makeRoom(
+  entering: SetGroup<LoggedSet> | null,
+  exerciseId: string,
+  place: number,
+  groups: readonly SetGroup<LoggedSet>[],
+): NumberPatch[] {
   const after = groups
-    .filter((g) => g.head.exerciseId === entering.head.exerciseId && !g.head.isWarmup && g.head.setNumber >= place)
+    .filter((g) => g.head.exerciseId === exerciseId && !g.head.isWarmup && g.head.setNumber >= place)
     .sort((a, b) => a.head.setNumber - b.head.setNumber)
-  return [...numbersOf(entering, place), ...after.flatMap((g) => numbersOf(g, g.head.setNumber + 1))]
+  return [...(entering === null ? [] : numbersOf(entering, place)), ...after.flatMap((g) => numbersOf(g, g.head.setNumber + 1))]
 }
 
-// Where a set that joins the working sets takes its number: after the logged working sets that come before it
-// in the plan's order (a warmup is planned first, so a warmup made Normal is usually the first).
-const placeAmongLogged = (row: ResolvedRow, rows: readonly ResolvedRow[]): number =>
-  1 + rows.filter((r) => r.exerciseKey === row.exerciseKey && r.kind === 'working' && r.state !== 'unlogged' && r.planIndex < row.planIndex).length
+// Where a set that joins the working sets takes its number: after the working sets that come before it in the plan's
+// order, whether they are logged, skipped or still open (an open set keeps its place, DECISIONS 151; a warmup is
+// planned first, so a warmup made Normal is usually the first).
+const placeInPlan = (row: ResolvedRow, rows: readonly ResolvedRow[]): number =>
+  1 + rows.filter((r) => r.exerciseKey === row.exerciseKey && r.kind === 'working' && r.planIndex < row.planIndex).length
 
 // ─── A set type changed during a workout ─────────────────────────────────────────────────────────
 
@@ -753,8 +822,12 @@ export interface SetTypeChange {
   type: SessionSetChangeType
   /** False when the pick is the type it already has: nothing to write. */
   changed: boolean
-  /** A logged head: the patch for its log row (`is_warmup`, `stage_kind`); null for a set with no log. */
-  headPatch: { isWarmup: boolean; stageKind: StageKind | null } | null
+  /**
+   * A logged head: the patch for its log row (`is_warmup`, `stage_kind`); null for a set with no log. A warmup that
+   * was logged with no weight or reps and is made a working set also carries the two numbers, in the same write:
+   * the table refuses a working set without them (DECISIONS 152).
+   */
+  headPatch: { isWarmup: boolean; stageKind: StageKind | null; weight?: number; reps?: number } | null
   /** The drops that appear under it, by number (1-based). */
   stagesToAdd: number[]
   /** The logged drops to delete, the last first (Normal, Warmup, or fewer drops than are logged). */
@@ -770,11 +843,40 @@ export interface SetTypeChange {
    */
   changes: ChangeWrite[]
   /**
-   * A logged set switched to or from Warmup: the logs whose `set_number` changes (DECISIONS 146 (a)). To Warmup the
-   * working sets after it close the gap, as a delete does; from Warmup it takes its place among the working sets
-   * and the ones after it move up one. Online-only with the type change itself (G47).
+   * A set switched to or from Warmup, logged or not: the logs whose `set_number` changes (DECISIONS 146 (a)). To
+   * Warmup the logged working sets after it move down one, as a delete moves them; from Warmup it takes its place
+   * among the working sets and the logged ones from there on move up one. The open sets after it follow by
+   * themselves, and so does the open set itself: it has no log, so nothing of its own to write. A set added in the
+   * session and not logged yet renumbers nothing: its type is the card's own state, which no row can read. These
+   * are edits of logged sets: online-only with a type change on a logged set (G47).
    */
   renumber: NumberPatch[]
+}
+
+/** The weight (kg, as stored) and reps typed in the edit panel. */
+export interface TypedNumbers {
+  weight: number
+  reps: number
+}
+
+/**
+ * DECISIONS 152 (a): a warmup logged with no weight or reps (SPEC lets it be) can't be made a working set by
+ * the type alone, because the table refuses a working set without both numbers (035's `v2_set_logs_check`). True
+ * when `pick` would do that to `row`: the edit panel asks for weight and reps first, and `applySetTypeChange`
+ * takes them as `numbers`. False for every other change, a warmup that holds both numbers included.
+ */
+export function typeChangeNeedsNumbers({
+  row,
+  pick,
+  session,
+}: {
+  row: ResolvedRow
+  pick: SessionSetChangeType
+  session: TypeChangeView
+}): boolean {
+  if (row.type === null || row.type.kind !== 'warmup' || pick.kind === 'warmup' || row.state !== 'logged') return false
+  const log = logOf(row, session.logs)
+  return log.weight === null || log.reps === null
 }
 
 /**
@@ -787,10 +889,13 @@ export function applySetTypeChange({
   row,
   pick,
   session,
+  numbers,
 }: {
   row: ResolvedRow
   pick: SessionSetChangeType
-  session: SessionView
+  session: TypeChangeView
+  /** Read only when `typeChangeNeedsNumbers` is true, and then required (DECISIONS 152). */
+  numbers?: TypedNumbers
 }): SetTypeChange {
   if (row.type === null) throw new RangeError('only a set has a type; a drop follows its head')
   if (row.state === 'skipped') throw new RangeError('a skipped set has no type to change')
@@ -810,11 +915,26 @@ export function applySetTypeChange({
   const retyped: ChangeWrite[] = row.weekPlanSetId === null ? [] : [retypedWrite(row.weekPlanSetId, next, session.changes)]
 
   if (row.state === 'unlogged') {
-    // No log row yet: a planned set records the change on the session, an added set keeps it as local state.
-    return { type: next, changed: true, headPatch: null, stagesToAdd, stagesToDelete: [], needsConfirm: false, confirmCount: 0, changes: retyped, renumber: [] }
+    // No log row yet: a planned set records the change on the session, an added set keeps it as local state. The logged
+    // sets after a planned one that joins or leaves the working sets move with it (an open set keeps its place, so
+    // a logged set can come after it: DECISIONS 151).
+    let renumber: NumberPatch[] = []
+    if (row.weekPlanSetId !== null && (next.kind === 'warmup') !== (current.kind === 'warmup')) {
+      const groups = groupsOf(session.logs)
+      renumber =
+        next.kind === 'warmup' ? closeGap(row.exerciseId, row.number, groups) : makeRoom(null, row.exerciseId, placeInPlan(row, session.rows), groups)
+    }
+    return { type: next, changed: true, headPatch: null, stagesToAdd, stagesToDelete: [], needsConfirm: false, confirmCount: 0, changes: retyped, renumber }
   }
 
   const log = logOf(row, session.logs)
+  // The table refuses a working set without weight and reps: they come with the type (DECISIONS 152).
+  let typed: TypedNumbers | null = null
+  if (typeChangeNeedsNumbers({ row, pick: next, session })) {
+    if (numbers === undefined) throw new RangeError('a warmup logged without weight or reps needs both to become a working set')
+    if (!Number.isFinite(numbers.weight) || !Number.isInteger(numbers.reps)) throw new RangeError('the weight and reps of a working set are numbers')
+    typed = { weight: numbers.weight, reps: numbers.reps }
+  }
   const logged = stagesOf(session.logs, log.id)
   const stagesToDelete = logged.slice(Math.min(logged.length, after)).reverse()
   const confirmCount = stagesToDelete.filter((stage) => !stage.isSkipped).length
@@ -823,7 +943,10 @@ export function applySetTypeChange({
   let renumber: NumberPatch[] = []
   if ((next.kind === 'warmup') !== (current.kind === 'warmup')) {
     const groups = groupsOf(session.logs)
-    const patches = next.kind === 'warmup' ? closeGap(log, groups) : makeRoom({ head: log, stages: logged }, placeAmongLogged(row, session.rows), groups)
+    const patches =
+      next.kind === 'warmup'
+        ? closeGap(log.exerciseId, log.setNumber, groups)
+        : makeRoom({ head: log, stages: logged }, log.exerciseId, placeInPlan(row, session.rows), groups)
     // A log that is being deleted has no number to change.
     const going = new Set(stagesToDelete.map((stage) => stage.id))
     renumber = patches.filter((patch) => !going.has(patch.id))
@@ -831,7 +954,7 @@ export function applySetTypeChange({
   return {
     type: next,
     changed: true,
-    headPatch: { isWarmup: columns.isWarmup, stageKind: columns.stageKind },
+    headPatch: { isWarmup: columns.isWarmup, stageKind: columns.stageKind, ...(typed === null ? {} : typed) },
     stagesToAdd,
     stagesToDelete,
     needsConfirm: confirmCount > 0,
@@ -880,7 +1003,10 @@ function deleteSetEffects(row: ResolvedRow, session: SessionView): DeleteEffects
     const stages = stagesOf(session.logs, gone.id)
     effects.deleteOrder = cascadeDeleteOrder({ head: gone, stages }, (log) => log.stageIndex)
     effects.stageCount = stages.length
-    if (!gone.isWarmup) effects.renumber = closeGap(gone, groupsOf(session.logs))
+    if (!gone.isWarmup) effects.renumber = closeGap(gone.exerciseId, gone.setNumber, groupsOf(session.logs))
+  } else if (row.kind === 'working') {
+    // An open set leaves the working numbers too, and a logged set can come after it (DECISIONS 151).
+    effects.renumber = closeGap(row.exerciseId, row.number, groupsOf(session.logs))
   }
   if (row.weekPlanSetId !== null) effects.changes.push(deletedWrite(row.weekPlanSetId, session.changes))
   return effects
@@ -913,7 +1039,7 @@ function deleteDropEffects(row: ResolvedRow, session: SessionView): DeleteEffect
 // ─── Unlog ───────────────────────────────────────────────────────────────────────────────────────
 
 /** A set log with the numbers a draft keeps. */
-export type UnloggableSet = LoggedSet & Pick<SetLog, 'weight' | 'reps' | 'rir' | 'formRating' | 'enteredUnit'>
+export type UnloggableSet = NumberedSet & Pick<SetLog, 'rir' | 'formRating' | 'enteredUnit'>
 
 /** The session as `unlogEffects` reads it: its logs carry the numbers the draft keeps. */
 export type UnlogView = Omit<SessionView, 'logs'> & { logs: readonly UnloggableSet[] }

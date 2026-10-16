@@ -8,10 +8,12 @@ import {
   deleteEffects,
   finishWarning,
   resolveRows,
+  typeChangeNeedsNumbers,
   unlogEffects,
   type HeldChange,
   type OrderExercise,
   type ResolvedRow,
+  type SetDraftKey,
 } from './workoutRules'
 import { FakeServer, PgError } from './workoutRules.server.testutil'
 import { SESSION, addedLog, brief, card, dropLog, exerciseIdOf, headLog, held, orderOf, pending, retyped, rowKeyed, staged, viewOf } from './workoutRules.testutil'
@@ -156,10 +158,12 @@ describe('an added set never gets a "retyped" row, whatever is done to it', () =
 
 // ─── A walk through many sessions ───────────────────────────────────────────────────────────────
 // Every step of every walk applies what a rule returns to the stand-in (a write the table would refuse
-// throws) and then checks what must hold afterwards. The walk logs, switches types, adds sets, deletes sets and
-// drops and unlogs drops, on a session with a superset, a card with warmups and drops, and added sets.
-// (Unlogging a whole set is not in the walk: unlog keeps the logged sets' numbers, so it leaves a gap in them,
-// which chunk 46's report asks about.)
+// throws) and then checks what must hold afterwards. The walk logs (each row with the number it shows: DECISIONS 151),
+// switches types, adds sets, deletes sets and drops, and unlogs drops and whole sets, on a session with a superset, a card
+// with warmups and drops, and added sets. It keeps the phone's drafts the way the workout screen will: an unlogged added
+// set's key goes beside its card, and is dropped when the set is logged again or deleted. A warmup is logged with no
+// weight and no reps half the time (SetRow writes an empty box as null), and a type change that needs the numbers brings
+// them (DECISIONS 152).
 
 function walker(seed: number) {
   let state = seed >>> 0
@@ -173,16 +177,17 @@ function walker(seed: number) {
   }
 }
 
-const WALK_CARDS = (added: Record<string, number>): OrderExercise[] => [
-  card('bench', 'w w n n d2 n', { added: added.bench }),
-  card('row', 'n n n', { added: added.row }),
-  card('lat', 'n d1 n', { added: added.lat }),
+const WALK_CARDS = (added: Record<string, number>, drafts: readonly SetDraftKey[]): OrderExercise[] => [
+  card('bench', 'w w n n d2 n', { added: added.bench, drafts }),
+  card('row', 'n n n', { added: added.row, drafts }),
+  card('lat', 'n d1 n', { added: added.lat, drafts }),
   card('curl', 'n n n'),
 ]
 const WALK_BLOCKS = [{ id: 'blk', members: ['row', 'lat'] }]
+const WALK_EXERCISES = ['bench', 'row', 'lat', 'curl']
 
-/** What the app writes when a row is logged: a head gets the next number, a warmup its place, a drop its head's number. */
-function logOf(row: ResolvedRow, server: FakeServer, rows: readonly ResolvedRow[], serial: number): SetLog | null {
+/** What the app writes when a row is logged: a head gets the number its row shows, a warmup its place, a drop its head's number. */
+function logOf(row: ResolvedRow, server: FakeServer, rows: readonly ResolvedRow[], serial: number, emptyWarmup: boolean): SetLog | null {
   const exerciseId = exerciseIdOf(row.exerciseKey)
   const base = headLog(row.exerciseKey, 1)
   if (row.kind === 'stage') {
@@ -192,36 +197,51 @@ function logOf(row: ResolvedRow, server: FakeServer, rows: readonly ResolvedRow[
     const taken = server.logs.filter((l) => l.parentSetId === headLog_.id).map((l) => l.stageIndex)
     return { ...base, id: `walk.${serial}`, exerciseId, weekPlanSetId: null, parentSetId: headLog_.id, isDropset: true, stageIndex: Math.max(0, ...taken) + 1, setNumber: headLog_.setNumber, stageKind: null }
   }
-  const working = server.logs.filter((l) => l.exerciseId === exerciseId && l.parentSetId === null && !l.isWarmup).length
   return {
     ...base,
     id: `walk.${serial}`,
     exerciseId,
     weekPlanSetId: row.weekPlanSetId,
-    setNumber: row.kind === 'warmup' ? row.number : working + 1,
+    setNumber: row.number,
     isWarmup: row.kind === 'warmup',
     stageKind: row.type?.kind === 'staged' ? row.type.stageKind : null,
+    ...(row.kind === 'warmup' && emptyWarmup ? { weight: null, reps: null } : {}),
   }
 }
+
+/**
+ * What stays of a set's logs when it is logged again: where it sits, what it holds. A warmup's stored number is not
+ * maintained (the rows number warmups by their place, and a set made a warmup keeps the number it had), so it is not compared.
+ */
+const heldBy = (logs: readonly SetLog[]) =>
+  logs
+    .filter((l) => l.parentSetId === null)
+    .map((l) => [l.weekPlanSetId ?? `added ${l.setNumber}`, l.isWarmup ? 0 : l.setNumber, l.weight, l.reps, l.isWarmup] as const)
+    .sort((a, b) => a[1] - b[1] || String(a[0]).localeCompare(String(b[0])))
 
 function walk(seed: number, steps: number): string[] {
   const rng = walker(seed)
   const added: Record<string, number> = { bench: 0, row: 0, lat: 0 }
+  let drafts: SetDraftKey[] = []
   const server = new FakeServer({ logs: [] })
   const trace: string[] = []
+  const orderNow = () => orderOf(WALK_CARDS(added, drafts), WALK_BLOCKS)
   let serial = 0
   for (let step = 0; step < steps; step++) {
-    const order = orderOf(WALK_CARDS(added), WALK_BLOCKS)
-    const view = viewOf(order, server.logs, server.held())
+    const view = viewOf(orderNow(), server.logs, server.held())
     const rows = view.rows
-    const op = rng.pick(['logNext', 'logNext', 'logNext', 'log', 'type', 'type', 'delete', 'delete', 'add', 'unlogDrop', 'unlogDrop'] as const)
+    const op = rng.pick(['logNext', 'logNext', 'logNext', 'log', 'type', 'type', 'delete', 'delete', 'add', 'unlogDrop', 'unlogDrop', 'unlogSet', 'unlogSet'] as const)
     const open = rows.filter((r) => r.state === 'unlogged')
     const heads = rows.filter((r) => r.kind !== 'stage' && r.state !== 'skipped')
+    const dropDraftOf = (row: ResolvedRow) => {
+      if (row.draftPosition !== null) drafts = drafts.filter((d) => !('localId' in d && d.exerciseId === row.exerciseId && d.position === row.draftPosition))
+    }
     if ((op === 'log' || op === 'logNext') && open.length > 0) {
       const row = op === 'logNext' ? open[0] : rng.pick(open)
-      const log = logOf(row, server, rows, ++serial)
+      const log = logOf(row, server, rows, ++serial, rng.chance(0.5))
       if (log) {
-        server.logs.push(log)
+        server.insertLog(log)
+        dropDraftOf(row)
         trace.push(`log ${row.key}`)
       }
     } else if (op === 'add') {
@@ -231,9 +251,12 @@ function walk(seed: number, steps: number): string[] {
     } else if (op === 'type' && heads.length > 0) {
       const row = rng.pick(heads)
       const pick = rng.pick([{ kind: 'normal' }, { kind: 'warmup' }, staged('dropset', rng.chance(0.5) ? 1 : 2), staged('rest_pause', 3)] as const)
-      const effects = applySetTypeChange({ row, pick, session: view })
+      const needs = typeChangeNeedsNumbers({ row, pick, session: view })
+      // the numbers are asked for first (152): without them the rule refuses to answer
+      if (needs) expect(() => applySetTypeChange({ row, pick, session: view }), `${step}: ${row.key} to ${JSON.stringify(pick)} needs numbers`).toThrow(RangeError)
+      const effects = applySetTypeChange({ row, pick, session: view, numbers: needs ? { weight: 40, reps: 6 } : undefined })
       server.applySetType(effects, row)
-      const after = resolveRows(order, server.logs, server.held()).find((r) => r.key === row.key)
+      const after = resolveRows(orderNow(), server.logs, server.held()).find((r) => r.key === row.key)
       if (after && row.state !== 'unlogged' && effects.changed) expect(after.type, `${step}: ${row.key} to ${JSON.stringify(pick)}`).toEqual(effects.type)
       if (row.state === 'unlogged' && row.weekPlanSetId !== null && effects.changed) expect(after!.type).toEqual(effects.type)
       trace.push(`type ${row.key} ${JSON.stringify(pick)}`)
@@ -241,8 +264,11 @@ function walk(seed: number, steps: number): string[] {
       const row = rng.pick(rows)
       const effects = deleteEffects(row, view)
       server.applyDelete(effects)
-      if (row.added && row.kind !== 'stage') added[row.exerciseKey] = Math.max(0, added[row.exerciseKey] - 1)
-      const after = resolveRows(orderOf(WALK_CARDS(added), WALK_BLOCKS), server.logs, server.held())
+      if (row.added && row.kind !== 'stage') {
+        added[row.exerciseKey] = Math.max(0, added[row.exerciseKey] - 1)
+        dropDraftOf(row)
+      }
+      const after = resolveRows(orderNow(), server.logs, server.held())
       if (row.weekPlanSetId !== null) expect(after.map((r) => r.key), `${step}: deleted ${row.key}`).not.toContain(row.key)
       if (row.kind === 'stage') {
         const head = after.find((r) => r.key === row.headKey)
@@ -259,34 +285,61 @@ function walk(seed: number, steps: number): string[] {
         server.applyUnlog(unlogEffects(drop, view))
         trace.push(`unlog ${drop.key}`)
       }
+    } else if (op === 'unlogSet') {
+      const candidates = rows.filter((r) => r.kind !== 'stage' && r.state === 'logged' && canUnlog(r, view))
+      if (candidates.length > 0) {
+        const row = rng.pick(candidates)
+        const effects = unlogEffects(row, view)
+        const numbersBefore = Object.fromEntries(rows.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
+        // no other set's number changes: the answer holds no number patch, and the heads read as they did
+        expect(Object.keys(effects).sort(), `${step}: unlog of ${row.key} holds no renumbering`).toEqual(['changes', 'deleteOrder', 'draft'])
+        const copy = new FakeServer({ logs: server.logs, changes: server.held() })
+        copy.applyUnlog(effects)
+        const keptDrafts = row.added ? [...drafts, effects.draft.key] : drafts
+        const reopened = resolveRows(orderOf(WALK_CARDS(added, keptDrafts), WALK_BLOCKS), copy.logs, copy.held())
+        const numbersAfter = Object.fromEntries(reopened.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
+        expect(numbersAfter, `${step}: unlog of ${row.key} moves no number`).toEqual(numbersBefore)
+        // …and logging it again with the number the open row shows is an exact undo of the head's log
+        const reopenedRow = reopened.find((r) => r.key === row.key)!
+        expect(reopenedRow, `${step}: ${row.key} is open again`).toMatchObject({ state: 'unlogged', number: row.number })
+        const original = server.logs.find((l) => l.id === row.logId)!
+        copy.insertLog({ ...original, id: 'again', setNumber: reopenedRow.number })
+        expect(heldBy(copy.logs.filter((l) => l.parentSetId === null)), `${step}: unlog and log of ${row.key} restores the set`).toEqual(
+          heldBy(server.logs.filter((l) => l.parentSetId === null)),
+        )
+        server.applyUnlog(effects)
+        if (row.added) drafts = keptDrafts
+        trace.push(`unlogset ${row.key}`)
+      }
     }
 
     // what must hold after every step
-    const now = resolveRows(orderOf(WALK_CARDS(added), WALK_BLOCKS), server.logs, server.held())
-    expect(new Set(now.map((r) => r.key)).size, `${step}: row keys are unique`).toBe(now.length)
-    for (const exercise of ['bench', 'row', 'lat', 'curl']) {
-      const numbers = server.logs
+    const now = resolveRows(orderNow(), server.logs, server.held())
+    expect(new Set(now.map((r) => r.key)).size, `${step}: row keys are unique\n${trace.join('\n')}`).toBe(now.length)
+    for (const exercise of WALK_EXERCISES) {
+      const logged = server.logs
         .filter((l) => l.exerciseId === exerciseIdOf(exercise) && l.parentSetId === null && !l.isWarmup)
         .map((l) => l.setNumber)
-        .sort((a, b) => a - b)
-      expect(numbers, `${step}: ${exercise}'s logged working sets are numbered 1 to ${numbers.length}\n${trace.join('\n')}`).toEqual(numbers.map((_, i) => i + 1))
-    }
-    for (const exercise of ['bench', 'row', 'lat', 'curl']) {
+      expect(new Set(logged).size, `${step}: no two logged working sets of ${exercise} hold one number (${logged.join(' ')})\n${trace.join('\n')}`).toBe(logged.length)
       const shown = now.filter((r) => r.exerciseKey === exercise && r.kind === 'working').map((r) => r.number)
-      expect(new Set(shown).size, `${step}: no two working sets of ${exercise} read the same number (${shown.join(' ')})\n${trace.join('\n')}`).toBe(shown.length)
+      // the numbers of the working sets are exactly 1 to n, whichever are logged: no two alike, no gap
+      expect([...shown].sort((a, b) => a - b), `${step}: the working sets of ${exercise} read ${shown.join(' ')}\n${trace.join('\n')}`).toEqual(shown.map((_, i) => i + 1))
+      // …and, while no draft is out of date, in the order of the plan
+      const stale = now.some((r) => r.exerciseKey === exercise && r.draftPosition !== null && r.draftPosition !== r.number)
+      if (!stale) expect(shown, `${step}: the working sets of ${exercise} keep their places (${shown.join(' ')})\n${trace.join('\n')}`).toEqual(shown.map((_, i) => i + 1))
     }
     const rowsNow = new Set(now.map((r) => r.key))
     for (const change of server.held()) {
       if (change.kind === 'deleted') expect(rowsNow.has(`set:${change.weekPlanSetId}`), `${step}: ${change.weekPlanSetId} is deleted`).toBe(false)
     }
-    void currentSet(orderOf(WALK_CARDS(added), WALK_BLOCKS), server.logs, server.held())
-    void finishWarning(orderOf(WALK_CARDS(added), WALK_BLOCKS), server.logs, server.held())
+    void currentSet(orderNow(), server.logs, server.held())
+    void finishWarning(orderNow(), server.logs, server.held())
   }
   return trace
 }
 
 describe('a walk through many sessions', () => {
-  it('every write the rules return is accepted by the tables, the logged sets stay numbered 1 to n, and a deleted set stays deleted', () => {
+  it('every write the rules return is accepted by the tables, every working set keeps its number and its place, and a deleted set stays deleted', () => {
     let steps = 0
     for (let seed = 1; seed <= 400; seed++) steps += walk(seed, 14).length
     expect(steps).toBeGreaterThan(2000)
@@ -295,6 +348,6 @@ describe('a walk through many sessions', () => {
   it('the walks exercise every kind of step', () => {
     const kinds = new Set<string>()
     for (let seed = 1; seed <= 60; seed++) for (const step of walk(seed, 14)) kinds.add(step.split(' ')[0])
-    expect([...kinds].sort()).toEqual(['add', 'delete', 'log', 'type', 'unlog'])
+    expect([...kinds].sort()).toEqual(['add', 'delete', 'log', 'type', 'unlog', 'unlogset'])
   })
 })
