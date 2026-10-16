@@ -134,6 +134,7 @@ describe('added exercise — "appended where it was placed, in every not-done se
         tempo: null,
         week_only: false,
         removed_at: null,
+        replaces_program_exercise_id: null,
       },
     ])
     expect(inserts(ops, 'v2_program_sets')).toEqual([]) // no program sets

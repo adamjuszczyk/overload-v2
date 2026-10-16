@@ -70,6 +70,7 @@ export interface DbProgramExercise {
   tempo: string | null
   week_only: boolean
   removed_at: string | null
+  replaces_program_exercise_id: string | null
 }
 export interface DbProgramSet {
   id: string
@@ -207,7 +208,7 @@ const PATCH_COLUMNS: Record<string, readonly string[]> = {
   v2_workout_days: ['name', 'position'],
   v2_program_exercises: [
     'workout_day_id', 'exercise_id', 'position', 'weight_unit', 'superset_block_id', 'rest_seconds', 'rest_after_seconds',
-    'tempo', 'week_only', 'removed_at',
+    'tempo', 'week_only', 'removed_at', 'replaces_program_exercise_id',
   ],
   v2_program_sets: [
     'program_exercise_id', 'position', 'is_warmup', 'stage_kind', 'stage_rest_seconds', 'parent_program_set_id',
@@ -584,6 +585,7 @@ export function addExercise(
     tempo: null,
     week_only: false,
     removed_at: null,
+    replaces_program_exercise_id: null,
     ...over,
   })
   sets.forEach((spec, i) => {

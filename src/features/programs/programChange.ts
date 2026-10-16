@@ -74,8 +74,8 @@
 //     the copy takes its exercise list and order from the run copy, which the save did change (weekPlanning.ts
 //     `autoCopy`): a removed exercise is left out, an added one arrives with no sets, a kept one brings its sets from
 //     that occurrence and a swapped one brings the old exercise's. The run copy already says the first three. The last
-//     needs the new row to say which row it replaced, and `v2_program_exercises` has no column for that (a migration,
-//     outside chunk 45), so nothing writes it: until it exists a swapped-in exercise is copied like an added one.
+//     needs the new row to say which row it replaced: a swap's new row names the old one in
+//     `replaces_program_exercise_id`.
 //
 // Not decided here, on purpose (SPEC is silent; asked in chunk 45's report): which exercise rows a session may hold that
 // the run copy doesn't list (weeks planned in 1.1 can hold a week-only row): they are never touched and keep their
@@ -127,6 +127,9 @@ export type ProgramExerciseColumns = {
   tempo: string | null
   week_only: boolean
   removed_at: string | null
+  // The row a swap replaced (DECISIONS 143: a week-dependent week copied after the save gives the new exercise the old one's
+  // sets). Null on every row that isn't a swap's new row. Nullable column on `v2_program_exercises`, FK to itself, on delete set null.
+  replaces_program_exercise_id: string | null
 }
 export type ProgramSetColumns = {
   program_exercise_id: string
@@ -1175,6 +1178,7 @@ export function planProgramChange(input: ProgramChangeInput): ProgramChangePlan 
           tempo: e.tempo,
           week_only: false,
           removed_at: null,
+          replaces_program_exercise_id: e.kind === 'swapped' ? p.oldRow!.id : null,
         })
         if (stable) insertDefaultSets(run, userId, now, p)
         if (e.kind === 'swapped') run.update('v2_program_exercises', p.oldRow!.id, { removed_at: now })
