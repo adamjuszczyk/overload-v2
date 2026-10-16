@@ -133,7 +133,7 @@ export default function MissedSessionPrompt({ queue, activeMeso, onDismiss, toda
                   className="flex-1 py-3 rounded-xl font-black text-sm tracking-wider"
                   style={{
                     backgroundColor: 'var(--accent)',
-                    color: 'var(--base)',
+                    color: 'var(--on-accent)',
                     fontFamily: 'var(--font-mono)',
                     opacity: planWeek.isPending || createSession.isPending ? 0.6 : 1,
                   }}

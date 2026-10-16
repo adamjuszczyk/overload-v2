@@ -43,7 +43,11 @@ import {
 // A picker opens on the set's current target (`initial`, from the caller's `value`): its segment and
 // its numbers. The boards' example numbers (8, 8-10, RIR 2, 1-2) are only where a segment the set
 // doesn't have starts, and a set with no target shows no number at all until a segment is picked
-// (DECISIONS 128, Adam 2026-10-15; `pickerLogic.ts`'s `draftFromRepTarget`, `pickTargetMode`).
+// (DECISIONS 128, Adam 2026-10-15; `pickerLogic.ts`'s `draftFromRepTarget`, `pickTargetMode`). Each
+// segment keeps its own numbers while the sheet is open and a switch changes none: 12 reps gives RANGE
+// 8-10, 6-9 gives NUMBER 8, and 6-9, NUMBER, RANGE is 6-9 again (DECISIONS 155 (a)). A segment tap
+// settles the text still in a box into the draft and then clears all the typed text, so a box the
+// segment hid never shows its old text when the segment comes back.
 
 interface TargetPickerSheetProps {
   kind: TargetKind

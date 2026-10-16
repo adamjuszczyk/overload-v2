@@ -81,7 +81,7 @@ export default function StepVolume({
                 key={opt.value}
                 onClick={() => setPlanningType(opt.value)}
                 disabled={!canChangePlanningType || updatePlanningType.isPending}
-                style={{ flex: 1, padding: '10px 6px', background: active ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: canChangePlanningType ? 'pointer' : 'default', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: active ? 'var(--base)' : 'var(--text-muted)' }}
+                style={{ flex: 1, padding: '10px 6px', background: active ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: canChangePlanningType ? 'pointer' : 'default', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: active ? 'var(--on-accent)' : 'var(--text-muted)' }}
               >
                 {opt.label}
               </button>

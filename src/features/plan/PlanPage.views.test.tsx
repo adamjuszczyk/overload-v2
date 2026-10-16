@@ -222,9 +222,11 @@ describe('PlanPage — the SETS / STRUCTURE switch', () => {
   // fixture, the SETS / STRUCTURE bar of chunk 29, before the WEEKS / PROGRAM bar
   // it shares its pattern with was removed): the bar is the same markup, so the
   // app still has one segmented control and Plan adds no new visual language.
+  // One value differs from master's: the picked segment's text is --on-accent
+  // (the display follow-up, Adam 2026-10-15: text on the accent is never --base).
   const SWITCH_MARKUP =
     '<div style="display: flex; border-radius: 11px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 8px;">' +
-    '<button style="flex: 1 1 0%; padding: 10px 0px; background: var(--accent); border: medium; cursor: pointer; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--base);">SETS</button>' +
+    '<button style="flex: 1 1 0%; padding: 10px 0px; background: var(--accent); border: medium; cursor: pointer; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--on-accent);">SETS</button>' +
     '<button style="flex: 1 1 0%; padding: 10px 0px; background: var(--surface); border: medium; cursor: pointer; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--text-muted);">STRUCTURE</button>' +
     '</div>'
 

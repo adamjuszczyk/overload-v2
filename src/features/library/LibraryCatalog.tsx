@@ -287,7 +287,7 @@ function LibraryRow({ library }: { library: ExerciseLibrary }) {
             border: 'none',
             borderRadius: 9,
             cursor: download.isPending ? 'default' : 'pointer',
-            color: 'var(--base)',
+            color: 'var(--on-accent)',
             opacity: download.isPending ? 0.6 : 1,
           }}
         >

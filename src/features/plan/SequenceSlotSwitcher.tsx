@@ -70,7 +70,7 @@ export default function SequenceSlotSwitcher({
                 fontSize: 8,
                 fontWeight: 700,
                 letterSpacing: '1.5px',
-                color: active ? 'var(--base)' : 'var(--text-muted)',
+                color: active ? 'var(--on-accent)' : 'var(--text-muted)',
               }}
             >
               SLOT {slot.position + 1}
@@ -81,7 +81,7 @@ export default function SequenceSlotSwitcher({
                 fontWeight: 800,
                 fontSize: 12,
                 fontStyle: isRest ? 'italic' : 'normal',
-                color: active ? 'var(--base)' : (isRest ? 'var(--text-dim)' : 'var(--text-primary)'),
+                color: active ? 'var(--on-accent)' : (isRest ? 'var(--text-dim)' : 'var(--text-primary)'),
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',

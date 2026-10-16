@@ -319,12 +319,12 @@ export interface TargetBounds {
 export const REP_BOUNDS: TargetBounds = { min: 1, max: 100 }
 export const RIR_BOUNDS: TargetBounds = { min: 0, max: 20 }
 
-// What a box shows when a mode is picked with nothing to start from, and how wide the range a number
-// grows into is. The boards' own examples (8-10 reps, RIR 1-2, "SET 8 REPS", "SET RIR 2"); provisional
-// under D31.
-const TARGET_SETTINGS: Record<TargetKind, { bounds: TargetBounds; defaultNumber: number; defaultFrom: number; defaultTo: number; rangeWidth: number }> = {
-  reps: { bounds: REP_BOUNDS, defaultNumber: 8, defaultFrom: 8, defaultTo: 10, rangeWidth: 2 },
-  rir: { bounds: RIR_BOUNDS, defaultNumber: 2, defaultFrom: 1, defaultTo: 2, rangeWidth: 1 },
+// What a box shows in a segment the set doesn't have: the boards' own examples (8 and 8-10 reps, RIR 2 and
+// 1-2; "SET 8 REPS", "SET RIR 2"). Adam, 2026-10-15: "The boards' example values (8, 8-10, RIR 2, 1-2) are
+// only the starting point when you switch to a segment the set doesn't already have".
+const TARGET_SETTINGS: Record<TargetKind, { bounds: TargetBounds; defaultNumber: number; defaultFrom: number; defaultTo: number }> = {
+  reps: { bounds: REP_BOUNDS, defaultNumber: 8, defaultFrom: 8, defaultTo: 10 },
+  rir: { bounds: RIR_BOUNDS, defaultNumber: 2, defaultFrom: 1, defaultTo: 2 },
 }
 
 /** The segments of each picker (NONE / NUMBER / RANGE / AMRAP for reps; RIR has no AMRAP). */
@@ -344,8 +344,9 @@ export const TARGET_MODES: Record<TargetKind, readonly { id: TargetMode; label: 
 
 /**
  * What the sheet holds while it is open: the segment picked and the numbers behind it. `number` is the
- * NUMBER box, `from` and `to` the RANGE boxes; they are kept apart so a segment tapped and tapped back
- * finds its numbers where they were.
+ * NUMBER box, `from` and `to` the RANGE boxes. Each segment keeps its own numbers: the set's own segment
+ * starts from the set's numbers and every other one from the boards' examples (`draftFromRepTarget`), and
+ * a switch changes no number, so a segment tapped and tapped back finds its numbers where they were.
  */
 export interface TargetDraft {
   mode: TargetMode
@@ -359,14 +360,13 @@ function defaultDraft(kind: TargetKind, mode: TargetMode): TargetDraft {
   return { mode, number: settings.defaultNumber, from: settings.defaultFrom, to: settings.defaultTo }
 }
 
-/** The range a number grows into when RANGE is picked: from the number up by the kind's width, held to the top bound. */
-function rangeAround(kind: TargetKind, number: number): { from: number; to: number } {
-  const { bounds, rangeWidth } = TARGET_SETTINGS[kind]
-  const to = Math.min(bounds.max, number + rangeWidth)
-  return { from: Math.min(number, to), to }
-}
-
-/** A rep target as the sheet's first state. A stored value is shown as it is, even past the bounds: only the steppers are bounded. */
+/**
+ * A rep target as the sheet's first state: it opens on the set's segment with the set's numbers (a stored value
+ * is shown as it is, even past the bounds: only the steppers are bounded). The segments the set doesn't have
+ * start from the boards' examples (8 and 8-10), not from a number the set has: 12 reps gives RANGE 8-10, and
+ * 6-9 gives NUMBER 8. A set with no target (or AMRAP) has no number of its own, so it opens on NONE (or AMRAP)
+ * and both segments start from the examples.
+ */
 export function draftFromRepTarget(target: RepTarget): TargetDraft {
   switch (target.type) {
     case 'none':
@@ -374,20 +374,21 @@ export function draftFromRepTarget(target: RepTarget): TargetDraft {
     case 'amrap':
       return defaultDraft('reps', 'amrap')
     case 'number':
-      return { mode: 'number', number: target.value, ...rangeAround('reps', target.value) }
+      return { ...defaultDraft('reps', 'number'), number: target.value }
     case 'range':
-      return { mode: 'range', number: target.min, from: target.min, to: target.max }
+      return { ...defaultDraft('reps', 'range'), from: target.min, to: target.max }
   }
 }
 
+/** A RIR target as the sheet's first state, on the same rule as `draftFromRepTarget` (examples: RIR 2 and 1-2). */
 export function draftFromRirTarget(target: RirTarget): TargetDraft {
   switch (target.kind) {
     case 'none':
       return defaultDraft('rir', 'none')
     case 'number':
-      return { mode: 'number', number: target.value, ...rangeAround('rir', target.value) }
+      return { ...defaultDraft('rir', 'number'), number: target.value }
     case 'range':
-      return { mode: 'range', number: target.min, from: target.min, to: target.max }
+      return { ...defaultDraft('rir', 'range'), from: target.min, to: target.max }
   }
 }
 
@@ -423,14 +424,14 @@ export function rirTargetFromDraft(draft: TargetDraft): RirTarget {
 }
 
 /**
- * A segment tapped. NUMBER takes the number, or the FROM box when it comes from a range; RANGE grows a
- * number into a range and otherwise finds its last numbers; NONE and AMRAP keep the numbers for later.
+ * A segment tapped: the draft in that segment, with no number changed. A segment shows the numbers it has
+ * (the set's own, or the boards' examples if the set had none there, or what was typed or stepped in it
+ * while the sheet was open); nothing is carried over from the segment left, so 6-9 gone to NUMBER gives 8 and
+ * RANGE tapped again gives 6-9 back.
  */
 export function pickTargetMode(draft: TargetDraft, mode: TargetMode, kind: TargetKind): TargetDraft {
   if (mode === draft.mode) return draft
   if (mode === 'amrap' && kind === 'rir') return draft
-  if (mode === 'number') return { ...draft, mode, number: draft.mode === 'range' ? draft.from : draft.number }
-  if (mode === 'range' && draft.mode === 'number') return { ...draft, mode, ...rangeAround(kind, draft.number) }
   return { ...draft, mode }
 }
 

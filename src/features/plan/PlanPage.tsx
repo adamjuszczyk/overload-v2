@@ -538,7 +538,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               planner (PlannerPage, /program/:id). */}
           <button
             onClick={() => navigate('/program')}
-            style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)', cursor: 'pointer' }}
+            style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--on-accent)', cursor: 'pointer' }}
           >
             START A PROGRAM →
           </button>
@@ -602,7 +602,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               <ChevronLeft size={14} />
             </button>
             <div style={{ minWidth: 76, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewWeek === currentWeek ? 'var(--accent)' : 'var(--surface-overlay)', border: `1px solid ${viewWeek === currentWeek ? 'transparent' : 'var(--border-strong)'}`, borderRadius: 8, padding: '0 10px' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--base)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--on-accent)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
                 {isSequence ? 'CYCLE' : 'WEEK'} {viewWeek}
               </span>
             </div>
@@ -1560,7 +1560,7 @@ function SegmentBar<T extends string>({
         <button
           key={segment.id}
           onClick={() => onSelect(segment.id)}
-          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--base)' : 'var(--text-muted)' }}
+          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--on-accent)' : 'var(--text-muted)' }}
         >
           {segment.label}
         </button>

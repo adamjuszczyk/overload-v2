@@ -50,7 +50,7 @@ export default function Nav() {
             className="px-3 py-2 rounded-lg text-xs font-bold"
             style={{
               backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
             }}
           >

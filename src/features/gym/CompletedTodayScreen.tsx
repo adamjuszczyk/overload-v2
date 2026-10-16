@@ -130,7 +130,7 @@ export default function CompletedTodayScreen({
                 className="flex-1 py-2 rounded-lg text-xs font-bold tracking-wider"
                 style={{
                   backgroundColor: 'var(--accent)',
-                  color: 'var(--base)',
+                  color: 'var(--on-accent)',
                   fontFamily: 'var(--font-mono)',
                   opacity: updateNote.isPending ? 0.6 : 1,
                 }}
@@ -194,7 +194,7 @@ export default function CompletedTodayScreen({
               className="flex-1 py-3 rounded-xl font-black text-sm tracking-wider"
               style={{
                 backgroundColor: 'var(--accent)',
-                color: 'var(--base)',
+                color: 'var(--on-accent)',
                 fontFamily: 'var(--font-mono)',
                 opacity: isPending ? 0.6 : 1,
               }}
@@ -225,7 +225,7 @@ export default function CompletedTodayScreen({
             className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
             style={{
               backgroundColor: 'var(--accent)',
-              color: 'var(--base)',
+              color: 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
             }}
           >

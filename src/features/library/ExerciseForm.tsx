@@ -298,7 +298,7 @@ export default function ExerciseForm({ exercise, onClose }: Props) {
               fontWeight: 900,
               fontSize: 15,
               letterSpacing: '2px',
-              color: isPending ? 'var(--text-muted)' : 'var(--base)',
+              color: isPending ? 'var(--text-muted)' : 'var(--on-accent)',
             }}
           >
             {isPending ? '…' : isEdit ? 'SAVE CHANGES' : 'ADD EXERCISE'}

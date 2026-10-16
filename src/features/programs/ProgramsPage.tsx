@@ -266,7 +266,7 @@ export default function ProgramsPage() {
             <button
               onClick={() => { setNewProgramName(''); setShowCreateProgram(true) }}
               aria-label="Create a program"
-              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 18, color: 'var(--base)', lineHeight: 1 }}
+              style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent)', border: 'none', borderRadius: 7, cursor: 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 18, color: 'var(--on-accent)', lineHeight: 1 }}
             >
               +
             </button>
@@ -340,7 +340,7 @@ export default function ProgramsPage() {
               </p>
               <button
                 onClick={() => { setShowStartMeso(false); setNewProgramName(''); setShowCreateProgram(true) }}
-                style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 20px', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)', cursor: 'pointer' }}
+                style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 20px', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 13, letterSpacing: '1.5px', color: 'var(--on-accent)', cursor: 'pointer' }}
               >
                 CREATE PROGRAM
               </button>
@@ -388,7 +388,7 @@ export default function ProgramsPage() {
               <button
                 type="submit"
                 disabled={startDisabled}
-                style={{ width: '100%', height: 54, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: startDisabled ? 'var(--text-muted)' : 'var(--base)' }}
+                style={{ width: '100%', height: 54, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 14, letterSpacing: '2px', color: startDisabled ? 'var(--text-muted)' : 'var(--on-accent)' }}
               >
                 {startRun.isPending ? '…' : 'START RUN'}
               </button>
@@ -428,7 +428,7 @@ export default function ProgramsPage() {
             <button
               onClick={handleComplete}
               disabled={completeMeso.isPending}
-              style={{ flex: 1, height: 50, background: 'var(--accent)', border: 'none', borderRadius: 10, cursor: completeMeso.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)' }}
+              style={{ flex: 1, height: 50, background: 'var(--accent)', border: 'none', borderRadius: 10, cursor: completeMeso.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--on-accent)' }}
             >
               {completeMeso.isPending ? '…' : 'END RUN'}
             </button>
@@ -486,7 +486,7 @@ export default function ProgramsPage() {
             <button
               type="submit"
               disabled={createProgram.isPending}
-              style={{ width: '100%', height: 56, background: createProgram.isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: createProgram.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 15, letterSpacing: '2px', color: createProgram.isPending ? 'var(--text-muted)' : 'var(--base)' }}
+              style={{ width: '100%', height: 56, background: createProgram.isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: createProgram.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 15, letterSpacing: '2px', color: createProgram.isPending ? 'var(--text-muted)' : 'var(--on-accent)' }}
             >
               {createProgram.isPending ? '…' : 'CREATE PROGRAM'}
             </button>
@@ -514,7 +514,7 @@ function ActiveMesoCard({
         {/* Week badge + name row */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
           <div style={{ background: 'var(--accent)', borderRadius: 6, padding: '3px 10px', flexShrink: 0, alignSelf: 'center' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, letterSpacing: '1.5px', color: 'var(--base)' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, letterSpacing: '1.5px', color: 'var(--on-accent)' }}>
               WEEK {week}
             </span>
           </div>
