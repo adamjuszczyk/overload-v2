@@ -467,6 +467,8 @@ optional:
     another workout already uses can't be picked: the toggle is disabled and the
     card says whose day it is ("Thu is Push 2's day"). At least one day stays
     on.
+    - The DAYS card (DECISIONS 169, Adam 2026-10-16) checks the edit as it
+      stands, so two workouts can trade days in one save.
 - [1.2] **The stepped program planner** still refuses to open a run's copy
   (PP5: "This is the current program's copy … It opens from Plan instead").
 - [P1.1] **Starting a run needs a schedule:** at least one workout on a weekday
@@ -762,6 +764,8 @@ optional:
   from the set's ⋯ during a workout (W7). A cue edited during a workout changes
   that set in this week's plan; a workout on days that share one plan shows it
   on both.
+  - A set with no planned set (DECISIONS 165, Adam 2026-10-16): no CUES row in
+    its ⋯.
 
 ### Tempo [P1]
 
@@ -991,6 +995,11 @@ optional:
   planned RIR is a dim placeholder (a range shows as "1–2"); RIR is on every
   working row. Each exercise shows last week's numbers and, when the exercise
   was already done earlier this week, those too (W16, W17).
+  - What LOG takes untouched (DECISIONS 162, Adam 2026-10-16): an untouched row's
+    values are the plan's targets; a range or AMRAP is a placeholder, so LOG needs
+    reps typed; with no planned weight the weight box is empty and LOG needs it.
+    Last time's numbers show only on the row's LAST line. (Pre-fill from last
+    time stays phase 2.)
 - [1.2] **Rest timer (C5):** no inline rest under the last logged set; the rest
   timer is the pinned bar (W1, W4). Today's inline timer goes.
 - [1.2] **Current set** = the first unlogged working set or stage in the
@@ -1016,6 +1025,9 @@ optional:
     number, so unlog then log is an exact undo. No other set's number changes
     on unlog. The open row shows its own number (a planned set's position; an
     added set's number from its draft), never "the next after the logged ones".
+  - An added set's type on unlog (DECISIONS 161, Adam 2026-10-16): an added
+    set's draft also keeps its type, so an unlog is undone exactly and nothing
+    moves; the workout rules see every added set's type.
 - [1.2] **Delete set (18b):** with a confirmation (W9). An unlogged set's DELETE
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
@@ -1028,6 +1040,9 @@ optional:
   later through the sync queue. A set type change on a logged set and the edit
   panel's SAVE need a connection, as editing a logged set does today; offline
   they say so (W6, Errors).
+  - A set not logged yet switched to or from Warmup (DECISIONS 168, Adam
+    2026-10-16): the switch and the renumbering of later logged sets queue
+    offline, like a delete.
 - [1.2] **Set type during a workout (19):** through the set's ⋯ for upcoming and
   current sets, through the edit panel for a logged set (W7a). Session-only;
   next week sees it only through REVIEW (13d). Making a logged set a dropset adds
@@ -1041,19 +1056,28 @@ optional:
   - A numberless logged warmup (DECISIONS 152, Adam 2026-10-16): making it a
     working set asks for weight and reps in the panel first; type and numbers
     are saved in one write.
+  - The DROPS stepper on a logged set (DECISIONS 167, Adam 2026-10-16) can go
+    below the drops already logged; deleting a logged drop asks first (19c).
 - [1.2] **Stage rows** open by themselves once the row before them is logged
   (C8).
 - [1.2] **The set's ⋯ during a workout (C9):** SET TYPE, CUES, FORM, a per-set
   unit override, SKIP THIS SET and DELETE (W7). FORM and SKIP THIS SET are
   today's, unchanged.
+  - Skip the rest of this exercise (DECISIONS 163, Adam 2026-10-16) also skips
+    its open added sets and its unlogged warmups.
 - [1.2] **Swap during a workout (C7):** moves only the remaining sets; next
   week's plan stays the same (W10, W11).
+  - What a swap for today moves (DECISIONS 164, Adam 2026-10-16): the
+    original's open sets move to the new exercise with their numbers, type,
+    drops and targets, as W5 draws.
 - [1.2] **Finishing (11, C6):** the finish screen (W18) shows the session's
   tiles, energy, pump and note, and COMPLETE. When planned sets aren't logged it
   says which ("2 planned sets aren't logged yet: EZ Bar Curl 01 and 02.") with
   GO BACK, which closes the finish screen and scrolls to the first of them.
   BACK TO SESSION closes it where it was. A reopened session finishes through
   W19.
+  - Auto-finish (DECISIONS 166, Adam 2026-10-16) waits for what the workout's
+    rows say is left (the same view as the finish warning).
 - [P2] **"Set added · Undo"** after adding a set.
 - [P2] **Pre-fill:** values shown as grey suggestions, visibly different from
   typed values. Log accepts them as they are. Source: planned, otherwise last
