@@ -290,25 +290,29 @@ function walk(seed: number, steps: number): string[] {
       if (candidates.length > 0) {
         const row = rng.pick(candidates)
         const effects = unlogEffects(row, view)
-        const numbersBefore = Object.fromEntries(rows.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
         // no other set's number changes: the answer holds no number patch, and the heads read as they did
         expect(Object.keys(effects).sort(), `${step}: unlog of ${row.key} holds no renumbering`).toEqual(['changes', 'deleteOrder', 'draft'])
-        const copy = new FakeServer({ logs: server.logs, changes: server.held() })
-        copy.applyUnlog(effects)
         const keptDrafts = row.added ? [...drafts, effects.draft.key] : drafts
-        const reopened = resolveRows(orderOf(WALK_CARDS(added, keptDrafts), WALK_BLOCKS), copy.logs, copy.held())
-        const numbersAfter = Object.fromEntries(reopened.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
-        expect(numbersAfter, `${step}: unlog of ${row.key} moves no number`).toEqual(numbersBefore)
-        // …and logging it again with the number the open row shows is an exact undo of the head's log
-        const reopenedRow = reopened.find((r) => r.key === row.key)!
-        expect(reopenedRow, `${step}: ${row.key} is open again`).toMatchObject({ state: 'unlogged', number: row.number })
-        const original = server.logs.find((l) => l.id === row.logId)!
-        copy.insertLog({ ...original, id: 'again', setNumber: reopenedRow.number })
-        expect(heldBy(copy.logs.filter((l) => l.parentSetId === null)), `${step}: unlog and log of ${row.key} restores the set`).toEqual(
-          heldBy(server.logs.filter((l) => l.parentSetId === null)),
-        )
+        // An added warmup loses its type when it is unlogged (no planned set to key a change on, and the draft holds no
+        // type): it is an open working slot afterwards, so the sets around it are numbered with it. Not the case here.
+        if (!(row.added && row.kind === 'warmup')) {
+          const numbersBefore = Object.fromEntries(rows.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
+          const copy = new FakeServer({ logs: server.logs, changes: server.held() })
+          copy.applyUnlog(effects)
+          const reopened = resolveRows(orderOf(WALK_CARDS(added, keptDrafts), WALK_BLOCKS), copy.logs, copy.held())
+          const numbersAfter = Object.fromEntries(reopened.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.number]))
+          expect(numbersAfter, `${step}: unlog of ${row.key} moves no number`).toEqual(numbersBefore)
+          // …and logging it again with the number the open row shows is an exact undo of the head's log
+          const reopenedRow = reopened.find((r) => r.key === row.key)!
+          expect(reopenedRow, `${step}: ${row.key} is open again`).toMatchObject({ state: 'unlogged', number: row.number })
+          const original = server.logs.find((l) => l.id === row.logId)!
+          copy.insertLog({ ...original, id: 'again', setNumber: reopenedRow.number })
+          expect(heldBy(copy.logs.filter((l) => l.parentSetId === null)), `${step}: unlog and log of ${row.key} restores the set`).toEqual(
+            heldBy(server.logs.filter((l) => l.parentSetId === null)),
+          )
+        }
         server.applyUnlog(effects)
-        if (row.added) drafts = keptDrafts
+        drafts = keptDrafts
         trace.push(`unlogset ${row.key}`)
       }
     }

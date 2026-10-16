@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { currentSet, finishWarning, lockDecision, resolveRows, unlogEffects, type ResolvedRow } from './workoutRules'
+import { FakeServer } from './workoutRules.server.testutil'
 import { brief, card, dropLog, headLog, orderOf, rowKeyed, staged, viewOf } from './workoutRules.testutil'
 
 // Chunk 46 (TASKS-1.2, "Seed"): the shapes the staging checks of chunks 58a to 64 rely on, built from
@@ -112,6 +113,38 @@ describe('the seed\'s week 3 Monday Upper A, in progress', () => {
       "9 planned sets aren't logged yet: Bench Press 03; Seated Cable Row 01, 02 and 03; Lateral Raise 01, 02 and 03; Cable Pushdown 01 and 02.",
     )
     expect(warning.firstKey).toBe('set:bench.4')
+  })
+})
+
+describe('the seed\'s week 3 Monday Upper A: UNLOG on the bench set that is not the last one logged (TASKS 63\'s staging check, DECISIONS 151)', () => {
+  // The pen on the first logged working set (the plan's set 2, shown 01), with the second (02) logged after it.
+  const unlogBenchOne = () => {
+    const server = new FakeServer({ logs: SEEDED })
+    const view = viewOf(UPPER_A, server.logs, server.held())
+    const effects = unlogEffects(rowKeyed(view, 'set:bench.2'), view)
+    server.applyUnlog(effects)
+    return { server, effects, rows: resolveRows(UPPER_A, server.logs, server.held()) }
+  }
+
+  it('it is still 01 and the other logged set still 02: no number moves, and the bench set after them is still 03', () => {
+    const { server, effects, rows } = unlogBenchOne()
+    expect(rows.slice(0, 4).map(brief)).toEqual(['bench W1✓', 'bench 01·', 'bench 02✓', 'bench 03·'])
+    expect(server.logs.map((l) => l.setNumber)).toEqual([1, 2])
+    expect(effects.draft.key).toEqual({ sessionId: 's1', weekPlanSetId: 'bench.2' })
+  })
+
+  it('it is the current set again, the lock asks about the bench\'s other open set by its own number, and the finish warning counts it', () => {
+    const { server, rows } = unlogBenchOne()
+    const current = currentSet(UPPER_A, server.logs, server.held())!
+    expect(brief(current)).toBe('bench 01·')
+    expect(lockDecision({ logInOrder: true, current, tapped: rows.find((r) => r.key === 'set:bench.4')! })).toEqual({
+      ask: 'Log set 03 before set 01?',
+      next: 'Bench Press 01',
+      label: 'set 03',
+    })
+    expect(finishWarning(UPPER_A, server.logs, server.held())!.text).toBe(
+      "10 planned sets aren't logged yet: Bench Press 01 and 03; Seated Cable Row 01, 02 and 03; Lateral Raise 01, 02 and 03; Cable Pushdown 01 and 02.",
+    )
   })
 })
 

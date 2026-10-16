@@ -18,17 +18,31 @@
 //   - `pending_stages` changes: a logged head with drops still to log (the change's count is the head's
 //     total number of drops, logged ones included);
 //   - logs: heads by `weekPlanSetId` (identity), a head's drops by count (the n-th logged drop is drop n),
-//     added sets (`weekPlanSetId` null) by their `setNumber` order against the exercise's added rows.
+//     added sets (`weekPlanSetId` null) by their `setNumber` against the exercise's added rows and the drafts
+//     the phone holds for added sets that were unlogged.
 // A set that was logged takes its type from its log (SPEC Objects stored: "set kind and stage kind as
 // done"), so a logged planned dropset switched to Normal has no drop rows left although the plan still
 // holds them; a null kind on a head with planned drops, or with logged drops, still reads as a dropset
 // (`resolveStageKind`, pre-1.1 data).
 //
-// ─── What a row's number is ──────────────────────────────────────────────────────────────────────
-// As the cards number them today (`useExerciseCardState.ts`, unchanged by 1.2): a logged head shows the
-// `setNumber` it was logged with; an unlogged one shows the exercise's logged heads (warmups out) + its
-// place among the unlogged ones, so rows run 01, 02, 03 whatever the plan's own numbers say. A drop shows
-// its head's number. Warmups are numbered among themselves.
+// ─── What a row's number is (DECISIONS 151, Adam 2026-10-16) ─────────────────────────────────────
+// "An unlogged set keeps its number and its place. Logging it again stores it with that same number, so unlog
+// then log is an exact undo (SPEC 18c). No other set's number changes on unlog. The open row shows its own
+// number (a planned set's position; an added set's number from its draft), never 'the next after the logged ones'."
+//   - A logged or skipped working set shows the `setNumber` it was logged with, and holds it.
+//   - An open one takes the lowest number that no working set of its exercise holds, in the order of the plan (a
+//     planned set first, then an added set that keeps a draft, then a new one). With the numbers the sets were
+//     logged with being their places (every set LOGGED from 58a on: see below) that is its position, whichever
+//     of the sets around it are logged: unlog 02 of 01 to 03 and it is still 02, with 04 after the logged 03. With
+//     numbers that are gapless in the order sets were logged (1.1's rule) it is the number after them, as the cards
+//     number a set today.
+//   - An added set is numbered with the planned ones and put in the order of its number; one that was unlogged keeps
+//     its draft (`OrderExercise.drafts`), which is how it is still a row after a reload, and its row says which
+//     (`draftPosition`).
+//   - A drop shows its head's number. Warmups are numbered among themselves, by their place.
+// LOG STORES `row.number`: the number the row shows, never "the logged heads + 1" (58a's `handleLogHead`, 63's
+// re-log and a skip all write it). That is what makes the stored numbers the places of the sets, and a set logged
+// again an exact undo.
 //
 // ─── Current set and the lock ────────────────────────────────────────────────────────────────────
 // - The current set is the first unlogged working set or drop in the order (SPEC: "the first unlogged
@@ -62,16 +76,22 @@
 //     also gets the `retyped` change, keyed by its planned set (141 (a): next week's REVIEW reads the
 //     type as done through the change rows);
 //   - an added set that is not logged yet has no row to write: its type is local state;
-//   - a logged set switched to or from Warmup renumbers the working sets as a delete does (DECISIONS 146
-//     (a)): `renumber` lists the logs whose `set_number` changes (an upcoming set has none to change:
-//     its number is worked out from the logged ones).
+//   - a set switched to or from Warmup renumbers the working sets as a delete does (DECISIONS 146 (a)):
+//     `renumber` lists the logs whose `set_number` changes. An open set has no log of its own to change, but
+//     the logged sets after it move with it (an open set keeps its place, so a logged set can come after it);
+//   - a logged warmup with no weight or reps made a working set carries the two numbers with the type, in the
+//     same patch, because the table refuses a working set without them (DECISIONS 152 (a), Adam 2026-10-16: the
+//     panel asks for them first): `typeChangeNeedsNumbers` says when, and `applySetTypeChange` refuses to answer
+//     without `numbers`.
 //
 // ─── Delete, unlog, finish ───────────────────────────────────────────────────────────────────────
 // - `deleteEffects` says everything DELETE does, so that a deleted set never comes back as an open row
 //   (SPEC 18b: "The remaining sets renumber", 13c: a deleted planned set counts as Skipped):
 //     * a set that has logs: the drops from the last, then the head (the cascade order of
-//       `setGroupLogic.ts`); every later head of the same exercise and its drops take the numbers that
-//       close the gap (F4: a renumbered head's drops used to keep their old number);
+//       `setGroupLogic.ts`); every later head of the same exercise and its drops move down one (F4: a
+//       renumbered head's drops used to keep their old number). Open sets keep their places, so "one less" is
+//       right and "consecutive from the gap" is not: 01, 02 and 05 logged with 03 and 04 open, 02 deleted,
+//       leaves 05 as 04. An open set that is deleted moves the logged sets after it the same way (151);
 //     * a planned set, logged or not: a `deleted` change that replaces its `retyped` change (the plan has
 //       the slot, and only the change row says it is gone). An added set needs none: the card lowers its
 //       count of added sets;
@@ -85,17 +105,19 @@
 //   row; the draft's key is the set's own (the planned set, or for an added set its local id, exercise and
 //   position) and, for a drop, its number under the set. A type the set was logged with, and the plan
 //   doesn't have, travels as a `retyped` change so unlog never loses it. Nothing it returns touches the
-//   rest timer or the session's status (Defaults 6).
+//   rest timer or the session's status (Defaults 6). It renumbers nothing: the set is open again at its number
+//   and no other set moves (DECISIONS 151); logging it again stores that number.
 // - `finishWarning`: the unlogged planned sets, by exercise and number (board W18); deleted sets are not
 //   in the order, skipped ones are settled.
 //
 // ─── How the screens call it (58a to 64) ──────────────────────────────────────────────────────────
-//   const order = sessionOrder(cards, blocks)              // the cards as drawn: plan, swaps, added exercises
+//   const order = sessionOrder(cards, blocks)              // the cards as drawn: plan, swaps, added exercises, the phone's drafts
 //   const rows = resolveRows(order, logs, changes)         // what every card draws; one list
 //   const current = currentSet(order, logs, changes)       // the first unlogged working set or drop of `rows`
 //   lockDecision({ logInOrder, current, tapped })          // 'log', or the question's words for the sheet
 //   const session = { rows, logs, changes }                // `changes` with the stored rows' ids (`HeldChange`)
-//   applySetTypeChange({ row, pick, session })             // a picked type -> the log patch, drops, change rows, numbers
+//   typeChangeNeedsNumbers({ row, pick, session })         // a numberless warmup made a working set: ask for the numbers first
+//   applySetTypeChange({ row, pick, session, numbers })    // a picked type -> the log patch, drops, change rows, numbers
 //   deleteEffects(row, session) / canUnlog(row, session) / unlogEffects(row, session)
 //   finishWarning(order, logs, changes) / addRound(order, rows, blockId)
 // None of them writes: each returns what the caller writes. The order of the writes is the caller's
@@ -108,6 +130,11 @@
 // - Unlog: a skipped drop doesn't stop the unlog of its set and goes with it; the same for the skipped drops
 //   after a drop that is unlogged (rows read a set's drops by count, so a log left after it would move up
 //   into the place of the drop that is open again).
+// - Unlog keeps the number of an added set in its draft's key (`position`), and of a planned set nowhere: the planned
+//   set's number is its position, which the rows work out (151). A draft's position can fall out of date when
+//   sets before the added set are deleted or switched to or from Warmup while it is open; the rows number it by
+//   the lowest number free then, and `draftPosition` still finds its draft. The caller drops a draft's key when the
+//   set is logged again or deleted.
 // - A set type pick with fewer drops than are logged deletes the extra logged drops after the question
 //   (19c asks for Normal; the same question is asked here).
 // - An added set that is not logged yet keeps its type as local state; once logged, the caller writes its

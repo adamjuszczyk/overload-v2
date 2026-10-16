@@ -398,6 +398,14 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
     expect(first.effects.renumber).toEqual([])
   })
 
+  it('the number it leaves is the one it shows, not its place in the plan: with a warmup first, 02 open between 01 and 03 logged', () => {
+    // the plan is 'w n n n' (the warmup is its set 1), so the open working set 02 is the plan's set 3
+    const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 4, { number: 3 })]
+    const { effects, rows } = deleteOn({ cards: [card('bench', 'w n n n')], logs, key: 'set:bench.3' })
+    expect(effects.renumber).toEqual([{ id: 'log.bench.4', setNumber: 2 }])
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓'])
+  })
+
   it('an open warmup is not one of the working numbers: deleting it moves nothing', () => {
     const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
     const { effects, rows } = deleteOn({ cards: [card('bench', 'w n n')], logs, key: 'set:bench.1' })
