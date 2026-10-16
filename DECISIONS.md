@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, chunk 47's review (migration 043, the save executor): merged (#137); its own staging deploy failed, and the next one applied it.*
-- *Chunk 47 merged. Migration 043 adds `v2_apply_ops`, which applies a whole save in one request, and a column that records what a swap replaced. Your 142 and 143 rules were proven in SQL before the merge: a week plan takes an update of its saved pre-deload plan and nothing else, and a swap's new row names the row it replaced.*
-- ***The merge's own staging deploy failed (156, the first to-do).** Supabase's check said "Failed to update config for branch: staging", and 043 didn't apply. The next push (this review's docs merge, #138) deployed it, and R2 then passed on staging as the test account. Only your Branches log says why the first run failed. Until you have read it, the chunks that save through 043 wait, from 51a.*
-- *One new reading for you, blocking nothing (157): the executor accepts a delete of a run's workout or program, where TASKS says "only an update".*
-- *The smoke passed: 51/51 and every tab, before and after 043 applied. Its log step is "waiting on re-seed" (138). 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-16, chunk 49's review (Settings' two new rows; "New week starts" gone): merged (#140).*
+- *Chunk 49 merged. Settings has the two rows SPEC adds: "Drops and stages count as" (each drop = ½ by default) and "Log sets in order" (on by default). Both save and read back after a reload, and "New week starts" is gone. A value it held stays stored and is no longer written; no staging account held "empty".*
+- *One new reading for you, blocking nothing (158): the builder's display choices for those rows, since Settings has no board, and the name chunk 60's lock question will use for the setting (SPEC's "Log sets in order", not board W7b's "LOG IN ORDER").*
+- *156 (043's failed staging deploy) still waits on you and still holds 51a. This merge's own deploy worked (three runs, one success), so it adds nothing to 156.*
+- *The smoke passed: 51/51 and every tab. Its log step is "waiting on re-seed" (138). 151, 149 and 152 hold what they held. Each list is ordered by what it blocks.*
 
 Decisions:
 - **151** — what UNLOG does to the set numbers (chunk 46). A logged set shows the number it was logged with, and an open set shows the next number after the logged ones. So unlogging a set that isn't the last one logged leaves two rows with one number. With bench 01–03 logged, UNLOG on 02 shows 01, an open 03, 03, 04. Logging it again stores a second set 3, which History shows. SPEC 18c says only "with its numbers kept" and "logging again undoes it". Recommended: (a), as a delete does: the logged sets after it move down one, and logging it again gives it the next number (it can come back as 03). Blocks: chunk 46's merge, and so 58a–64; 63 writes it. Nothing before 58a.
@@ -25,6 +25,13 @@ Decisions:
   - (c) The cues sheet's rows keep wrapping a long cue as built.
   - Blocks: nothing.
 - **153** — the order of a set's two REVIEW items (chunk 43, for 56; display only). With your 150 (b), a set whose type you change during a workout and then skip or never log gives two items. As built, "Skipped" / "Not logged" comes first and the type item right after it, the order a done set's number item and type item already have (139, accepted). Blocks: nothing. It is display only (D31): as built unless you change it.
+- **158** — chunk 49's display choices (D31), each as built (#140) unless you change it. Settings has no board; SPEC's "keeps its current look" and TASKS' words decided the rest:
+  - (a) "Log sets in order" is in a section of its own titled WORKOUT, right after REST TIMER (the page has no WORKOUT group; TASKS: "in WORKOUT (next to the rest timer rows)").
+  - (b) The toggle reads "Log sets in order" in sentence case, as SPEC spells it and like the page's other toggles; the chip row's label is in capitals like its neighbours.
+  - (c) The two explanation lines are TASKS' words, in small muted text under their rows.
+  - (d) At phone widths each chip takes two lines ("WHOLE SET =" over "1"); nothing is clipped.
+  - (e) For chunk 60: board W7b's question ends `TURN OFF "LOG IN ORDER" IN SETTINGS`, but SPEC calls the setting "Log sets in order" three times, once about that very line. SPEC wins over a board, so 60's line names the row as it reads.
+  - Blocks: nothing.
 
 To-dos:
 - **156** — read the log of 043's failed staging deploy (chunk 47).
@@ -32,7 +39,7 @@ To-dos:
   - The next push's run (#138, `43f1fc8`, 07:26 UTC) succeeded and applied it: the column probe is green, and R2 passed as the test account.
   - When: now. Please read the Branches log for the failed run, and say "go on" (or what to fix).
   - Blocks: until you have read it, the chunks that need 043 (51a first; then 52's COPY, 56, 61 and 53). Not 49 or 50.
-- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's smoke found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
+- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's and chunk 49's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -104,6 +111,20 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - On the run's `v2_programs` row the delete is refused by `v2_mesocycles_program_id_fkey` (`23503`). On a saved program it would land.
 - The builder asserts the delete on purpose (its scenario D05), but did not list it among its judgement calls.
 - The function's other departures from TASKS' words are the four judgement calls the builder listed (the revoke from anon, the input refusals, NULL rather than the default, the committed proof), all accepted in the review. Long form: HISTORY.md, "2026-10-16 chunk 47 review".
+
+### 158 Chunk 49's display choices where SPEC and TASKS give no layout (provisional, D31)
+**Ask:** Chunk 49 added Settings' two [1.2] rows. Settings has no board: SPEC says it "keeps its current look", and TASKS gives the words. These choices were the builder's, under D31. Each stays as built (#140) unless you change it:
+- (a) Where "Log sets in order" sits. TASKS says "in WORKOUT (next to the rest timer rows)", but the page has no WORKOUT group: SPEC's grouping into Workout, Planning, Language and Appearance is [P2]. As built, it is a section of its own titled WORKOUT, right after REST TIMER and before SET TIMING. The alternative would be a row inside the REST TIMER card.
+- (b) The toggle's label is "Log sets in order", in sentence case. That is SPEC's spelling and matches the page's other toggles ("Show rest timer"); TASKS writes it in capitals. The chip row's label is in capitals, "DROPS AND STAGES COUNT AS", like the page's other chip labels.
+- (c) The two explanation lines are TASKS' words verbatim: "Off: LOG never asks." and "For Plan's VOLUME sheet. History and Progress count as before." Each is in small muted body text under its row.
+- (d) At phone widths each of the three chips takes two lines ("WHOLE SET =" over "1", at 390, 375 and 320 px). Nothing is clipped or overflows. A non-breaking space before the number would keep "= 1" together.
+- (e) For chunk 60: board W7b's lock question ends `DON'T WANT THIS QUESTION? TURN OFF "LOG IN ORDER" IN SETTINGS.` SPEC names the setting "Log sets in order" three times: under Settings, under Screens → Settings, and in the sentence about this very line ("a line saying the lock can be turned off in Settings ("Log sets in order", W7b)"). SPEC wins over a board ("Design boards [1.2]"), so 60's line names the row as it reads: "LOG SETS IN ORDER".
+
+**Recommendation:** keep all five as built. (a) to (d) keep the page's look with the least new layout; (e) is SPEC's own wording.
+**Blocks:** nothing. Each is a short change; (e) is chunk 60's to build.
+**Options:** for each, as built or the alternative named.
+**Answer:**
+**Evidence:** the deployed screen, read by the reviewer as the test account on staging after the merge: the two rows where (a) says, the selected chip's text in `--on-accent` in both themes, no overflow at 390, 375 and 320 px, and both values persisting through a reload. Long form: HISTORY.md, "2026-10-16 chunk 49 review".
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 **Ask:** the display follow-up built your changes to 128, 129, 130 and 132 (#135). Three things it needed have no exact word from you. Each stays as described here unless you change it.
@@ -277,7 +298,7 @@ Chunk 46's rules read no weight or reps, and their stand-in doesn't model this c
 ### 138 Re-seed staging on Monday 2026-10-19 (to-do)
 **Ask:** paste `supabase/seed.sql` (as on `staging` then) into the staging branch's SQL editor on Monday 2026-10-19, and say "re-seeded".
 **Recommendation:** as you planned (2026-10-15). — **When:** Monday 2026-10-19, not earlier: the seed's dates are relative to the day it runs, so a re-seed in the week of Monday 2026-10-12 would put the test account's week 3 in that week again.
-**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button.
+**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's (2026-10-16; the account's set logs still 214).
 **Answer:**
 **Evidence:** every merge's smoke logs one set in the in-progress session (week 3 Monday Upper A). Chunk 57's review (2026-10-16) logged the first drop of Cable Triceps Pushdown set 2 (typed 22.5 kg × 8 with the browser offline, then synced on reconnect; set logs 212 → 213, read back as the test account), which opened its second drop. Today now shows 1 LOG button, that drop's, with empty boxes: type the plan's 17.5 kg × 6 before LOG (RULES.md: a row with no prefill; its target is 6–8 reps). It is the session's last open set (Today showed one LOG button before that log and one after it), so the smoke after the next one finds none and is "waiting on re-seed". Since your re-seed of 2026-10-14 (124) the test account's week 3 is Monday 2026-10-12 to Sunday 2026-10-18; from Monday 2026-10-19 it is past, and the checks TASKS-1.2 writes for "week 3 current" read a week later until the re-seed (TASKS-1.2, "Seed").
 
