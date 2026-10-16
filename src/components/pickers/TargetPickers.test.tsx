@@ -555,7 +555,7 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 14 }, applyToAll: true })
   })
 
-  it('typing two digits one after the other works: 1, then 12 (the first is not held up to a higher floor)', () => {
+  it('typing 12 as 1 and then 12 works: nothing is clamped on the way, so the first digit is not turned into something else', () => {
     const onSubmit = vi.fn()
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 8 }, onSubmit })} />)
     typeInto('REPS', '1')
@@ -657,6 +657,20 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     expect(box('REPS')).toBe('34')
   })
 
+  it('a stepper tapped with a number outside the range typed goes on from the number the box will be held to (100), not from the last one the draft took (12)', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', '150')
+    fireEvent.click(button('Fewer reps'))
+    expect(box('REPS')).toBe('99')
+  })
+
+  it('and the RIR picker\'s: 21 is held to 20, so a tap on - makes 19', () => {
+    render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 3 } })} />)
+    typeInto('REPS IN RESERVE', '21')
+    fireEvent.click(button('Less RIR'))
+    expect(box('REPS IN RESERVE')).toBe('19')
+  })
+
   it('a stepper past what was typed stops at the bound, and says so', () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     typeInto('REPS', '150')
@@ -673,6 +687,15 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     expect(box('To')).toBe('22')
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('20')
+  })
+
+  it('a segment tapped with a number outside the range typed starts from the number the box will be held to (1), not from the last one the draft took (12)', () => {
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+    typeInto('REPS', '0')
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('1')
+    expect(box('To')).toBe('3')
+    expect(button('SET 1–3 REPS')).toBeTruthy()
   })
 
   it('RANGE: typing TO and FROM sets the two ends', () => {

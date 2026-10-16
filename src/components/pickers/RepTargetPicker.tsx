@@ -28,7 +28,11 @@ export interface RepTargetPickerProps {
   /** `WEEK N` in Plan (`CYCLE N` with `isCycle`); the stepped planner's picker names no week (PP3d). */
   weekNumber?: number
   isCycle?: boolean
-  /** The set's rep target now; the sheet opens on its segment and numbers. */
+  /**
+   * The set's rep target now. Every caller passes the set's own current target, and the sheet opens on its segment and
+   * numbers (DECISIONS 128, Adam 2026-10-15): the boards' example numbers (8, 8-10) start only a segment the set doesn't
+   * have, and `{ type: 'none' }` opens on NONE with no number until a segment is picked.
+   */
   value: RepTarget
   /** The exercise's head sets, this one included. A rep target goes to every head, a warmup too. */
   sets: readonly TargetableSet[]

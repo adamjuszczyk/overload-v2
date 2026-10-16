@@ -30,7 +30,11 @@ export interface RirTargetPickerProps {
   /** `WEEK N` in Plan (`CYCLE N` with `isCycle`). */
   weekNumber?: number
   isCycle?: boolean
-  /** The set's RIR target now; the sheet opens on its segment and numbers. */
+  /**
+   * The set's RIR target now. Every caller passes the set's own current target, and the sheet opens on its segment and
+   * numbers (DECISIONS 128, Adam 2026-10-15): the boards' example numbers (RIR 2, 1-2) start only a segment the set
+   * doesn't have, and `{ kind: 'none' }` opens on NONE with no number until a segment is picked.
+   */
   value: RirTarget
   /** The exercise's head sets, this one included. The N in "Use for all N sets" counts the ones that aren't warmups. */
   sets: readonly TargetableSet[]
