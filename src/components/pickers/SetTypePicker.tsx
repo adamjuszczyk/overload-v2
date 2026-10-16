@@ -87,10 +87,11 @@ const RADIO_DOT_STYLE: CSSProperties = { width: 8, height: 8, borderRadius: 4, b
 
 const TEXT_COLUMN_STYLE: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }
 
-// A word with no break opportunity wraps inside its line, the Cues row's second line (a custom cue of 35
-// letters and no space) above all (DECISIONS 128 (i), Adam 2026-10-15: "overflow-wrap: anywhere").
-const NAME_STYLE: CSSProperties = { fontWeight: 700, fontSize: 15, lineHeight: 1.2, color: 'var(--text-primary)', overflowWrap: 'anywhere' }
+const NAME_STYLE: CSSProperties = { fontWeight: 700, fontSize: 15, lineHeight: 1.2, color: 'var(--text-primary)' }
 
+// The Cues row's second line is the user's own text, a custom cue that can be one long word (35 letters and no
+// space ran past the row): a word with no break opportunity wraps inside its line (DECISIONS 128 (i), Adam
+// 2026-10-15: "overflow-wrap: anywhere"). The other descriptions are the boards' own words.
 const DESCRIPTION_STYLE: CSSProperties = { fontSize: 12, lineHeight: 1.4, color: 'var(--text-secondary)', overflowWrap: 'anywhere' }
 
 const STAGE_ROW_STYLE: CSSProperties = {
