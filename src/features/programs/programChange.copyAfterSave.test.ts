@@ -160,7 +160,7 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     expect(r.sets.some((s) => s.programExerciseId === curl.id)).toBe(false)
   })
 
-  it('swapped: Cable Row takes Lat Pulldown\'s sets — a warmup, a working set, a dropset head and its drop — and Lat Pulldown is gone (with the swap link, which nothing stores yet)', () => {
+  it('swapped: Cable Row takes Lat Pulldown\'s sets — a warmup, a working set, a dropset head and its drop — and Lat Pulldown is gone (the swap\'s new row names the row it replaced)', () => {
     const w = pullWorld()
     const d = edit(w)
     const { ops, after } = saveOf(w, d)
