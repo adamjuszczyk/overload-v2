@@ -175,12 +175,9 @@ export interface RunCopyExercise extends Pick<ProgramExercise, 'id' | 'exerciseI
   weekOnly?: boolean
   removedAt?: string | null
   // CHANGE THE PROGRAM's SWAP puts a new row where the old one was and soft-removes the old (a done session keeps
-  // pointing at the old row, so the row can't be changed in place). This is the old row the new one took the place of:
-  // the week-dependent copy gives the new exercise the old one's sets ("the new exercise takes the old one's sets").
-  // NOTHING STORES THIS LINK YET: `v2_program_exercises` has no column for it (a migration, outside chunk 45's scope), so
-  // until it exists no caller can pass it and a swapped-in exercise is copied like an added one (no sets). The rule is
-  // here, tested with the link given, so the column, the op that writes it and the read that fills this can be added
-  // without changing the rule.
+  // pointing at the old row, so the row can't be changed in place). This is the old row the new one took the place of
+  // (`v2_program_exercises.replaces_program_exercise_id`): the week-dependent copy gives the new exercise the old one's
+  // sets ("the new exercise takes the old one's sets").
   replacesProgramExerciseId?: string | null
 }
 export type RunCopySet = Pick<
@@ -517,9 +514,11 @@ function sameSlot(a: Pick<CopyWorkout, 'workoutDayId' | 'sequencePosition'>, b: 
 
 // The nth occurrence of an exercise this week with the nth of it last week (provisional 83); an
 // exercise last week doesn't have is left alone. Rows in position order on both sides.
-type ExerciseSlot = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position'>
+// Exported since chunk 43: REVIEW matches last week's exercises to this week's with this very
+// pairing (and `pairSets` below), so there is one matcher, not two.
+export type ExerciseSlot = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position'>
 
-function pairByExercise(
+export function pairByExercise(
   thisWeek: readonly ExerciseSlot[],
   lastWeek: readonly ExerciseSlot[],
 ): Array<[ExerciseSlot, ExerciseSlot]> {
@@ -538,8 +537,8 @@ function pairByExercise(
 }
 
 // This week's set rows of one exercise row paired with last week's: heads by (is_warmup, ordinal
-// among those), 039's rule, then each head's stages by stage index.
-function pairSets(thisSets: readonly CopySet[], lastSets: readonly CopySet[]): Array<[CopySet, CopySet]> {
+// among those), 039's rule, then each head's stages by stage index. Exported since chunk 43 (see above).
+export function pairSets(thisSets: readonly CopySet[], lastSets: readonly CopySet[]): Array<[CopySet, CopySet]> {
   const heads = (sets: readonly CopySet[], warmup: boolean) =>
     sets
       .filter((s) => s.parentWeekPlanSetId == null && s.isWarmup === warmup)
@@ -739,6 +738,19 @@ function repsKey(n: Pick<ChangeNumbers, 'repMin' | 'repMax' | 'isAmrap'>): strin
   return formatRepTarget(columnsToRepTarget({ repMin: n.repMin, repMax: n.repMax, isAmrap: n.isAmrap }))
 }
 
+// Whether a box holds a value (DECISIONS 132 (a)): only a box that does can be marked. A rep target is
+// empty when the row shows none (a half-set pair shows none), a weight or a RIR when it is null: 0 is a
+// value, and a RIR range is a value because its low end is.
+function hasRepTarget(n: Pick<ChangeNumbers, 'repMin' | 'repMax' | 'isAmrap'>): boolean {
+  return columnsToRepTarget({ repMin: n.repMin, repMax: n.repMax, isAmrap: n.isAmrap }).type !== 'none'
+}
+function hasWeight(n: Pick<ChangeNumbers, 'targetWeight'>): boolean {
+  return n.targetWeight !== null
+}
+function hasRir(n: Pick<ChangeNumbers, 'targetRir'>): boolean {
+  return n.targetRir !== null
+}
+
 // A head's kind as its row shows it: WARMUP, a staged set's kind (a null kind on a head that has
 // stages reads as a dropset), or nothing. A stage kind on a head without stages shows nowhere, so
 // it isn't a difference.
@@ -787,10 +799,13 @@ export function thisWeekOnly(
 //   - there is no "week start" setting: a week-dependent week with no usable last week has nothing
 //     to compare with, as before;
 //   - a RIR range is compared on both ends;
-//   - a warmup row has no RIR target (G49): its RIR is never a mark.
-// Unchanged from 1.1 and worth knowing: a box that differs from the source is a change whether or
-// not it is empty, so a week planned forward before COPY (no weight, RIR or reps of its own) marks
-// every number its source has. SPEC says "anything that differs"; D31 provisional, see the report.
+//   - a warmup row has no RIR target (G49): its RIR is never a mark;
+//   - an empty box is never a mark (DECISIONS 132 (a), Adam 2026-10-15: "an empty box is never marked as
+//     changed. Only a value that is present and differs from its source is marked. A week planned forward
+//     therefore shows no marks until numbers are typed or copied in"). A box is a weight, a rep target or a
+//     RIR target; it is empty when it holds none (a weight or RIR of 0 is a value, an AMRAP is a rep
+//     target). A present value is marked when it differs from the source's, and when the source has none.
+//     1.1 marked an empty box that its source filled, so a week planned forward marked every number.
 
 export type ChangeShapeSource = { kind: 'default' } | { kind: 'week'; weekNumber: number } | { kind: 'none' }
 export type ChangeNumbersSource = { kind: 'week'; weekNumber: number } | { kind: 'none' }
@@ -985,12 +1000,12 @@ function compareShape(week: ChangeExercise, source: ChangeExercise, out: Exercis
     const s = source.heads[p]
     if (w && s) {
       const d = setChangeOf(out, w.id)
-      d.reps = repsKey(w) !== repsKey(s)
+      d.reps = hasRepTarget(w) && repsKey(w) !== repsKey(s)
       d.kind = kindKey(w) !== kindKey(s)
       for (const stage of w.stages) {
         const counterpart = s.stages.find((x) => x.stageIndex === stage.stageIndex)
         const sd = setChangeOf(out, stage.id)
-        if (counterpart) sd.reps = repsKey(stage) !== repsKey(counterpart)
+        if (counterpart) sd.reps = hasRepTarget(stage) && repsKey(stage) !== repsKey(counterpart)
         else sd.added = true
       }
       const gone = s.stages.filter((x) => !w.stages.some((st) => st.stageIndex === x.stageIndex))
@@ -1015,32 +1030,34 @@ function compareShape(week: ChangeExercise, source: ChangeExercise, out: Exercis
 // has but last week lacks is compared with last week.
 //   - a counterpart: the number differs, or it doesn't (a RIR range on both ends);
 //   - a working set with no counterpart at its position (last week has no such set) is new against
-//     last week, so its weight and RIR differ from it; so do its stages';
+//     last week, so a weight or RIR it holds differs from it; so do its stages';
 //   - a warmup or a stage with no counterpart is a new set kind, which the structure marks (a
 //     warmup's or a stage's own newness is not the numbers'), so its numbers are left alone;
-//   - a warmup row has no RIR target (G49), so its RIR is never a difference.
+//   - a warmup row has no RIR target (G49), so its RIR is never a difference;
+//   - an empty box is never a difference, whatever its source holds (DECISIONS 132 (a)): only a
+//     weight or RIR that is present can be marked.
 function compareNumbers(week: ChangeExercise, source: ChangeExercise, out: ExerciseChanges): void {
   week.heads.forEach((w, p) => {
     const s = source.heads[p]
     const d = setChangeOf(out, w.id)
     const newAgainstSource = !s && !w.isWarmup
     if (s) {
-      d.weight = w.targetWeight !== s.targetWeight
-      d.rir = !w.isWarmup && rirDiffers(w, s)
+      d.weight = hasWeight(w) && w.targetWeight !== s.targetWeight
+      d.rir = !w.isWarmup && hasRir(w) && rirDiffers(w, s)
     } else if (newAgainstSource) {
-      d.weight = true
-      d.rir = true
+      d.weight = hasWeight(w)
+      d.rir = hasRir(w)
     }
     for (const stage of w.stages) {
       const counterpart = s?.stages.find((x) => x.stageIndex === stage.stageIndex)
       if (counterpart) {
         const sd = setChangeOf(out, stage.id)
-        sd.weight = stage.targetWeight !== counterpart.targetWeight
-        sd.rir = rirDiffers(stage, counterpart)
+        sd.weight = hasWeight(stage) && stage.targetWeight !== counterpart.targetWeight
+        sd.rir = hasRir(stage) && rirDiffers(stage, counterpart)
       } else if (newAgainstSource) {
         const sd = setChangeOf(out, stage.id)
-        sd.weight = true
-        sd.rir = true
+        sd.weight = hasWeight(stage)
+        sd.rir = hasRir(stage)
       }
     }
   })

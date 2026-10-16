@@ -89,7 +89,10 @@ const TEXT_COLUMN_STYLE: CSSProperties = { display: 'flex', flexDirection: 'colu
 
 const NAME_STYLE: CSSProperties = { fontWeight: 700, fontSize: 15, lineHeight: 1.2, color: 'var(--text-primary)' }
 
-const DESCRIPTION_STYLE: CSSProperties = { fontSize: 12, lineHeight: 1.4, color: 'var(--text-secondary)' }
+// The Cues row's second line is the user's own text, a custom cue that can be one long word (35 letters and no
+// space ran past the row): a word with no break opportunity wraps inside its line (DECISIONS 128 (i), Adam
+// 2026-10-15: "overflow-wrap: anywhere"). The other descriptions are the boards' own words.
+const DESCRIPTION_STYLE: CSSProperties = { fontSize: 12, lineHeight: 1.4, color: 'var(--text-secondary)', overflowWrap: 'anywhere' }
 
 const STAGE_ROW_STYLE: CSSProperties = {
   display: 'flex',

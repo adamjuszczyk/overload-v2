@@ -171,7 +171,7 @@ export default function StepExercises({
             key={st}
             onClick={() => { if (st !== scheduleType) updateScheduleType.mutate({ id: program.id, scheduleType: st }) }}
             disabled={updateScheduleType.isPending}
-            style={{ flex: 1, padding: '9px 0', background: scheduleType === st ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: updateScheduleType.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: scheduleType === st ? 'var(--base)' : 'var(--text-muted)' }}
+            style={{ flex: 1, padding: '9px 0', background: scheduleType === st ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: updateScheduleType.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: scheduleType === st ? 'var(--on-accent)' : 'var(--text-muted)' }}
           >
             {st.toUpperCase()}
           </button>
@@ -227,7 +227,7 @@ export default function StepExercises({
             <button
               type="submit"
               disabled={createDay.isPending}
-              style={{ width: '100%', height: 56, background: createDay.isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: createDay.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 15, letterSpacing: '2px', color: createDay.isPending ? 'var(--text-muted)' : 'var(--base)' }}
+              style={{ width: '100%', height: 56, background: createDay.isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 11, cursor: createDay.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 15, letterSpacing: '2px', color: createDay.isPending ? 'var(--text-muted)' : 'var(--on-accent)' }}
             >
               {createDay.isPending ? '…' : 'ADD WORKOUT'}
             </button>

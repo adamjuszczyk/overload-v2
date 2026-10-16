@@ -676,6 +676,11 @@ export interface UserSettings {
   // week-dependent run's week beyond week 1 (weekSources.ts); the manual
   // "Copy last week"/"Copy this workout" actions always try to copy,
   // regardless of this setting.
+  // Chunk 49 (SPEC [1.2]: "The 'new week starts: copy / empty' setting is
+  // removed"): READ ONLY. Settings no longer shows it and upsertSettings no
+  // longer writes it, so the stored value stays. It is still read — by Plan's
+  // highlighting (weekDiff.ts, through the settings store) and by v2_plan_week
+  // (041) — until chunks 54b and 53 replace those; after that nothing reads it.
   weekStart: 'copy' | 'empty'
   // v2_user_settings.warmup_display (migration 027, chunk 15 — SPEC.md
   // "Warmup sets": "Display setting: rows (default; numbers optional) or
@@ -695,12 +700,13 @@ export interface UserSettings {
   // SPEC [1.2] "Settings": how drops and stages count in volume, "whole set
   // = 1 | each drop = 1 | each drop = ½", default each drop = ½; G51: the
   // VOLUME sheet only). Falls back to 'half' while the column is absent
-  // (settingsService.ts). Not sent by upsertSettings yet: chunk 49 does, once
-  // 042 is live on staging.
+  // (settingsService.ts). Chunk 49: Settings' "Drops and stages count as" row
+  // changes it and upsertSettings writes it; chunk 55 reads it.
   stageVolumeRule: StageVolumeRule
   // v2_user_settings.log_in_order (migration 042 — SPEC [1.2] "Settings":
   // "Log sets in order" (the log lock, 18a), on by default). Falls back to
-  // true while the column is absent. Not sent by upsertSettings yet (chunk 49).
+  // true while the column is absent. Chunk 49: Settings' "Log sets in order"
+  // toggle changes it and upsertSettings writes it; chunk 60 reads it.
   logInOrder: boolean
 }
 

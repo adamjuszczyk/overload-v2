@@ -432,7 +432,7 @@ export function WarmupRoutineEditor({
           <button
             type="submit"
             disabled={addItem.isPending}
-            style={{ height: 36, padding: '0 14px', flexShrink: 0, background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: addItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: 'var(--base)' }}
+            style={{ height: 36, padding: '0 14px', flexShrink: 0, background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: addItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: 'var(--on-accent)' }}
           >
             ADD
           </button>

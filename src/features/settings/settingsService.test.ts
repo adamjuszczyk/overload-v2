@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { UserSettings } from '../../types'
 
 // Migration 042 (TASKS-1.2 chunk 36) adds v2_user_settings.stage_volume_rule
-// and log_in_order. This chunk only READS them: fetchSettings maps them with
-// the "absent until applied" fallback to the column defaults, and
-// upsertSettings does not send them (chunk 49 does, after 042 is live on
-// staging) — a full-row upsert that named them now would overwrite whatever
-// is stored with this build's defaults.
+// and log_in_order. Chunk 36 only READ them: fetchSettings maps them with the
+// "absent until applied" fallback to the column defaults. Chunk 49 (042 is
+// live on staging) WRITES them: upsertSettings names both in its full row, and
+// no longer names week_start (SPEC [1.2] removes the "new week starts"
+// setting, so a stored value stays as it is).
 //
 // Mocked the same way the other service tests are (the real Supabase client
 // throws at import time without env vars): the chain this module builds is
@@ -86,6 +86,21 @@ describe('fetchSettings — the two 042 columns', () => {
   })
 })
 
+describe('fetchSettings — week_start is read-only since chunk 49', () => {
+  // Plan's highlighting (weekDiff.ts, through the settings store) and v2_plan_week
+  // (041) still act on the stored value until chunks 54b and 53 replace them, so
+  // dropping the read here would change what an account that stored 'empty' sees.
+  it('a stored week_start still maps (the setting is gone from Settings, not from the row)', async () => {
+    fromMock.mockReturnValue(selectChain(baseRow({ week_start: 'empty' })))
+    expect((await fetchSettings('u1'))?.weekStart).toBe('empty')
+  })
+
+  it('a row without the key maps to the column default', async () => {
+    fromMock.mockReturnValue(selectChain(baseRow()))
+    expect((await fetchSettings('u1'))?.weekStart).toBe('copy')
+  })
+})
+
 describe('DEFAULT_SETTINGS — what a user without a settings row gets', () => {
   it('counts a drop as one half and keeps the log lock on (SPEC [1.2] Settings defaults)', () => {
     expect(DEFAULT_SETTINGS.stageVolumeRule).toBe('half')
@@ -93,51 +108,81 @@ describe('DEFAULT_SETTINGS — what a user without a settings row gets', () => {
   })
 })
 
-describe('upsertSettings — does not send the 042 columns yet', () => {
-  // Non-default values on purpose: if the payload named the keys at all, this
-  // build would write 'whole' / false over the stored values.
+describe('upsertSettings — the full row (chunk 49)', () => {
+  // Non-default values for every field, so a payload built from the defaults (the
+  // wrong source) tells itself apart from one built from these settings.
   const settings: UserSettings = {
-    ...DEFAULT_SETTINGS,
+    theme: 'light',
+    accentColour: '#3B82F6',
+    restTimerEnabled: false,
+    buzzOnRestComplete: false,
+    targetRestSeconds: 150,
+    weightUnit: 'lbs',
+    autoFinishMinutes: 20,
+    measureSetTime: true,
+    weekStart: 'empty',
+    warmupDisplay: 'tick',
+    deloadRules: { reps: { delta: -2 } },
     stageVolumeRule: 'whole',
     logInOrder: false,
   }
 
-  it('the payload carries neither stage_volume_rule nor log_in_order (absence)', async () => {
+  async function payloadFor(s: UserSettings) {
     const chain = upsertChain()
     fromMock.mockReturnValue(chain)
-
-    await upsertSettings('u1', settings)
-
+    await upsertSettings('u1', s)
     expect(fromMock).toHaveBeenCalledWith('v2_user_settings')
     const [payload, options] = chain.upsert.mock.calls[0] as unknown as [Record<string, unknown>, unknown]
-    expect(payload).not.toHaveProperty('stage_volume_rule')
-    expect(payload).not.toHaveProperty('log_in_order')
+    return { payload, options }
+  }
+
+  it('writes stage_volume_rule and log_in_order with the settings\' own values, not the defaults', async () => {
+    const { payload } = await payloadFor(settings)
+
+    expect(payload.stage_volume_rule).toBe('whole')
+    expect(payload.log_in_order).toBe(false)
+    // …and the defaults are what a wrong source would have sent:
+    expect(DEFAULT_SETTINGS.stageVolumeRule).not.toBe('whole')
+    expect(DEFAULT_SETTINGS.logInOrder).not.toBe(false)
+  })
+
+  it('every value of the check, and both lock positions, reach the payload unchanged', async () => {
+    for (const rule of ['whole', 'each', 'half'] as const) {
+      for (const logInOrder of [true, false]) {
+        const { payload } = await payloadFor({ ...settings, stageVolumeRule: rule, logInOrder })
+        expect(payload.stage_volume_rule).toBe(rule)
+        expect(payload.log_in_order).toBe(logInOrder)
+      }
+    }
+  })
+
+  it('the payload is the whole row: exactly these columns with exactly these values', async () => {
+    const { payload, options } = await payloadFor(settings)
+
+    expect(payload).toEqual({
+      user_id: 'u1',
+      theme: 'light',
+      accent_colour: '#3B82F6',
+      rest_timer_enabled: false,
+      buzz_on_rest_complete: false,
+      target_rest_seconds: 150,
+      weight_unit: 'lbs',
+      auto_finish_minutes: 20,
+      measure_set_time: true,
+      warmup_display: 'tick',
+      deload_rules: { reps: { delta: -2 } },
+      stage_volume_rule: 'whole',
+      log_in_order: false,
+    })
     expect(options).toEqual({ onConflict: 'user_id' })
   })
 
-  it('the payload is exactly the columns it sent before 042 (no key added by this chunk)', async () => {
-    const chain = upsertChain()
-    fromMock.mockReturnValue(chain)
-
-    await upsertSettings('u1', settings)
-
-    const [payload] = chain.upsert.mock.calls[0] as unknown as [Record<string, unknown>]
-    expect(Object.keys(payload).sort()).toEqual(
-      [
-        'accent_colour',
-        'auto_finish_minutes',
-        'buzz_on_rest_complete',
-        'deload_rules',
-        'measure_set_time',
-        'rest_timer_enabled',
-        'target_rest_seconds',
-        'theme',
-        'user_id',
-        'warmup_display',
-        'week_start',
-        'weight_unit',
-      ],
-    )
+  it('the payload has no week_start key, whatever the settings hold (absence: the stored value stays)', async () => {
+    for (const weekStart of ['empty', 'copy'] as const) {
+      const { payload } = await payloadFor({ ...settings, weekStart })
+      expect(payload).not.toHaveProperty('week_start')
+      expect(Object.keys(payload)).not.toContain('week_start')
+    }
   })
 
   it('a throw from the database surfaces (the full-row write is not swallowed)', async () => {

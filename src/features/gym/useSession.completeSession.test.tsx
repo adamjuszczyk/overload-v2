@@ -17,13 +17,14 @@ vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
 type Row = Record<string, unknown>
-interface QueueItem { id: number; table: string; operation: 'upsert'; payload: Row; createdAt: string; attempts?: number }
+interface QueueItem { id: number; table: string; operation: 'upsert' | 'delete'; payload: Row; createdAt: string; attempts?: number; sessionId?: string }
 
 const state = {
   queue: [] as QueueItem[],
   serverLogs: [] as Row[],
   sessionUpdates: [] as Row[],
   upsertFails: false,
+  deleteFails: false,
   nextQueueId: 100,
 }
 
@@ -51,6 +52,8 @@ vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       let patch: Row | null = null
+      let deleting = false
+      let deletedId: unknown = null
       const chain: Record<string, unknown> = {
         upsert: async (payload: Row) => {
           if (state.upsertFails) return { error: { message: 'Failed to fetch' } }
@@ -62,8 +65,20 @@ vi.mock('../../lib/supabase', () => ({
           patch = p
           return chain
         },
-        eq: () => chain,
+        delete: () => {
+          deleting = true
+          return chain
+        },
+        eq: (_column: string, value: unknown) => {
+          if (deleting) deletedId = value
+          return chain
+        },
         then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+          if (deleting) {
+            if (state.deleteFails) return Promise.resolve({ error: { message: 'Failed to fetch' } }).then(resolve, reject)
+            state.serverLogs = state.serverLogs.filter((l) => l.id !== deletedId)
+            return Promise.resolve({ error: null }).then(resolve, reject)
+          }
           if (patch) {
             state.sessionUpdates.push(patch)
             return Promise.resolve({ error: null }).then(resolve, reject)
@@ -95,6 +110,7 @@ afterEach(() => {
   state.serverLogs = []
   state.sessionUpdates = []
   state.upsertFails = false
+  state.deleteFails = false
   queryClient.clear()
 })
 
@@ -129,6 +145,46 @@ describe('useCompleteSession online — queued sets are sent before the finish r
     expect(finish).toBeTruthy()
     expect(finish!.payload.id).toBe('s1')
     expect(finish!.payload.status).toBe('completed')
+  })
+
+  it('a set deleted offline is deleted on the server before the finish reads: the finish counts what is left', async () => {
+    // The server holds a skipped set and a real one; the real one was deleted offline, and its delete is queued.
+    state.serverLogs = [
+      { id: 'a', session_id: 's1', logged_at: '2026-10-11T08:00:00Z', is_skipped: true },
+      { id: 'b', session_id: 's1', logged_at: '2026-10-11T08:10:00Z', is_skipped: false },
+    ]
+    state.queue = [
+      { id: state.nextQueueId++, table: 'v2_set_logs', operation: 'delete', payload: { id: 'b' }, createdAt: '2026-10-11T08:20:00Z', sessionId: 's1' },
+    ]
+    const { result } = renderHook(() => useCompleteSession(), { wrapper })
+
+    const out = await result.current.mutateAsync({ id: 's1', note: null })
+
+    // Only the skipped set is left, so the session is skipped, as if the set had never been logged.
+    expect(out.status).toBe('skipped')
+    expect(state.sessionUpdates).toHaveLength(1)
+    expect(state.sessionUpdates[0].completed_at).toBe('2026-10-11T08:00:00Z')
+    expect(state.queue).toEqual([])
+  })
+
+  it('when a queued delete can’t be sent, the finish queues behind it instead of counting the set that is about to go', async () => {
+    state.serverLogs = [
+      { id: 'a', session_id: 's1', logged_at: '2026-10-11T08:00:00Z', is_skipped: true },
+      { id: 'b', session_id: 's1', logged_at: '2026-10-11T08:10:00Z', is_skipped: false },
+    ]
+    state.queue = [
+      { id: state.nextQueueId++, table: 'v2_set_logs', operation: 'delete', payload: { id: 'b' }, createdAt: '2026-10-11T08:20:00Z', sessionId: 's1' },
+    ]
+    state.deleteFails = true
+    const { result } = renderHook(() => useCompleteSession(), { wrapper })
+
+    await result.current.mutateAsync({ id: 's1', note: null })
+
+    expect(state.sessionUpdates).toEqual([]) // nothing written from the server's incomplete picture
+    expect(state.queue.map((q) => [q.table, q.operation])).toEqual([
+      ['v2_set_logs', 'delete'],
+      ['v2_sessions', 'upsert'],
+    ])
   })
 
   it('with nothing queued the finish is unchanged: one read, one update', async () => {

@@ -192,7 +192,7 @@ export default function PlannerPage() {
             <button
               key={s.id}
               onClick={() => setStep(s.id)}
-              style={{ flex: 1, padding: '10px 2px', background: step === s.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: step === s.id ? 'var(--base)' : 'var(--text-muted)' }}
+              style={{ flex: 1, padding: '10px 2px', background: step === s.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: step === s.id ? 'var(--on-accent)' : 'var(--text-muted)' }}
             >
               {s.label}
             </button>
@@ -223,7 +223,7 @@ export default function PlannerPage() {
           <button
             onClick={handleStart}
             disabled={startDisabled}
-            style={{ flex: 1, height: 50, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: startDisabled ? 'var(--text-muted)' : 'var(--base)' }}
+            style={{ flex: 1, height: 50, background: startDisabled ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: startDisabled ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: startDisabled ? 'var(--text-muted)' : 'var(--on-accent)' }}
           >
             {startRun.isPending ? '…' : 'START'}
           </button>
@@ -359,7 +359,7 @@ function G14Prompt({
               <button
                 onClick={onConfirmSplit}
                 disabled={isPending}
-                style={{ flex: 1, height: 50, background: isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: isPending ? 'var(--text-muted)' : 'var(--base)' }}
+                style={{ flex: 1, height: 50, background: isPending ? 'var(--border-strong)' : 'var(--accent)', border: 'none', borderRadius: 10, cursor: isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: isPending ? 'var(--text-muted)' : 'var(--on-accent)' }}
               >
                 {isPending ? '…' : 'CONFIRM'}
               </button>

@@ -178,9 +178,10 @@ describe('a week-dependent week copied after a save: the run copy\'s exercise li
     expect(idsOf(r.sets)).toEqual(['w2-lat-1'])
   })
 
-  it('swapped: a link nothing stores yet (no `replacesProgramExerciseId`) leaves the swapped-in exercise empty and the swapped-out one gone', () => {
-    // The state of every real save today: the swap writes no link (a column is needed, DECISIONS 143). It is the (a′) outcome
-    // Adam did not choose, shown here so it is read as a gap and not as the rule.
+  it('swapped, but the new row names no row it replaced (no `replacesProgramExerciseId`): the swapped-in exercise is empty and the swapped-out one gone', () => {
+    // Since migration 043 a swap writes the link (`v2_program_exercises.replaces_program_exercise_id`, DECISIONS 143), so a row
+    // like this is one that replaced nothing: it sits where a removed one was and is copied like an added exercise. It is the
+    // (a′) outcome Adam did not choose for a swap, shown so that the link, not the position, is what carries the old sets.
     const noLink = runCopy({
       exercises: [rc('pe-lat', 'lat', 0), rc('pe-curl', 'curl', 2, { removedAt: REMOVED }), rc('pe-ham', 'ham', 2)],
     })

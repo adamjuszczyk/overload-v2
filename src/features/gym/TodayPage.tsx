@@ -280,7 +280,7 @@ export default function TodayPage() {
               className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
               style={{
                 backgroundColor: 'var(--accent)',
-                color: 'var(--base)',
+                color: 'var(--on-accent)',
                 fontFamily: 'var(--font-mono)',
                 opacity: isStartingSession ? 0.6 : 1,
               }}
@@ -441,7 +441,7 @@ export default function TodayPage() {
         <button
           onClick={() => navigate('/program')}
           className="px-6 py-3 rounded-xl font-black text-sm tracking-widest"
-          style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
+          style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: 'var(--font-mono)' }}
         >
           GO TO PROGRAM →
         </button>

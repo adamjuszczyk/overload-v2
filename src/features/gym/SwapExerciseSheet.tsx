@@ -166,7 +166,7 @@ export default function SwapExerciseSheet({
               <button
                 onClick={() => onConfirm(pending)}
                 className="flex-1 py-3 rounded-xl text-xs font-bold tracking-widest"
-                style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
+                style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: 'var(--font-mono)' }}
               >
                 {isAdd ? 'ADD EXERCISE' : 'CONFIRM SWAP'}
               </button>
@@ -236,7 +236,7 @@ export default function SwapExerciseSheet({
                     className="flex-1 py-2.5 rounded-xl text-xs font-bold"
                     style={{
                       backgroundColor: 'var(--accent)',
-                      color: 'var(--base)',
+                      color: 'var(--on-accent)',
                       fontFamily: 'var(--font-mono)',
                       opacity: createExercise.isPending || !newName.trim() ? 0.5 : 1,
                     }}

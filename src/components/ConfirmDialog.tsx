@@ -101,7 +101,7 @@ export default function ConfirmDialog({
               background: danger ? 'var(--error)' : 'var(--accent)',
               border: 'none',
               borderRadius: 10,
-              color: 'var(--base)',
+              color: danger ? 'var(--base)' : 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
               fontWeight: 700,
               fontSize: 12,

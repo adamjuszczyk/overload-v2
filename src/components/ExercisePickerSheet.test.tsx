@@ -10,6 +10,7 @@ import ExercisePickerSheet from './ExercisePickerSheet'
 import type { ExercisePickerSheetProps } from './ExercisePickerSheet'
 import { queryClient } from '../lib/queryClient'
 import { captureRender } from '../testing/captureRender'
+import { textOnAccent } from '../testing/textOnAccent'
 import type { Exercise, MuscleGroup } from '../types'
 
 // TASKS-1.2 chunk 41: the one exercise picker (PL4-PL6, PP2d, PP2d2, W11, W13-W15). It writes nothing but a
@@ -1149,7 +1150,7 @@ describe('the frame', () => {
     library = [ex('long', 'X'.repeat(80), 'back')]
     await listed(add())
     const name = rowButtons()[0].children[0].children[0] as HTMLElement
-    expect(name.style.overflowWrap).toBe('break-word')
+    expect(name.style.overflowWrap).toBe('anywhere')
     expect((rowButtons()[0].children[0] as HTMLElement).style.minWidth).toBe('0px')
   })
 })
@@ -1314,5 +1315,99 @@ describe('draws the boards', () => {
     renderPicker(add({ eyebrow: 'PULL 1 · TODAY', title: 'Add an exercise', showGroup: false, onCreate: noop }))
     await screen.findByText('No exercises yet. Pick a muscle group to create one.')
     captureRender('exercise-picker-w15-library-empty', document.body)
+  })
+})
+
+describe('text on the accent is --on-accent, never --base (DECISIONS 130 (j), Adam 2026-10-15)', () => {
+  it("W11: the swap button is greyed until a row is picked; once it is, SWAP FOR TODAY is the one thing on the accent", async () => {
+    library = [LAT, ROW, MACHINE]
+    renderPicker(swap({ title: 'Swap for what?', showGroup: false, confirmLabel: 'SWAP FOR TODAY' }))
+    await list()
+    expect(textOnAccent(document.body)).toEqual([])
+    fireEvent.click(radios()[0])
+    const onAccent = textOnAccent(document.body)
+    expect(onAccent.map((el) => el.textContent)).toEqual(['SWAP FOR TODAY'])
+    expect(onAccent[0].style.color).toBe('var(--on-accent)')
+  })
+
+  it("W14: ADD EXERCISE is on the accent in --on-accent", async () => {
+    renderPicker(add({ title: 'Add an exercise', showGroup: false, confirmLabel: 'ADD EXERCISE' }))
+    await list()
+    fireEvent.click(button('Add Hammer Curl'))
+    const onAccent = textOnAccent(document.body)
+    expect(onAccent.map((el) => el.textContent)).toEqual(['ADD EXERCISE'])
+    expect(onAccent[0].style.color).toBe('var(--on-accent)')
+  })
+
+  it('the create form: CREATE is on the accent in --on-accent (and so is CREATING… while it saves)', async () => {
+    service.createExercise.mockReturnValue(new Promise(() => {}))
+    library = [LAT, ROW]
+    renderPicker(swap({ title: 'Swap for what?', showGroup: false, onCreate: noop, confirmLabel: 'SWAP FOR TODAY' }))
+    await list()
+    fireEvent.click(button('+ NEW BACK EXERCISE'))
+    type('Kneeling Pulldown')
+    expect(textOnAccent(document.body).map((el) => el.textContent)).toEqual(['CREATE'])
+    expect(textOnAccent(document.body)[0].style.color).toBe('var(--on-accent)')
+    fireEvent.click(button('CREATE'))
+    await screen.findByRole('button', { name: 'CREATING…' })
+    expect(textOnAccent(document.body).map((el) => [el.textContent, el.style.color])).toEqual([['CREATING…', 'var(--on-accent)']])
+  })
+})
+
+describe('a name with no break opportunity wraps inside its line (DECISIONS 130 (m), Adam 2026-10-15)', () => {
+  const LONG = 'X'.repeat(80)
+
+  // jsdom lays nothing out: these hold the rule that gives the wrap (on the element that draws the text), and the
+  // fixtures they capture are measured in Chromium at 375 px by `node scripts/check-sheet-overflow.mjs`.
+  it("W11: the line over the button wraps the picked exercise's name, and so do its row, the eyebrow and the title", async () => {
+    library = [LAT, ROW, ex('long', LONG, 'back')]
+    renderWithPage(
+      swap({
+        eyebrow: `${LONG} · TODAY ONLY`,
+        title: 'Swap for what?',
+        showGroup: false,
+        onCreate: noop,
+        confirmLabel: 'SWAP FOR TODAY',
+        confirmNote: (picked) => (picked ? `The set left moves to ${picked.name}. Next week's plan stays the same.` : "Next week's plan stays the same."),
+      }),
+      'PULL 1',
+    )
+    await list()
+    fireEvent.click(radios().find((row) => rowName(row) === LONG) as HTMLElement)
+    // captured before anything is asserted, so a fixture is written even when a rule is broken (the Chromium check needs one)
+    captureRender('exercise-picker-w11-long-name', document.body)
+    const line = screen.getByText(`The set left moves to ${LONG}. Next week's plan stays the same.`)
+    expect(line.style.overflowWrap).toBe('anywhere')
+    expect(within(dialog()).getByText(`${LONG} · TODAY ONLY`).style.overflowWrap).toBe('anywhere')
+    const name = radios().find((row) => rowName(row) === LONG) as HTMLElement
+    expect((name.children[0].children[0] as HTMLElement).style.overflowWrap).toBe('anywhere')
+  })
+
+  it('W14: the title names the exercise being added, and the line under it, in one long word each', async () => {
+    library = [LAT, ex('long', LONG, 'back')]
+    renderWithPage(
+      add({ eyebrow: 'PULL 1 · TODAY', title: 'Add an exercise', showGroup: false, onCreate: noop, confirmLabel: 'ADD EXERCISE', confirmNote: (picked) => `Only today's session changes. ${picked?.name ?? ''}` }),
+      'PULL 1',
+    )
+    await list()
+    fireEvent.click(button(`Add ${LONG}`))
+    captureRender('exercise-picker-w14-long-name', document.body)
+    const heading = screen.getByRole('heading', { level: 2 })
+    expect(heading.textContent).toBe(`Add ${LONG}?`)
+    expect(heading.style.overflowWrap).toBe('anywhere')
+    const line = screen.getByText(`Only today's session changes. ${LONG}`)
+    expect(line.style.overflowWrap).toBe('anywhere')
+  })
+
+  it("the reason a create failed wraps too: a server message can be one long word", async () => {
+    service.createExercise.mockRejectedValue({ message: LONG })
+    library = [LAT, ROW]
+    renderPicker(swap({ title: 'Swap for what?', showGroup: false, onCreate: noop, confirmLabel: 'SWAP FOR TODAY' }))
+    await list()
+    fireEvent.click(button('+ NEW BACK EXERCISE'))
+    type('Kneeling Pulldown')
+    fireEvent.click(button('CREATE'))
+    const reason = await screen.findByText(LONG)
+    expect(reason.style.overflowWrap).toBe('anywhere')
   })
 })

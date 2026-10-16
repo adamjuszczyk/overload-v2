@@ -6,11 +6,9 @@ NUMBER
 RANGE
 AMRAP
 FROM
-8
 −
 +
 TO
-10
 −
 +
 Use for all 3 sets of Lat Pulldown

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { draftFromRunCopy, type Op, type ProgramEdit, type RunChangeStatus } from './programChange'
+import { draftFromRunCopy, type ProgramEdit, type RunChangeStatus } from './programChange'
 import {
   type Db,
   type World,
@@ -56,36 +56,20 @@ const saveOf = (w: World, edit: ProgramEdit, statuses: Record<string, RunChangeS
   return { ...plan, after: applyOpsToDb(w.db, plan.ops) }
 }
 
-// The link a swap should store, read from the draft and the ops: each swapped-in row → the row it replaced. NOTHING STORES
-// IT YET (v2_program_exercises has no column for it; DECISIONS 143 needs one, a migration outside chunk 45), so this stands
-// in for it; when the column exists, the run copy's rows carry it and this goes.
-function swapLinks(edit: ProgramEdit, ops: readonly Op[]): Map<string, string> {
-  const links = new Map<string, string>()
-  for (const w of edit.workouts) {
-    for (const e of w.exercises) {
-      if (e.kind !== 'swapped') continue
-      const made = inserts(ops, 'v2_program_exercises').find((o) => o.row.workout_day_id === w.id && o.row.exercise_id === e.exerciseId)
-      if (made) links.set(made.row.id, e.replaces)
-    }
-  }
-  return links
-}
-
-// The run copy of one workout as autoCopy reads it: every row of it (the removed ones too), with the swap links if given.
-function runCopyOfWorkout(db: Db, w: World, workoutId: string, links: ReadonlyMap<string, string> = new Map()): RunCopy {
+// The run copy of one workout as autoCopy reads it: every row of it (the removed ones too), each with the row it replaced.
+function runCopyOfWorkout(db: Db, w: World, workoutId: string): RunCopy {
   const rc = runCopyOf(db, w.programId, w.mesocycleId)
-  const ids = new Set(rc.exercises.filter((e) => e.workoutDayId === workoutId).map((e) => e.id))
+  const rows = db.v2_program_exercises.filter((e) => e.workout_day_id === workoutId)
+  const ids = new Set(rows.map((e) => e.id))
   return {
-    exercises: rc.exercises
-      .filter((e) => e.workoutDayId === workoutId)
-      .map((e) => ({
-        id: e.id,
-        exerciseId: e.exerciseId,
-        position: e.position,
-        weekOnly: e.weekOnly,
-        removedAt: e.removedAt,
-        ...(links.has(e.id) ? { replacesProgramExerciseId: links.get(e.id)! } : {}),
-      })),
+    exercises: rows.map((e) => ({
+      id: e.id,
+      exerciseId: e.exercise_id,
+      position: e.position,
+      weekOnly: e.week_only,
+      removedAt: e.removed_at,
+      replacesProgramExerciseId: e.replaces_program_exercise_id,
+    })),
     sets: rc.sets.filter((s) => ids.has(s.programExerciseId)),
   }
 }
@@ -113,8 +97,8 @@ function plannedWeekRows(db: Db, planId: string): PlannedWeekRows {
 }
 
 // Week 3's Pull, copied from week 2's.
-function weekThree(db: Db, w: World, links?: ReadonlyMap<string, string>) {
-  return autoCopy({ planningType: 'week_dependent', weekNumber: 3, runCopy: runCopyOfWorkout(db, w, 'pull', links), priorWeeks: [plannedWeekRows(db, 'p2-pull')] })
+function weekThree(db: Db, w: World) {
+  return autoCopy({ planningType: 'week_dependent', weekNumber: 3, runCopy: runCopyOfWorkout(db, w, 'pull'), priorWeeks: [plannedWeekRows(db, 'p2-pull')] })
 }
 
 const headsOf = (r: ReturnType<typeof weekThree>, programExerciseId: string) => r.sets.filter((s) => s.programExerciseId === programExerciseId && s.parentSourceId === null)
@@ -135,6 +119,13 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     expect(summary.keptSessions.map((k) => [k.weekPlanId, k.status])).toEqual([['p2-pull', 'done']])
     expect(ops.some((o) => 'row' in o && (o.row as { week_plan_id?: string }).week_plan_id?.endsWith('-pull'))).toBe(false)
     expect(summary.startWeek).toBe(3) // Push's week 3 is the next session to start
+  })
+
+  it('the swap\'s new row names the row it replaced; the added row and every kept row name none', () => {
+    const w = pullWorld()
+    const { ops } = saveOf(w, edit(w))
+    const rows = inserts(ops, 'v2_program_exercises').map((o) => [o.row.exercise_id, o.row.replaces_program_exercise_id])
+    expect(rows).toEqual([['ex-cable', 'pe-pd'], ['ex-curl', null]])
   })
 
   it('removed: next week\'s Pull has no Face Pull and none of its sets', () => {
@@ -169,12 +160,12 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     expect(r.sets.some((s) => s.programExerciseId === curl.id)).toBe(false)
   })
 
-  it('swapped: Cable Row takes Lat Pulldown\'s sets — a warmup, a working set, a dropset head and its drop — and Lat Pulldown is gone (with the swap link, which nothing stores yet)', () => {
+  it('swapped: Cable Row takes Lat Pulldown\'s sets — a warmup, a working set, a dropset head and its drop — and Lat Pulldown is gone (the swap\'s new row names the row it replaced)', () => {
     const w = pullWorld()
     const d = edit(w)
     const { ops, after } = saveOf(w, d)
     const cable = inserts(ops, 'v2_program_exercises').find((o) => o.row.exercise_id === 'ex-cable')!.row
-    const r = weekThree(after, w, swapLinks(d, ops))
+    const r = weekThree(after, w)
     expect(r.sets.filter((s) => s.programExerciseId === cable.id).map((s) => [s.sourceId, s.setNumber, s.stageIndex, s.isWarmup, s.stageKind, s.isDropset])).toEqual([
       ['p2-pull-pe-pd-s1', 1, 0, true, null, false],
       ['p2-pull-pe-pd-s2', 2, 0, false, null, false],
@@ -190,7 +181,7 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     const w = pullWorld()
     const d = edit(w)
     const { ops, after } = saveOf(w, d)
-    const r = weekThree(after, w, swapLinks(d, ops))
+    const r = weekThree(after, w)
     const idOf = (exerciseId: string) => inserts(ops, 'v2_program_exercises').find((o) => o.row.exercise_id === exerciseId)!.row.id
     expect(r.exercises.map((e) => e.programExerciseId)).toEqual([idOf('ex-cable'), 'pe-seat', idOf('ex-curl')])
   })
@@ -205,9 +196,9 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
   it('the same when the session is in progress, not done: the save leaves it alone too', () => {
     const w = pullWorld()
     const d = edit(w)
-    const { ops, after, summary } = saveOf(w, d, { 'p2-pull': 'in_progress' })
+    const { after, summary } = saveOf(w, d, { 'p2-pull': 'in_progress' })
     expect(summary.keptSessions.map((k) => [k.weekPlanId, k.status])).toEqual([['p2-pull', 'in_progress']])
-    const r = weekThree(after, w, swapLinks(d, ops))
+    const r = weekThree(after, w)
     expect(r.exercises).toHaveLength(3)
     expect(r.exercises.map((e) => e.programExerciseId)).not.toContain('pe-face')
   })
@@ -223,11 +214,10 @@ describe('a week-dependent week copied after a save follows the run copy\'s list
     const w = pullWorld()
     planSession(w, 'p3-pull', 'pull', 3) // week 3 is planned and not started: the save changes it
     const d = edit(w)
-    const { ops, after, summary } = saveOf(w, d)
+    const { after, summary } = saveOf(w, d)
     expect(summary.changedSessions.map((s) => s.weekPlanId)).toEqual(['p3-pull'])
-    const links = swapLinks(d, ops)
-    const fromThree = autoCopy({ planningType: 'week_dependent', weekNumber: 4, runCopy: runCopyOfWorkout(after, w, 'pull', links), priorWeeks: [plannedWeekRows(after, 'p2-pull'), plannedWeekRows(after, 'p3-pull')] })
-    const fromTwo = autoCopy({ planningType: 'week_dependent', weekNumber: 4, runCopy: runCopyOfWorkout(after, w, 'pull', links), priorWeeks: [plannedWeekRows(after, 'p2-pull')] })
+    const fromThree = autoCopy({ planningType: 'week_dependent', weekNumber: 4, runCopy: runCopyOfWorkout(after, w, 'pull'), priorWeeks: [plannedWeekRows(after, 'p2-pull'), plannedWeekRows(after, 'p3-pull')] })
+    const fromTwo = autoCopy({ planningType: 'week_dependent', weekNumber: 4, runCopy: runCopyOfWorkout(after, w, 'pull'), priorWeeks: [plannedWeekRows(after, 'p2-pull')] })
     expect(fromThree.source).toEqual({ kind: 'week', weekNumber: 3 })
     expect(fromTwo.source).toEqual({ kind: 'week', weekNumber: 2 })
     expect(fromThree.exercises).toEqual(fromTwo.exercises)

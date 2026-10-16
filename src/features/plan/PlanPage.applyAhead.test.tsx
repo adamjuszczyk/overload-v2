@@ -120,6 +120,8 @@ vi.mock('../library/useExercises', () => ({
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.currentPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.allPlans, isLoading: false }),

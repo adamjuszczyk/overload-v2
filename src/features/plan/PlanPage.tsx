@@ -6,6 +6,7 @@ import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exe
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
 import { hasScheduledWorkout } from '../programs/hasSchedule'
+import { scheduleForWeek } from '../programs/runSchedule'
 import {
   useWeekPlans,
   useAllWeekPlans,
@@ -57,6 +58,7 @@ import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import { useDoneWeekPlanIds } from './useDoneWeekPlanIds'
+import { useRunSchedule } from './useRunSchedule'
 import MakeWeekDefault from './MakeWeekDefault'
 import { canMakeWeekDefault } from './makeWeekDefault'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE, DiffDot } from './planMenu'
@@ -313,9 +315,17 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // lingers once a fresh one is in flight.
   const [weekDeloadNotice, setWeekDeloadNotice] = useState<string | null>(null)
 
-  const { data: workoutDays = [], isLoading: daysLoading } = useWorkoutDays(
+  const { data: workoutDays = [], isLoading: workoutDaysLoading } = useWorkoutDays(
     activeMeso?.programId ?? '',
   )
+  // Chunk 50 (SPEC [1.2] Programs and runs → "Weekdays storage"): which workout is on which weekday is the schedule IN
+  // FORCE FOR THE VIEWED WEEK, not the run copy's (which holds the newest days once CHANGE THE PROGRAM has moved some,
+  // chunk 51b). The run's schedule rows are read once (`['v2_runSchedules', mesoId]`, shared with Today); the page waits
+  // for them like it waits for the workouts, because the run copy's days drawn for a week that had others would put a
+  // MOVE THIS SESSION on the wrong date. A sequence run has no weekday schedule and no rows.
+  const { data: scheduleRows } = useRunSchedule(activeMeso?.id)
+  const scheduleLoading = !isSequence && !!activeMeso && scheduleRows === undefined
+  const daysLoading = workoutDaysLoading || scheduleLoading
   const { data: weekPlans = [], isLoading: plansLoading } = useWeekPlans(
     activeMeso?.id ?? '',
     viewWeek,
@@ -353,7 +363,9 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // text if that workout is shared, the same wording convention chunk 21
   // will use" — detectSharedWeekdayWorkouts only ever returns a group for a
   // workout actually on 2+ weekdays, so membership alone is "is shared".
-  const sharedGroups = program ? detectSharedWeekdayWorkouts(program.schedule) : []
+  // Chunk 50: both are read from the viewed week's schedule (weekSchedule, below).
+  const weekSchedule = program && !isSequence ? scheduleForWeek(scheduleRows ?? [], program.schedule, viewWeek) : undefined
+  const sharedGroups = weekSchedule ? detectSharedWeekdayWorkouts(weekSchedule) : []
   const sharedWorkoutDayIds = new Set(sharedGroups.map((g) => g.workoutDayId))
   // Chunk 21 (reviewer's note 2 — "the marking UI says so where the mark is
   // set, e.g. 'Marks Mon, Tue, Wed, Thu, Fri — they share one plan'") — the
@@ -361,12 +373,11 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // sharedWorkoutDayIds already carries for the apply-ahead banner above.
   const sharedWeekdaysByWorkoutDayId = new Map(sharedGroups.map((g) => [g.workoutDayId, g.weekdays]))
 
-  const schedule = program?.schedule
-  const scheduledDays = schedule
-    ? DAYS_ORDER.filter((dow) => !!schedule[dow])
+  const scheduledDays = weekSchedule
+    ? DAYS_ORDER.filter((dow) => !!weekSchedule[dow])
         .map((dow) => ({
           dow,
-          workoutDay: workoutDays.find((d) => d.id === schedule[dow]),
+          workoutDay: workoutDays.find((d) => d.id === weekSchedule[dow]),
         }))
         .filter((x): x is { dow: DayOfWeek; workoutDay: WorkoutDay } => !!x.workoutDay)
     : []
@@ -538,7 +549,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               planner (PlannerPage, /program/:id). */}
           <button
             onClick={() => navigate('/program')}
-            style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--base)', cursor: 'pointer' }}
+            style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--on-accent)', cursor: 'pointer' }}
           >
             START A PROGRAM →
           </button>
@@ -602,7 +613,7 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               <ChevronLeft size={14} />
             </button>
             <div style={{ minWidth: 76, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: viewWeek === currentWeek ? 'var(--accent)' : 'var(--surface-overlay)', border: `1px solid ${viewWeek === currentWeek ? 'transparent' : 'var(--border-strong)'}`, borderRadius: 8, padding: '0 10px' }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--base)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, letterSpacing: '1.5px', color: viewWeek === currentWeek ? 'var(--on-accent)' : (isPast ? 'var(--text-dim)' : 'var(--text-muted)') }}>
                 {isSequence ? 'CYCLE' : 'WEEK'} {viewWeek}
               </span>
             </div>
@@ -1560,7 +1571,7 @@ function SegmentBar<T extends string>({
         <button
           key={segment.id}
           onClick={() => onSelect(segment.id)}
-          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--base)' : 'var(--text-muted)' }}
+          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--on-accent)' : 'var(--text-muted)' }}
         >
           {segment.label}
         </button>

@@ -138,7 +138,7 @@ export default function SessionComplete({ sessionId, onBack }: SessionCompletePr
           className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
           style={{
             backgroundColor: 'var(--accent)',
-            color: 'var(--base)',
+            color: 'var(--on-accent)',
             fontFamily: 'var(--font-mono)',
             opacity: completeSession.isPending ? 0.6 : 1,
           }}

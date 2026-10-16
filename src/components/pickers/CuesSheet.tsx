@@ -160,7 +160,7 @@ const SUBMIT_STYLE: CSSProperties = {
   borderRadius: 10,
   borderWidth: 0,
   background: 'var(--accent)',
-  color: 'var(--base)',
+  color: 'var(--on-accent)',
   fontFamily: 'var(--font-display)',
   fontWeight: 800,
   fontSize: 15,
@@ -185,7 +185,7 @@ function rowStyle(on: boolean): CSSProperties {
   }
 }
 
-/** The 20 px tick box of a row (text on the accent is `--base`, as on every accent button: DECISIONS 128 (g)). */
+/** The 20 px tick box of a row (text on the accent is `--on-accent`, the boards' near-black: DECISIONS 129 (d), Adam 2026-10-15). */
 function TickBox({ on }: { on: boolean }) {
   return (
     <span
@@ -200,7 +200,7 @@ function TickBox({ on }: { on: boolean }) {
         borderStyle: 'solid',
         borderColor: on ? 'var(--accent)' : 'var(--border-strong)',
         background: on ? 'var(--accent)' : 'var(--surface)',
-        color: 'var(--base)',
+        color: 'var(--on-accent)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

@@ -2,8 +2,17 @@ import { useState } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useSettings, useUpdateSettings, useUpdateDeloadRules } from './useSettings'
 import { useAuth } from '../auth/useAuth'
-import type { UserSettings } from '../../types'
+import type { StageVolumeRule, UserSettings } from '../../types'
 import DeloadRulesEditor from './DeloadRulesEditor'
+
+// SPEC [1.2] Settings: "Drops and stages count as" — whole set = 1 / each drop
+// = 1 / each drop = ½. The values are v2_user_settings.stage_volume_rule's
+// check (042); the labels are TASKS-1.2 chunk 49's.
+const STAGE_VOLUME_OPTIONS: { value: StageVolumeRule; label: string }[] = [
+  { value: 'whole', label: 'WHOLE SET = 1' },
+  { value: 'each', label: 'EACH DROP = 1' },
+  { value: 'half', label: 'EACH DROP = ½' },
+]
 
 const ACCENT_SWATCHES: { colour: string; label: string }[] = [
   { colour: '#FF8C42', label: 'ORANGE' },
@@ -69,6 +78,13 @@ export default function SettingsPage() {
     letterSpacing: '0.1em',
   }
 
+  // The one-line explanation under a Settings row (chunk 49's two rows): muted
+  // sentence text in the body font, where labelStyle is the uppercase mono label.
+  const explanationStyle = {
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--font-sans)',
+  }
+
   const sectionTitle = (text: string) => (
     <p className="text-xs font-bold tracking-widest mb-3" style={labelStyle}>
       {text}
@@ -93,7 +109,7 @@ export default function SettingsPage() {
               // 2px under this app's 44px touch-target convention.
               minHeight: 44,
               backgroundColor: current === value ? 'var(--accent)' : 'var(--surface-raised)',
-              color: current === value ? 'var(--base)' : 'var(--text-muted)',
+              color: current === value ? 'var(--on-accent)' : 'var(--text-muted)',
               border: `1px solid ${current === value ? 'transparent' : 'var(--border)'}`,
               fontFamily: 'var(--font-mono)',
               letterSpacing: '0.08em',
@@ -274,6 +290,22 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* ── Workout ──────────────────────────────────────────────────── */}
+        {/* v2_user_settings.log_in_order (migration 042, chunk 49; SPEC [1.2]
+            Settings: "Log sets in order", on by default; off means LOG never
+            asks). TASKS puts it "in WORKOUT (next to the rest timer rows)";
+            the page has no such group, so it is a section of its own right
+            after REST TIMER. Chunk 60 reads the value (the lock). */}
+        <section>
+          {sectionTitle('WORKOUT')}
+          <div className="rounded-xl p-4" style={cardStyle}>
+            {toggle(settings.logInOrder, (v) => set({ logInOrder: v }), 'Log sets in order')}
+            <p className="text-xs" style={{ ...explanationStyle, marginTop: 6 }}>
+              Off: LOG never asks.
+            </p>
+          </div>
+        </section>
+
         {/* ── Set Timing ───────────────────────────────────────────────── */}
         <section>
           {sectionTitle('SET TIMING')}
@@ -360,21 +392,25 @@ export default function SettingsPage() {
         </section>
 
         {/* ── Planning ─────────────────────────────────────────────────── */}
-        {/* v2_user_settings.week_start (chunk 8, SPEC "Weeks and copying")
-            — a week-dependent run's weeks beyond week 1 either copy the
-            last planned week automatically (the default) or start empty,
-            left for "Copy last week" to fill in by hand. No effect on a
-            stable program, which always re-derives its volume from the
-            run's own copy. */}
+        {/* v2_user_settings.stage_volume_rule (migration 042, chunk 49; SPEC
+            [1.2] Settings: "Drops and stages count as", default each drop =
+            ½). G51: the VOLUME sheet only, so the line says so.
+            "New week starts" (v2_user_settings.week_start, chunk 8) is gone
+            (SPEC [1.2]: "Removes 'New week starts'; users who had it on
+            'empty' get auto-copy, with no message"): nothing shows or writes
+            it any more. */}
         <section>
           {sectionTitle('PLANNING')}
           <div className="rounded-xl p-4" style={cardStyle}>
-            <p className="text-xs mb-2.5" style={labelStyle}>NEW WEEK STARTS</p>
+            <p className="text-xs mb-2.5" style={labelStyle}>DROPS AND STAGES COUNT AS</p>
             {chipRow(
-              [{ value: 'copy', label: 'COPY' }, { value: 'empty', label: 'EMPTY' }],
-              settings.weekStart,
-              (weekStart) => set({ weekStart }),
+              STAGE_VOLUME_OPTIONS,
+              settings.stageVolumeRule,
+              (stageVolumeRule) => set({ stageVolumeRule }),
             )}
+            <p className="text-xs" style={{ ...explanationStyle, marginTop: 10 }}>
+              For Plan's VOLUME sheet. History and Progress count as before.
+            </p>
           </div>
         </section>
 

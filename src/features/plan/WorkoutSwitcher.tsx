@@ -62,7 +62,7 @@ export default function WorkoutSwitcher({
                 fontSize: 8,
                 fontWeight: 700,
                 letterSpacing: '1.5px',
-                color: active ? 'var(--base)' : 'var(--text-muted)',
+                color: active ? 'var(--on-accent)' : 'var(--text-muted)',
               }}
             >
               {DOW_SHORT[dow]}
@@ -72,7 +72,7 @@ export default function WorkoutSwitcher({
                 fontFamily: 'var(--font-display)',
                 fontWeight: 800,
                 fontSize: 12,
-                color: active ? 'var(--base)' : 'var(--text-primary)',
+                color: active ? 'var(--on-accent)' : 'var(--text-primary)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
