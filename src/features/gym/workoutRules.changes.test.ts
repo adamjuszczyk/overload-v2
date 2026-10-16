@@ -189,8 +189,8 @@ function walker(seed: number) {
 }
 
 const WALK_CARDS = (added: Record<string, number>, drafts: readonly SetDraftKey[]): OrderExercise[] => [
-  card('bench', 'w w n n d2 n', { added: added.bench, drafts }),
-  card('row', 'n n n', { added: added.row, drafts }),
+  card('bench', 'w w d2 n n d1', { added: added.bench, drafts }),
+  card('row', 'n d1 n', { added: added.row, drafts }),
   card('lat', 'n d1 n', { added: added.lat, drafts }),
   card('curl', 'n n n'),
 ]
@@ -241,8 +241,9 @@ function walk(seed: number, steps: number): string[] {
   for (let step = 0; step < steps; step++) {
     const view = viewOf(orderNow(), server.logs, server.held())
     const rows = view.rows
-    const op = rng.pick(['logNext', 'logNext', 'logNext', 'log', 'type', 'type', 'delete', 'delete', 'add', 'unlogDrop', 'unlogDrop', 'unlogSet', 'unlogSet'] as const)
-    const open = rows.filter((r) => r.state === 'unlogged')
+    const op = rng.pick(['logNext', 'logNext', 'logNext', 'logNext', 'logNext', 'log', 'type', 'type', 'delete', 'delete', 'add', 'unlogDrop', 'unlogDrop', 'unlogSet', 'unlogSet'] as const)
+    // a drop can be logged once its set is (a row of a set still to do is open too, and logging it would write nothing)
+    const open = rows.filter((r) => r.state === 'unlogged' && (r.kind !== 'stage' || rows.some((h) => h.key === r.headKey && h.logId !== null)))
     const heads = rows.filter((r) => r.kind !== 'stage' && r.state !== 'skipped')
     const dropDraftOf = (row: ResolvedRow) => {
       if (row.draftPosition !== null) drafts = drafts.filter((d) => !('localId' in d && d.exerciseId === row.exerciseId && d.position === row.draftPosition))
