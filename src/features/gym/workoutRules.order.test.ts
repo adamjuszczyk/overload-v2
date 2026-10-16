@@ -217,6 +217,18 @@ describe('resolveRows: an open set keeps its number and its place (DECISIONS 151
     }
   })
 
+  it('every way that five planned sets can be logged, skipped or open, each holding the number of its place: every row reads its position', () => {
+    const states = ['logged', 'skipped', 'open'] as const
+    const five = orderOf([card('bench', 'n n n n n')])
+    for (let combo = 0; combo < 3 ** 5; combo++) {
+      const here = [0, 1, 2, 3, 4].map((i) => states[Math.floor(combo / 3 ** i) % 3])
+      const logs = here.flatMap((state, i) => (state === 'open' ? [] : [headLog('bench', i + 1, { skipped: state === 'skipped' })]))
+      const rows = rowsOf(five, logs)
+      expect(rows.map((r) => r.number), here.join(' ')).toEqual([1, 2, 3, 4, 5])
+      expect(rows.map((r) => (r.state === 'unlogged' ? 'open' : r.state)), here.join(' ')).toEqual(here)
+    }
+  })
+
   it('a skipped set in the middle holds its number and the open ones keep theirs', () => {
     const rows = rowsOf(plan, [headLog('bench', 2, { skipped: true }), headLog('bench', 4)])
     expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02×', 'bench 03·', 'bench 04✓'])

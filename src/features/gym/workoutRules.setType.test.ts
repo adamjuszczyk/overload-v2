@@ -799,6 +799,29 @@ describe('a working set made a warmup and then Normal again is back where it was
     expect(end.rows).toEqual(start.rows)
   })
 
+  it('any one of four sets, logged or open, with the others logged, skipped or open: each switch keeps the numbers 1 to 3 in order, and back is where it was', () => {
+    const states = ['logged', 'skipped', 'open'] as const
+    for (let target = 1; target <= 4; target++) {
+      for (const own of ['logged', 'open'] as const) {
+        for (let combo = 0; combo < 3 ** 3; combo++) {
+          const others = [0, 1, 2].map((i) => states[Math.floor(combo / 3 ** i) % 3])
+          const here = [...others.slice(0, target - 1), own, ...others.slice(target - 1)] as Array<(typeof states)[number]>
+          const logs = here.flatMap((state, i) => (state === 'open' ? [] : [headLog('bench', i + 1, { skipped: state === 'skipped' })]))
+          const title = `${here.join(' ')}, set ${target} to Warmup and back`
+          const { start, middle, end } = roundTrip({ cards: [card('bench', 'n n n n')], logs, key: `set:bench.${target}` })
+          expect(end.logs, title).toEqual(start.logs)
+          expect(end.rows, title).toEqual(start.rows)
+          // while it is a warmup the three working sets read 01 to 03, each logged one stored as that
+          const workingNumbers = middle.rows.filter((r) => !r.includes(' W')).map((r) => Number(r.split(' ')[1].slice(0, 2)))
+          expect(workingNumbers, title).toEqual([1, 2, 3])
+          const storedWorking = middle.logs.filter(([, , warmup]) => !warmup).map(([, n]) => n).sort()
+          const expectedStored = here.flatMap((state, i) => (i === target - 1 || state === 'open' ? [] : [i + 1 - (i + 1 > target ? 1 : 0)]))
+          expect(storedWorking, title).toEqual(expectedStored.sort())
+        }
+      }
+    }
+  })
+
   it('the same for each state the set before it can be in, and for the set being first, middle or last of four', () => {
     const states = ['logged', 'skipped', 'open'] as const
     for (const before of states) {

@@ -415,6 +415,23 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
     expect(deleteEffects(rowKeyed(turned, 'set:bench.2'), turned)).toEqual(deleteEffects(rowKeyed(forward, 'set:bench.2'), forward))
   })
 
+  it('any one of four sets deleted, whatever state each is in: the rest read 01 to 03 in order, and what is logged is stored as that', () => {
+    const states = ['logged', 'skipped', 'open'] as const
+    for (let combo = 0; combo < 3 ** 4; combo++) {
+      const here = [0, 1, 2, 3].map((i) => states[Math.floor(combo / 3 ** i) % 3])
+      const logs = here.flatMap((state, i) => (state === 'open' ? [] : [headLog('bench', i + 1, { skipped: state === 'skipped' })]))
+      for (let gone = 1; gone <= 4; gone++) {
+        const { rows, server } = deleteOn({ cards: [card('bench', 'n n n n')], logs, key: `set:bench.${gone}` })
+        const left = here.filter((_, i) => i !== gone - 1)
+        const title = `${here.join(' ')}, set ${gone} deleted`
+        expect(rows.map((r) => r.number), title).toEqual([1, 2, 3])
+        expect(rows.map((r) => (r.state === 'unlogged' ? 'open' : r.state)), title).toEqual(left)
+        const stored = left.flatMap((state, i) => (state === 'open' ? [] : [i + 1]))
+        expect(server.logs.map((l) => l.setNumber).sort(), title).toEqual(stored)
+      }
+    }
+  })
+
   it('an open warmup is not one of the working numbers: deleting it moves nothing', () => {
     const logs = [headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
     const { effects, rows } = deleteOn({ cards: [card('bench', 'w n n')], logs, key: 'set:bench.1' })
