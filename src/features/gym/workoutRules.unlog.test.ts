@@ -450,14 +450,16 @@ describe('an added set unlogged keeps its number from its draft, and its place a
     expect(resolveRows(orderOf([cardWith([])]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05✓'])
   })
 
-  it('the last added set (05) and the first (03): each keeps its place, at the end and at the start of the added sets', () => {
-    for (const [k, expected] of [
-      [3, ['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·']],
-      [1, ['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05✓']],
-    ] as const) {
-      const { server, drafts } = unlogAdded(k)
-      expect(resolveRows(orderOf([cardWith(drafts)]), server.logs, server.held()).map(brief), `added ${k}`).toEqual(expected)
+  it('the last added set (05), told apart from the middle one: it is the last row, at its number, with or without its draft', () => {
+    const { server, drafts } = unlogAdded(3)
+    for (const kept of [drafts, [] as SetDraftKey[]]) {
+      expect(resolveRows(orderOf([cardWith(kept)]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
     }
+  })
+
+  it('the first added set (03): it stays ahead of the added sets after it, at its number', () => {
+    const { server, drafts } = unlogAdded(1)
+    expect(resolveRows(orderOf([cardWith(drafts)]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05✓'])
   })
 
   it('the control: without the draft (another phone, G46) the set is a new slot that takes the number that is free — the same place, with no draft to give back', () => {
