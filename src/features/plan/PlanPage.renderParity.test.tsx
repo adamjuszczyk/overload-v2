@@ -107,6 +107,12 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // new line under MARK WEEK AS DELOAD (the rules in effect) isn't rendered either:
 // an unset feature shows nothing. PlanPage.programTabRemoved.test.tsx proves that line,
 // and the page without a bar, at the screen layer.
+//
+// Chunk 51a re-capture (SPEC Plan screen [1.2] → Bottom): the week panel ends in the CHANGE THE PROGRAM button. The fixture file
+// gained exactly that one <button> (an inserted 842 characters, nothing removed: the button, its pencil icon and the text
+// "CHANGE THE PROGRAM FROM WEEK 1" — week 1 because this fixture's run starts today and nothing in it is done), at the end of the
+// panel; every other character is where it was. PlanPage.changeProgramButton.test.tsx proves the button, its number and where it
+// goes at the screen layer.
 
 afterEach(() => cleanup())
 
