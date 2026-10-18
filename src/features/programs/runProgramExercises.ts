@@ -158,6 +158,36 @@ export async function fetchRunProgramExercises(workoutDayId: string): Promise<Pr
   return (data as DbProgramExerciseJoin[]).map(toProgramExercise)
 }
 
+// ─── The run copy's every row (CHANGE THE PROGRAM) ──────────────────────────
+// Chunk 51a (TASKS-1.2): CHANGE THE PROGRAM edits the run's copy and `planProgramChange` (chunk 45) takes the copy's rows
+// as they are, "every row of it: the live ones are the program, a `week_only` or `removed_at` row is not part of it"
+// (`ProgramChangeRunCopy`). The rule above is therefore not applied here: the module filters. Every row of the given workout
+// days comes back, the exercise joined, each carrying the two flags the program tab's list is cut by. Paged (ordered by id,
+// `.range()` until a short page): a run copy only ever gains rows (a removal is soft, a 1.1 swap in a week adds a week-only
+// row), so it is not bounded by the program's size, and every read of a table that grows pages (RULES.md, Checks that lied
+// #31).
+const RUN_COPY_PAGE = 500
+
+export type RunCopyExerciseRowRead = ProgramExercise & { weekOnly: boolean; removedAt: string | null }
+
+export async function fetchRunCopyExerciseRows(workoutDayIds: readonly string[]): Promise<RunCopyExerciseRowRead[]> {
+  if (workoutDayIds.length === 0) return []
+  const out: RunCopyExerciseRowRead[] = []
+  for (let from = 0; ; from += RUN_COPY_PAGE) {
+    const { data, error } = await supabase
+      .from('v2_program_exercises')
+      .select('*, exercises(*)')
+      .in('workout_day_id', [...workoutDayIds])
+      .order('id', { ascending: true })
+      .range(from, from + RUN_COPY_PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as Array<DbProgramExerciseJoin & { week_only?: boolean | null; removed_at?: string | null }>
+    out.push(...rows.map((row) => ({ ...toProgramExercise(row), weekOnly: row.week_only === true, removedAt: row.removed_at ?? null })))
+    if (rows.length < RUN_COPY_PAGE) break
+  }
+  return out
+}
+
 // ─── Week-only slot creation (swap / add) ──────────────────────────────────
 
 export interface NewWeekOnlySlot {
