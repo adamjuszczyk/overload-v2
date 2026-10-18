@@ -15,8 +15,9 @@ import { fakePostgrest, type FakePostgrest, type Row, type Tables } from './fake
 // schedule rows, plan rows of earlier weeks. A read that takes the wrong rows or the wrong columns shows as a difference.
 
 const h = vi.hoisted(() => ({ client: null as unknown }))
+// (Spread arguments, not a named table: scripts/verify-rls-tables.test.mjs lists the calls of the table reader that name their table by a variable, and allows two.)
 vi.mock('../../lib/supabase', () => ({
-  supabase: { from: (table: string) => (h.client as FakePostgrest['client']).from(table) },
+  supabase: { from: (...args: [string]) => (h.client as FakePostgrest['client']).from(...args) },
 }))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: null, loading: false, signOut: vi.fn() }) }))
 

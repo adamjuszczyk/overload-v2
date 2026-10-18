@@ -23,6 +23,7 @@ import {
   type World,
 } from './programChange.testutil'
 import { stableWorld, weekDependentWorld } from './programChange.worlds.testutil'
+import { markDeload } from './programChange.deload.testutil'
 import { draftFromRunCopy, planProgramChange, type Op, type RunChangeStatus } from './programChange'
 import type { ChangeProgramSource } from './changeProgramService'
 
@@ -255,6 +256,29 @@ describe('SAVE sends exactly the op list planProgramChange returns for the draft
     expect(week3.map((r) => db.v2_program_exercises.find((p) => p.id === r.program_exercise_id)!.exercise_id)).toEqual(['ex-machine', 'ex-curl'])
     expect(db.v2_week_plan_sets.filter((s) => s.week_plan_id === 'p3-pull' && s.program_exercise_id === live[1].id)).toEqual([])
     expect(ops.some((o) => 'id' in o && (o.id === 'p2-pull' || o.id === 'p2-push'))).toBe(false)
+  })
+
+  it("a not-started session marked deload brings its saved pre-deload plan: the list holds the update of that plan row's deload_restore (DECISIONS 142)", async () => {
+    const w = weekDependentWorld()
+    await markDeload(w.db, 'p3-pull') // week 3's Pull, not started: its sets are halved and the plan it had is kept in deload_restore
+    useWorld(w)
+    await open()
+    const before = world
+    chooseWorkout(/^Pull/)
+    click('Swap Lat Pulldown')
+    await pickInSheet('Swap Lat Pulldown', 'Swap to Machine Pulldown')
+    await save()
+
+    const ops = sent()
+    const copies = updates(ops, 'v2_week_plans')
+    // one session carries a saved plan and is not started; Tuesday's (in progress) and every other plan row have none to write
+    expect(copies.map((o) => o.id)).toEqual(['p3-pull'])
+    expect(Object.keys(copies[0].patch)).toEqual(['deload_restore'])
+    expect(ops).toEqual(expectedFor(before, (e) => swapExerciseIn(e, 'pull', 'pe-pd', 'ex-machine')))
+    // the plan UNMARK writes back no longer names the exercise the swap replaced, and the stand-in for 043 took the list
+    const saved = world.db.v2_week_plans.find((p) => p.id === 'p3-pull')!.deload_restore!
+    expect(saved.some((e) => e.programExerciseId === 'pe-pd')).toBe(false)
+    expect(saved.length).toBeGreaterThan(0)
   })
 
   it('a list it carries is a list the tables take: it is sent once, under p_ops, to v2_apply_ops', async () => {
