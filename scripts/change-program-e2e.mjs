@@ -360,7 +360,7 @@ export const BREAKS = [
   { id: 'E12', title: "write the run's schedule", fails: ['A13'], mutate: (ops, ctx) => [...ops, { op: 'update', table: 'v2_programs', id: ctx.runProgramId, patch: { schedule: {} } }] },
 ]
 export const CONTROLS = [
-  { id: 'C01', title: 'a no-op: the rename written twice, which changes nothing', mutate: (ops) => [...ops, ...ops.filter((o) => o.table === 'v2_workout_days')] },
+  { id: 'C01', control: true, title: 'a no-op: the rename written twice, which changes nothing', mutate: (ops) => [...ops, ...ops.filter((o) => o.table === 'v2_workout_days')] },
 ]
 
 // ─── Running it ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -548,7 +548,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   main().then(
     (code) => process.exit(code),
     (e) => {
-      console.error(`change-program-e2e: ${String(e?.message ?? e).split('\n')[0]}`)
+      console.error(`change-program-e2e: ${process.env.CHANGE_PROGRAM_E2E_DEBUG ? e?.stack : String(e?.message ?? e).split('\n')[0]}`)
       process.exit(2)
     },
   )
