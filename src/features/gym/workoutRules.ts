@@ -56,7 +56,8 @@
 //     (not logged, no draft) in the order they were added, and a row says which it is (`addedIndex`, the index into that
 //     list). The type belongs to the set and not to its row key (`added:<card>:<n>`, which moves when numbers do). The
 //     card removes an entry when its set is logged or deleted; an entry that is missing reads Normal, which is what ADD
-//     SET gives, and an extra one is ignored (the lists can lag one another for a render);
+//     SET gives, and an extra one is ignored (the lists can lag one another for a render). The list itself is required
+//     once the card has a new added set: a card that leaves it out is refused (TypeError), an empty list says all Normal;
 //   - a logged set has its type in its log (`is_warmup`, `stage_kind`, the `pending_stages` row).
 // So an open added Warmup is a warmup row like any other: never the current set, its LOG never asks (G54), and it holds
 // no working number, so the working sets read 1 to n without it (146 (a)); an open added dropset has its drops as open
@@ -249,7 +250,8 @@ export interface OrderExercise {
    * were added (DECISIONS 161): the card's own state for them (TASKS 62). The n-th new set has the n-th type, and its row
    * says so (`addedIndex`), so the type belongs to the set and not to its row key or its number. The card removes an entry
    * when its set is logged or deleted. A set with no entry is Normal (what ADD SET gives; the lists can lag one another
-   * for a render); an entry past the last new set is ignored.
+   * for a render); an entry past the last new set is ignored. Required once the card has a new added set (an empty list says
+   * they are all Normal): a card that leaves it out is refused, because a Warmup would pass for a working set (RULES.md).
    */
   addedTypes?: readonly SessionSetChangeType[]
   /**
@@ -660,6 +662,9 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       addedIndex: null,
     })),
   ]
+  if (slots.length < (exercise.addedSets ?? 0) && exercise.addedTypes === undefined) {
+    throw new TypeError(`${exercise.name} has a new added set and no addedTypes: the card must hand over the type of every added set (an empty list says they are all Normal)`)
+  }
   for (let fresh = 0; slots.length < (exercise.addedSets ?? 0); fresh++) {
     const type = exercise.addedTypes?.[fresh]
     slots.push({ log: null, openType: type === undefined ? NORMAL : heldType(type, `the ${fresh + 1}th new set added to ${exercise.name}`), draftKey: null, addedIndex: fresh })

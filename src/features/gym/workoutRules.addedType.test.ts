@@ -241,6 +241,21 @@ describe('what the card or a draft must say is refused when it is wrong', () => 
     }
   })
 
+  it('a card that has a new added set must hand over its types: left out, a Warmup could pass for a working set (an empty list says all Normal)', () => {
+    const { addedTypes: _left, ...without } = card('bench', 'n n n', { added: 1, types: [WARMUP] })
+    expect(_left).toEqual([WARMUP])
+    expect(() => rowsOf([without])).toThrow(TypeError)
+    expect(rowsOf([card('bench', 'n n n', { added: 1, types: [] })]).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])
+    // …but a card whose added sets are all logged or kept as drafts has nothing to say, and a card with none is as it was
+    const drafted = card('bench', 'n n n', { added: 1, drafts: [draftOf(key(4), NORMAL)] })
+    delete (drafted as { addedTypes?: unknown }).addedTypes
+    expect(() => rowsOf([drafted])).not.toThrow()
+    const logged = card('bench', 'n n n', { added: 1 })
+    delete (logged as { addedTypes?: unknown }).addedTypes
+    expect(() => rowsOf([logged], [...threeLogged(), addedLog('bench', 1, { number: 4 })])).not.toThrow()
+    expect(() => rowsOf([card('bench', 'n n n')])).not.toThrow()
+  })
+
   it('…and under tsc (this line fails `npm run typecheck` if the type becomes optional)', () => {
     // @ts-expect-error a draft of a set added in the session must say its type
     const noType: HeldDraft = { key: key(4), values: {} }

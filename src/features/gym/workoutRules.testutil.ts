@@ -89,7 +89,7 @@ export const draftOf = (key: AddedSetKey, type: SessionSetChangeType): HeldDraft
 /**
  * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the screen's count of
  * added sets, `drafts` the drafts the phone holds (bare keys read as Normal sets), `types` the types the card keeps for its
- * new added sets, in the order they were added (none: all Normal).
+ * new added sets, in the order they were added (none given: an empty list, all Normal).
  */
 export function card(
   key: string,
@@ -104,7 +104,8 @@ export function card(
     plannedSets: plannedSets(key, spec),
     ...(o.added === undefined ? {} : { addedSets: o.added }),
     ...(o.drafts === undefined ? {} : { drafts: o.drafts.map(heldDraft) }),
-    ...(o.types === undefined ? {} : { addedTypes: o.types }),
+    // a card that has added sets hands over its types (an empty list: all Normal), as the module requires
+    ...(o.types === undefined && o.added === undefined ? {} : { addedTypes: o.types ?? [] }),
   }
 }
 
