@@ -740,7 +740,8 @@ describe('resolveRows: sets added in the session', () => {
     const rows = rowsOf(orderOf([card('bench', 'n', { added: 0 })]), logs)
     expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓'])
     expect(rows.map((r) => r.added)).toEqual([true, false, true, true])
-    expect(rows[0]).toMatchObject({ kind: 'warmup', key: 'added:bench:3', type: { kind: 'warmup' } })
+    // the warmup was logged with the number 3, which the second added set holds as well: a warmup comes first on a tie
+    expect(rows[0]).toMatchObject({ kind: 'warmup', key: 'added:bench:2', type: { kind: 'warmup' } })
   })
 
   it('a set added to one exercise is not a row of another', () => {

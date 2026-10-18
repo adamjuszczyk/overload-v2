@@ -129,11 +129,9 @@ export function brief(row: ResolvedRow): string {
 // What the workout screen keeps beside the logs: the type of each added set that has no log. A test that applies a rule's
 // answer calls these to do what the card does with it, then reads the rows again from the cards.
 
-/** An open added row's draft in `exercise`, or undefined: found by its position, the way `draftPosition` says. */
-const draftIndexOf = (exercise: OrderExercise, row: Pick<ResolvedRow, 'exerciseId' | 'draftPosition'>): number =>
-  (exercise.drafts ?? []).findIndex(
-    (d) => 'localId' in d.key && !('drop' in d.key) && d.key.exerciseId === row.exerciseId && d.key.position === row.draftPosition,
-  )
+/** An open added row's draft in `exercise`, or -1: found by its key, the way `draftKey` says (two drafts can name one position). */
+const draftIndexOf = (exercise: OrderExercise, row: Pick<ResolvedRow, 'draftKey'>): number =>
+  (exercise.drafts ?? []).findIndex((d) => 'localId' in d.key && !('drop' in d.key) && d.key.localId === row.draftKey?.localId)
 
 /**
  * The card keeps `type` for an open added row (the `type` that `applySetTypeChange` or `deleteEffects` answers): in its draft
@@ -143,9 +141,9 @@ const draftIndexOf = (exercise: OrderExercise, row: Pick<ResolvedRow, 'exerciseI
 export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type: SessionSetChangeType): OrderExercise[] {
   return cards.map((exercise) => {
     if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
-    if (row.draftPosition !== null) {
+    if (row.draftKey !== null) {
       const at = draftIndexOf(exercise, row)
-      if (at < 0) throw new Error(`no draft at ${row.draftPosition} for ${row.key}`)
+      if (at < 0) throw new Error(`no draft ${row.draftKey.localId} for ${row.key}`)
       return { ...exercise, drafts: (exercise.drafts ?? []).map((d, i) => (i === at ? { key: d.key as AddedSetKey, values: { type } } : d)) }
     }
     if (row.addedIndex === null) throw new Error(`${row.key} is an open added set with neither a draft nor an index`)
@@ -160,7 +158,7 @@ export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type
 export function dropOpenAdded(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
   return cards.map((exercise) => {
     if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
-    if (row.draftPosition !== null) {
+    if (row.draftKey !== null) {
       const at = draftIndexOf(exercise, row)
       return { ...exercise, drafts: (exercise.drafts ?? []).filter((_, i) => i !== at) }
     }

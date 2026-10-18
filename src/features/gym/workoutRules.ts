@@ -38,7 +38,7 @@
 //     number a set today.
 //   - An added set is numbered with the planned ones and put in the order of its number; one that was unlogged keeps
 //     its draft (`OrderExercise.drafts`), which is how it is still a row after a reload, and its row says which
-//     (`draftPosition`).
+//     (`draftKey`, and `draftPosition` for its position).
 //   - A drop shows its head's number. Warmups are numbered among themselves, by their place; an open added Warmup takes
 //     no working number, and sits among the added sets where its number would have been (its draft's position, or the
 //     lowest free number at its turn), so a switch to Warmup and back leaves every set in its place.
@@ -157,7 +157,7 @@
 // - Unlog keeps the number of an added set in its draft's key (`position`), and of a planned set nowhere: the planned
 //   set's number is its position, which the rows work out (151). A draft's position can fall out of date when
 //   sets before the added set are deleted or switched to or from Warmup while it is open; the rows number it by
-//   the lowest number free then, and `draftPosition` still finds its draft. The caller drops a draft's key when the
+//   the lowest number free then, and `draftKey` still finds its draft. The caller drops a draft's key when the
 //   set is logged again or deleted.
 // - A set type pick with fewer drops than are logged deletes the extra logged drops after the question
 //   (19c asks for Normal; the same question is asked here).
@@ -165,8 +165,8 @@
 //   its `pending_stages`. An added set can be switched to Warmup like any set, logged or not: its row is drawn as a
 //   warmup.
 // - Where an open added Warmup sits among the added sets (which sets get which `added:<card>:<n>` key and which Warmup is
-//   W1): at the number it had (its draft's position), else at the lowest free number at its turn, an open warmup before
-//   a logged or working set on a tie. SPEC keeps no record of the order sets were added in, so a Warmup that was never logged and
+//   W1): at the number it had (a logged one's, or its draft's position), else at the lowest free number at its turn, and a
+//   warmup before a working set on a tie, logged or not. SPEC keeps no record of the order sets were added in, so a Warmup that was never logged and
 //   is made Normal again joins the working sets at that place.
 // - The stored `stage_index` of the drops left after a drop is deleted is not renumbered (rows read the
 //   drops by count, and `nextStageIndex` already allows gaps); a warmup's stored `set_number` is not
@@ -253,7 +253,7 @@ export interface OrderExercise {
    * The drafts the phone holds for the session (G46). Only the draft of a set added in the session and unlogged again is
    * read, and each is a slot of its own, so the set is still a row after a reload and takes its number before a new
    * slot does (DECISIONS 151: "an added set's number from its draft"; the key's `position` is the number it was logged
-   * with). Its type is the draft's (DECISIONS 161: `values.type`, required). The row carries `draftPosition`, which is how
+   * with). Its type is the draft's (DECISIONS 161: `values.type`, required). The row carries `draftKey`, which is how
    * the screen finds the draft. A draft of a planned set, of a drop or of another exercise is ignored.
    */
   drafts?: readonly HeldDraft[]
@@ -305,6 +305,11 @@ export interface ResolvedRow {
    * position unless the sets before it have been deleted or switched to or from Warmup since. Null on every other row.
    */
   draftPosition: number | null
+  /**
+   * The key of that draft: the screen finds the draft by it. `draftPosition` is not enough once a Warmup keeps a number a
+   * working set takes later (two drafts of one exercise can then name one position); the `localId` tells them apart.
+   */
+  draftKey: AddedSetKey | null
   /**
    * A set added in the session that is neither logged nor kept as a draft: its index in `OrderExercise.addedTypes`, which
    * is how the screen finds the type the card keeps for it (DECISIONS 161). Null on every other row.
@@ -568,7 +573,7 @@ interface Head {
   /** Where it sits among the added sets: the number it holds or would take (a warmup holds none). Only added sets are sorted by it. */
   place: number
   planIndex: number
-  draftPosition: number | null
+  draftKey: AddedSetKey | null
   addedIndex: number | null
 }
 
@@ -627,7 +632,7 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       number: 0,
       place: 0,
       planIndex: 0, // set below, once the added sets are in their places
-      draftPosition: null,
+      draftKey: null,
       addedIndex: null,
     })
   }
@@ -643,20 +648,20 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
     .filter((draft): draft is AddedDraft => isAddedDraft(draft) && draft.key.exerciseId === exercise.exerciseId)
     .sort((a, b) => a.key.position - b.key.position)
   const planned = heads.length
-  const slots: Array<{ log: LoggedSet | null; openType: SessionSetChangeType; draftPosition: number | null; addedIndex: number | null }> = [
-    ...addedLogs.map((log) => ({ log, openType: NORMAL, draftPosition: null, addedIndex: null })),
+  const slots: Array<{ log: LoggedSet | null; openType: SessionSetChangeType; draftKey: AddedSetKey | null; addedIndex: number | null }> = [
+    ...addedLogs.map((log) => ({ log, openType: NORMAL, draftKey: null, addedIndex: null })),
     ...drafted.map((draft) => ({
       log: null,
       openType: heldType(draft.values?.type, `the draft of the set added at ${draft.key.position} of ${exercise.name}`),
-      draftPosition: draft.key.position,
+      draftKey: draft.key,
       addedIndex: null,
     })),
   ]
   for (let fresh = 0; slots.length < (exercise.addedSets ?? 0); fresh++) {
     const type = exercise.addedTypes?.[fresh]
-    slots.push({ log: null, openType: type === undefined ? NORMAL : heldType(type, `the ${fresh + 1}th new set added to ${exercise.name}`), draftPosition: null, addedIndex: fresh })
+    slots.push({ log: null, openType: type === undefined ? NORMAL : heldType(type, `the ${fresh + 1}th new set added to ${exercise.name}`), draftKey: null, addedIndex: fresh })
   }
-  for (const { log, openType, draftPosition, addedIndex } of slots) {
+  for (const { log, openType, draftKey, addedIndex } of slots) {
     const stageLogs = log ? session.stagesByParent.get(log.id) ?? [] : []
     heads.push({
       key: '',
@@ -671,45 +676,53 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       number: 0,
       place: 0,
       planIndex: 0,
-      draftPosition,
+      draftKey,
       addedIndex,
     })
   }
 
-  // DECISIONS 151: a working set that is logged or skipped shows the number it was logged with and holds it; one that is
-  // open takes the lowest number no other working set of its exercise holds, in the order of the plan (a planned set
-  // first, then an added one that keeps a draft, then a new one). So an open set keeps its place whatever is logged around
-  // it (unlog 02 of 01 to 03 and it is still 02), and the numbers of sets logged one after the other (1.1's, and any whose
-  // logs are gapless) read as they always did. A warmup holds no working number; it keeps a place among the added sets
-  // all the same (`place`): the number it was logged with (a logged one's, or its draft's), else the one it would take.
+  // DECISIONS 151: a working set that is logged or skipped shows the number it was logged with and holds it; an open one of the plan
+  // takes the lowest number no other working set of its exercise holds, in the order of the plan. An open added set shows its
+  // number from its draft (151) whenever that number is free and is no more than the count of working sets, so it comes back to
+  // the place it left even with new sets open before it; a draft that no longer fits (the sets before it were deleted or switched
+  // to Warmup since) takes the lowest number free, never two rows alike and never a hole. The new sets (no draft) take the numbers
+  // that are left, in the order they were added. So an open set keeps its place whatever is logged around it (unlog 02 of 01 to
+  // 03 and it is still 02), and the numbers of sets logged one after the other (1.1's, and any whose logs are gapless) read as they
+  // always did. A warmup holds no working number; it keeps a place among the added sets all the same (`place`): the number it was
+  // logged with (a logged one's, or its draft's), else the one it would take at its turn.
   const held = new Set<number>()
   for (const log of session.headLogs) if (log.exerciseId === exercise.exerciseId && !log.isWarmup) held.add(log.setNumber)
-  let free = 0
+  const taken = new Set(held)
   const lowestFree = (): number => {
-    let n = free
-    do {
-      n += 1
-    } while (held.has(n))
+    let n = 1
+    while (taken.has(n)) n += 1
     return n
   }
-  for (const head of heads) {
-    if (head.type.kind === 'warmup') {
-      head.place = head.log ? head.log.setNumber : head.draftPosition ?? lowestFree()
-    } else {
-      if (head.log) {
-        head.number = head.log.setNumber
-      } else {
-        head.number = lowestFree()
-        free = head.number
-      }
-      head.place = head.number
+  const takeLowest = (head: Head): void => {
+    head.number = lowestFree()
+    taken.add(head.number)
+  }
+  const openWorking = (head: Head): boolean => head.log === null && head.type.kind !== 'warmup'
+  const workingCount = heads.filter((head) => head.type.kind !== 'warmup').length
+  for (const head of heads) if (head.log && head.type.kind !== 'warmup') head.number = head.log.setNumber
+  for (const head of heads.slice(0, planned)) if (openWorking(head)) takeLowest(head)
+  for (const head of heads.slice(planned)) {
+    const claim = head.draftKey?.position ?? null
+    if (openWorking(head) && claim !== null && claim <= workingCount && !taken.has(claim)) {
+      head.number = claim
+      taken.add(claim)
     }
   }
-  // The added sets in the order of their places; on a tie an open warmup comes first (it left the working numbers at that
-  // number, and the set after it closed the gap or took the number, 146 (a)); any other tie keeps the order the slots were
-  // made in. Then each one's key and place.
-  const openWarmup = (head: Head): number => (head.type.kind === 'warmup' && head.log === null ? 0 : 1)
-  const addedHeads = heads.splice(planned).sort((a, b) => a.place - b.place || openWarmup(a) - openWarmup(b))
+  for (const head of heads.slice(planned)) {
+    if (head.type.kind === 'warmup') head.place = head.log ? head.log.setNumber : head.draftKey?.position ?? lowestFree()
+    else if (openWorking(head) && head.number === 0) takeLowest(head)
+  }
+  for (const head of heads) if (head.type.kind !== 'warmup') head.place = head.number
+  // The added sets in the order of their places; on a tie a warmup comes first (it left the working numbers at that number, and the
+  // set after it closed the gap or took the number, 146 (a)), logged or not, so unlogging it moves no key); any other tie keeps the
+  // order the slots were made in. Then each one's key and place.
+  const warmupFirst = (head: Head): number => (head.type.kind === 'warmup' ? 0 : 1)
+  const addedHeads = heads.splice(planned).sort((a, b) => a.place - b.place || warmupFirst(a) - warmupFirst(b))
   addedHeads.forEach((head, i) => {
     head.key = addedRowKey(exercise.key, i + 1)
   })
@@ -755,7 +768,8 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
       stageKind,
       headKey: null,
       stageNumber: null,
-      draftPosition: head.draftPosition,
+      draftPosition: head.draftKey?.position ?? null,
+      draftKey: head.draftKey,
       addedIndex: head.addedIndex,
     },
   ]
@@ -780,6 +794,7 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
         headKey: head.key,
         stageNumber: n,
         draftPosition: null,
+        draftKey: null,
         addedIndex: null,
       })
     }
