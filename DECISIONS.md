@@ -1,13 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, your second batch of answers of 2026-10-16: 159–169 all written in.*
-- *Each answer is in its entry's Answer field, word for word, and those entries are now three lines (full text in HISTORY.md). SPEC.md has a line for 161–169; 159 has none (no SPEC rule covers Coach's weeks) and 160 changes nothing. "For the release" has 159's update note. TASKS 60's text is fixed to "Log sets in order" (158 (e)) when 60 starts.*
-- *What follows: chunk 46 goes to a fourth attempt with 161 (b)(i). 51b, 58a, 59, 61 and 62 are unblocked by 169, 162, 163 and 164, 165 and 166, and 167 and 168.*
-- *Still waiting on you: only the to-dos (138, 121, 113, 79). Nothing blocks the build.*
+*Rewritten at every boundary. Last: 2026-10-18, chunk 46's fourth review: not merged, new 170.*
+- *Chunk 46's fourth attempt builds your 161 (b)(i) right: the rules see every added set's type, and an added set's unlog is undone exactly. But a change it made for another unlog case breaks the order of the added sets after an edit of an earlier set (new 170, a behaviour bug). Your rule for this attempt was no retry, so 46 waits for your answer.*
+- *What follows: 51a to 57 don't use chunk 46 and go on; 58a, 58b and 59–64 wait for 170. The to-dos are as they were.*
 
 Decisions:
-- None.
+- **170** — chunk 46, fourth attempt: after an earlier set is deleted or switched to or from Warmup, an unlogged added set can lose its place to an open added set after it. Bench 01–03 logged, A logged as 04 and unlogged, B new at 05, DELETE 02: B reads 03 and A 04, where 18b and 146 (a) give A 03, B 04 (two unlogged sets trade places the same way). The third attempt got it right; the fourth broke it while fixing an unlog case. Recommended: (a), a fifth attempt in which DELETE and a Warmup switch also give each open added set after the set its new place, checked set by set after every delete and switch. When: before 58a. Blocks: chunk 46's merge, so 58a, 58b and 59–64.
 
 To-dos:
 - **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's, 49's and 50's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
@@ -116,6 +115,25 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - What: whether the DAYS card's "a day another workout already uses" (chunk 51b) means the saved schedule or the edit as it stands; with the saved one, two workouts can't trade days in one save.
 - Answer: (Adam, 2026-10-16) "(a). The DAYS card checks the edit as it stands, so two workouts can trade days in one save." Full text in HISTORY.md.
 - Date: 2026-10-16
+
+### 170 An unlogged added set's place after an earlier set is deleted or switched to or from Warmup (chunk 46)
+**Ask:** Chunk 46's fourth attempt builds your 161 (b)(i) right. To fix another unlog case, it made an unlogged added set take the number its draft holds, and that breaks the order of the added sets after an edit of an earlier set. Bench 01–03 logged, two sets added: A logged as 04 and unlogged again (its numbers kept), B new at 05. DELETE 02, or make it a Warmup: SPEC 18b and your 146 (a) say the sets after it close the gap, so A 03 and B 04. The fourth attempt gives B 03 and A 04: the empty new set jumps ahead of the unlogged one. Two unlogged added sets trade places the same way, also when a Warmup before them is made Normal. The third attempt got all four cases right. It is a behaviour bug, and your rule for this attempt was no retry. Allow a fifth attempt?
+**Recommendation:** (a): a fifth attempt in which every writer that moves the numbers also moves the places the phone keeps for its open added sets. Both 151's unlog and 18b's delete then hold. Nothing uses chunk 46 before 58a, so nothing else waits.
+**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it. Nothing before 58a.
+**Options:**
+- (a) A fifth attempt of 46. DELETE and a switch to or from Warmup also give each open added set after the set its new place (its draft's position, or a place the card keeps for a new set), as they give the logged sets their new numbers; chunks 61 and 62 write it. Its walk checks each set by identity, and their order, after every delete and switch. The builder's readings 3 and 4 (Evidence) get the same fix. Recommended.
+- (b) Merge as built: after a delete or a Warmup switch before an unlogged added set, a later open added set can take its place. "The sets after it close the gap" then holds for logged sets only.
+- (c) Go back to the third attempt's numbering for unlogged added sets (the lowest free number, in their drafts' order, before the new sets). 18b holds, but an added set unlogged while new sets are open before it moves to the front of them, against 151's "no other set's number changes on unlog" (the builder executed this on the third attempt).
+**Answer:**
+**Evidence:** executed in the review on `9a08d7a`. Each step is the module's own answer, applied as the card and the sync queue will apply it (`<scratchpad>/build/chunk-46-review-4.md`). Bench `n n n`, 01–03 logged, two sets added:
+- D: A logged as 04 and unlogged, B new (05); DELETE 02 → B 03, A 04 (the third attempt: A 03, B 04).
+- W: the same, with 02 made a Warmup → B 03, A 04 (the third: A 03, B 04).
+- 2D: A (04) and C (05) logged and unlogged; DELETE 02 → C 03, A 04 (the third: A 03, C 04).
+- MR: bench `w n n`, 01–02 logged; A (03) and C (04) logged and unlogged; the open planned Warmup made Normal → C 04, A 05 (the third: A 04, C 05).
+- Cause: new in the fourth attempt, a draft takes its stored position whenever that number is free and no more than the count of working sets. A delete or switch before it leaves the position one too high, and another open added set takes the number the delete gives the draft. Chunk 46's third review accepted out-of-date drafts on the condition that "the row then takes the number 18b's renumbering gives it".
+- The walk checks "nothing moves" set by set on unlog only. After a delete or a switch it checks that the numbers read 1 to n, which a swapped order satisfies.
+- The builder's readings 3 and 4 have the same root (by reading, not executed). A never-logged added Warmup with a logged added set after it, made Normal again, joins after that set (146 (a): "takes its place"). Two added Warmups holding one stored number can swap W1 and W2 on an unlog (161: "nothing moves").
+- Everything else is right. 161 (b)(i), executed: an added Warmup and an added Dropset ×1 unlogged come back as they were, nothing moves, and logging again restores them. Review 3's case: an open added Warmup is not the current set, and the lock answers `log` for it. Also: 4379 tests, every script green, and the builder's 54 breaks re-run in the review, all caught (the comment-only control not caught, as it must be).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
