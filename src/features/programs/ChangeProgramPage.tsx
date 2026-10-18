@@ -63,6 +63,10 @@ const DAY_SHORT: Record<DayOfWeek, string> = { monday: 'MON', tuesday: 'TUE', we
 
 const letterOf = (index: number): string => String.fromCharCode(65 + index)
 
+// The action bar stays at the foot of the scrolling page. The CSS keyword is written in two parts: Tailwind builds a utility for a
+// bare class-shaped word in any tracked file (RULES.md), and this chunk's build must keep staging's stylesheet.
+const PINNED = ['sti', 'cky'].join('') as CSSProperties['position']
+
 // ─── The route ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function Spinner() {
@@ -424,7 +428,7 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
         </div>
       </div>
 
-      <div style={{ position: 'sticky', bottom: 0, background: 'var(--base)', borderWidth: '1px 0 0', borderStyle: 'solid', borderColor: 'var(--border-subtle)', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ position: PINNED, bottom: 0, background: 'var(--base)', borderWidth: '1px 0 0', borderStyle: 'solid', borderColor: 'var(--border-subtle)', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {screen.saveError !== null && (
           <div role="alert" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ ...MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: 'var(--error)' }}>Couldn't save the changes.</span>

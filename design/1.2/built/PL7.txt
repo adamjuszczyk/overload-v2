@@ -1,0 +1,34 @@
+PUSH PULL LEGS · WEEK-DEPENDENT
+CHANGE THE PROGRAM
+Changes start in week 2. Sets are planned in each week, in Plan.
+Monday's Push is done, so it keeps its plan. Tuesday's Pull is in progress, so it stays as it is. Your saved program, Push Pull Legs, doesn't change.
+WORKOUTS
+CHANGED IN THIS EDIT
+Push
+MON
+Pull
+TUE
+Legs
+THU
+RENAME
+1 · WARMUP ROUTINE
+EVERY WEEK
+Band pull-aparts
++ ADD ITEM
+2 · EXERCISES · DRAG TO REORDER
+Lat Pulldown
+BACK
+SWAP
+SUPERSET
+REMOVE
+Face Pull
+SHOULDERS
+SWAP
+REMOVE
++ ADD EXERCISE
+CANCEL
+SAVE CHANGES
+Remove Lat Pulldown from week 2?
+This deletes its planned sets from week 2 on.
+CANCEL
+REMOVE

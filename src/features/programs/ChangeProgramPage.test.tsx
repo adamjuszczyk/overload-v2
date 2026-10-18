@@ -18,7 +18,6 @@ import {
   sessionsOf,
   updates,
   addExerciseTo,
-  patchExercise,
   removeExerciseFrom,
   swapExerciseIn,
   type World,

@@ -130,7 +130,8 @@ function Item({
         flexDirection: 'column',
         gap: 10,
         margin: '0 -6px',
-        padding: inSuperset ? '10px 6px' : '0 6px',
+        // A card drawn as changed (accent outline) needs room inside it, a lone exercise included (PL1 draws only a member this way).
+        padding: inSuperset || changed ? '10px 6px' : '0 6px',
         borderRadius: 10,
         background: changed ? 'var(--accent-muted)' : 'transparent',
         ...hairline(changed ? 'var(--accent)' : 'transparent'),
