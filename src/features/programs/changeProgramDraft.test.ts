@@ -89,6 +89,17 @@ describe('swap', () => {
     expect(inserted[0]).toMatchObject({ row: { exercise_id: 'ex-new', replaces_program_exercise_id: 'pe-lat', superset_block_id: 'blk', position: 2 } })
   })
 
+  it('a swap starts with no rest, tempo or unit of its own, whatever the old exercise had', () => {
+    const w = weekDependentWorld()
+    let s = start(w)
+    s = setExerciseRest(s, 'pull', 'e:pe-pd', 'restSeconds', 150)
+    s = setExerciseRest(s, 'pull', 'e:pe-pd', 'restAfterSeconds', 60)
+    s = setExerciseTempo(s, 'pull', 'e:pe-pd', '3-0-1-0')
+    s = setExerciseUnit(s, 'pull', 'e:pe-pd', 'lbs')
+    s = swapExercise(s, 'pull', 'e:pe-pd', 'ex-new')
+    expect(workoutOf(s, 'pull').exercises[0]).toMatchObject({ kind: 'swapped', restSeconds: null, restAfterSeconds: null, tempo: null, weightUnit: null })
+  })
+
   it('swapping a swapped exercise again changes which exercise it is, nothing else', () => {
     const w = weekDependentWorld()
     const once = swapExercise(start(w), 'pull', 'e:pe-pd', 'ex-one')
@@ -163,6 +174,7 @@ describe('order', () => {
     expect(keysOf(moveExerciseToUnit(s, 'fb', 'e:pe-lat', 0), 'fb')).toEqual(['e:pe-lat', 'e:pe-plank', 'e:pe-leg', 'e:pe-inc'])
     expect(keysOf(moveExerciseToUnit(s, 'fb', 'e:pe-leg', 2), 'fb')).toEqual(['e:pe-inc', 'e:pe-lat', 'e:pe-plank', 'e:pe-leg'])
     expect(keysOf(moveExerciseToUnit(s, 'fb', 'e:pe-leg', 9), 'fb')).toEqual(['e:pe-inc', 'e:pe-lat', 'e:pe-plank', 'e:pe-leg'])
+    expect(keysOf(moveExerciseToUnit(s, 'fb', 'e:pe-lat', -1), 'fb')).toEqual(['e:pe-lat', 'e:pe-plank', 'e:pe-leg', 'e:pe-inc'])
     expect(moveExerciseToUnit(s, 'fb', 'e:pe-inc', 1)).toEqual(s)
     expect(() => planOf(w, moveExerciseToUnit(s, 'fb', 'e:pe-lat', 0).edit)).not.toThrow()
   })
@@ -287,7 +299,16 @@ describe('does the draft differ?', () => {
     expect(draftDiffers(renameWorkout(renamed, 'pull', 'Pull'), original)).toBe(false)
   })
 
-  it('the keys do not count', () => {
+  it('the keys do not count: the same content under other keys is the same draft', () => {
+    const original = start(weekDependentWorld())
+    const first = addExercise(original, 'pull', 'ex-a', 'kg')
+    const again = addExercise(removeExercise(addExercise(original, 'pull', 'ex-a', 'kg'), 'pull', keysOf(first, 'pull')[2]), 'pull', 'ex-a', 'kg')
+    expect(keysOf(again, 'pull')[2]).not.toBe(keysOf(first, 'pull')[2])
+    expect(draftContent(again)).toEqual(draftContent(first))
+    expect(draftDiffers(again, first)).toBe(false)
+  })
+
+  it('the keys do not count (removing what was added)', () => {
     const original = start(weekDependentWorld())
     const other = addExercise(original, 'pull', 'ex-a', 'kg') // counter moves, keys are new
     expect(draftContent(other)).not.toEqual(draftContent(original))
@@ -365,6 +386,8 @@ describe.each([
         try {
           ops = planProgramChange({ ...inputOf(w, s.edit), newId: idGen(`w${walk}s${step}-`) }).ops
           applyOpsToDb(cloneDb(w.db), ops)
+          // DECISIONS 157: a save never deletes a run's program or one of its workouts (only week plan rows and routine items).
+          if (ops.some((o) => o.op === 'delete' && (o.table === 'v2_programs' || o.table === 'v2_workout_days'))) throw new Error('a delete on programs or workout days')
         } catch (e) {
           throw new Error(`walk ${walk}, step ${step}: ${(e as Error).message}`)
         }

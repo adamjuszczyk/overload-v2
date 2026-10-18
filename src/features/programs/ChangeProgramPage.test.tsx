@@ -370,6 +370,7 @@ describe('SAVE sends exactly the op list planProgramChange returns for the draft
     click('Lat Pulldown: rest, tempo, unit')
     const sheet = dialog('Lat Pulldown')
     for (let i = 0; i < 6; i++) fireEvent.click(within(sheet).getByRole('button', { name: 'After round: more' })) // 1:30
+    for (let i = 0; i < 2; i++) fireEvent.click(within(sheet).getByRole('button', { name: 'Within round: more' })) // 0:30
     expect(within(sheet).getByText('The two rests belong to superset A, so they change it for Face Pull too. Changes start in week 2.')).toBeTruthy()
     fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
     expect(screen.getByText('Rest 1:30 after each round')).toBeTruthy()
@@ -377,7 +378,7 @@ describe('SAVE sends exactly the op list planProgramChange returns for the draft
     const ops = sent()
     const block = inserts(ops, 'v2_program_superset_blocks')
     expect(block).toHaveLength(1)
-    expect(block[0].row).toMatchObject({ workout_day_id: 'pull', rest_after_round_seconds: 90, rest_within_round_seconds: null })
+    expect(block[0].row).toMatchObject({ workout_day_id: 'pull', rest_after_round_seconds: 90, rest_within_round_seconds: 30 })
     const members = updates(ops, 'v2_program_exercises').filter((o) => o.id === 'pe-pd' || o.id === 'pe-face')
     expect(members.map((o) => (o.patch as { superset_block_id: string }).superset_block_id)).toEqual([block[0].row.id, block[0].row.id])
   })
@@ -426,6 +427,36 @@ describe('SAVE sends exactly the op list planProgramChange returns for the draft
     expect(routine.map((o) => o.op)).toContain('update')
     const rows = world.db.v2_workout_warmup_items.filter((r) => r.workout_day_id === 'pull')
     expect(rows.map((r) => r.body)).toEqual(['Band pull-aparts, 2 × 15'])
+  })
+
+  it("the routine's order: MOVE DOWN and MOVE UP reach the routine rows as positions", async () => {
+    useWorld(stableWorld(), {})
+    await open()
+    // Full Body's routine: Band pull-aparts, Dead hang. Swap them with MOVE DOWN, add a third, move it to the top.
+    click('Band pull-aparts: options')
+    click('MOVE DOWN')
+    click('+ ADD ITEM')
+    fireEvent.change(screen.getByLabelText('New warmup item'), { target: { value: 'Cat-cow' } })
+    click('ADD')
+    click('Cat-cow: options')
+    click('MOVE UP')
+    click('MOVE UP')
+    await save()
+    const rows = world.db.v2_workout_warmup_items.filter((r) => r.workout_day_id === 'fb').sort((a, b) => a.position - b.position)
+    expect(rows.map((r) => r.body)).toEqual(['Cat-cow', 'Dead hang', 'Band pull-aparts'])
+    expect(rows.map((r) => r.position)).toEqual([0, 1, 2])
+  })
+
+  it('a rename that only adds a space is no change: CANCEL leaves without asking and SAVE sends nothing', async () => {
+    await open()
+    chooseWorkout(/^Legs/)
+    click('Rename Legs')
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Legs ' } })
+    fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
+    click('CANCEL')
+    expect(screen.queryByText('Discard your changes?')).toBeNull()
+    expect(screen.getByText('AT PLAN')).toBeTruthy()
+    expect(h.rpc).not.toHaveBeenCalled()
   })
 
   it('a rename sends the workout’s new name, trimmed, and nothing else', async () => {
@@ -519,6 +550,22 @@ describe('SAVE', () => {
     expect(h.rpc).toHaveBeenCalledTimes(1)
   })
 
+  it('two presses in one instant send one request (an in-flight guard, not only the disabled button)', async () => {
+    await open()
+    chooseWorkout(/^Legs/)
+    click('Rename Legs')
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Leg Day' } })
+    click('DONE')
+    const button = screen.getByRole('button', { name: 'SAVE CHANGES' })
+    await act(async () => {
+      button.click()
+      button.click()
+    })
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.fetchSource).toHaveBeenCalledTimes(2) // opened, saved: the second press read nothing
+  })
+
   it('a failed save shows the server’s message under "Couldn\'t save the changes." and keeps the draft; a retry builds a new list from a new read', async () => {
     h.rpc.mockImplementationOnce(async () => ({ data: null, error: { message: 'row not found: v2_week_plan_sets/zz' } }))
     await open()
@@ -581,7 +628,20 @@ describe('SAVE', () => {
     expect(h.rpc).not.toHaveBeenCalled()
   })
 
-  it('writes the weekdays the run copy has now, not the ones the screen opened with', async () => {
+  it('refuses when the weekdays changed meanwhile: the schedule the screen opened with is never written back over them', async () => {
+    await open()
+    chooseWorkout(/^Legs/)
+    click('Rename Legs')
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Leg Day' } })
+    click('DONE')
+    // Another phone moved Legs from Thursday to Friday (chunk 51b's save) while this screen was open.
+    world = { ...world, db: { ...world.db, v2_programs: world.db.v2_programs.map((p) => ({ ...p, schedule: { ...p.schedule, thursday: null, friday: 'legs' } })) } }
+    click('SAVE CHANGES')
+    await screen.findByText("Couldn't save the changes.")
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  it('and a save with the weekdays unchanged writes none', async () => {
     await open()
     chooseWorkout(/^Legs/)
     click('Rename Legs')
@@ -603,6 +663,20 @@ describe('SAVE', () => {
     const keys = spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown[] }).queryKey))
     for (const k of ['v2_programExercises', 'v2_programSets', 'v2_weekPlans', 'v2_allWeekPlans', 'v2_weekPlan']) expect(keys).toContain(JSON.stringify([k]))
     expect(keys).not.toContain(JSON.stringify(['v2_runSchedules']))
+  })
+
+  it("a rest change, which writes only the run copy's rows, still stales every cached week plan (their exercise lists are a join over those rows)", async () => {
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    await open()
+    chooseWorkout(/^Legs/)
+    click('Back Squat: rest, tempo, unit')
+    fireEvent.click(within(dialog('Back Squat')).getByRole('button', { name: 'Rest: more' }))
+    fireEvent.click(within(dialog('Back Squat')).getByRole('button', { name: 'Close' }))
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(sent().every((o) => o.table === 'v2_program_exercises')).toBe(true)
+    const keys = spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown[] }).queryKey))
+    for (const k of ['v2_programExercises', 'v2_weekPlans', 'v2_allWeekPlans', 'v2_weekPlan']) expect(keys).toContain(JSON.stringify([k]))
   })
 
   it('a rename invalidates the workouts and programs, a routine edit its own rows', async () => {
@@ -652,6 +726,15 @@ describe('the rule box (SPEC: "Week N is the week of the next session that isn�
     // 51a draws a stable run without set rows and without the "no sets" note.
     expect(screen.queryByText(/with no sets/)).toBeNull()
     expect(screen.queryByText('+ SET')).toBeNull()
+  })
+
+  it("a stable run's new exercise has no \"no sets\" note: its default is the run's, and 51b draws the rows", async () => {
+    useWorld(stableWorld(), {})
+    await open()
+    click('+ ADD EXERCISE')
+    await pickInSheet('Add exercise', 'Add Cable Curl')
+    expect(screen.getByText('BICEPS · NEW')).toBeTruthy()
+    expect(screen.queryByText(/It lands in week/)).toBeNull()
   })
 
   it('a sequence run speaks of cycles', async () => {
