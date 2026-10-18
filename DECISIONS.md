@@ -1,17 +1,13 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-16, your answers of 2026-10-16 to 151, 149, 152, 157, 154, 128 (g), 155, 153 and 158: all written in.*
-- *Each answer is in its entry's Answer field, word for word, and those entries are now three lines (full text in HISTORY.md). SPEC.md has a line for 151, 152, 154 and 149; 155 (a) has no SPEC rule to change. TASKS-1.2.md has them in chunks 46, 53, 62 and 63 and the Release section, and RULES.md has your 1.2 usage rules.*
-- *What follows: chunk 46 goes to its third attempt with 151. Chunk 53 is unblocked and carries 149's data migration, which runs only at the release, as a blocking decision with the manual backup before it ("For the release"). 152 is chunk 62's. A second display follow-up, d31b, is queued for 154 (Coach stays as it is; the screens 1.2 doesn't rebuild go back to their own code), 155 (a) (a segment switch carries the set's own value over) and 157 (c) (the app's op type narrowed; no migration).*
-- *Still waiting on you: 159 and 160, from chunk 50's review, which block nothing in the build (159 needs your answer before the release); and the to-dos (138, 121, 113, 79). Each list is ordered by what it blocks.*
+*Rewritten at every boundary. Last: 2026-10-16, your second batch of answers of 2026-10-16: 159–169 all written in.*
+- *Each answer is in its entry's Answer field, word for word, and those entries are now three lines (full text in HISTORY.md). SPEC.md has a line for 161–169; 159 has none (no SPEC rule covers Coach's weeks) and 160 changes nothing. "For the release" has 159's update note. TASKS 60's text is fixed to "Log sets in order" (158 (e)) when 60 starts.*
+- *What follows: chunk 46 goes to a fourth attempt with 161 (b)(i). 51b, 58a, 59, 61 and 62 are unblocked by 169, 162, 163 and 164, 165 and 166, and 167 and 168.*
+- *Still waiting on you: only the to-dos (138, 121, 113, 79). Nothing blocks the build.*
 
 Decisions:
-- **159** — Coach's weekly analysis after a weekday change (chunk 50, for 51b; Coach is frozen). Since chunk 50, Today and Plan read each week's own weekdays. From 51b, a weekday change starts next week, and the run copy then holds the new days. Coach's week resolution still reads the run copy for every week (your D15: "derived from `program.schedule`"). Executed: after a week-2 save that also puts Arms on Friday from week 3, Today offers week 2 Tue, Thu and Sat, while Coach expects Friday too. So with every session done, that week is never complete and never analysed. Recommended: (a), Coach resolves each week through the same schedule rows (a Coach change, with the freeze's base moved). Blocks: nothing in the build (Coach runs for your account only, which isn't on staging); answer before the release.
-- **160** — chunk 50's display choices (D31), each as built (#142) unless you change it:
-  - (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner, and a failed read keeps it there, as Today already does when its other reads fail (a workout in progress included). Falling back to the run copy's days could show next week's days in this week.
-  - (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day (the existing rule, now reachable).
-  - Blocks: nothing.
+- None.
 
 To-dos:
 - **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's, 49's and 50's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
@@ -29,6 +25,7 @@ To-dos:
 
   Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, a config-sync failure only, and the next push's deploy applied it (156, answered; verified live 2026-10-16).
 - **149's data migration** — chunk 53, its number assigned there (DECISIONS 149 (c), Adam 2026-10-16): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build.
+- Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
 
 ## Format for all new entries
 
@@ -66,29 +63,59 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-16
 
 ### 159 Coach's weekly analysis reads the run's newest weekdays for every week (chunk 50, for 51b; Coach is frozen)
-**Ask:** From chunk 51b, CHANGE THE PROGRAM can change a run's weekdays. The new days start next week, stored as `v2_run_schedules` rows, and the run copy's `schedule` holds the new days (chunk 45's writer). Since chunk 50, Today, Plan and the missed-session prompt read each week's own days. Coach doesn't: `weekResolution.ts` takes a week's expected sessions from the run copy's `program.schedule`, for every week (your D15: "By plan resolution derived from `program.schedule`"). Should Coach read the days in force for the week, as Today does? Coach is frozen (Escalation 16), so either way it is your call.
-**Recommendation:** (a). D15 chose `program.schedule` because it is what Today prompts about. The file's own header: "a date the scheduler never prompts about can't be skip-marked through any existing UI, so using the weekly-plan layer instead would risk a permanently unanalyzable week". Since 50, Today prompts by the week's own days, so (a) keeps D15's reason.
-**Blocks:** nothing in the build: Coach runs for your account only, which isn't on staging. Answer before the release, which brings 51b's weekday change to production.
-**Options:**
-- (a) Coach resolves each week through `scheduleForWeek` over the run's rows and the run copy, in its week resolution and in its Q&A context. This is a Coach change: its server-side reads add `v2_run_schedules`, and `check-frozen-code.mjs`'s base moves to it.
-- (b) As built: Coach expects the run's newest days in every week. After a change that adds or moves a day, the week of the change expects a day Today never offered in it. So that week is never complete and never analysed, and the same goes for an earlier week not yet analysed. Q&A's "this week" lists the new days. A day taken off is simply not expected.
-
-**Answer:**
-**Evidence:**
-- Read in the frozen code: `resolveWeek` reads `program.schedule[dow]` for each date of the week, and `isComplete` needs every expected date completed or skipped. `coachWeekService.ts` lists only complete weeks, `api/coach/analyze-week.ts` refuses an incomplete one, and `qaContext.ts` hands Q&A this week's and next week's expected sessions.
-- Executed in chunk 50's review: chunk 45's `planProgramChange` (what 51b's SAVE calls) was applied to the G14 world in week 2, with Arms also on Friday from week 3. It writes rows `from_week` 1 (Tue, Thu, Sat) and `from_week` 3 (Friday added), and puts all four days in the run copy. Today's scheduler then offers week 2 Tue, Thu and Sat, with no Friday. With those three sessions done, `resolveWeek` for week 2 expects Tue, Thu, Fri and Sat, so `isComplete` is false. Against the run copy before the save (the control), the same sessions are complete.
-- Nothing differs until a run has a schedule row: none exists on staging, and no screen writes one until 51b. Flagged by chunk 50's builder (its report, section 3, item 5).
+- What: whether Coach's weekly analysis resolves each week through the run's schedule rows (a Coach change, the freeze's base moved), or keeps expecting the run's newest weekdays in every week, so that after a 51b weekday change the week of the change is never complete and never analysed.
+- Answer: (Adam, 2026-10-16) "no Coach change. Coach stays exactly as it is; it may skip analysing the one week in which weekdays change. Note it in the update notes." Written into "For the release" as an update note; no SPEC line (no SPEC rule covers Coach's weeks). Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 160 Chunk 50's display choices (provisional, D31)
-**Ask:** Chunk 50 reads each week's weekdays from the run's schedule rows. Two things it shows have no word in SPEC or TASKS. The builder chose them under D31, and each stays as built (#142) unless you change it:
-- (a) Until a weekday run's schedule rows have loaded, Today and Plan show their existing spinner (a sequence run waits for nothing). If the read fails, they stay on it, as Today already does when its other reads fail (programs, sessions, week plans), a workout in progress included. Plan has no load error for this read: board 12's "COULDN'T LOAD PLAN" with the real message is chunk 52's. The alternative, falling back to the run copy's days, would show next week's days in a week that had others once 51b writes rows.
-- (b) In Plan, stepping to a week where the selected weekday has no workout selects that week's first day. That is the page's existing rule, now reachable: Friday selected in week 3, then back to a week 2 without a Friday.
+- What: chunk 50's two display choices (D31): (a) Today and Plan stay on their spinner until a weekday run's schedule rows have loaded, and a failed read keeps it there; (b) in Plan, stepping to a week where the selected weekday has no workout selects that week's first day.
+- Answer: (Adam, 2026-10-16) "(a) and (b) accepted." They stay as built (#142). Full text in HISTORY.md.
+- Date: 2026-10-16
 
-**Recommendation:** keep both. (a) never shows a wrong day, and (b) is the page's existing rule.
-**Blocks:** nothing.
-**Options:** for each, as built or the alternative named.
-**Answer:**
-**Evidence:** nothing is written either way: the scheduler only reads, and Plan's plan-the-week effect doesn't wait for the rows. On staging no run has rows, and every read answered `200` with none. A failed read was not reproduced live; the hooks' tests hold Today and Plan on the spinner while the rows are `undefined`, which is what a failed first read leaves. The builder's report, section 3, item 3; long form: HISTORY.md, "2026-10-16 chunk 50 review".
+### 161 An added set's type during a workout: the rules can't see it before it is logged, and UNLOG loses it (chunk 46)
+- What: an added set's type during a workout (chunk 46): its rules can't see the type before the set is logged (one made a Warmup is still the current set, and leaves a gap in the numbers once logged), and an added set logged, made a Warmup and unlogged comes back a working set and moves the open set after it.
+- Answer: (Adam, 2026-10-16) "go ahead with chunk 46's fourth attempt, with (b)(i): an added set's draft also keeps its type, so an unlog is undone exactly and nothing moves; 46's rules see every added set's type." Chunk 46 goes to a fourth attempt. Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 162 What LOG writes from a row nobody typed into: the plan's targets or last time's numbers (pre-read, chunk 58a)
+- What: what LOG writes from a row nobody typed into (chunk 58a): the plan's targets (SPEC C3), or last time's numbers as today.
+- Answer: (Adam, 2026-10-16) "(a). An untouched row's values are the plan's targets; a range or AMRAP is a placeholder, so LOG needs reps typed; with no planned weight the weight box is empty and LOG needs it. Last time's numbers show only on the row's LAST line. (Pre-fill from last time stays phase 2.)" Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 163 "Skip the rest of this exercise": also its open added sets and its unlogged warmups? (pre-read, chunk 59)
+- What: whether "Skip the rest of this exercise" (chunk 59) also skips the exercise's open added sets and its unlogged planned warmups; today it skips neither.
+- Answer: (Adam, 2026-10-16) "(a). Skip the rest of this exercise also skips its open added sets and its unlogged warmups." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 164 What a swap for today moves to the new exercise (pre-read, chunk 59)
+- What: what a swap for today moves to the new exercise (chunk 59): the original's open sets as board W5 draws them, or as many plain sets as the original planned, numbered from 01 (today).
+- Answer: (Adam, 2026-10-16) "(a). A swap for today moves the original's open sets to the new exercise with their numbers, type, drops and targets, as W5 draws." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 165 CUES on a set that has no planned set (pre-read, chunk 61)
+- What: what CUES does on a set with no planned set (chunk 61): a set added in the workout, or moved to a swapped-in exercise.
+- Answer: (Adam, 2026-10-16) "(a). No CUES row in the ⋯ of a set with no planned set." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 166 Auto-finish once a planned set is deleted or retyped during the workout (pre-read, chunk 61)
+- What: whether auto-finish (chunk 61) waits for a log on every planned set id, so that a planned set deleted or retyped in the workout means it never finishes, or for what the workout's rows say is left.
+- Answer: (Adam, 2026-10-16) "(a). Auto-finish waits for what the workout's rows say is left (the same view as the finish warning)." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 167 The DROPS stepper on a logged set, below the drops already logged (pre-read, chunk 62)
+- What: whether the DROPS stepper on a logged set (chunk 62) can go below the drops already logged; chunk 46 asks 19c's question and deletes the extra logged drops.
+- Answer: (Adam, 2026-10-16) "(a), as 46 built: the stepper can go below the logged drops, and deleting a logged drop asks first (19c)." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 168 Offline: a set not logged yet switched to or from Warmup when logged sets after it move (pre-read, chunk 62)
+- What: offline, a set not logged yet switched to or from Warmup when logged sets after it move (chunk 62): queued like a delete's renumber, or "Requires a connection".
+- Answer: (Adam, 2026-10-16) "(a). The switch and the renumbering of later logged sets queue offline, like a delete." Full text in HISTORY.md.
+- Date: 2026-10-16
+
+### 169 CHANGE THE PROGRAM's DAYS card: "a day another workout already uses", as saved or as edited? (pre-read, chunk 51b)
+- What: whether the DAYS card's "a day another workout already uses" (chunk 51b) means the saved schedule or the edit as it stands; with the saved one, two workouts can't trade days in one save.
+- Answer: (Adam, 2026-10-16) "(a). The DAYS card checks the edit as it stands, so two workouts can trade days in one save." Full text in HISTORY.md.
+- Date: 2026-10-16
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
