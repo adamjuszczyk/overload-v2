@@ -35,6 +35,9 @@ const SESSION = 's1'
 /** The key of the draft an added set of `bench` leaves when it is unlogged at `position`. */
 const key = (position: number, n = 1): AddedSetKey => ({ sessionId: SESSION, localId: `log.bench.added${n}`, exerciseId: 'ex.bench', position })
 
+/** The head rows (not their drops) as the screen keys and numbers them: what must not move on an unlog. */
+const placesOf = (rows: readonly ResolvedRow[]) => rows.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.kind, r.number, r.type] as const)
+
 /** Bench 01–03 logged. */
 const threeLogged = () => [1, 2, 3].map((i) => headLog('bench', i))
 
@@ -155,6 +158,77 @@ describe('the rows see an open added set\'s type (DECISIONS 161): an added Warmu
     const rows = resolveRows(orderOf(cards, [{ id: 'blk', members: ['row', 'lat'] }]), [])
     expect(rows.map(brief)).toEqual(['row W1·', 'row A1·', 'lat B1·', 'row A2·', 'lat B2·'])
     expect(currentSet(orderOf(cards, [{ id: 'blk', members: ['row', 'lat'] }]), [])!.key).toBe('set:row.1')
+  })
+})
+
+describe('where the added sets sit: a draft keeps its number, a Warmup comes first on a tie, a row names its draft (found by the walk)', () => {
+  it('an added set unlogged after another was added and left open comes back at its own number, and the new ones keep theirs', () => {
+    // two new sets (04, 05) are open and a third added set was logged ahead of them (the lock off), as 06; unlogging it moves nothing
+    const logged = viewOf(orderOf([card('bench', 'n n n', { added: 3, types: [NORMAL, NORMAL] })]), [...threeLogged(), addedLog('bench', 3, { number: 6 })])
+    expect(logged.rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05·', 'bench 06✓'])
+    const unlog = unlogEffects(rowKeyed(logged, 'added:bench:3'), logged)
+    const cards = [{ ...card('bench', 'n n n', { added: 3, types: [NORMAL, NORMAL] }), drafts: [unlog.draft] }]
+    const rows = rowsOf(cards)
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05·', 'bench 06·'])
+    expect(rows.slice(3).map((r) => [r.key, r.number, r.addedIndex, r.draftPosition])).toEqual([
+      ['added:bench:1', 4, 0, null],
+      ['added:bench:2', 5, 1, null],
+      ['added:bench:3', 6, null, 6],
+    ])
+    expect(currentSet(orderOf(cards), threeLogged())!.key).toBe('added:bench:1')
+  })
+
+  it('a draft whose number is held by a logged set, or is past the count of working sets, takes the lowest number free instead', () => {
+    // 01 to 03 logged, an added set logged as 04, and a draft that says 04 too: the open set is 05; a draft that says 9 is the next after them
+    const held = rowsOf([card('bench', 'n n n', { added: 2, drafts: [draftOf(key(4), NORMAL)] })], [...threeLogged(), addedLog('bench', 2, { number: 4 })])
+    expect(held.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
+    const past = rowsOf([card('bench', 'n n n', { added: 1, drafts: [draftOf(key(9), NORMAL)] })])
+    expect(past.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])
+    // a Warmup is no working set, so it does not raise the count: 01 to 03 and the draft are four, and a draft that says 5 doesn't fit
+    const withWarmup = rowsOf([card('bench', 'n n n', { added: 2, types: [WARMUP], drafts: [draftOf(key(5), NORMAL)] })])
+    expect(withWarmup.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])
+  })
+
+  it('drafts that no longer fit are given the free numbers in the order of their positions, whichever order they come in', () => {
+    // 01 to 03 are logged and two drafts say 8 and 9, which are past the five working sets there are: they read 04 and 05, the lower first
+    const drafts = [draftOf(key(8, 1), NORMAL), draftOf(key(9, 2), NORMAL)]
+    const read = (given: HeldDraft[]) =>
+      rowsOf([card('bench', 'n n n', { added: 2, drafts: given })])
+        .filter((r) => r.state === 'unlogged')
+        .map((r) => [r.number, r.draftPosition, r.draftKey?.localId])
+    expect(read(drafts)).toEqual([[4, 8, 'log.bench.added1'], [5, 9, 'log.bench.added2']])
+    expect(read([...drafts].reverse())).toEqual(read(drafts))
+  })
+
+  it('two drafts of one exercise that name one position are two rows, and each row names its own draft', () => {
+    // a Warmup keeps the number it was logged with (4); a working set unlogged later at 4 names the same position
+    const warm = key(4, 1)
+    const work = key(4, 2)
+    const rows = rowsOf([card('bench', 'n n n', { added: 2, drafts: [draftOf(warm, WARMUP), draftOf(work, NORMAL)] })])
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])
+    expect(rows[0]).toMatchObject({ kind: 'warmup', draftPosition: 4, draftKey: warm })
+    expect(rows[4]).toMatchObject({ kind: 'working', draftPosition: 4, draftKey: work })
+    // the card finds each by its key: logging the working set leaves the Warmup's draft
+    const left = dropOpenAdded([card('bench', 'n n n', { added: 2, drafts: [draftOf(warm, WARMUP), draftOf(work, NORMAL)] })], rows[4])
+    expect(left[0].drafts).toEqual([draftOf(warm, WARMUP)])
+  })
+
+  it('a Warmup and a working set that hold one number: the Warmup comes first, whichever was logged first, and unlogging it moves no key', () => {
+    // the Warmup left the working numbers at 4 and the set after it closed the gap; both read 4 in the logs
+    const warmLog = addedLog('bench', 1, { number: 4, warmup: true })
+    const workLog = addedLog('bench', 2, { number: 4 })
+    for (const logs of [[...threeLogged(), warmLog, workLog], [...threeLogged(), workLog, warmLog]]) {
+      const view = viewOf(orderOf([card('bench', 'n n n', { added: 2 })]), logs)
+      expect(view.rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
+      expect(view.rows[0]).toMatchObject({ key: 'added:bench:1', logId: warmLog.id })
+      expect(view.rows[4]).toMatchObject({ key: 'added:bench:2', logId: workLog.id })
+      const unlog = unlogEffects(view.rows[0], view)
+      const kept = [{ ...card('bench', 'n n n', { added: 2 }), drafts: [unlog.draft] }]
+      const server = new FakeServer({ logs })
+      server.applyUnlog(unlog)
+      const after = viewOf(orderOf(kept), server.logs)
+      expect(placesOf(after.rows)).toEqual(placesOf(view.rows))
+    }
   })
 })
 
@@ -361,8 +435,6 @@ describe('the finish warning lists planned sets only, whatever the added sets ar
 
 // ─── Unlog: the draft holds the type, so an unlog is undone exactly and nothing moves ────────────
 
-/** The head rows (not their drops) as the screen keys and numbers them: what must not move on an unlog. */
-const placesOf = (rows: readonly ResolvedRow[]) => rows.filter((r) => r.kind !== 'stage').map((r) => [r.key, r.kind, r.number, r.type] as const)
 
 describe('unlog of an added set keeps its type in the draft (DECISIONS 161)', () => {
   it('an added Warmup unlogged comes back a Warmup, the open set after it keeps its number, and logging it again restores it', () => {

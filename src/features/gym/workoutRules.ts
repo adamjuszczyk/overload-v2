@@ -30,18 +30,21 @@
 // then log is an exact undo (SPEC 18c). No other set's number changes on unlog. The open row shows its own
 // number (a planned set's position; an added set's number from its draft), never 'the next after the logged ones'."
 //   - A logged or skipped working set shows the `setNumber` it was logged with, and holds it.
-//   - An open one takes the lowest number that no working set of its exercise holds, in the order of the plan (a
-//     planned set first, then an added set that keeps a draft, then a new one). With the numbers the sets were
-//     logged with being their places (every set LOGGED from 58a on: see below) that is its position, whichever
-//     of the sets around it are logged: unlog 02 of 01 to 03 and it is still 02, with 04 after the logged 03. With
-//     numbers that are gapless in the order sets were logged (1.1's rule) it is the number after them, as the cards
-//     number a set today.
-//   - An added set is numbered with the planned ones and put in the order of its number; one that was unlogged keeps
+//   - An open planned set takes the lowest number that no working set of its exercise holds, in the order of the plan.
+//     With the numbers the sets were logged with being their places (every set LOGGED from 58a on: see below) that is its
+//     position, whichever of the sets around it are logged: unlog 02 of 01 to 03 and it is still 02, with 04 after the
+//     logged 03. With numbers that are gapless in the order sets were logged (1.1's rule) it is the number after them,
+//     as the cards number a set today.
+//   - An added set is numbered with the planned ones and put in the order of its number. One that was unlogged keeps
 //     its draft (`OrderExercise.drafts`), which is how it is still a row after a reload, and its row says which
-//     (`draftKey`, and `draftPosition` for its position).
+//     (`draftKey`, and `draftPosition` for its position); it shows the draft's number when that number is free and no
+//     more than the count of working sets, so it comes back to its place even with new sets open before it (a draft
+//     that no longer fits takes the lowest number free). The new ones take the numbers that are left.
 //   - A drop shows its head's number. Warmups are numbered among themselves, by their place; an open added Warmup takes
 //     no working number, and sits among the added sets where its number would have been (its draft's position, or the
-//     lowest free number at its turn), so a switch to Warmup and back leaves every set in its place.
+//     lowest free number at its turn), so a switch to Warmup and back leaves every set in its place (but for a Warmup that
+//     was never logged with a logged added set after it: nothing records the order sets were added in, and it comes back
+//     after that set).
 //
 // ─── An added set's type (DECISIONS 161, Adam 2026-10-16) ─────────────────────────────────────────
 // "An added set's draft also keeps its type, so an unlog is undone exactly and nothing moves; 46's rules see every added
