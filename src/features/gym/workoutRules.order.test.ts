@@ -778,7 +778,7 @@ describe('a pure function changes nothing it is given', () => {
     expect(logs.map((l) => l.id)).toEqual([`${head.id}.d2`, head.id, 'log.row.1'])
     expect(exercises[0].plannedSets.map((s) => s.id)).toEqual(['pushdown.1', 'pushdown.2', 'pushdown.2.1', 'pushdown.2.2'])
     // the drafts are read in the order of their positions without being sorted where they are
-    expect(exercises[0].drafts!.map((d) => ('position' in d ? d.position : null))).toEqual([4, 3])
+    expect(exercises[0].drafts!.map((d) => ('position' in d.key ? d.key.position : null))).toEqual([4, 3])
     expect(first.filter((r) => r.added).map((r) => r.draftPosition)).toEqual([3, 4])
   })
 })

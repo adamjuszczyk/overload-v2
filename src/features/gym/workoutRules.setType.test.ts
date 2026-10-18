@@ -23,6 +23,7 @@ import {
   dropLog,
   headLog,
   held,
+  keepType,
   orderOf,
   pending,
   retyped,
@@ -54,13 +55,15 @@ function changeOn(o: {
   const row = rowKeyed(view, o.key)
   const effects = applySetTypeChange({ row, pick: o.pick, session: view })
   server.applySetType(effects, row)
+  // an open set added in the session keeps its new type in the card or its draft, as the screen does (DECISIONS 161)
+  const after = orderOf(keepType(o.cards, row, effects.type), o.blocks ?? [])
   return {
     effects,
     server,
-    order,
+    order: after,
     row,
-    rows: resolveRows(order, server.logs, server.held()),
-    current: currentSet(order, server.logs, server.held()),
+    rows: resolveRows(after, server.logs, server.held()),
+    current: currentSet(after, server.logs, server.held()),
   }
 }
 
@@ -618,13 +621,25 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓'])
   })
 
-  it('an open set added in the session has no log and no type a row can read: switching it moves nothing', () => {
+  it('an open set added in the session made a Warmup closes the gap like a planned one: the logged set after it moves down (146 (a), 161)', () => {
+    // bench 01 is logged, the first added set is open (kept as a draft, at 02), the second added set is logged as 03
     const logs = [headLog('bench', 1), addedLog('bench', 2, { number: 3 })]
     const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 2 } as const
-    const { effects, row } = changeOn({ cards: [card('bench', 'n', { added: 2, drafts: [draft] })], logs, key: 'added:bench:1', pick: WARMUP })
-    expect(row.state).toBe('unlogged')
-    expect(effects.renumber).toEqual([])
-    expect(effects.changes).toEqual([])
+    const cards = [card('bench', 'n', { added: 2, drafts: [draft] })]
+    const { effects, row, rows, current } = changeOn({ cards, logs, key: 'added:bench:1', pick: WARMUP })
+    expect(row).toMatchObject({ state: 'unlogged', kind: 'working', number: 2, draftPosition: 2 })
+    expect(effects.type).toEqual(WARMUP)
+    expect(effects.changed).toBe(true)
+    expect(effects.headPatch).toBeNull()
+    expect(effects.changes).toEqual([]) // an added set never gets a change row (Adam's change-row rule)
+    expect(effects.renumber).toEqual([{ id: 'log.bench.added2', setNumber: 2 }])
+    // the rows with the type kept: the warmup is no working row (the hole the review found is closed), and nothing is current
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓'])
+    expect(current).toBeNull()
+    // …and the control, a planned set in the same place, gives the same patches
+    const planned = changeOn({ cards: [card('bench', 'n n n')], logs: [headLog('bench', 1), headLog('bench', 3, { number: 3 })], key: 'set:bench.2', pick: WARMUP })
+    expect(planned.effects.renumber).toEqual([{ id: 'log.bench.3', setNumber: 2 }])
+    expect(planned.rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓'])
   })
 
   it('switching between two working types, or two staged ones, renumbers nothing', () => {

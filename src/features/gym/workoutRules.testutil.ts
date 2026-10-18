@@ -7,7 +7,9 @@ import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   resolveRows,
   sessionOrder,
+  type AddedSetKey,
   type HeldChange,
+  type HeldDraft,
   type OrderExercise,
   type OrderSuperset,
   type ResolvedRow,
@@ -72,10 +74,28 @@ export function plannedSets(key: string, spec: string): WeekPlanSet[] {
 }
 
 /**
- * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the screen's count of
- * added sets, `drafts` the keys of the drafts the phone holds.
+ * A draft as the phone holds it: a bare key of a set added in the session is a draft of a Normal set (what a test that is
+ * not about the type means), a bare key of anything else needs nothing more, and a `{ key, values }` entry is taken as it is.
+ * A test about the type writes the entry, or uses `draftOf`.
  */
-export function card(key: string, spec: string, o: { name?: string; added?: number; drafts?: readonly SetDraftKey[] } = {}): OrderExercise {
+export function heldDraft(entry: SetDraftKey | HeldDraft): HeldDraft {
+  if ('key' in entry) return entry
+  return 'localId' in entry && !('drop' in entry) ? { key: entry, values: { type: { kind: 'normal' } } } : { key: entry }
+}
+
+/** The draft of a set added in the session with the type it keeps (DECISIONS 161). */
+export const draftOf = (key: AddedSetKey, type: SessionSetChangeType): HeldDraft => ({ key, values: { type } })
+
+/**
+ * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the screen's count of
+ * added sets, `drafts` the drafts the phone holds (bare keys read as Normal sets), `types` the types the card keeps for its
+ * new added sets, in the order they were added (none: all Normal).
+ */
+export function card(
+  key: string,
+  spec: string,
+  o: { name?: string; added?: number; drafts?: readonly (SetDraftKey | HeldDraft)[]; types?: readonly SessionSetChangeType[] } = {},
+): OrderExercise {
   const name = o.name ?? key.charAt(0).toUpperCase() + key.slice(1)
   return {
     key,
@@ -83,7 +103,8 @@ export function card(key: string, spec: string, o: { name?: string; added?: numb
     name,
     plannedSets: plannedSets(key, spec),
     ...(o.added === undefined ? {} : { addedSets: o.added }),
-    ...(o.drafts === undefined ? {} : { drafts: o.drafts }),
+    ...(o.drafts === undefined ? {} : { drafts: o.drafts.map(heldDraft) }),
+    ...(o.types === undefined ? {} : { addedTypes: o.types }),
   }
 }
 
@@ -102,6 +123,50 @@ export function brief(row: ResolvedRow): string {
   const drop = row.kind === 'stage' ? `.${row.stageNumber}` : ''
   const mark = row.state === 'logged' ? '✓' : row.state === 'skipped' ? '×' : '·'
   return `${row.exerciseKey} ${place}${drop}${mark}`
+}
+
+// ─── The card's own state for the sets added in the session (DECISIONS 161) ─────────────────────────
+// What the workout screen keeps beside the logs: the type of each added set that has no log. A test that applies a rule's
+// answer calls these to do what the card does with it, then reads the rows again from the cards.
+
+/** An open added row's draft in `exercise`, or undefined: found by its position, the way `draftPosition` says. */
+const draftIndexOf = (exercise: OrderExercise, row: Pick<ResolvedRow, 'exerciseId' | 'draftPosition'>): number =>
+  (exercise.drafts ?? []).findIndex(
+    (d) => 'localId' in d.key && !('drop' in d.key) && d.key.exerciseId === row.exerciseId && d.key.position === row.draftPosition,
+  )
+
+/**
+ * The card keeps `type` for an open added row (the `type` that `applySetTypeChange` or `deleteEffects` answers): in its draft
+ * if the set keeps one, else as its entry of `addedTypes` (the entries before it are Normal, ADD SET's default). Any other row
+ * is returned as it was: a planned set's type is its change row, a logged set's its log.
+ */
+export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type: SessionSetChangeType): OrderExercise[] {
+  return cards.map((exercise) => {
+    if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
+    if (row.draftPosition !== null) {
+      const at = draftIndexOf(exercise, row)
+      if (at < 0) throw new Error(`no draft at ${row.draftPosition} for ${row.key}`)
+      return { ...exercise, drafts: (exercise.drafts ?? []).map((d, i) => (i === at ? { key: d.key as AddedSetKey, values: { type } } : d)) }
+    }
+    if (row.addedIndex === null) throw new Error(`${row.key} is an open added set with neither a draft nor an index`)
+    const types = [...(exercise.addedTypes ?? [])]
+    while (types.length <= row.addedIndex) types.push({ kind: 'normal' })
+    types[row.addedIndex] = type
+    return { ...exercise, addedTypes: types }
+  })
+}
+
+/** An open added set is logged or deleted: the card stops keeping its type (its draft goes, or its entry of `addedTypes`). */
+export function dropOpenAdded(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
+  return cards.map((exercise) => {
+    if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
+    if (row.draftPosition !== null) {
+      const at = draftIndexOf(exercise, row)
+      return { ...exercise, drafts: (exercise.drafts ?? []).filter((_, i) => i !== at) }
+    }
+    if (row.addedIndex === null || exercise.addedTypes === undefined) return exercise
+    return { ...exercise, addedTypes: exercise.addedTypes.filter((_, i) => i !== row.addedIndex) }
+  })
 }
 
 // ─── Logs ────────────────────────────────────────────────────────────────────────────────────────
