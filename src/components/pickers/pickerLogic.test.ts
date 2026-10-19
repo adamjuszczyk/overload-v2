@@ -383,7 +383,7 @@ describe('the numbers behind the boxes', () => {
     expect(draftFromRirTarget({ kind: 'none' })).toEqual({ mode: 'none', number: 2, from: 1, to: 2 })
   })
 
-  it('shows a stored value past the bounds as it is: only the steppers are bounded (and its RANGE does not grow past them)', () => {
+  it('shows a stored value past the bounds as it is: only the steppers are bounded (and its RANGE is held at the bound)', () => {
     expect(draftFromRepTarget({ type: 'number', value: 120 })).toEqual({ mode: 'number', number: 120, from: 120, to: 120 })
   })
 
