@@ -301,6 +301,11 @@ describe('a set changed in this edit has the accent outline (board PL1b)', () =>
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Add Dip' }))
     press('Add a set to Dip')
     expect(outlined('Set 01 of Dip: rep target')).toBe(false)
+    // the card carries the mark on all four sides, each its own longhand: jsdom drops a `border-color` shorthand that a side colour
+    // follows, so a captured fixture kept the top edge and lost the other three (RULES.md, jsdom drops some inline declarations)
+    const style = screen.getByText('TRICEPS · NEW').closest('[data-exercise-key]')?.getAttribute('style') ?? ''
+    for (const side of ['top', 'right', 'bottom', 'left']) expect(style).toContain(`border-${side}-color: var(--accent)`)
+    expect(style).toContain('background: var(--accent-muted)')
   })
 })
 
