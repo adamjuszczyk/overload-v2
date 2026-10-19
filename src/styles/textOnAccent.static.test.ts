@@ -27,8 +27,8 @@ import { reachableFrom } from '../testing/moduleGraph'
 
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 
-// The screens 1.2 rebuilds, by the file each starts from. A chunk that renames or replaces one (65 replaces ProgramsPage with the
-// PROGRAMS tab) changes its line here; a missing file fails the test instead of leaving it reading nothing.
+// The screens 1.2 rebuilds, by the file each starts from. A chunk that adds one (66's finished program), renames one or replaces one
+// (65 replaces ProgramsPage with the PROGRAMS tab) changes its line here; a missing file fails the test instead of leaving it reading nothing.
 const REBUILT_SCREENS: Record<string, string> = {
   'features/plan/PlanPage.tsx': 'Plan',
   'features/programs/ProgramsPage.tsx': 'PROGRAMS',
@@ -175,7 +175,12 @@ describe('text on the accent is --on-accent in the screens 1.2 rebuilds and the 
 
   it('the token is on files that a rebuilt screen loads and on no others', () => {
     const outside = SITES.filter((site) => hasOnAccent(site) && !USED.has(site.file))
-    expect(outside.map((site) => `${where(site)}  -- no rebuilt screen loads ${site.file}: wire it to its screen, or this place is on a screen 1.2 does not rebuild`)).toEqual([])
+    expect(
+      outside.map(
+        (site) =>
+          `${where(site)}  -- no rebuilt screen loads ${site.file}: wire it to its screen, add the screen's file to REBUILT_SCREENS if it is one 1.2 rebuilds, or leave this place on --base (a screen 1.2 does not rebuild keeps its current code: DECISIONS 154)`,
+      ),
+    ).toEqual([])
   })
 
   it("a file of a screen 1.2 doesn't rebuild is loaded by no rebuilt screen: a file one loads is a shared component, and it takes the token", () => {

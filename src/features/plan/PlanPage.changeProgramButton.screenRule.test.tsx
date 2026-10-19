@@ -240,10 +240,8 @@ describe('PlanPage’s CHANGE THE PROGRAM button and CHANGE THE PROGRAM’s rule
     expect(buttonCycle).toBe(screenCycle)
   })
 
-  it('the rows differ in what N depends on: the same rows read as done, as in progress and as not started give three numbers', async () => {
-    // the control that the table above can tell the sources apart: 2 (nothing started), 3 (the last in progress), 3 (all done)
-    // would read the same if in progress were counted as done, so the week-dependent case with a session not started is the one that
-    // separates "done" from "in progress" from "not started": Pull in progress, Legs not started -> 2, and Legs in progress -> 3.
+  it('a second world is read, not remembered: the same page names the week of the statuses it is given (Plan holds them for five minutes)', async () => {
+    // Pull in progress with Legs not started: the changes start in week 2; Legs in progress as well: the week after.
     useWorld(weekDependentWorld(), { 'p2-push': 'done', 'p2-pull': 'in_progress' })
     const notStarted = await planButtonWeek()
     useWorld(weekDependentWorld(), { 'p2-push': 'done', 'p2-pull': 'done', 'p2-legs': 'in_progress' })
