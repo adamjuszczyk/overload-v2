@@ -219,6 +219,10 @@ export function typeChecks(): void {
   void applyOps([{ op: 'insert', table: 'v2_programs', row: { id: 'p', user_id: 'u', schedule: {} } }])
   // @ts-expect-error no delete of a v2_week_plans row
   void applyOps([{ op: 'delete', table: 'v2_week_plans', id: 'p' }])
+  // @ts-expect-error no delete of a v2_programs row (157 (c): 043 would take it, the app's op type does not)
+  void applyOps([{ op: 'delete', table: 'v2_programs', id: 'p' }])
+  // @ts-expect-error no delete of a v2_workout_days row (157 (c))
+  void applyOps([{ op: 'delete', table: 'v2_workout_days', id: 'w' }])
   // @ts-expect-error an op is insert, update or delete
   void applyOps([{ op: 'upsert', table: 'v2_programs', id: 'p', patch: {} }])
   // @ts-expect-error the list is the argument, not a JSON string

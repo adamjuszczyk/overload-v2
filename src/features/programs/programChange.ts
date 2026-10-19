@@ -204,7 +204,11 @@ export type OpTable = keyof OpColumns
 // 043: "an insert into v2_programs raises" (and v2_workout_days): those two take no inserts. `v2_week_plans` takes an update
 // of `deload_restore` and nothing else: no insert, no delete (DECISIONS 142).
 export type InsertableTable = Exclude<OpTable, 'v2_programs' | 'v2_workout_days' | 'v2_week_plans'>
-export type DeletableTable = Exclude<OpTable, 'v2_week_plans'>
+// `v2_programs` and `v2_workout_days` take an update only, no delete either (DECISIONS 157 (c), Adam 2026-10-16: "Narrow the
+// app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration."). The type is what
+// refuses it: 043's function still accepts such a delete (a run's workout cascades through its weeks; a program with a run is
+// held by a foreign key), so no op list the app builds may hold one.
+export type DeletableTable = Exclude<OpTable, 'v2_programs' | 'v2_workout_days' | 'v2_week_plans'>
 
 // An insert row names every NOT NULL column: `jsonb_populate_record` fills a column the row leaves out with NULL, not with
 // its default. Four of the tables have `created_at timestamptz not null default now()` (a patch never names it), so the
