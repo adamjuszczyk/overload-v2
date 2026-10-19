@@ -883,6 +883,24 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expectEditable(4)
     })
 
+    // Chunk 52: COPY's sheet and WEEK ⋯'s sheet belong to a week that has them; a past cycle has neither (board 1c), so an open one goes.
+    for (const [name, open] of [['COPY', () => fireEvent.click(screen.getByText('COPY'))], ['WEEK ⋯', () => openWeekMenu()]] as const) {
+      it(`the ${name} sheet that is open goes with it: the cycle turns read-only under it`, () => {
+        setUpSequenceRun(THREE_DAY)
+        const view = renderPlan()
+        expect(isMarkedCurrent('CYCLE 3')).toBe(true)
+        open()
+        expect(screen.getByRole('dialog')).toBeTruthy()
+
+        lastDoneOrSkipped = sessionFor(THREE_DAY.layout, { status: 'completed', cycle: 3, position: 2, on: dayOf(1, 'Sunday') })
+        view.rerender(ui())
+
+        expect(isMarkedCurrent('CYCLE 3')).toBe(false)
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(screen.queryByText('COPY')).toBeNull()
+      })
+    }
+
     it('STRUCTURE view: the same, with an exercise\'s ⋯ menu open — the offer (above both views) was still showing, and goes with it', () => {
       setUpSequenceRun(THREE_DAY)
       const view = renderPlan()

@@ -132,7 +132,17 @@ export function fakeWeekPlan(
   }
 }
 
-export function createFakeSupabase(weekPlans: FakeWeekPlanRow[]) {
+// What the stand-in does when `v2_plan_week` is called, when a test wants it to plan: the rows it makes for that week (they are added to
+// the world, so the next read has them: the week appears), a failure (the call fails with it: Supabase's errors are plain objects with a
+// `message`, not `Error`s, and the real client throws what it was given), or either of them later (a promise, so a test can hold the call
+// open). Without it the call is only recorded and answers 0, as a week that was already planned does.
+export interface FakeFailure {
+  message: string
+  code?: string
+}
+export type FakePlanWeek = (week: number) => FakeWeekPlanRow[] | FakeFailure | Promise<FakeWeekPlanRow[] | FakeFailure>
+
+export function createFakeSupabase(weekPlans: FakeWeekPlanRow[], options: { planWeek?: FakePlanWeek } = {}) {
   const writes: FakeCall[] = []
   let insertCounter = 0
 
@@ -210,11 +220,19 @@ export function createFakeSupabase(weekPlans: FakeWeekPlanRow[]) {
     return chain
   }
 
-  // `v2_apply_ops` answers the number of ops it was given (the real function's answer: the ops it applied).
+  // `v2_apply_ops` answers the number of ops it was given (the real function's answer: the ops it applied); `v2_plan_week` plans what
+  // `options.planWeek` says it does, and answers the number of sessions it made.
   function rpc(name: string, args: unknown) {
     writes.push({ table: 'rpc', method: name, args: [args] })
-    const ops = (args as { p_ops?: unknown[] } | undefined)?.p_ops
-    return Promise.resolve({ data: ops?.length ?? 0, error: null })
+    const given = args as { p_ops?: unknown[]; p_week_number?: number } | undefined
+    if (name === 'v2_plan_week' && options.planWeek) {
+      return Promise.resolve(options.planWeek(given?.p_week_number as number)).then((made) => {
+        if (!Array.isArray(made)) return { data: null, error: made }
+        weekPlans.push(...made)
+        return { data: made.length, error: null }
+      })
+    }
+    return Promise.resolve({ data: given?.p_ops?.length ?? 0, error: null })
   }
 
   return { client: { from, rpc }, writes }

@@ -181,6 +181,9 @@ describe('PlanPage — MARK WEEK AS DELOAD follows the Settings rules too (chunk
 
     expect(setsNow()).toEqual(ORIGINAL)
     expect(fake.state.plans[0]).toMatchObject({ is_deload: false, deload_restore: null })
+    // Chunk 52: marking and unmarking a week plans nothing first (the week is planned by definition when its WEEK ⋯ exists): no
+    // `v2_plan_week` call, no call to any function at all.
+    expect(fake.writes.filter((w) => w.table === 'rpc')).toEqual([])
   })
 
   it('no rules in Settings: flag-only here too', async () => {
