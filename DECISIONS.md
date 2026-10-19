@@ -4,12 +4,11 @@
 *Rewritten at every boundary. Last: 2026-10-19, Adam's answers to 172, 173 and 174 written in (docs only).*
 - *173 and 174 are answered: chunk 46m (migration 044, `v2_set_logs.added_place`: one nullable column, no default, no row touched) goes first, merged and live on staging; then chunk 46's sixth attempt, on Opus, uses it. One more behaviour failure stops 46 for a redraw (your words).*
 - *`v2_plan_week` is now migration 045 (chunk 53), as you numbered it; 044 is in "For the release" with 042 and 043.*
-- *172 is accepted except Plan's "CHANGE THE PROGRAM FROM WEEK N" button, which goes to the second display follow-up (d31b).*
+- *172: the other eleven display choices are accepted, (l) included; (j), Plan's "CHANGE THE PROGRAM FROM WEEK N" button, follows the screen's rule box and goes to the second display follow-up (d31b).*
 - *The smoke fix (your third bullet: the empty account may have no exercises or exactly the defaults) is pending; chunk 51b's next reviewer makes it, so the smoke reads 51/51.*
 - *What follows: 51b's tests-only retry, 46m, then 46's sixth attempt; d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
-- **172** — a letter to confirm: your exception reads "(l)" but describes Plan's button and the screen's rule box, which the entry listed as (j); its (l) was a superset's within-round rest stored as 0 reading 0:00. Recommended: d31b fixes the button (the choice you described) and (l)'s 0:00 stays accepted. When: before d31b starts. Blocks: nothing before d31b.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -138,7 +137,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
 - What: twelve display choices of chunk 51a's CHANGE THE PROGRAM, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
-- Answer: (Adam, 2026-10-19) "all twelve accepted, except (l): Plan's "CHANGE THE PROGRAM FROM WEEK N" button names the same week as the screen's rule box, which is right (a session in progress is left as it is, so changes start the week after). Fix it in the second display follow-up." The change goes to the second display follow-up, d31b (CONTEXT.md, "Where the build is"). The choice his words describe is the one this entry listed as (j); (l) as listed is a superset's within-round rest stored as 0 reading 0:00 (Waiting on Adam asks which he meant). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-19) "I meant the item about Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when the week's last open session is in progress — whichever letter that is in the entry. The button follows the screen. The other eleven are accepted." That item is the entry's (j) (his earlier "(l)" was the letter he gave; (l) as listed, a superset's within-round rest stored as 0 reading 0:00, is among the eleven accepted, and so are (a)–(i), (k)). The button fix goes to the second display follow-up, d31b (CONTEXT.md, "Where the build is"): the button names the same week as the screen's rule box (a session in progress is left as it is, so changes start the week after). Full text in HISTORY.md.
 - Date: 2026-10-19
 
 ### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
