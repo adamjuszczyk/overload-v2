@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 46's review 5: not merged (new 173).*
-- *Chunk 46's fifth attempt builds your 170 right for the working sets. Every set has a fixed place and its number is its rank; LOG stores that number, and a delete or a Warmup switch patches the logged sets after it. 161 (b)(i) is built right too, review 4's four sequences come out as they should, and your named break (attempt 4's claim put back) fails the sequence test.*
-- *Two behaviour bugs remain, both executed: 173. A warmup's log keeps a number it no longer shows. And a set added in a reopened session is drawn before the earlier added sets.*
-- *TASKS 63 now keeps the card's list of added sets across a reload (the builder's question 2; a TASKS addition from the review, as for 51b).*
-- *What follows: 51b (building), the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
+*Rewritten at every boundary. Last: 2026-10-19, chunk 51b's review 1: not merged (proof missing, behaviour right; a tests-only retry).*
+- *Chunk 51b (CHANGE THE PROGRAM's DAYS card and a stable run's default set rows) does what SPEC says, all of it executed: new weekdays start next week and this week keeps its days, two workouts can trade days in one save (your 169), an exercise added on a stable run gets its sets (171), and Coach is untouched (159). The real tables took every list.*
+- *It isn't merged because six of the review's breaks on its writers pass every test: REMOVE THIS SET is only tested on an exercise's last set, "+ SET", REST AFTER and ALL only on the first workout, and a stage's target only on the last set. Its retry adds those tests. Nothing for you to decide.*
+- *Chunk 46 still waits on your 173 (two behaviour bugs in its fifth attempt).*
+- *What follows: 51b's retry, the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
 
 Decisions:
 - **173** — chunk 46's fifth attempt has two behaviour bugs. A warmup's log keeps a number it no longer shows, so two added Warmups can be one REVIEW item, and unlog then log isn't exact. A set added in a reopened session is drawn before the earlier added sets, and two logs can end up holding one number. Recommended: (a), a sixth attempt that fixes both in 46. When: before 58a. Blocks: chunk 46's merge, and so 58a–64; nothing before 58a.

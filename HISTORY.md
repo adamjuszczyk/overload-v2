@@ -26847,3 +26847,26 @@ Decisions:
 
 ### From DECISIONS.md: 170's status line (before chunk 46's fifth review)
   Written into SPEC.md (Logging mechanics → Delete set (18b)). Chunk 46's fifth attempt is building (from 2026-10-19, in the main checkout, beside chunk 51a's review). Full text in HISTORY.md.
+
+## 2026-10-19 chunk 51b review — not merged (proof missing, behaviour right; a tests-only retry); moved out of DECISIONS.md (replaced by newer lines there), word for word
+*Chunk 51b's first builder attempt (`build/chunk-51b` at `6fcca5e`, off staging `63db262`; built in a worktree beside chunk 46's fifth review) was reviewed on 2026-10-19 and not merged. Staging had moved by docs #151 only. The branch rebased onto `9afad29` with no conflict and a byte-identical patch, and every script ran on that tree. The rebase was not pushed.*
+- *Built: CHANGE THE PROGRAM's DAYS card. Seven toggles; a day another workout holds is disabled and named; the last day stays on; the "Was … New days start in week N …" line; RENAME in the card's header. SAVE writes `v2_run_schedules` (`from_week` 1 with the old days on a run with no rows, and N + 1 with the new days) and the run copy's `schedule`, checked against the edit as it stands (DECISIONS 169).*
+- *Built: a stable run's default set rows (ALL, the rows with their set type and rep pickers, REST AFTER, "+ SET", REMOVE THIS SET), an added exercise's included (171), and `/plan/change#<exerciseId>`.*
+- *Right, executed:*
+  - *every script (4287 tests in 240 files; the stylesheet staging's `index-ra14cXRp.css`);*
+  - *051-b on the reviewer's replay: A0–A14 pass and E01–E12 are caught;*
+  - *the reviewer's walk on the real tables: 40 walks × 2 saves of every 51b edit kind through `v2_apply_ops` under pg-safeupdate, 1958 ops, 0 problems, the control refused;*
+  - *60 walks with a deload session: no delete of a program or workout, only `deload_restore` on a plan row, and UNMARK exact (142);*
+  - *the invalidation keys against the app's hooks, warmup items and superset blocks included;*
+  - *the real screens of the test, stable and sequence accounts on the branch built the staging way, read only;*
+  - *no Coach change (159).*
+- *Not proven, three findings ("proof missing, behaviour right"). REMOVE THIS SET is only ever tested on an exercise's last set; "+ SET", REST AFTER and ALL only on the first workout; a stage's rep target only on the last set. Six of the reviewer's breaks pass all of the builder's tests and fail the reviewer's probes on the real code: `removeSet` dropping the last set, the screen passing the last index, the three handlers writing to the first workout, and a stage's target written to the last set. RULES.md has the rule since this review's docs PR.*
+
+*The reviewer's findings: `<scratchpad>/build/chunk-51b-review-1.md`; probes, break manifests, the real-table walk, the read-only screen tool and logs: `<scratchpad>/build/r51b/`.*
+
+### From DECISIONS.md: "Waiting on Adam"'s header and notes (before chunk 51b's review; the Decisions and To-dos lists are unchanged)
+*Rewritten at every boundary. Last: 2026-10-19, chunk 46's review 5: not merged (new 173).*
+- *Chunk 46's fifth attempt builds your 170 right for the working sets. Every set has a fixed place and its number is its rank; LOG stores that number, and a delete or a Warmup switch patches the logged sets after it. 161 (b)(i) is built right too, review 4's four sequences come out as they should, and your named break (attempt 4's claim put back) fails the sequence test.*
+- *Two behaviour bugs remain, both executed: 173. A warmup's log keeps a number it no longer shows. And a set added in a reopened session is drawn before the earlier added sets.*
+- *TASKS 63 now keeps the card's list of added sets across a reload (the builder's question 2; a TASKS addition from the review, as for 51b).*
+- *What follows: 51b (building), the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
