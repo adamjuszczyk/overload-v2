@@ -279,7 +279,11 @@ export class Session {
     }
     this.cards = this.cards.map((c) => ({ ...c, added: [], drafts: keepDrafts ? (c.drafts ?? []) : [] }))
     const patches = numberCorrections(this.order(), this.server.logs, this.server.held())
+    this.lastCorrections = patches.map((p) => ({ ...p, was: this.server.logs.find((l) => l.id === p.id)!.setNumber }))
     this.server.applyCorrections(patches)
     return patches
   }
+
+  /** The corrections the last reopen or reload wrote, each with the number its log held before (178: only where they differ). */
+  lastCorrections: Array<NumberPatch & { was: number }> = []
 }
