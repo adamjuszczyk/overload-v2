@@ -36,7 +36,7 @@ const REPO = path.resolve(HERE, '..')
 
 // ─── The fixture ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const TABLES = [
+export const TABLES = [
   'v2_programs', 'v2_workout_days', 'v2_mesocycles', 'v2_program_exercises', 'v2_program_sets', 'v2_program_superset_blocks',
   'v2_workout_warmup_items', 'v2_run_schedules', 'v2_week_plans', 'v2_week_plan_exercises', 'v2_week_plan_sets', 'v2_sessions', 'exercises',
 ]
@@ -44,7 +44,7 @@ const TABLES = [
 export const dumpSql = (name) =>
   `select '@@${name}@@ ' || jsonb_build_object(${TABLES.map((t) => `'${t}', (select coalesce(jsonb_agg(to_jsonb(t) order by t.id), '[]'::jsonb) from ${t} t)`).join(', ')})::text;`
 
-const SESSION_HEAD = `
+export const SESSION_HEAD = `
 \\set ON_ERROR_STOP on
 load 'safeupdate';
 do $c$ begin
@@ -122,7 +122,7 @@ end $fx$;
 
 // ─── One psql session, kept open so the app's TypeScript can answer between the two halves ──────────────────────────────
 
-class Psql {
+export class Psql {
   constructor(container) {
     this.child = spawn(
       'docker',
@@ -188,10 +188,10 @@ class Psql {
 
 // ─── Reading the rows the way a screen does, and judging what happened ───────────────────────────────────────────────
 
-const md5 = (rows) => createHash('md5').update(rows.map((r) => JSON.stringify(r)).sort().join('\n')).digest('hex')
+export const md5 = (rows) => createHash('md5').update(rows.map((r) => JSON.stringify(r)).sort().join('\n')).digest('hex')
 
 // The users's rows of one table that belong to a workout day / a plan row, to fingerprint (every column, so any change shows).
-const byPlan = (db, planId) => ({
+export const byPlan = (db, planId) => ({
   exercises: db.v2_week_plan_exercises.filter((x) => x.week_plan_id === planId),
   sets: db.v2_week_plan_sets.filter((x) => x.week_plan_id === planId),
 })
@@ -216,7 +216,7 @@ export function facts(db) {
   return { name, saved, run, savedDays, runDays, savedExercises, plans, peOf }
 }
 
-const savedFingerprint = (db) => {
+export const savedFingerprint = (db) => {
   const f = facts(db)
   const setIds = new Set(f.savedExercises.map((e) => e.id))
   return md5([
@@ -465,7 +465,7 @@ async function runOne(container, app, mutate) {
   }
 }
 
-function rowCounts(container) {
+export function rowCounts(container) {
   const sql = 'select ' + TABLES.concat(['auth.users']).map((t) => `(select count(*) from ${t})`).join(" || '/' || ")
   const r = spawnSync('docker', ['exec', '-i', '-e', 'PGPASSWORD=postgres', container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres', '-X', '-tA', '-c', sql], { encoding: 'utf8' })
   return r.status === 0 ? r.stdout.trim() : null
@@ -482,7 +482,7 @@ function parseArgs(argv) {
   return o
 }
 
-const short = (s, n = 170) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
+export const short = (s, n = 170) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
 async function main() {
   const o = parseArgs(process.argv.slice(2))

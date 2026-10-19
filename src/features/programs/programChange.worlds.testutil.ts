@@ -11,6 +11,11 @@
 //   sequenceWorld ...... a stable SEQUENCE run, slots A, A, B, A in a cycle: one workout in three slots with three
 //                        statuses in cycle 2 (TASKS 45's "Monday done, Tuesday in progress, Thursday not started" as
 //                        sessions of ONE workout), cycle 3 planned forward.
+//   unevenStableWorld .. (chunk 51b's retry) a stable weekday run for the tests of WHICH set an edit lands on: two workouts
+//                        (Full Body on Tuesday and Thursday, one plan row; Arms on Saturday), each with two exercises of
+//                        THREE sets, and no two sets alike in a column a set edit writes (rep target, rest after, kind,
+//                        stages), so an edit that lands on another set, another exercise or the other workout shows in
+//                        what it writes. Weeks 1-3 planned from the default, the run in week 2.
 
 import {
   type World,
@@ -79,6 +84,22 @@ export function sequenceWorld(): World {
     planSession(w, `c${cycle}-s1`, 'a', cycle, { sequencePosition: 1 })
     planSession(w, `c${cycle}-s2`, 'b', cycle, { sequencePosition: 2 })
     planSession(w, `c${cycle}-s3`, 'a', cycle, { sequencePosition: 3 })
+  }
+  return w
+}
+
+export function unevenStableWorld(): World {
+  const w = newWorld({ planningType: 'stable', scheduleType: 'weekday', currentWeek: 2 })
+  addWorkout(w, 'fb', 'Full Body', 0)
+  addWorkout(w, 'arms', 'Arms', 1)
+  setDays(w, { tuesday: 'fb', thursday: 'fb', saturday: 'arms' })
+  addExercise(w, 'pe-leg', 'fb', 'ex-leg', 0, [{ reps: '12-15' }, { reps: '10-12' }, { reps: '6-8', rest: 150 }])
+  addExercise(w, 'pe-inc', 'fb', 'ex-inc', 1, [{ reps: '8-10' }, { reps: '8-10', kind: 'dropset', stages: ['6-8'] }, { reps: 'amrap', rest: 90 }])
+  addExercise(w, 'pe-curl', 'arms', 'ex-curl', 0, [{ reps: '15' }, { reps: '10-12', rest: 60 }, { reps: '8' }])
+  addExercise(w, 'pe-dip', 'arms', 'ex-dip', 1, [{ reps: '8-12' }, { reps: '' }, { reps: '5', kind: 'rest_pause', stages: ['3'], stageRest: 20 }])
+  for (const week of [1, 2, 3]) {
+    planSession(w, `p${week}-fb`, 'fb', week)
+    planSession(w, `p${week}-arms`, 'arms', week)
   }
   return w
 }
