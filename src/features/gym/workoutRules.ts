@@ -68,8 +68,10 @@
 //     with its log.
 //   - The order: a card's added sets by place, whichever record holds the place (the card's entry, the log, or a draft). Two
 //     sets in one place come only from two phones adding at once: they go by their log's id, which every phone reads the same
-//     (so two phones never correct each other's numbers back and forth, 178), and a set not logged yet, which only one phone
-//     holds, by its own id.
+//     (so two phones order the same logs alike, and their corrections, 178, agree), and a set not logged yet, which only one
+//     phone holds, by its own id. Such an open set moves the numbers its own phone shows after it, not another phone's: two
+//     phones drawing the session then correct those logs back and forth until it is logged, deleted or gone with the
+//     session's end (a question for DECISIONS; the numbers test pins it).
 //   - 177: "Only an added set's own log carries added_place; its drop and stage logs leave it null." So a place is read from
 //     a head log only (`parentSetId` null), and a drop's log is never taken for an added set, nor for one logged before 044.
 //   - Logged before 044 (a head log of no planned set whose place is null, or absent: `SetLog.addedPlace` is optional,

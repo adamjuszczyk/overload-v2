@@ -201,4 +201,28 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     expect(s.reopen()).toEqual([{ id: bLog.id, setNumber: 1 }])
     expect(stored(s)).toEqual([`${bLog.id}:w1`, 'P1:1', 'P2:2', `${s.server.logs.find((l) => l.addedPlace === 3)!.id}:3`])
   })
+
+  it('reported (DECISIONS asks): two phones on one session, one holding an open added set the other can\'t see (G46), correct the same log back and forth while both draw it', () => {
+    // phone 1 adds A and B and logs B as 03 (A open, 02); phone 2 holds no list and no draft, so it draws B as 02
+    const s = new Session([card('bench', 'n')], [], [headLog('bench', 1)])
+    s.add('bench', 'A')
+    s.add('bench', 'B')
+    s.log('added:bench:B')
+    expect(read(s)).toEqual(['01✓=P1', '02·=A', '03✓=B'])
+    const bLog = s.server.logs.find((l) => l.addedPlace === 2)!
+    const phone2 = orderOf([card('bench', 'n')])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    const fromPhone2 = numberCorrections(phone2, s.server.logs, s.server.held())
+    expect(fromPhone2).toEqual([{ id: bLog.id, setNumber: 2 }])
+    s.server.applyCorrections(fromPhone2)
+    // phone 1 draws again: B still shows 03 there, so it writes 3 back; phone 2's next draw writes 2 again
+    const fromPhone1 = numberCorrections(s.order(), s.server.logs, s.server.held())
+    expect(fromPhone1).toEqual([{ id: bLog.id, setNumber: 3 }])
+    s.server.applyCorrections(fromPhone1)
+    expect(numberCorrections(phone2, s.server.logs, s.server.held())).toEqual([{ id: bLog.id, setNumber: 2 }])
+    // it settles once A is logged (or deleted, or gone with the session's end): every phone then draws the same rows
+    s.log('added:bench:A')
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    expect(numberCorrections(phone2, s.server.logs, s.server.held())).toEqual([])
+  })
 })
