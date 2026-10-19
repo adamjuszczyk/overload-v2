@@ -17,8 +17,6 @@ const service = {
   addSet: vi.fn(),
   addStage: vi.fn(),
   removeSet: vi.fn(),
-  copyFromPreviousWeek: vi.fn(),
-  copyWorkoutFromPreviousWeek: vi.fn(),
   swapWeekExercise: vi.fn(),
   addWeekExercise: vi.fn(),
   removeWeekExercise: vi.fn(),
@@ -29,8 +27,6 @@ vi.mock('./weekPlanService', () => ({
   addSet: (...a: unknown[]) => service.addSet(...a),
   addStage: (...a: unknown[]) => service.addStage(...a),
   removeSet: (...a: unknown[]) => service.removeSet(...a),
-  copyFromPreviousWeek: (...a: unknown[]) => service.copyFromPreviousWeek(...a),
-  copyWorkoutFromPreviousWeek: (...a: unknown[]) => service.copyWorkoutFromPreviousWeek(...a),
   swapWeekExercise: (...a: unknown[]) => service.swapWeekExercise(...a),
   addWeekExercise: (...a: unknown[]) => service.addWeekExercise(...a),
   removeWeekExercise: (...a: unknown[]) => service.removeWeekExercise(...a),
@@ -62,8 +58,6 @@ function add(
 add('useAddSet', () => hooks.useAddSet('m1', 1), { workoutDayId: 'wd', weekPlanId: 'wp', programExerciseId: 'pe', setNumber: 1 }, 'addSet')
 add('useAddStage', () => hooks.useAddStage('m1', 1), { weekPlanId: 'wp', programExerciseId: 'pe', parentId: 's1', setNumber: 1, stageIndex: 1 }, 'addStage')
 add('useRemoveSet', () => hooks.useRemoveSet('m1', 1), 's1', 'removeSet')
-add('useCopyFromPreviousWeek', () => hooks.useCopyFromPreviousWeek('m1', 2), undefined, 'copyFromPreviousWeek')
-add('useCopyWorkoutFromPreviousWeek', () => hooks.useCopyWorkoutFromPreviousWeek('m1', 2), { workoutDayId: 'wd' }, 'copyWorkoutFromPreviousWeek')
 add('useSwapWeekExercise', () => hooks.useSwapWeekExercise('m1', 1), { weekPlanId: 'wp', programExerciseId: 'pe', replacementExerciseId: 'ex2' }, 'swapWeekExercise')
 add('useAddWeekExercise', () => hooks.useAddWeekExercise('m1', 1), { weekPlanId: 'wp', workoutDayId: 'wd', exerciseId: 'ex', position: 3 }, 'addWeekExercise')
 add('useRemoveWeekExercise', () => hooks.useRemoveWeekExercise('m1', 1), { weekPlanId: 'wp', programExerciseId: 'pe' }, 'removeWeekExercise')
