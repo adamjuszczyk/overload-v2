@@ -91,6 +91,7 @@ describe('runtimeImports: the modules a file loads when it runs', () => {
 describe('resolveImport: the source file a relative specifier names', () => {
   const files = new Set([
     'features/plan/PlanPage.tsx',
+    'features/plan/react.ts', // a sibling file named like a package
     'features/gym/RatingChips.tsx',
     'lib/plannerVocabulary.ts',
     'components/pickers/index.ts',
@@ -113,7 +114,9 @@ describe('resolveImport: the source file a relative specifier names', () => {
   })
 
   it('leaves out a package, an alias, and a relative path that names no source file', () => {
+    // a bare specifier is a package, never a file beside the importer (`react` is not `./react.ts`)
     expect(resolveImport(from, 'react', files)).toBeNull()
+    expect(resolveImport(from, './react', files)).toBe('features/plan/react.ts')
     expect(resolveImport(from, '@scope/pkg', files)).toBeNull()
     expect(resolveImport(from, './PlanPage.css', files)).toBeNull()
     expect(resolveImport(from, '../gym/Missing', files)).toBeNull()
@@ -126,7 +129,7 @@ describe('reachableFrom: everything a root loads, and which roots load it', () =
     ['screens/B.tsx', `import { shared } from '../parts/shared'\nimport { own } from '../parts/own.js'\nexport const B = () => own + shared`],
     ['screens/C.tsx', `import { c } from '../parts/c'\nexport const C = () => c`],
     ['parts/shared.ts', `import { deep } from './deep'\nexport const shared = deep`],
-    ['parts/deep.ts', `import { shared } from './shared'\nexport const deep = 1\nexport const back = shared`], // a cycle
+    ['parts/deep.ts', `export const deep = 1`],
     ['parts/own.ts', `export const own = 2`],
     ['parts/types.ts', `export type OnlyType = string`],
     ['parts/c.ts', `export const c = 3`],
@@ -140,6 +143,13 @@ describe('reachableFrom: everything a root loads, and which roots load it', () =
     expect([...reached.get('parts/own.ts')!]).toEqual(['screens/B.tsx'])
   })
 
+  it('a root names itself, and a file one root loads names only that root', () => {
+    const reached = reachableFrom(['screens/A.tsx', 'screens/C.tsx'], sources)
+    expect([...reached.get('screens/A.tsx')!]).toEqual(['screens/A.tsx'])
+    expect([...reached.get('parts/c.ts')!]).toEqual(['screens/C.tsx'])
+    expect([...reached.get('parts/shared.ts')!]).toEqual(['screens/A.tsx'])
+  })
+
   it('does not reach a file that only a type import names, nor one that no root loads', () => {
     const reached = reachableFrom(['screens/A.tsx', 'screens/B.tsx'], sources)
     expect(reached.has('parts/types.ts')).toBe(false)
@@ -147,12 +157,18 @@ describe('reachableFrom: everything a root loads, and which roots load it', () =
     expect(reached.has('screens/C.tsx')).toBe(false)
   })
 
-  it('stops at a cycle', () => {
-    const reached = reachableFrom(['parts/shared.ts'], sources)
-    expect([...reached.keys()].sort()).toEqual(['parts/deep.ts', 'parts/shared.ts'])
-  })
-
   it('throws for a root that is not among the sources, so a renamed screen cannot leave the test reading nothing', () => {
     expect(() => reachableFrom(['screens/Gone.tsx'], sources)).toThrow(/screens\/Gone\.tsx/)
+  })
+
+  // Last on purpose: if the guard that stops a walk at a file it has already seen is removed, this one never returns, and
+  // Vitest's timeout cannot stop a synchronous loop (RULES.md); nothing above it depends on a cycle.
+  it('stops at a cycle', () => {
+    const cyclic = new Map<string, string>([
+      ['a.ts', `import { b } from './b'\nexport const a = b`],
+      ['b.ts', `import { a } from './a'\nimport { b } from './b'\nexport const b = a`], // loads the first file back, and itself
+    ])
+    const reached = reachableFrom(['a.ts'], cyclic)
+    expect([...reached.keys()].sort()).toEqual(['a.ts', 'b.ts'])
   })
 })
