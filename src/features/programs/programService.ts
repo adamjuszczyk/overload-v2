@@ -171,6 +171,14 @@ export async function fetchPrograms(): Promise<Program[]> {
   return (data as DbProgram[]).map(toProgram)
 }
 
+// One program by id (chunk 51a: CHANGE THE PROGRAM re-reads the run copy's own row, its weekdays included, when SAVE builds
+// its op list, so a save never writes back the weekdays a screen opened with).
+export async function fetchProgram(id: string): Promise<Program> {
+  const { data, error } = await supabase.from('v2_programs').select(PROGRAM_COLUMNS).eq('id', id).single()
+  if (error) throw error
+  return toProgram(data as DbProgram)
+}
+
 // Program lists (chunk 6, TASKS.md — "program lists show kind = 'saved'
 // only"): the programs page's own list and its Start Mesocycle picker, the
 // only two places a user picks a reusable template from. Everywhere else
