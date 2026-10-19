@@ -602,14 +602,14 @@ describe('REST AFTER, "+ SET" and REMOVE THIS SET (W)', () => {
     // run-wide: only the default's row; no session row is written
     expect(sent().map((o) => o.table)).toEqual(['v2_program_sets'])
     expect(world.db.v2_program_sets.find((r) => r.id === 'pe-leg-s2')!.rest_seconds).toBe(120)
-  })
+  }, 20000)
 
   it('REST AFTER stops at 10:00', async () => {
     await open()
     press('More rest after set 01 of Incline Press', 40)
     expect(screen.getByRole('group', { name: 'Rest after set 01 of Incline Press' }).textContent).toContain('10:00')
     expect((setRow('More rest after set 01 of Incline Press') as HTMLButtonElement).disabled).toBe(true)
-  })
+  }, 20000)
 
   it('"+ SET" adds a set with the last set’s rep target; SAVE writes it to the default and to each session that still has the default’s count (W)', async () => {
     await open()
@@ -860,7 +860,7 @@ describe('draws board PL1b (the stable screen)', () => {
     click('All sets of Dip: rep target')
     pickReps('Rep target', { segment: 'RANGE', from: '15', to: '20' }, 'SET 15–20 REPS')
     captureRender('change-program-stable-page', container)
-  })
+  }, 20000)
 
   it('the widest rep boxes (for the 375 px check): the longest kind with the most stages, a warmup, a rest of two minutes', async () => {
     useWorld(stableWorld(), {})

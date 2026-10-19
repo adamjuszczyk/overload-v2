@@ -569,3 +569,92 @@ describe('draws the DAYS card’s states for the 390 px pictures (board PL1 is c
     captureRender('change-program-days-moved', container)
   })
 })
+
+// ─── The card on a workout that is neither the first nor the last (chunk 51b review 1) ───────────────────────────────────
+// The tests above run the card on Full Body, the first workout, and on Arms or the spare one, which are last in their worlds. A generated sweep
+// (the selected workout made the first and the last workout in every place the screen reads it) found three uses that none of them could tell
+// from the first or the last workout: whether the selected workout ever had a day (it decides "the last day stays on"), which of this week's
+// days it is struck through for, and the line "Was …" under the card. Here the workouts are Full Body, a spare one, Arms and a reserve one:
+// the spare and the reserve never had a day, so the middle workouts differ from both ends.
+
+describe('the DAYS card on a workout that is neither the first nor the last (review 1)', () => {
+  function fourWorkouts(): World {
+    const w = stableWorld()
+    addWorkout(w, 'spare', 'Spare', 1)
+    addWorkout(w, 'reserve', 'Reserve', 3)
+    w.db.v2_workout_days.find((x) => x.id === 'arms')!.position = 2
+    return w
+  }
+  const WEEK_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+  beforeEach(() => {
+    useWorld(fourWorkouts(), {})
+  })
+
+  it('the world: Full Body, Spare, Arms, Reserve, with days on the first and the third alone', async () => {
+    await open()
+    expect(screen.getAllByRole('button', { name: /^(Full Body|Spare|Arms|Reserve)/ }).map((b) => b.textContent)).toEqual(['Full BodyTUE · THU', 'Spare', 'ArmsSAT', 'Reserve'])
+  })
+
+  it('a spare workout between two that have days is never asked to keep a day it never had: Friday is given and taken away again', async () => {
+    await open()
+    click(/^Spare/)
+    expect(WEEK_NAMES.map((n) => isOn(n))).toEqual([false, false, false, false, false, false, false])
+    click('Friday')
+    expect(isOn('Friday')).toBe(true)
+    expect(day('Friday').disabled).toBe(false)
+    expect(screen.queryByText('At least one day stays on.')).toBeNull()
+    click('Friday')
+    expect(isOn('Friday')).toBe(false)
+    // its taken days are named for the workouts that hold them, and it can't take them
+    expect(day('Tuesday').disabled).toBe(true)
+    expect(day('Saturday').disabled).toBe(true)
+  })
+
+  it('Arms, with one day, between Full Body and a reserve workout with none: its day stays on, and the card says so', async () => {
+    await open()
+    click(/^Arms/)
+    expect(isOn('Saturday')).toBe(true)
+    expect(day('Saturday').disabled).toBe(true)
+    expect(screen.getByText('At least one day stays on.')).toBeTruthy()
+    fireEvent.click(day('Saturday'))
+    expect(isOn('Saturday')).toBe(true)
+    // a second day lets it give one up
+    click('Friday')
+    expect(day('Saturday').disabled).toBe(false)
+    expect(screen.queryByText('At least one day stays on.')).toBeNull()
+  })
+
+  it('the day Arms gives up is struck through, and the line under the card is Arms’s: "Was Saturday. New days start in week 3. …"', async () => {
+    await open()
+    click(/^Arms/)
+    click('Friday')
+    click('Saturday')
+    expect(isOn('Friday')).toBe(true)
+    expect(isOn('Saturday')).toBe(false)
+    expect(day('Saturday').style.textDecoration).toBe('line-through')
+    expect(day('Friday').style.textDecoration).toBe('none')
+    // the days of the other workouts are not Arms's: Full Body's Tuesday is not struck, Arms did not have it
+    expect(day('Tuesday').style.textDecoration).toBe('none')
+    expect(screen.getByText('Was Saturday. New days start in week 3. This week Arms stays on Saturday; MOVE THIS SESSION in Plan moves just this week.')).toBeTruthy()
+    // the pills show the draft's days of each workout
+    expect(screen.getByRole('button', { name: /^ArmsFRI$/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Full BodyTUE · THU$/ })).toBeTruthy()
+  })
+
+  it('the spare workout given Friday: the line says it had no day, and SAVE writes Friday for the spare workout alone', async () => {
+    const before = world
+    await open()
+    click(/^Spare/)
+    click('Friday')
+    expect(screen.queryByText(/^Was /)).toBeNull()
+    await save()
+    expect(sent()).toEqual(expectedFor(before, withDays({ friday: 'spare' })))
+    // the first row keeps the old days and the second has the spare workout on Friday and nobody else changed
+    const rows = world.db.v2_run_schedules.map((r) => [r.from_week, r.schedule.friday ?? null, r.schedule.tuesday ?? null, r.schedule.saturday ?? null])
+    expect(rows).toEqual([
+      [1, null, 'fb', 'arms'],
+      [3, 'spare', 'fb', 'arms'],
+    ])
+  })
+})
