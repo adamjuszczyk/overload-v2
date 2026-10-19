@@ -118,6 +118,36 @@ describe('text on the accent is --on-accent (DECISIONS 128 (g), the rebuilt scre
   })
 })
 
+describe('what each state draws when its tile is not the open one', () => {
+  // Boards 1b and 1c draw DONE (the name in --text-secondary, the state line muted, a hairline on the surface) and THIS WEEK (the name in
+  // --text-primary, the state line and the outline in the accent). PLANNED and NOT PLANNED are display choices no board draws (provisional
+  // under D31, the report lists them): PLANNED is a week ahead that is ready, so its name is --text-primary and the rest is a DONE tile's
+  // without the tick; NOT PLANNED is a dashed outline on nothing, the name dimmed.
+  const drawn = (week: number) => {
+    const el = tile(week)
+    const stateLine = el.querySelectorAll<HTMLElement>(':scope > span')[1]
+    return { name: el.style.color, state: stateLine.style.color, border: el.style.borderColor, borderStyle: el.style.borderStyle, background: el.style.background }
+  }
+
+  it('DONE, THIS WEEK, PLANNED and NOT PLANNED each draw their own name, state line, outline and fill', () => {
+    strip({ tiles: tilesOf([1, 2, 3, 4], 3), openWeek: 0 })
+    const done = { name: 'var(--text-secondary)', state: 'var(--text-muted)', border: 'var(--border)', borderStyle: 'solid', background: 'var(--surface)' }
+    expect(drawn(1)).toEqual(done)
+    expect(drawn(2)).toEqual(done)
+    expect(drawn(3)).toEqual({ name: 'var(--text-primary)', state: 'var(--accent)', border: 'var(--accent)', borderStyle: 'solid', background: 'var(--surface)' })
+    expect(drawn(4)).toEqual({ name: 'var(--text-primary)', state: 'var(--text-muted)', border: 'var(--border)', borderStyle: 'solid', background: 'var(--surface)' })
+    expect(drawn(5)).toEqual({ name: 'var(--text-secondary)', state: 'var(--text-muted)', border: 'var(--border-strong)', borderStyle: 'dashed', background: 'transparent' })
+  })
+
+  it('opening a tile takes it to the accent whatever it was, and leaves the others as they were', () => {
+    strip({ tiles: tilesOf([1, 2, 3, 4], 3), openWeek: 4 })
+    expect(drawn(4)).toEqual({ name: 'var(--on-accent)', state: 'var(--on-accent)', border: 'var(--accent)', borderStyle: 'solid', background: 'var(--accent)' })
+    expect(drawn(3).border).toBe('var(--accent)')
+    expect(drawn(3).background).toBe('var(--surface)')
+    expect(drawn(1).name).toBe('var(--text-secondary)')
+  })
+})
+
 describe('the strip opens scrolled to the current tile (P1.2-6)', () => {
   // jsdom has no layout: a tile is 100 px per week from the strip's left edge and 90 px wide, the strip 300 px wide.
   beforeEach(() => {

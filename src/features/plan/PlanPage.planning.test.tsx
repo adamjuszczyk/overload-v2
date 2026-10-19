@@ -212,6 +212,9 @@ describe('opening Plan, and tapping tiles, plans nothing', () => {
 
     openWeekTile('WEEK 1')
     await screen.findByText("Week 1 wasn't planned", {}, FOUND)
+    // nothing went wrong, so the note is announced as a status, not as an alert
+    expect(screen.getByText("Week 1 wasn't planned").parentElement?.getAttribute('role')).toBe('status')
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
     expect(screen.queryByText('PLAN FORWARD')).toBeNull()
     expect(screen.queryByText('COPY')).toBeNull()
@@ -282,6 +285,34 @@ describe('the current week is planned when it has no rows, once, and nothing els
     fireEvent.click(screen.getByText('TRY AGAIN'))
     await screen.findByLabelText('Week 2 options', {}, FOUND)
     expect(calledWeeks()).toEqual([2, 2])
+  })
+
+  it('planning the current week failing with no message says "Something went wrong."; with none and the phone offline, "You may be offline." (a real message still wins)', async () => {
+    useRun({ current: 2, planned: [1], planWeek: () => ({ message: '' }) })
+    renderPlan()
+    await screen.findByText("Week 2 isn't planned yet", {}, FOUND)
+    await screen.findByText('Something went wrong.', {}, FOUND)
+    expect(screen.getByRole('alert').textContent).toContain("Week 2 isn't planned yet")
+    expect(screen.queryByText('You may be offline.')).toBeNull()
+
+    const online = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      cleanup()
+      queryClient.clear()
+      useRun({ current: 2, planned: [1], planWeek: () => ({ message: '' }) })
+      renderPlan()
+      await screen.findByText('You may be offline.', {}, FOUND)
+      expect(screen.queryByText('Something went wrong.')).toBeNull()
+
+      cleanup()
+      queryClient.clear()
+      useRun({ current: 2, planned: [1], planWeek: () => ({ message: 'Failed to fetch' }) })
+      renderPlan()
+      await screen.findByText('Failed to fetch', {}, FOUND)
+      expect(screen.queryByText('You may be offline.')).toBeNull()
+    } finally {
+      online.mockRestore()
+    }
   })
 
   it('a sequence run plans the current cycle only (cycle 7, whose slots sit at positions 0 and 1), not a cycle the slot positions name', async () => {

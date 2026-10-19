@@ -424,7 +424,41 @@ describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 5
     expect(within(wordsOf()).getByText('Something went wrong.')).toBeTruthy()
   })
 
-  it('a new attempt clears the "already started" notice before it asks again, and the sheet closes with ×', () => {
+  it('a failure with no message while the phone is offline: "You may be offline."; with a message, offline too, the message wins', () => {
+    const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      weekDeloadHook.isError = true
+      weekDeloadHook.error = {}
+      mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+      const first = renderPlanPage()
+      openWeekMenu()
+      expect(within(wordsOf()).getByText('You may be offline.')).toBeTruthy()
+      expect(within(wordsOf()).queryByText('Something went wrong.')).toBeNull()
+      first.unmount()
+
+      weekDeloadHook.error = { message: 'Failed to fetch' }
+      renderPlanPage()
+      openWeekMenu()
+      expect(within(wordsOf()).getByText('Failed to fetch')).toBeTruthy()
+      expect(within(wordsOf()).queryByText('You may be offline.')).toBeNull()
+    } finally {
+      onLine.mockRestore()
+    }
+  })
+
+  it('a new attempt clears the "already started" notice before it asks again: the second ask is still out, and the first one\'s notice is gone', () => {
+    setWeekDeloadMutate.mockImplementationOnce((_vars, opts) => opts?.onSuccess?.({ anyAlreadyStarted: true }))
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    fireEvent.click(within(wordsOf()).getByText('MARK WEEK AS DELOAD'))
+    expect(within(wordsOf()).getByText('Already started — sets left as they are')).toBeTruthy()
+    fireEvent.click(within(wordsOf()).getByText('MARK WEEK AS DELOAD')) // the second mutation does not answer (no onSuccess)
+    expect(setWeekDeloadMutate).toHaveBeenCalledTimes(2)
+    expect(within(wordsOf()).queryByText('Already started — sets left as they are')).toBeNull()
+  })
+
+  it('the sheet closes with ×, and opened again it shows no notice from before', () => {
     setWeekDeloadMutate.mockImplementation((_vars, opts) => opts?.onSuccess?.({ anyAlreadyStarted: true }))
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()

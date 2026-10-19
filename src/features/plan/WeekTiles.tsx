@@ -10,9 +10,10 @@ import type { WeekTile } from './weekPlanning'
 // Tapping a tile opens that week; it never plans it (PLAN FORWARD does, on the card the first unplanned week opens).
 //
 // The open tile is the accent's (text on it is `--on-accent`). Display choices no board settles, provisional under D31 (chunk 52's
-// report lists them): a PLANNED tile, which no board draws, is a DONE tile without the tick; every NOT PLANNED tile is dashed and has the
-// lock, the first unplanned week after the current one (board 1b) and a past week nobody planned (DECISIONS 131) alike, so a week off
-// reads as a week with nothing in it; and the current week's tile outlines in the accent when it isn't open (board 1c).
+// report lists them): a PLANNED tile, which no board draws, is a DONE tile without the tick and with its name in the primary text (a week
+// ahead isn't dimmed like one behind); every NOT PLANNED tile is dashed and has the lock, the first unplanned week after the current one
+// (board 1b) and a past week nobody planned (DECISIONS 131) alike, so a week off reads as a week with nothing in it; and the current
+// week's tile outlines in the accent when it isn't open (board 1c).
 
 export interface WeekTilesProps {
   tiles: readonly WeekTile[]

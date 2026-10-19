@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { addWeeks, format, startOfWeek, subWeeks } from 'date-fns'
 import type { Mesocycle, Program, WeekPlan, WorkoutDay } from '../../types'
@@ -20,10 +21,13 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
   state.programsLoading = false
   planWeekMutate.mockReset()
+  weekReads.length = 0
 })
 
 interface Read<T> { data: T | undefined; isLoading: boolean; isError?: boolean; error?: unknown }
 const planWeekMutate = vi.hoisted(() => vi.fn())
+/** Every (run, week) the screen asked the open week's plan of, in order: what `useWeekPlans` was called with. */
+const weekReads = vi.hoisted(() => [] as Array<[string, number]>)
 const state = vi.hoisted(() => ({
   programsLoading: false,
   meso: null as unknown as Mesocycle,
@@ -63,7 +67,10 @@ vi.mock('./usePlanForward', () => ({
   useDefaultHasSets: () => ({ data: undefined }),
 }))
 vi.mock('./useWeekPlan', () => ({
-  useWeekPlans: () => state.week,
+  useWeekPlans: (mesoId: string, weekNumber: number) => {
+    weekReads.push([mesoId, weekNumber])
+    return state.week
+  },
   useAllWeekPlans: () => state.all,
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: planWeekMutate, isPending: false }),
@@ -282,6 +289,28 @@ describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => 
     expect(screen.queryByText("COULDN'T LOAD PLAN")).toBeNull()
   })
 
+  // react-dom/server draws the first render alone, with no effect run: what RTL's render (effects flushed in act) can't show. A run in
+  // week 3 must not draw week 1 (open, with its lock line) for a render before an effect moves the page to week 3.
+  const firstRender = () => renderToString(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+
+  it('the first render of a run in week 3 whose weeks are already read opens week 3: no lock line, no week 1 open', () => {
+    run(3, [1, 2, 3])
+    const first = firstRender()
+    expect(first).toMatch(/data-week="3"[^>]*aria-current="true"/)
+    expect(first).not.toMatch(/data-week="1"[^>]*aria-current="true"/)
+    expect(first).not.toContain('PAST WEEK')
+  })
+
+  it('the first render of a run in week 3 whose weeks are still out: the spinner and no lock line', () => {
+    run(3, [1, 2, 3])
+    state.all = { data: undefined, isLoading: true }
+    const first = firstRender()
+    expect(first).toContain('aria-label="Loading"')
+    expect(first).not.toContain('PAST WEEK')
+    renderPlan()
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
+  })
+
   it('LOADING THE WEEK: the tiles stay, with the open week\'s own spinner under them, and no panel, actions or CHANGE THE PROGRAM until it has been read', () => {
     run(2, [1, 2])
     state.week = { data: undefined, isLoading: true }
@@ -307,6 +336,47 @@ describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => 
     expect(tileLabels()).toHaveLength(3)
   })
 
+  it('...with no message: "Something went wrong."; offline with no message: "You may be offline."; offline with a message: the message', () => {
+    run(2, [1, 2])
+    state.week = { data: undefined, isLoading: false, isError: true, error: {} }
+    const { unmount } = renderPlan()
+    expect(within(screen.getByRole('alert')).getByText('Something went wrong.')).toBeTruthy()
+    unmount()
+
+    const online = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      const again = renderPlan()
+      expect(within(screen.getByRole('alert')).getByText('You may be offline.')).toBeTruthy()
+      expect(screen.queryByText('Something went wrong.')).toBeNull()
+      again.unmount()
+      state.week = { data: undefined, isLoading: false, isError: true, error: { message: 'Failed to fetch' } }
+      renderPlan()
+      expect(screen.getByText('Failed to fetch')).toBeTruthy()
+      expect(screen.queryByText('You may be offline.')).toBeNull()
+    } finally {
+      online.mockRestore()
+    }
+  })
+
+  it('a refetch of the open week that failed with its plan in hand does not blank the week: no alert, and the actions are still there', () => {
+    run(2, [1, 2])
+    state.week = { data: [week(2)], isLoading: false, isError: true, error: { message: 'Failed to fetch' } }
+    renderPlan()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText("Couldn't load this week")).toBeNull()
+    expect(screen.getByText('COPY')).toBeTruthy()
+    expect(screen.getByLabelText('Week 2 options')).toBeTruthy()
+  })
+
+  it('a planned week whose own read came back empty offers no COPY and no WEEK ⋯: nothing to copy into, nothing to mark', () => {
+    run(2, [1, 2])
+    state.week = { data: [], isLoading: false }
+    renderPlan()
+    expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
+    expect(screen.queryByText('COPY')).toBeNull()
+    expect(screen.queryByLabelText('Week 2 options')).toBeNull()
+  })
+
   it('a week that is not planned has no spinner while its (empty) read is out: the card is a card, not a week to load', () => {
     run(2, [1, 2])
     state.week = { data: undefined, isLoading: true }
@@ -314,6 +384,38 @@ describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => 
     openWeekTile('WEEK 3')
     expect(screen.getByText("Week 3 isn't planned yet")).toBeTruthy()
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('the open week is always one of the tiles', () => {
+  it('another run takes the screen while the first one\'s week 6 is open: the first render of the new run already reads its own current week, never week 6', () => {
+    run(5, [1, 2, 3, 4, 5]) // tiles 1 to 6: week 6 is the one PLAN FORWARD opens
+    const { rerender } = renderPlan()
+    openWeekTile('WEEK 6')
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('6')
+
+    // a second run, in its week 2 with weeks 1 and 2 planned: its tiles are 1 to 3, and 6 is not one of them
+    state.meso = { ...state.meso, id: 'meso-2', startDate: monday(1) }
+    state.all = { data: [week(1), week(2)], isLoading: false }
+    state.week = { data: [week(2)], isLoading: false }
+    weekReads.length = 0
+    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+
+    expect(weekReads.length).toBeGreaterThan(0)
+    expect(weekReads.every(([meso, weekNumber]) => meso === 'meso-2' && weekNumber === 2)).toBe(true)
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
+  })
+
+  it('a week that is one of the tiles stays open when the tiles change under it', () => {
+    run(5, [1, 2, 3, 4, 5])
+    const { rerender } = renderPlan()
+    openWeekTile('WEEK 2')
+    weekReads.length = 0
+    state.all = { data: [1, 2, 3, 4, 5, 6].map(week), isLoading: false } // week 6 is planned: the strip grows to 7
+    rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    expect(tileLabels()).toHaveLength(7)
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
+    expect(weekReads.every(([, weekNumber]) => weekNumber === 2)).toBe(true)
   })
 })
 

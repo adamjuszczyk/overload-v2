@@ -338,9 +338,10 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
   // A run whose start date is still ahead has no current week yet: week 1 (as CHANGE THE PROGRAM's button reads it). `weekTiles` needs
   // a whole number from 1.
   const tilesCurrent = Math.max(1, currentWeek)
-  // The week the header has open. A sequence run opens on its current cycle from the first render, not after an effect, so no other
-  // cycle is shown (or flagged read-only) first. What is shown is `viewWeek` below, which is always one of the tiles.
-  const [openedWeek, setOpenedWeek] = useState(sequenceCycle ?? 1)
+  // The week the header has open. It opens on the current week (the current cycle on a sequence run) from the first render, not after an
+  // effect, so no other week is shown (or flagged read-only) first: a run in week 5 whose weeks are already read would otherwise draw
+  // week 1 and its lock line for a render. What is shown is `viewWeek` below, which is always one of the tiles.
+  const [openedWeek, setOpenedWeek] = useState(sequenceCycle ?? tilesCurrent)
 
   // Workout switcher (TASKS.md §4 item 30) — which single workout day is
   // showing. No effect needed to keep it valid: `selected` below always
@@ -455,8 +456,9 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
   const showForward = !!viewTile && viewTile.planForward
   const currentUnplanned = !!viewTile && viewTile.state === 'not_planned' && !viewTile.readOnly && !viewTile.planForward
   const weekIsOpen = !!viewTile && !missedWeek && !showForward && !currentUnplanned
-  // A past week: every tile before the current one. Week plans with a completed or skipped session are read-only too (below).
-  const isPast = viewTile ? viewTile.readOnly : viewWeek < currentWeek
+  // A past week: every tile before the current one. Week plans with a completed or skipped session are read-only too (below). With the
+  // run's weeks still unread there is no tile and nothing is known to be past: the lock line must not show over the spinner.
+  const isPast = !!viewTile && viewTile.readOnly
 
   const weekPlansRead = useWeekPlans(activeMeso?.id ?? '', viewWeek)
   const weekPlans = weekPlansRead.data ?? NO_PLANS
