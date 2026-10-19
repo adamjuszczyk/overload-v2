@@ -10,6 +10,7 @@ import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { createFakeDeloadDb, fakePlan, fakeSet, type FakeSetRow } from './fakeDeloadDb.testutil'
+import { openWeekMenu } from './planMenus.testutil'
 
 // Chunk 48 (TASKS-1.2: "Deload rules are read from Settings and nowhere else"; SPEC Deload [1.2]: "Settings
 // only; programs have no override"; "RIR rule: a range shifts both ends, floor 0"). The call-site proof:
@@ -166,6 +167,9 @@ describe('PlanPage — MARK WEEK AS DELOAD follows the Settings rules too (chunk
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETTINGS_RULES })
     renderPlanPage()
 
+    // Chunk 52: the week's deload is in WEEK ⋯ (board 1e), not a button above the panel.
+    await screen.findByLabelText('Week 1 options', {}, FOUND)
+    openWeekMenu()
     fireEvent.click(await screen.findByText('MARK WEEK AS DELOAD', {}, FOUND))
     await screen.findByText('UNMARK THIS WEEK', {}, FOUND)
 
@@ -183,6 +187,8 @@ describe('PlanPage — MARK WEEK AS DELOAD follows the Settings rules too (chunk
     buildWorld()
     renderPlanPage()
 
+    await screen.findByLabelText('Week 1 options', {}, FOUND)
+    openWeekMenu()
     fireEvent.click(await screen.findByText('MARK WEEK AS DELOAD', {}, FOUND))
     await screen.findByText('UNMARK THIS WEEK', {}, FOUND)
 
