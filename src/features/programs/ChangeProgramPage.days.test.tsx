@@ -263,6 +263,22 @@ describe('the DAYS card of a weekday run (board PL1)', () => {
     expect(isOn('Friday')).toBe(false)
   })
 
+  it('a workout whose first day only starts next week has that day already: it is its last one, by the days the edit starts from (the run copy’s), not the ones in force this week', async () => {
+    const w = stableWorld()
+    addWorkout(w, 'spare', 'Spare', 2)
+    w.db.v2_programs[0].schedule = { tuesday: 'fb', thursday: 'fb', saturday: 'arms', friday: 'spare' }
+    w.db.v2_run_schedules.push(
+      { id: 'r1', user_id: USER, mesocycle_id: w.mesocycleId, from_week: 1, schedule: { tuesday: 'fb', thursday: 'fb', saturday: 'arms' } },
+      { id: 'r3', user_id: USER, mesocycle_id: w.mesocycleId, from_week: 3, schedule: { tuesday: 'fb', thursday: 'fb', saturday: 'arms', friday: 'spare' } },
+    )
+    useWorld(w)
+    await open()
+    click(/^Spare/)
+    expect(isOn('Friday')).toBe(true)
+    expect(day('Friday').disabled).toBe(true)
+    expect(screen.getByText('At least one day stays on.')).toBeTruthy()
+  })
+
   it('says when the new days start, and what this week does: "Was Tuesday and Thursday. New days start in week 3. …"', async () => {
     await open()
     click('Wednesday')

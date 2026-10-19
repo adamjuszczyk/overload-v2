@@ -10,12 +10,23 @@ Pull
 TUE
 Legs
 THU
+1 · PULL · DAYS
 RENAME
-1 · WARMUP ROUTINE
+M
+T
+W
+T
+F
+S
+S
+Mon is Push's day
+Thu is Legs's day
+At least one day stays on.
+2 · WARMUP ROUTINE
 EVERY WEEK
 Band pull-aparts
 + ADD ITEM
-2 · EXERCISES · DRAG TO REORDER
+3 · EXERCISES · DRAG TO REORDER
 Lat Pulldown
 BACK
 SWAP

@@ -132,6 +132,10 @@ function Item({
   handlers: CardHandlers
 }) {
   const changed = item.isChanged
+  // Every side's colour is its own longhand: a `border-color` shorthand followed by `border-top-color` is dropped whole by jsdom's
+  // serialiser, so a captured fixture of a changed card kept its top edge and lost the other three (RULES.md, "jsdom drops some inline
+  // declarations"; the pictures showed the card's other sides black). A browser draws both the same.
+  const outline = changed ? 'var(--accent)' : 'transparent'
   return (
     <div
       data-exercise-key={item.key}
@@ -144,8 +148,12 @@ function Item({
         padding: inSuperset || changed ? '10px 6px' : '0 6px',
         borderRadius: 10,
         background: changed ? 'var(--accent-muted)' : 'transparent',
-        ...hairline(changed ? 'var(--accent)' : 'transparent'),
+        borderWidth: 1,
+        borderStyle: 'solid',
         borderTopColor: changed ? 'var(--accent)' : first ? 'transparent' : 'var(--border-subtle)',
+        borderRightColor: outline,
+        borderBottomColor: outline,
+        borderLeftColor: outline,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>

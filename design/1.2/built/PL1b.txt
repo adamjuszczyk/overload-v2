@@ -61,9 +61,12 @@ CHAIN
 +
 02
 10–12
+DROPSET · 1
 −
 CHAIN
 +
+↳
+—
 + SET
 SWAP
 SUPERSET
@@ -113,15 +116,15 @@ REMOVE
 Dip
 TRICEPS · NEW
 ALL
-—
+15–20
 REST AFTER
 01
-—
+15–20
 −
 CHAIN
 +
 02
-—
+15–20
 −
 CHAIN
 +
