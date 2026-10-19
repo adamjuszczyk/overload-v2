@@ -664,6 +664,12 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     const logs = [headLog('bench', 1), headLog('bench', 2), headLog('bench', 3)]
     expect(changeOn({ cards: [card('bench', 'n n n')], logs, key: 'set:bench.1', pick: staged('dropset', 1) }).effects.renumber).toEqual([])
     expect(changeOn({ cards: [card('bench', 'w n n')], logs: [headLog('bench', 1, { warmup: true, number: 1 })], key: 'set:bench.1', pick: WARMUP }).effects.changed).toBe(false)
+    // …even where stored numbers are stale (1.1 numbered sets in the order they were logged): a type change that moves no set
+    // between the lists writes no number, logged or open; the draw's corrections fix stale ones (178) (break: any type change
+    // renumbers)
+    const stale = [headLog('bench', 3, { number: 1 }), headLog('bench', 1, { number: 2 })]
+    expect(changeOn({ cards: [card('bench', 'n n n')], logs: stale, key: 'set:bench.1', pick: staged('dropset', 1) }).effects.renumber).toEqual([])
+    expect(changeOn({ cards: [card('bench', 'n n n')], logs: stale, key: 'set:bench.2', pick: staged('dropset', 1) }).effects.renumber).toEqual([])
   })
 
   it('a set added in the session and logged: made a warmup it stays a row, as a warmup with its W number on its log (173), and the added sets after it close the gap', () => {
