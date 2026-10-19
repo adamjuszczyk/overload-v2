@@ -240,7 +240,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **A mutation sweep's runner decides by the run's exit code, never by a pattern matched in vitest's output, and is checked before any verdict is used** (chunk 51b's retry builder; its runner rules followed in the second review).
   - What happened: the builder's first runner took a regex match on the output as vitest's summary. The "Failed Tests N" banner matches it too, and it reported caught mutants as survivors. A mutant that had to be caught came back a survivor, which is how it was found.
   - Check the runner on a mutant that must be caught, one that must survive and a comment-only control.
-  - Run each sweep with a test timeout far above the heaviest test (60 s here, where the heaviest took 4 s alone), and one runner per tree. Under a 5 s timeout with three shards on four CPUs, a comment-only control read as caught (a timeout is a failure), and two runners in one tree leave a file mutated.
+  - Run each sweep with a test timeout far above the heaviest test (60 s here, where the heaviest took 4 s alone), and one runner per tree. In the builder's first full run, three shards on four CPUs under a 5 s timeout, with a second run in a tree one shard was using, read a comment-only control as caught: a timed-out test is a failure, and two runners in one tree see each other's mutations.
   - A generated mutant is valid only where its names are in scope: flag a caught run whose output holds a ReferenceError, a crash or a timeout, and run it again alone.
 
 ## The 1.2 usage rules (Adam, 2026-10-16) — cut tokens per chunk without changing what is checked
