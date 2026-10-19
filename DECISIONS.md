@@ -1,16 +1,13 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 46's gap pre-read (three questions, 177–179, all blocking 46's sixth attempt).*
+*Rewritten at every boundary. Last: 2026-10-19, 177–179 answered (Adam, 2026-10-19); chunk 46's sixth attempt can start.*
 - *Chunk 46m merged (#158). Migration 044 adds `v2_set_logs.added_place`: a nullable number with no default, refused below 1, and no existing row touched. It is live on staging. The deploy succeeded and the column answers. A test write of 0 was refused by its check and wrote nothing. RLS and the smoke are unchanged. Nothing reads or writes the column until chunks 46 and 58a.*
 - *`check-migration` flags 044's check and its schema reload, as it did for 042 and 043. That is one more line under "For the release", for the migrations-first PR.*
 - *One docs fix, no decision needed: TASKS 46 now adds `SetLog.addedPlace` as an optional field, as `stageKind` is. As a required field it breaks typecheck in 25 files, three of them frozen Coach files.*
-- *Chunk 46's pre-read is done: three questions it doesn't settle, 177–179, each blocking 46's sixth attempt. What follows: 46's sixth attempt once they are answered, beside d31b; then 52 onward; 58a–64 once 46 merges.*
+- *Chunk 46's pre-read is done and its three questions, 177–179, are answered. What follows: 46's sixth attempt, beside d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
-- **177** — do the drop and stage logs of an added set also carry `added_place`? Recommended: no, the head's log only. Blocks: chunk 46.
-- **178** — an added set left unlogged when the session ends: what patches the logged sets after it, whose rows then show a lower number than their logs hold? Recommended: the module reports them and the card writes the patch when it draws them. Blocks: chunk 46.
-- **179** — the sets a swap for today moves: added sets with a place, or none? Recommended: added sets with a place, assigned at the swap. Blocks: chunk 46.
 - **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
 - **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, after d31b or inside its scope. Blocks: nothing.
 
@@ -199,38 +196,19 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Evidence:** made the first workout, these `selected.id` uses in `ChangeProgramPage.tsx` pass every test (line numbers as merged in #156): 366 the drag's commit, 383 UNLINK, 384 the split, 385 MOVE, 540 a routine item's move, 677 and 678 the exercise sheet's MOVE UP and MOVE DOWN. So does 533, the warmup card's `key` (a display state kept across a workout switch). The builder's results are in `<scratchpad>/build/c51b2/logs/x51-final-*.jsonl`. Chunk 51b's second review re-ran four of them, its own replacements, on the merged tests: the drag's commit, UNLINK, the routine move and MOVE UP; all four pass every test.
 
 ### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
-**Ask:** an added set's place is "written when the added set's log is first written" (174). A staged added set has several logs: its head, and one per drop or stage. Does each drop or stage log hold the place too, or only the head's log?
-**Recommendation:** (a), the head's log only. The place belongs to the set. A drop is always drawn under its head (`parentSetId`, `stageIndex`), and a head can't be unlogged while a drop of it is logged (18c), so a drop's copy would never be read.
-**Blocks:** chunk 46's sixth attempt (which logs the reader reads the place from, and which logs the null fallback covers); then 58a's payload for a drop or stage LOG.
-**Options:**
-- (a) Head only: drop and stage logs hold null. 46 reads the place from head logs (`stageIndex` 0) and never from a stage row, and the 46m fallback ("null and no planned set") covers head logs only. TASKS 46m's writer list loses `handleLogStage`.
-- (b) Every log of an added set holds its set's place: 58a's `handleLogStage` writes the head's place with each drop or stage. 46 reads it from the head, and a test checks that each drop holds its head's place.
-**Answer:**
-**Evidence:** Adam's words (174 and the writers' mapping) say "an added set's place" and "the added set's log", as if there were one log. TASKS 46m's writer list names `handleLogStage` among the LOG paths of an added set, which reads as (b). The sixth attempt's plan (`<scratchpad>/build/chunk-46-builder-6.md`, section 3, option (a)) has the place "null … on a drop", which is (a). Chunk 46m's review left it open for this pre-read (carry notes). A drop log has `weekPlanSetId` null too, so under (a) the reader must not take it for a pre-044 log. What is redone if the answer goes the other way: 58a's stage payload, and one reader test in 46.
+- What: whether the drop and stage logs of an added set also carry `added_place`.
+- Answer: (Adam, 2026-10-19) "no. Only an added set's own log carries added_place; its drop and stage logs leave it null."
+- Date: 2026-10-19
 
 ### 178 An added set left unlogged when the session ends: what patches the logged sets after it? (pre-read, chunk 46)
-**Ask:** an added set with no log exists only in the card's list and its draft, and both end with the session (G46; TASKS 63: "the session's end clears the session's drafts"; 174 didn't keep the list past the session). Once it is gone, each logged set after it shows a number one lower than its log holds, and the next set added stores a number that a log already holds. What writes their new numbers?
-- Example, with the lock on: Bench 01–03 logged; A and B added and logged as 04 and 05; A unlogged; FINISH, COMPLETE; CONTINUE SESSION. The rows read 01✓ 02✓ 03✓ B✓, with B shown as 04 and its log holding 5. + ADD SET gives N, shown as 05, and LOG stores 5. Two logs hold 5.
-- The same happens on another phone during the session (it never had A's draft), and with the lock off, A never logged.
-**Recommendation:** (b). The module reports each logged set whose stored number isn't the number its row shows, and the card writes those patches when it draws the rows (after a reopen, after a reload without the drafts, on another phone), queued offline like a delete's. It is the only option that keeps 173's "no two logs ever hold one number" on every phone. Its cost: with two phones open at once and a draft on one of them, each phone patches the numbers back to its own view when it refetches.
-**Blocks:** chunk 46's sixth attempt. 173's reopen step, checked with stored = shown and "no two logs share a number", fails on this shape once the warmup carve-outs come out.
-**Options:**
-- (a) The session's end counts an unlogged added set as deleted: FINISH (64, and auto-finish) writes the renumber that `deleteEffects` gives for it before the session completes. That covers a reopen. Another phone during the session can still show a stale number and store a duplicate.
-- (b) A reconcile when the rows are drawn (recommended): from 46's module, written by the card (58a).
-- (c) FINISH logs each unlogged added set as skipped, so it keeps its place and number after a reopen. That is a skipped row the user never asked for (REVIEW lists no skipped added set).
-- (d) Accept it: after a reopen or on another phone, a logged set may show a number its log doesn't hold, and two logs can hold one number. That relaxes 173.
-**Answer:**
-**Evidence:** SPEC 18b (170) names two things that patch stored numbers, a delete and a switch to or from Warmup; a set that leaves with the session's end is neither. Review 5's F2 is this shape with every added set logged, which 044's place fixes. With one of them unlogged at the end, the place keeps the order, but the number of each set after it still moves. Read, not executed (a read-only pre-read): from the rank rule at `d09a241` (`workoutRules.ts`, its header's "What a row's number is") and 170.
+- What: what patches the logged sets after an added set is left unlogged when the session ends.
+- Answer: (Adam, 2026-10-19) "(a), with limits. Chunk 46's rules report the logged sets whose stored number differs from the number their row shows; the workout screen writes the corrected numbers when it draws the session's rows. It writes only where they differ, so drawing the same session again writes nothing. It writes only from the workout screen for an in-progress or reopened session, never from History, Plan or any read-only view. Offline, the writes queue like a delete's. Tests: a session ended with an unlogged added set, reopened, gets one correction write; a second draw gets none (break-proven both ways)."
+- Date: 2026-10-19
 
 ### 179 The sets a swap for today moves: added sets with a place, or none? (pre-read, chunk 46)
-**Ask:** a swap for today moves the original's open sets to the new exercise with their numbers, type, drops and targets (164), and they are logged with no planned set. That makes them sets of the new exercise that no plan holds, as an added set is. But TASKS 46m's writer list says only 58a's + ADD SET / + ADD ROUND and 59's "Add a set" create an added set, so nothing gives the moved sets a place. Do they get one?
-**Recommendation:** (a), yes. The swap creates them as added sets of the new exercise, each given its place by 46's rule in the order they stood (1, 2, …), and 59 writes the place with each moved set's log, as for any added set. Without one, their logs fall into the pre-044 fallback (logged time, then id), and a moved set made a Warmup brings back 174's shape: after a reopen, nothing says where it stood among the moved working sets.
-**Blocks:** chunk 46's sixth attempt, whose module has no input for a moved set (164's Blocks said so) and whose order and `nextAddedPlace` must take them in; then 59.
-**Options:**
-- (a) Added sets with a place (recommended): in the card's list (`OrderExercise.added`) with their types (161), ranked after the original's logged sets so they keep their numbers (164: "03 after 01–02"). 59 assigns and writes the place, and TASKS 46m's mapping gains the swap.
-- (b) Not added sets: their logs leave `added_place` null, and the module orders a swapped card's sets that have no planned set and no place by their number, before its placed added sets. There is no new writer, but the null fallback then covers logs written after 044 too, and a moved Warmup's order is lost on a reopen (above).
-**Answer:**
-**Evidence:** 164's full text (HISTORY.md): the moved sets "are logged with no planned set, as today (RULES.md: the swap's logs carry none)". 1.1 draws them as extra (ADD SET) slots on the replacement's card (`useExerciseCardState.ts`, `extraSlotCount` seeded from `swappedFrom`). At `d09a241`, `workoutRules.ts` has no swap input (a swapped card is only "the replacement's" `exerciseId`), and no test names a swap. TASKS 46m: "no other chunk creates an added set", listing Plan's + ADD SET and chunks 61, 62 and 64, but not 59's swap.
+- What: whether the sets a swap for today moves are added sets with a place.
+- Answer: (Adam, 2026-10-19) "yes. Sets moved by a swap for today count as added sets of the new exercise. Each gets its place at the swap, in their order, after any sets already added to that exercise; chunk 59 writes it."
+- Date: 2026-10-19
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
