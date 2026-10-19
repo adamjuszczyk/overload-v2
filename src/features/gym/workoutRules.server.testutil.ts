@@ -75,6 +75,13 @@ export class FakeServer {
     for (const change of init.changes ?? []) this.rows.push({ ...changeColumns(change), id: change.id })
   }
 
+  /** A copy of the tables, which goes on making new row ids where this one would (a copy that started again from 1 would reuse them). */
+  clone(): FakeServer {
+    const copy = new FakeServer({ logs: this.logs, changes: this.held() })
+    copy.made = this.made
+    return copy
+  }
+
   /** The change rows as the app reads them back: the union of chunk 36 with each row's id. */
   held(): HeldChange[] {
     return this.rows.map((r): HeldChange => {
