@@ -161,6 +161,34 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   Numbering (Adam, 2026-10-19): "Migration numbers: (a). Chunk 46m's added_place is 044; chunk 53's v2_plan_week becomes 045. Renumber TASKS-1.2 (Data model, Migration summary, chunk 53, Release, "For the release") and every other mention, docs only, in the same commit as 46m's scope note." So the migration is 044, not the 045 of his first words. Written into SPEC.md (Objects stored → Set log) and TASKS-1.2 (chunk 46m, the Data model and the Migration summary), and 044 into DECISIONS "For the release", in #153. Full text in HISTORY.md.
 - Date: 2026-10-19
 
+### 175 Chunk 51b's display choices on CHANGE THE PROGRAM's DAYS card and set rows (provisional, D31)
+**Ask:** chunk 51b built the DAYS card and a stable run's set rows with these display choices, which no board or SPEC sentence settles, or where the screen differs from a board's drawing. Accept them, or change any?
+**Recommendation:** accept all: each is display only and changes nothing that is written. (b) changes 51a's chips on weekday runs and (l) is the contract 54b sends, so they are the ones to look at.
+**Blocks:** nothing.
+**Options:** accept as built, or change any of:
+- (a) RENAME is in the DAYS card's header (PL1) on a weekday run; a sequence run, which has no card, keeps 51a's row under the chips (172 (a), now for sequence runs only).
+- (b) The workout chips show the draft's days, as PL1 draws Pull 1 on WED beside "Was Tuesday"; 51a drew the days in force that week (172 (a)), which this replaces on weekday runs. The card's struck-through day and its "Was …" line say what this week has.
+- (c) The taken-day lines ("Sat is Arms's day") are always shown, not only when tapped: a disabled day can't be tapped.
+- (d) A workout that never had a day (a spare one) may be given days and lose them again, as `planSchedule` has it; "had a day" is read from the run copy's schedule, the one the edit starts from.
+- (e) A new stage has no rep target of its own (as the planner's `addProgramSetStage`).
+- (f) The kind label goes under the rep target when the two don't fit side by side (the box is about 115 px wide at 375) and ends in an ellipsis only at 360 px with `REST-PAUSE · 10`; the REST AFTER column is the board's 128 px and gives up to 32 px to the rep box on a narrower screen.
+- (g) "NO SETS YET", drawn in `--error`, on a stable card with no set (an exercise just added), and no ALL row until it has one.
+- (h) Warmups: the row says `W` (`AW` in a superset), numbered apart from the working sets (SPEC 18b, DECISIONS 170); a picker's eyebrow says the number among the working sets, or among the warmups for a warmup.
+- (i) ALL sets every set, a warmup too; its picker opens with one set, so "Use for all" isn't offered, and its eyebrow says `SET 01` (chunk 39's picker has no eyebrow for "all sets").
+- (j) "+ SET" copies the last set's rep target (a staged last set gives its own, not its last stage's); none when there is no set.
+- (k) A swapped exercise on a stable run shows and edits the old exercise's sets; the ops are exactly what a swap with no sets writes (a test compares them).
+- (l) `#<exerciseId>` is the catalogue exercise's id (the `exerciseId` field): the first workout that holds it is selected and its card scrolled to the top; an unknown or malformed hash is ignored. This is what 54b's "CHANGE EVERY WEEK →" must send.
+**Answer:**
+**Evidence:** the builder's report (`<scratchpad>/build/chunk-51b-builder-1.md`, "For the reviewer"), read on the branch on staging's data in chunk 51b's first review and on the deployed app after real saves in its second (`<scratchpad>/build/r51b2/`). What would be redone if an answer goes against them: display code in `ChangeProgramDaysCard.tsx`, `ChangeProgramSetRows.tsx`, `ChangeProgramExerciseCard.tsx` and `ChangeProgramPage.tsx`; no data.
+
+### 176 51a's exercise-level writers on CHANGE THE PROGRAM are tested on the first workout only: a tests-only follow-up? (chunk 51b's retry)
+**Ask:** chunk 51b's retry builder found that 51a's exercise-level writers on CHANGE THE PROGRAM have the blind spot review 1 found in 51b's: each is only ever tested on the first workout. May a tests-only follow-up add the proof?
+**Recommendation:** yes. Schedule a tests-only follow-up, with no code change: each writer pressed on a workout that isn't the first, its list held against `planProgramChange`'s list for the same edit written by hand, proven by the builder's mutants and a sweep of every `selected.id` use, as 51b's retry did. The behaviour is right as built; only the proof is missing. It shares CHANGE THE PROGRAM's files with d31b, so it runs after it or inside its scope.
+**Blocks:** nothing (51a is merged and right).
+**Options:** (a) a tests-only follow-up, after d31b or folded into it (recommended); (b) leave it to the release checklist (RC16 on staging); (c) leave it.
+**Answer:**
+**Evidence:** made the first workout, these `selected.id` uses in `ChangeProgramPage.tsx` pass every test (`build/chunk-51b`'s lines): 366 the drag's commit, 383 UNLINK, 384 the split, 385 MOVE, 540 a routine item's move, 677 and 678 the exercise sheet's MOVE UP and MOVE DOWN. So does 533, the warmup card's `key` (a display state kept across a workout switch). The builder's results are in `<scratchpad>/build/c51b2/logs/x51-final-*.jsonl`. Chunk 51b's second review re-ran four of them, its own replacements, on the merged tests: the drag's commit, UNLINK, the routine move and MOVE UP; all four pass every test.
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
 - Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, in the second display follow-up (d31b); (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
@@ -313,8 +341,8 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 125 The empty staging account now owns the app's 46 default exercises
 - What: whether "empty" on staging means what a new account has after its first sign-in (the app's 46 default exercises) or no rows at all; `staging-smoke.mjs` reads 54/55 since chunk 37's review.
-- Answer: (Adam, 2026-10-15) "accept them. The app creates the 46 default exercises when a new account first signs in; that is real behaviour. "Empty" means no programs, runs or sessions; the smoke asserts exactly that, and that the account's exercises are the defaults." Done in chunk 44's review (its docs PR; a verification-script change made by the reviewer): the smoke's empty account owns no programs, runs or sessions and exactly the app's `DEFAULT_EXERCISES`, read from the app's source, proven by `staging-smoke.test.mjs` and on staging (a throwaway exercise that isn't a default failed exactly that check; removed); 51/51 on staging. TASKS-1.2's Seed table says so. Full text in HISTORY.md.
-- Date: 2026-10-15
+- Answer: (Adam, 2026-10-15) "accept them. The app creates the 46 default exercises when a new account first signs in; that is real behaviour. "Empty" means no programs, runs or sessions; the smoke asserts exactly that, and that the account's exercises are the defaults." Done in chunk 44's review (its docs PR; a verification-script change made by the reviewer): the smoke's empty account owns no programs, runs or sessions and exactly the app's `DEFAULT_EXERCISES`, read from the app's source, proven by `staging-smoke.test.mjs` and on staging (a throwaway exercise that isn't a default failed exactly that check; removed); 51/51 on staging. (Adam, 2026-10-19) "Smoke: since the re-seed, the empty account has no exercises until its first sign-in (125). The smoke accepts either no exercises or exactly the defaults; fix that check so it reads 51/51." Done in chunk 51b's second review (its docs PR; a verification-script change made by the reviewer): the check is now "no exercises, or exactly the app's defaults", and anything between fails; `staging-smoke.test.mjs` has both cases and four breaks (each caught, a comment-only control not); SMOKE_RESULT. TASKS-1.2's Seed table says so. Full text in HISTORY.md.
+- Date: 2026-10-15; 2026-10-19
 
 ### 124 Re-seed staging after chunk 36
 - What: run `supabase/seed.sql` (as on `staging` since #95) once more in the staging branch's SQL editor, so the stable, sequence and empty accounts and week 2 Upper A's differences exist on staging.

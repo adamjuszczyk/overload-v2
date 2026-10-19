@@ -27,17 +27,22 @@
 //        sequence  exactly one active SEQUENCE run, cycle 1 done (four
 //                  workouts, the A repeat included), cycle 2 planned, nothing
 //                  in it done
-//        empty     no programs, runs or sessions, and its exercises are
+//        empty     no programs, runs or sessions, and either no exercises or
 //                  exactly the app's defaults (DECISIONS 125, Adam: "'Empty'
 //                  means no programs, runs or sessions; the smoke asserts
 //                  exactly that, and that the account's exercises are the
-//                  defaults"). The app gives an account with no exercises its
-//                  default ones when it signs in (useSeedDefaultExercisesIfEmpty),
-//                  so the account owns them from the first time anyone signs
-//                  in to the app as it. The list is the app's own
-//                  DEFAULT_EXERCISES (src/features/library/defaultExercises.ts),
-//                  loaded through Vite's SSR loader and never typed here: every
-//                  default once (name and muscle group), nothing else. A
+//                  defaults"; and on 2026-10-19, after the re-seed: "The smoke
+//                  accepts either no exercises or exactly the defaults"). The
+//                  app gives an account with no exercises its default ones
+//                  when it signs in (useSeedDefaultExercisesIfEmpty), so a
+//                  re-seeded account owns none until someone signs in to the
+//                  app as it, and the defaults from then on. The list is the
+//                  app's own DEFAULT_EXERCISES
+//                  (src/features/library/defaultExercises.ts), loaded through
+//                  Vite's SSR loader and never typed here: none at all, or
+//                  every default once (name and muscle group) and nothing
+//                  else; anything between fails, and so does a list that
+//                  couldn't be loaded. A
 //                  program's workout days, a run's week plans and a session's
 //                  set logs can't exist without their program, run or session
 //                  (not-null foreign keys), so the three counts cover them; a
@@ -140,6 +145,19 @@ export function judgeDefaultExercises(rows, defaults) {
   };
 }
 
+// The empty account's exercises (DECISIONS 125; Adam, 2026-10-19: "The smoke accepts either no exercises or exactly the
+// defaults"): none at all, as a re-seeded account has until its first app sign-in, or exactly the defaults, as it has from then
+// on. Anything between fails. The defaults must have loaded either way, so a smoke that can't read the app's list never passes.
+export function judgeEmptyAccountExercises(rows, defaults) {
+  if (rows.length === 0) {
+    return {
+      ok: defaults.length > 0,
+      detail: `0 exercises: none yet (the app creates its ${defaults.length} defaults at the account's first app sign-in)`,
+    };
+  }
+  return judgeDefaultExercises(rows, defaults);
+}
+
 // Adam's three: no programs, no runs, no sessions.
 export const EMPTY_OWNS_NONE = [
   ['programs (v2_programs)', 'v2_programs?select=id'],
@@ -156,7 +174,7 @@ export async function emptyAccountChecks(who, defaults) {
     const n = await who.count(path);
     out.push([`seed: empty: owns no ${what}`, n === 0, n === null ? 'read failed' : `${n}`]);
   }
-  const name = 'seed: empty: its exercises are exactly the app\'s defaults';
+  const name = 'seed: empty: no exercises, or exactly the app\'s defaults';
   if (!defaults) {
     out.push([name, false, 'the app\'s DEFAULT_EXERCISES could not be loaded']);
     return out;
@@ -166,7 +184,7 @@ export async function emptyAccountChecks(who, defaults) {
   if (total === null || rows === null) out.push([name, false, 'read failed']);
   else if (rows.length !== total) out.push([name, false, `read ${rows.length} of ${total} rows`]);
   else {
-    const { ok, detail } = judgeDefaultExercises(rows, defaults);
+    const { ok, detail } = judgeEmptyAccountExercises(rows, defaults);
     out.push([name, ok, detail]);
   }
   return out;
@@ -297,8 +315,8 @@ async function main() {
     await seedCheck(sq, 'sequence: cycle 2 planned (4 workout slots)', 'v2_week_plans?select=id&week_number=eq.2', (n) => n >= 4);
   }
 
-  // 3d. staging-empty: no programs, runs or sessions, and exactly the app's
-  // default exercises (DECISIONS 125)
+  // 3d. staging-empty: no programs, runs or sessions, and no exercises or
+  // exactly the app's default ones (DECISIONS 125)
   const em = others.empty;
   if (em) {
     for (const [name, ok, detail] of await emptyAccountChecks(em, defaults)) check(name, ok, detail);
