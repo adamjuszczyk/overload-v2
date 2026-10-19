@@ -359,6 +359,11 @@ the current program while it runs and a finished program afterwards; the word
 - [1.2] unlogged again (18c): a logged set can return to unlogged, keeping its
   numbers. Unlog deletes the log; the numbers are kept as a draft on that phone,
   not on the server (G46).
+- [1.2] an added set's place: its place among the sets added to its exercise in
+  that session, from 1, in the order they were added (18b). Written when the
+  added set's log is first written, kept on re-log after an unlog (the draft
+  holds it until then); planned sets have none. A log with none and no planned
+  set (logged before 1.2) orders by logged time, then id (DECISIONS 174).
 - [P2] side split: when split, L and R values for every tracked field
 - [P2] for bodyweight exercises: weight is signed added load (0 = bodyweight)
 
