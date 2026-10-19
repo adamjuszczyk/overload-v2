@@ -256,6 +256,54 @@ describe('a stable run draws the default’s sets as rows (board PL1b)', () => {
   })
 })
 
+// ─── "Changed in this edit" ──────────────────────────────────────────────────────────────────────────────────────────
+
+const outlined = (name: string) => (screen.getByRole('button', { name }).getAttribute('style') ?? '').includes('border-color: var(--accent)')
+
+describe('a set changed in this edit has the accent outline (board PL1b)', () => {
+  it('only the set that changed: its rep target, its type, its rest after; and it goes when the change is put back', async () => {
+    await open()
+    expect(outlined('Set 01 of Leg Press: rep target')).toBe(false)
+    click('Set 02 of Leg Press: rep target')
+    pickReps('Rep target', { segment: 'NUMBER', number: '8', useForAll: false }, 'SET 8 REPS')
+    expect(outlined('Set 02 of Leg Press: rep target')).toBe(true)
+    expect(outlined('Set 01 of Leg Press: rep target')).toBe(false)
+    expect(outlined('Set 03 of Leg Press: rep target')).toBe(false)
+    click('Set 02 of Leg Press: rep target')
+    pickReps('Rep target', { segment: 'RANGE', from: '10', to: '12', useForAll: false }, 'SET 10–12 REPS')
+    expect(outlined('Set 02 of Leg Press: rep target')).toBe(false)
+    press('More rest after set 03 of Leg Press')
+    expect(outlined('Set 03 of Leg Press: rep target')).toBe(true)
+    press('Less rest after set 03 of Leg Press')
+    expect(outlined('Set 03 of Leg Press: rep target')).toBe(false)
+    click('Set 01 of Leg Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Dropset/ }))
+    closeDialog('What is this set?')
+    expect(outlined('Set 01 of Leg Press: rep target')).toBe(true)
+    // its new stage is a new row: outlined too
+    expect(outlined('Stage 1 of set 01 of Leg Press: rep target')).toBe(true)
+  })
+
+  it('a stage row is outlined for its own target, and the set above it is not', async () => {
+    await open()
+    click(/^Arms/)
+    expect(outlined('Stage 1 of set 02 of Cable Curl: rep target')).toBe(false)
+    click('Stage 1 of set 02 of Cable Curl: rep target')
+    pickReps('Rep target', { segment: 'AMRAP' }, 'SET AMRAP')
+    expect(outlined('Stage 1 of set 02 of Cable Curl: rep target')).toBe(true)
+    expect(outlined('Set 02 of Cable Curl: rep target')).toBe(false)
+  })
+
+  it('a new exercise’s rows are not outlined one by one: its card carries the mark', async () => {
+    await open()
+    click('+ ADD EXERCISE')
+    const sheet = await screen.findByRole('dialog', { name: 'Add exercise' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Add Dip' }))
+    press('Add a set to Dip')
+    expect(outlined('Set 01 of Dip: rep target')).toBe(false)
+  })
+})
+
 // ─── Rep targets ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 describe('a set’s rep target (W)', () => {

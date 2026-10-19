@@ -10,6 +10,7 @@ import type { Exercise, MuscleGroup, Mesocycle, Program } from '../../types'
 import {
   NOW,
   USER,
+  addWorkout,
   applyOpsToDb,
   inputOf,
   inserts,
@@ -239,6 +240,21 @@ describe('the DAYS card of a weekday run (board PL1)', () => {
     expect(day('Saturday').disabled).toBe(true)
     expect(isOn('Saturday')).toBe(true)
     expect(screen.getByText('At least one day stays on.')).toBeTruthy()
+  })
+
+  it('a workout that has no day (a spare one) can be given a day and have it taken away again: it is never asked to keep one it never had', async () => {
+    const w = weekDependentWorld()
+    addWorkout(w, 'spare', 'Spare', 3)
+    useWorld(w, {})
+    await open()
+    click(/^Spare/)
+    expect(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((n) => isOn(n))).toEqual([false, false, false, false, false, false, false])
+    click('Friday')
+    expect(isOn('Friday')).toBe(true)
+    expect(day('Friday').disabled).toBe(false)
+    expect(screen.queryByText('At least one day stays on.')).toBeNull()
+    click('Friday')
+    expect(isOn('Friday')).toBe(false)
   })
 
   it('says when the new days start, and what this week does: "Was Tuesday and Thursday. New days start in week 3. …"', async () => {

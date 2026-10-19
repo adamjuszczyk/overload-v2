@@ -65,12 +65,19 @@ import { usePrograms } from './usePrograms'
 // chunk 41's sheet). One screen edits the running program's COPY: its exercises (add, swap, remove, order), supersets, the warmup
 // routine, each exercise's rest, rest after, tempo and unit, and the workouts' names. Nothing is written until SAVE CHANGES, which
 // lands the whole edit on every session that hasn't started, from the current week on, in one request; CANCEL leaves nothing behind.
-// Weekdays (the DAYS card) and the stable program's set rows are chunk 51b's; on a stable run this screen draws without them.
 //
-// Display choices no board settles, provisional under D31: a workout is renamed with a RENAME button under the WORKOUTS chips (the
-// board puts RENAME in the DAYS card, which a sequence run doesn't have and chunk 51b adds); the chips show the days in force this
-// week and scroll sideways when they don't fit; the save error sits above CANCEL and SAVE CHANGES under "Couldn't save the changes."
-// (the real reason under it, SPEC Errors (15)); a failed or empty load says so in the same words as Plan's.
+// Chunk 51b (TASKS-1.2 "CHANGE THE PROGRAM: weekdays, and the stable program's default sets"; SPEC Programs and runs [1.2] → "Stable: it
+// also shows the default's sets, as rows", "Weekdays (1e)", "Weekdays storage"; boards PL1 (the DAYS card) and PL1b): a weekday run's DAYS
+// card (seven toggles, a day another workout holds is disabled and named, the last day stays on; DECISIONS 169: the draft's own schedule
+// decides what is "another workout's day", so two workouts can trade days in one save), and on a stable run each exercise's default sets as
+// rows (the number opens the set type picker, the rep box the rep target picker, ALL the picker for every set, REST AFTER steps the set's
+// rest, "+ SET", and the same rows for an exercise added on a stable run: DECISIONS 171). The route's `#<exerciseId>` scrolls to that card.
+//
+// Display choices no board settles, provisional under D31: a sequence run, which has no DAYS card, keeps RENAME under the WORKOUTS chips,
+// a weekday run's RENAME is in the DAYS card (board PL1); the chips show the DRAFT's days, so a toggle is on its chip at once; a staged
+// set's kind label goes under its rep target when the two don't fit side by side; "NO SETS YET" on a card with no set; a stage's own rep
+// box is a row under its set (the stepped planner draws stages the same way); the save error sits above CANCEL and SAVE CHANGES under
+// "Couldn't save the changes." (the real reason under it, SPEC Errors (15)); a failed or empty load says so in the same words as Plan's.
 
 const MONO: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600 }
 const CAPTION: CSSProperties = { ...MONO, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }

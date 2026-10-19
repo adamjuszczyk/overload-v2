@@ -4,6 +4,7 @@ import type { Op, RunChangeStatus } from './programChange'
 import {
   USER,
   addExercise as addExerciseRow,
+  addBlock,
   addWorkout,
   applyOpsToDb,
   cloneDb,
@@ -250,6 +251,22 @@ describe('REST AFTER, "+ SET" and REMOVE THIS SET', () => {
     const changed = setSetRepTarget(s0, 'fb', 'e:pe-leg', 1, { type: 'number', value: 5 })
     expect(draftDiffers(changed, s0)).toBe(true)
     expect(draftDiffers(setSetRepTarget(changed, 'fb', 'e:pe-leg', 1, { type: 'range', min: 10, max: 12 }), s0)).toBe(false)
+  })
+})
+
+describe('the comparison SAVE makes between two reads of the run copy', () => {
+  it('does not depend on the order the superset blocks came back in (their read has no order: 51a’s review)', () => {
+    const w = miniWorld()
+    addBlock(w, 'blk-b', 'fb', null, 90)
+    addBlock(w, 'blk-a', 'fb', null, 60)
+    w.db.v2_program_exercises.find((e) => e.id === 'pe-leg')!.superset_block_id = 'blk-b'
+    w.db.v2_program_exercises.find((e) => e.id === 'pe-inc')!.superset_block_id = 'blk-a'
+    const copy = runCopyOf(w.db, w.programId, w.mesocycleId)
+    expect(copy.blocks.map((b) => b.id)).toEqual(['blk-b', 'blk-a'])
+    const forward = initialDraft(copy, 'stable')
+    const reversed = initialDraft({ ...copy, blocks: [...copy.blocks].reverse() }, 'stable')
+    expect(reversed.edit.blocks.map((b) => b.id)).toEqual(['blk-a', 'blk-b'])
+    expect(draftContent(reversed)).toBe(draftContent(forward))
   })
 })
 
