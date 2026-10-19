@@ -11,6 +11,7 @@ import {
   type AddedSet,
   type HeldDraft,
   type OrderExercise,
+  type ResolvedRow,
   type UnlogEffects,
 } from './workoutRules'
 import { FakeServer } from './workoutRules.server.testutil'
@@ -36,7 +37,7 @@ const entry = (localId: string, place: number, logId: string | null = null, type
 const threeLogged = (): SetLog[] => [headLog('bench', 1), headLog('bench', 2), headLog('bench', 3)]
 
 /** A card's head rows as the user reads them, each named by who it is: "P2" a planned set, else the added set's own id. */
-function read(rows: ReturnType<typeof resolveRows>, cardKey = 'bench'): string[] {
+function read(rows: readonly ResolvedRow[], cardKey = 'bench'): string[] {
   return rows
     .filter((r) => r.exerciseKey === cardKey && r.kind !== 'stage')
     .map((r) => `${brief(r).split(' ')[1]}=${r.added ? r.localId : `P${r.key.split('.').pop()}`}`)
@@ -324,7 +325,7 @@ describe('no rule changes a place: delete, a Warmup switch, a type change, the r
     const server = new FakeServer({ logs: [...logs, dropLog(logs[5], 1)] })
     const places = () => server.logs.map((l) => [l.id, l.addedPlace ?? null])
     const before = places()
-    const patchesSeen: Array<Record<string, unknown>> = []
+    const patchesSeen: object[] = []
     const step = (key: string, what: 'delete' | 'warmup' | 'normal' | 'staged') => {
       const view = viewOf(order, server.logs, server.held())
       const row = rowKeyed(view, key)
