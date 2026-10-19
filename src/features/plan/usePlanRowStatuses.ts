@@ -13,8 +13,8 @@ import { DONE_WEEK_PLANS_KEY } from './useDoneWeekPlanIds'
 // done, which is what locks a row, and a session in progress doesn't lock one.
 //
 // The key sits under the done list's own prefix, so every place that refreshes that list (starting a session, finishing, reopening,
-// skipping, moving: `useSession.ts`, `useHistory.ts`) refreshes this one too. The list is small, and the session that starts is
-// the case this exists for.
+// skipping, moving: `useSession.ts`, `useHistory.ts`) refreshes this one too. A start is the case this exists for: it moves a row to
+// in progress and changes nothing in the done list.
 export type PlanRowStatuses = ReadonlyMap<string, 'done' | 'in_progress'>
 
 const NONE: PlanRowStatuses = new Map()

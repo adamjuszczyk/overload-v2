@@ -46,7 +46,7 @@ const SHARED_COMPONENTS: Record<string, string[]> = {
   'components/ExercisePickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/CuesSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/TargetPickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
-  // the ENERGY and PUMP chips: Plan's session panel, the planner's volume step, the workout's finish step and set rows
+  // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows, the STAGE KIND rows in Plan and in the planner's volume step
   'features/gym/RatingChips.tsx': ['features/plan/PlanPage.tsx', 'features/planner/PlannerPage.tsx', 'features/gym/GymSession.tsx'],
   // the planner's FOCUS / DON'T CARE marks, kept in Plan's folder
   'features/plan/MarkSelector.tsx': ['features/planner/PlannerPage.tsx'],
@@ -59,7 +59,7 @@ const SHARED_COMPONENTS: Record<string, string[]> = {
 // is not listed, fails; so does one of them on the token. No rebuilt screen loads any of these files (below): one that did would be a
 // shared component, and a shared component takes the token.
 const NOT_REBUILT: Record<string, number> = {
-  'components/Nav.tsx': 1, // INSTALL, the app shell's strip (the bottom bar's tabs and strips are not a screen; chunk 65 keeps them)
+  'components/Nav.tsx': 1, // INSTALL, the bottom bar's install strip: app chrome, in no 1.2 screen and on no board
   'features/auth/LoginPage.tsx': 1, // sign-in: Sign in
   'features/gym/CompletedTodayScreen.tsx': 3, // Today, after a session is finished (SPEC: finished session unchanged)
   'features/gym/MissedSessionPrompt.tsx': 1, // Today
