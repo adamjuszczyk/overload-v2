@@ -114,11 +114,13 @@
 // An entry whose log isn't among the logs yet, or any more (the logs and the card can lag one another for a render),
 // is an open set with the entry's type. The card keeps the list for the session and across a reload with the drafts
 // (chunk 63). A set the list doesn't name (a log or a draft, after a reload before 63, a reopened session or another
-// phone's set) is drawn in its place all the same, keyed by its log's id or its draft's `localId`; when this phone acts on
-// it (UNLOG, or LOG of a draft's set, or SET TYPE on one with no log), the card first takes it into its list with that id,
-// so it keeps its key: `{ localId: row.localId, logId: row.logId, type: row.type, place: row.addedPlace }`. A set logged
-// before 044 has no place and is not taken in: its key is its log's (or its draft's), and a new log gives it a new one.
-// After a session ends its list and its drafts go (G46): an added set that has no log then is gone with them.
+// phone's set) is drawn in its place all the same, keyed by its log's id or its draft's `localId`. Before this phone writes
+// anything for it that the card must keep (UNLOG; LOG or SKIP of a set only a draft holds; a type for a set with no log),
+// the card takes it into its list with that id, so it keeps its key across the new log:
+// `{ localId: row.localId, logId: row.logId, type: row.type, place: row.addedPlace }`. A set logged before 044 has no place
+// and is not taken in: its key is its log's (or its draft's), and a new log gives it a new one. A logged set the list
+// doesn't name needs nothing taken in for a type change or a delete (its log holds its type). After a session ends its
+// list and its drafts go (G46): an added set that has no log then is gone with them.
 //
 // ─── Current set and the lock ────────────────────────────────────────────────────────────────────
 // - The current set is the first unlogged working set or drop in the order (SPEC: "the first unlogged

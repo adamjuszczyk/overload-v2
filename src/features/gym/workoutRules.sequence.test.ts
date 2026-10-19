@@ -214,12 +214,13 @@ function startOf(added: readonly SessionSetChangeType[]): Session {
   return s
 }
 
-type Mode = 'mixed' | 'added' | 'warmups' | 'phones'
+type Mode = 'mixed' | 'added' | 'warmups' | 'phones' | 'staged'
 const START: Record<Mode, readonly SessionSetChangeType[]> = {
   mixed: [],
   added: [NORMAL, NORMAL, NORMAL],
   warmups: [WARMUP, NORMAL, WARMUP],
   phones: [NORMAL, WARMUP],
+  staged: [staged('dropset', 1), WARMUP, NORMAL],
 }
 
 /** How often the sequences reached each case (a sequence test that never gets there proves nothing about it). */
@@ -385,6 +386,7 @@ const OPS: Record<Mode, readonly Op[]> = {
   added: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'log', 'logNext', 'logWarmup', 'warmup', 'warmup', 'warmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'type', 'delete', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload'],
   warmups: ['add', 'addWarmup', 'addWarmup', 'log', 'log', 'log', 'logWarmup', 'logWarmup', 'warmup', 'warmup', 'warmup', 'warmup', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogWarmup', 'reopen', 'reload'],
   phones: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'logWarmup', 'warmup', 'warmup', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogWarmup', 'reopen', 'reopen', 'reload', 'reload'],
+  staged: ['add', 'addWarmup', 'log', 'log', 'log', 'log', 'logWarmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload'],
 }
 
 /** One generated sequence: `steps` steps from the seed, each checked. Returns what it did. */
@@ -428,7 +430,7 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       // …and one before a logged working set of its card as often as the session has one
       const beforeLogged = openAddedWarmups.filter((r) => rows.some((x) => x.exerciseKey === r.exerciseKey && x.kind === 'working' && x.logId !== null && x.planIndex > r.planIndex))
       const pool =
-        mode !== 'mixed' && beforeLogged.length > 0 && g.chance(0.4)
+        mode !== 'mixed' && beforeLogged.length > 0 && g.chance(0.7)
           ? beforeLogged
           : mode !== 'mixed' && openAddedWarmups.length > 0 && g.chance(0.3)
             ? openAddedWarmups
@@ -473,7 +475,7 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       if (pool.length === 0) continue
       // a staged added set as often as the session has one (161: its draft brings its drops back)
       const stagedAdded = pool.filter((r) => r.added && r.type?.kind === 'staged')
-      const row = stagedAdded.length > 0 && g.chance(0.5) ? g.pick(stagedAdded) : g.pick(pool)
+      const row = stagedAdded.length > 0 && g.chance(0.8) ? g.pick(stagedAdded) : g.pick(pool)
       if (row.added && row.kind === 'warmup') reached.unlogAddedWarmup++
       if (!row.added && row.kind === 'warmup') reached.unlogPlannedWarmup++
       if (row.added && row.type?.kind === 'staged') reached.unlogAddedStaged++
@@ -513,9 +515,11 @@ describe('generated sequences of add, log, unlog, delete, Warmup switches, reope
     for (let seed = 1001; seed <= 1300; seed++) steps += sequence(seed, 28, 'added').length - 1
     // …with two of the three made Warmups as soon as they were added
     for (let seed = 2001; seed <= 2200; seed++) steps += sequence(seed, 28, 'warmups').length - 1
-    // …and with the phone's state dropped often (a reopen: the list and the drafts; a reload: the list)
+    // …with the phone's state dropped often (a reopen: the list and the drafts; a reload: the list)
     for (let seed = 3001; seed <= 3200; seed++) steps += sequence(seed, 28, 'phones').length - 1
-    expect(steps).toBeGreaterThan(14000)
+    // …and with the first set added to each card a dropset, then a Warmup and a working set
+    for (let seed = 4001; seed <= 4150; seed++) steps += sequence(seed, 28, 'staged').length - 1
+    expect(steps).toBeGreaterThan(17000)
     // the sequences got to every case the fourth review's sequences are made of, DECISIONS 161's, and 173's and 178's
     expect(Object.entries(reached).filter(([, count]) => count <= 30), `the cases barely reached (${JSON.stringify(reached)})`).toEqual([])
   })
