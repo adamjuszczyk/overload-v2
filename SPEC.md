@@ -359,6 +359,13 @@ the current program while it runs and a finished program afterwards; the word
 - [1.2] unlogged again (18c): a logged set can return to unlogged, keeping its
   numbers. Unlog deletes the log; the numbers are kept as a draft on that phone,
   not on the server (G46).
+- [1.2] an added set's place: its place among the sets added to its exercise in
+  that session, from 1, in the order they were added (18b). Written when the
+  added set's log is first written, kept on re-log after an unlog (the draft
+  holds it until then); planned sets have none. A log with none and no planned
+  set (logged before 1.2) orders by logged time, then id (DECISIONS 174).
+- [1.2] only an added set's own log carries the place; its drop and stage logs
+  leave it null (DECISIONS 177, Adam 2026-10-19).
 - [P2] side split: when split, L and R values for every tracked field
 - [P2] for bodyweight exercises: weight is signed added load (0 = bodyweight)
 
@@ -1039,6 +1046,12 @@ optional:
     non-warmup working sets in that order (warmups numbered apart). LOG stores
     the number the row shows; a delete or a switch to or from Warmup (146)
     that changes logged sets' numbers patches them, as 146 (a) writes.
+  - [1.2] A stored number that differs from its row's (DECISIONS 178, Adam
+    2026-10-19): when the workout screen draws a session's rows, it writes the
+    shown number over a logged set's stored one, only where they differ, so
+    drawing the same session again writes nothing. It does this only from the
+    workout screen for an in-progress or reopened session, never from History,
+    Plan or any read-only view; offline the writes queue like a delete's.
   - A drop on its own (DECISIONS 147, Adam 2026-10-15): deleting a set's last
     drop makes it a normal set. A logged drop can be unlogged under the same
     rule as any set: not while a later drop or stage of that set is logged. Its
@@ -1077,6 +1090,9 @@ optional:
   - What a swap for today moves (DECISIONS 164, Adam 2026-10-16): the
     original's open sets move to the new exercise with their numbers, type,
     drops and targets, as W5 draws.
+  - [1.2] The moved sets are added sets (DECISIONS 179, Adam 2026-10-19): they
+    count as added sets of the new exercise. Each gets its place at the swap,
+    in the order they stood, after any sets already added to that exercise.
 - [1.2] **Finishing (11, C6):** the finish screen (W18) shows the session's
   tiles, energy, pump and note, and COMPLETE. When planned sets aren't logged it
   says which ("2 planned sets aren't logged yet: EZ Bar Curl 01 and 02.") with

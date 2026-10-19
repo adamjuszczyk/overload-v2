@@ -17,6 +17,7 @@ import {
   scheduleRowsOf,
   sessionsOf,
   updates,
+  addExercise as addExerciseRow,
   addExerciseTo,
   removeExerciseFrom,
   swapExerciseIn,
@@ -747,9 +748,10 @@ describe('the rule box (SPEC: "Week N is the week of the next session that isn�
     useWorld(stableWorld(), { 'p2-fb': 'done' })
     await open()
     expect(screen.getByText('Changes start in week 2. Every week from then on copies this.')).toBeTruthy()
-    // 51a draws a stable run without set rows and without the "no sets" note.
+    // A stable run draws the default's set rows (chunk 51b) and not the week-dependent "no sets" note: one "+ SET"
+    // for each of Full Body's four exercises.
     expect(screen.queryByText(/with no sets/)).toBeNull()
-    expect(screen.queryByText('+ SET')).toBeNull()
+    expect(screen.getAllByText('+ SET')).toHaveLength(4)
   })
 
   it("a stable run's new exercise has no \"no sets\" note: its default is the run's, and 51b draws the rows", async () => {
@@ -935,11 +937,20 @@ describe('order (W)', () => {
 // ─── Captured for the 390 px screenshots (design/1.2/built) ──────────────────────────────────────────────────────────
 
 describe('draws boards PL1, PL2, PL3, PL7, PL8 and PL9', () => {
-  it('PL1: the screen with a new exercise, a changed marker, a removed one and a superset', async () => {
-    useWorld(stableWorld(), {})
+  it('PL1: the week-dependent screen with its DAYS card (Pull moved to Wednesday), a new exercise, a changed marker, a removed one and a superset', async () => {
+    // Pull gets the board's exercises beside its own: the run copy's rows are all the screen reads
+    const w = weekDependentWorld()
+    addExerciseRow(w, 'pe-inc', 'pull', 'ex-inc', 2)
+    addExerciseRow(w, 'pe-lat', 'pull', 'ex-lat', 3)
+    addExerciseRow(w, 'pe-plank', 'pull', 'ex-plank', 4)
+    useWorld(w, {})
     const { container } = await open()
+    chooseWorkout(/^Pull/)
+    click('Wednesday')
+    click('Tuesday')
+    click('Link Seated Cable Row with the exercise below')
     click('Link Incline Press with the exercise below')
-    click('Remove Leg Press')
+    click('Remove Face Pull')
     click('REMOVE')
     click('+ ADD EXERCISE')
     await pickInSheet('Add exercise', 'Add Cable Curl')
