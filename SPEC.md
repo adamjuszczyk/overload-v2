@@ -1032,6 +1032,13 @@ optional:
   is in its ⋯ (W7); a logged set's is in its edit panel. Logged and unlogged
   sets, this session only, never touches the plan. Deleting a staged set's head
   deletes its stages, and the confirm says so. The remaining sets renumber.
+  - Set numbers (DECISIONS 170, Adam 2026-10-18): set numbers are never
+    claimed or stored per rule. Each set has a fixed place in the session
+    order: planned sets by planned position, added sets by when they were
+    added. A set's displayed number is its rank among the non-deleted,
+    non-warmup working sets in that order (warmups numbered apart). LOG stores
+    the number the row shows; a delete or a switch to or from Warmup (146)
+    that changes logged sets' numbers patches them, as 146 (a) writes.
   - A drop on its own (DECISIONS 147, Adam 2026-10-15): deleting a set's last
     drop makes it a normal set. A logged drop can be unlogged under the same
     rule as any set: not while a later drop or stage of that set is logged. Its

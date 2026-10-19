@@ -1,15 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-18, chunk 46's fourth review: not merged, new 170.*
-- *Chunk 46's fourth attempt builds your 161 (b)(i) right: the rules see every added set's type, and an added set's unlog is undone exactly. But a change it made for another unlog case breaks the order of the added sets after an edit of an earlier set (new 170, a behaviour bug). Your rule for this attempt was no retry, so 46 waits for your answer.*
-- *What follows: 51a to 57 don't use chunk 46 and go on; 58a, 58b and 59–64 wait for 170. The to-dos are as they were.*
+*Rewritten at every boundary. Last: 2026-10-19, chunk 51a's review: merged (#149).*
+- *Your answers of 2026-10-19 are in. The re-seed is done (138), and the checks that waited on it ran. 170's answer is in its entry word for word, with a SPEC line, and chunk 46's fifth attempt is building on Opus. 51a's question is 171: answered, and 51b's scope now names an added exercise's default sets. Day mode: two builders at a time again.*
+- *Chunk 51a merged: CHANGE THE PROGRAM's screen and SAVE, the first writer through `v2_apply_ops`. A real save on staging landed as SPEC says; the done and in-progress sessions and the saved program are byte-identical. Its display choices are 172 (provisional, D31).*
+- *What follows: 51b, the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
 
 Decisions:
-- **170** — chunk 46, fourth attempt: after an earlier set is deleted or switched to or from Warmup, an unlogged added set can lose its place to an open added set after it. Bench 01–03 logged, A logged as 04 and unlogged, B new at 05, DELETE 02: B reads 03 and A 04, where 18b and 146 (a) give A 03, B 04 (two unlogged sets trade places the same way). The third attempt got it right; the fourth broke it while fixing an unlog case. Recommended: (a), a fifth attempt in which DELETE and a Warmup switch also give each open added set after the set its new place, checked set by set after every delete and switch. When: before 58a. Blocks: chunk 46's merge, so 58a, 58b and 59–64.
+- **172** — chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31): twelve, (a)–(l). Three differ from a drawing or a count: SUPERSET isn't shown on the last single exercise (PL1 draws it on every single card); "+ ADD ITEM" stays while a routine item is tapped or edited (PL9 draws neither with it); and on the day a week's last open session is in progress, Plan's button names that week where the screen names the next. Recommended: accept all (display only). When: any time. Blocks: nothing.
 
 To-dos:
-- **138** — your re-seed on Monday 2026-10-19: paste `supabase/seed.sql` into the staging branch's SQL editor and say "re-seeded". When: Monday 2026-10-19 (the seed's dates are relative to the day it runs). Blocks: nothing stops (your rule, 2026-10-15): until then a staging check that needs open sets in the seed's in-progress session and finds none is recorded "waiting on re-seed" in 138 and runs after the re-seed. The in-progress session has no open set left: the display follow-up's smoke logged its last one, the second drop of Cable Triceps Pushdown set 2 (set logs 213 → 214). So every smoke's log step is "waiting on re-seed" until then (chunk 47's, 49's and 50's smokes found Today with no LOG button); the seed's week 3 ends Sunday 2026-10-18.
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
@@ -117,23 +117,40 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-16
 
 ### 170 An unlogged added set's place after an earlier set is deleted or switched to or from Warmup (chunk 46)
-**Ask:** Chunk 46's fourth attempt builds your 161 (b)(i) right. To fix another unlog case, it made an unlogged added set take the number its draft holds, and that breaks the order of the added sets after an edit of an earlier set. Bench 01–03 logged, two sets added: A logged as 04 and unlogged again (its numbers kept), B new at 05. DELETE 02, or make it a Warmup: SPEC 18b and your 146 (a) say the sets after it close the gap, so A 03 and B 04. The fourth attempt gives B 03 and A 04: the empty new set jumps ahead of the unlogged one. Two unlogged added sets trade places the same way, also when a Warmup before them is made Normal. The third attempt got all four cases right. It is a behaviour bug, and your rule for this attempt was no retry. Allow a fifth attempt?
-**Recommendation:** (a): a fifth attempt in which every writer that moves the numbers also moves the places the phone keeps for its open added sets. Both 151's unlog and 18b's delete then hold. Nothing uses chunk 46 before 58a, so nothing else waits.
-**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it. Nothing before 58a.
-**Options:**
-- (a) A fifth attempt of 46. DELETE and a switch to or from Warmup also give each open added set after the set its new place (its draft's position, or a place the card keeps for a new set), as they give the logged sets their new numbers; chunks 61 and 62 write it. Its walk checks each set by identity, and their order, after every delete and switch. The builder's readings 3 and 4 (Evidence) get the same fix. Recommended.
-- (b) Merge as built: after a delete or a Warmup switch before an unlogged added set, a later open added set can take its place. "The sets after it close the gap" then holds for logged sets only.
-- (c) Go back to the third attempt's numbering for unlogged added sets (the lowest free number, in their drafts' order, before the new sets). 18b holds, but an added set unlogged while new sets are open before it moves to the front of them, against 151's "no other set's number changes on unlog" (the builder executed this on the third attempt).
+- What: whether an unlogged added set keeps its place, after an earlier set is deleted or switched to or from Warmup, ahead of an open added set after it; chunk 46's fourth attempt gave the later one its place (a behaviour bug; the third attempt got it right), and Adam's rule for that attempt was no retry.
+- Answer: "allow chunk 46's fifth attempt, done this way (Adam, 2026-10-18):
+  - Set numbers are never claimed or stored per rule. Each set has a fixed place in the session order: planned sets by planned position, added sets by when they were added. A set's displayed number is its rank among the non-deleted, non-warmup working sets in that order (warmups numbered apart, as now). LOG stores the number the row shows; a delete or warmup switch that changes logged sets' numbers patches them, as 146 (a) already writes. This satisfies 146, 151 and 161 as answered; no new decision.
+  - Start from attempt 3's delete and warmup behaviour, which the reviewer confirmed correct.
+  - Verification adds a sequence test: many generated sequences of add, log, unlog, delete and warmup switches, asserting after every step that numbers are contiguous with no duplicates, every set's identity and order are unchanged, and unlog then log is an exact undo. Break proof: reintroduce attempt 4's "draft claims its number" and the test fails.
+  - This attempt's builder runs on Opus (the process allows it after two behaviour failures)."
+
+  Written into SPEC.md (Logging mechanics → Delete set (18b)). Chunk 46's fifth attempt is building (from 2026-10-19, in the main checkout, beside chunk 51a's review). Full text in HISTORY.md.
+- Date: 2026-10-18
+
+### 171 An exercise added on a stable run in chunk 51a lands with no sets until 51b (chunk 51a)
+- What: chunk 51a's builder asked about an exercise added on a stable run. SPEC gives it the default's sets, but 51a draws no set rows on a stable run (51b's), so until 51b it lands in the not-done sessions with none.
+- Answer: (Adam, 2026-10-19) "not a spec gap. SPEC says an exercise added on a stable run gets the default's sets; until 51b builds the default's set rows, staging shows it with none. That's an accepted interim between 51a and 51b. The reviewer checks that 51b's scope covers adding the default's sets for an added exercise, and adds it to 51b's scope if it doesn't." Checked in chunk 51a's review: 51b's scope named the default's set rows "per exercise" and "+ SET", but neither it nor its verification or staging list named an added exercise, so all three do now (TASKS-1.2, chunk 51b). `planProgramChange` already lands an added entry's sets on a stable run (chunk 45). No SPEC line: SPEC already says it.
+- Date: 2026-10-19
+
+### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
+**Ask:** chunk 51a built CHANGE THE PROGRAM with these display choices, which no board or SPEC sentence settles, or where it differs from a board's drawing. Accept them, or change any?
+**Recommendation:** accept all: each is display only and changes nothing that is written. (h), (i) and (j) differ from a board or from the screen's own week, so they are the ones to look at.
+**Blocks:** nothing.
+**Options:** accept as built, or change any of:
+- (a) RENAME is a row under the WORKOUTS chips, for the selected workout (PL1 puts it in the DAYS card, which a sequence run doesn't have and 51b adds); the chips show each workout's days that week and scroll sideways.
+- (b) The cards are numbered 1 · WARMUP ROUTINE and 2 · EXERCISES until 51b's DAYS card becomes 1.
+- (c) A routine item's ⋯ opens MOVE UP / MOVE DOWN / REMOVE under the item; an item's text shows as a name and a dose, split at its last comma.
+- (d) MOVE UP / MOVE DOWN also sit in the exercise's ⋯ sheet (PL2, PL3), the drag's fallback.
+- (e) A swapped-in exercise is tagged "· SWAPPED"; a new or swapped card is tinted like PL1's new one.
+- (f) The discard confirm: "Discard your changes?" / "Nothing has been saved. Going back leaves the program as it is." / DISCARD.
+- (g) SAVE CHANGES with nothing changed sends nothing and goes back; the footer (CANCEL, SAVE CHANGES, and a save error above them) is pinned to the bottom.
+- (h) SUPERSET isn't shown on the last single exercise (it links with the one below, and there is none); PL1 draws it on every single card.
+- (i) "+ ADD ITEM" stays under the routine while an item is tapped or edited; PL9 draws those two states without it.
+- (j) Plan's "CHANGE THE PROGRAM FROM WEEK N" counts done sessions only, so on the day a week's last open session is the one in progress, the button names that week and the screen's rule box the next.
+- (k) The header's caption is the run's name ("STG UPPER/LOWER RUN · WEEK-DEPENDENT"); a run's name defaults to its program's, which PL1 draws.
+- (l) A superset's within-round rest stored as 0 reads 0:00 in PL3 (unset reads NO TIMER; the planner shows 0s).
 **Answer:**
-**Evidence:** executed in the review on `9a08d7a`. Each step is the module's own answer, applied as the card and the sync queue will apply it (`<scratchpad>/build/chunk-46-review-4.md`). Bench `n n n`, 01–03 logged, two sets added:
-- D: A logged as 04 and unlogged, B new (05); DELETE 02 → B 03, A 04 (the third attempt: A 03, B 04).
-- W: the same, with 02 made a Warmup → B 03, A 04 (the third: A 03, B 04).
-- 2D: A (04) and C (05) logged and unlogged; DELETE 02 → C 03, A 04 (the third: A 03, C 04).
-- MR: bench `w n n`, 01–02 logged; A (03) and C (04) logged and unlogged; the open planned Warmup made Normal → C 04, A 05 (the third: A 04, C 05).
-- Cause: new in the fourth attempt, a draft takes its stored position whenever that number is free and no more than the count of working sets. A delete or switch before it leaves the position one too high, and another open added set takes the number the delete gives the draft. Chunk 46's third review accepted out-of-date drafts on the condition that "the row then takes the number 18b's renumbering gives it".
-- The walk checks "nothing moves" set by set on unlog only. After a delete or a switch it checks that the numbers read 1 to n, which a swapped order satisfies.
-- The builder's readings 3 and 4 have the same root (by reading, not executed). A never-logged added Warmup with a logged added set after it, made Normal again, joins after that set (146 (a): "takes its place"). Two added Warmups holding one stored number can swap W1 and W2 on an unlog (161: "nothing moves").
-- Everything else is right. 161 (b)(i), executed: an added Warmup and an added Dropset ×1 unlogged come back as they were, nothing moves, and logging again restores them. Review 3's case: an open added Warmup is not the current set, and the lock answers `log` for it. Also: 4379 tests, every script green, and the builder's 54 breaks re-run in the review, all caught (the comment-only control not caught, as it must be).
+**Evidence:** the builder's report (`<scratchpad>/build/chunk-51a-builder-1.md`, "Provisional choices under D31": (a)–(g) and (j)) and the review's real-screen checks on staging's data (`<scratchpad>/build/chunk-51a-review-1.md`), which found (h), (i), (k) and (l). What would be redone if an answer goes against them: display code in `ChangeProgramPage.tsx`, `ChangeProgramExerciseCard.tsx`, `ChangeProgramWarmupCard.tsx` and `PlanPage.tsx`; no data.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
@@ -221,11 +238,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-15
 
 ### 138 Re-seed staging on Monday 2026-10-19 (to-do)
-**Ask:** paste `supabase/seed.sql` (as on `staging` then) into the staging branch's SQL editor on Monday 2026-10-19, and say "re-seeded".
-**Recommendation:** as you planned (2026-10-15). — **When:** Monday 2026-10-19, not earlier: the seed's dates are relative to the day it runs, so a re-seed in the week of Monday 2026-10-12 would put the test account's week 3 in that week again.
-**Blocks:** nothing stops for it (your rule, 2026-10-15; CONTEXT.md, "Waiting on re-seed"): until then, a chunk's staging check that needs open sets in the seed's in-progress session and finds none is recorded here as "waiting on re-seed", the chunk still merges if everything else passed, and the check runs after the re-seed. Waiting on re-seed so far: every smoke's "log one set" since the display follow-up's review (its smoke logged the session's last open set); chunk 47's smoke (2026-10-16) found Today with no LOG button, and so did chunk 49's and chunk 50's (2026-10-16; the account's set logs still 214).
-**Answer:**
-**Evidence:** every merge's smoke logs one set in the in-progress session (week 3 Monday Upper A). Chunk 57's review (2026-10-16) logged the first drop of Cable Triceps Pushdown set 2 (typed 22.5 kg × 8 with the browser offline, then synced on reconnect; set logs 212 → 213, read back as the test account), which opened its second drop. Today now shows 1 LOG button, that drop's, with empty boxes: type the plan's 17.5 kg × 6 before LOG (RULES.md: a row with no prefill; its target is 6–8 reps). It is the session's last open set (Today showed one LOG button before that log and one after it), so the smoke after the next one finds none and is "waiting on re-seed". Since your re-seed of 2026-10-14 (124) the test account's week 3 is Monday 2026-10-12 to Sunday 2026-10-18; from Monday 2026-10-19 it is past, and the checks TASKS-1.2 writes for "week 3 current" read a week later until the re-seed (TASKS-1.2, "Seed").
+- What: Adam's re-seed of staging on Monday 2026-10-19 (`supabase/seed.sql` pasted into the staging branch's SQL editor); until it, a staging check that needed open sets in the seed's in-progress session and found none was recorded "waiting on re-seed".
+- Answer: done (Adam, 2026-10-19): "reseeded." Verified by effect in chunk 51a's review (2026-10-19): the test account's week 3 is the week of Monday 2026-10-19 (Monday's Upper A in progress, Wednesday's Lower A and Friday's Upper B not started, 9 LOG buttons on Today), and `staging-smoke.mjs` reads 50/51, its one failure the empty account's exercises: none until its first app sign-in creates the defaults (125). The checks waiting on it ran the same day. The smoke's log step, waiting since the display follow-up's review (chunks 47, 49 and 50 found no LOG button), ran on the deployed `0f9e281`: LOG on week 3 Upper A's bench set 3 (prefilled 80 kg × 5) took the test account's set logs 203 → 204, read back as the test account. After 51a's merge its own smoke logged Seated Cable Row set 1 (60 × 12): 204 → 205. Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 137 USE on a set planned AMRAP: does this week's set stay AMRAP? (chunk 43)
 - What: whether REVIEW's USE on a set planned AMRAP whose weight differed writes the weight only, so this week's set stays AMRAP (as built), or the reps done too, so the set becomes a number.
