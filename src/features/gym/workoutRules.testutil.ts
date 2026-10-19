@@ -7,6 +7,7 @@ import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   resolveRows,
   sessionOrder,
+  type AddedSet,
   type AddedSetKey,
   type HeldChange,
   type HeldDraft,
@@ -86,26 +87,40 @@ export function heldDraft(entry: SetDraftKey | HeldDraft): HeldDraft {
 /** The draft of a set added in the session with the type it keeps (DECISIONS 161). */
 export const draftOf = (key: AddedSetKey, type: SessionSetChangeType): HeldDraft => ({ key, values: { type } })
 
+/** The id a card gives the `n`-th set added to it in a test (1-based): its row key is `added:<card>:a<n>`. */
+export const addedId = (n: number): string => `a${n}`
+
 /**
- * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the screen's count of
- * added sets, `drafts` the drafts the phone holds (bare keys read as Normal sets), `types` the types the card keeps for its
- * new added sets, in the order they were added (none given: an empty list, all Normal).
+ * A set added in the session as a test writes it in `card`'s list: a log of an added set (the set is logged, by that log), a
+ * type (the set is open, with that type), or the entry itself. Unless the entry says otherwise, the n-th one's id is `a<n>`.
+ */
+export type AddedSpec = SetLog | SessionSetChangeType | AddedSet
+
+function addedEntry(spec: AddedSpec, n: number): AddedSet {
+  if ('localId' in spec) return spec
+  if ('id' in spec) return { localId: addedId(n), logId: spec.id, type: { kind: spec.isWarmup ? 'warmup' : 'normal' } }
+  return { localId: addedId(n), logId: null, type: spec }
+}
+
+/**
+ * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the card's list of the
+ * sets added in the session, in the order they were added (DECISIONS 170): a number is that many open Normal sets (ADD SET),
+ * a list names each one (`AddedSpec`). `drafts` are the drafts the phone holds (bare keys read as Normal sets).
  */
 export function card(
   key: string,
   spec: string,
-  o: { name?: string; added?: number; drafts?: readonly (SetDraftKey | HeldDraft)[]; types?: readonly SessionSetChangeType[] } = {},
+  o: { name?: string; added?: number | readonly AddedSpec[]; drafts?: readonly (SetDraftKey | HeldDraft)[] } = {},
 ): OrderExercise {
   const name = o.name ?? key.charAt(0).toUpperCase() + key.slice(1)
+  const added = typeof o.added === 'number' ? Array.from({ length: o.added }, (): AddedSpec => ({ kind: 'normal' })) : o.added
   return {
     key,
     exerciseId: exerciseIdOf(key),
     name,
     plannedSets: plannedSets(key, spec),
-    ...(o.added === undefined ? {} : { addedSets: o.added }),
+    ...(added === undefined ? {} : { added: added.map((entry, i) => addedEntry(entry, i + 1)) }),
     ...(o.drafts === undefined ? {} : { drafts: o.drafts.map(heldDraft) }),
-    // a card that has added sets hands over its types (an empty list: all Normal), as the module requires
-    ...(o.types === undefined && o.added === undefined ? {} : { addedTypes: o.types ?? [] }),
   }
 }
 
@@ -126,46 +141,60 @@ export function brief(row: ResolvedRow): string {
   return `${row.exerciseKey} ${place}${drop}${mark}`
 }
 
-// ─── The card's own state for the sets added in the session (DECISIONS 161) ─────────────────────────
-// What the workout screen keeps beside the logs: the type of each added set that has no log. A test that applies a rule's
-// answer calls these to do what the card does with it, then reads the rows again from the cards.
+// ─── The card's own state for the sets added in the session (DECISIONS 170, 161) ─────────────────
+// What the workout screen keeps beside the logs: its list of the sets added in the session, in the order they were added,
+// each with its log while it has one and its type, and the drafts. A test that applies a rule's answer calls these to do
+// what the card does with it (workoutRules.ts' header, "What the card keeps"), then reads the rows again from the cards.
 
-/** An open added row's draft in `exercise`, or -1: found by its key, the way `draftKey` says (two drafts can name one position). */
-const draftIndexOf = (exercise: OrderExercise, row: Pick<ResolvedRow, 'draftKey'>): number =>
-  (exercise.drafts ?? []).findIndex((d) => 'localId' in d.key && !('drop' in d.key) && d.key.localId === row.draftKey?.localId)
-
-/**
- * The card keeps `type` for an open added row (the `type` that `applySetTypeChange` or `deleteEffects` answers): in its draft
- * if the set keeps one, else as its entry of `addedTypes` (the entries before it are Normal, ADD SET's default). Any other row
- * is returned as it was: a planned set's type is its change row, a logged set's its log.
- */
-export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type: SessionSetChangeType): OrderExercise[] {
-  return cards.map((exercise) => {
-    if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
-    if (row.draftKey !== null) {
-      const at = draftIndexOf(exercise, row)
-      if (at < 0) throw new Error(`no draft ${row.draftKey.localId} for ${row.key}`)
-      return { ...exercise, drafts: (exercise.drafts ?? []).map((d, i) => (i === at ? { key: d.key as AddedSetKey, values: { type } } : d)) }
-    }
-    if (row.addedIndex === null) throw new Error(`${row.key} is an open added set with neither a draft nor an index`)
-    const types = [...(exercise.addedTypes ?? [])]
-    while (types.length <= row.addedIndex) types.push({ kind: 'normal' })
-    types[row.addedIndex] = type
-    return { ...exercise, addedTypes: types }
-  })
+/** The entry of the added set a row stands for, with its card; a row that is no added head is a caller's mistake here. */
+function entryOf(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerciseKey' | 'added' | 'kind' | 'localId' | 'key'>) {
+  if (!row.added || row.kind === 'stage' || row.localId === null) throw new Error(`${row.key} is not a set added in the session`)
+  const exercise = cards.find((c) => c.key === row.exerciseKey)
+  const at = exercise?.added?.findIndex((a) => a.localId === row.localId) ?? -1
+  if (exercise === undefined || at < 0) throw new Error(`the card ${row.exerciseKey} does not list ${row.localId}`)
+  return { exercise, at }
 }
 
-/** An open added set is logged or deleted: the card stops keeping its type (its draft goes, or its entry of `addedTypes`). */
-export function dropOpenAdded(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
-  return cards.map((exercise) => {
-    if (exercise.key !== row.exerciseKey || !row.added || row.logId !== null || row.kind === 'stage') return exercise
-    if (row.draftKey !== null) {
-      const at = draftIndexOf(exercise, row)
-      return { ...exercise, drafts: (exercise.drafts ?? []).filter((_, i) => i !== at) }
-    }
-    if (row.addedIndex === null || exercise.addedTypes === undefined) return exercise
-    return { ...exercise, addedTypes: exercise.addedTypes.filter((_, i) => i !== row.addedIndex) }
-  })
+function withEntry(cards: readonly OrderExercise[], row: ResolvedRow, change: (entry: AddedSet, drafts: readonly HeldDraft[]) => { entry: AddedSet | null; drafts: readonly HeldDraft[] }) {
+  const { exercise, at } = entryOf(cards, row)
+  const { entry, drafts } = change(exercise.added![at], exercise.drafts ?? [])
+  const added = exercise.added!.flatMap((a, i) => (i !== at ? [a] : entry === null ? [] : [entry]))
+  return cards.map((c) => (c === exercise ? { ...c, added, drafts } : c))
+}
+
+const isDraftOf = (localId: string) => (draft: HeldDraft): boolean => 'localId' in draft.key && !('drop' in draft.key) && draft.key.localId === localId
+
+/**
+ * SET TYPE or a drop deleted on its own, on an added set (logged or not): the card keeps the answer's `type` as the set's, and
+ * in its draft when it keeps one (the draft is what holds the type across a reload). Any other row is returned as it was: a
+ * planned set's type is its change row.
+ */
+export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type: SessionSetChangeType): OrderExercise[] {
+  if (!row.added || row.kind === 'stage') return [...cards]
+  return withEntry(cards, row, (entry, drafts) => ({
+    entry: { ...entry, type },
+    drafts: drafts.map((d) => (isDraftOf(entry.localId)(d) ? { key: d.key as AddedSetKey, values: { type } } : d)),
+  }))
+}
+
+/** LOG (or SKIP) of an added set: its entry names the new log, and its draft goes. */
+export function loggedAdded(cards: readonly OrderExercise[], row: ResolvedRow, logId: string): OrderExercise[] {
+  return withEntry(cards, row, (entry, drafts) => ({ entry: { ...entry, logId }, drafts: drafts.filter((d) => !isDraftOf(entry.localId)(d)) }))
+}
+
+/** UNLOG of an added set: its entry names no log, and the draft `unlogEffects` answered is kept beside it. */
+export function unloggedAdded(cards: readonly OrderExercise[], row: ResolvedRow, draft: HeldDraft): OrderExercise[] {
+  return withEntry(cards, row, (entry, drafts) => ({ entry: { ...entry, logId: null }, drafts: [...drafts.filter((d) => !isDraftOf(entry.localId)(d)), draft] }))
+}
+
+/** DELETE of an added set: its entry goes, and its draft with it. */
+export function deletedAdded(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
+  return withEntry(cards, row, (entry, drafts) => ({ entry: null, drafts: drafts.filter((d) => !isDraftOf(entry.localId)(d)) }))
+}
+
+/** ADD SET (or a member's share of ADD ROUND): a new entry at the end of the card's list, open, with the type given (Normal). */
+export function addSet(cards: readonly OrderExercise[], key: string, localId: string, type: SessionSetChangeType = { kind: 'normal' }): OrderExercise[] {
+  return cards.map((c) => (c.key === key ? { ...c, added: [...(c.added ?? []), { localId, logId: null, type }] } : c))
 }
 
 // ─── Logs ────────────────────────────────────────────────────────────────────────────────────────

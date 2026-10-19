@@ -17,9 +17,11 @@ import {
   card,
   deepFreeze,
   deleted,
+  deletedAdded,
   dropLog,
   headLog,
   held,
+  keepType,
   orderOf,
   pending,
   retyped,
@@ -36,21 +38,28 @@ import {
 // session the way the screen will: `resolveRows`, `currentSet`, `finishWarning` (RULES.md: "A write path's
 // output is proven through the reader that draws it").
 
-/** One session of these cards, with these logs and changes held; DELETE on the row with `key`, applied. */
+/**
+ * One session of these cards, with these logs and changes held; DELETE on the row with `key`, applied: the writes to the
+ * stand-in, and what the card does (an added set leaves its list; a drop deleted under an added set leaves its type one drop
+ * fewer), unless `cardsAfter` says otherwise.
+ */
 function deleteOn(o: {
   cards: OrderExercise[]
   blocks?: OrderSuperset[]
   logs?: SetLog[]
   changes?: HeldChange[]
   key: string
-  /** The cards after the delete, when the card's own count of added sets goes down with it. */
   cardsAfter?: OrderExercise[]
 }) {
   const server = new FakeServer({ logs: o.logs ?? [], changes: o.changes ?? [] })
   const view = viewOf(orderOf(o.cards, o.blocks ?? []), server.logs, server.held())
-  const effects = deleteEffects(rowKeyed(view, o.key), view)
+  const row = rowKeyed(view, o.key)
+  const effects = deleteEffects(row, view)
   server.applyDelete(effects)
-  const order = orderOf(o.cardsAfter ?? o.cards, o.blocks ?? [])
+  const head = row.kind === 'stage' ? rowKeyed(view, row.headKey!) : row
+  const byCard =
+    !head.added ? o.cards : row.kind === 'stage' ? keepType(o.cards, head, effects.type!) : deletedAdded(o.cards, row)
+  const order = orderOf(o.cardsAfter ?? byCard, o.blocks ?? [])
   return {
     effects,
     server,
@@ -126,16 +135,38 @@ describe('deleteEffects: the sets after it close the gap', () => {
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03·', 'bench 04✓'])
   })
 
-  it('a later head\'s stale drop is put right with its head: the drop says 9, its head goes from 4 to 3, so the drop is written 3', () => {
-    const gone = headLog('bench', 1, { number: 2 })
-    const a = headLog('bench', 2, { number: 3 })
-    const b = headLog('bench', 3, { number: 4, stageKind: 'dropset' })
+  it('a later head\'s stale drop is put right with its head: the drop says 9, its head goes from 3 to 2, so the drop is written 2', () => {
+    const gone = headLog('bench', 1)
+    const a = headLog('bench', 2)
+    const b = headLog('bench', 3, { stageKind: 'dropset' })
     const stale = dropLog(b, 1, { number: 9 })
     const view = viewOf(orderOf([card('bench', 'n n n')]), [gone, a, b, stale])
     expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([
-      { id: 'log.bench.2', setNumber: 2 },
-      { id: 'log.bench.3', setNumber: 3 },
-      { id: stale.id, setNumber: 3 },
+      { id: 'log.bench.2', setNumber: 1 },
+      { id: 'log.bench.3', setNumber: 2 },
+      { id: stale.id, setNumber: 2 },
+    ])
+  })
+
+  it('stored numbers that are not the places (1.1 numbered sets in the order they were logged) are each written the number their row shows', () => {
+    // set 1 stored 2, set 2 stored 3, set 3 stored 1 (logged first): the rows read 01 02 03 (DECISIONS 170)
+    const one = headLog('bench', 1, { number: 2 })
+    const two = headLog('bench', 2, { number: 3 })
+    const three = headLog('bench', 3, { number: 1 })
+    const four = headLog('bench', 4, { number: 4 })
+    const logs = [one, two, three, four]
+    expect(viewOf(orderOf([card('bench', 'n n n n')]), logs).rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
+    const { effects, rows, server } = deleteOn({ cards: [card('bench', 'n n n n')], logs, key: 'set:bench.2' })
+    expect(effects.renumber).toEqual([
+      { id: one.id, setNumber: 1 },
+      { id: three.id, setNumber: 2 },
+      { id: four.id, setNumber: 3 },
+    ])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓'])
+    expect(server.logs.map((l) => [l.id, l.setNumber])).toEqual([
+      [one.id, 1],
+      [three.id, 2],
+      [four.id, 3],
     ])
   })
 
@@ -179,7 +210,7 @@ describe('deleteEffects: the sets after it close the gap', () => {
 
   it('a set added in the session is a head like any other', () => {
     const logs = [headLog('bench', 1), headLog('bench', 2), addedLog('bench', 1, { number: 3 })]
-    const view = viewOf(orderOf([card('bench', 'n n', { added: 1 })]), logs)
+    const view = viewOf(orderOf([card('bench', 'n n', { added: [logs[2]] })]), logs)
     expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([
       { id: 'log.bench.2', setNumber: 1 },
       { id: 'log.bench.added1', setNumber: 2 },
@@ -257,9 +288,9 @@ describe('DELETE on a logged planned set: it never comes back as an open row (SP
     const effects = deleteEffects(rowKeyed(view, 'set:bench.2'), view)
     server.applyDelete({ ...effects, changes: [] })
     const order = orderOf(cards)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 03·', 'bench 02✓', 'bench 04·'])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓', 'bench 04·'])
     expect(currentSet(order, server.logs, server.held())!.weekPlanSetId).toBe('bench.2')
-    expect(finishWarning(order, server.logs, server.held())!.text).toBe("2 planned sets aren't logged yet: Bench 03 and 04.")
+    expect(finishWarning(order, server.logs, server.held())!.text).toBe("2 planned sets aren't logged yet: Bench 02 and 04.")
   })
 
   it('deleting the first, a middle and the last logged set each leave the rest in order', () => {
@@ -370,12 +401,15 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
     expect(warning!.text).toBe("1 planned set isn't logged yet: Bench 03.")
   })
 
-  it('the control: without the renumbering the logged 03 keeps its number, the open set after it reads 02 and History keeps a hole', () => {
+  it('the control: without the renumbering the rows still read 01 02 03 (a row shows its rank), but the logged set is stored as 3 where its row shows 02: History keeps a hole', () => {
     const server = new FakeServer({ logs: [headLog('bench', 1), headLog('bench', 3)] })
     const view = viewOf(orderOf(cards), server.logs, [])
     const effects = deleteEffects(rowKeyed(view, 'set:bench.2'), view)
     server.applyDelete({ ...effects, renumber: [] })
-    expect(resolveRows(orderOf(cards), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 03✓', 'bench 02·'])
+    const rows = resolveRows(orderOf(cards), server.logs, server.held())
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(server.logs.map((l) => l.setNumber)).toEqual([1, 3])
+    expect(rows.filter((r) => r.logId !== null).map((r) => r.number)).toEqual([1, 2])
   })
 
   it('every logged set after it moves, each down by one, with its drops; the sets before it, and an open one after, do not', () => {
@@ -446,10 +480,10 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
   })
 
   it('an added set that is open (its draft kept) is deleted like any: the logged added sets after it close the gap', () => {
-    const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 3 } as const
-    const withDraft = [card('bench', 'n n', { added: 3, drafts: [draft] })]
+    const draft = { sessionId: 's1', localId: 'a1', exerciseId: 'ex.bench', position: 3 } as const
     const logs = [headLog('bench', 1), headLog('bench', 2), addedLog('bench', 2, { number: 4 }), addedLog('bench', 3, { number: 5 })]
-    const { effects, rows, server } = deleteOn({ cards: withDraft, logs, key: 'added:bench:1', cardsAfter: [card('bench', 'n n', { added: 2 })] })
+    const withDraft = [card('bench', 'n n', { added: [{ kind: 'normal' }, logs[2], logs[3]], drafts: [draft] })]
+    const { effects, rows, server } = deleteOn({ cards: withDraft, logs, key: 'added:bench:a1' })
     expect(effects.changes).toEqual([])
     expect(effects.renumber).toEqual([
       { id: 'log.bench.added2', setNumber: 3 },
@@ -460,7 +494,7 @@ describe('DELETE on an open set with logged sets after it (DECISIONS 151, SPEC 1
   })
 
   it('a fresh added slot (ADD SET, never logged) goes with nothing to move', () => {
-    const { effects } = deleteOn({ cards: [card('bench', 'n n', { added: 1 })], logs: [headLog('bench', 1), headLog('bench', 2)], key: 'added:bench:1', cardsAfter: [card('bench', 'n n')] })
+    const { effects } = deleteOn({ cards: [card('bench', 'n n', { added: 1 })], logs: [headLog('bench', 1), headLog('bench', 2)], key: 'added:bench:a1' })
     expect(effects.renumber).toEqual([])
   })
 })
@@ -536,13 +570,12 @@ describe('DELETE turns the set\'s "retyped" row into "deleted": the same row, it
 })
 
 describe('DELETE on a set added in the session: no change row (it has no planned set)', () => {
-  it('a logged added set: the log goes, the added sets after it renumber, and the card lowers its count of added sets', () => {
+  it('a logged added set: the log goes, the added sets after it renumber, and the card takes it off its list', () => {
     const logs3 = [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 2, { number: 3 })]
     const { effects, rows } = deleteOn({
-      cards: [card('bench', 'n', { added: 2 })],
-      cardsAfter: [card('bench', 'n', { added: 1 })],
+      cards: [card('bench', 'n', { added: [logs3[1], logs3[2]] })],
       logs: logs3,
-      key: 'added:bench:1',
+      key: 'added:bench:a1',
     })
     expect(effects.deleteOrder.map((l) => l.id)).toEqual(['log.bench.added1'])
     expect(effects.renumber).toEqual([{ id: 'log.bench.added2', setNumber: 2 }])
@@ -553,8 +586,7 @@ describe('DELETE on a set added in the session: no change row (it has no planned
   it('an added set not logged yet: nothing to write at all (the card\'s own state)', () => {
     const { effects, rows } = deleteOn({
       cards: [card('bench', 'n', { added: 1 })],
-      cardsAfter: [card('bench', 'n', { added: 0 })],
-      key: 'added:bench:1',
+      key: 'added:bench:a1',
     })
     expect(effects).toEqual({ deleteOrder: [], stageCount: 0, renumber: [], changes: [], headPatch: null, type: null })
     expect(rows.map(brief)).toEqual(['bench 01·'])
@@ -565,11 +597,10 @@ describe('DELETE on a set added in the session: no change row (it has no planned
     const drop = dropLog(head, 1)
     const changes = [held(pending(head, 'dropset', 2), 'c1')]
     const { effects, server, rows } = deleteOn({
-      cards: [card('bench', 'n', { added: 1 })],
-      cardsAfter: [card('bench', 'n', { added: 0 })],
+      cards: [card('bench', 'n', { added: [head] })],
       logs: [headLog('bench', 1), head, drop],
       changes,
-      key: 'added:bench:1',
+      key: 'added:bench:a1',
     })
     expect(effects.deleteOrder.map((l) => l.id)).toEqual([drop.id, head.id])
     expect(effects.changes).toEqual([])
@@ -699,10 +730,10 @@ describe('DELETE on a drop on its own (board W8): the set has one drop fewer and
     const head = addedLog('bench', 1, { stageKind: 'dropset', number: 2 })
     const changes = [held(pending(head, 'dropset', 2), 'c1')]
     const { effects, server, rows } = deleteOn({
-      cards: [card('bench', 'n', { added: 1 })],
+      cards: [card('bench', 'n', { added: [head] })],
       logs: [headLog('bench', 1), head, dropLog(head, 1), dropLog(head, 2)],
       changes,
-      key: 'added:bench:1:stage:2',
+      key: 'added:bench:a1:stage:2',
     })
     expect(effects.changes).toEqual([{ change: { kind: 'pending_stages', setLogId: head.id, stageKind: 'dropset', stageCount: 1 }, id: 'c1' }])
     expect(server.rows.map((r) => [r.id, r.stageCount])).toEqual([['c1', 1]])
@@ -785,10 +816,10 @@ describe('DELETE of a set\'s last drop makes it a normal set (DECISIONS 147 (a))
     const drop = dropLog(head, 1)
     const changes = [held(pending(head, 'dropset', 1), 'c1')]
     const { effects, server, rows } = deleteOn({
-      cards: [card('bench', '', { added: 1 })],
+      cards: [card('bench', '', { added: [head] })],
       logs: [head, drop],
       changes,
-      key: 'added:bench:1:stage:1',
+      key: 'added:bench:a1:stage:1',
     })
     expect(effects.headPatch).toEqual({ id: head.id, stageKind: null })
     expect(effects.changes).toEqual([])
@@ -799,8 +830,8 @@ describe('DELETE of a set\'s last drop makes it a normal set (DECISIONS 147 (a))
 
   it('an added set not logged yet has no row to write: the effect says its new type for the card\'s own state', () => {
     const view = viewOf(orderOf([card('bench', '', { added: 1 })]), [])
-    const row = { ...rowKeyed(view, 'added:bench:1'), type: staged('dropset', 1) }
-    const drop = { ...row, key: 'added:bench:1:stage:1', kind: 'stage' as const, type: null, headKey: row.key, stageNumber: 1 }
+    const row = { ...rowKeyed(view, 'added:bench:a1'), type: staged('dropset', 1) }
+    const drop = { ...row, key: 'added:bench:a1:stage:1', kind: 'stage' as const, type: null, headKey: row.key, stageNumber: 1, localId: null }
     const effects = deleteEffects(drop, { ...view, rows: [row, drop] })
     expect(effects).toEqual({ deleteOrder: [], stageCount: 0, renumber: [], changes: [], headPatch: null, type: { kind: 'normal' } })
   })

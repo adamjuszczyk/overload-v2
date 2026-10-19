@@ -111,7 +111,9 @@ describe('currentSet: the first unlogged working set or drop', () => {
     const order = orderOf([card('bench', 'n', { added: 1 })])
     expect(brief(current(order, [headLog('bench', 1)])!)).toBe('bench 02·')
     expect(current(order, [headLog('bench', 1)])!.added).toBe(true)
-    expect(current(order, [headLog('bench', 1), addedLog('bench', 1, { number: 2 })])).toBeNull()
+    // once it is logged the card's entry names its log, and nothing is left
+    const log = addedLog('bench', 1, { number: 2 })
+    expect(current(orderOf([card('bench', 'n', { added: [log] })]), [headLog('bench', 1), log])).toBeNull()
   })
 
   it('goes card by card in the order given, a block standing where its first member is', () => {

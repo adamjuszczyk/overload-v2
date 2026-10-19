@@ -64,7 +64,11 @@ function fromHook(spec: string, logs: SetLog[], addedTaps: number): { sets: Show
   return { sets: [...planned, ...extra], warmups: state.warmupRows.map((_, i) => i + 1) }
 }
 
-function fromRules(spec: string, logs: SetLog[], added: number): { sets: Shown[]; warmups: number[] } {
+function fromRules(spec: string, logs: SetLog[], taps: number): { sets: Shown[]; warmups: number[] } {
+  // the card's list as a card makes it when the screen opens: the added sets already logged, in the order of their numbers (as the
+  // hook's `extraLogGroups`), then one new set for each ADD SET tap (DECISIONS 170: the order they were added in)
+  const addedLogs = logs.filter((l) => l.weekPlanSetId === null && l.parentSetId === null && !l.isWarmup).sort((a, b) => a.setNumber - b.setNumber)
+  const added = [...addedLogs, ...Array.from({ length: taps }, () => ({ kind: 'normal' }) as const)]
   const rows = resolveRows(orderOf([card('ex', spec, { added })]), logs, [])
   const sets = rows
     .filter((r) => r.kind === 'working')
@@ -81,10 +85,9 @@ function fromRules(spec: string, logs: SetLog[], added: number): { sets: Shown[]
 }
 
 // `taps` is how many times ADD SET was tapped after the screen opened; the card's slots start at the added sets
-// already logged (its `extraSlotCount`), which is the count the rules are given.
+// already logged (its `extraSlotCount`), and so does the list the rules are given.
 function bothWays(spec: string, logs: SetLog[], taps = 0) {
-  const addedLogs = logs.filter((l) => l.weekPlanSetId === null && l.parentSetId === null && !l.isWarmup).length
-  return { hook: fromHook(spec, logs, taps), rules: fromRules(spec, logs, addedLogs + taps) }
+  return { hook: fromHook(spec, logs, taps), rules: fromRules(spec, logs, taps) }
 }
 
 function same(spec: string, logs: SetLog[], taps = 0) {
@@ -102,11 +105,6 @@ describe('resolveRows reads a plan and its logs as the card does today', () => {
   it('two logged in order: the open ones follow the logged heads', () => {
     const shown = same('n n n n', [headLog('ex', 1), headLog('ex', 2)])
     expect(shown.sets.map((s) => [s.number, s.state])).toEqual([[1, 'logged'], [2, 'logged'], [3, 'unlogged'], [4, 'unlogged']])
-  })
-
-  it('set 3 logged first: it shows 1 and the sets before it shift', () => {
-    const shown = same('n n n n', [headLog('ex', 3, { number: 1 })])
-    expect(shown.sets.map((s) => s.number)).toEqual([2, 3, 1, 4])
   })
 
   it('logs that come in any order, a skipped set among them', () => {
@@ -146,10 +144,9 @@ describe('resolveRows reads a plan and its logs as the card does today', () => {
   })
 
   it('added logs that come in any order are matched in the order of their numbers', () => {
-    const logs = [headLog('ex', 1), addedLog('ex', 2, { number: 3 }), addedLog('ex', 1, { number: 2 })]
+    const logs = [headLog('ex', 1), headLog('ex', 2), addedLog('ex', 2, { number: 4 }), addedLog('ex', 1, { number: 3 })]
     const shown = same('n n', logs, 1)
-    // numbered in the order they were logged (gapless, 1.1's rule): the open planned set takes the number after the logged ones
-    expect(shown.sets.map((s) => [s.number, s.state])).toEqual([[1, 'logged'], [4, 'unlogged'], [2, 'logged'], [3, 'logged'], [5, 'unlogged']])
+    expect(shown.sets.map((s) => [s.number, s.state])).toEqual([[1, 'logged'], [2, 'logged'], [3, 'logged'], [4, 'logged'], [5, 'unlogged']])
   })
 
   it('an added set made a dropset in the session shows the drop it was logged with', () => {
@@ -161,8 +158,24 @@ describe('resolveRows reads a plan and its logs as the card does today', () => {
 
 // DECISIONS 151 (Adam, 2026-10-16): an unlogged set keeps its number and its place. The card still numbers an open set
 // "the logged heads + its place among the open ones", so a set unlogged ahead of logged ones is where the two part.
-// 58a deletes this file with the hook; these are the cases where the rules are right and the hook is the defect Adam ruled out.
-describe('where the rules part from the card on purpose (DECISIONS 151)', () => {
+// DECISIONS 170 (Adam, 2026-10-18): a set's number is its rank in the session's order, so logs that hold numbers in the order
+// they were logged (1.1's rule, which the card shows) read in the plan's order. 58a deletes this file with the hook; these are
+// the cases where the rules are right and the hook is the defect Adam ruled out.
+describe('where the rules part from the card on purpose (DECISIONS 151, 170)', () => {
+  it('set 3 logged first (stored 1, as 1.1 numbered it): the card shows 1 and shifts the sets before it, the rules keep every set at its rank', () => {
+    const { hook, rules } = bothWays('n n n n', [headLog('ex', 3, { number: 1 })])
+    expect(hook.sets.map((s) => s.number)).toEqual([2, 3, 1, 4])
+    expect(rules.sets.map((s) => s.number)).toEqual([1, 2, 3, 4])
+    expect(rules.sets.map((s) => s.state)).toEqual(hook.sets.map((s) => s.state))
+  })
+
+  it('added logs numbered in the order they were logged, with a planned set open before them: the card reads 1 4 2 3 5, the rules 1 to 5', () => {
+    const logs = [headLog('ex', 1), addedLog('ex', 2, { number: 3 }), addedLog('ex', 1, { number: 2 })]
+    const { hook, rules } = bothWays('n n', logs, 1)
+    expect(hook.sets.map((s) => [s.number, s.state])).toEqual([[1, 'logged'], [4, 'unlogged'], [2, 'logged'], [3, 'logged'], [5, 'unlogged']])
+    expect(rules.sets.map((s) => [s.number, s.state])).toEqual([[1, 'logged'], [2, 'unlogged'], [3, 'logged'], [4, 'logged'], [5, 'unlogged']])
+  })
+
   it('an open planned set ahead of logged ones: the card reads its number twice, the rules keep it', () => {
     const logs = [headLog('ex', 1), addedLog('ex', 2, { number: 4 }), addedLog('ex', 1, { number: 3 })]
     const { hook, rules } = bothWays('n n', logs, 1)

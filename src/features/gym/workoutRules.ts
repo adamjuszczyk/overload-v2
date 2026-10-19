@@ -18,55 +18,75 @@
 //   - `pending_stages` changes: a logged head with drops still to log (the change's count is the head's
 //     total number of drops, logged ones included);
 //   - logs: heads by `weekPlanSetId` (identity), a head's drops by count (the n-th logged drop is drop n),
-//     added sets (`weekPlanSetId` null) by their `setNumber` against the exercise's added rows and the drafts
-//     the phone holds for added sets that were unlogged.
+//     added sets (`weekPlanSetId` null) by the card's list of the sets added in the session, which names each
+//     one's log (`OrderExercise.added`).
 // A set that was logged takes its type from its log (SPEC Objects stored: "set kind and stage kind as
 // done"), so a logged planned dropset switched to Normal has no drop rows left although the plan still
 // holds them; a null kind on a head with planned drops, or with logged drops, still reads as a dropset
 // (`resolveStageKind`, pre-1.1 data).
 //
-// ─── What a row's number is (DECISIONS 151, Adam 2026-10-16) ─────────────────────────────────────
-// "An unlogged set keeps its number and its place. Logging it again stores it with that same number, so unlog
-// then log is an exact undo (SPEC 18c). No other set's number changes on unlog. The open row shows its own
-// number (a planned set's position; an added set's number from its draft), never 'the next after the logged ones'."
-//   - A logged or skipped working set shows the `setNumber` it was logged with, and holds it.
-//   - An open planned set takes the lowest number that no working set of its exercise holds, in the order of the plan.
-//     With the numbers the sets were logged with being their places (every set LOGGED from 58a on: see below) that is its
-//     position, whichever of the sets around it are logged: unlog 02 of 01 to 03 and it is still 02, with 04 after the
-//     logged 03. With numbers that are gapless in the order sets were logged (1.1's rule) it is the number after them,
-//     as the cards number a set today.
-//   - An added set is numbered with the planned ones and put in the order of its number. One that was unlogged keeps
-//     its draft (`OrderExercise.drafts`), which is how it is still a row after a reload, and its row says which
-//     (`draftKey`, and `draftPosition` for its position); it shows the draft's number when that number is free and no
-//     more than the count of working sets, so it comes back to its place even with new sets open before it (a draft
-//     that no longer fits takes the lowest number free). The new ones take the numbers that are left.
-//   - A drop shows its head's number. Warmups are numbered among themselves, by their place; an open added Warmup takes
-//     no working number, and sits among the added sets where its number would have been (its draft's position, or the
-//     lowest free number at its turn), so a switch to Warmup and back leaves every set in its place (but for a Warmup that
-//     was never logged with a logged added set after it: nothing records the order sets were added in, and it comes back
-//     after that set).
+// ─── What a row's number is (DECISIONS 170, Adam 2026-10-18; it satisfies 146, 151 and 161) ────────
+// "Set numbers are never claimed or stored per rule. Each set has a fixed place in the session order: planned sets by
+// planned position, added sets by when they were added. A set's displayed number is its rank among the non-deleted,
+// non-warmup working sets in that order (warmups numbered apart, as now). LOG stores the number the row shows; a delete or
+// warmup switch that changes logged sets' numbers patches them, as 146 (a) already writes."
+//   - A card's sets in their places: the plan's sets in the order of their planned `setNumber` (warmups among them, the
+//     deleted ones gone), then the sets added in the session in the order they were added. That order is the card's own
+//     record (`OrderExercise.added`: nothing on the server says when a set was added), and no log, draft or number moves
+//     a set in it: logging, unlogging, a type change, and a delete of another set leave every set where it was.
+//   - A working set's number is its rank among the card's working sets in that order, logged, skipped or open alike; a
+//     Warmup's is its rank among the card's warmups (W1, W2: numbered apart); a drop shows its head's. So the numbers read
+//     1 to n with no two alike, a set's number changes only when a set before it leaves or joins the working sets, and
+//     the number a log holds is never read for it.
+//   - So DECISIONS 151 holds as it stands: unlog moves no set and changes no number (unlog 02 of 01 to 03 and it is still
+//     02, with 04 after the logged 03; an added set unlogged after new sets were added before it keeps its number); and
+//     146 (a): a set switched to Warmup leaves the working ranks, so the sets after it close the gap, and one switched from
+//     Warmup takes its place among them again, the sets after it moving up one; a delete is the same as a switch to
+//     Warmup. And 161: an added set's type is the card's, its draft's after an unlog, or its log's, so a Warmup is no
+//     working set wherever it is.
+//   - The writers keep the stored numbers equal to the numbers shown: LOG stores `row.number`, and DELETE and a switch to
+//     or from Warmup return the logs whose stored number is not their set's number afterwards (`renumber`): with stored
+//     numbers that are the ranks, exactly the logged working sets after the set, each one down or up one, with its drops.
+//     A warmup's stored number is left as it is (as now: warmups are numbered by their place, and nothing moves on their
+//     account).
+//   - A log of an added set that the card's list doesn't name, and a draft no listed set has (the session after a reload,
+//     or a reopened one), are drawn after the listed sets in the order of the number each holds (a log's `setNumber`, a
+//     draft's `position`): the card has no record of when those were added.
 //
 // ─── An added set's type (DECISIONS 161, Adam 2026-10-16) ─────────────────────────────────────────
 // "An added set's draft also keeps its type, so an unlog is undone exactly and nothing moves; 46's rules see every added
 // set's type." A set added in the session (ADD SET, ADD ROUND) has no planned set and, until it is logged, no log or
-// change row to hold its type (TASKS 62: the card's own state), so the card hands it to the rules:
+// change row to hold its type (TASKS 62: the card's own state), so the card hands it to the rules with the set itself:
+//   - each entry of `OrderExercise.added` has the set's `type` as the card keeps it: what it was added as (Normal for ADD
+//     SET), then every answer's `type` for that set (SET TYPE, a drop deleted on its own), logged or not. It is read while
+//     the set has no log, and it is required on every entry: an entry without one is refused (TypeError), because a
+//     Warmup would pass for a working set (RULES.md);
 //   - a set that was logged and unlogged again keeps a draft, and the draft holds its type: `HeldDraft.values.type`,
-//     which chunk 63 stores from `unlogEffects`' `draft.values.type`. A draft of an added set without one is refused;
-//   - a set never logged keeps its type in the card: `OrderExercise.addedTypes`, the types of the card's new added sets
-//     (not logged, no draft) in the order they were added, and a row says which it is (`addedIndex`, the index into that
-//     list). The type belongs to the set and not to its row key (`added:<card>:<n>`, which moves when numbers do). The
-//     card removes an entry when its set is logged or deleted; an entry that is missing reads Normal, which is what ADD
-//     SET gives, and an extra one is ignored (the lists can lag one another for a render). The list itself is required
-//     once the card has a new added set: a card that leaves it out is refused (TypeError), an empty list says all Normal;
+//     which chunk 63 stores from `unlogEffects`' `draft.values.type` (the entry's `type` already says the same). The
+//     draft is what brings the type back after a reload, when the card's list is gone: a draft no listed set has is drawn
+//     with its own type. A draft of an added set without one is refused;
 //   - a logged set has its type in its log (`is_warmup`, `stage_kind`, the `pending_stages` row).
+// The type belongs to the set, and so does its row key (`added:<card>:<localId>`), which nothing moves.
 // So an open added Warmup is a warmup row like any other: never the current set, its LOG never asks (G54), and it holds
 // no working number, so the working sets read 1 to n without it (146 (a)); an open added dropset has its drops as open
 // rows. `applySetTypeChange` says the type to keep (`type`) and, for a switch to or from Warmup, the logged sets that
 // move. LOG of such a set writes the log with `typeColumns(row.type)` (`isWarmup`, `stageKind`) and, for a staged type,
 // the `pending_stages` row; without that row it reads as Normal once logged.
 // LOG STORES `row.number`: the number the row shows, never "the logged heads + 1" (58a's `handleLogHead`, 63's
-// re-log and a skip all write it). That is what makes the stored numbers the places of the sets, and a set logged
+// re-log and a skip all write it). That is what keeps the stored numbers the ranks of the sets, and a set logged
 // again an exact undo.
+//
+// ─── What the card keeps for the sets added in the session (DECISIONS 170, 161) ──────────────────
+// `OrderExercise.added`, one entry per set, in the order they were added; the card changes it at:
+//   - ADD SET, ADD ROUND (`addRound`): a new entry at the end, `{ localId: <a new id>, logId: null, type: Normal }`;
+//   - LOG and SKIP: the entry's `logId` is the new log's id (the draft, if any, goes);
+//   - UNLOG: `logId` back to null, the draft `unlogEffects` answers kept beside it;
+//   - SET TYPE and a drop deleted on its own: the entry's `type` is the answer's `type`;
+//   - DELETE: the entry goes (with its draft).
+// An entry whose log isn't among the logs yet, or any more (the logs and the card can lag one another for a render),
+// is an open set with the entry's type. The card keeps the list for the session (it is the only record of the order the
+// sets were added in) and across a reload with the drafts (chunk 63): a set the list doesn't name is drawn after the
+// listed ones (above).
 //
 // ─── Current set and the lock ────────────────────────────────────────────────────────────────────
 // - The current set is the first unlogged working set or drop in the order (SPEC: "the first unlogged
@@ -102,9 +122,9 @@
 //   - an added set that is not logged yet has no row to write: its type is the card's own state (or its draft's), and
 //     the `type` of the answer is what the card keeps (DECISIONS 161);
 //   - a set switched to or from Warmup renumbers the working sets as a delete does (DECISIONS 146 (a)):
-//     `renumber` lists the logs whose `set_number` changes. An open set has no log of its own to change, but
-//     the logged sets after it move with it (an open set keeps its place, so a logged set can come after it); an open
-//     added set is one of these like a planned one;
+//     `renumber` lists the logs whose `set_number` is not their set's rank afterwards (see the numbers above). An open
+//     set has no log of its own to change, but the logged sets after it move with it (an open set keeps its place, so a
+//     logged set can come after it); an open added set is one of these like a planned one;
 //   - a logged warmup with no weight or reps made a working set carries the two numbers with the type, in the
 //     same patch, because the table refuses a working set without them (DECISIONS 152 (a), Adam 2026-10-16: the
 //     panel asks for them first): `typeChangeNeedsNumbers` says when, and `applySetTypeChange` refuses to answer
@@ -114,10 +134,10 @@
 // - `deleteEffects` says everything DELETE does, so that a deleted set never comes back as an open row
 //   (SPEC 18b: "The remaining sets renumber", 13c: a deleted planned set counts as Skipped):
 //     * a set that has logs: the drops from the last, then the head (the cascade order of
-//       `setGroupLogic.ts`); every later head of the same exercise and its drops move down one (F4: a
-//       renumbered head's drops used to keep their old number). Open sets keep their places, so "one less" is
-//       right and "consecutive from the gap" is not: 01, 02 and 05 logged with 03 and 04 open, 02 deleted,
-//       leaves 05 as 04. An open set that is deleted moves the logged sets after it the same way (151);
+//       `setGroupLogic.ts`); every later head of the same exercise and its drops take their rank among the sets
+//       left, one down (F4: a renumbered head's drops used to keep their old number). Open sets keep their places,
+//       so 01, 02 and 05 logged with 03 and 04 open, 02 deleted, leaves 05 as 04. An open set that is deleted
+//       moves the logged sets after it the same way (151);
 //     * a planned set, logged or not: a `deleted` change that replaces its `retyped` change (the plan has
 //       the slot, and only the change row says it is gone). An added set needs none: the card lowers its
 //       count of added sets;
@@ -138,8 +158,8 @@
 //   in the order, skipped ones are settled.
 //
 // ─── How the screens call it (58a to 64) ──────────────────────────────────────────────────────────
-//   const order = sessionOrder(cards, blocks)              // the cards as drawn: plan, swaps, added exercises, the phone's drafts,
-//                                                          // and the type of every added set that has no log (161)
+//   const order = sessionOrder(cards, blocks)              // the cards as drawn: plan, swaps, added exercises, each card's added
+//                                                          // sets in the order they were added with their types (170, 161), the drafts
 //   const rows = resolveRows(order, logs, changes)         // what every card draws; one list
 //   const current = currentSet(order, logs, changes)       // the first unlogged working set or drop of `rows`
 //   lockDecision({ logInOrder, current, tapped })          // 'log', or the question's words for the sheet
@@ -158,20 +178,22 @@
 // - Unlog: a skipped drop doesn't stop the unlog of its set and goes with it; the same for the skipped drops
 //   after a drop that is unlogged (rows read a set's drops by count, so a log left after it would move up
 //   into the place of the drop that is open again).
-// - Unlog keeps the number of an added set in its draft's key (`position`), and of a planned set nowhere: the planned
-//   set's number is its position, which the rows work out (151). A draft's position can fall out of date when
-//   sets before the added set are deleted or switched to or from Warmup while it is open; the rows number it by
-//   the lowest number free then, and `draftKey` still finds its draft. The caller drops a draft's key when the
-//   set is logged again or deleted.
+// - Unlog keeps the number an added set shows in its draft's key (`position`, as TASKS 63's key has it), and of a planned
+//   set nowhere. Neither is read for the number: a set's number is its rank (170), so a draft whose position fell out of
+//   date (a set before it deleted or switched to or from Warmup since) changes nothing, and `draftKey` still finds the
+//   draft. The position orders only the drafts no listed set has (after a reload). The caller drops a draft when the set
+//   is logged again or deleted.
 // - A set type pick with fewer drops than are logged deletes the extra logged drops after the question
 //   (19c asks for Normal; the same question is asked here).
 // - An added set that is not logged yet keeps its type in the card or its draft (above); once logged, the caller writes
 //   its `pending_stages`. An added set can be switched to Warmup like any set, logged or not: its row is drawn as a
 //   warmup.
-// - Where an open added Warmup sits among the added sets (which sets get which `added:<card>:<n>` key and which Warmup is
-//   W1): at the number it had (a logged one's, or its draft's position), else at the lowest free number at its turn, and a
-//   warmup before a working set on a tie, logged or not. SPEC keeps no record of the order sets were added in, so a Warmup that was never logged and
-//   is made Normal again joins the working sets at that place.
+// - An added Warmup sits among the added sets where it was added (170), like any set: it is W-numbered by that place among
+//   the card's warmups, and made Normal again it takes its rank among the working sets from there, the logged sets after it
+//   moving up one.
+// - The stored numbers of logs that no 1.2 writer wrote (1.1's "the logged heads + 1", which numbered sets in the order
+//   they were logged) are not what their rows show: a row shows its rank. The first delete or Warmup switch on that card
+//   writes each such log the number its row shows (`renumber` names every log whose stored number is not its rank).
 // - The stored `stage_index` of the drops left after a drop is deleted is not renumbered (rows read the
 //   drops by count, and `nextStageIndex` already allows gaps); a warmup's stored `set_number` is not
 //   kept (warmups are numbered by their place), so switching a set to Warmup leaves its own number alone.
@@ -192,7 +214,7 @@ import type {
 } from '../../types'
 import { resolveStageKind, type StageKind } from '../../lib/plannerVocabulary'
 import { buildSupersetRounds } from './supersetRounds'
-import { cascadeDeleteOrder, groupByParent, type SetGroup } from './setGroupLogic'
+import { cascadeDeleteOrder, groupByParent } from './setGroupLogic'
 
 // ─── The shapes it reads ─────────────────────────────────────────────────────────────────────────
 // Each is the fields read, picked from the app's own types: a real `WeekPlanSet`, `SetLog` and
@@ -243,25 +265,33 @@ export interface OrderExercise {
   name: string
   /** Every planned set of this exercise in the session's plan: heads, drops and warmups. */
   plannedSets: readonly PlannedSet[]
-  /** Sets added in the session (ADD SET, ADD ROUND), logged or not: the screen's `extraSlotCount`. */
-  addedSets?: number
   /**
-   * The types of the sets added in the session that are neither logged nor kept as a draft ("new" ones), in the order they
-   * were added (DECISIONS 161): the card's own state for them (TASKS 62). The n-th new set has the n-th type, and its row
-   * says so (`addedIndex`), so the type belongs to the set and not to its row key or its number. The card removes an entry
-   * when its set is logged or deleted. A set with no entry is Normal (what ADD SET gives; the lists can lag one another
-   * for a render); an entry past the last new set is ignored. Required once the card has a new added set (an empty list says
-   * they are all Normal): a card that leaves it out is refused, because a Warmup would pass for a working set (RULES.md).
+   * The sets added in the session (ADD SET, ADD ROUND), logged or not, in the order they were added (DECISIONS 170: "added
+   * sets by when they were added"): the card's own record, which nothing on the server holds. This order is their place in
+   * the card, after the planned sets; a log or a number never moves one (the header says how the card keeps it). Left out,
+   * or empty, the card has none.
    */
-  addedTypes?: readonly SessionSetChangeType[]
+  added?: readonly AddedSet[]
   /**
    * The drafts the phone holds for the session (G46). Only the draft of a set added in the session and unlogged again is
-   * read, and each is a slot of its own, so the set is still a row after a reload and takes its number before a new
-   * slot does (DECISIONS 151: "an added set's number from its draft"; the key's `position` is the number it was logged
-   * with). Its type is the draft's (DECISIONS 161: `values.type`, required). The row carries `draftKey`, which is how
-   * the screen finds the draft. A draft of a planned set, of a drop or of another exercise is ignored.
+   * read: a listed set's draft is named on its row (`draftKey`), which is how the screen finds it; a draft that no listed
+   * set has (`localId`) is a set of its own, drawn after the listed sets with its draft's type (DECISIONS 161:
+   * `values.type`, required), so the set is still a row after a reload. A draft of a planned set, of a drop or of another
+   * exercise is ignored.
    */
   drafts?: readonly HeldDraft[]
+}
+
+/**
+ * A set added in the session, as the card keeps it (DECISIONS 170, 161). `localId` is the set's own id, made when it was
+ * added and kept until it is deleted: the row's key and its draft's key carry it. `logId` is its head log's id while it is
+ * logged or skipped, null while it is open. `type` is the set's type as the card keeps it (what it was added as, then each
+ * answer's `type` for it), read while the set has no log; required, because a Warmup would otherwise pass for a working set.
+ */
+export interface AddedSet {
+  localId: string
+  logId: string | null
+  type: SessionSetChangeType
 }
 
 /** A superset block as the screen draws it (a member with a swap left its block), members in block order. */
@@ -295,31 +325,22 @@ export interface ResolvedRow {
   weekPlanSetId: string | null
   /** A set added in the session (no plan behind it). */
   added: boolean
-  /** What the row shows (see the header); a drop shows its head's. */
+  /** What the row shows: a working set's rank among its card's working sets, a warmup's among its warmups (DECISIONS 170); a drop shows its head's. */
   number: number
   /**
-   * The set's place among its exercise's sets in the order the plan gives them (warmups and working sets
-   * together, then the sets added in the session), counted from 1 over the sets that are left; a drop has its
-   * head's. Only the order means anything. It does not change when a set is switched to or from Warmup, which
-   * is what places a set among the working numbers when it joins them (DECISIONS 146 (a)).
+   * The set's place among its exercise's sets (DECISIONS 170): the plan's sets in the order of their planned position
+   * (warmups and working sets together), then the sets added in the session in the order they were added, counted from 1
+   * over the sets that are left; a drop has its head's. Only the order means anything. It does not change when a set is
+   * switched to or from Warmup, which is what places a set among the working numbers when it joins them (146 (a)).
    */
   planIndex: number
   /**
-   * A set added in the session that was unlogged and keeps a draft on the phone (G46): the `position` of that draft's
-   * key, which is how the screen finds the draft. The number the row shows is the lowest one free, which is the draft's
-   * position unless the sets before it have been deleted or switched to or from Warmup since. Null on every other row.
+   * A set added in the session: its own id (`AddedSet.localId`; for a set the card's list doesn't name, its log's id or its
+   * draft's), which its row key and its draft's key carry and nothing changes. Null on a planned set and on a drop.
    */
-  draftPosition: number | null
-  /**
-   * The key of that draft: the screen finds the draft by it. `draftPosition` is not enough once a Warmup keeps a number a
-   * working set takes later (two drafts of one exercise can then name one position); the `localId` tells them apart.
-   */
+  localId: string | null
+  /** An open added set that keeps a draft on the phone (G46): that draft's key, by which the screen finds the draft. Null on every other row. */
   draftKey: AddedSetKey | null
-  /**
-   * A set added in the session that is neither logged nor kept as a draft: its index in `OrderExercise.addedTypes`, which
-   * is how the screen finds the type the card keeps for it (DECISIONS 161). Null on every other row.
-   */
-  addedIndex: number | null
   /** The log behind a logged or skipped row. */
   logId: string | null
   /** A head's type as it is now (plan, change and log together); null on a drop. */
@@ -354,7 +375,7 @@ export function memberLetter(index: number): string {
 }
 
 export const plannedRowKey = (weekPlanSetId: string): string => `set:${weekPlanSetId}`
-export const addedRowKey = (exerciseKey: string, position: number): string => `added:${exerciseKey}:${position}`
+export const addedRowKey = (exerciseKey: string, localId: string): string => `added:${exerciseKey}:${localId}`
 export const stageRowKey = (headKey: string, stageNumber: number): string => `${headKey}:stage:${stageNumber}`
 
 // ─── A set type and how it is stored ─────────────────────────────────────────────────────────────
@@ -527,6 +548,7 @@ export function sessionOrder(exercises: readonly OrderExercise[], supersets: rea
 // ─── Reading the logs and changes over the structure ──────────────────────────────────────────────
 
 interface SessionIndex {
+  logById: Map<string, LoggedSet>
   headLogs: LoggedSet[]
   headLogByPlan: Map<string, LoggedSet>
   stagesByParent: Map<string, LoggedSet[]>
@@ -537,6 +559,7 @@ interface SessionIndex {
 
 function indexSession(logs: readonly LoggedSet[], changes: readonly SessionSetChange[]): SessionIndex {
   const session: SessionIndex = {
+    logById: new Map(),
     headLogs: [],
     headLogByPlan: new Map(),
     stagesByParent: new Map(),
@@ -545,6 +568,7 @@ function indexSession(logs: readonly LoggedSet[], changes: readonly SessionSetCh
     pending: new Map(),
   }
   for (const log of logs) {
+    if (!session.logById.has(log.id)) session.logById.set(log.id, log)
     if (log.parentSetId !== null) {
       const stages = session.stagesByParent.get(log.parentSetId)
       if (stages) stages.push(log)
@@ -575,11 +599,9 @@ interface Head {
   plannedType: SessionSetChangeType | null
   retyped: boolean
   number: number
-  /** Where it sits among the added sets: the number it holds or would take (a warmup holds none). Only added sets are sorted by it. */
-  place: number
   planIndex: number
+  localId: string | null
   draftKey: AddedSetKey | null
-  addedIndex: number | null
 }
 
 /** A type as the card or a draft hands it over, checked and copied (the rows share the frozen Normal and Warmup). */
@@ -600,6 +622,65 @@ function heldType(type: SessionSetChangeType | undefined, what: string): Session
 /** The draft of a set added in the session: its key names a local id and no drop. */
 type AddedDraft = Extract<HeldDraft, { key: AddedSetKey }>
 const isAddedDraft = (draft: HeldDraft): draft is AddedDraft => 'localId' in draft.key && !('drop' in draft.key)
+
+/** A set added in the session before it is a head: its own id, its log while it has one, the type it has while open, its draft. */
+interface AddedSlot {
+  localId: string
+  log: LoggedSet | null
+  openType: SessionSetChangeType
+  draftKey: AddedSetKey | null
+}
+
+const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+
+/**
+ * The sets added in the session to `exercise`, in their places (DECISIONS 170): the card's list, in the order the sets were
+ * added; then the ones it doesn't name (a log of an added set that no entry names, a draft that no listed set has: the session
+ * after a reload, or a reopened one), in the order of the number each holds (a log's `setNumber`, a draft's `position`), then
+ * of their ids. Nothing else orders them: a log, a draft or a number never moves a listed set.
+ */
+function addedSlots(exercise: OrderExercise, session: SessionIndex): AddedSlot[] {
+  const ownAdded = (log: LoggedSet): boolean => log.parentSetId === null && log.weekPlanSetId === null && log.exerciseId === exercise.exerciseId
+  // The drafts of this exercise's added sets, each of which holds its type (DECISIONS 161: a draft without one is refused).
+  const drafts = new Map<string, { draft: AddedDraft; type: SessionSetChangeType }>()
+  for (const draft of exercise.drafts ?? []) {
+    if (!isAddedDraft(draft) || draft.key.exerciseId !== exercise.exerciseId) continue
+    if (drafts.has(draft.key.localId)) throw new RangeError(`${exercise.name} holds two drafts of the added set ${draft.key.localId}`)
+    drafts.set(draft.key.localId, { draft, type: heldType(draft.values?.type, `the draft of the set ${draft.key.localId} added to ${exercise.name}`) })
+  }
+
+  const slots: AddedSlot[] = []
+  const listed = new Set<string>() // the sets' own ids
+  const named = new Set<string>() // the logs the list names
+  for (const entry of exercise.added ?? []) {
+    if (listed.has(entry.localId)) throw new RangeError(`${exercise.name} lists the added set ${entry.localId} twice`)
+    listed.add(entry.localId)
+    const openType = heldType(entry.type, `the set ${entry.localId} added to ${exercise.name}`)
+    let log: LoggedSet | null = null
+    if (entry.logId !== null) {
+      if (named.has(entry.logId)) throw new RangeError(`two sets added to ${exercise.name} name the log ${entry.logId}`)
+      named.add(entry.logId)
+      const found = session.logById.get(entry.logId)
+      // A log that isn't among the logs (not yet, or not any more) leaves the set open for this render, with its type.
+      if (found !== undefined) {
+        if (!ownAdded(found)) throw new RangeError(`the set ${entry.localId} added to ${exercise.name} names the log ${entry.logId}, which is not a set added to it`)
+        log = found
+      }
+    }
+    slots.push({ localId: entry.localId, log, openType, draftKey: log === null ? drafts.get(entry.localId)?.draft.key ?? null : null })
+  }
+  // A log whose id is a listed set's own id is that set's (a card that took the set over from its log keeps the id), so it is
+  // not drawn a second time while its unlog has not reached the logs.
+  const unlisted = session.headLogs.filter((log) => ownAdded(log) && !named.has(log.id) && !listed.has(log.id))
+  const unlistedIds = new Set(unlisted.map((log) => log.id))
+  const rest = [
+    ...unlisted.map((log) => ({ at: log.setNumber, slot: { localId: log.id, log, openType: NORMAL, draftKey: null } })),
+    ...[...drafts.values()]
+      .filter(({ draft }) => !listed.has(draft.key.localId) && !unlistedIds.has(draft.key.localId))
+      .map(({ draft, type }) => ({ at: draft.key.position, slot: { localId: draft.key.localId, log: null, openType: type, draftKey: draft.key } })),
+  ].sort((a, b) => a.at - b.at || byId(a.slot.localId, b.slot.localId))
+  return [...slots, ...rest.map(({ slot }) => slot)]
+}
 
 function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmups: Head[]; workings: Head[] } {
   const heads: Head[] = []
@@ -635,44 +716,19 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType,
       retyped: retyped !== undefined,
       number: 0,
-      place: 0,
-      planIndex: 0, // set below, once the added sets are in their places
+      planIndex: 0,
+      localId: null,
       draftKey: null,
-      addedIndex: null,
     })
   }
 
-  // The sets added in the session come after the planned ones. A logged one is the slot of the number it was logged with; an
-  // unlogged one that keeps a draft (DECISIONS 151) is a slot of its own, found by the draft's `position`, with the type the
-  // draft holds (DECISIONS 161); the rest are new slots (ADD SET, or a draft the phone no longer holds), each with the type the
-  // card keeps for it. They are numbered with the planned sets below, and then put in the order of their numbers, so a slot
-  // keeps its place whichever of them were logged first. A set added and then switched to Warmup is still that row (drawn as a
-  // warmup: the type is the log's, or the card's or draft's while it is open).
-  const addedLogs = session.headLogs.filter((log) => log.exerciseId === exercise.exerciseId && log.weekPlanSetId === null)
-  const drafted = (exercise.drafts ?? [])
-    .filter((draft): draft is AddedDraft => isAddedDraft(draft) && draft.key.exerciseId === exercise.exerciseId)
-    .sort((a, b) => a.key.position - b.key.position)
-  const planned = heads.length
-  const slots: Array<{ log: LoggedSet | null; openType: SessionSetChangeType; draftKey: AddedSetKey | null; addedIndex: number | null }> = [
-    ...addedLogs.map((log) => ({ log, openType: NORMAL, draftKey: null, addedIndex: null })),
-    ...drafted.map((draft) => ({
-      log: null,
-      openType: heldType(draft.values?.type, `the draft of the set added at ${draft.key.position} of ${exercise.name}`),
-      draftKey: draft.key,
-      addedIndex: null,
-    })),
-  ]
-  if (slots.length < (exercise.addedSets ?? 0) && exercise.addedTypes === undefined) {
-    throw new TypeError(`${exercise.name} has a new added set and no addedTypes: the card must hand over the type of every added set (an empty list says they are all Normal)`)
-  }
-  for (let fresh = 0; slots.length < (exercise.addedSets ?? 0); fresh++) {
-    const type = exercise.addedTypes?.[fresh]
-    slots.push({ log: null, openType: type === undefined ? NORMAL : heldType(type, `the ${fresh + 1}th new set added to ${exercise.name}`), draftKey: null, addedIndex: fresh })
-  }
-  for (const { log, openType, draftKey, addedIndex } of slots) {
+  // The sets added in the session come after the planned ones, in the order they were added (DECISIONS 170). A logged one
+  // has the type of its log; an open one the type the card keeps for it (DECISIONS 161), or, for a set the card doesn't list,
+  // its draft's. A set added and then switched to Warmup is still that set in that place, drawn as a warmup.
+  for (const { localId, log, openType, draftKey } of addedSlots(exercise, session)) {
     const stageLogs = log ? session.stagesByParent.get(log.id) ?? [] : []
     heads.push({
-      key: '',
+      key: addedRowKey(exercise.key, localId),
       exercise,
       weekPlanSetId: null,
       added: true,
@@ -682,67 +738,23 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex): { warmup
       plannedType: null,
       retyped: false,
       number: 0,
-      place: 0,
       planIndex: 0,
+      localId,
       draftKey,
-      addedIndex,
     })
   }
 
-  // DECISIONS 151: a working set that is logged or skipped shows the number it was logged with and holds it; an open one of the plan
-  // takes the lowest number no other working set of its exercise holds, in the order of the plan. An open added set shows its
-  // number from its draft (151) whenever that number is free and is no more than the count of working sets, so it comes back to
-  // the place it left even with new sets open before it; a draft that no longer fits (the sets before it were deleted or switched
-  // to Warmup since) takes the lowest number free, never two rows alike and never a hole. The new sets (no draft) take the numbers
-  // that are left, in the order they were added. So an open set keeps its place whatever is logged around it (unlog 02 of 01 to
-  // 03 and it is still 02), and the numbers of sets logged one after the other (1.1's, and any whose logs are gapless) read as they
-  // always did. A warmup holds no working number; it keeps a place among the added sets all the same (`place`): the number it was
-  // logged with (a logged one's, or its draft's), else the one it would take at its turn.
-  const held = new Set<number>()
-  for (const log of session.headLogs) if (log.exerciseId === exercise.exerciseId && !log.isWarmup) held.add(log.setNumber)
-  const taken = new Set(held)
-  const lowestFree = (): number => {
-    let n = 1
-    while (taken.has(n)) n += 1
-    return n
-  }
-  const takeLowest = (head: Head): void => {
-    head.number = lowestFree()
-    taken.add(head.number)
-  }
-  const openWorking = (head: Head): boolean => head.log === null && head.type.kind !== 'warmup'
-  const workingCount = heads.filter((head) => head.type.kind !== 'warmup').length
-  for (const head of heads) if (head.log && head.type.kind !== 'warmup') head.number = head.log.setNumber
-  for (const head of heads.slice(0, planned)) if (openWorking(head)) takeLowest(head)
-  for (const head of heads.slice(planned)) {
-    const claim = head.draftKey?.position ?? null
-    if (openWorking(head) && claim !== null && claim <= workingCount && !taken.has(claim)) {
-      head.number = claim
-      taken.add(claim)
-    }
-  }
-  for (const head of heads.slice(planned)) {
-    if (head.type.kind === 'warmup') head.place = head.log ? head.log.setNumber : head.draftKey?.position ?? lowestFree()
-    else if (openWorking(head) && head.number === 0) takeLowest(head)
-  }
-  for (const head of heads) if (head.type.kind !== 'warmup') head.place = head.number
-  // The added sets in the order of their places; on a tie a warmup comes first (it left the working numbers at that number, and the
-  // set after it closed the gap or took the number, 146 (a)), logged or not, so unlogging it moves no key); any other tie keeps the
-  // order the slots were made in. Then each one's key and place.
-  const warmupFirst = (head: Head): number => (head.type.kind === 'warmup' ? 0 : 1)
-  const addedHeads = heads.splice(planned).sort((a, b) => a.place - b.place || warmupFirst(a) - warmupFirst(b))
-  addedHeads.forEach((head, i) => {
-    head.key = addedRowKey(exercise.key, i + 1)
-  })
-  heads.push(...addedHeads)
+  // DECISIONS 170: every set in its place; a set's number is its rank there, among the working sets (logged, skipped or open
+  // alike) or, for a head that is a warmup now (planned so, retyped so, logged so, or kept so by the card), among the warmups.
   heads.forEach((head, i) => {
     head.planIndex = i + 1
   })
-
-  // A head that is a warmup now (planned so, retyped so, or logged so) is not one of the working sets.
   const warmups = heads.filter((head) => head.type.kind === 'warmup')
   const workings = heads.filter((head) => head.type.kind !== 'warmup')
   warmups.forEach((head, i) => {
+    head.number = i + 1
+  })
+  workings.forEach((head, i) => {
     head.number = i + 1
   })
   return { warmups, workings }
@@ -776,9 +788,8 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
       stageKind,
       headKey: null,
       stageNumber: null,
-      draftPosition: head.draftKey?.position ?? null,
+      localId: head.localId,
       draftKey: head.draftKey,
-      addedIndex: head.addedIndex,
     },
   ]
   if (head.type.kind === 'staged') {
@@ -801,9 +812,8 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
         stageKind: head.type.stageKind,
         headKey: head.key,
         stageNumber: n,
-        draftPosition: null,
+        localId: null,
         draftKey: null,
-        addedIndex: null,
       })
     }
   }
@@ -902,57 +912,35 @@ function logOf<L extends LoggedSet>(row: Pick<ResolvedRow, 'key' | 'logId'>, log
 const stagesOf = <L extends LoggedSet>(logs: readonly L[], headId: string): L[] =>
   logs.filter((log) => log.parentSetId === headId).sort((a, b) => a.stageIndex - b.stageIndex)
 
-/** The session's head logs, each with its drops. */
-const groupsOf = (logs: readonly LoggedSet[]): SetGroup<LoggedSet>[] =>
-  groupByParent(
-    [...logs],
-    (l) => l.id,
-    (l) => l.parentSetId,
-    (l) => l.stageIndex,
-  )
-
-// A head and its drops all carry the head's number (the app writes a drop with its head's `set_number`).
-function numbersOf(group: SetGroup<LoggedSet>, setNumber: number): NumberPatch[] {
+/**
+ * DECISIONS 170 (with 146 (a) and SPEC 18b, "the remaining sets renumber"): a working set's number is its rank among its
+ * card's working sets, so when `row`'s set leaves them (`'leaves'`: deleted, or switched to Warmup) or joins them at its place
+ * (`'joins'`: switched from Warmup), every log whose stored `set_number` is not its set's rank afterwards is given it, a drop
+ * with its head (the app writes a drop with its head's `set_number`). With stored numbers that are the ranks (LOG stores the
+ * number its row shows) those are exactly the logged working sets after it, each down or up one; the open ones follow by
+ * themselves, and an open set between them holds its place (DECISIONS 151). A warmup's number is not kept (the header).
+ * `going`: logs that are being deleted, which keep no number.
+ */
+function renumberWorking(
+  row: ResolvedRow,
+  change: 'leaves' | 'joins',
+  session: Pick<SessionView, 'rows' | 'logs'>,
+  going: ReadonlySet<string> = new Set(),
+): NumberPatch[] {
+  const working = session.rows
+    .filter((r) => r.exerciseKey === row.exerciseKey && r.kind !== 'stage')
+    .filter((r) => (r.key === row.key ? change === 'joins' : r.kind === 'working'))
+    .sort((a, b) => a.planIndex - b.planIndex)
   const patches: NumberPatch[] = []
-  if (group.head.setNumber !== setNumber) patches.push({ id: group.head.id, setNumber })
-  for (const stage of group.stages) if (stage.setNumber !== setNumber) patches.push({ id: stage.id, setNumber })
+  working.forEach((set, i) => {
+    if (set.logId === null) return
+    const head = logOf(set, session.logs)
+    for (const log of [head, ...stagesOf(session.logs, head.id)]) {
+      if (!going.has(log.id) && log.setNumber !== i + 1) patches.push({ id: log.id, setNumber: i + 1 })
+    }
+  })
   return patches
 }
-
-/**
- * SPEC 18b: a working set numbered `number` leaves its exercise's working sets (deleted, or switched to Warmup). The
- * logged sets after it move down one, with their drops; the open ones after it follow by themselves. It is one
- * less for each, not "consecutive from the gap": an open set between them holds its place (DECISIONS 151).
- */
-function closeGap(exerciseId: string, number: number, groups: readonly SetGroup<LoggedSet>[]): NumberPatch[] {
-  return groups
-    .filter((g) => g.head.exerciseId === exerciseId && !g.head.isWarmup && g.head.setNumber > number)
-    .sort((a, b) => a.head.setNumber - b.head.setNumber)
-    .flatMap((g) => numbersOf(g, g.head.setNumber - 1))
-}
-
-/**
- * DECISIONS 146 (a): a set joins its exercise's working sets as number `place`, and the logged working sets from there on
- * move up one. `entering` is its log with the drops under it, when it has a log (a warmup that is still to do has
- * none, and its number is worked out when it is logged).
- */
-function makeRoom(
-  entering: SetGroup<LoggedSet> | null,
-  exerciseId: string,
-  place: number,
-  groups: readonly SetGroup<LoggedSet>[],
-): NumberPatch[] {
-  const after = groups
-    .filter((g) => g.head.exerciseId === exerciseId && !g.head.isWarmup && g.head.setNumber >= place)
-    .sort((a, b) => a.head.setNumber - b.head.setNumber)
-  return [...(entering === null ? [] : numbersOf(entering, place)), ...after.flatMap((g) => numbersOf(g, g.head.setNumber + 1))]
-}
-
-// Where a set that joins the working sets takes its number: after the working sets that come before it in the plan's
-// order, whether they are logged, skipped or still open (an open set keeps its place, DECISIONS 151; a warmup is
-// planned first, so a warmup made Normal is usually the first).
-const placeInPlan = (row: ResolvedRow, rows: readonly ResolvedRow[]): number =>
-  1 + rows.filter((r) => r.exerciseKey === row.exerciseKey && r.kind === 'working' && r.planIndex < row.planIndex).length
 
 // ─── A set type changed during a workout ─────────────────────────────────────────────────────────
 
@@ -982,12 +970,13 @@ export interface SetTypeChange {
    */
   changes: ChangeWrite[]
   /**
-   * A set switched to or from Warmup, logged or not: the logs whose `set_number` changes (DECISIONS 146 (a)). To
-   * Warmup the logged working sets after it move down one, as a delete moves them; from Warmup it takes its place
-   * among the working sets and the logged ones from there on move up one. The open sets after it follow by
-   * themselves, and so does the open set itself: it has no log, so nothing of its own to write. A set added in the
-   * session and not logged yet is one of these like a planned set (its type is the card's, or its draft's: DECISIONS
-   * 161). These are edits of logged sets: online-only with a type change on a logged set (G47).
+   * A set switched to or from Warmup, logged or not: the logs whose `set_number` is not their set's rank afterwards
+   * (DECISIONS 146 (a), 170). To Warmup the logged working sets after it move down one, as a delete moves them; from
+   * Warmup it takes its place among the working sets and the logged ones from there on move up one. The open sets after
+   * it follow by themselves, and so does the open set itself: it has no log, so nothing of its own to write. A set added
+   * in the session and not logged yet is one of these like a planned set (its type is the card's: DECISIONS 161). With a
+   * type change on a logged set they need a connection, as it does (G47); for a set not logged yet they queue offline,
+   * like a delete (DECISIONS 168 (a)).
    */
   renumber: NumberPatch[]
 }
@@ -1057,12 +1046,7 @@ export function applySetTypeChange({
     // No log row yet: a planned set records the change on the session, an added set keeps it as the card's own state (or its
     // draft's: `type` is what to keep, DECISIONS 161). The logged sets after a set that joins or leaves the working sets
     // move with it, planned or added (an open set keeps its place, so a logged set can come after it: DECISIONS 151).
-    let renumber: NumberPatch[] = []
-    if ((next.kind === 'warmup') !== (current.kind === 'warmup')) {
-      const groups = groupsOf(session.logs)
-      renumber =
-        next.kind === 'warmup' ? closeGap(row.exerciseId, row.number, groups) : makeRoom(null, row.exerciseId, placeInPlan(row, session.rows), groups)
-    }
+    const renumber = (next.kind === 'warmup') !== (current.kind === 'warmup') ? renumberWorking(row, next.kind === 'warmup' ? 'leaves' : 'joins', session) : []
     return { type: next, changed: true, headPatch: null, stagesToAdd, stagesToDelete: [], needsConfirm: false, confirmCount: 0, changes: retyped, renumber }
   }
 
@@ -1079,17 +1063,10 @@ export function applySetTypeChange({
   const confirmCount = stagesToDelete.filter((stage) => !stage.isSkipped).length
   const columns = typeColumns(next)
   const pending: ChangeWrite[] = next.kind === 'staged' ? [pendingWrite(log.id, next.stageKind, next.stageCount, session.changes)] : []
-  let renumber: NumberPatch[] = []
-  if ((next.kind === 'warmup') !== (current.kind === 'warmup')) {
-    const groups = groupsOf(session.logs)
-    const patches =
-      next.kind === 'warmup'
-        ? closeGap(log.exerciseId, log.setNumber, groups)
-        : makeRoom({ head: log, stages: logged }, log.exerciseId, placeInPlan(row, session.rows), groups)
-    // A log that is being deleted has no number to change.
-    const going = new Set(stagesToDelete.map((stage) => stage.id))
-    renumber = patches.filter((patch) => !going.has(patch.id))
-  }
+  // A log that is being deleted has no number to change.
+  const going = new Set(stagesToDelete.map((stage) => stage.id))
+  const renumber =
+    (next.kind === 'warmup') !== (current.kind === 'warmup') ? renumberWorking(row, next.kind === 'warmup' ? 'leaves' : 'joins', session, going) : []
   return {
     type: next,
     changed: true,
@@ -1110,13 +1087,13 @@ export interface DeleteEffects {
   deleteOrder: LoggedSet[]
   /** How many logged drops go with the head: the confirm says so (W9). */
   stageCount: number
-  /** Later heads of the same exercise, and their drops, with the number that closes the gap. */
+  /** Later heads of the same exercise, and their drops, with the number that closes the gap: their rank among the sets left (170). */
   renumber: NumberPatch[]
   /**
    * The `v2_session_set_changes` rows that keep what was deleted out of the session. A planned set (logged or
    * not): `deleted`, replacing its `retyped` row. A drop of a planned set: the set's `retyped` row with one drop
    * fewer; of a logged set: its `pending_stages` row with one drop fewer, none when it was the last. An added
-   * set needs none (its card lowers its count of added sets).
+   * set needs none (its card takes it off its list of added sets).
    */
   changes: ChangeWrite[]
   /** The last drop of a logged set deleted: the set is a normal set, so its log loses its stage kind (147 (a)). */
@@ -1142,11 +1119,10 @@ function deleteSetEffects(row: ResolvedRow, session: SessionView): DeleteEffects
     const stages = stagesOf(session.logs, gone.id)
     effects.deleteOrder = cascadeDeleteOrder({ head: gone, stages }, (log) => log.stageIndex)
     effects.stageCount = stages.length
-    if (!gone.isWarmup) effects.renumber = closeGap(gone.exerciseId, gone.setNumber, groupsOf(session.logs))
-  } else if (row.kind === 'working') {
-    // An open set leaves the working numbers too, and a logged set can come after it (DECISIONS 151).
-    effects.renumber = closeGap(row.exerciseId, row.number, groupsOf(session.logs))
   }
+  // A working set leaves the working numbers, logged or not (an open set keeps its place, so a logged set can come after it:
+  // DECISIONS 151); a warmup holds none.
+  if (row.kind === 'working') effects.renumber = renumberWorking(row, 'leaves', session, new Set(effects.deleteOrder.map((log) => log.id)))
   if (row.weekPlanSetId !== null) effects.changes.push(deletedWrite(row.weekPlanSetId, session.changes))
   return effects
 }
@@ -1239,11 +1215,12 @@ export function canUnlog(row: ResolvedRow, session: Pick<SessionView, 'logs'>): 
   return stagesOf(session.logs, log.id).every((stage) => stage.isSkipped)
 }
 
-// A set's draft key: the planned set, or for an added set its local id (its log's), exercise and position.
-function setKeyOf(head: Pick<ResolvedRow, 'weekPlanSetId'>, log: LoggedSet): PlannedSetKey | AddedSetKey {
+// A set's draft key: the planned set, or for an added set its own id (the card's; for a set it doesn't list, its log's), its
+// exercise and the number its row shows (`position`, TASKS 63's key; DECISIONS 151: "an added set's number from its draft").
+function setKeyOf(head: Pick<ResolvedRow, 'weekPlanSetId' | 'localId' | 'number'>, log: LoggedSet): PlannedSetKey | AddedSetKey {
   return head.weekPlanSetId !== null
     ? { sessionId: log.sessionId, weekPlanSetId: head.weekPlanSetId }
-    : { sessionId: log.sessionId, localId: log.id, exerciseId: log.exerciseId, position: log.setNumber }
+    : { sessionId: log.sessionId, localId: head.localId ?? log.id, exerciseId: log.exerciseId, position: head.number }
 }
 
 /**

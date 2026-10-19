@@ -11,7 +11,6 @@ import {
   type HeldChange,
   type OrderExercise,
   type ResolvedRow,
-  type SetDraftKey,
   type UnloggableSet,
   type UnlogEffects,
 } from './workoutRules'
@@ -25,9 +24,11 @@ import {
   dropLog,
   headLog,
   held,
+  loggedAdded,
   orderOf,
   pending,
   retyped,
+  unloggedAdded,
   rowKeyed,
   staged,
   viewOf,
@@ -134,15 +135,15 @@ describe('unlogEffects: the log goes, the numbers stay as a draft', () => {
     expect(effects().draft.values).toEqual({ weight: 20, reps: null, rir: null, formRating: null, enteredUnit: null })
   })
 
-  it('an added set is keyed by its local id with its exercise and position, never by a planned set', () => {
+  it('an added set is keyed by its own id (the card\'s) with its exercise and the number it shows, never by a planned set', () => {
     const head = addedLog('bench', 1, { number: 3 })
     const { effects } = unlogOn({
-      cards: [card('bench', 'n n', { added: 1 })],
+      cards: [card('bench', 'n n', { added: [head] })],
       logs: [headLog('bench', 1), headLog('bench', 2), head],
-      key: 'added:bench:1',
+      key: 'added:bench:a1',
     })
     const result = effects()
-    expect(result.draft.key).toEqual({ sessionId: SESSION, localId: head.id, exerciseId: 'ex.bench', position: 3 })
+    expect(result.draft.key).toEqual({ sessionId: SESSION, localId: 'a1', exerciseId: 'ex.bench', position: 3 })
     expect('weekPlanSetId' in result.draft.key).toBe(false)
     expect(result.changes).toEqual([])
   })
@@ -241,18 +242,18 @@ describe('unlogEffects on a drop (DECISIONS 147 (b)): its own log goes, its draf
     expect(apply().rows.map(brief)).toEqual(['pushdown 01✓', 'pushdown 01.1×', 'pushdown 01.2·'])
   })
 
-  it('a drop of an added set is keyed by the added set\'s key (its log\'s id, exercise and position) plus its number', () => {
+  it('a drop of an added set is keyed by the added set\'s key (its own id, exercise and number) plus its number', () => {
     const addedHead = addedLog('bench', 1, { stageKind: 'dropset', number: 2 })
     const drop = dropLog(addedHead, 1, { weight: 25, reps: 12, rir: 2 })
     const changes = [held(pending(addedHead, 'dropset', 1), 'c1')]
     const { effects, apply } = unlogOn({
-      cards: [card('bench', 'n', { added: 1 })],
+      cards: [card('bench', 'n', { added: [addedHead] })],
       logs: [headLog('bench', 1), addedHead, drop],
       changes,
-      key: 'added:bench:1:stage:1',
+      key: 'added:bench:a1:stage:1',
     })
     expect(effects().draft).toEqual({
-      key: { sessionId: SESSION, localId: addedHead.id, exerciseId: 'ex.bench', position: 2, drop: 1 },
+      key: { sessionId: SESSION, localId: 'a1', exerciseId: 'ex.bench', position: 2, drop: 1 },
       values: { weight: 25, reps: 12, rir: 2, formRating: null, enteredUnit: null },
     })
     expect(apply().rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 02.1·'])
@@ -418,75 +419,74 @@ describe('unlog keeps the set\'s number and its place; logging it again stores t
   })
 })
 
-describe('an added set unlogged keeps its number from its draft, and its place among the added sets (DECISIONS 151)', () => {
+describe('an added set unlogged keeps its number and its place among the added sets (DECISIONS 151, 170)', () => {
   const planned = [headLog('bench', 1, { weight: 50 }), headLog('bench', 2, { weight: 52 })]
   const added = (k: number) => addedLog('bench', k, { number: 2 + k, weight: 60 + k, reps: 12 - k })
   const all = [...planned, added(1), added(2), added(3)]
-  const cardWith = (drafts: SetDraftKey[]) => card('bench', 'n n', { added: 3, drafts })
+  /** The card with its three added sets logged, in the order they were added. */
+  const logged = () => [card('bench', 'n n', { added: [added(1), added(2), added(3)] })]
 
-  /** Unlog the added set `k` (the screen then keeps the draft's key beside the card). */
-  function unlogAdded(k: number, logs: SetLog[] = all) {
-    const server = new FakeServer({ logs })
-    const order0 = orderOf([cardWith([])])
-    const view = viewOf(order0, server.logs, server.held())
-    const row = rowKeyed(view, `added:bench:${k}`)
+  /** Unlog the added set `k`, as the card does it: the log goes, the entry names no log, and the draft is kept beside it. */
+  function unlogAdded(k: number) {
+    const server = new FakeServer({ logs: all })
+    const view = viewOf(orderOf(logged()), server.logs, server.held())
+    const row = rowKeyed(view, `added:bench:a${k}`)
     const effects = unlogEffects(row, view)
     server.applyUnlog(effects)
-    return { server, effects, drafts: [effects.draft.key] as SetDraftKey[] }
+    return { server, effects, row, cards: unloggedAdded(logged(), row, effects.draft) }
   }
 
-  it('the middle added set (04): its draft is keyed by its number, and with it the set is still 04, between 03 and 05', () => {
-    const { server, effects, drafts } = unlogAdded(2)
-    expect(effects.draft.key).toEqual({ sessionId: SESSION, localId: 'log.bench.added2', exerciseId: 'ex.bench', position: 4 })
-    const order = orderOf([cardWith(drafts)])
+  it('the middle added set (04): its draft is keyed by its number, and the set is still 04, between 03 and 05', () => {
+    const { server, effects, cards } = unlogAdded(2)
+    expect(effects.draft.key).toEqual({ sessionId: SESSION, localId: 'a2', exerciseId: 'ex.bench', position: 4 })
+    const order = orderOf(cards)
     const rows = resolveRows(order, server.logs, server.held())
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:1', 'added:bench:2', 'added:bench:3'])
-    expect(currentSet(order, server.logs, server.held())).toMatchObject({ key: 'added:bench:2', number: 4, draftPosition: 4 })
+    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:a1', 'added:bench:a2', 'added:bench:a3'])
+    expect(currentSet(order, server.logs, server.held())).toMatchObject({ key: 'added:bench:a2', number: 4, draftKey: effects.draft.key })
     // logging it again stores 04 and the draft is cleared: an exact undo
-    const row = rows[3]
-    relog(server, row, effects.draft, all[3])
+    const again = relog(server, rows[3], effects.draft, all[3])
     expect(stored(server.logs)).toEqual(stored(all))
-    expect(resolveRows(orderOf([cardWith([])]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05✓'])
+    expect(resolveRows(orderOf(loggedAdded(cards, rows[3], again.id)), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05✓'])
   })
 
   it('the last added set (05), told apart from the middle one: it is the last row, at its number, with or without its draft', () => {
-    const { server, drafts } = unlogAdded(3)
-    for (const kept of [drafts, [] as SetDraftKey[]]) {
-      expect(resolveRows(orderOf([cardWith(kept)]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
+    const { server, cards } = unlogAdded(3)
+    for (const kept of [cards, cards.map((c) => ({ ...c, drafts: [] }))]) {
+      expect(resolveRows(orderOf(kept), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
     }
   })
 
   it('the first added set (03): it stays ahead of the added sets after it, at its number', () => {
-    const { server, drafts } = unlogAdded(1)
-    expect(resolveRows(orderOf([cardWith(drafts)]), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05✓'])
+    const { server, cards } = unlogAdded(1)
+    expect(resolveRows(orderOf(cards), server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05✓'])
   })
 
-  it('the control: without the draft (another phone, G46) the set is a new slot that takes the number that is free — the same place, with no draft to give back', () => {
-    const { server } = unlogAdded(2)
-    const rows = resolveRows(orderOf([cardWith([])]), server.logs, server.held())
+  it('the control: without the draft (another phone, G46) the card\'s entry still holds the set in its place, with no draft to give back', () => {
+    const { server, cards } = unlogAdded(2)
+    const rows = resolveRows(orderOf(cards.map((c) => ({ ...c, drafts: [] }))), server.logs, server.held())
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    expect(rows.map((r) => r.draftPosition)).toEqual([null, null, null, null, null])
+    expect(rows.map((r) => r.draftKey)).toEqual([null, null, null, null, null])
   })
 
   it('a planned set and an added set unlogged together are told apart: the planned one by its position, the added one by its draft', () => {
     const addedAfterThree = (k: number) => addedLog('bench', k, { number: 3 + k, weight: 60 + k, reps: 12 - k })
     const server = new FakeServer({ logs: [...planned, headLog('bench', 3, { weight: 54 }), addedAfterThree(1), addedAfterThree(2)] })
-    const before = orderOf([card('bench', 'n n n', { added: 2 })])
-    const view = viewOf(before, server.logs, server.held())
+    const before = [card('bench', 'n n n', { added: [addedAfterThree(1), addedAfterThree(2)] })]
+    const view = viewOf(orderOf(before), server.logs, server.held())
     const plannedRow = rowKeyed(view, 'set:bench.2')
-    const addedRow = rowKeyed(view, 'added:bench:1')
+    const addedRow = rowKeyed(view, 'added:bench:a1')
     const plannedEffects = unlogEffects(plannedRow, view)
     const addedEffects = unlogEffects(addedRow, view)
     server.applyUnlog(plannedEffects)
     server.applyUnlog({ ...addedEffects, changes: [] })
     expect(plannedEffects.draft.key).toEqual({ sessionId: SESSION, weekPlanSetId: 'bench.2' })
-    expect(addedEffects.draft.key).toMatchObject({ localId: 'log.bench.added1', position: 4 })
-    const rows = resolveRows(orderOf([card('bench', 'n n n', { added: 2, drafts: [addedEffects.draft.key] })]), server.logs, server.held())
+    expect(addedEffects.draft.key).toMatchObject({ localId: 'a1', position: 4 })
+    const rows = resolveRows(orderOf(unloggedAdded(before, addedRow, addedEffects.draft)), server.logs, server.held())
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    expect(rows.filter((r) => r.state === 'unlogged').map((r) => [r.key, r.added, r.draftPosition])).toEqual([
+    expect(rows.filter((r) => r.state === 'unlogged').map((r) => [r.key, r.added, r.draftKey?.position ?? null])).toEqual([
       ['set:bench.2', false, null],
-      ['added:bench:1', true, 4],
+      ['added:bench:a1', true, 4],
     ])
   })
 
@@ -494,25 +494,27 @@ describe('an added set unlogged keeps its number from its draft, and its place a
     const logs = [...planned, added(1), added(2), added(3)]
     for (let subset = 1; subset < 32; subset++) {
       const away = [1, 2, 3, 4, 5].filter((n) => subset & (1 << (n - 1)))
-      const keyOf = (n: number) => (n <= 2 ? `set:bench.${n}` : `added:bench:${n - 2}`)
+      const keyOf = (n: number) => (n <= 2 ? `set:bench.${n}` : `added:bench:a${n - 2}`)
       for (const back of [away, [...away].reverse(), [...away.slice(1), ...away.slice(0, 1)]]) {
         const server = new FakeServer({ logs })
         const draftOf = new Map<number, UnlogEffects['draft']>()
-        let drafts: SetDraftKey[] = []
-        const rowsNow = () => resolveRows(orderOf([cardWith(drafts)]), server.logs, server.held())
+        let cards: OrderExercise[] = logged()
+        const rowsNow = () => resolveRows(orderOf(cards), server.logs, server.held())
         for (const n of away) {
-          const view = viewOf(orderOf([cardWith(drafts)]), server.logs, server.held())
-          const effects = unlogEffects(rowKeyed(view, keyOf(n)), view)
+          const view = viewOf(orderOf(cards), server.logs, server.held())
+          const row = rowKeyed(view, keyOf(n))
+          const effects = unlogEffects(row, view)
           server.applyUnlog(effects)
           draftOf.set(n, effects.draft)
-          if (n > 2) drafts = [...drafts, effects.draft.key]
+          if (n > 2) cards = unloggedAdded(cards, row, effects.draft)
           expect(rowsNow().map((r) => r.number), `away ${away} up to ${n}`).toEqual([1, 2, 3, 4, 5])
+          expect(rowsNow().map((r) => r.key), `away ${away} up to ${n}`).toEqual([1, 2, 3, 4, 5].map(keyOf))
         }
         for (const n of back) {
           const row = rowsNow().find((r) => r.key === keyOf(n))!
           expect(row.number, `back ${back} at ${n}`).toBe(n)
-          relog(server, row, draftOf.get(n)!, logs[n - 1])
-          if (n > 2) drafts = drafts.filter((d) => !('position' in d) || d.position !== row.draftPosition)
+          const again = relog(server, row, draftOf.get(n)!, logs[n - 1])
+          if (n > 2) cards = loggedAdded(cards, row, again.id)
           expect(rowsNow().map((r) => r.number), `back ${back} up to ${n}`).toEqual([1, 2, 3, 4, 5])
         }
         expect(stored(server.logs), `away ${away} back ${back}`).toEqual(stored(logs))
@@ -602,7 +604,7 @@ describe('unlogEffects: a type the set was logged with survives', () => {
 
   it('a row with no planned set never gets a change, whatever it says (a change is keyed by the planned set)', () => {
     const head = addedLog('bench', 1, { number: 1 })
-    const { row, view } = unlogOn({ cards: [card('bench', '', { added: 1 })], logs: [head], key: 'added:bench:1' })
+    const { row, view } = unlogOn({ cards: [card('bench', '', { added: [head] })], logs: [head], key: 'added:bench:a1' })
     const doctored = { ...row, type: staged('dropset', 1), plannedType: { kind: 'normal' } as const, retyped: true }
     expect(unlogEffects(doctored, view).changes).toEqual([])
   })
@@ -610,10 +612,10 @@ describe('unlogEffects: a type the set was logged with survives', () => {
   it('an added set made a dropset has no planned set to key a change on', () => {
     const head = addedLog('bench', 1, { stageKind: 'dropset', number: 1 })
     const { effects } = unlogOn({
-      cards: [card('bench', '', { added: 1 })],
+      cards: [card('bench', '', { added: [head] })],
       logs: [head],
       changes: [held(pending(head, 'dropset', 1), 'c1')],
-      key: 'added:bench:1',
+      key: 'added:bench:a1',
     })
     expect(effects().changes).toEqual([])
   })

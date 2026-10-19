@@ -15,6 +15,7 @@ import {
   card,
   deepFreeze,
   deleted,
+  draftOf,
   dropLog,
   headLog,
   orderOf,
@@ -82,7 +83,7 @@ describe('sessionOrder: the cards and the superset blocks', () => {
     expect(memberLetter(25)).toBe('Z')
     expect(memberLetter(26)).toBe('#27')
     expect(plannedRowKey('p1')).toBe('set:p1')
-    expect(addedRowKey('bench', 2)).toBe('added:bench:2')
+    expect(addedRowKey('bench', 'a2')).toBe('added:bench:a2')
     expect(stageRowKey('set:p1', 1)).toBe('set:p1:stage:1')
   })
 })
@@ -149,8 +150,10 @@ describe('resolveRows: the order of the rows', () => {
   })
 })
 
-describe('resolveRows: what a row shows as its number', () => {
-  it('a logged set shows the number it was logged with and an unlogged one follows the logged heads, warmups out', () => {
+// DECISIONS 170 (Adam, 2026-10-18): "A set's displayed number is its rank among the non-deleted, non-warmup working sets in
+// that order (warmups numbered apart, as now)." The number a log holds is never read for it.
+describe('resolveRows: what a row shows as its number (its rank, DECISIONS 170)', () => {
+  it('every working set shows its rank among the working sets, logged or open, and a warmup its rank among the warmups', () => {
     // The plan numbers the warmup 1 and the working sets 2, 3, 4; the screen shows 01, 02, 03.
     const order = orderOf([card('bench', 'w n n n')])
     const logs = [headLog('bench', 1, { number: 1, warmup: true }), headLog('bench', 2, { number: 1 }), headLog('bench', 3, { number: 2 })]
@@ -159,20 +162,28 @@ describe('resolveRows: what a row shows as its number', () => {
     expect(rows.map((r) => r.number)).toEqual([1, 1, 2, 3])
   })
 
-  it('logs numbered in the order they were logged (1.1\'s rule) still read without a clash: the open sets take the numbers left', () => {
-    // set 3 was logged first and stored as 1; the three sets still to do take 2, 3 and 4
+  it('logs numbered in the order they were logged (1.1\'s rule) read in the plan\'s order: a row shows its rank, not the number its log holds', () => {
+    // set 3 was logged first and stored as 1 (1.1's "the logged heads + 1"): it is the third set, 03, and the open ones keep theirs
     const order = orderOf([card('bench', 'n n n n')])
     const rows = rowsOf(order, [headLog('bench', 3, { number: 1 })])
-    expect(rows.map(brief)).toEqual(['bench 02·', 'bench 03·', 'bench 01✓', 'bench 04·'])
+    expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02·', 'bench 03✓', 'bench 04·'])
+    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'set:bench.3', 'set:bench.4'])
   })
 
-  it('a skipped set counts as logged for the numbers (it has a log and a number)', () => {
+  it('a stored number that is out of range or held twice changes nothing on screen: no two rows alike, no gap', () => {
+    // two logs that both say 7, and one that says 0: the rows read 01 to 04 in the plan's order
+    const order = orderOf([card('bench', 'n n n n')])
+    const rows = rowsOf(order, [headLog('bench', 1, { number: 7 }), headLog('bench', 2, { number: 7 }), headLog('bench', 4, { number: 0 })])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓'])
+  })
+
+  it('a skipped set counts like a logged one for the numbers (it is a set that is not deleted)', () => {
     const order = orderOf([card('bench', 'n n n')])
     const rows = rowsOf(order, [headLog('bench', 1, { skipped: true })])
     expect(rows.map(brief)).toEqual(['bench 01×', 'bench 02·', 'bench 03·'])
   })
 
-  it('only the exercise\'s own logs move its numbers', () => {
+  it('only the exercise\'s own sets move its numbers', () => {
     const order = orderOf([card('bench', 'n n'), card('row', 'n n')])
     const rows = rowsOf(order, [headLog('row', 1), headLog('row', 2)])
     expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02·', 'row 01✓', 'row 02✓'])
@@ -261,116 +272,166 @@ describe('resolveRows: an open set keeps its number and its place (DECISIONS 151
   })
 })
 
-describe('resolveRows: a set added in the session that was unlogged keeps its number from its draft (DECISIONS 151)', () => {
-  // two planned sets (01, 02) and three added ones (03, 04, 05), all logged before 04 was unlogged
+// DECISIONS 170: "added sets by when they were added". The card hands its added sets over in that order (`OrderExercise.added`),
+// and that order is their place: no log, draft or number moves one. An unlogged one keeps its number and its place (151).
+describe('resolveRows: the sets added in the session keep the order they were added in (DECISIONS 170, 151)', () => {
+  // two planned sets (01, 02) and three added ones (03, 04, 05); the middle one was logged and unlogged again
   const planned = [headLog('bench', 1), headLog('bench', 2)]
   const added = (n: number) => addedLog('bench', n - 2, { number: n })
-  const draft = (position: number, extra: Partial<SetDraftKey> = {}): SetDraftKey =>
-    ({ sessionId: 's1', localId: `log.bench.added${position - 2}`, exerciseId: 'ex.bench', position, ...extra }) as SetDraftKey
-  const bench = (drafts: SetDraftKey[]) => orderOf([card('bench', 'n n', { added: 3, drafts })])
+  const key = (position: number, localId = 'a2'): SetDraftKey => ({ sessionId: 's1', localId, exerciseId: 'ex.bench', position })
+  const three = (middle: Parameters<typeof card>[2] = {}) => orderOf([card('bench', 'n n', { added: [added(3), { kind: 'normal' }, added(5)], ...middle })])
 
-  it('the middle added set unlogged: its draft puts it back between its neighbours, at its own number', () => {
-    const rows = rowsOf(bench([draft(4)]), [...planned, added(3), added(5)])
+  it('the middle added set unlogged is between its neighbours at its own number, and its row names its draft', () => {
+    const rows = rowsOf(three({ drafts: [key(4)] }), [...planned, added(3), added(5)])
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:1', 'added:bench:2', 'added:bench:3'])
-    expect(rows[3]).toMatchObject({ added: true, state: 'unlogged', logId: null, draftPosition: 4 })
-    expect(rows.filter((r) => r !== rows[3]).map((r) => r.draftPosition)).toEqual([null, null, null, null])
+    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:a1', 'added:bench:a2', 'added:bench:a3'])
+    expect(rows[3]).toMatchObject({ added: true, state: 'unlogged', logId: null, localId: 'a2', draftKey: key(4) })
+    expect(rows.filter((r) => r !== rows[3]).map((r) => r.draftKey)).toEqual([null, null, null, null])
+    expect(rows.map((r) => r.localId)).toEqual([null, null, 'a1', 'a2', 'a3'])
   })
 
-  it('the same set without its draft (the phone lost it) is a new slot: it takes the number that is free, which is the same place, and nothing finds a draft', () => {
-    const rows = rowsOf(bench([]), [...planned, added(3), added(5)])
+  it('without its draft (the phone lost it) it is the same set in the same place: the order is the card\'s, not the draft\'s', () => {
+    const rows = rowsOf(three(), [...planned, added(3), added(5)])
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    expect(rows[3]).toMatchObject({ added: true, state: 'unlogged', draftPosition: null })
+    expect(rows[3]).toMatchObject({ key: 'added:bench:a2', state: 'unlogged', draftKey: null })
   })
 
-  it('a draft goes with its own slot, and a new slot takes the number after it: the draft is not given to the new one', () => {
-    // 04 is open with its draft, and ADD SET made another slot: it is 06, after the logged 05
-    const rows = rowsOf(orderOf([card('bench', 'n n', { added: 4, drafts: [draft(4)] })]), [...planned, added(3), added(5)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓', 'bench 06·'])
-    expect(rows.map((r) => r.draftPosition)).toEqual([null, null, null, 4, null, null])
-  })
-
-  it('a new slot logged ahead of another (the lock off) is the one that was logged: the open one keeps the lower number, in front of it', () => {
-    // two new slots, nothing logged: 03 and 04. The second is logged as 04: the rows are 03 open, 04 logged, and the keys follow the numbers
-    const twoNew = orderOf([card('bench', 'n n', { added: 2 })])
-    expect(rowsOf(twoNew, planned).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04·'])
-    const rows = rowsOf(twoNew, [...planned, addedLog('bench', 2, { number: 4 })])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓'])
-    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:1', 'added:bench:2'])
-    expect(rows[3].logId).toBe('log.bench.added2')
-  })
-
-  it('the last added set unlogged: with or without its draft it is the last row, at its number', () => {
-    for (const drafts of [[draft(5)], []]) {
-      const rows = rowsOf(bench(drafts), [...planned, added(3), added(4)])
-      expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
+  it('a draft\'s number is never read for the row\'s: one that says 9, or 3, or the number a logged set holds, changes nothing', () => {
+    for (const position of [9, 3, 5, 1]) {
+      const rows = rowsOf(three({ drafts: [key(position)] }), [...planned, added(3), added(5)])
+      expect(rows.map(brief), `a draft at ${position}`).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
+      expect(rows[3].draftKey, `a draft at ${position}`).toEqual(key(position))
     }
   })
 
-  it('tells an open planned set from an open added one: the planned set\'s number is its position, the added set\'s its draft\'s', () => {
-    // planned 02 and added 04 are both unlogged
-    const rows = rowsOf(bench([draft(4)]), [headLog('bench', 1), added(3), added(5)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓', 'bench 04·', 'bench 05✓'])
-    const open = rows.filter((r) => r.state === 'unlogged')
-    expect(open.map((r) => [r.key, r.added, r.draftPosition])).toEqual([
-      ['set:bench.2', false, null],
-      ['added:bench:2', true, 4],
+  it('a new set logged ahead of an older one (the lock off): each stays where it was added, and the logged one stores the number its row shows', () => {
+    const twoNew = orderOf([card('bench', 'n n', { added: 2 })])
+    const before = rowsOf(twoNew, planned)
+    expect(before.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04·'])
+    // the second is logged as 04: the card's entry names the log, and the rows are 03 open, 04 logged, the keys as they were
+    const logged = orderOf([card('bench', 'n n', { added: [{ kind: 'normal' }, addedLog('bench', 2, { number: before[3].number })] })])
+    const rows = rowsOf(logged, [...planned, addedLog('bench', 2, { number: 4 })])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓'])
+    expect(rows.map((r) => r.key)).toEqual(before.map((r) => r.key))
+    expect(rows[3].logId).toBe('log.bench.added2')
+  })
+
+  it('logs that hold their numbers the other way round are still drawn in the card\'s order, each at its rank', () => {
+    // the card added a1 then a2; the logs say 5 and 4: a1 is 03 and a2 04 all the same
+    const order = orderOf([card('bench', 'n n', { added: [addedLog('bench', 1, { number: 5 }), addedLog('bench', 2, { number: 4 })] })])
+    const rows = rowsOf(order, [...planned, addedLog('bench', 2, { number: 4 }), addedLog('bench', 1, { number: 5 })])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
+    expect(rows.slice(2).map((r) => [r.key, r.logId])).toEqual([
+      ['added:bench:a1', 'log.bench.added1'],
+      ['added:bench:a2', 'log.bench.added2'],
     ])
   })
 
-  it('the slot is the one the draft names, whichever order the drafts and the logs come in', () => {
-    const drafts = [draft(3), draft(5)]
-    const logs = [...planned, added(4)]
-    const rows = rowsOf(bench(drafts), logs)
-    const turned = rowsOf(bench([...drafts].reverse()), [...logs].reverse())
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05·'])
+  it('the order the list comes in is the order of the sets; the order of the logs and the drafts is not', () => {
+    const logs = [...planned, added(3), added(5)]
+    const drafts = [key(4), { sessionId: 's1', localId: 'row.x', exerciseId: 'ex.row', position: 1 }]
+    const rows = rowsOf(three({ drafts }), logs)
+    const turned = rowsOf(three({ drafts: [...drafts].reverse() }), [...logs].reverse())
     expect(turned).toEqual(rows)
-    expect(rows.filter((r) => r.added).map((r) => r.draftPosition)).toEqual([3, null, 5])
+    // and the list the other way round is the sets the other way round
+    const reversed = orderOf([card('bench', 'n n', { added: [{ localId: 'a3', logId: added(5).id, type: { kind: 'normal' } }, { localId: 'a2', logId: null, type: { kind: 'normal' } }, { localId: 'a1', logId: added(3).id, type: { kind: 'normal' } }] })])
+    expect(rowsOf(reversed, logs).slice(2).map((r) => [r.key, r.number])).toEqual([
+      ['added:bench:a3', 3],
+      ['added:bench:a2', 4],
+      ['added:bench:a1', 5],
+    ])
   })
 
-  it('a draft that is not an added set\'s is not read: another exercise\'s, a planned set\'s and a drop\'s', () => {
+  it('a draft that is not an added set\'s of this card is not read: another exercise\'s, a planned set\'s and a drop\'s', () => {
     const others: SetDraftKey[] = [
-      { sessionId: 's1', localId: 'log.row.added1', exerciseId: 'ex.row', position: 4 },
+      { sessionId: 's1', localId: 'a2', exerciseId: 'ex.row', position: 4 },
       { sessionId: 's1', weekPlanSetId: 'bench.2' },
-      { sessionId: 's1', localId: 'log.bench.added2', exerciseId: 'ex.bench', position: 4, drop: 1 },
+      { sessionId: 's1', localId: 'a2', exerciseId: 'ex.bench', position: 4, drop: 1 },
       { sessionId: 's1', weekPlanSetId: 'bench.1', drop: 2 },
     ]
-    const withOthers = rowsOf(bench(others), [...planned, added(3), added(5)])
-    const without = rowsOf(bench([]), [...planned, added(3), added(5)])
+    const withOthers = rowsOf(three({ drafts: others }), [...planned, added(3), added(5)])
+    const without = rowsOf(three(), [...planned, added(3), added(5)])
     expect(withOthers).toEqual(without)
-    expect(withOthers.map((r) => r.draftPosition)).toEqual([null, null, null, null, null])
+    expect(withOthers.map((r) => r.draftKey)).toEqual([null, null, null, null, null])
   })
 
-  it('the draft\'s claim comes before a logged set of the same number: after a delete the open set is still ahead of it', () => {
-    // 01 and 02 were planned: 01 was deleted since, so the logged sets moved down one (to 1, 2 and 4) but the draft still says 4
-    const rows = rowsOf(orderOf([card('bench', 'n', { added: 3, drafts: [draft(4)] })]), [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 3, { number: 4 })])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓'])
-    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'added:bench:1', 'added:bench:2', 'added:bench:3'])
-    expect(rows[2]).toMatchObject({ state: 'unlogged', draftPosition: 4 })
+  it('an open planned set and an open added one: each at its rank, the planned set first', () => {
+    const rows = rowsOf(three({ drafts: [key(4)] }), [headLog('bench', 1), added(3), added(5)])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03✓', 'bench 04·', 'bench 05✓'])
+    expect(rows.filter((r) => r.state === 'unlogged').map((r) => [r.key, r.added, r.draftKey?.localId ?? null])).toEqual([
+      ['set:bench.2', false, null],
+      ['added:bench:a2', true, 'a2'],
+    ])
   })
 
-  it('a draft whose number has gone stale never makes two rows read one number, and the open set takes the lowest one free', () => {
-    // it says 6, but the sets before it have moved down: five working sets hold 1 to 5 except the open one\'s
-    const rows = rowsOf(bench([draft(6)]), [...planned, added(3), added(4)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
-    expect(rows[4].draftPosition).toBe(6)
+  it('an entry whose log is not among the logs (the logs and the card lag one another for a render) is an open set with its type', () => {
+    const order = orderOf([card('bench', 'n n', { added: [{ localId: 'a1', logId: 'log.not.yet', type: { kind: 'warmup' } }, { kind: 'normal' }] })])
+    const rows = rowsOf(order, planned)
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(rows[0]).toMatchObject({ key: 'added:bench:a1', state: 'unlogged', logId: null })
+  })
+})
+
+describe('resolveRows: added sets the card does not list (a reload, a reopened session)', () => {
+  const planned = [headLog('bench', 1), headLog('bench', 2)]
+
+  it('a log of an added set that no entry names comes after the listed sets, keyed by its log; several in the order of their numbers', () => {
+    const order = orderOf([card('bench', 'n n', { added: 1 })])
+    const rows = rowsOf(order, [...planned, addedLog('bench', 3, { number: 6 }), addedLog('bench', 2, { number: 4 })])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'bench 05✓'])
+    expect(rows.slice(2).map((r) => [r.key, r.localId, r.logId])).toEqual([
+      ['added:bench:a1', 'a1', null],
+      ['added:bench:log.bench.added2', 'log.bench.added2', 'log.bench.added2'],
+      ['added:bench:log.bench.added3', 'log.bench.added3', 'log.bench.added3'],
+    ])
   })
 
-  it('the count of added sets is a floor: each draft and each logged added set is a row even if the screen counts fewer', () => {
-    const rows = rowsOf(orderOf([card('bench', 'n n', { added: 0, drafts: [draft(4)] })]), [...planned, added(3), added(5)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
+  it('a card with no list at all draws every added log after its planned sets (a session reopened after it was finished)', () => {
+    const rows = rowsOf(orderOf([card('bench', 'n n')]), [...planned, addedLog('bench', 1, { number: 3 }), addedLog('bench', 2, { number: 4, warmup: true })])
+    expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓'])
   })
 
-  it('a slot the screen counts that has neither a log nor a draft (ADD SET) comes after the others', () => {
-    const rows = rowsOf(orderOf([card('bench', 'n n', { added: 4, drafts: [draft(4)] })]), [...planned, added(3), added(5)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓', 'bench 06·'])
-    expect(rows.map((r) => r.draftPosition)).toEqual([null, null, null, 4, null, null])
+  it('a draft that no listed set has is a set of its own with its draft\'s type, between the unlisted logs by its number', () => {
+    const drafts = [draftOf({ sessionId: 's1', localId: 'gone.1', exerciseId: 'ex.bench', position: 4 }, { kind: 'warmup' }), draftOf({ sessionId: 's1', localId: 'gone.2', exerciseId: 'ex.bench', position: 4 }, { kind: 'normal' })]
+    const rows = rowsOf(orderOf([card('bench', 'n n', { drafts })]), [...planned, addedLog('bench', 1, { number: 3 }), addedLog('bench', 3, { number: 5 })])
+    expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05✓'])
+    expect(rows.map((r) => r.localId)).toEqual(['gone.1', null, null, 'log.bench.added1', 'gone.2', 'log.bench.added3'])
+    expect(rows[4].draftKey).toEqual(drafts[1].key)
   })
 
-  it('an open added set with its draft still counts in the numbers the planned open sets take', () => {
-    // planned 02 is open, added 03 is open with its draft: 02 is 02 and the draft is 03, not 02 twice
-    const rows = rowsOf(bench([draft(3)]), [headLog('bench', 1), added(4), added(5)])
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·', 'bench 03·', 'bench 04✓', 'bench 05✓'])
+  it('a log whose id is a listed set\'s own id is that set\'s: it is not drawn twice while an unlog has not reached the logs', () => {
+    const log = addedLog('bench', 1, { number: 3 })
+    const order = orderOf([card('bench', 'n n', { added: [{ localId: log.id, logId: null, type: { kind: 'normal' } }] })])
+    const rows = rowsOf(order, [...planned, log])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
+  })
+
+  it('a draft whose set\'s log is still among the logs is not drawn twice either', () => {
+    const log = addedLog('bench', 1, { number: 3 })
+    const drafts = [draftOf({ sessionId: 's1', localId: log.id, exerciseId: 'ex.bench', position: 3 }, { kind: 'normal' })]
+    expect(rowsOf(orderOf([card('bench', 'n n', { drafts })]), [...planned, log]).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓'])
+  })
+})
+
+describe('resolveRows: what the card\'s list may not say (a caller bug, refused)', () => {
+  const planned = [headLog('bench', 1)]
+
+  it('one set listed twice, two sets naming one log, a log that is not a set added to this card, two drafts of one set', () => {
+    const twice = card('bench', 'n', { added: [{ localId: 'a1', logId: null, type: { kind: 'normal' } }, { localId: 'a1', logId: null, type: { kind: 'normal' } }] })
+    expect(() => rowsOf(orderOf([twice]), planned)).toThrow(RangeError)
+    const oneLog = card('bench', 'n', { added: [{ localId: 'a1', logId: 'log.bench.added1', type: { kind: 'normal' } }, { localId: 'a2', logId: 'log.bench.added1', type: { kind: 'normal' } }] })
+    expect(() => rowsOf(orderOf([oneLog]), [...planned, addedLog('bench', 1, { number: 2 })])).toThrow(RangeError)
+    const plannedLog = card('bench', 'n', { added: [{ localId: 'a1', logId: 'log.bench.1', type: { kind: 'normal' } }] })
+    expect(() => rowsOf(orderOf([plannedLog]), planned)).toThrow(RangeError)
+    const otherCard = card('bench', 'n', { added: [{ localId: 'a1', logId: 'log.row.added1', type: { kind: 'normal' } }] })
+    expect(() => rowsOf(orderOf([otherCard, card('row', 'n')]), [...planned, addedLog('row', 1)])).toThrow(RangeError)
+    const draft = { sessionId: 's1', localId: 'a1', exerciseId: 'ex.bench', position: 2 }
+    expect(() => rowsOf(orderOf([card('bench', 'n', { added: 1, drafts: [draft, { ...draft, position: 3 }] })]), planned)).toThrow(RangeError)
+  })
+
+  it('the control: the same lists, each set once and each log once, are drawn', () => {
+    const ok = card('bench', 'n', { added: [{ localId: 'a1', logId: 'log.bench.added1', type: { kind: 'normal' } }, { localId: 'a2', logId: null, type: { kind: 'normal' } }] })
+    expect(rowsOf(orderOf([ok]), [...planned, addedLog('bench', 1, { number: 2 })]).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
   })
 })
 
@@ -382,12 +443,12 @@ describe('resolveRows: logged, skipped and unlogged', () => {
     expect(rows.map((r) => r.logId)).toEqual(['log.bench.1', null, 'log.bench.3'])
   })
 
-  it('two logs of one planned set: the first is the set\'s log, as the card\'s own lookup finds it, and both move the numbers', () => {
+  it('two logs of one planned set: the first is the set\'s log, as the card\'s own lookup finds it, and the second is no set (it moves no number)', () => {
     const first = headLog('bench', 1, { number: 1 })
     const second = { ...headLog('bench', 1, { number: 2 }), id: 'log.bench.1.again' }
     const rows = rowsOf(orderOf([card('bench', 'n n')]), [first, second])
     expect(rows[0].logId).toBe('log.bench.1')
-    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 03·'])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02·'])
   })
 
   it('the n-th logged drop is drop n, whatever stage indexes the logs carry and whatever order they come in', () => {
@@ -587,8 +648,8 @@ describe('resolveRows: the place of a set in the plan (what places a set among t
       ['set:bench.3', 3],
       ['set:bench.3:stage:1', 3],
       ['set:bench.4', 4],
-      ['added:bench:1', 5],
-      ['added:bench:2', 6],
+      ['added:bench:a1', 5],
+      ['added:bench:a2', 6],
       ['set:row.1', 1],
     ])
   })
@@ -721,39 +782,43 @@ describe('resolveRows: sets added in the session', () => {
     const rows = rowsOf(orderOf([card('bench', 'n n', { added: 2 })]))
     expect(rows.map(brief)).toEqual(['bench 01·', 'bench 02·', 'bench 03·', 'bench 04·'])
     expect(rows.map((r) => r.added)).toEqual([false, false, true, true])
-    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:1', 'added:bench:2'])
+    expect(rows.map((r) => r.key)).toEqual(['set:bench.1', 'set:bench.2', 'added:bench:a1', 'added:bench:a2'])
     expect(rows[2].weekPlanSetId).toBeNull()
     expect(rows.map((r) => r.retyped)).toEqual([false, false, false, false])
   })
 
-  it('the n-th added row is the n-th added log, in the order of their set numbers', () => {
-    // logged out of array order: number 4 first
+  it('each listed set is drawn with the log its entry names, whatever order the logs come in', () => {
     const logs = [headLog('bench', 1), headLog('bench', 2), addedLog('bench', 2, { number: 4 }), addedLog('bench', 1, { number: 3 })]
-    const rows = rowsOf(orderOf([card('bench', 'n n', { added: 3 })]), logs)
+    const rows = rowsOf(orderOf([card('bench', 'n n', { added: [logs[3], logs[2], { kind: 'normal' }] })]), logs)
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
     expect(rows[2].logId).toBe('log.bench.added1')
     expect(rows[3].logId).toBe('log.bench.added2')
   })
 
-  it('every logged added set is a row even when the screen counts fewer, and an added log of a warmup is a warmup row (146: any set can be switched to Warmup)', () => {
-    const logs = [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 2, { number: 3 }), addedLog('bench', 3, { warmup: true })]
-    const rows = rowsOf(orderOf([card('bench', 'n', { added: 0 })]), logs)
+  it('an added log of a warmup is a warmup row in its place (146: any set can be switched to Warmup), numbered among the warmups', () => {
+    const logs = [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 2, { number: 3 }), addedLog('bench', 3, { warmup: true, number: 4 })]
+    const rows = rowsOf(orderOf([card('bench', 'n', { added: [logs[1], logs[3], logs[2]] })]), logs)
     expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓'])
     expect(rows.map((r) => r.added)).toEqual([true, false, true, true])
-    // the warmup was logged with the number 3, which the second added set holds as well: a warmup comes first on a tie
-    expect(rows[0]).toMatchObject({ kind: 'warmup', key: 'added:bench:2', type: { kind: 'warmup' } })
+    // the warmup is the card's second added set: it sits between the other two in the card's order (`planIndex`), drawn with the warmups
+    expect(rows[0]).toMatchObject({ kind: 'warmup', key: 'added:bench:a2', type: { kind: 'warmup' }, planIndex: 3 })
+    expect(rows.slice(2).map((r) => [r.key, r.planIndex])).toEqual([
+      ['added:bench:a1', 2],
+      ['added:bench:a3', 4],
+    ])
   })
 
   it('a set added to one exercise is not a row of another', () => {
-    const rows = rowsOf(orderOf([card('bench', 'n'), card('row', 'n')]), [addedLog('row', 1, { number: 2 })])
-    // row's planned set is open and keeps its place, 01, before the added set that was logged as 02; bench is not moved by it
+    const log = addedLog('row', 1, { number: 2 })
+    const rows = rowsOf(orderOf([card('bench', 'n'), card('row', 'n', { added: [log] })]), [log])
+    // row's planned set is open and keeps its place, 01, before the added set, 02; bench is not moved by it
     expect(rows.map(brief)).toEqual(['bench 01·', 'row 01·', 'row 02✓'])
     expect(rows.filter((r) => r.added).map((r) => r.exerciseKey)).toEqual(['row'])
   })
 
   it('an added set made a dropset in the session has its drop', () => {
     const head = addedLog('bench', 1, { stageKind: 'dropset' })
-    const rows = rowsOf(orderOf([card('bench', '', { added: 1 })]), [head], [pending(head, 'dropset', 1)])
+    const rows = rowsOf(orderOf([card('bench', '', { added: [head] })]), [head], [pending(head, 'dropset', 1)])
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 01.1·'])
   })
 
@@ -764,10 +829,14 @@ describe('resolveRows: sets added in the session', () => {
 })
 
 describe('a pure function changes nothing it is given', () => {
-  it('reads frozen inputs and answers the same twice, leaving the logs and the plan in the order they came', () => {
+  it('reads frozen inputs and answers the same twice, leaving the logs, the plan and the card\'s list in the order they came', () => {
     const head = headLog('pushdown', 1, { stageKind: 'dropset' })
-    const draft: SetDraftKey = { sessionId: 's1', localId: 'log.pushdown.added1', exerciseId: 'ex.pushdown', position: 4 }
-    const exercises = deepFreeze([card('pushdown', 'n d2', { added: 1, drafts: [draft, { ...draft, position: 3 }] }), card('row', 'n n'), card('lat', 'n n')])
+    const draft: SetDraftKey = { sessionId: 's1', localId: 'a2', exerciseId: 'ex.pushdown', position: 4 }
+    const exercises = deepFreeze([
+      card('pushdown', 'n d2', { added: [{ kind: 'normal' }, { kind: 'warmup' }], drafts: [draft, { ...draft, localId: 'gone', position: 3 }] }),
+      card('row', 'n n'),
+      card('lat', 'n n'),
+    ])
     const supersets = deepFreeze([{ id: 'blk', members: ['row', 'lat'] }])
     const logs = deepFreeze([dropLog(head, 2), head, headLog('row', 1)])
     const changes = deepFreeze([deleted('row', 2), pending(head, 'dropset', 3)])
@@ -778,8 +847,13 @@ describe('a pure function changes nothing it is given', () => {
     expect(first.length).toBeGreaterThan(5)
     expect(logs.map((l) => l.id)).toEqual([`${head.id}.d2`, head.id, 'log.row.1'])
     expect(exercises[0].plannedSets.map((s) => s.id)).toEqual(['pushdown.1', 'pushdown.2', 'pushdown.2.1', 'pushdown.2.2'])
-    // the drafts are read in the order of their positions without being sorted where they are
+    expect(exercises[0].added!.map((a) => a.localId)).toEqual(['a1', 'a2'])
     expect(exercises[0].drafts!.map((d) => ('position' in d.key ? d.key.position : null))).toEqual([4, 3])
-    expect(first.filter((r) => r.added).map((r) => r.draftPosition)).toEqual([3, 4])
+    // the listed sets in the card's order, then the draft no listed set has
+    expect(first.filter((r) => r.added).map((r) => [r.localId, r.kind])).toEqual([
+      ['a2', 'warmup'],
+      ['a1', 'working'],
+      ['gone', 'working'],
+    ])
   })
 })

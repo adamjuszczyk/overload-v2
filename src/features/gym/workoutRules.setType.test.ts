@@ -151,7 +151,7 @@ describe('applySetTypeChange: a planned set that is not logged yet', () => {
 describe('applySetTypeChange: a set added in the session that is not logged yet', () => {
   it('has no row to write: the type is the screen\'s own state (an added set never gets a "retyped" row)', () => {
     const view = viewOf(orderOf([card('bench', 'n', { added: 1 })]), [])
-    const result = applySetTypeChange({ row: rowOf(view.rows, 'added:bench:1'), pick: staged('dropset', 2), session: view })
+    const result = applySetTypeChange({ row: rowOf(view.rows, 'added:bench:a1'), pick: staged('dropset', 2), session: view })
     expect(result).toMatchObject({ type: staged('dropset', 2), changed: true, headPatch: null, stagesToAdd: [1, 2], stagesToDelete: [] })
     expect(result.changes).toEqual([])
     expect(result.renumber).toEqual([])
@@ -440,7 +440,7 @@ describe('typeColumns / typeOfColumns: the one mapping between a type and the co
 describe('an added set that is logged keeps what it was made', () => {
   it('a logged added dropset with its pending drop is current at the drop, and has no "retyped" row', () => {
     const head = addedLog('bench', 1, { stageKind: 'dropset', number: 1 })
-    const { effects, current, server } = changeOn({ cards: [card('bench', '', { added: 1 })], logs: [head], key: 'added:bench:1', pick: staged('dropset', 1) })
+    const { effects, current, server } = changeOn({ cards: [card('bench', '', { added: [head] })], logs: [head], key: 'added:bench:a1', pick: staged('dropset', 1) })
     expect(effects.changes).toEqual([{ change: { kind: 'pending_stages', setLogId: head.id, stageKind: 'dropset', stageCount: 1 }, id: null }])
     expect(brief(current!)).toBe('bench 01.1·')
     expect(server.held().map((c) => c.kind)).toEqual(['pending_stages'])
@@ -448,7 +448,7 @@ describe('an added set that is logged keeps what it was made', () => {
 
   it('made Normal or a warmup it gets no change row at all', () => {
     const head = addedLog('bench', 1, { number: 1 })
-    expect(changeOn({ cards: [card('bench', '', { added: 1 })], logs: [head], key: 'added:bench:1', pick: WARMUP }).effects.changes).toEqual([])
+    expect(changeOn({ cards: [card('bench', '', { added: [head] })], logs: [head], key: 'added:bench:a1', pick: WARMUP }).effects.changes).toEqual([])
   })
 })
 
@@ -463,15 +463,17 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(current!.number).toBe(3)
   })
 
-  it('the control: without the numbers the logged set keeps 03, the open set after it reads 02 and History holds 1 and 3 (the failure found in the first review of chunk 46)', () => {
+  it('the control: without the numbers the rows still read 01 02 03 (a row shows its rank), but History holds 1 and 3 where the rows show 01 and 02 (the failure found in the first review of chunk 46)', () => {
     const logs = [headLog('bench', 1), headLog('bench', 2), headLog('bench', 3)]
     const order = orderOf([card('bench', 'n n n n')])
     const server = new FakeServer({ logs })
     const view = viewOf(order, server.logs, [])
     const row = rowKeyed(view, 'set:bench.2')
     server.applySetType({ ...applySetTypeChange({ row, pick: WARMUP, session: view }), renumber: [] }, row)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 03✓', 'bench 02·'])
+    const rows = resolveRows(order, server.logs, server.held())
+    expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03·'])
     expect(server.logs.filter((l) => !l.isWarmup).map((l) => l.setNumber)).toEqual([1, 3])
+    expect(rows.filter((r) => r.kind === 'working' && r.logId !== null).map((r) => r.number)).toEqual([1, 2])
   })
 
   it('a logged warmup made Normal takes its place first among the working sets and the ones after it move up one', () => {
@@ -482,14 +484,15 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
   })
 
-  it('the control: without the numbers two logged rows read 01 (the failure found in the first review of chunk 46)', () => {
+  it('the control: without the numbers two logs hold 1 where the rows show 01 and 02 (the failure found in the first review of chunk 46)', () => {
     const logs = [headLog('bench', 1, { warmup: true, number: 1 }), headLog('bench', 2, { number: 1 })]
     const order = orderOf([card('bench', 'w n n')])
     const server = new FakeServer({ logs })
     const view = viewOf(order, server.logs, [])
     const row = rowKeyed(view, 'set:bench.1')
     server.applySetType({ ...applySetTypeChange({ row, pick: NORMAL, session: view }), renumber: [] }, row)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 01✓', 'bench 02·'])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(server.logs.map((l) => l.setNumber)).toEqual([1, 1])
   })
 
   it('the second of two warmups made Normal is the first working set: its own number and the others\' change', () => {
@@ -585,13 +588,14 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(current!.key).toBe('set:bench.4')
   })
 
-  it('the control: without the numbers the logged 03 keeps its number and the open set reads 02 after it', () => {
+  it('the control: without the numbers the logged set keeps 3 in the log where its row shows 02', () => {
     const order = orderOf([card('bench', 'n n n n')])
     const server = new FakeServer({ logs: [headLog('bench', 1), headLog('bench', 3)] })
     const view = viewOf(order, server.logs, [])
     const row = rowKeyed(view, 'set:bench.2')
     server.applySetType({ ...applySetTypeChange({ row, pick: WARMUP, session: view }), renumber: [] }, row)
-    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 03✓', 'bench 02·'])
+    expect(resolveRows(order, server.logs, server.held()).map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03·'])
+    expect(server.logs.map((l) => l.setNumber)).toEqual([1, 3])
   })
 
   it('an open warmup made Normal, with logged sets after it: it joins at its place and they move up one', () => {
@@ -624,10 +628,10 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
   it('an open set added in the session made a Warmup closes the gap like a planned one: the logged set after it moves down (146 (a), 161)', () => {
     // bench 01 is logged, the first added set is open (kept as a draft, at 02), the second added set is logged as 03
     const logs = [headLog('bench', 1), addedLog('bench', 2, { number: 3 })]
-    const draft = { sessionId: 's1', localId: 'log.bench.added1', exerciseId: 'ex.bench', position: 2 } as const
-    const cards = [card('bench', 'n', { added: 2, drafts: [draft] })]
-    const { effects, row, rows, current } = changeOn({ cards, logs, key: 'added:bench:1', pick: WARMUP })
-    expect(row).toMatchObject({ state: 'unlogged', kind: 'working', number: 2, draftPosition: 2 })
+    const draft = { sessionId: 's1', localId: 'a1', exerciseId: 'ex.bench', position: 2 } as const
+    const cards = [card('bench', 'n', { added: [NORMAL, logs[1]], drafts: [draft] })]
+    const { effects, row, rows, current } = changeOn({ cards, logs, key: 'added:bench:a1', pick: WARMUP })
+    expect(row).toMatchObject({ state: 'unlogged', kind: 'working', number: 2, draftKey: draft })
     expect(effects.type).toEqual(WARMUP)
     expect(effects.changed).toBe(true)
     expect(effects.headPatch).toBeNull()
@@ -650,17 +654,17 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
 
   it('a set added in the session and logged: made a warmup it stays a row, as a warmup, and the added sets after it close the gap', () => {
     const logs = [headLog('bench', 1), addedLog('bench', 1, { number: 2 }), addedLog('bench', 2, { number: 3 })]
-    const cards = [card('bench', 'n', { added: 2 })]
-    const { effects, rows, server } = changeOn({ cards, logs, key: 'added:bench:1', pick: WARMUP })
+    const cards = [card('bench', 'n', { added: [logs[1], logs[2]] })]
+    const { effects, rows, server } = changeOn({ cards, logs, key: 'added:bench:a1', pick: WARMUP })
     expect(effects.changes).toEqual([])
     expect(effects.renumber).toEqual([{ id: 'log.bench.added2', setNumber: 2 }])
     expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓'])
-    expect(rows[0].key).toBe('added:bench:1')
+    expect(rows[0].key).toBe('added:bench:a1')
     expect(rows.map((r) => r.logId)).toEqual(['log.bench.added1', 'log.bench.1', 'log.bench.added2'])
     // and back to Normal: it is the second working set again, the other added set the third
     const order = orderOf(cards)
     const view = viewOf(order, server.logs, server.held())
-    const back = rowKeyed(view, 'added:bench:1')
+    const back = rowKeyed(view, 'added:bench:a1')
     const undone = applySetTypeChange({ row: back, pick: NORMAL, session: view })
     expect(undone.renumber).toEqual([{ id: 'log.bench.added2', setNumber: 3 }])
     server.applySetType(undone, back)
@@ -730,13 +734,18 @@ describe('a logged set switched to or from Warmup renumbers the sets as a delete
     expect(rows.map(brief)).toEqual(['row W1✓', 'row A1✓', 'lat B1✓', 'row A2✓', 'lat B2✓', 'lat B3✓'])
   })
 
-  it('sets logged out of order: coming in it takes its place by the plan\'s order and nothing collides', () => {
-    // set 4 was logged first (number 1), set 3 second (number 2); the warmup, planned first, is made Normal
+  it('sets logged out of order: coming in it takes its place by the plan\'s order, every log is written the number its row shows, and nothing collides', () => {
+    // set 4 was logged first (number 1), set 3 second (number 2), as 1.1 numbered them; the warmup, planned first, is made Normal
     const logs = [headLog('bench', 1, { warmup: true, number: 1 }), headLog('bench', 4, { number: 1 }), headLog('bench', 3, { number: 2 })]
-    const { effects, rows } = changeOn({ cards: [card('bench', 'w n n n')], logs, key: 'set:bench.1', pick: NORMAL })
+    const { effects, rows, server } = changeOn({ cards: [card('bench', 'w n n n')], logs, key: 'set:bench.1', pick: NORMAL })
     expect(effects.renumber).toEqual([
-      { id: 'log.bench.4', setNumber: 2 },
       { id: 'log.bench.3', setNumber: 3 },
+      { id: 'log.bench.4', setNumber: 4 },
+    ])
+    expect(server.logs.map((l) => [l.id, l.setNumber])).toEqual([
+      ['log.bench.1', 1],
+      ['log.bench.4', 4],
+      ['log.bench.3', 3],
     ])
     const logged = rows.filter((r) => r.state === 'logged').map((r) => r.number)
     expect(new Set(logged).size).toBe(logged.length)
@@ -962,9 +971,9 @@ describe('a warmup logged with no weight or reps, made a working set (DECISIONS 
 
   it('an added set logged as a warmup with no numbers is the same case', () => {
     const log = addedLog('bench', 1, { warmup: true, number: 1, weight: null, reps: null })
-    const order = orderOf([card('bench', '', { added: 1 })])
+    const order = orderOf([card('bench', '', { added: [log] })])
     const view = viewOf(order, [log])
-    const row = rowKeyed(view, 'added:bench:1')
+    const row = rowKeyed(view, 'added:bench:a1')
     expect(typeChangeNeedsNumbers({ row, pick: NORMAL, session: view })).toBe(true)
     expect(() => applySetTypeChange({ row, pick: NORMAL, session: view })).toThrow(RangeError)
     expect(applySetTypeChange({ row, pick: NORMAL, session: view, numbers: { weight: 40, reps: 5 } }).headPatch).toEqual({ isWarmup: false, stageKind: null, weight: 40, reps: 5 })
@@ -980,7 +989,8 @@ describe('what the tables accept', () => {
       { cards: [card('bench', 'n')], logs: [headLog('bench', 1)], key: 'set:bench.1', pick: staged('myo_reps', 2) },
       { cards: [card('pushdown', 'd2')], logs: [head, dropLog(head, 1)], key: 'set:pushdown.1', pick: NORMAL },
       { cards: [card('pushdown', 'd2')], logs: [head], changes: [held(pending(head, 'dropset', 2), 'c1')], key: 'set:pushdown.1', pick: WARMUP },
-      { cards: [card('bench', '', { added: 1 })], logs: [addedLog('bench', 1)], key: 'added:bench:1', pick: staged('rest_pause', 1) },
+      { cards: [card('bench', '', { added: [addedLog('bench', 1)] })], logs: [addedLog('bench', 1)], key: 'added:bench:a1', pick: staged('rest_pause', 1) },
+      { cards: [card('bench', '', { added: [WARMUP, addedLog('bench', 2, { number: 1 })] })], logs: [addedLog('bench', 2, { number: 1 })], key: 'added:bench:a1', pick: NORMAL },
     ]
     for (const c of all) expect(() => changeOn(c)).not.toThrow()
   })
