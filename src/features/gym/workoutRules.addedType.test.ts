@@ -163,8 +163,8 @@ describe('the rows see an open added set\'s type (DECISIONS 161): an added Warmu
     const log = addedLog('bench', 2, { number: second.number })
     const cards = loggedAdded(before, second, log.id)
     expect(cards[0].added).toEqual([
-      { localId: 'a1', logId: null, type: WARMUP },
-      { localId: 'a2', logId: log.id, type: NORMAL },
+      { localId: 'a1', logId: null, type: WARMUP, place: 1 },
+      { localId: 'a2', logId: log.id, type: NORMAL, place: 2 },
     ])
     const rows = rowsOf(cards, [...threeLogged(), log])
     expect(rows.map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
@@ -294,20 +294,22 @@ describe('what the card or a draft must say is refused when it is wrong', () => 
   })
 
   it('…and under tsc (these lines fail `npm run typecheck` if a type becomes optional)', () => {
+    // Each literal holds everything else its type asks for (the place too, DECISIONS 174), so each line fails for the one
+    // property it names and for nothing else.
     // @ts-expect-error an entry of the card's list must say its set's type
-    const noType: AddedSet = { localId: 'a1', logId: null }
+    const noType: AddedSet = { localId: 'a1', logId: null, place: 1 }
     // @ts-expect-error nor may it leave out whether it is logged
-    const noLog: AddedSet = { localId: 'a1', type: NORMAL }
+    const noLog: AddedSet = { localId: 'a1', type: NORMAL, place: 1 }
     // @ts-expect-error a draft of a set added in the session must say its type
-    const draftNoType: HeldDraft = { key: key(4), values: {} }
+    const draftNoType: HeldDraft = { key: key(4), values: { place: 4 } }
     // @ts-expect-error nor may it leave `values` out
     const draftNoValues: HeldDraft = { key: key(4) }
     // @ts-expect-error what unlogging an added set answers carries the type in its values
-    const noTypeAnswered: UnlogEffects['draft'] = { key: key(4), values: { weight: 1, reps: 1, rir: null, formRating: null, enteredUnit: null } }
+    const noTypeAnswered: UnlogEffects['draft'] = { key: key(4), values: { weight: 1, reps: 1, rir: null, formRating: null, enteredUnit: null, place: 4 } }
     // a planned set's draft and a drop's need no type, and the type may be any of the three kinds
     const planned: HeldDraft = { key: { sessionId: SESSION, weekPlanSetId: 'bench.1' } }
     const drop: HeldDraft = { key: { ...key(4), drop: 1 } }
-    const kinds: AddedSet[] = [NORMAL, WARMUP, staged('myo_reps', 3)].map((type, i) => ({ localId: `a${i}`, logId: null, type }))
+    const kinds: AddedSet[] = [NORMAL, WARMUP, staged('myo_reps', 3)].map((type, i) => ({ localId: `a${i}`, logId: null, type, place: i + 1 }))
     expect([noType, noLog, draftNoType, draftNoValues, noTypeAnswered, planned, drop, kinds].length).toBe(8)
   })
 
@@ -476,7 +478,7 @@ describe('addRound counts working rows only: an open added Warmup is not one', (
     const block = [{ id: 'blk', members: ['row', 'lat'] }]
     const position = (type: typeof WARMUP | typeof NORMAL) => {
       const order = orderOf([card('row', 'n n', { added: [type] }), card('lat', 'n n')], block)
-      return addRound(order, resolveRows(order, []), 'blk').map((p) => [p.exerciseKey, p.position])
+      return addRound(order, resolveRows(order, []), 'blk', []).map((p) => [p.exerciseKey, p.position])
     }
     expect(position(WARMUP)).toEqual([['row', 3], ['lat', 3]])
     expect(position(NORMAL)).toEqual([['row', 4], ['lat', 3]])
@@ -504,8 +506,10 @@ describe('unlog of an added set keeps its type in the draft (DECISIONS 161)', ()
     expect(start.rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓', 'bench 05·'])
     const a = rowKeyed(start, 'added:bench:a1')
     const toWarmup = applySetTypeChange({ row: a, pick: WARMUP, session: start })
-    expect(toWarmup).toMatchObject({ headPatch: { isWarmup: true, stageKind: null }, renumber: [], changes: [] })
+    // its own log takes its W number (173); B is open, so no other log moves
+    expect(toWarmup).toMatchObject({ headPatch: { isWarmup: true, stageKind: null }, renumber: [{ id: aLog.id, setNumber: 1 }], changes: [] })
     server.applySetType(toWarmup, a)
+    expect(server.logs.find((l) => l.id === aLog.id)).toMatchObject({ setNumber: 1, isWarmup: true })
     cards = keepType(cards, a, toWarmup.type)
     const before = viewOf(orderOf(cards), server.logs, server.held())
     expect(before.rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])

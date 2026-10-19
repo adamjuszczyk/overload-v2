@@ -218,8 +218,8 @@ describe('deleteEffects: the sets after it close the gap', () => {
   })
 })
 
-describe('deleteEffects: what renumbers nothing', () => {
-  it('a warmup — it is not numbered with the working sets — and the warmups when a working set goes', () => {
+describe('deleteEffects: each list renumbers apart (DECISIONS 170, 173)', () => {
+  it('a warmup deleted closes the warmups\' gap and moves no working set; a working set deleted moves no warmup', () => {
     const logs = [
       headLog('bench', 1, { warmup: true, number: 1 }),
       headLog('bench', 2, { warmup: true, number: 2 }),
@@ -227,7 +227,10 @@ describe('deleteEffects: what renumbers nothing', () => {
       headLog('bench', 4, { number: 2 }),
     ]
     const view = viewOf(orderOf([card('bench', 'w w n n')]), logs)
-    expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([])
+    // W1 goes: the other warmup shows W1 now, and its log must say so (173: "a log never keeps a number its row no longer shows")
+    expect(deleteEffects(rowKeyed(view, 'set:bench.1'), view).renumber).toEqual([{ id: 'log.bench.2', setNumber: 1 }])
+    // W2 goes: nothing after it in its list
+    expect(deleteEffects(rowKeyed(view, 'set:bench.2'), view).renumber).toEqual([])
     expect(deleteEffects(rowKeyed(view, 'set:bench.3'), view).renumber).toEqual([{ id: 'log.bench.4', setNumber: 1 }])
   })
 
@@ -334,10 +337,10 @@ describe('DELETE on a logged planned set: it never comes back as an open row (SP
     expect(warning!.text).toBe("1 planned set isn't logged yet: Bench 03.")
   })
 
-  it('a logged warmup is deleted too: no working set renumbers, the other warmup moves up, and it does not come back', () => {
+  it('a logged warmup is deleted too: no working set renumbers, the other warmup moves up (its log with it: 173), and it does not come back', () => {
     const logs2 = [headLog('bench', 1, { warmup: true, number: 1 }), headLog('bench', 2, { warmup: true, number: 2 }), headLog('bench', 3, { number: 1 })]
     const { effects, rows, current } = deleteOn({ cards: [card('bench', 'w w n n')], logs: logs2, key: 'set:bench.1' })
-    expect(effects.renumber).toEqual([])
+    expect(effects.renumber).toEqual([{ id: 'log.bench.2', setNumber: 1 }])
     expect(effects.changes).toEqual([{ change: { kind: 'deleted', weekPlanSetId: 'bench.1' }, id: null }])
     expect(rows.map(brief)).toEqual(['bench W1✓', 'bench 01✓', 'bench 02·'])
     expect(rows.map((r) => r.key)).toEqual(['set:bench.2', 'set:bench.3', 'set:bench.4'])

@@ -43,10 +43,17 @@ export interface StoredChange extends ChangeColumns {
   id: string
 }
 
-/** 035's check on one set log: a working set has a weight and reps; a warmup or a skipped set may have none. */
-function checkLog(log: Pick<SetLog, 'id' | 'isSkipped' | 'isWarmup' | 'weight' | 'reps'>): void {
+/**
+ * 035's check on one set log: a working set has a weight and reps; a warmup or a skipped set may have none. And 044's
+ * (`v2_set_logs_added_place_check`: `added_place is null or added_place >= 1`, an integer column).
+ */
+function checkLog(log: Pick<SetLog, 'id' | 'isSkipped' | 'isWarmup' | 'weight' | 'reps' | 'addedPlace'>): void {
   if (!(log.isSkipped || log.isWarmup || (log.weight !== null && log.reps !== null))) {
     throw new PgError('23514', `violates check constraint "v2_set_logs_check" (log ${log.id})`)
+  }
+  const place = log.addedPlace ?? null
+  if (place !== null && !(Number.isInteger(place) && place >= 1)) {
+    throw new PgError('23514', `violates check constraint "v2_set_logs_added_place_check" (log ${log.id}, ${place})`)
   }
 }
 
@@ -96,12 +103,15 @@ export class FakeServer {
     })
   }
 
-  /** An insert of one log, as LOG writes it: 035's check, a unique id, a drop's head already there. */
+  /**
+   * An insert of one log, as LOG writes it: 035's and 044's checks, a unique id, a drop's head already there. A payload that
+   * leaves `added_place` out stores null (044: no default), and the log reads back as the mapper gives it (`addedPlace: null`).
+   */
   insertLog(log: SetLog): void {
     checkLog(log)
     if (this.logs.some((l) => l.id === log.id)) throw new PgError('23505', `duplicate key value violates unique constraint "v2_set_logs_pkey" (${log.id})`)
     if (log.parentSetId !== null && !this.logs.some((l) => l.id === log.parentSetId)) throw new PgError('23503', `log ${log.id} names no head ${log.parentSetId}`)
-    this.logs.push({ ...log })
+    this.logs.push({ ...log, addedPlace: log.addedPlace ?? null })
   }
 
   deleteLog(id: string): void {
@@ -111,7 +121,8 @@ export class FakeServer {
     this.rows = this.rows.filter((r) => r.setLogId !== id)
   }
 
-  patchLog(id: string, patch: Partial<Pick<SetLog, 'setNumber' | 'isWarmup' | 'stageKind' | 'weight' | 'reps'>>): void {
+  /** An update of one log by id (PostgREST `update … where id`): every column the patch names changes, and only those. */
+  patchLog(id: string, patch: Partial<Omit<SetLog, 'id'>>): void {
     const current = this.logs.find((l) => l.id === id)
     if (!current) throw new PgError('P0002', `no log ${id}`)
     const next = { ...current, ...patch }
@@ -145,8 +156,14 @@ export class FakeServer {
     return row
   }
 
+  /** Number patches, each sent whole (`update … set <every key but id> where id`), so a patch that named any other column would change it. */
   private renumber(patches: readonly NumberPatch[]): void {
-    for (const p of patches) this.patchLog(p.id, { setNumber: p.setNumber })
+    for (const { id, ...columns } of patches) this.patchLog(id, columns)
+  }
+
+  /** What chunk 58a writes when the workout screen draws a session's rows (DECISIONS 178): 46's corrections, as patches. */
+  applyCorrections(patches: readonly NumberPatch[]): void {
+    this.renumber(patches)
   }
 
   /** What chunk 61 writes for DELETE: the log deletes in order, the numbers, the kind patch and the change rows. */

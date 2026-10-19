@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addRound, finishWarning, resolveRows, sessionOrder } from './workoutRules'
-import { addSet, brief, card, deepFreeze, deleted, dropLog, headLog, orderOf, retyped, staged } from './workoutRules.testutil'
+import { addedLog, addSet, brief, card, deepFreeze, deleted, dropLog, headLog, orderOf, retyped, staged } from './workoutRules.testutil'
 
 // Chunk 46: finishing (SPEC [1.2] "Finishing (11, C6)": "When planned sets aren't logged it says which")
 // and ADD ROUND (Supersets, Defaults 9).
@@ -100,21 +100,36 @@ describe('addRound: one set for every member of the superset (Defaults 9)', () =
   const lat = card('lat', 'n n', { name: 'Lateral Raise' })
   const order = orderOf([row, lat], [{ id: 'blk', members: ['row', 'lat'] }])
 
-  it('a 3 and 2 superset adds one to each: the 4th set of A and the 3rd of B', () => {
+  it('a 3 and 2 superset adds one to each: the 4th set of A and the 3rd of B, each the first set added to its member (place 1)', () => {
     const rows = resolveRows(order, [], [])
-    expect(addRound(order, rows, 'blk')).toEqual([
-      { exerciseKey: 'row', exerciseId: 'ex.row', position: 4 },
-      { exerciseKey: 'lat', exerciseId: 'ex.lat', position: 3 },
+    expect(addRound(order, rows, 'blk', [])).toEqual([
+      { exerciseKey: 'row', exerciseId: 'ex.row', position: 4, place: 1 },
+      { exerciseKey: 'lat', exerciseId: 'ex.lat', position: 3, place: 1 },
     ])
   })
 
-  it('applied as the card does (a new set at the end of each member\'s list), the rounds are A1 B1 A2 B2 A3 B3 A4, and each new set has the number returned', () => {
-    const answer = addRound(order, resolveRows(order, [], []), 'blk')
+  it('applied as the card does (a new entry on each member\'s list, at the place returned), the rounds are A1 B1 A2 B2 A3 B3 A4, and each new set has the number returned', () => {
+    const answer = addRound(order, resolveRows(order, [], []), 'blk', [])
     let cards = [row, lat]
-    answer.forEach((a, i) => (cards = addSet(cards, a.exerciseKey, `round${i}`)))
+    answer.forEach((a, i) => (cards = addSet(cards, a.exerciseKey, `round${i}`, a.place)))
     const rows = resolveRows(sessionOrder(cards, [{ id: 'blk', members: ['row', 'lat'] }]), [], [])
     expect(rows.map(brief)).toEqual(['row A1·', 'lat B1·', 'row A2·', 'lat B2·', 'row A3·', 'lat B3·', 'row A4·'])
     expect(answer.map((_, i) => rows.find((r) => r.localId === `round${i}`)!.number)).toEqual(answer.map((a) => a.position))
+    expect(answer.map((_, i) => rows.find((r) => r.localId === `round${i}`)!.addedPlace)).toEqual([1, 1])
+  })
+
+  it('each member\'s place is its own next one (DECISIONS 174): A has two added sets (one logged, one open), B one logged before the list began', () => {
+    const members = [
+      card('row', 'n n', { name: 'Seated Cable Row', added: [addedLog('row', 1, { number: 3, place: 1 }), { kind: 'normal' }] }),
+      card('lat', 'n n', { name: 'Lateral Raise' }),
+    ]
+    const blockOrder = sessionOrder(members, [{ id: 'blk', members: ['row', 'lat'] }])
+    const logs = [addedLog('row', 1, { number: 3, place: 1 }), addedLog('lat', 1, { number: 3, place: 4 })]
+    const rows = resolveRows(blockOrder, logs, [])
+    expect(addRound(blockOrder, rows, 'blk', logs).map((r) => [r.exerciseKey, r.position, r.place])).toEqual([
+      ['row', 5, 3],
+      ['lat', 4, 5],
+    ])
   })
 
   it('counts the sets the members have now: added ones in, deleted ones and warmups out', () => {
@@ -122,24 +137,24 @@ describe('addRound: one set for every member of the superset (Defaults 9)', () =
     const blockOrder = sessionOrder(members, [{ id: 'blk', members: ['row', 'lat'] }])
     const rows = resolveRows(blockOrder, [], [deleted('row', 2)])
     // row: 3 planned working − 1 deleted + 1 added = 3 sets; lat: 2
-    expect(addRound(blockOrder, rows, 'blk').map((r) => r.position)).toEqual([4, 3])
+    expect(addRound(blockOrder, rows, 'blk', []).map((r) => r.position)).toEqual([4, 3])
   })
 
   it('a member with no sets gets its first', () => {
     const empty = sessionOrder([card('row', 'n'), card('lat', 'n')], [{ id: 'blk', members: ['row', 'lat'] }])
     const rows = resolveRows(empty, [], [deleted('lat', 1)])
-    expect(addRound(empty, rows, 'blk').map((r) => r.position)).toEqual([2, 1])
+    expect(addRound(empty, rows, 'blk', []).map((r) => r.position)).toEqual([2, 1])
   })
 
   it('three members, in block order', () => {
     const three = sessionOrder([card('a', 'n n'), card('b', 'n'), card('c', 'n n n')], [{ id: 'x', members: ['c', 'a', 'b'] }])
-    expect(addRound(three, resolveRows(three, [], []), 'x').map((r) => [r.exerciseKey, r.position])).toEqual([['c', 4], ['a', 3], ['b', 2]])
+    expect(addRound(three, resolveRows(three, [], []), 'x', []).map((r) => [r.exerciseKey, r.position])).toEqual([['c', 4], ['a', 3], ['b', 2]])
   })
 
   it('names no block it cannot find', () => {
-    expect(() => addRound(order, resolveRows(order, [], []), 'nope')).toThrow(RangeError)
+    expect(() => addRound(order, resolveRows(order, [], []), 'nope', [])).toThrow(RangeError)
     // a plain card is not a block
     const plain = sessionOrder([card('bench', 'n')])
-    expect(() => addRound(plain, resolveRows(plain, [], []), 'bench')).toThrow(RangeError)
+    expect(() => addRound(plain, resolveRows(plain, [], []), 'bench', [])).toThrow(RangeError)
   })
 })

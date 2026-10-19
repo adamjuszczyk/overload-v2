@@ -8,6 +8,7 @@ import {
   resolveRows,
   sessionOrder,
   type AddedSet,
+  type AddedSetDraft,
   type AddedSetKey,
   type HeldChange,
   type HeldDraft,
@@ -75,37 +76,40 @@ export function plannedSets(key: string, spec: string): WeekPlanSet[] {
 }
 
 /**
- * A draft as the phone holds it: a bare key of a set added in the session is a draft of a Normal set (what a test that is
- * not about the type means), a bare key of anything else needs nothing more, and a `{ key, values }` entry is taken as it is.
- * A test about the type writes the entry, or uses `draftOf`.
+ * A draft as the phone holds it: a bare key of a set added in the session is a draft of a Normal set whose place is its key's
+ * position (what a test that is about neither the type nor the place means), a bare key of anything else needs nothing more,
+ * and a `{ key, values }` entry is taken as it is. A test about the type or the place writes the entry, or uses `draftOf`.
  */
 export function heldDraft(entry: SetDraftKey | HeldDraft): HeldDraft {
   if ('key' in entry) return entry
-  return 'localId' in entry && !('drop' in entry) ? { key: entry, values: { type: { kind: 'normal' } } } : { key: entry }
+  return 'localId' in entry && !('drop' in entry) ? { key: entry, values: { type: { kind: 'normal' }, place: entry.position } } : { key: entry }
 }
 
-/** The draft of a set added in the session with the type it keeps (DECISIONS 161). */
-export const draftOf = (key: AddedSetKey, type: SessionSetChangeType): HeldDraft => ({ key, values: { type } })
+/** The draft of a set added in the session with the type it keeps (DECISIONS 161) and its place (174; its key's position unless given). */
+export const draftOf = (key: AddedSetKey, type: SessionSetChangeType, place: number | null = key.position): HeldDraft => ({ key, values: { type, place } })
 
 /** The id a card gives the `n`-th set added to it in a test (1-based): its row key is `added:<card>:a<n>`. */
 export const addedId = (n: number): string => `a${n}`
 
 /**
  * A set added in the session as a test writes it in `card`'s list: a log of an added set (the set is logged, by that log), a
- * type (the set is open, with that type), or the entry itself. Unless the entry says otherwise, the n-th one's id is `a<n>`.
+ * type (the set is open, with that type), or the entry itself. Unless the entry says otherwise, the n-th one's id is `a<n>`
+ * and its place is n (a logged one's: its log's place when the log has one), so a list a test writes in the order the sets
+ * were added gives them their places in that order (DECISIONS 174).
  */
-export type AddedSpec = SetLog | SessionSetChangeType | AddedSet
+export type AddedSpec = SetLog | SessionSetChangeType | AddedSet | Omit<AddedSet, 'place'>
 
 function addedEntry(spec: AddedSpec, n: number): AddedSet {
-  if ('localId' in spec) return spec
-  if ('id' in spec) return { localId: addedId(n), logId: spec.id, type: { kind: spec.isWarmup ? 'warmup' : 'normal' } }
-  return { localId: addedId(n), logId: null, type: spec }
+  if ('localId' in spec) return 'place' in spec ? spec : { ...spec, place: n }
+  if ('id' in spec) return { localId: addedId(n), logId: spec.id, type: { kind: spec.isWarmup ? 'warmup' : 'normal' }, place: spec.addedPlace ?? n }
+  return { localId: addedId(n), logId: null, type: spec, place: n }
 }
 
 /**
  * A card: its key doubles as its name's seed (`Bench` for `bench`) unless a name is given. `added` is the card's list of the
- * sets added in the session, in the order they were added (DECISIONS 170): a number is that many open Normal sets (ADD SET),
- * a list names each one (`AddedSpec`). `drafts` are the drafts the phone holds (bare keys read as Normal sets).
+ * sets added in the session, in the order they were added (DECISIONS 170), each at its place (174): a number is that many
+ * open Normal sets (ADD SET) at places 1 to n, a list names each one (`AddedSpec`). `drafts` are the drafts the phone holds
+ * (bare keys read as Normal sets).
  */
 export function card(
   key: string,
@@ -173,8 +177,29 @@ export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type
   if (!row.added || row.kind === 'stage') return [...cards]
   return withEntry(cards, row, (entry, drafts) => ({
     entry: { ...entry, type },
-    drafts: drafts.map((d) => (isDraftOf(entry.localId)(d) ? { key: d.key as AddedSetKey, values: { type } } : d)),
+    drafts: drafts.map((d) => (isDraftOf(entry.localId)(d) ? { key: d.key as AddedSetKey, values: { ...(d.values as Pick<AddedSetDraft, 'type' | 'place'>), type } } : d)),
   }))
+}
+
+/** Does the card list the set this row stands for? (A set after a reload, a reopen or from another phone may not be listed.) */
+export function lists(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerciseKey' | 'localId'>): boolean {
+  return cards.find((c) => c.key === row.exerciseKey)?.added?.some((a) => a.localId === row.localId) ?? false
+}
+
+/**
+ * The card takes a set it doesn't list into its list (the header's contract: before this phone acts on it), with the row's own
+ * id, log, type and place, so the set keeps its key. A set logged before 044 has no place and can't be taken in.
+ */
+export function takeIn(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
+  if (!row.added || row.kind === 'stage' || row.localId === null || lists(cards, row)) return [...cards]
+  if (row.addedPlace === null) throw new Error(`${row.key} has no place: a set logged before 044 is not taken in`)
+  const entry: AddedSet = { localId: row.localId, logId: row.logId, type: row.type!, place: row.addedPlace }
+  return cards.map((c) => (c.key === row.exerciseKey ? { ...c, added: [...(c.added ?? []), entry] } : c))
+}
+
+/** A set the card doesn't list and that has only its draft (after a reload), deleted: its draft goes. */
+export function dropDraft(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
+  return cards.map((c) => (c.key === row.exerciseKey ? { ...c, drafts: (c.drafts ?? []).filter((d) => !isDraftOf(row.localId!)(d)) } : c))
 }
 
 /** LOG (or SKIP) of an added set: its entry names the new log, and its draft goes. */
@@ -192,9 +217,12 @@ export function deletedAdded(cards: readonly OrderExercise[], row: ResolvedRow):
   return withEntry(cards, row, (entry, drafts) => ({ entry: null, drafts: drafts.filter((d) => !isDraftOf(entry.localId)(d)) }))
 }
 
-/** ADD SET (or a member's share of ADD ROUND): a new entry at the end of the card's list, open, with the type given (Normal). */
-export function addSet(cards: readonly OrderExercise[], key: string, localId: string, type: SessionSetChangeType = { kind: 'normal' }): OrderExercise[] {
-  return cards.map((c) => (c.key === key ? { ...c, added: [...(c.added ?? []), { localId, logId: null, type }] } : c))
+/**
+ * ADD SET (or a member's share of ADD ROUND): a new entry in the card's list, open, at the place given (the caller asks
+ * `nextAddedPlace`, as 58a will), with the type given (Normal).
+ */
+export function addSet(cards: readonly OrderExercise[], key: string, localId: string, place: number, type: SessionSetChangeType = { kind: 'normal' }): OrderExercise[] {
+  return cards.map((c) => (c.key === key ? { ...c, added: [...(c.added ?? []), { localId, logId: null, type, place }] } : c))
 }
 
 // ─── Logs ────────────────────────────────────────────────────────────────────────────────────────
@@ -212,6 +240,13 @@ export interface LogOptions {
   weight?: number | null
   reps?: number | null
   rir?: number | null
+  /**
+   * `added_place` (DECISIONS 174): an added set's place. Left out, the log has no `addedPlace` key at all, as every SetLog
+   * built before chunk 46 (it reads as null: a log written before 044).
+   */
+  place?: number | null
+  /** When it was logged (the order of the added sets logged before 044); the seed's Monday evening unless given. */
+  loggedAt?: string
 }
 
 function baseLog(id: string, exerciseId: string, o: LogOptions): SetLog {
@@ -234,10 +269,11 @@ function baseLog(id: string, exerciseId: string, o: LogOptions): SetLog {
     setSeconds: null,
     enteredUnit: null,
     isSkipped: skipped,
-    loggedAt: '2026-10-12T18:00:00Z',
+    loggedAt: o.loggedAt ?? '2026-10-12T18:00:00Z',
     restSeconds: null,
     formRating: null,
     stageKind: o.stageKind ?? null,
+    ...(o.place === undefined ? {} : { addedPlace: o.place }),
   }
 }
 
