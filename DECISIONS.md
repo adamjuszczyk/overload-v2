@@ -1,14 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, Adam's answers to 172, 173 and 174 written in (docs only).*
-- *173 and 174 are answered: chunk 46m (migration 044, `v2_set_logs.added_place`: one nullable column, no default, no row touched) goes first, merged and live on staging; then chunk 46's sixth attempt, on Opus, uses it. One more behaviour failure stops 46 for a redraw (your words).*
-- *`v2_plan_week` is now migration 045 (chunk 53), as you numbered it; 044 is in "For the release" with 042 and 043.*
-- *172: the other eleven display choices are accepted, (l) included; (j), Plan's "CHANGE THE PROGRAM FROM WEEK N" button, follows the screen's rule box and goes to the second display follow-up (d31b).*
-- *The smoke fix (your third bullet: the empty account may have no exercises or exactly the defaults) is pending; chunk 51b's next reviewer makes it, so the smoke reads 51/51.*
-- *What follows: 51b's tests-only retry, 46m, then 46's sixth attempt; d31b; then 52 onward; 58a–64 once 46 merges.*
+*Rewritten at every boundary. Last: 2026-10-19, chunk 51b's review 2: merged (#156) on its tests-only retry.*
+- *Chunk 51b merged (#156): CHANGE THE PROGRAM's DAYS card (new weekdays start the week after the current one) and a stable run's default set rows, an added exercise's included (171, so 51a's interim is over). STAGING_WAITING*
+- *Your smoke answer is built: the empty account may have no exercises or exactly the defaults, and nothing between. The smoke reads 51/51 on staging (125).*
+- *Two new entries, neither blocking: 175 (51b's display choices, D31; recommended: accept all) and 176 (51a's exercise-level writers are tested on the first workout only; recommended: a tests-only follow-up).*
+- *What follows: 46m (migration 044, alone), then the pre-read of 46, then 46's sixth attempt beside d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
+- **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
+- **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, after d31b or inside its scope. Blocks: nothing.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
