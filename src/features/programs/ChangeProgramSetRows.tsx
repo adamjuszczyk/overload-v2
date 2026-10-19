@@ -44,7 +44,9 @@ export interface SetRowsHandlers {
 const MONO: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600 }
 
 const COLUMN_NUMBER = 40
-const COLUMN_REST = 128
+// The REST AFTER column is 128 px wide (board PL1b: 36 + 56 + 36) and gives up to 32 px of it to the rep box on a screen narrower than
+// 360 px, so a rep target still fits there (measured in Chromium at 320 px).
+const REST_COLUMN: CSSProperties = { flex: '0 1 128px', minWidth: 96 }
 
 const CELL: CSSProperties = {
   height: 40,
@@ -54,6 +56,10 @@ const CELL: CSSProperties = {
   cursor: 'pointer',
 }
 
+// The rep box: the target, and for a staged set or a warmup its kind (board PL1b draws `10–12` and `DROPSET · 1` side by side). The box is
+// 40 px high and 115 px wide at 375 px, which holds a number and a short kind but not `10–12` beside `REST-PAUSE · 10`: when the two don't fit on
+// a line the kind goes under the number (the box grows), and a kind wider than the box itself ends in an ellipsis rather than painting over the
+// REST AFTER stepper (display only, provisional under D31; measured in Chromium at 390 and 375 px).
 function RepBox({ target, kind, changed, label, onClick }: { target: string; kind: string | null; changed: boolean; label: string; onClick: () => void }) {
   return (
     <button
@@ -62,13 +68,20 @@ function RepBox({ target, kind, changed, label, onClick }: { target: string; kin
       onClick={onClick}
       style={{
         ...CELL,
+        height: 'auto',
+        minHeight: 40,
         flex: 1,
-        minWidth: 0,
-        padding: '0 10px',
+        // wide enough for `10–12`: on a screen under 360 px the REST AFTER column is what gives way (REST_COLUMN)
+        minWidth: 88,
+        padding: '3px 10px',
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
+        alignContent: 'center',
         justifyContent: 'space-between',
-        gap: 4,
+        columnGap: 4,
+        rowGap: 2,
+        overflow: 'hidden',
         ...hairline(changed ? 'var(--accent)' : 'var(--border)'),
         background: changed ? 'var(--accent-muted)' : 'var(--surface)',
       }}
@@ -78,11 +91,16 @@ function RepBox({ target, kind, changed, label, onClick }: { target: string; kin
         <span
           style={{
             ...MONO,
-            padding: '2px 5px',
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            padding: '2px 4px',
             borderRadius: 4,
             fontSize: 8,
-            letterSpacing: '0.08em',
+            letterSpacing: '0.04em',
             whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
             background: changed ? 'var(--surface)' : 'var(--surface-raised)',
             color: changed ? 'var(--accent)' : 'var(--text-secondary)',
             ...hairline(changed ? 'var(--accent)' : 'var(--border-subtle)'),
@@ -104,9 +122,9 @@ function RestStepper({ name, label, row, index, onRest }: { name: string; label:
       role="group"
       aria-label={`Rest after set ${label} of ${name}`}
       style={{
-        flex: '0 0 auto',
+        ...REST_COLUMN,
         display: 'grid',
-        gridTemplateColumns: '36px 56px 36px',
+        gridTemplateColumns: '32px minmax(0, 1fr) 32px',
         height: 40,
         boxSizing: 'border-box',
         borderRadius: 8,
@@ -152,7 +170,7 @@ export default function ChangeProgramSetRows({ name, sets, handlers }: { name: s
           >
             {sets.all}
           </button>
-          <span style={{ ...MONO, flex: '0 0 auto', width: COLUMN_REST, textAlign: 'center', fontSize: 9, letterSpacing: '0.15em', color: 'var(--text-muted)' }}>REST AFTER</span>
+          <span style={{ ...MONO, ...REST_COLUMN, textAlign: 'center', fontSize: 9, letterSpacing: '0.15em', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>REST AFTER</span>
         </div>
       )}
       {sets.rows.length === 0 && (
@@ -176,7 +194,7 @@ export default function ChangeProgramSetRows({ name, sets, handlers }: { name: s
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span aria-hidden="true" style={{ ...MONO, flex: '0 0 auto', width: COLUMN_NUMBER, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>↳</span>
               <RepBox target={stage.target} kind={null} changed={stage.changed} label={`Stage ${s + 1} of set ${row.label} of ${name}: rep target`} onClick={() => handlers.onStageReps(index, s)} />
-              <span aria-hidden="true" style={{ flex: '0 0 auto', width: COLUMN_REST }} />
+              <span aria-hidden="true" style={REST_COLUMN} />
             </div>
           ))}
         </div>

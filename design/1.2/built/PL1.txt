@@ -1,22 +1,39 @@
-PUSH PULL LEGS · STABLE
+PUSH PULL LEGS · WEEK-DEPENDENT
 CHANGE THE PROGRAM
-Changes start in week 2. Every week from then on copies this.
+Changes start in week 2. Sets are planned in each week, in Plan.
 Your saved program, Push Pull Legs, doesn't change.
 WORKOUTS
 CHANGED IN THIS EDIT
-Full Body
-TUE · THU
-Arms
-SAT
+Push
+MON
+Pull
+WED
+Legs
+THU
+1 · PULL · DAYS
 RENAME
-1 · WARMUP ROUTINE
+M
+T
+W
+T
+F
+S
+S
+Mon is Push's day
+Thu is Legs's day
+At least one day stays on.
+Was Tuesday. New days start in week 3. This week Pull stays on Tuesday; MOVE THIS SESSION in Plan moves just this week.
+2 · WARMUP ROUTINE
 EVERY WEEK
 Band pull-aparts
-Dead hang
 + ADD ITEM
-2 · EXERCISES · DRAG TO REORDER
+3 · EXERCISES · DRAG TO REORDER
+Lat Pulldown
+BACK
+SWAP
+SUPERSET
+REMOVE
 SUPERSET A
-Rest 1:30 after each round
 UNLINK
 A
 Incline Press
@@ -38,9 +55,10 @@ REMOVE
 Cable Curl
 BICEPS · NEW
 TEMPO 3-0-1-0
+New. It lands in week 2 with no sets; add them in Plan.
 SWAP
 REMOVE
-Leg Press
+Face Pull
 REMOVED FROM WEEK 2
 UNDO
 + ADD EXERCISE

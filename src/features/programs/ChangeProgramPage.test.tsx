@@ -17,6 +17,7 @@ import {
   scheduleRowsOf,
   sessionsOf,
   updates,
+  addExercise as addExerciseRow,
   addExerciseTo,
   removeExerciseFrom,
   swapExerciseIn,
@@ -936,11 +937,20 @@ describe('order (W)', () => {
 // ─── Captured for the 390 px screenshots (design/1.2/built) ──────────────────────────────────────────────────────────
 
 describe('draws boards PL1, PL2, PL3, PL7, PL8 and PL9', () => {
-  it('PL1: the screen with a new exercise, a changed marker, a removed one and a superset', async () => {
-    useWorld(stableWorld(), {})
+  it('PL1: the week-dependent screen with its DAYS card (Pull moved to Wednesday), a new exercise, a changed marker, a removed one and a superset', async () => {
+    // Pull gets the board's exercises beside its own: the run copy's rows are all the screen reads
+    const w = weekDependentWorld()
+    addExerciseRow(w, 'pe-inc', 'pull', 'ex-inc', 2)
+    addExerciseRow(w, 'pe-lat', 'pull', 'ex-lat', 3)
+    addExerciseRow(w, 'pe-plank', 'pull', 'ex-plank', 4)
+    useWorld(w, {})
     const { container } = await open()
+    chooseWorkout(/^Pull/)
+    click('Wednesday')
+    click('Tuesday')
+    click('Link Seated Cable Row with the exercise below')
     click('Link Incline Press with the exercise below')
-    click('Remove Leg Press')
+    click('Remove Face Pull')
     click('REMOVE')
     click('+ ADD EXERCISE')
     await pickInSheet('Add exercise', 'Add Cable Curl')

@@ -485,30 +485,16 @@ describe('SAVE invalidates after the write, and the schedule rows are among what
 
 // ─── Captured for the 390 px pictures (design/1.2/built) ─────────────────────────────────────────────────────────────────
 
-describe('draws board PL1 (the week-dependent screen with its DAYS card)', () => {
-  it('PL1: Pull moves from Tuesday to Wednesday, with its new exercise, a changed marker, a removed one and a superset', async () => {
+describe('draws the DAYS card’s states for the 390 px pictures (board PL1 is captured by ChangeProgramPage.test.tsx)', () => {
+  it('a card whose workout has one day, with the other workouts’ days greyed and named', async () => {
     useWorld(weekDependentWorld(), {})
     const { container } = await open()
-    click(/^Pull/)
-    click('Wednesday')
-    click('Tuesday')
-    click('Link Lat Pulldown with the exercise below')
-    click('Remove Face Pull')
-    click('REMOVE')
-    click('+ ADD EXERCISE')
-    const sheet = await screen.findByRole('dialog', { name: 'Add exercise' })
-    fireEvent.click(await within(sheet).findByRole('button', { name: 'Add Cable Curl' }))
-    click('Cable Curl: rest, tempo, unit')
-    fireEvent.change(within(screen.getByRole('dialog', { name: 'Cable Curl' })).getByLabelText('Tempo'), { target: { value: '3-0-1-0' } })
-    fireEvent.click(within(screen.getByRole('dialog', { name: 'Cable Curl' })).getByRole('button', { name: 'Close' }))
-    captureRender('change-program-days-page', container)
+    captureRender('change-program-days-last-day', container)
   })
 
-  it('the DAYS card’s states: a day taken by another workout, the last day, and a day struck through', async () => {
+  it('a card whose workout moved: the new day on, the old one struck through, and the line under it', async () => {
     useWorld(weekDependentWorld(), {})
     const { container } = await open()
-    click(/^Push/)
-    captureRender('change-program-days-last-day', container)
     click(/^Pull/)
     click('Wednesday')
     click('Tuesday')

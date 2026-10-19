@@ -20,7 +20,7 @@ import {
   type World,
 } from './programChange.testutil'
 import { stableWorld, weekDependentWorld } from './programChange.worlds.testutil'
-import { draftFromRunCopy, planProgramChange } from './programChange'
+import { planProgramChange } from './programChange'
 import {
   addExercise,
   addSet,
@@ -64,7 +64,6 @@ function miniWorld(): World {
 
 const start = (w: World): DraftState => initialDraft(runCopyOf(w.db, w.programId, w.mesocycleId), w.planningType)
 const plan = (w: World, s: DraftState, statuses: Record<string, RunChangeStatus> = {}) => planOf(w, s.edit, { statuses })
-const idsOf = (ops: readonly Op[]) => ops.map((o) => ('id' in o ? o.id : (o as { row: { id: string } }).row.id))
 const NOT_STARTED = {}
 const WEEK_2_DONE: Record<string, RunChangeStatus> = { 'p2-fb': 'done' }
 

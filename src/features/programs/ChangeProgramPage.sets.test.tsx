@@ -11,7 +11,6 @@ import {
   NOW,
   addExerciseTo,
   applyOpsToDb,
-  deletes,
   editSetsOf,
   inputOf,
   inserts,
@@ -20,7 +19,6 @@ import {
   scheduleRowsOf,
   sessionsOf,
   swapExerciseIn,
-  updates,
   weekSetOf,
   withReps,
   type World,
@@ -731,6 +729,24 @@ describe('draws board PL1b (the stable screen)', () => {
     press('Add a set to Dip', 2)
     captureRender('change-program-stable-page', container)
   })
+
+  it('the widest rep boxes (for the 375 px check): the longest kind with the most stages, a warmup, a rest of two minutes', async () => {
+    useWorld(stableWorld(), {})
+    const { container } = await open()
+    click('Set 02 of Leg Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Rest-pause/ }))
+    press('More pauses', 9)
+    closeDialog('What is this set?')
+    click('Set 03 of Leg Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Myo-reps/ }))
+    press('More mini-sets', 2)
+    closeDialog('What is this set?')
+    click('Set 01 of Leg Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Warmup/ }))
+    closeDialog('What is this set?')
+    press('More rest after set 02 of Leg Press', 8)
+    captureRender('change-program-stable-widest', container)
+  }, 20000)
 
   it('the pickers as this screen opens them', async () => {
     await open()
