@@ -66,8 +66,10 @@
 //     the swap, in their order, after any sets already added to that exercise"): `movedSetEntries` gives the moved sets
 //     their entries on the new card, places from `nextAddedPlace` on, in the order they stood; 59 writes each one's place
 //     with its log.
-//   - The order: a card's added sets by place, then by their own id (`localId`), whichever record holds the place (the
-//     card's entry, the log, or a draft). Ties come only from two phones adding at once; each phone keeps its own order.
+//   - The order: a card's added sets by place, whichever record holds the place (the card's entry, the log, or a draft). Two
+//     sets in one place come only from two phones adding at once: they go by their log's id, which every phone reads the same
+//     (so two phones never correct each other's numbers back and forth, 178), and a set not logged yet, which only one phone
+//     holds, by its own id.
 //   - 177: "Only an added set's own log carries added_place; its drop and stage logs leave it null." So a place is read from
 //     a head log only (`parentSetId` null), and a drop's log is never taken for an added set, nor for one logged before 044.
 //   - Logged before 044 (a head log of no planned set whose place is null, or absent: `SetLog.addedPlace` is optional,
@@ -740,9 +742,10 @@ function addedDrafts(exercise: OrderExercise): Map<string, { draft: AddedDraft; 
 /**
  * The sets added in the session to `exercise`, in their places (DECISIONS 170, 173, 174): every set the card's list names,
  * every head log of an added set it doesn't name (a reload, a reopened session, another phone), and every draft no listed set
- * has, each where its place puts it, then by its own id. The sets logged before 044 (no place) come first, in the order they
- * were logged (`loggedAt`, then id), and the drafts of such sets after them; every set with a place was added after those.
- * Nothing else orders them: the list's own order, a log's number or a draft's position never moves a set.
+ * has, each where its place puts it, two in one place by their log's id (an open set's own id). The sets logged before 044 (no
+ * place) come first, in the order they were logged (`loggedAt`, then id), and the drafts of such sets after them; every set
+ * with a place was added after those. Nothing else orders them: the list's own order, a log's number or a draft's position
+ * never moves a set.
  */
 function addedSlots(exercise: OrderExercise, session: SessionIndex): AddedSlot[] {
   const ownAdded = isAddedHeadOf(exercise)
@@ -780,14 +783,17 @@ function addedSlots(exercise: OrderExercise, session: SessionIndex): AddedSlot[]
     slots.push({ localId: draft.key.localId, log: null, openType: type, draftKey: draft.key, place })
   }
 
-  // Before 044 (no place): the logs by time, then the drafts of such sets; then every set with a place, by place.
+  // Before 044 (no place): the logs by time, then the drafts of such sets; then every set with a place, by place. Two sets in
+  // one place (two phones adding at once) go by their log's id, which every phone reads the same, so no two phones order them
+  // differently and correct each other's numbers back and forth (178); an open set, which only this phone holds, by its own.
   const group = (slot: AddedSlot): number => (slot.place !== null ? 2 : slot.log !== null ? 0 : 1)
+  const tieKey = (slot: AddedSlot): string => slot.log?.id ?? slot.localId
   return slots.sort(
     (a, b) =>
       group(a) - group(b) ||
       (a.place !== null && b.place !== null ? a.place - b.place : 0) ||
       (a.log !== null && b.log !== null && group(a) === 0 ? timeOf(a.log.loggedAt) - timeOf(b.log.loggedAt) : 0) ||
-      byId(a.localId, b.localId),
+      byId(tieKey(a), tieKey(b)),
   )
 }
 

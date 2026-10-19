@@ -129,9 +129,27 @@ describe('the added sets in their places, whichever record holds the place (DECI
     const rows = resolveRows(orderOf(cards), logs)
     expect(read(rows)).toEqual(['01✓=P1', '02✓=P2', '03✓=e1', '04✓=log.bench.added2', '05·=d3', '06·=e4', '07✓=log.bench.added5'])
     expect(rows.map((r) => r.addedPlace)).toEqual([null, null, 1, 2, 3, 4, 5])
-    // two sets in one place (two phones adding at once): by their own id
+    // two sets in one place (two phones adding at once), neither logged: by their own id
     const tie = [card('bench', 'n', { added: [entry('zz', 1), entry('aa', 1)] })]
     expect(read(resolveRows(orderOf(tie), [headLog('bench', 1)]))).toEqual(['01✓=P1', '02·=aa', '03·=zz'])
+  })
+
+  it('two phones that each added a set at place 1: once both are logged, both phones draw them in one order (by log id), so their draws never correct each other back and forth (178)', () => {
+    // phone 1 added "p1" and logged it (log.b, 02); phone 2, which saw no place, added "p2" at place 1 too and logged it (log.a, 02)
+    const fromPhone1 = { ...addedLog('bench', 1, { number: 2, place: 1 }), id: 'log.b' }
+    const fromPhone2 = { ...addedLog('bench', 2, { number: 2, place: 1 }), id: 'log.a' }
+    const logs = [headLog('bench', 1), fromPhone1, fromPhone2]
+    const phone1 = orderOf([card('bench', 'n', { added: [entry('p1', 1, 'log.b')] })])
+    const phone2 = orderOf([card('bench', 'n', { added: [entry('p2', 1, 'log.a')] })])
+    const ids = (order: ReturnType<typeof orderOf>) => resolveRows(order, logs).filter((r) => r.added).map((r) => r.logId)
+    expect(ids(phone1)).toEqual(['log.a', 'log.b'])
+    expect(ids(phone2)).toEqual(['log.a', 'log.b'])
+    // phone 1 draws and writes its corrections; phone 2 then has none to write: the two agree
+    const corrections = numberCorrections(phone1, logs)
+    expect(corrections).toEqual([{ id: 'log.b', setNumber: 3 }])
+    const after = logs.map((l) => (l.id === 'log.b' ? { ...l, setNumber: 3 } : l))
+    expect(numberCorrections(phone2, after)).toEqual([])
+    expect(numberCorrections(phone1, after)).toEqual([])
   })
 
   it('F2 (review 5\'s probe): a session reopened with two added sets logged as 04 and 05, + ADD SET and LOG: A 04, B 05, N 06, stored 4, 5 and 6, three REVIEW items', () => {
