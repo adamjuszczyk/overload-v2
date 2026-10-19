@@ -1,16 +1,22 @@
-import type { WeightUnit } from '../../types'
+import type { DayOfWeek, WeightUnit } from '../../types'
 import { groupIntoUnits, isLinkedGap, moveUnit, planLinkToggle } from '../../lib/supersetGroups'
-import { normaliseTempo } from '../../lib/plannerVocabulary.js'
+import { normaliseTempo, type RepTarget } from '../../lib/plannerVocabulary.js'
+import type { SetType } from '../../components/pickers/pickerLogic'
 import {
+  daysOfWorkout,
   draftFromRunCopy,
+  validateDays,
   type DraftBlock,
   type DraftExercise,
   type DraftRoutineItem,
+  type DraftSet,
   type DraftWorkout,
   type ProgramChangeRunCopy,
   type ProgramEdit,
 } from './programChange'
-import type { PlanningType } from '../../types'
+import { newSetAfter, withRepTarget, withSetType } from './changeProgramSets'
+import { fullSchedule } from './runSchedule'
+import type { PlanningType, WeeklySchedule } from '../../types'
 
 // Chunk 51a (TASKS-1.2, CHANGE THE PROGRAM) — the screen's local draft and every edit that changes it, as pure functions
 // from one draft to the next. Nothing is written until SAVE hands `state.edit` to `planProgramChange` (chunk 45), which
@@ -113,7 +119,8 @@ export function renameWorkout(state: DraftState, workoutId: string, name: string
 /**
  * A new exercise at the end of the workout. Its unit is a resolved literal (RULES.md: "a program exercise's unit is written
  * as a resolved literal at creation", as `addProgramExercise` does); a week-dependent run holds no sets, and a stable
- * run's default starts with none (SPEC is silent on what an added exercise's default holds; chunk 51b adds the rows).
+ * run's default starts with none: its card's "+ SET" builds it (chunk 51b; `addSet`), and SAVE lands those sets in every
+ * session of the workout that hasn't started (SPEC, How a save lands: "Added exercise ... Stable: the default's sets").
  */
 export function addExercise(state: DraftState, workoutId: string, exerciseId: string, weightUnit: WeightUnit): DraftState {
   const made = nextKey(state, 'e')
@@ -134,6 +141,10 @@ export function addExercise(state: DraftState, workoutId: string, exerciseId: st
  * The new exercise takes the old one's place and superset block, with no rest, tempo or unit of its own (1.1's swap kept the
  * slot's position and block and set nothing else; `programChange.ts` writes the same). Swapping a swapped entry again, or a
  * new one, changes only which exercise it is.
+ *
+ * On a stable run the new exercise takes the old one's sets too ("count, kinds, stages, rep targets": SPEC, How a save lands), and
+ * the card draws them as set rows (chunk 51b), so the draft holds them: the old exercise's default as it stands in the draft. The
+ * planner reads a swapped entry with no sets of its own as exactly this, so carrying them changes nothing it writes.
  */
 export function swapExercise(state: DraftState, workoutId: string, key: string, exerciseId: string): DraftState {
   return mapWorkout(state, workoutId, (w) => {
@@ -150,6 +161,7 @@ export function swapExercise(state: DraftState, workoutId: string, key: string, 
             restAfterSeconds: null,
             tempo: null,
             weightUnit: null,
+            ...(old.sets ? { sets: old.sets } : {}),
             key: old.key,
           }
         : { ...old, exerciseId }
@@ -334,6 +346,102 @@ export function removeRoutineItem(state: DraftState, workoutId: string, key: str
   return mapWorkout(state, workoutId, (w) => ({ ...w, routine: w.routine.filter((r) => r.key !== key) }))
 }
 
+// ─── The default's sets (a stable run; chunk 51b) ────────────────────────────────────────────────────────────────────────
+// A set is named by its place in its exercise's list of sets (`index`, heads only; a stage by its place in its head's `stages`). The
+// screen draws the list it holds and every edit names a row it drew, so an index that isn't there is a mistake in the caller and an
+// error, as an unknown exercise is. A week-dependent run draws no set rows and calls none of these.
+
+const setsOf = (e: DraftEntry): readonly DraftSet[] => e.sets ?? []
+
+function mapEntry(state: DraftState, workoutId: string, key: string, fn: (e: DraftEntry) => DraftEntry): DraftState {
+  return mapWorkout(state, workoutId, (w) => {
+    const i = indexOfKey(w, key)
+    return { ...w, exercises: w.exercises.map((e, j) => (j === i ? fn(e) : e)) }
+  })
+}
+
+function mapSets(state: DraftState, workoutId: string, key: string, fn: (sets: readonly DraftSet[]) => readonly DraftSet[]): DraftState {
+  return mapEntry(state, workoutId, key, (e) => ({ ...e, sets: fn(setsOf(e)) }))
+}
+
+function mapSetAt(state: DraftState, workoutId: string, key: string, index: number, fn: (s: DraftSet) => DraftSet): DraftState {
+  return mapSets(state, workoutId, key, (sets) => {
+    if (!Number.isInteger(index) || index < 0 || index >= sets.length) throw new RangeError(`exercise ${key} has no set ${index}`)
+    return sets.map((s, i) => (i === index ? fn(s) : s))
+  })
+}
+
+/** "+ SET": a Normal set after the last one with that set's rep target (a staged set's own), none when there is no set (`newSetAfter`). */
+export function addSet(state: DraftState, workoutId: string, key: string): DraftState {
+  return mapSets(state, workoutId, key, (sets) => [...sets, newSetAfter(sets[sets.length - 1])])
+}
+
+/** REMOVE THIS SET (the set type picker's): the set leaves the list with its stages; `planProgramChange` soft-removes the default's row. */
+export function removeSet(state: DraftState, workoutId: string, key: string, index: number): DraftState {
+  return mapSets(state, workoutId, key, (sets) => {
+    if (!Number.isInteger(index) || index < 0 || index >= sets.length) throw new RangeError(`exercise ${key} has no set ${index}`)
+    return sets.filter((_, i) => i !== index)
+  })
+}
+
+/** The set type picker's answer for one set (`withSetType`: type, DROPS and REST BETWEEN). */
+export function setSetType(state: DraftState, workoutId: string, key: string, index: number, type: SetType): DraftState {
+  return mapSetAt(state, workoutId, key, index, (s) => withSetType(s, type))
+}
+
+/** One set's rep target (the rep box). A staged set's stages keep their own. */
+export function setSetRepTarget(state: DraftState, workoutId: string, key: string, index: number, target: RepTarget): DraftState {
+  return mapSetAt(state, workoutId, key, index, (s) => withRepTarget(s, target))
+}
+
+/** A stage's own rep target (the rep box on a stage row). */
+export function setStageRepTarget(state: DraftState, workoutId: string, key: string, index: number, stage: number, target: RepTarget): DraftState {
+  return mapSetAt(state, workoutId, key, index, (s) => {
+    if (!Number.isInteger(stage) || stage < 0 || stage >= s.stages.length) throw new RangeError(`set ${index} of ${key} has no stage ${stage}`)
+    return { ...s, stages: s.stages.map((st, j) => (j === stage ? withRepTarget(st, target) : st)) }
+  })
+}
+
+/** ALL, and "Use for all N sets": every head of the exercise, a warmup too (a rep target goes to every head); a stage keeps its own. */
+export function setAllRepTargets(state: DraftState, workoutId: string, key: string, target: RepTarget): DraftState {
+  return mapSets(state, workoutId, key, (sets) => sets.map((s) => withRepTarget(s, target)))
+}
+
+/** The REST AFTER stepper: `rest_seconds` of the default's set, null the chain. */
+export function setSetRestAfter(state: DraftState, workoutId: string, key: string, index: number, seconds: number | null): DraftState {
+  return mapSetAt(state, workoutId, key, index, (s) => ({ ...s, restSeconds: seconds }))
+}
+
+// ─── Weekdays (a weekday run; chunk 51b) ─────────────────────────────────────────────────────────────────────────────────
+
+export type DayToggle =
+  | { ok: true; schedule: WeeklySchedule }
+  | { ok: false; reason: 'taken'; takenBy: string } // another workout's id: "Thu is Push 2's day"
+  | { ok: false; reason: 'last' } // "At least one day stays on"
+
+/**
+ * What tapping a weekday on a workout's DAYS card does, by chunk 45's rule (`validateDays`; SPEC Defaults 2) against the schedule
+ * the DRAFT holds: DECISIONS 169 (Adam, 2026-10-16), "the DAYS card checks the edit as it stands, so two workouts can trade days
+ * in one save". A day another workout holds is refused and names that workout; the last day a workout has can't be turned off
+ * (`hadDays`: the workout had a day when the screen opened; one that never had any isn't asked for one, as the planner's
+ * `planSchedule` has it).
+ */
+export function dayToggle(state: DraftState, workoutId: string, day: DayOfWeek, hadDays: boolean): DayToggle {
+  const current = daysOfWorkout(state.edit.schedule, workoutId)
+  const days = current.includes(day) ? current.filter((d) => d !== day) : [...current, day]
+  if (days.length === 0) {
+    return hadDays ? { ok: false, reason: 'last' } : { ok: true, schedule: { ...fullSchedule(state.edit.schedule), [day]: null } }
+  }
+  const checked = validateDays({ schedule: state.edit.schedule, workoutId, days })
+  return checked.ok ? { ok: true, schedule: checked.schedule } : checked.reason === 'taken' ? { ok: false, reason: 'taken', takenBy: checked.takenBy } : { ok: false, reason: 'last' }
+}
+
+/** The weekday toggled, or the draft as it was when the toggle is refused. */
+export function toggleWorkoutDay(state: DraftState, workoutId: string, day: DayOfWeek, hadDays: boolean): DraftState {
+  const toggle = dayToggle(state, workoutId, day, hadDays)
+  return toggle.ok ? { ...state, edit: { ...state.edit, schedule: toggle.schedule } } : state
+}
+
 // ─── Does the draft differ from where it started? ────────────────────────────────────────────────────────────────────
 
 // The draft without the screen's own handles: what CANCEL compares, and what SAVE checks the run copy against.
@@ -347,7 +455,8 @@ export function draftContent(state: DraftState): string {
       exercises: w.exercises.map(({ key: _key, ...e }) => e),
       routine: w.routine.map(({ key: _key, ...r }) => r),
     })),
-    blocks: state.edit.blocks.filter((b) => referenced.has(b.id)),
+    // In id order: `fetchSupersetBlockRests` reads with no order, and SAVE compares this text from two reads of the same rows.
+    blocks: state.edit.blocks.filter((b) => referenced.has(b.id)).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     schedule: state.edit.schedule,
   })
 }

@@ -1,45 +1,61 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ExercisePickerSheet from '../../components/ExercisePickerSheet'
 import { groupLabel } from '../../components/exercisePickerLogic'
-import { formatRestClock } from '../../components/pickers/pickerLogic'
+import { RepTargetPicker, SetTypePicker, type TargetableSet } from '../../components/pickers'
+import { formatRestClock, stepRest } from '../../components/pickers/pickerLogic'
 import { hairline } from '../../components/pickers/pickerControls'
 import { groupIntoUnits } from '../../lib/supersetGroups'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useSequenceCurrentCycle } from '../plan/useSequenceCurrentCycle'
+import type { RepTarget } from '../../lib/plannerVocabulary'
 import type { DayOfWeek, Exercise, Mesocycle, Program } from '../../types'
 import {
   addExercise,
   addRoutineItem,
+  addSet,
   canLinkBelow,
+  dayToggle,
   editRoutineItem,
+  initialDraft,
   linkWithBelow,
   moveExercise,
   moveExerciseToUnit,
   moveRoutineItem,
   removeExercise,
   removeRoutineItem,
+  removeSet,
   renameWorkout,
+  setAllRepTargets,
   setBlockRest,
   setExerciseRest,
   setExerciseTempo,
   setExerciseUnit,
+  setSetRepTarget,
+  setSetRestAfter,
+  setSetType,
+  setStageRepTarget,
   splitAfter,
   swapExercise,
+  toggleWorkoutDay,
   undoRemove,
   unlinkBlock,
   type DraftEntry,
   type DraftState,
 } from './changeProgramDraft'
+import { allText, kindText, numberSets, repTargetOf, repText, restAfterText, setChanged, setTypeOf, stageChanged } from './changeProgramSets'
 import { dragTarget } from './changeProgramDrag'
+import ChangeProgramDaysCard, { type DayView } from './ChangeProgramDaysCard'
 import ChangeProgramExerciseSheet from './ChangeProgramExerciseSheet'
 import { BlockCard, RemovedLine, type CardBlock, type CardHandlers, type CardItem, type CardMarker } from './ChangeProgramExerciseCard'
+import type { SetRowsView } from './ChangeProgramSetRows'
 import ChangeProgramWarmupCard from './ChangeProgramWarmupCard'
-import { daysOfWorkout, type RunCopyExerciseRow } from './programChange'
-import { scheduleForWeek } from './runSchedule'
+import { RenameButton, RenameRow } from './ChangeProgramRename'
+import { daysCardText, daysOfWorkout, dayTakenText, type DraftSet, type RunCopyExerciseRow } from './programChange'
+import { WEEKDAYS, scheduleForWeek } from './runSchedule'
 import { useChangeProgram, weekOfRun } from './useChangeProgram'
 import { useMesos } from './useMesos'
 import { usePrograms } from './usePrograms'
@@ -145,16 +161,28 @@ interface ScreenProps {
 
 type PickerState = { mode: 'add'; workoutId: string } | { mode: 'swap'; workoutId: string; key: string; exerciseId: string }
 
+// A set picker open on a stable run's card: the set type picker (a set's number), the rep target picker (a set's rep box, a stage's, or ALL).
+type SetPick =
+  | { kind: 'type'; workoutId: string; key: string; index: number }
+  | { kind: 'reps'; workoutId: string; key: string; index: number; stage: number | null }
+  | { kind: 'all'; workoutId: string; key: string }
+
+const DAY_LETTER: Record<DayOfWeek, string> = { monday: 'M', tuesday: 'T', wednesday: 'W', thursday: 'T', friday: 'F', saturday: 'S', sunday: 'S' }
+const DAY_NAME: Record<DayOfWeek, string> = { monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday' }
+
 function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: ScreenProps) {
   const planningType = program.planningType ?? 'week_dependent'
+  const isStable = planningType === 'stable'
   const isSequence = (program.scheduleType ?? 'weekday') === 'sequence'
   const unitWord = isSequence ? 'cycle' : 'week'
   const globalUnit = useSettingsStore((s) => s.weightUnit)
   const screen = useChangeProgram({ meso, program, savedName, currentWeek, onDone })
   const { draft, source, update, rule, startWeek } = screen
+  const { hash } = useLocation()
 
   const [workoutId, setWorkoutId] = useState<string | null>(null)
   const [picker, setPicker] = useState<PickerState | null>(null)
+  const [setPick, setSetPick] = useState<SetPick | null>(null)
   const [sheetKey, setSheetKey] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -164,6 +192,48 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
 
   const rowById = useMemo(() => new Map<string, RunCopyExerciseRow>((source?.runCopy.exercises ?? []).map((e) => [e.id, e])), [source])
 
+  // The default's sets as the screen opened with them, by program-set id: "changed in this edit" is a set against its own original.
+  const originalSets = useMemo(() => {
+    const out = new Map<string, DraftSet>()
+    if (!source || !isStable) return out
+    for (const w of initialDraft(source.runCopy, planningType).edit.workouts) {
+      for (const e of w.exercises) for (const s of e.sets ?? []) if (s.id !== null) out.set(s.id, s)
+    }
+    return out
+  }, [source, isStable, planningType])
+
+  // The route's `#<exerciseId>` (chunk 54b's "CHANGE EVERY WEEK →"): the card of that exercise is scrolled into view, once the screen
+  // has loaded; an exercise in more than one workout opens on the first of them, and an id no card has is ignored.
+  const handledHash = useRef<string | null>(null)
+  const scrollTo = useRef<{ workoutId: string; key: string } | null>(null)
+  useEffect(() => {
+    if (!draft || handledHash.current === hash) return
+    handledHash.current = hash
+    let wanted = ''
+    try {
+      wanted = hash.startsWith('#') ? decodeURIComponent(hash.slice(1)) : ''
+    } catch {
+      wanted = '' // a malformed escape names no exercise
+    }
+    if (wanted === '') return
+    for (const w of draft.edit.workouts) {
+      const found = w.exercises.find((e) => (e.kind === 'kept' ? rowById.get(e.id)?.exerciseId : e.exerciseId) === wanted)
+      if (found) {
+        scrollTo.current = { workoutId: w.id, key: found.key }
+        setWorkoutId(w.id)
+        return
+      }
+    }
+  }, [draft, hash, rowById])
+  useEffect(() => {
+    const target = scrollTo.current
+    if (!target || !draft || (workoutId ?? draft.edit.workouts[0]?.id) !== target.workoutId) return
+    const card = listRef.current?.querySelector(`[data-exercise-key="${target.key}"]`)
+    if (!card) return
+    scrollTo.current = null
+    if (typeof card.scrollIntoView === 'function') card.scrollIntoView({ block: 'start' })
+  })
+
   if (screen.load === 'error') return <LoadError reason={screen.loadError ?? 'Something went wrong.'} onRetry={screen.reload} />
   if (!draft || !source || !rule) return <Spinner />
 
@@ -171,7 +241,10 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
   const selected = workouts.find((w) => w.id === workoutId) ?? workouts[0]
   if (!selected) return <LoadError reason="This program has no workouts." />
 
+  // The weekdays the pills show are the draft's: a day toggled in the DAYS card is on its pill at once (board PL1). What is in force
+  // THIS week (`schedule`) is what the DAYS card says the workout "Was" on.
   const schedule = isSequence ? null : scheduleForWeek(source.scheduleRows, source.runCopy.schedule, currentWeek)
+  const draftSchedule = isSequence ? null : draft.edit.schedule
   const exerciseIdOf = (e: DraftEntry): string => (e.kind === 'kept' ? rowById.get(e.id)?.exerciseId ?? '' : e.exerciseId)
   const exerciseName = (e: DraftEntry): string => screen.exerciseOf(exerciseIdOf(e))?.name ?? 'Exercise'
 
@@ -195,6 +268,29 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
     return out
   }
 
+  // A stable run's card: the default's sets as rows. A kept exercise's sets are marked against their own originals; a new or
+  // swapped-in exercise is marked as a whole (its card carries the accent), and its rows are not outlined one by one (board PL1b).
+  function setRowsOf(e: DraftEntry, letter: string | null): SetRowsView {
+    const sets = e.sets ?? []
+    const numbering = numberSets(sets, letter)
+    const marked = e.kind === 'kept'
+    return {
+      all: allText(sets),
+      rows: sets.map((s, i) => {
+        const original = s.id === null ? undefined : originalSets.get(s.id)
+        return {
+          label: numbering[i].label,
+          target: repText(repTargetOf(s)),
+          kind: kindText(s),
+          changed: marked && setChanged(s, original),
+          rest: restAfterText(s.restSeconds),
+          restSeconds: s.restSeconds,
+          stages: s.stages.map((st) => ({ target: repText(repTargetOf(st)), changed: marked && stageChanged(st, original) })),
+        }
+      }),
+    }
+  }
+
   function itemOf(e: DraftEntry, canLink: boolean, letter: string | null): CardItem {
     const exercise = screen.exerciseOf(exerciseIdOf(e))
     const group = exercise ? groupLabel(exercise) : ''
@@ -205,10 +301,11 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
       muscle: `${group}${tag}`,
       isChanged: e.kind !== 'kept',
       markers: markersOf(e),
-      // A week-dependent run holds no sets here: a new exercise arrives with none (SPEC).
-      note: e.kind === 'added' && planningType === 'week_dependent' ? `New. It lands in ${unitWord} ${startWeek} with no sets; add them in Plan.` : null,
+      // A week-dependent run holds no sets here: a new exercise arrives with none (SPEC). A stable run draws the rows instead.
+      note: e.kind === 'added' && !isStable ? `New. It lands in ${unitWord} ${startWeek} with no sets; add them in Plan.` : null,
       letter,
       canLink,
+      setRows: isStable ? setRowsOf(e, letter) : null,
     }
   }
 
@@ -234,6 +331,10 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
   const entryByKey = (key: string): DraftEntry | undefined => selected.exercises.find((e) => e.key === key)
 
   const edit = (fn: (s: DraftState) => DraftState) => update(fn)
+  const finishRename = (name: string | null) => {
+    setRenaming(false)
+    if (name !== null && name !== selected.name) edit((s) => renameWorkout(s, selected.id, name))
+  }
 
   // ── Drag to reorder: pointer events on the grip; the dragged card follows the pointer and lands where it was let go.
   function onGripPointerDown(blockKey: string, event: ReactPointerEvent<HTMLElement>) {
@@ -276,7 +377,27 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
     onSplitAfter: (key) => edit((s) => splitAfter(s, selected.id, key)),
     onMove: (key, direction) => edit((s) => moveExercise(s, selected.id, key, direction)),
     onGripPointerDown,
+    onSetType: (key, index) => setSetPick({ kind: 'type', workoutId: selected.id, key, index }),
+    onSetReps: (key, index) => setSetPick({ kind: 'reps', workoutId: selected.id, key, index, stage: null }),
+    onStageReps: (key, index, stage) => setSetPick({ kind: 'reps', workoutId: selected.id, key, index, stage }),
+    onAllReps: (key) => setSetPick({ kind: 'all', workoutId: selected.id, key }),
+    onSetRest: (key, index, direction) => {
+      const set = entryByKey(key)?.sets?.[index]
+      if (set) edit((s) => setSetRestAfter(s, selected.id, key, index, stepRest(set.restSeconds, direction)))
+    },
+    onAddSet: (key) => edit((s) => addSet(s, selected.id, key)),
   }
+
+  // ── The set pickers of a stable run's cards (chunk 51b). Each reads the set from the draft as it is now; a pick that no longer names a
+  // set (it was removed, or the workout shown changed) draws nothing.
+  const pickEntry = setPick && setPick.workoutId === selected.id ? entryByKey(setPick.key) : undefined
+  const pickUnit = pickEntry ? units.find((u) => u.some((m) => m.id === pickEntry.key)) : undefined
+  const pickLetter = pickEntry && pickUnit && pickUnit.length >= 2 ? letterOf(pickUnit.findIndex((m) => m.id === pickEntry.key)) : null
+  const pickSets = pickEntry?.sets ?? []
+  const pickNumbering = numberSets(pickSets, pickLetter)
+  const pickSet = setPick && setPick.kind !== 'all' ? pickSets[setPick.index] : undefined
+  const pickHeads: TargetableSet[] = pickSets.map((s, i) => ({ id: String(i), isWarmup: s.isWarmup }))
+  const closeSetPick = () => setSetPick(null)
 
   // ── The exercise ⋯ sheet
   const sheetEntry = sheetKey ? entryByKey(sheetKey) : undefined
@@ -285,9 +406,26 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
   const sheetMembers = sheetBlockId ? selected.exercises.filter((e) => e.supersetBlockId === sheetBlockId) : []
   const sheetIsMember = sheetEntry !== undefined && sheetMembers.length >= 2
 
-  // ── Number the cards: there is no DAYS card until chunk 51b, so the warmup routine is 1 and the exercises 2.
-  const warmupNumber = 1
-  const exercisesNumber = 2
+  // ── Number the cards: a weekday run's DAYS card is 1 (board PL1), the warmup routine 2 and the exercises 3; a sequence run has no DAYS card,
+  // so its routine is 1 and its exercises 2 (DECISIONS 172 (b)).
+  const daysNumber = isSequence ? null : 1
+  const warmupNumber = isSequence ? 1 : 2
+  const exercisesNumber = isSequence ? 2 : 3
+
+  // ── The DAYS card of the selected workout (weekday runs): the toggles are the draft's days, the refusals come from `dayToggle`, which
+  // checks the edit as it stands (DECISIONS 169), and "Was …" is what is in force this week.
+  const hadDays = daysOfWorkout(source.runCopy.schedule, selected.id).length > 0
+  const nameOfWorkout = (id: string) => workouts.find((w) => w.id === id)?.name ?? 'another workout'
+  const dayViews: DayView[] = draftSchedule
+    ? WEEKDAYS.map((day) => {
+        const on = draftSchedule[day] === selected.id
+        const wasInForce = schedule !== null && schedule[day] === selected.id
+        return { day, letter: DAY_LETTER[day], name: DAY_NAME[day], on, was: wasInForce && !on, disabled: !dayToggle(draft, selected.id, day, hadDays).ok }
+      })
+    : []
+  const takenLines = draftSchedule ? WEEKDAYS.filter((day) => draftSchedule[day] !== null && draftSchedule[day] !== selected.id).map((day) => dayTakenText(day, nameOfWorkout(draftSchedule[day]!))) : []
+  const draftDays = draftSchedule ? daysOfWorkout(draftSchedule, selected.id) : []
+  const daysCaption = schedule ? daysCardText({ workoutName: selected.name, oldDays: daysOfWorkout(schedule, selected.id), newDays: draftDays, startWeek: currentWeek + 1 }) : null
 
   const pickerExclude = picker ? (workouts.find((w) => w.id === picker.workoutId)?.exercises ?? []).map(exerciseIdOf) : []
 
@@ -327,7 +465,7 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
             {workouts.map((w) => {
               const on = w.id === selected.id
-              const days = schedule ? daysOfWorkout(schedule, w.id).map((d) => DAY_SHORT[d]).join(' · ') : ''
+              const days = draftSchedule ? daysOfWorkout(draftSchedule, w.id).map((d) => DAY_SHORT[d]).join(' · ') : ''
               return (
                 <button
                   key={w.id}
@@ -360,27 +498,29 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
               )
             })}
           </div>
-          {renaming ? (
-            <RenameRow
-              key={selected.id}
-              initial={selected.name}
-              onDone={(name) => {
-                setRenaming(false)
-                if (name !== null && name !== selected.name) edit((s) => renameWorkout(s, selected.id, name))
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              aria-label={`Rename ${selected.name}`}
-              onClick={() => setRenaming(true)}
-              style={{ ...MONO, alignSelf: 'flex-start', height: 36, padding: '0 10px', borderRadius: 8, ...hairline('var(--border)'), background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, letterSpacing: '0.12em', color: 'var(--text-primary)', cursor: 'pointer' }}
-            >
-              <Pencil size={13} aria-hidden="true" />
-              RENAME
-            </button>
-          )}
+          {isSequence &&
+            (renaming ? (
+              <RenameRow key={selected.id} initial={selected.name} onDone={finishRename} />
+            ) : (
+              <RenameButton name={selected.name} onClick={() => setRenaming(true)} />
+            ))}
         </div>
+
+        {daysNumber !== null && (
+          <ChangeProgramDaysCard
+            key={`days-${selected.id}`}
+            number={daysNumber}
+            workoutName={selected.name}
+            days={dayViews}
+            taken={takenLines}
+            lastDay={hadDays && draftDays.length === 1}
+            caption={daysCaption}
+            renaming={renaming}
+            onToggle={(day) => edit((s) => toggleWorkoutDay(s, selected.id, day, hadDays))}
+            onRenameStart={() => setRenaming(true)}
+            onRenameDone={finishRename}
+          />
+        )}
 
         <ChangeProgramWarmupCard
           key={`routine-${selected.id}`}
@@ -532,8 +672,63 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
           onClose={() => setSheetKey(null)}
         />
       )}
+
+      {/* The set pickers of a stable run (chunk 51b). They write nothing: each answer goes into the draft, and the sheets are mounted here,
+          outside every clickable card (React events from a portal bubble to whatever rendered it). */}
+      {setPick?.kind === 'type' && pickEntry && pickSet && (
+        <SetTypePicker
+          context="change-program"
+          exerciseName={exerciseName(pickEntry)}
+          setNumber={pickNumbering[setPick.index].number}
+          value={setTypeOf(pickSet)}
+          onChange={(next) => edit((s) => setSetType(s, setPick.workoutId, setPick.key, setPick.index, next))}
+          onClose={closeSetPick}
+          onRemove={() => {
+            edit((s) => removeSet(s, setPick.workoutId, setPick.key, setPick.index))
+            closeSetPick()
+          }}
+        />
+      )}
+      {setPick?.kind === 'reps' && pickEntry && pickSet && (
+        <RepTargetPicker
+          exerciseName={exerciseName(pickEntry)}
+          setNumber={pickNumbering[setPick.index].number}
+          value={repTargetOf(setPick.stage === null ? pickSet : pickSet.stages[setPick.stage] ?? pickSet)}
+          // A stage has no siblings to share its target with: "Use for all" is for a set's rep box alone.
+          sets={setPick.stage === null ? pickHeads : pickHeads.slice(0, 1)}
+          onSubmit={({ target, applyToAll }) => {
+            const pick = setPick
+            if (pick.stage !== null) edit((s) => setStageRepTarget(s, pick.workoutId, pick.key, pick.index, pick.stage!, target))
+            else if (applyToAll) edit((s) => setAllRepTargets(s, pick.workoutId, pick.key, target))
+            else edit((s) => setSetRepTarget(s, pick.workoutId, pick.key, pick.index, target))
+            closeSetPick()
+          }}
+          onClose={closeSetPick}
+        />
+      )}
+      {setPick?.kind === 'all' && pickEntry && (
+        <RepTargetPicker
+          exerciseName={exerciseName(pickEntry)}
+          setNumber={1}
+          value={allValue(pickSets)}
+          // ALL always sets every set: one entry here keeps the picker from offering "Use for all" as a choice.
+          sets={pickHeads.slice(0, 1)}
+          onSubmit={({ target }) => {
+            const pick = setPick
+            edit((s) => setAllRepTargets(s, pick.workoutId, pick.key, target))
+            closeSetPick()
+          }}
+          onClose={closeSetPick}
+        />
+      )}
     </div>
   )
+}
+
+// What the rep picker opens on for ALL: the rep target every set has, and none (the picker's NONE, no number) when they differ.
+function allValue(sets: readonly DraftSet[]): RepTarget {
+  const first = sets[0] ? repTargetOf(sets[0]) : ({ type: 'none' } as const)
+  return sets.every((s) => repText(repTargetOf(s)) === repText(first)) ? first : { type: 'none' }
 }
 
 // The run copy's row as a draft entry, for "changed in this edit": the values the screen started from.
@@ -548,35 +743,4 @@ function rowAsEntry(key: string, row: RunCopyExerciseRow | undefined): DraftEntr
     tempo: row?.tempo ?? null,
     weightUnit: row?.weightUnit ?? null,
   }
-}
-
-function RenameRow({ initial, onDone }: { initial: string; onDone: (name: string | null) => void }) {
-  const [text, setText] = useState(initial)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => ref.current?.focus(), [])
-  const blank = text.trim() === ''
-  const commit = () => onDone(blank ? null : text.trim())
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <input
-        ref={ref}
-        aria-label="Workout name"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          if (e.key === 'Escape') onDone(null)
-        }}
-        style={{ flex: 1, minWidth: 0, height: 44, boxSizing: 'border-box', borderRadius: 10, ...hairline('var(--accent)'), borderWidth: 2, background: 'var(--surface)', padding: '0 12px', fontSize: 16, color: 'var(--text-primary)', outline: 'none' }}
-      />
-      <button
-        type="button"
-        disabled={blank}
-        onClick={commit}
-        style={{ ...MONO, flex: '0 0 auto', height: 44, padding: '0 14px', borderRadius: 10, borderWidth: 0, background: 'var(--accent)', color: 'var(--on-accent)', fontWeight: 700, fontSize: 11, letterSpacing: '0.15em', opacity: blank ? 0.5 : 1, cursor: blank ? 'default' : 'pointer' }}
-      >
-        DONE
-      </button>
-    </div>
-  )
 }

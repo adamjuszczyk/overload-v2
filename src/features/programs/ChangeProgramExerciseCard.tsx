@@ -2,6 +2,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowRightLeft, Link as LinkIcon, Trash2 } from 'lucide-react'
 import { hairline } from '../../components/pickers/pickerControls'
 import { SupersetLinkToggle } from '../planner/designFieldEditors'
+import ChangeProgramSetRows, { type SetRowsView } from './ChangeProgramSetRows'
 
 // Chunk 51a (TASKS-1.2; board PL1, SPEC "Looks the same in CHANGE THE PROGRAM as in the workout (12)"): the cards of the EXERCISES
 // list. A single exercise is a card with its name, its muscle group, the markers of what is set on it (REST, TEMPO, …), SWAP,
@@ -31,6 +32,8 @@ export interface CardItem {
   letter: string | null
   /** SUPERSET on this card (it links with the exercise below). */
   canLink: boolean
+  /** A stable run: the default's sets as rows (chunk 51b). A week-dependent run holds no sets here: null. */
+  setRows: SetRowsView | null
 }
 
 export interface CardBlock {
@@ -49,6 +52,13 @@ export interface CardHandlers {
   onSplitAfter: (key: string) => void
   onMove: (key: string, direction: 'up' | 'down') => void
   onGripPointerDown: (blockKey: string, event: ReactPointerEvent<HTMLElement>) => void
+  /** The set rows of a stable run's card (chunk 51b); each names the card by its key and the set by its place in the card's rows. */
+  onSetType: (key: string, index: number) => void
+  onSetReps: (key: string, index: number) => void
+  onStageReps: (key: string, index: number, stage: number) => void
+  onAllReps: (key: string) => void
+  onSetRest: (key: string, index: number, direction: 1 | -1) => void
+  onAddSet: (key: string) => void
 }
 
 const MONO_10: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10 }
@@ -193,6 +203,20 @@ function Item({
             <Marker key={m.label} marker={m} />
           ))}
         </div>
+      )}
+      {item.setRows !== null && (
+        <ChangeProgramSetRows
+          name={item.name}
+          sets={item.setRows}
+          handlers={{
+            onType: (index) => handlers.onSetType(item.key, index),
+            onReps: (index) => handlers.onSetReps(item.key, index),
+            onStageReps: (index, stage) => handlers.onStageReps(item.key, index, stage),
+            onAll: () => handlers.onAllReps(item.key),
+            onRest: (index, direction) => handlers.onSetRest(item.key, index, direction),
+            onAdd: () => handlers.onAddSet(item.key),
+          }}
+        />
       )}
       {item.note !== null && <span style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)' }}>{item.note}</span>}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

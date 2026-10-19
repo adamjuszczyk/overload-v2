@@ -747,9 +747,10 @@ describe('the rule box (SPEC: "Week N is the week of the next session that isnâ€
     useWorld(stableWorld(), { 'p2-fb': 'done' })
     await open()
     expect(screen.getByText('Changes start in week 2. Every week from then on copies this.')).toBeTruthy()
-    // 51a draws a stable run without set rows and without the "no sets" note.
+    // A stable run's lands with its default's sets and has the rows (chunk 51b), not the week-dependent "no sets" note: one "+ SET"
+    // for each of Full Body's four exercises.
     expect(screen.queryByText(/with no sets/)).toBeNull()
-    expect(screen.queryByText('+ SET')).toBeNull()
+    expect(screen.getAllByText('+ SET')).toHaveLength(4)
   })
 
   it("a stable run's new exercise has no \"no sets\" note: its default is the run's, and 51b draws the rows", async () => {
