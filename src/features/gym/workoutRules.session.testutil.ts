@@ -6,7 +6,8 @@
 // they were added, a deleted one taken out, and, at a reopen or a reload, the sets that end with the phone's state taken out.
 // Nothing here decides what a rule decides.
 
-import type { SessionSetChangeType, SetLog } from '../../types'
+import type { SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
+import { reviewItems } from '../plan/review'
 import {
   applySetTypeChange,
   canUnlog,
@@ -40,6 +41,7 @@ import {
   loggedAdded,
   orderOf,
   pending,
+  SESSION,
   takeIn,
   unloggedAdded,
   viewOf,
@@ -217,6 +219,32 @@ export class Session {
   /** The card the row `key` is on, as the card keeps it now. */
   cardOf(key: string): OrderExercise {
     return this.cards.find((c) => c.key === this.row(key).exerciseKey)!
+  }
+
+  /**
+   * What REVIEW (chunk 43's `reviewItems`, the one reader of a set log's number besides the workout) makes of this session
+   * next week, were it finished now: the keys of its items for the sets added in the session (`added-set:<session>:
+   * <exercise>:<w?><number>`, built from each log's stored number). A set log's number is written here and read there
+   * (RULES.md: "a value that one module writes and only another reads is probed through that reader").
+   */
+  reviewAddedSetKeys(): string[] {
+    const plan = (id: string, weekNumber: number) => ({
+      id,
+      workoutDayId: 'wd',
+      weekNumber,
+      exercises: this.cards.map((c, i) => ({ id: c.key, exerciseId: c.exerciseId, position: i, exercise: { name: c.name } })),
+      sets: this.cards.flatMap((c) => c.plannedSets as unknown as WeekPlanSet[]),
+    })
+    const groups = reviewItems({
+      weekNumber: 2,
+      lastWeek: {
+        sessions: [{ id: SESSION, weekPlanId: 'wp1', status: 'completed', date: '2026-10-12', setLogs: this.server.logs, sessionSetChanges: this.server.held() }],
+        plan: [plan('wp1', 1)],
+      },
+      thisWeek: [plan('wp2', 2)],
+      decisions: [],
+    })
+    return groups.flatMap((g) => g.items).filter((e) => e.item.kind === 'added_set').map((e) => e.key)
   }
 
   /**
