@@ -202,7 +202,7 @@ export function addSet(cards: readonly OrderExercise[], key: string, localId: st
 export interface LogOptions {
   /**
    * The `set_number` it was logged with: for a head the planned index (right for a card without warmups; pass the
-   * number the screen showed otherwise, warmups apart), for an added set its place among the added ones.
+   * number the screen showed otherwise, warmups apart), for an added set the number its row showed (its rank, DECISIONS 170).
    */
   number?: number
   skipped?: boolean

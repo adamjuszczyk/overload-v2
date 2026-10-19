@@ -149,6 +149,13 @@ describe('the rows see an open added set\'s type (DECISIONS 161): an added Warmu
     ])
   })
 
+  it('for a listed set the card\'s type is the one read, also while its draft still says another (the card is the live state; the draft is for a reload)', () => {
+    const lagging = [card('bench', 'n n n', { added: [WARMUP, NORMAL], drafts: [draftOf(key(4), NORMAL)] })]
+    expect(rowsOf(lagging).map(brief)).toEqual(['bench W1·', 'bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·'])
+    const otherWay = [card('bench', 'n n n', { added: [NORMAL, NORMAL], drafts: [draftOf(key(4), WARMUP)] })]
+    expect(rowsOf(otherWay).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04·', 'bench 05·'])
+  })
+
   it('the type and the key belong to the set, not to a number: logging the second added set first moves neither', () => {
     // two new added sets, the first a Warmup; the screen logs the second one (as 04) and its entry names the log
     const before = [card('bench', 'n n n', { added: [WARMUP, NORMAL] })]

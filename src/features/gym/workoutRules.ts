@@ -42,8 +42,8 @@
 //     02, with 04 after the logged 03; an added set unlogged after new sets were added before it keeps its number); and
 //     146 (a): a set switched to Warmup leaves the working ranks, so the sets after it close the gap, and one switched from
 //     Warmup takes its place among them again, the sets after it moving up one; a delete is the same as a switch to
-//     Warmup. And 161: an added set's type is the card's, its draft's after an unlog, or its log's, so a Warmup is no
-//     working set wherever it is.
+//     Warmup. And 161: an added set's type is its log's, or while it has none the card's (for a set the card doesn't list,
+//     its draft's), so a Warmup is no working set wherever it is.
 //   - The writers keep the stored numbers equal to the numbers shown: LOG stores `row.number`, and DELETE and a switch to
 //     or from Warmup return the logs whose stored number is not their set's number afterwards (`renumber`): with stored
 //     numbers that are the ranks, exactly the logged working sets after the set, each one down or up one, with its drops.
@@ -119,8 +119,8 @@
 //     remove the drops, and logged drops are deleted only after the confirm (19c). A logged PLANNED head
 //     also gets the `retyped` change, keyed by its planned set (141 (a): next week's REVIEW reads the
 //     type as done through the change rows);
-//   - an added set that is not logged yet has no row to write: its type is the card's own state (or its draft's), and
-//     the `type` of the answer is what the card keeps (DECISIONS 161);
+//   - an added set that is not logged yet has no row to write: its type is the card's own state, and the `type` of the
+//     answer is what the card keeps (DECISIONS 161);
 //   - a set switched to or from Warmup renumbers the working sets as a delete does (DECISIONS 146 (a)):
 //     `renumber` lists the logs whose `set_number` is not their set's rank afterwards (see the numbers above). An open
 //     set has no log of its own to change, but the logged sets after it move with it (an open set keeps its place, so a
@@ -139,8 +139,8 @@
 //       so 01, 02 and 05 logged with 03 and 04 open, 02 deleted, leaves 05 as 04. An open set that is deleted
 //       moves the logged sets after it the same way (151);
 //     * a planned set, logged or not: a `deleted` change that replaces its `retyped` change (the plan has
-//       the slot, and only the change row says it is gone). An added set needs none: the card lowers its
-//       count of added sets;
+//       the slot, and only the change row says it is gone). An added set needs none: the card takes it off
+//       its list;
 //     * a drop on its own, logged or not (board W8): its set has one drop fewer, kept by the change rows
 //       (a `pending_stages` row for a logged head, the `retyped` row for a planned one); a set left with
 //       no drop is a Normal set (DECISIONS 147 (a)): a logged head loses its stage kind and a planned
@@ -185,7 +185,7 @@
 //   is logged again or deleted.
 // - A set type pick with fewer drops than are logged deletes the extra logged drops after the question
 //   (19c asks for Normal; the same question is asked here).
-// - An added set that is not logged yet keeps its type in the card or its draft (above); once logged, the caller writes
+// - An added set that is not logged yet keeps its type in the card (above); once logged, the caller writes
 //   its `pending_stages`. An added set can be switched to Warmup like any set, logged or not: its row is drawn as a
 //   warmup.
 // - An added Warmup sits among the added sets where it was added (170), like any set: it is W-numbered by that place among
