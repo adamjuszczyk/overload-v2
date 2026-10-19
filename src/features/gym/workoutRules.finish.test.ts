@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addRound, finishWarning, resolveRows, sessionOrder } from './workoutRules'
-import { brief, card, deepFreeze, deleted, dropLog, headLog, orderOf, retyped, staged } from './workoutRules.testutil'
+import { addSet, brief, card, deepFreeze, deleted, dropLog, headLog, orderOf, retyped, staged } from './workoutRules.testutil'
 
 // Chunk 46: finishing (SPEC [1.2] "Finishing (11, C6)": "When planned sets aren't logged it says which")
 // and ADD ROUND (Supersets, Defaults 9).
@@ -108,10 +108,13 @@ describe('addRound: one set for every member of the superset (Defaults 9)', () =
     ])
   })
 
-  it('applied, the rounds are A1 B1 A2 B2 A3 B3 A4 — B\'s new set is its third', () => {
-    const added = [card('row', 'n n n', { name: 'Seated Cable Row', added: 1 }), card('lat', 'n n', { name: 'Lateral Raise', added: 1 })]
-    const rows = resolveRows(sessionOrder(added, [{ id: 'blk', members: ['row', 'lat'] }]), [], [])
+  it('applied as the card does (a new set at the end of each member\'s list), the rounds are A1 B1 A2 B2 A3 B3 A4, and each new set has the number returned', () => {
+    const answer = addRound(order, resolveRows(order, [], []), 'blk')
+    let cards = [row, lat]
+    answer.forEach((a, i) => (cards = addSet(cards, a.exerciseKey, `round${i}`)))
+    const rows = resolveRows(sessionOrder(cards, [{ id: 'blk', members: ['row', 'lat'] }]), [], [])
     expect(rows.map(brief)).toEqual(['row A1·', 'lat B1·', 'row A2·', 'lat B2·', 'row A3·', 'lat B3·', 'row A4·'])
+    expect(answer.map((_, i) => rows.find((r) => r.localId === `round${i}`)!.number)).toEqual(answer.map((a) => a.position))
   })
 
   it('counts the sets the members have now: added ones in, deleted ones and warmups out', () => {

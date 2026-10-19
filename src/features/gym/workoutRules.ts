@@ -1308,7 +1308,8 @@ export function finishWarning(order: SessionOrder, logs: readonly LoggedSet[], c
 /**
  * SPEC Defaults 9: "+ ADD ROUND" adds one set to every member of the superset (board W1), whatever each
  * member has (3 and 2 sets become 4 and 3). Returns the new set of each member in block order, with the
- * place it takes; the caller adds one pending set to each.
+ * number it takes; the caller adds one entry to the end of each member's list (`OrderExercise.added`: a new id,
+ * no log, Normal), where it takes that number (DECISIONS 170).
  */
 export function addRound(
   order: SessionOrder,
