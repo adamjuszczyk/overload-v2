@@ -41,13 +41,14 @@ import {
 // stepper all act on the draft with that text settled, so what the button says is what it sets.
 //
 // A picker opens on the set's current target (`initial`, from the caller's `value`): its segment and
-// its numbers. The boards' example numbers (8, 8-10, RIR 2, 1-2) are only where a segment the set
-// doesn't have starts, and a set with no target shows no number at all until a segment is picked
-// (DECISIONS 128, Adam 2026-10-15; `pickerLogic.ts`'s `draftFromRepTarget`, `pickTargetMode`). Each
-// segment keeps its own numbers while the sheet is open and a switch changes none: 12 reps gives RANGE
-// 8-10, 6-9 gives NUMBER 8, and 6-9, NUMBER, RANGE is 6-9 again (DECISIONS 155 (a)). A segment tap
-// settles the text still in a box into the draft and then clears all the typed text, so a box the
-// segment hid never shows its old text when the segment comes back.
+// its numbers. A segment the set doesn't have starts from the set's own value (DECISIONS 155 (a), Adam
+// 2026-10-16: NUMBER n gives RANGE n-(n+2), RANGE a-b gives NUMBER a), and the boards' example numbers
+// (8, 8-10, RIR 2, 1-2) only where the set has no target at all, which shows no number until a segment
+// is picked (`pickerLogic.ts`'s `draftFromRepTarget`, `pickTargetMode`). Each segment keeps its own
+// numbers while the sheet is open and a switch changes none: 12 reps gives RANGE 12-14, 6-9 gives NUMBER 6,
+// and 6-9, NUMBER, RANGE is 6-9 again. A segment tap settles the text still in a box into the draft and
+// then clears all the typed text, so a box the segment hid never shows its old text when the segment
+// comes back.
 
 interface TargetPickerSheetProps {
   kind: TargetKind

@@ -386,8 +386,9 @@ describe.each([
         try {
           ops = planProgramChange({ ...inputOf(w, s.edit), newId: idGen(`w${walk}s${step}-`) }).ops
           applyOpsToDb(cloneDb(w.db), ops)
-          // DECISIONS 157: a save never deletes a run's program or one of its workouts (only week plan rows and routine items).
-          if (ops.some((o) => o.op === 'delete' && (o.table === 'v2_programs' || o.table === 'v2_workout_days'))) throw new Error('a delete on programs or workout days')
+          // DECISIONS 157: a save never deletes a run's program or one of its workouts (only week plan rows and routine items). The op type
+          // already refuses both tables (157 (c)), so the table is read as plain text: this checks the lists the planner really made.
+          if (ops.some((o) => o.op === 'delete' && ((o.table as string) === 'v2_programs' || (o.table as string) === 'v2_workout_days'))) throw new Error('a delete on programs or workout days')
         } catch (e) {
           throw new Error(`walk ${walk}, step ${step}: ${(e as Error).message}`)
         }

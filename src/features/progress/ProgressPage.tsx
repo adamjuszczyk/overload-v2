@@ -40,7 +40,7 @@ export default function ProgressPage() {
             className="flex-1 py-2.5 text-xs font-bold tracking-widest"
             style={{
               backgroundColor: activeTab === tab.id ? 'var(--accent)' : 'var(--surface)',
-              color: activeTab === tab.id ? 'var(--on-accent)' : 'var(--text-muted)',
+              color: activeTab === tab.id ? 'var(--base)' : 'var(--text-muted)',
               fontFamily: 'var(--font-mono)',
             }}
           >

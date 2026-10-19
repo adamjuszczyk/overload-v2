@@ -10,7 +10,10 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // PROGRAM FROM WEEK N' / 'FROM CYCLE N' at the bottom of the week panel in this chunk — the only Plan change here"). This file
 // proves the button and nothing behind it: where it is, the number it names, that a past week has none, and that it opens the
 // route the app wires to the screen. N is chunk 45's `changeStartWeek` over the run's planned weeks and the sessions Plan knows
-// are done, so the fixtures differ in exactly what N depends on: which plan rows are done.
+// are done or in progress, so the fixtures differ in exactly what N depends on: which plan rows are done and which are in progress.
+// The second display follow-up (DECISIONS 172 (j), Adam, 2026-10-19: "The button follows the screen.") reads the screen's own
+// statuses, so a session in progress is left as it is and the changes start the week after (the last describe below; the twin
+// that holds the button against the screen's rule box on the same rows is PlanPage.changeProgramButton.screenRule.test.tsx).
 
 // The run started two Mondays ago, so today is in week 3 whatever day this runs.
 const startDate = format(startOfWeek(subWeeks(new Date(), 2), { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -30,6 +33,7 @@ const state = vi.hoisted(() => ({
   program: null as unknown as Program,
   plans: [] as WeekPlan[],
   done: new Set<string>(),
+  statuses: new Map<string, 'done' | 'in_progress'>(),
   cycle: 3,
 }))
 
@@ -59,6 +63,7 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => state.statuses }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false }) }))
 vi.mock('./useWeekPlan', () => ({
@@ -87,9 +92,17 @@ beforeEach(() => {
   state.program = makeProgram()
   state.plans = []
   state.done = new Set()
+  state.statuses = new Map()
   state.cycle = 3
 })
 afterEach(() => cleanup())
+
+// What Plan knows of the plan rows' sessions: the rows with a session done (what locks a row: `useDoneWeekPlanIds`) and the statuses
+// the button reads (`usePlanRowStatuses`: done or in progress; a row missing from it is not started).
+function sessions({ done = [], inProgress = [] }: { done?: string[]; inProgress?: string[] }) {
+  state.done = new Set(done)
+  state.statuses = new Map<string, 'done' | 'in_progress'>([...done.map((id) => [id, 'done'] as const), ...inProgress.map((id) => [id, 'in_progress'] as const)])
+}
 
 function LocationProbe() {
   return <div>AT {useLocation().pathname}</div>
@@ -123,21 +136,21 @@ describe('the CHANGE THE PROGRAM button at the foot of the week panel', () => {
   it('names the week of the first session that has not started, not simply the current week', () => {
     state.plans = [plan('w3-a', 3), plan('w3-b', 3), plan('w4-a', 4)]
     // Everything in week 3 is done: the changes start where the next not-done session is.
-    state.done = new Set(['w3-a', 'w3-b'])
+    sessions({ done: ['w3-a', 'w3-b'] })
     renderPlan()
     expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 4')
   })
 
   it('with nothing planned beyond a finished current week, names the week after it', () => {
     state.plans = [plan('w3-a', 3), plan('w3-b', 3)]
-    state.done = new Set(['w3-a', 'w3-b'])
+    sessions({ done: ['w3-a', 'w3-b'] })
     renderPlan()
     expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 4')
   })
 
   it('with a session of the current week not done, a done one earlier in that week does not move it', () => {
     state.plans = [plan('w3-a', 3), plan('w3-b', 3)]
-    state.done = new Set(['w3-a'])
+    sessions({ done: ['w3-a'] })
     renderPlan()
     expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 3')
   })
@@ -170,8 +183,68 @@ describe('the CHANGE THE PROGRAM button at the foot of the week panel', () => {
     state.program = makeProgram({ scheduleType: 'sequence' })
     state.cycle = 5
     state.plans = [plan('c5-a', 5), plan('c5-b', 5)]
-    state.done = new Set(['c5-a'])
+    sessions({ done: ['c5-a'] })
     renderPlan()
     expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM CYCLE 5')
+  })
+})
+
+// DECISIONS 172 (j), Adam, 2026-10-19: "Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when
+// the week's last open session is in progress ... The button follows the screen." The screen's N is the week of the first session that
+// has not STARTED (`changeStartWeek` over done, in progress and not started): a session in progress is left as it is, so the changes
+// start the week after it. The button used to count done sessions only, so on the day a week's last open session was the one in
+// progress it named that week and the screen's rule box the next.
+describe('a session in progress is left as it is: the button names the week the screen names (DECISIONS 172 (j))', () => {
+  it("the week's last open session in progress: the week after, with a week planned after it", () => {
+    state.plans = [plan('w3-a', 3), plan('w3-b', 3), plan('w4-a', 4)]
+    sessions({ done: ['w3-a'], inProgress: ['w3-b'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 4')
+  })
+
+  it("the week's last open session in progress, nothing planned after it: the week after the last one there is", () => {
+    state.plans = [plan('w3-a', 3), plan('w3-b', 3)]
+    sessions({ done: ['w3-a'], inProgress: ['w3-b'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 4')
+  })
+
+  it('the only session of the week in progress (none done yet): still the week after', () => {
+    state.plans = [plan('w3-a', 3)]
+    sessions({ inProgress: ['w3-a'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 4')
+  })
+
+  it('a session in progress does not move it while a session of the same week has not started: that one is where the changes start', () => {
+    state.plans = [plan('w3-a', 3), plan('w3-b', 3), plan('w3-c', 3)]
+    sessions({ done: ['w3-a'], inProgress: ['w3-b'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 3')
+  })
+
+  it('a session in progress in an earlier week is not a session from this week on: it moves nothing', () => {
+    // the current week is 3; week 2's session is still in progress (never finished), and week 3 has not started
+    state.plans = [plan('w2-a', 2), plan('w3-a', 3)]
+    sessions({ inProgress: ['w2-a'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 3')
+  })
+
+  it('a sequence run: the cycle after the one whose last open slot is in progress', () => {
+    state.program = makeProgram({ scheduleType: 'sequence' })
+    state.cycle = 5
+    state.plans = [plan('c5-a', 5), plan('c5-b', 5)]
+    sessions({ done: ['c5-a'], inProgress: ['c5-b'] })
+    renderPlan()
+    expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM CYCLE 6')
+  })
+
+  it('what locks a row is unchanged: a session in progress locks nothing, and the button is there either way', () => {
+    state.plans = [plan('w3-a', 3)]
+    sessions({ inProgress: ['w3-a'] })
+    expect(state.done.has('w3-a')).toBe(false)
+    renderPlan()
+    expect(screen.queryByRole('button', { name: BUTTON })).not.toBeNull()
   })
 })

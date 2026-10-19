@@ -44,7 +44,7 @@ export default function PwaUpdateNotice() {
           style={{
             minHeight: 44,
             backgroundColor: 'var(--accent)',
-            color: 'var(--on-accent)',
+            color: 'var(--base)',
             fontFamily: 'var(--font-mono)',
             opacity: isReloading ? 0.6 : 1,
           }}
