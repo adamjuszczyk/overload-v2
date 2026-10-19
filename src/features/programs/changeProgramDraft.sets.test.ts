@@ -618,8 +618,8 @@ describe('a week-dependent run takes the day toggles too', () => {
 // The first version of these tests ran every set edit on Full Body (the first workout) and every REMOVE THIS SET on the last set of an
 // exercise, so six writers could pick the wrong set or the wrong workout and still pass (RULES.md, "A writer that takes an item's place
 // and a selected container"). The fixture here has two workouts with two exercises of three sets each and no two sets alike, and each
-// edit is run on the first, a middle and the last set of each exercise of each workout. What it should have done is written beside it by
-// plain array operations on a copy of the draft (`expectedAfter`): the walk at the end does the same on random sequences.
+// edit is run on the first, a middle and the last set of each exercise of each workout. What the edit should leave is written beside it by
+// plain array operations on a copy of the draft (`expectedAfter`), and the walk at the end does the same on random sequences.
 
 interface Place {
   workoutId: string
@@ -635,7 +635,7 @@ const PLACES: readonly Place[] = [
 ]
 const POSITIONS = [0, 1, 2] as const
 const entryOf = (s: DraftState, t: Place) => s.edit.workouts.find((x) => x.id === t.workoutId)!.exercises.find((e) => e.key === t.key)!
-const setsOfTarget = (s: DraftState, t: Place): readonly DraftSet[] => entryOf(s, t).sets ?? []
+const setsOfPlace = (s: DraftState, t: Place): readonly DraftSet[] => entryOf(s, t).sets ?? []
 
 // The draft the edit should leave: a copy of `before` in which the named exercise's sets went through `change`, plain arrays and indexes.
 function expectedAfter(before: DraftState, t: Place, change: (sets: DraftSet[]) => DraftSet[]): DraftState {
@@ -670,7 +670,7 @@ describe('a set edit changes the set it names, in the exercise and the workout i
   it('the fixture: two workouts, two exercises each, three sets each, and no two sets of an exercise alike', () => {
     expect(base.edit.workouts.map((x) => x.id)).toEqual(['fb', 'arms'])
     for (const t of PLACES) {
-      const sets = setsOfTarget(base, t)
+      const sets = setsOfPlace(base, t)
       expect(sets.map((s) => s.id)).toEqual([1, 2, 3].map((n) => `${t.row}-s${n}`))
       const shapes = sets.map((s) => JSON.stringify([s.repMin, s.repMax, s.isAmrap, s.restSeconds, s.stages.length, s.stageKind]))
       expect(new Set(shapes).size).toBe(3)
@@ -681,7 +681,7 @@ describe('a set edit changes the set it names, in the exercise and the workout i
     for (const t of PLACES) {
       for (const i of POSITIONS) {
         const after = removeSet(base, t.workoutId, t.key, i)
-        const left = setsOfTarget(after, t).map((s) => s.id)
+        const left = setsOfPlace(after, t).map((s) => s.id)
         expect({ t: t.name, i, left }).toEqual({ t: t.name, i, left: [1, 2, 3].map((n) => `${t.row}-s${n}`).filter((_, j) => j !== i) })
         expect({ t: t.name, i, after }).toEqual({ t: t.name, i, after: expectedAfter(base, t, (sets) => [...sets.slice(0, i), ...sets.slice(i + 1)]) })
       }
@@ -692,11 +692,11 @@ describe('a set edit changes the set it names, in the exercise and the workout i
     for (const t of PLACES) {
       const after = addSet(base, t.workoutId, t.key)
       expect({ t: t.name, after }).toEqual({ t: t.name, after: expectedAfter(base, t, (sets) => [...sets, newSetAfter(sets[sets.length - 1])]) })
-      const sets = setsOfTarget(after, t)
+      const sets = setsOfPlace(after, t)
       expect({ t: t.name, text: repText(repTargetOf(sets[3])) }).toEqual({ t: t.name, text: repText(repTargetOf(sets[2])) })
     }
     // the last set of Dip is a staged one at 5: the new set has its 5, not its stage's 3
-    expect(repText(repTargetOf(setsOfTarget(addSet(base, 'arms', 'e:pe-dip'), PLACES[3])[3]))).toBe('5')
+    expect(repText(repTargetOf(setsOfPlace(addSet(base, 'arms', 'e:pe-dip'), PLACES[3])[3]))).toBe('5')
   })
 
   it('the set type: the set at that place takes the answer, a different one for every place', () => {
@@ -736,7 +736,7 @@ describe('a set edit changes the set it names, in the exercise and the workout i
 
   it('a stage’s rep target on a set that has stages of its own, not the last set: Incline Press set 02 and the other places', () => {
     const t = PLACES[1]
-    expect(setsOfTarget(base, t)[1].stages).toHaveLength(1)
+    expect(setsOfPlace(base, t)[1].stages).toHaveLength(1)
     const after = setStageRepTarget(base, t.workoutId, t.key, 1, 0, { type: 'amrap' })
     expect(after).toEqual(expectedAfter(base, t, (sets) => at(sets, 1, (s) => ({ ...s, stages: [{ ...s.stages[0], repMin: null, repMax: null, isAmrap: true }] }))))
     // the last set's stage (Dip's set 03) is the other end
@@ -773,6 +773,52 @@ describe('a set edit changes the set it names, in the exercise and the workout i
   })
 })
 
+describe('an index that names no set is an error in every set edit, the first one past the end included (review 1)', () => {
+  const refusedWithRangeError = (fn: () => unknown): boolean => {
+    try {
+      fn()
+      return false
+    } catch (e) {
+      return e instanceof RangeError
+    }
+  }
+  const base = start(unevenStableWorld())
+  const dip = PLACES[3]
+  const none: RepTarget = { type: 'none' }
+  // each takes a set's place; Dip has three sets, so 0, 1 and 2 name one and 3 is the first value past the end
+  const BY_PLACE: Record<string, (i: number) => DraftState> = {
+    removeSet: (i) => removeSet(base, dip.workoutId, dip.key, i),
+    setSetType: (i) => setSetType(base, dip.workoutId, dip.key, i, { kind: 'normal' }),
+    setSetRepTarget: (i) => setSetRepTarget(base, dip.workoutId, dip.key, i, none),
+    setSetRestAfter: (i) => setSetRestAfter(base, dip.workoutId, dip.key, i, 30),
+    setStageRepTarget: (i) => setStageRepTarget(base, dip.workoutId, dip.key, i, 0, none),
+  }
+  it.each(Object.keys(BY_PLACE))('%s: a place before the first, the first past the last, a fraction and not-a-number are refused; the three sets’ places are not', (name) => {
+    for (const i of [-1, 3, 4, 0.5, Number.NaN]) expect({ name, i, refused: refusedWithRangeError(() => BY_PLACE[name](i)) }).toEqual({ name, i, refused: true })
+    // Dip's third set is its only staged one: the other two have no stage to name, so for the stage edit only place 2 is a set it can name
+    for (const i of name === 'setStageRepTarget' ? [2] : [0, 1, 2]) expect(() => BY_PLACE[name](i)).not.toThrow()
+  })
+
+  it('a stage: a place before the first, the first past the last, a fraction and not-a-number are refused; the stage that is there is not', () => {
+    const inc = PLACES[1] // its second set has one stage
+    const at = (stage: number) => setStageRepTarget(base, inc.workoutId, inc.key, 1, stage, none)
+    for (const stage of [-1, 1, 2, 0.5, Number.NaN]) expect(() => at(stage)).toThrow(RangeError)
+    expect(() => at(0)).not.toThrow()
+  })
+
+  it('an exercise or a workout that is not there is refused, whatever the place', () => {
+    for (const [workoutId, key] of [['fb', 'e:nope'], ['nobody', 'e:pe-leg'], ['arms', 'e:pe-leg']] as const) {
+      expect(() => addSet(base, workoutId, key)).toThrow(RangeError)
+      expect(() => removeSet(base, workoutId, key, 0)).toThrow(RangeError)
+      expect(() => setSetType(base, workoutId, key, 0, { kind: 'normal' })).toThrow(RangeError)
+      expect(() => setSetRepTarget(base, workoutId, key, 0, none)).toThrow(RangeError)
+      expect(() => setStageRepTarget(base, workoutId, key, 0, 0, none)).toThrow(RangeError)
+      expect(() => setAllRepTargets(base, workoutId, key, none)).toThrow(RangeError)
+      expect(() => setSetRestAfter(base, workoutId, key, 0, 15)).toThrow(RangeError)
+    }
+  })
+})
+
 describe('REMOVE THIS SET through the planner and the tables: the set named goes from the default and from each session that still matches, the others stay (review 1, P1)', () => {
   const FIRST_EXERCISE = [PLACES[0], PLACES[2]] as const
   const PLACE_NAME = ['first', 'middle', 'last'] as const
@@ -797,9 +843,9 @@ describe('REMOVE THIS SET through the planner and the tables: the set named goes
     }
     // what the screen would read back is the draft: the remaining sets, in order
     const reread = initialDraft(runCopyOf(after, world.programId, world.mesocycleId), 'stable')
-    expect(setsOfTarget(reread, t).map((s) => s.id)).toEqual([1, 2, 3].map((n) => `${t.row}-s${n}`).filter((id) => id !== gone))
+    expect(setsOfPlace(reread, t).map((s) => s.id)).toEqual([1, 2, 3].map((n) => `${t.row}-s${n}`).filter((id) => id !== gone))
     // every other exercise of the run, and the other workout's sessions, are exactly as they were
-    for (const other of PLACES.filter((x) => x.row !== t.row)) expect(setsOfTarget(reread, other)).toEqual(setsOfTarget(before, other))
+    for (const other of PLACES.filter((x) => x.row !== t.row)) expect(setsOfPlace(reread, other)).toEqual(setsOfPlace(before, other))
     const otherPlan = t.workoutId === 'fb' ? 'arms' : 'fb'
     for (const p of [1, 2, 3]) expect(after.v2_week_plan_sets.filter((r) => r.week_plan_id === `p${p}-${otherPlan}`)).toEqual(world.db.v2_week_plan_sets.filter((r) => r.week_plan_id === `p${p}-${otherPlan}`))
     // a done week is not written: the first week's rows are all still there

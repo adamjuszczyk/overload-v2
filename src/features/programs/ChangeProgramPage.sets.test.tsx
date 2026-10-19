@@ -25,7 +25,7 @@ import {
 } from './programChange.testutil'
 import { sequenceWorld, stableWorld, unevenStableWorld } from './programChange.worlds.testutil'
 import { draftFromRunCopy, planProgramChange, type DraftSet, type Op, type RunChangeStatus } from './programChange'
-import { kindText, newSetAfter, repTargetOf, repText, restAfterText, withRepTarget, withSetType } from './changeProgramSets'
+import { kindText, newSetAfter, repTargetOf, repText, restAfterText, setTypeOf, withRepTarget, withSetType } from './changeProgramSets'
 import type { SetType } from '../../components/pickers/pickerLogic'
 import type { RepTarget } from '../../lib/plannerVocabulary'
 import type { ChangeProgramSource } from './changeProgramService'
@@ -1073,6 +1073,8 @@ function answerReps(target: RepTarget, useForAll: boolean | undefined) {
         ? { segment: 'RANGE' as const, from: String(target.min), to: String(target.max) }
         : { segment: 'AMRAP' as const }
   pickReps('Rep target', { ...how, useForAll }, /^SET /)
+  // the answer closes the sheet
+  expect(screen.queryByRole('dialog')).toBeNull()
 }
 
 // A set's rep box: opened, held against the set's own target and its eyebrow, answered, and the box now says the answer.
@@ -1082,8 +1084,6 @@ function repBoxAnswer(x: Ex, i: number, was: DraftSet, target: RepTarget, useFor
   expect(within(dialog('Rep target')).getByText(`${x.name} · SET ${n2(i)}`)).toBeTruthy()
   answerReps(target, useForAll)
 }
-
-const withSetTypeAt = (sets: readonly DraftSet[], i: number, answer: 'warmup'): DraftSet[] => at(sets, i, (s) => withSetType(s, TYPE_OF[answer]))
 
 type TypeAnswer = 'dropset 1' | 'dropset 2' | 'dropset 3' | 'rest-pause 1' | 'rest-pause 2' | 'cluster 1' | 'normal' | 'warmup'
 const TYPE_OF: Record<TypeAnswer, SetType> = {
@@ -1096,10 +1096,27 @@ const TYPE_OF: Record<TypeAnswer, SetType> = {
   normal: { kind: 'normal' },
   warmup: { kind: 'warmup' },
 }
-// A set's number opens the set type picker; the answer is a row of its list and, for a staged kind, more of its stepper.
-function typeAnswer(x: Ex, i: number, answer: TypeAnswer, row: { label: string; eyebrow: string } = { label: n2(i), eyebrow: n2(i) }) {
+const withSetTypeAt = (sets: readonly DraftSet[], i: number, answer: TypeAnswer): DraftSet[] => at(sets, i, (s) => withSetType(s, TYPE_OF[answer]))
+// The set type picker as it opened: the row picked and, under a staged kind, the number its stepper says.
+function typeReads(): string {
+  const sheet = dialog('What is this set?')
+  const picked = within(within(sheet).getByRole('group', { name: 'Set type' })).getAllByRole('button').find((b) => b.getAttribute('aria-pressed') === 'true')
+  const kind = /^(Normal|Warmup|Dropset|Rest-pause|Myo-reps|Cluster)/.exec(picked?.textContent ?? '')?.[1] ?? 'nothing picked'
+  const more = within(sheet).queryByRole('button', { name: /^More (drops|pauses|mini-sets|clusters)$/ })
+  return more ? `${kind} ${more.previousElementSibling?.textContent ?? '?'}` : kind
+}
+const STAGED_NAME: Record<string, string> = { dropset: 'Dropset', rest_pause: 'Rest-pause', myo_reps: 'Myo-reps', cluster: 'Cluster' }
+function typeReadsOf(s: DraftSet): string {
+  const type = setTypeOf(s)
+  return type.kind === 'normal' ? 'Normal' : type.kind === 'warmup' ? 'Warmup' : `${STAGED_NAME[type.stageKind]} ${type.stageCount}`
+}
+
+// A set's number opens the set type picker (on the set's own type, with its eyebrow); the answer is a row of its list and, for a staged kind,
+// more of its stepper. `row` is for a list whose numbers a warmup has changed: the row's own label, and the number the eyebrow says.
+function typeAnswer(x: Ex, i: number, answer: TypeAnswer, was?: DraftSet, row: { label: string; eyebrow: string } = { label: n2(i), eyebrow: n2(i) }) {
   click(`Set ${row.label} of ${x.name}: type`)
   expect(within(dialog('What is this set?')).getByText(`${x.name} · SET ${row.eyebrow}`)).toBeTruthy()
+  if (was) expect({ x: x.name, i, opened: typeReads() }).toEqual({ x: x.name, i, opened: typeReadsOf(was) })
   const [kind, count] = answer.split(' ')
   const option = kind === 'normal' ? /^Normal/ : kind === 'warmup' ? /^Warmup/ : kind === 'dropset' ? /^Dropset/ : kind === 'cluster' ? /^Cluster/ : /^Rest-pause/
   fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: option }))
@@ -1141,8 +1158,9 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
     const edits: SetEdit[] = []
     for (const { x, presses, seconds } of RESTS.filter((r) => r.x.workout === wk)) {
       presses.forEach(([direction, times], i) => press(`${direction === 'more' ? 'More' : 'Less'} rest after set ${n2(i)} of ${x.name}`, times))
-      edits.push([x, (sets) => sets.map((s, i) => ({ ...s, restSeconds: seconds[i] }))])
-      expectRowsOf(x, applyEdits(draftOf(before), [[x, (sets) => sets.map((s, i) => ({ ...s, restSeconds: seconds[i] }))]]).workouts.flatMap((w) => w.exercises).filter((en) => en.kind === 'kept' && en.id === x.row)[0].sets!)
+      const edit: SetEdit = [x, (sets) => sets.map((s, i) => ({ ...s, restSeconds: seconds[i] }))]
+      edits.push(edit)
+      expectRowsOf(x, setsIn(applyEdits(draftOf(before), [edit]), x))
     }
     await saveAndExpect(before, edits)
   }, 20000)
@@ -1162,10 +1180,11 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
     for (const x of EXERCISES_OF[wk]) {
       const answers = TYPES_OF[x.row]
       // the last set first: a warmup there leaves the numbers of the sets before it as they are
-      for (const i of [2, 1, 0]) typeAnswer(x, i, answers[i])
-      edits.push([x, (sets) => sets.map((s, i) => withSetType(s, TYPE_OF[answers[i]]))])
-      const want = applyEdits(draftOf(before), [[x, (sets) => sets.map((s, i) => withSetType(s, TYPE_OF[answers[i]]))]])
-      expect({ x: x.name, boxes: repBoxes(x) }).toEqual({ x: x.name, boxes: setsIn(want, x).map(boxTextOf) })
+      const was = setsIn(draftOf(before), x)
+      for (const i of [2, 1, 0]) typeAnswer(x, i, answers[i], was[i])
+      const edit: SetEdit = [x, (sets) => sets.map((s, i) => withSetType(s, TYPE_OF[answers[i]]))]
+      edits.push(edit)
+      expectRowsOf(x, setsIn(applyEdits(draftOf(before), [edit]), x))
     }
     await saveAndExpect(before, edits)
   }, 20000)
@@ -1285,9 +1304,10 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
     click(TAB[wk])
     const [a, b] = EXERCISES_OF[wk]
     // a: set 01 a dropset of three drops, set 02 a cluster, set 03 a rest-pause of two pauses
-    typeAnswer(a, 2, 'rest-pause 2')
-    typeAnswer(a, 1, 'cluster 1')
-    typeAnswer(a, 0, 'dropset 3')
+    const wasA = setsIn(draftOf(before), a)
+    typeAnswer(a, 2, 'rest-pause 2', wasA[2])
+    typeAnswer(a, 1, 'cluster 1', wasA[1])
+    typeAnswer(a, 0, 'dropset 3', wasA[0])
     const stageTargets: ReadonlyArray<readonly [number, number, RepTarget]> = [
       [0, 2, { type: 'range', min: 8, max: 10 }],
       [2, 1, { type: 'number', value: 3 }],
@@ -1298,6 +1318,8 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
     ]
     for (const [i, s, target] of stageTargets) {
       click(`Stage ${s + 1} of set ${n2(i)} of ${a.name}: rep target`)
+      // a new stage has no target of its own: the picker opens on none, not on its set's or on another stage's
+      expect({ i, s, opened: pickerReads() }).toEqual({ i, s, opened: 'NONE' })
       // a stage has no siblings to share its target with
       expect(within(dialog('Rep target')).queryByRole('checkbox')).toBeNull()
       expect(within(dialog('Rep target')).getByText(`${a.name} · SET ${n2(i)}`)).toBeTruthy()
@@ -1394,7 +1416,7 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
   ])('after a warmup: REMOVE THIS SET on the row called $label removes the $nth set of the list', async ({ label, place }) => {
     await open()
     const before = world
-    typeAnswer(LEG, 0, 'warmup')
+    typeAnswer(LEG, 0, 'warmup', setsIn(draftOf(before), LEG)[0])
     expect(['W', '01', '02'].map((l) => setRow(`Set ${l} of Leg Press: type`).textContent)).toEqual(['W', '01', '02'])
     click(`Set ${label} of Leg Press: type`)
     // the eyebrow numbers the working sets apart from the warmups
@@ -1420,7 +1442,7 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
   it('after a warmup: REST AFTER, the rep box, the type and "+ SET" go to the set at the place of the row pressed (W, 01, 02)', async () => {
     await open()
     const before = world
-    typeAnswer(LEG, 0, 'warmup')
+    typeAnswer(LEG, 0, 'warmup', setsIn(draftOf(before), LEG)[0])
     press('More rest after set W of Leg Press', 1)
     press('More rest after set 01 of Leg Press', 2)
     press('More rest after set 02 of Leg Press', 3)
@@ -1432,7 +1454,7 @@ describe('every set-row writer, on both workouts, both exercises and the first, 
     click('Set W of Leg Press: rep target')
     expect(pickerReads()).toBe('RANGE 12–15')
     answerReps({ type: 'amrap' }, false)
-    typeAnswer(LEG, 2, 'rest-pause 1', { label: '02', eyebrow: '02' })
+    typeAnswer(LEG, 2, 'rest-pause 1', setsIn(draftOf(before), LEG)[2], { label: '02', eyebrow: '02' })
     click('Set 01 of Leg Press: type')
     expect(within(dialog('What is this set?')).getByRole('button', { name: /^Normal/ }).getAttribute('aria-pressed')).toBe('true')
     closeDialog('What is this set?')
