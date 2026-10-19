@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 51b's review 2: merged (#156) on its tests-only retry.*
-- *Chunk 51b merged (#156): CHANGE THE PROGRAM's DAYS card (new weekdays start the week after the current one) and a stable run's default set rows, an added exercise's included (171, so 51a's interim is over). On staging a real weekday change and a real default-sets save landed as SPEC says; the done week and the saved program stayed byte-identical.*
-- *Your smoke answer is built: the empty account may have no exercises or exactly the defaults, and nothing between. The smoke reads 51/51 on staging (125).*
-- *Two new entries, neither blocking: 175 (51b's display choices, D31; recommended: accept all) and 176 (51a's exercise-level writers are tested on the first workout only; recommended: a tests-only follow-up).*
-- *What follows: 46m (migration 044, alone), then the pre-read of 46, then 46's sixth attempt beside d31b; then 52 onward; 58a–64 once 46 merges.*
+*Rewritten at every boundary. Last: 2026-10-19, chunk 46m's review: merged (#158).*
+- *Chunk 46m merged (#158). Migration 044 adds `v2_set_logs.added_place`: a nullable number with no default, refused below 1, and no existing row touched. It is live on staging. The deploy succeeded and the column answers. A test write of 0 was refused by its check and wrote nothing. RLS and the smoke are unchanged. Nothing reads or writes the column until chunks 46 and 58a.*
+- *`check-migration` flags 044's check and its schema reload, as it did for 042 and 043. That is one more line under "For the release", for the migrations-first PR.*
+- *One docs fix, no decision needed: TASKS 46 now adds `SetLog.addedPlace` as an optional field, as `stageKind` is. As a required field it breaks typecheck in 25 files, three of them frozen Coach files.*
+- *What follows: the pre-read of 46, then 46's sixth attempt beside d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
 - **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
@@ -25,7 +25,11 @@ To-dos:
   - `create or replace function v2_apply_ops`, `revoke execute`, `grant execute`, `notify pgrst` (each "not on the safe list").
 
   Add-only: one nullable column with no default (every existing row reads NULL) and a function nothing calls until 51a; no existing row changes. The reviewer's grep outside the function body found no update, delete, insert, drop, default or NOT NULL; its one hit is the key's own `on delete set null`. Its own staging deploy failed at the config step, a config-sync failure only, and the next push's deploy applied it (156, answered; verified live 2026-10-16).
-- **044** — chunk 46m, not built yet: `v2_set_logs.added_place integer null` with `check (added_place is null or added_place >= 1)`; no default, no backfill, no existing row touched (DECISIONS 174 (a), Adam 2026-10-19). It goes in the migrations-first PR with 042 and 043 (Adam's words). `check-migration` must pass as additive; if it flags the check, as it flagged 042's, the flag is recorded here at 46m's merge.
+- **044** — chunk 46m (#158): `check-migration` exit 1 on two statements, as for 042 and 043:
+  - `alter table v2_set_logs add column if not exists added_place integer null constraint v2_set_logs_added_place_check check (added_place is null or added_place >= 1)` ("new column carries a constraint or generated value");
+  - `notify pgrst, 'reload schema'` ("not on the safe list").
+
+  Add-only: one nullable column with no default and no backfill, so every existing row reads NULL, which the check accepts. No existing row changes: on the reviewer's replay with the real seed, all 42 tables were identical before and after and 236 of 236 set logs read NULL, while a control that changed one row read different. It goes in the migrations-first PR with 042 and 043 (Adam's words, DECISIONS 174 (a)).
 - **045** — chunk 53, not built yet: `v2_plan_week` with the 1.2 copy rules (numbered 044 until Adam's numbering answer (a), 2026-10-19). `check-migration` will flag "function"; recorded here at 53's merge.
 - **149's data migration** — chunk 53, its number assigned there, after 045 (DECISIONS 149 (c), Adam 2026-10-16): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build.
 - Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
@@ -160,6 +164,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - Record it in SPEC.md's Objects stored → Set log as one [1.2] line, and in TASKS-1.2's Data model and Migration summary.
   - Then chunk 46's sixth attempt uses it, as 173 says. The same rule applies: one more behaviour failure means stop and write 46 up for a redraw.
   Numbering (Adam, 2026-10-19): "Migration numbers: (a). Chunk 46m's added_place is 044; chunk 53's v2_plan_week becomes 045. Renumber TASKS-1.2 (Data model, Migration summary, chunk 53, Release, "For the release") and every other mention, docs only, in the same commit as 46m's scope note." So the migration is 044, not the 045 of his first words. Written into SPEC.md (Objects stored → Set log) and TASKS-1.2 (chunk 46m, the Data model and the Migration summary), and 044 into DECISIONS "For the release", in #153. Full text in HISTORY.md.
+  Writers (Adam, 2026-10-19, fourth batch), word for word: "added_place writers: chunk 46 owns the rule (a pure function assigning the next place when an added set is created). It's assigned once, when an added set is created: + ADD ROUND and any add-set path in 58a, and "Add a set" in the exercise ⋯ (59). The draft holds it until the first log. It's written to the log by whichever chunk writes that set's log: LOG (58a), including the offline queue payload; re-log after unlog keeps the draft's value (63). No chunk ever changes it afterwards: delete, warmup switch and renumbering never touch added_place, because numbers are derived from the order, not stored in it. If TASKS puts any of those paths in a different chunk, follow TASKS and list the final mapping in 46m's scope note." The final mapping is in TASKS-1.2's chunk 46m since #155: every path sits in the chunk he named. Chunk 46m merged on 2026-10-19 (#158), and 044 is live on staging.
 - Date: 2026-10-19
 
 ### 175 Chunk 51b's display choices on CHANGE THE PROGRAM's DAYS card and set rows (provisional, D31)
