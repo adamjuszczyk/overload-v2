@@ -19,9 +19,11 @@ afterEach(cleanup)
 beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
   state.programsLoading = false
+  planWeekMutate.mockReset()
 })
 
 interface Read<T> { data: T | undefined; isLoading: boolean; isError?: boolean; error?: unknown }
+const planWeekMutate = vi.hoisted(() => vi.fn())
 const state = vi.hoisted(() => ({
   programsLoading: false,
   meso: null as unknown as Mesocycle,
@@ -64,7 +66,7 @@ vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => state.week,
   useAllWeekPlans: () => state.all,
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
-  usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
+  usePlanWeek: () => ({ mutate: planWeekMutate, isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
@@ -156,6 +158,61 @@ describe('the header (boards 1, 1b, 1d)', () => {
     expect(document.querySelector('[data-week]')).toBeNull()
     fireEvent.click(screen.getByRole('tab', { name: 'PLAN' }))
     expect(tileLabels()).toHaveLength(3)
+  })
+})
+
+describe('the current week is planned once per run and week', () => {
+  it('a current week with no rows is planned with the current week and the run, and not again when the run\'s weeks are read again (a failure does not loop; TRY AGAIN is the retry)', () => {
+    run(2, [1]) // week 2 is current and has no rows
+    const view = render(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    expect(planWeekMutate).toHaveBeenCalledTimes(1)
+    expect(planWeekMutate.mock.calls[0][0]).toEqual({ mesoId: 'meso-1', weekNumber: 2 })
+
+    // the run's weeks are out and come back (the cache reset, a sign-in): the effect runs again and must not plan the week again by itself
+    state.all = { data: undefined, isLoading: true }
+    view.rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    state.all = { data: [week(1)], isLoading: false }
+    view.rerender(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    expect(planWeekMutate).toHaveBeenCalledTimes(1)
+  })
+
+  it('nothing is planned while the run\'s weeks are not read, or when the current week has its rows', () => {
+    run(2, [1, 2])
+    render(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    expect(planWeekMutate).not.toHaveBeenCalled()
+    cleanup()
+    run(2, [1])
+    state.all = { data: undefined, isLoading: true }
+    render(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+    expect(planWeekMutate).not.toHaveBeenCalled()
+  })
+})
+
+describe('the strip opens on the current week\'s tile (P1.2-6)', () => {
+  // jsdom has no layout: a tile is 100 px per week from the strip's left edge and 90 px wide, the strip 300 px wide.
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.week ? (Number(this.dataset.week) - 1) * 100 : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.week ? 90 : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute('aria-label')?.endsWith('of this program') ? 300 : 0
+    })
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('a run in week 5: the strip is scrolled to week 5\'s tile as it opens, and tapping another tile does not move it (the page hands the strip the current week, not the open one)', () => {
+    run(5, [1, 2, 3, 4, 5])
+    renderPlan()
+    const row = screen.getByLabelText('Weeks of this program')
+    expect(row.scrollLeft).toBe(295) // week 5 starts at 400; centred in 300 px with a 90 px tile: 400 − 105
+    openWeekTile('WEEK 1')
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('1')
+    expect(row.scrollLeft).toBe(295)
+    openWeekTile('WEEK 3')
+    expect(row.scrollLeft).toBe(295)
   })
 })
 

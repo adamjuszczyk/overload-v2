@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Check, Lock } from 'lucide-react'
 import BottomSheet from '../../components/BottomSheet'
@@ -77,6 +77,16 @@ export default function CopySheet({ unit, weekNumber, planningType, rows, thisWe
   const [overwrite, setOverwrite] = useState(false)
   const copy = useCopyNumbers()
   const inFlight = useRef(false)
+  // The sheet closes itself when the write has landed, if it is still the sheet that was asked: a sheet closed while the request was
+  // out (and maybe opened again, a new one) must not be closed by the old one's answer. The ref is set on every effect run: StrictMode
+  // reruns the effect after its cleanup, and a ref set true only at creation would stay false (RULES, chunk 41).
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const word = unit.toUpperCase() as 'WEEK' | 'CYCLE'
   const workouts = pickedWorkouts(rows, picked)
@@ -116,7 +126,7 @@ export default function CopySheet({ unit, weekNumber, planningType, rows, thisWe
     inFlight.current = true
     try {
       await copy.mutateAsync(numbersOps(updates))
-      onClose()
+      if (mounted.current) onClose()
     } catch {
       // the failure is the mutation's own state: the line above the button
     } finally {

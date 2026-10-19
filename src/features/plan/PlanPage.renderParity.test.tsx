@@ -121,7 +121,9 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // that one button are gone and the new header and the one WEEK ⋯ button are in; the scroll area's side padding is the board's 16 px, not 20
 // (the gutter of the boards). Everything from the workout chip to the CHANGE THE PROGRAM button (117 of the render's elements, compared
 // element by element before the file was replaced) is where it was, byte for byte. PlanPage.programTabRemoved.test.tsx proves the
-// tabs, the tiles and WEEK ⋯ at the screen layer.
+// tabs, the tiles and WEEK ⋯ at the screen layer. One later edit, by literal replacement of that one span (the only difference when the
+// render was compared again): the run's name in the caption wraps inside its line (`overflow-wrap: anywhere`), so an unbroken long
+// name cannot run past the screen (the 375 px check of an 80-letter name; PlanPage.header.test.tsx pins it).
 
 afterEach(() => cleanup())
 

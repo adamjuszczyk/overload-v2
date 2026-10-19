@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -245,6 +246,24 @@ describe('the current week is planned when it has no rows, once, and nothing els
     expect(calledWeeks()).toEqual([2])
   })
 
+  it('under StrictMode, as the app runs (effects run, clean up and run again), the current week is planned once', async () => {
+    useRun({ current: 2, planned: [1], planWeek: plans() })
+    render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/plan']}>
+            <PlanPage />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+    await screen.findByLabelText('Week 2 options', {}, FOUND)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(calledWeeks()).toEqual([2])
+  })
+
   it('while the current week is being planned the screen says so, and a failure shows the real message with TRY AGAIN (which plans the same week again)', async () => {
     let failing = true
     useRun({
@@ -334,6 +353,10 @@ describe('PLAN FORWARD plans the week of the tile that carries it, then the next
     openWeekTile('CYCLE 8')
     await screen.findByText("Cycle 8 isn't planned yet", {}, FOUND)
     expect(screen.getByText('CYCLE 8 WILL HAVE')).toBeTruthy()
+    // the slots of the cycle, in order, a rest slot saying so; and the cycle it takes (each slot is its own history)
+    const list = screen.getByText('CYCLE 8 WILL HAVE').parentElement as HTMLElement
+    expect(Array.from(list.querySelectorAll('span')).map((el) => el.textContent).filter((t) => t && !t.startsWith('CYCLE'))).toEqual(['SLOT 1', 'Push Day', 'SLOT 2', 'Pull Day', 'SLOT 3', 'Rest day'])
+    expect(screen.getByText("Takes cycle 7's sets and set types. Numbers come with COPY. Cycle 9 opens once cycle 8 is planned.")).toBeTruthy()
     expect(planCalls()).toEqual([])
     fireEvent.click(screen.getByText('PLAN FORWARD'))
     await waitFor(() => expect(planCalls()).toHaveLength(1), FOUND)

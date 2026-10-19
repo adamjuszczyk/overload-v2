@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -183,6 +184,16 @@ describe('the COPY sheet (board 2)', () => {
     for (const name of ['WEIGHT', 'RIR']) fireEvent.click(within(dialog).getByRole('checkbox', { name }))
     expect(textOnAccent(dialog)).toHaveLength(2) // the two workout ticks; the button is disabled, so it is not the accent's
     expect(textOnAccentColours(dialog)).toEqual(Array(2).fill('var(--on-accent)'))
+  })
+
+  it('the rows read in the week\'s order whatever order the plans come in, and a workout on two weekdays is one row that names both', () => {
+    world('week_dependent')
+    // the plans of week 3 arrive reversed (the read's order is not the week's); Push Day is also on Thursday (one plan row, G14)
+    state.plans = [...state.plans.filter((p) => p.weekNumber === 2), ...state.plans.filter((p) => p.weekNumber === 3).reverse()]
+    state.program = { ...state.program, schedule: { ...state.program.schedule, thursday: 'wd-push' } }
+    const sheet = openSheet()
+    const rows = sheet.getAllByRole('checkbox').slice(3) // after the three field chips
+    expect(rows.map((el) => el.textContent?.replace('DONE', ''))).toEqual(['MON · THUPush Day', 'WEDPull Day', 'FRILeg Day'])
   })
 
   it('a past week (week 2, planned) has no COPY and no WEEK ⋯ (board 1c), though week 3 has both', () => {
@@ -398,6 +409,43 @@ describe('while it writes, and when it fails', () => {
     })
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(applyOpsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a sheet closed while its request is out, and opened again, is not closed by the first one\'s answer', async () => {
+    world('week_dependent')
+    let answer: (count: number) => void = () => {}
+    applyOpsMock.mockImplementation(() => new Promise<number>((resolve) => (answer = resolve)))
+    const first = openSheet()
+    fireEvent.click(first.getByText('COPY INTO 2 WORKOUTS'))
+    await waitFor(() => expect(applyOpsMock).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByLabelText('Close')) // the user closes it, then asks for COPY again: a new sheet
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByText('COPY'))
+    expect(screen.getByRole('dialog', { name: "Copy last week's numbers" })).toBeTruthy()
+
+    await act(async () => {
+      answer(3) // the first request lands
+    })
+    expect(screen.getByRole('dialog', { name: "Copy last week's numbers" })).toBeTruthy() // the new sheet is still open
+  })
+
+  it('under StrictMode (effects run, clean up and run again) the sheet still closes when its write has landed', async () => {
+    world('week_dependent')
+    applyOpsMock.mockResolvedValue(3)
+    render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/plan']}>
+            <PlanPage />
+          </MemoryRouter>
+        </QueryClientProvider>
+      </StrictMode>,
+    )
+    fireEvent.click(screen.getByText('COPY'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('COPY INTO 2 WORKOUTS'))
+    await waitFor(() => expect(applyOpsMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('a failure keeps the sheet and its choices, shows "Couldn\'t copy the numbers." with the server\'s own message, and the button sends the same list again', async () => {
