@@ -319,9 +319,10 @@ export interface TargetBounds {
 export const REP_BOUNDS: TargetBounds = { min: 1, max: 100 }
 export const RIR_BOUNDS: TargetBounds = { min: 0, max: 20 }
 
-// What a box shows in a segment the set doesn't have: the boards' own examples (8 and 8-10 reps, RIR 2 and
-// 1-2; "SET 8 REPS", "SET RIR 2"). Adam, 2026-10-15: "The boards' example values (8, 8-10, RIR 2, 1-2) are
-// only the starting point when you switch to a segment the set doesn't already have".
+// What a box shows when the set has no target at all: the boards' own examples (8 and 8-10 reps, RIR 2 and
+// 1-2; "SET 8 REPS", "SET RIR 2"). Adam, 2026-10-16 (DECISIONS 155 (a)): "a picker switched to a segment the set
+// doesn't have carries the set's own value over: NUMBER n -> RANGE n-(n+2); RANGE a-b -> NUMBER a. The boards'
+// examples are used only when the set has no target at all."
 const TARGET_SETTINGS: Record<TargetKind, { bounds: TargetBounds; defaultNumber: number; defaultFrom: number; defaultTo: number }> = {
   reps: { bounds: REP_BOUNDS, defaultNumber: 8, defaultFrom: 8, defaultTo: 10 },
   rir: { bounds: RIR_BOUNDS, defaultNumber: 2, defaultFrom: 1, defaultTo: 2 },
@@ -345,8 +346,9 @@ export const TARGET_MODES: Record<TargetKind, readonly { id: TargetMode; label: 
 /**
  * What the sheet holds while it is open: the segment picked and the numbers behind it. `number` is the
  * NUMBER box, `from` and `to` the RANGE boxes. Each segment keeps its own numbers: the set's own segment
- * starts from the set's numbers and every other one from the boards' examples (`draftFromRepTarget`), and
- * a switch changes no number, so a segment tapped and tapped back finds its numbers where they were.
+ * starts from the set's numbers and the other one from the set's own value carried over (`draftFromRepTarget`;
+ * the boards' examples only when the set has no number at all), and a switch changes no number, so a segment
+ * tapped and tapped back finds its numbers where they were.
  */
 export interface TargetDraft {
   mode: TargetMode
@@ -360,12 +362,27 @@ function defaultDraft(kind: TargetKind, mode: TargetMode): TargetDraft {
   return { mode, number: settings.defaultNumber, from: settings.defaultFrom, to: settings.defaultTo }
 }
 
+/** How far a number grows into a range when the set's NUMBER is carried over to RANGE: n becomes n-(n+2) (DECISIONS 155 (a)). */
+const RANGE_CARRY_WIDTH = 2
+
+/**
+ * A set's number as the RANGE segment starts from it: n-(n+2), the top end held at the kind's top bound (reps 99 gives 99-100, RIR
+ * 19 gives 19-20; at the bound itself the ends meet, 100-100, which the footer sets as the number 100, as any range whose ends meet).
+ * Not in Adam's words (a display choice under D31, provisional): his n-(n+2) would put the top end past the box's bound, where
+ * the steppers and the typed boxes stop. A stored number past the bound is shown as it is, so its range is that number twice.
+ */
+function carriedRange(kind: TargetKind, number: number): { from: number; to: number } {
+  const { bounds } = TARGET_SETTINGS[kind]
+  return { from: number, to: Math.max(number, Math.min(number + RANGE_CARRY_WIDTH, bounds.max)) }
+}
+
 /**
  * A rep target as the sheet's first state: it opens on the set's segment with the set's numbers (a stored value
- * is shown as it is, even past the bounds: only the steppers are bounded). The segments the set doesn't have
- * start from the boards' examples (8 and 8-10), not from a number the set has: 12 reps gives RANGE 8-10, and
- * 6-9 gives NUMBER 8. A set with no target (or AMRAP) has no number of its own, so it opens on NONE (or AMRAP)
- * and both segments start from the examples.
+ * is shown as it is, even past the bounds: only the steppers are bounded). The segment the set doesn't have
+ * starts from the set's own value (DECISIONS 155 (a), Adam 2026-10-16): 12 reps gives RANGE 12-14, and 6-9 gives
+ * NUMBER 6. The boards' examples (8 and 8-10) start a segment only when the set has no number to carry: no
+ * target at all, which opens on NONE, and AMRAP, which opens on AMRAP (a target, but with no number: a choice
+ * under D31, provisional).
  */
 export function draftFromRepTarget(target: RepTarget): TargetDraft {
   switch (target.type) {
@@ -374,21 +391,21 @@ export function draftFromRepTarget(target: RepTarget): TargetDraft {
     case 'amrap':
       return defaultDraft('reps', 'amrap')
     case 'number':
-      return { ...defaultDraft('reps', 'number'), number: target.value }
+      return { mode: 'number', number: target.value, ...carriedRange('reps', target.value) }
     case 'range':
-      return { ...defaultDraft('reps', 'range'), from: target.min, to: target.max }
+      return { mode: 'range', number: target.min, from: target.min, to: target.max }
   }
 }
 
-/** A RIR target as the sheet's first state, on the same rule as `draftFromRepTarget` (examples: RIR 2 and 1-2). */
+/** A RIR target as the sheet's first state, on the same rule as `draftFromRepTarget`: RIR 4 gives RANGE 4-6, 1-2 gives NUMBER 1; examples RIR 2 and 1-2 for a set with no target. */
 export function draftFromRirTarget(target: RirTarget): TargetDraft {
   switch (target.kind) {
     case 'none':
       return defaultDraft('rir', 'none')
     case 'number':
-      return { ...defaultDraft('rir', 'number'), number: target.value }
+      return { mode: 'number', number: target.value, ...carriedRange('rir', target.value) }
     case 'range':
-      return { ...defaultDraft('rir', 'range'), from: target.min, to: target.max }
+      return { mode: 'range', number: target.min, from: target.min, to: target.max }
   }
 }
 
@@ -425,9 +442,10 @@ export function rirTargetFromDraft(draft: TargetDraft): RirTarget {
 
 /**
  * A segment tapped: the draft in that segment, with no number changed. A segment shows the numbers it has
- * (the set's own, or the boards' examples if the set had none there, or what was typed or stepped in it
- * while the sheet was open); nothing is carried over from the segment left, so 6-9 gone to NUMBER gives 8 and
- * RANGE tapped again gives 6-9 back.
+ * (the set's own, or the set's value carried over to it when the sheet opened, or the boards' examples if the set
+ * had no number, or what was typed or stepped in it while the sheet was open); nothing is carried from the segment
+ * left, so 6-9 gone to NUMBER gives 6 (the set's own value, from `draftFromRepTarget`) and RANGE tapped again gives
+ * 6-9 back.
  */
 export function pickTargetMode(draft: TargetDraft, mode: TargetMode, kind: TargetKind): TargetDraft {
   if (mode === draft.mode) return draft
