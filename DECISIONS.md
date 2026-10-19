@@ -1,15 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 51b's review 1: not merged (proof missing, behaviour right; a tests-only retry).*
-- *Chunk 51b (CHANGE THE PROGRAM's DAYS card and a stable run's default set rows) does what SPEC says, all of it executed: new weekdays start next week and this week keeps its days, two workouts can trade days in one save (your 169), an exercise added on a stable run gets its sets (171), and Coach is untouched (159). The real tables took every list.*
-- *It isn't merged because six of the review's breaks on its writers pass every test: REMOVE THIS SET is only tested on an exercise's last set, "+ SET", REST AFTER and ALL only on the first workout, and a stage's target only on the last set. Its retry adds those tests. Nothing for you to decide.*
-- *Chunk 46 still waits on your 173 (two behaviour bugs in its fifth attempt).*
-- *What follows: 51b's retry, the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
+*Rewritten at every boundary. Last: 2026-10-19, Adam's answers to 172, 173 and 174 written in (docs only).*
+- *173 and 174 are answered: chunk 46m (migration 044, `v2_set_logs.added_place`: one nullable column, no default, no row touched) goes first, merged and live on staging; then chunk 46's sixth attempt, on Opus, uses it. One more behaviour failure stops 46 for a redraw (your words).*
+- *`v2_plan_week` is now migration 045 (chunk 53), as you numbered it; 044 is in "For the release" with 042 and 043.*
+- *172 is accepted except Plan's "CHANGE THE PROGRAM FROM WEEK N" button, which goes to the second display follow-up (d31b).*
+- *The smoke fix (your third bullet: the empty account may have no exercises or exactly the defaults) is pending; chunk 51b's next reviewer makes it, so the smoke reads 51/51.*
+- *What follows: 51b's tests-only retry, 46m, then 46's sixth attempt; d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
-- **173** — chunk 46's fifth attempt has two behaviour bugs. A warmup's log keeps a number it no longer shows, so two added Warmups can be one REVIEW item, and unlog then log isn't exact. A set added in a reopened session is drawn before the earlier added sets, and two logs can end up holding one number. Recommended: (a), a sixth attempt that fixes both in 46. When: before 58a. Blocks: chunk 46's merge, and so 58a–64; nothing before 58a.
-- **172** — chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31): twelve, (a)–(l). Three differ from a drawing or a count: SUPERSET isn't shown on the last single exercise (PL1 draws it on every single card); "+ ADD ITEM" stays while a routine item is tapped or edited (PL9 draws neither with it); and on the day a week's last open session is in progress, Plan's button names that week where the screen names the next. Recommended: accept all (display only). When: any time. Blocks: nothing.
+- **172** — a letter to confirm: your exception reads "(l)" but describes Plan's button and the screen's rule box, which the entry listed as (j); its (l) was a superset's within-round rest stored as 0 reading 0:00. Recommended: d31b fixes the button (the choice you described) and (l)'s 0:00 stays accepted. When: before d31b starts. Blocks: nothing before d31b.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -137,66 +137,30 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-19
 
 ### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
-**Ask:** chunk 51a built CHANGE THE PROGRAM with these display choices, which no board or SPEC sentence settles, or where it differs from a board's drawing. Accept them, or change any?
-**Recommendation:** accept all: each is display only and changes nothing that is written. (h), (i) and (j) differ from a board or from the screen's own week, so they are the ones to look at.
-**Blocks:** nothing.
-**Options:** accept as built, or change any of:
-- (a) RENAME is a row under the WORKOUTS chips, for the selected workout (PL1 puts it in the DAYS card, which a sequence run doesn't have and 51b adds); the chips show each workout's days that week and scroll sideways.
-- (b) The cards are numbered 1 · WARMUP ROUTINE and 2 · EXERCISES until 51b's DAYS card becomes 1.
-- (c) A routine item's ⋯ opens MOVE UP / MOVE DOWN / REMOVE under the item; an item's text shows as a name and a dose, split at its last comma.
-- (d) MOVE UP / MOVE DOWN also sit in the exercise's ⋯ sheet (PL2, PL3), the drag's fallback.
-- (e) A swapped-in exercise is tagged "· SWAPPED"; a new or swapped card is tinted like PL1's new one.
-- (f) The discard confirm: "Discard your changes?" / "Nothing has been saved. Going back leaves the program as it is." / DISCARD.
-- (g) SAVE CHANGES with nothing changed sends nothing and goes back; the footer (CANCEL, SAVE CHANGES, and a save error above them) is pinned to the bottom.
-- (h) SUPERSET isn't shown on the last single exercise (it links with the one below, and there is none); PL1 draws it on every single card.
-- (i) "+ ADD ITEM" stays under the routine while an item is tapped or edited; PL9 draws those two states without it.
-- (j) Plan's "CHANGE THE PROGRAM FROM WEEK N" counts done sessions only, so on the day a week's last open session is the one in progress, the button names that week and the screen's rule box the next.
-- (k) The header's caption is the run's name ("STG UPPER/LOWER RUN · WEEK-DEPENDENT"); a run's name defaults to its program's, which PL1 draws.
-- (l) A superset's within-round rest stored as 0 reads 0:00 in PL3 (unset reads NO TIMER; the planner shows 0s).
-**Answer:**
-**Evidence:** the builder's report (`<scratchpad>/build/chunk-51a-builder-1.md`, "Provisional choices under D31": (a)–(g) and (j)) and the review's real-screen checks on staging's data (`<scratchpad>/build/chunk-51a-review-1.md`), which found (h), (i), (k) and (l). What would be redone if an answer goes against them: display code in `ChangeProgramPage.tsx`, `ChangeProgramExerciseCard.tsx`, `ChangeProgramWarmupCard.tsx` and `PlanPage.tsx`; no data.
+- What: twelve display choices of chunk 51a's CHANGE THE PROGRAM, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
+- Answer: (Adam, 2026-10-19) "all twelve accepted, except (l): Plan's "CHANGE THE PROGRAM FROM WEEK N" button names the same week as the screen's rule box, which is right (a session in progress is left as it is, so changes start the week after). Fix it in the second display follow-up." The change goes to the second display follow-up, d31b (CONTEXT.md, "Where the build is"). The choice his words describe is the one this entry listed as (j); (l) as listed is a superset's within-round rest stored as 0 reading 0:00 (Waiting on Adam asks which he meant). Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
-**Ask:** Chunk 46's fifth attempt builds your 170 right for the working sets, and your named break fails its sequence test. Two behaviour bugs remain. Allow a sixth attempt that fixes both?
-- (1) A warmup's log keeps a number it no longer shows.
-  - A logged set made a Warmup keeps its working number: logged as 04, it shows W1 and still holds 4. A logged warmup keeps its W number when a set before it is switched or deleted.
-  - So unlog then log stores another number (4 → 1).
-  - Two added sets, logged and then both made Warmups, hold the same number. REVIEW then shows one item, "warmup 04", for the two.
-  - SPEC 18b says "LOG stores the number the row shows; a delete or a switch … that changes logged sets' numbers patches them". That, and 18c's exact undo, cover warmups too, and 1.1 stores a warmup's W number.
-- (2) A set added while the card's list doesn't name the earlier added sets is drawn before them. That happens in a session reopened with CONTINUE SESSION, or on another phone.
-  - Example: bench 01–03 and two added sets logged as 04 and 05. Reopened, + ADD SET: the new set shows 04, and the two older ones 05 and 06, while their logs still hold 4 and 5.
-  - Logging the new set stores a second 4, and REVIEW shows two items for the three added sets.
-  - 170 says "added sets by when they were added".
+- What: chunk 46's fifth attempt built 170 right for the working sets, with two behaviour bugs left: a warmup's log kept a number it no longer showed (two added Warmups could be one REVIEW item; unlog then log wasn't exact), and a set added while the card's list doesn't name the earlier added sets (a reopened session, another phone) was drawn before them, so two logs could hold one number.
+- Answer: (Adam, 2026-10-19) "(a), a sixth attempt of chunk 46, Opus builder, with:
+  - Warmups follow the same numbering rule as working sets: when a warmup's displayed number changes (delete, switch to or from Warmup), its log's stored number is patched, so a log never keeps a number its row no longer shows.
+  - An added set's place in the session order is persisted when it is created (from its log once logged, from its draft before that) and survives reload and reopening. A set added in a reopened session comes after every set added earlier. No two logs ever hold one number.
+  - The sequence test's generator adds warmup steps (add, log, unlog, switch to and from Warmup) and a "reopen the session" step, with the same invariants after every step, plus: no two logs share a number, and REVIEW sees two added warmups as two items. Break proofs for both bugs.
+  - If this attempt fails review on behaviour again, don't retry: stop 46 and write it up for Adam as a chunk to redraw."
+  The sixth attempt stopped before building: the second bullet needs a stored place, so chunk 46m (migration 044, `v2_set_logs.added_place`, 174) is built first. Full text in HISTORY.md.
+- Date: 2026-10-19
 
-**Recommendation:** (a). Both fixes are small and in 46.
-- The renumbering also gives each logged warmup its W number.
-- Any added set the card's list doesn't name is taken into the list before a new set is added, so a new set always comes last.
-- The sequence test then checks warmups' stored numbers and the exact undo in full, and adds reload and reopen steps.
-- Nothing uses 46 before 58a.
-
-**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it. Nothing before 58a.
-**Options:**
-- (a) A sixth attempt of 46 with both fixes, as recommended. (2) has a simpler form: draw the sets the list doesn't name before the listed ones. That is right on one phone, but wrong when you go back to a phone whose list is intact after another phone added sets.
-- (b) Merge as built, and make the fixes in 62 (which writes the warmups' numbers) and in 58a and 63 (the list). 46's module would then change inside those chunks.
-- (c) Merge as built and accept both bugs.
-  - A warmup's stored number can differ from what the workout showed. REVIEW can then show one item for two added Warmups, labelled with the old number.
-  - In a reopened session a new set comes before the earlier added sets, and two set logs can hold the same number.
-**Answer:**
-**Evidence:** executed in the review on `d09a241` (`<scratchpad>/build/chunk-46-review-5.md`), with probes on the reviewer's own driver and on the builder's `Session`. Each step is the module's own answer, applied as the card and the sync queue will apply it.
-- (1):
-  - Bench 01–03 logged; A and B added and logged as 04 and 05; A made a Warmup, then B. The rows read W1 = A, W2 = B, 01–03. Both logs hold 4, and REVIEW (chunk 43, merged) gives one item, `added-set:s1:ex.bench:w4`.
-  - A planned set: bench `w n n n`, all logged, 01 made a Warmup. It shows W2 and holds 1, beside W1, which also holds 1. Unlog then log stores 2.
-  - The builder's sequence test leaves warmups out of two of its checks. With those exceptions taken out, its generated sequences fail (seed 4, step 18: "shows 1 and its log holds 3").
-  - This is the builder's own question 1, and the builder recommended this fix.
-- (2):
-  - The module draws the sets the card's list doesn't name after the listed ones, and a test pins that.
-  - Its header names "the session after a reload, or a reopened one" as sessions with such sets, and TASKS 64's check reopens a session with CONTINUE SESSION.
-  - Control: with the two older sets in the card's list first, the result is A 04, B 05, N 06, stored 4, 5, 6, and three REVIEW items.
-- Right in the attempt, executed:
-  - 170's four sequences (D, W, 2D, MR), on the reviewer's own driver.
-  - 161's U1 and U2, and review 3's case.
-  - Your named break, in the builder's two forms and the reviewer's (attempt 4's claim and its ordering put back): 7 of the sequence test's 11 tests fail.
-  - Every script is green (4543 tests in 247 files). The reviewer's 15 breaks were all caught.
+### 174 An added set's place across a reopen needs a column (chunk 46's sixth attempt, for 173)
+- What: chunk 46's sixth attempt stopped before building (`<scratchpad>/build/chunk-46-builder-6.md`, section 3). After 173's first bullet a warmup's log holds its W number, and then no column of `v2_set_logs` says where an added Warmup stands among the working added sets after a reopen (executed: two histories store the same rows and need opposite orders). The builder's options: (a) a column, `v2_set_logs.added_place integer null`, no default (recommended); (b) no migration, the log's id made in time order when the set is added; (c) a fixed rule instead of a place for that one shape; (d) the phone keeps the card's list past the session's end.
+- Answer: (Adam, 2026-10-19) (a), word for word:
+  - Migration 045, its own small chunk "46m", built and merged into staging before 46's sixth attempt: `alter table v2_set_logs add column if not exists added_place integer null` with check (added_place is null or added_place >= 1). No default, no backfill, no existing row touched. The builder prints the grep proving no update/delete/drop/alter type. check-migration must pass as additive; the usual staging steps: Supabase deploy read, probe-live-columns green for the new column, verify-rls unchanged. Add 045 to "For the release" with 042–044 (the migrations-first PR).
+  - Meaning: an added set's place among the sets added to its exercise in that session, from 1, in the order they were added. Written when the added set's log is first written (the sync queue carries it offline), kept on re-log after an unlog (the draft holds it until then). Planned sets leave it null.
+  - A log with null added_place that has no planned set (anything logged before 045) orders as the app orders it today (logged time, then id). That fallback is tested.
+  - Record it in SPEC.md's Objects stored → Set log as one [1.2] line, and in TASKS-1.2's Data model and Migration summary.
+  - Then chunk 46's sixth attempt uses it, as 173 says. The same rule applies: one more behaviour failure means stop and write 46 up for a redraw.
+  Numbering (Adam, 2026-10-19): "Migration numbers: (a). Chunk 46m's added_place is 044; chunk 53's v2_plan_week becomes 045. Renumber TASKS-1.2 (Data model, Migration summary, chunk 53, Release, "For the release") and every other mention, docs only, in the same commit as 46m's scope note." So the migration is 044, not the 045 of his first words. Written into SPEC.md (Objects stored → Set log) and TASKS-1.2 (chunk 46m, the Data model and the Migration summary), and 044 into DECISIONS "For the release", in #153. Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.

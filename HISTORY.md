@@ -26876,3 +26876,143 @@ Decisions:
 
 ### From CONTEXT.md: Where the build is, the next migration number (before the renumbering)
 - **Next migration number: 044** (043 is chunk 47's, #137, live on staging since #138's deploy and verified live on 2026-10-16; its own deploy failed at the config step, a config-sync failure only: DECISIONS 156. TASKS-1.2 plans 044 `v2_plan_week`, chunk 53, which also numbers 149's release data migration (DECISIONS 149 (c)); nothing else is reserved).
+
+
+## 2026-10-19 Adam's answers to 172, 173 and the added set's place (174); moved out of DECISIONS.md and CONTEXT.md (replaced by newer lines there), word for word
+*Adam answered 173 (a sixth attempt of chunk 46) and 172 (all accepted but one) in the coordinator's session; chunk 46's sixth builder then stopped before building, because the place of an added set needs a column (`<scratchpad>/build/chunk-46-builder-6.md`, section 3), and Adam answered that (a), with the migration numbered 044 and `v2_plan_week` moved to 045 (#153, the renumbering). The smoke fix in his third bullet is left to chunk 51b's next reviewer.*
+
+### Adam's answers of 2026-10-19, second batch, word for word
+- 173: (a), a sixth attempt of chunk 46, Opus builder, with:
+  - Warmups follow the same numbering rule as working sets: when a warmup's displayed number changes (delete, switch to or from Warmup), its log's stored number is patched, so a log never keeps a number its row no longer shows.
+  - An added set's place in the session order is persisted when it is created (from its log once logged, from its draft before that) and survives reload and reopening. A set added in a reopened session comes after every set added earlier. No two logs ever hold one number.
+  - The sequence test's generator adds warmup steps (add, log, unlog, switch to and from Warmup) and a "reopen the session" step, with the same invariants after every step, plus: no two logs share a number, and REVIEW sees two added warmups as two items. Break proofs for both bugs.
+  - If this attempt fails review on behaviour again, don't retry: stop 46 and write it up for Adam as a chunk to redraw.
+- 172: all twelve accepted, except (l): Plan's "CHANGE THE PROGRAM FROM WEEK N" button names the same week as the screen's rule box, which is right (a session in progress is left as it is, so changes start the week after). Fix it in the second display follow-up.
+- Smoke: since the re-seed, the empty account has no exercises until its first sign-in (125). The smoke accepts either no exercises or exactly the defaults; fix that check so it reads 51/51.
+
+### Adam's answer of 2026-10-19 on the added set's place, and on the numbering, word for word
+- Migration 045, its own small chunk "46m", built and merged into staging before 46's sixth attempt: `alter table v2_set_logs add column if not exists added_place integer null` with check (added_place is null or added_place >= 1). No default, no backfill, no existing row touched. The builder prints the grep proving no update/delete/drop/alter type. check-migration must pass as additive; the usual staging steps: Supabase deploy read, probe-live-columns green for the new column, verify-rls unchanged. Add 045 to "For the release" with 042–044 (the migrations-first PR).
+- Meaning: an added set's place among the sets added to its exercise in that session, from 1, in the order they were added. Written when the added set's log is first written (the sync queue carries it offline), kept on re-log after an unlog (the draft holds it until then). Planned sets leave it null.
+- A log with null added_place that has no planned set (anything logged before 045) orders as the app orders it today (logged time, then id). That fallback is tested.
+- Record it in SPEC.md's Objects stored → Set log as one [1.2] line, and in TASKS-1.2's Data model and Migration summary.
+- Then chunk 46's sixth attempt uses it, as 173 says. The same rule applies: one more behaviour failure means stop and write 46 up for a redraw.
+
+Migration numbers: (a). Chunk 46m's added_place is 044; chunk 53's v2_plan_week becomes 045. Renumber TASKS-1.2 (Data model, Migration summary, chunk 53, Release, "For the release") and every other mention, docs only, in the same commit as 46m's scope note.
+
+### From DECISIONS.md: "Waiting on Adam"'s header, notes and Decisions list (before these answers; the to-dos are unchanged)
+*Rewritten at every boundary. Last: 2026-10-19, chunk 51b's review 1: not merged (proof missing, behaviour right; a tests-only retry).*
+- *Chunk 51b (CHANGE THE PROGRAM's DAYS card and a stable run's default set rows) does what SPEC says, all of it executed: new weekdays start next week and this week keeps its days, two workouts can trade days in one save (your 169), an exercise added on a stable run gets its sets (171), and Coach is untouched (159). The real tables took every list.*
+- *It isn't merged because six of the review's breaks on its writers pass every test: REMOVE THIS SET is only tested on an exercise's last set, "+ SET", REST AFTER and ALL only on the first workout, and a stage's target only on the last set. Its retry adds those tests. Nothing for you to decide.*
+- *Chunk 46 still waits on your 173 (two behaviour bugs in its fifth attempt).*
+- *What follows: 51b's retry, the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
+
+Decisions:
+- **173** — chunk 46's fifth attempt has two behaviour bugs. A warmup's log keeps a number it no longer shows, so two added Warmups can be one REVIEW item, and unlog then log isn't exact. A set added in a reopened session is drawn before the earlier added sets, and two logs can end up holding one number. Recommended: (a), a sixth attempt that fixes both in 46. When: before 58a. Blocks: chunk 46's merge, and so 58a–64; nothing before 58a.
+- **172** — chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31): twelve, (a)–(l). Three differ from a drawing or a count: SUPERSET isn't shown on the last single exercise (PL1 draws it on every single card); "+ ADD ITEM" stays while a routine item is tapped or edited (PL9 draws neither with it); and on the day a week's last open session is in progress, Plan's button names that week where the screen names the next. Recommended: accept all (display only). When: any time. Blocks: nothing.
+
+### From DECISIONS.md: 172, full text (before Adam's answer)
+### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
+**Ask:** chunk 51a built CHANGE THE PROGRAM with these display choices, which no board or SPEC sentence settles, or where it differs from a board's drawing. Accept them, or change any?
+**Recommendation:** accept all: each is display only and changes nothing that is written. (h), (i) and (j) differ from a board or from the screen's own week, so they are the ones to look at.
+**Blocks:** nothing.
+**Options:** accept as built, or change any of:
+- (a) RENAME is a row under the WORKOUTS chips, for the selected workout (PL1 puts it in the DAYS card, which a sequence run doesn't have and 51b adds); the chips show each workout's days that week and scroll sideways.
+- (b) The cards are numbered 1 · WARMUP ROUTINE and 2 · EXERCISES until 51b's DAYS card becomes 1.
+- (c) A routine item's ⋯ opens MOVE UP / MOVE DOWN / REMOVE under the item; an item's text shows as a name and a dose, split at its last comma.
+- (d) MOVE UP / MOVE DOWN also sit in the exercise's ⋯ sheet (PL2, PL3), the drag's fallback.
+- (e) A swapped-in exercise is tagged "· SWAPPED"; a new or swapped card is tinted like PL1's new one.
+- (f) The discard confirm: "Discard your changes?" / "Nothing has been saved. Going back leaves the program as it is." / DISCARD.
+- (g) SAVE CHANGES with nothing changed sends nothing and goes back; the footer (CANCEL, SAVE CHANGES, and a save error above them) is pinned to the bottom.
+- (h) SUPERSET isn't shown on the last single exercise (it links with the one below, and there is none); PL1 draws it on every single card.
+- (i) "+ ADD ITEM" stays under the routine while an item is tapped or edited; PL9 draws those two states without it.
+- (j) Plan's "CHANGE THE PROGRAM FROM WEEK N" counts done sessions only, so on the day a week's last open session is the one in progress, the button names that week and the screen's rule box the next.
+- (k) The header's caption is the run's name ("STG UPPER/LOWER RUN · WEEK-DEPENDENT"); a run's name defaults to its program's, which PL1 draws.
+- (l) A superset's within-round rest stored as 0 reads 0:00 in PL3 (unset reads NO TIMER; the planner shows 0s).
+**Answer:**
+**Evidence:** the builder's report (`<scratchpad>/build/chunk-51a-builder-1.md`, "Provisional choices under D31": (a)–(g) and (j)) and the review's real-screen checks on staging's data (`<scratchpad>/build/chunk-51a-review-1.md`), which found (h), (i), (k) and (l). What would be redone if an answer goes against them: display code in `ChangeProgramPage.tsx`, `ChangeProgramExerciseCard.tsx`, `ChangeProgramWarmupCard.tsx` and `PlanPage.tsx`; no data.
+
+### From DECISIONS.md: 173, full text (before Adam's answer)
+### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
+**Ask:** Chunk 46's fifth attempt builds your 170 right for the working sets, and your named break fails its sequence test. Two behaviour bugs remain. Allow a sixth attempt that fixes both?
+- (1) A warmup's log keeps a number it no longer shows.
+  - A logged set made a Warmup keeps its working number: logged as 04, it shows W1 and still holds 4. A logged warmup keeps its W number when a set before it is switched or deleted.
+  - So unlog then log stores another number (4 → 1).
+  - Two added sets, logged and then both made Warmups, hold the same number. REVIEW then shows one item, "warmup 04", for the two.
+  - SPEC 18b says "LOG stores the number the row shows; a delete or a switch … that changes logged sets' numbers patches them". That, and 18c's exact undo, cover warmups too, and 1.1 stores a warmup's W number.
+- (2) A set added while the card's list doesn't name the earlier added sets is drawn before them. That happens in a session reopened with CONTINUE SESSION, or on another phone.
+  - Example: bench 01–03 and two added sets logged as 04 and 05. Reopened, + ADD SET: the new set shows 04, and the two older ones 05 and 06, while their logs still hold 4 and 5.
+  - Logging the new set stores a second 4, and REVIEW shows two items for the three added sets.
+  - 170 says "added sets by when they were added".
+
+**Recommendation:** (a). Both fixes are small and in 46.
+- The renumbering also gives each logged warmup its W number.
+- Any added set the card's list doesn't name is taken into the list before a new set is added, so a new set always comes last.
+- The sequence test then checks warmups' stored numbers and the exact undo in full, and adds reload and reopen steps.
+- Nothing uses 46 before 58a.
+
+**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it. Nothing before 58a.
+**Options:**
+- (a) A sixth attempt of 46 with both fixes, as recommended. (2) has a simpler form: draw the sets the list doesn't name before the listed ones. That is right on one phone, but wrong when you go back to a phone whose list is intact after another phone added sets.
+- (b) Merge as built, and make the fixes in 62 (which writes the warmups' numbers) and in 58a and 63 (the list). 46's module would then change inside those chunks.
+- (c) Merge as built and accept both bugs.
+  - A warmup's stored number can differ from what the workout showed. REVIEW can then show one item for two added Warmups, labelled with the old number.
+  - In a reopened session a new set comes before the earlier added sets, and two set logs can hold the same number.
+**Answer:**
+**Evidence:** executed in the review on `d09a241` (`<scratchpad>/build/chunk-46-review-5.md`), with probes on the reviewer's own driver and on the builder's `Session`. Each step is the module's own answer, applied as the card and the sync queue will apply it.
+- (1):
+  - Bench 01–03 logged; A and B added and logged as 04 and 05; A made a Warmup, then B. The rows read W1 = A, W2 = B, 01–03. Both logs hold 4, and REVIEW (chunk 43, merged) gives one item, `added-set:s1:ex.bench:w4`.
+  - A planned set: bench `w n n n`, all logged, 01 made a Warmup. It shows W2 and holds 1, beside W1, which also holds 1. Unlog then log stores 2.
+  - The builder's sequence test leaves warmups out of two of its checks. With those exceptions taken out, its generated sequences fail (seed 4, step 18: "shows 1 and its log holds 3").
+  - This is the builder's own question 1, and the builder recommended this fix.
+- (2):
+  - The module draws the sets the card's list doesn't name after the listed ones, and a test pins that.
+  - Its header names "the session after a reload, or a reopened one" as sessions with such sets, and TASKS 64's check reopens a session with CONTINUE SESSION.
+  - Control: with the two older sets in the card's list first, the result is A 04, B 05, N 06, stored 4, 5, 6, and three REVIEW items.
+- Right in the attempt, executed:
+  - 170's four sequences (D, W, 2D, MR), on the reviewer's own driver.
+  - 161's U1 and U2, and review 3's case.
+  - Your named break, in the builder's two forms and the reviewer's (attempt 4's claim and its ordering put back): 7 of the sequence test's 11 tests fail.
+  - Every script is green (4543 tests in 247 files). The reviewer's 15 breaks were all caught.
+
+### 174, full text as the builder worded it (`chunk-46-builder-6.md`, section 3), before Adam's answer
+**Ask:** 173's second bullet keeps an added set's place "from its log once logged" across a reopen. After 173's first bullet, a warmup's log holds its W number, and then no column of `v2_set_logs` says where an added Warmup stands among the working added sets (executed: two histories store the same rows and need opposite orders). Add a column for the place, or take one of the other options?
+
+**Recommendation:** (a). It is one nullable column with no default, add-only (D29), and it says plainly what it holds.
+
+**Blocks:** chunk 46 (its sixth attempt stopped before building), so 58a–64. Nothing before 58a.
+
+**Options:**
+- **(a) A column.** `v2_set_logs.added_place integer null` (no default), holding the set's place among the sets added to its exercise in the session, from 1, in the order they were added.
+  - It is null on a planned set's log, on a drop, and on every log written before 1.2. 1.1 added working sets only, numbered as logged, so a null place is ordered by `set_number`, before the placed ones.
+  - An optional `check (added_place is null or added_place >= 1)` would be flagged by `check-migration` as 042's checks were, and logged under "For the release".
+  - Written by:
+    - ADD SET / ADD ROUND (58a): the new list entry gets 1 + the highest place the card knows (its list, the session's logs of that exercise, its drafts). On one phone a set added in a reopened session therefore comes after every set added earlier. Two phones adding at once can tie; the log's id breaks the tie.
+    - LOG of an added set (58a): writes the entry's place.
+    - The skips that log an added set (59's "skip the rest of this exercise", 61's SKIP THIS SET): write the place.
+    - Unlog (63): the draft and the Dexie list entry keep the place. Re-LOG (63) writes it again.
+    - A type change (62) and DELETE (61) leave it alone.
+  - Read by 46 only. The module orders every added set by place, then id, wherever its place comes from: the list entry, the log, or a draft no listed set has. REVIEW, History and Coach don't need it (`select *` returns the extra column; named lists are unaffected).
+  - Plumbing (a migration chunk, like 47):
+    - `SetLog.addedPlace` and the mappers (`toSetLog`, the Dexie `set_logs` cache);
+    - the LOG upsert payload in `useSession.ts`. A payload naming the column fails until the migration is live, so the migration goes live before 58a (RULES: a named column joins a list only once its migration is live). 58a's R4 parity payload for a planned set stays as it is if the column is left out of it.
+    - `probe-live-columns` gets a spec for the column.
+  - Number and order: CONTEXT's next number is 044, planned for 53's `v2_plan_week`, and 53 also numbers 149's data migration. The build order has 53 before 58a, so this migration is the next free number at the time.
+  - TASKS lines that change: the Data model (a row for the place), the Migration summary, the Process notes' migration list, 46, 58a, 59, 61, 63, and CONTEXT's next-migration line. A timestamp `added_at` is the variant: it needs no counting, but a phone's clock can put a new set before older ones.
+- **(b) No migration: the log's id is the set's own id, made in time order when the set is added** (a UUIDv7-shaped id), and LOG, re-LOG and the skips all write the log with it. The module orders by id.
+  - It hides an order in ids nobody can see. An id made the old way (crypto.randomUUID(), 1.1's logs) orders arbitrarily, and two phones' clocks can disagree.
+  - It changes TASKS 63, whose re-log is "a new log row … (new id)".
+  - The sync queue already keeps a re-insert after a delete of the same row in order ("a write that fails holds back every later write to that record"), but no test pins that shape. Not recommended.
+- **(c) A rule instead of a place, for that one shape.**
+  - After a reopen, or on another phone, an added Warmup whose list entry is gone stands where a fixed rule puts it, for example after the working added sets. Made Normal again, it can then land in another place than before the reopen.
+  - This relaxes 170's "added sets by when they were added" for that case. The generator's reopen step would re-derive the walk's own record by the same rule: a weaker invariant, which Adam's "the same invariants after every step" doesn't allow without his word.
+- **(d) The phone keeps the card's list past the session's end** (TASKS 63, Dexie), so CONTINUE SESSION on the same phone keeps the order.
+  - Another phone, or a cleared cache, has no list, and there the probe's H2 is drawn wrong.
+  - It doesn't meet "from its log once logged".
+
+**Evidence:** the probe above, and the column census.
+
+### From CONTEXT.md: the d31b record's end (before 172's answer)
+narrow the app's op type so `v2_programs` and `v2_workout_days` allow update only, no delete, with a test; no migration (157 (c)). Not started.
+
+### From CONTEXT.md: chunk 46's record, its first line's head (before 173's answer)
+  - **46** (2026-10-19, fifth review, **not merged**; blocked on new 173):
