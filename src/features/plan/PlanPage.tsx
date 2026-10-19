@@ -255,7 +255,7 @@ function PlanFrame({ children }: { children: ReactNode }) {
 function PlanSpinner() {
   return (
     <PlanFrame>
-      <div role="status" aria-label="Loading" className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+      <div role="status" aria-label="Loading" className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', ...SPINNER_RING }} />
     </PlanFrame>
   )
 }
@@ -276,6 +276,17 @@ function PlanLoadError({ error }: { error: unknown }) {
 }
 
 const NO_PLANS: WeekPlan[] = []
+
+// The spinner's ring, one side at a time: a captured render drops a `border` shorthand with `var()`, and a `borderColor` followed by
+// `borderTopColor` (jsdom keeps neither), so the board-12 screenshots would show no ring.
+const SPINNER_RING: CSSProperties = {
+  borderWidth: 2,
+  borderStyle: 'solid',
+  borderTopColor: 'var(--accent)',
+  borderRightColor: 'var(--border-strong)',
+  borderBottomColor: 'var(--border-strong)',
+  borderLeftColor: 'var(--border-strong)',
+}
 
 const MONO_CAPTION: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }
 
@@ -679,7 +690,7 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
       <div style={{ padding: '14px 16px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <PlanTabs active="plan" onSelect={onTab} />
-          <span style={MONO_CAPTION}>{`${activeMeso.name.toUpperCase()} · CURRENT PROGRAM`}</span>
+          <span style={{ ...MONO_CAPTION, overflowWrap: 'anywhere' }}>{`${activeMeso.name.toUpperCase()} · CURRENT PROGRAM`}</span>
         </div>
         {tiles.length > 0 && <WeekTiles tiles={tiles} unit={UNIT} openWeek={viewWeek} focusWeek={tilesCurrent} onOpen={setOpenedWeek} />}
       </div>
@@ -697,7 +708,7 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
         {/* Loading: the week's own spinner under the tiles (board 12) */}
         {contentLoading && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 32 }}>
-            <div role="status" aria-label="Loading" className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+            <div role="status" aria-label="Loading" className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', ...SPINNER_RING }} />
           </div>
         )}
 
@@ -978,7 +989,7 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
   // this workout (weekPlan.exercises, written alongside the plan row itself
-  // — weekPlanService.ts's createWeekPlan/copyOnePlanForward, kept in step
+  // — weekPlanService.ts's createWeekPlan and v2_plan_week, kept in step
   // with the program by programService.ts's add/reorder sync until chunk
   // 9); the program's own exercises directly otherwise — no week plan has
   // been planned for this workout/week yet, the same source this screen

@@ -91,6 +91,9 @@ function run(current: number, planned: number[]) {
 }
 
 const renderPlan = () => render(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+// The spinner's ring as a captured render carries it: its borders written as longhands (a `border` shorthand with `var()` is dropped by
+// jsdom, and the screenshot then shows no ring: the first capture of board 12 did), the accent on its top.
+const drawnRing = (el: HTMLElement) => el.style.borderStyle === 'solid' && el.style.borderWidth === '2px' && el.style.borderTopColor === 'var(--accent)' && el.style.borderLeftColor === 'var(--border-strong)'
 const tileLabels = () => Array.from(document.querySelectorAll('[data-week]')).map((el) => el.getAttribute('aria-label'))
 
 describe('the header (boards 1, 1b, 1d)', () => {
@@ -101,6 +104,8 @@ describe('the header (boards 1, 1b, 1d)', () => {
     const tabs = screen.getByRole('tablist')
     expect(within(tabs).getAllByRole('tab').map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([['PLAN', 'true'], ['PROGRAMS', 'false']])
     expect(screen.getByText('TEST MESO · CURRENT PROGRAM')).toBeTruthy()
+    // a long name wraps inside its line: an unbroken word must not run past the screen (RULES, 128 (i); the 375 px check of a long name)
+    expect(screen.getByText('TEST MESO · CURRENT PROGRAM').style.overflowWrap).toBe('anywhere')
     expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
     // in that order, one under the other
     const caption = screen.getByText('TEST MESO · CURRENT PROGRAM')
@@ -160,6 +165,7 @@ describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => 
     state.programsLoading = true
     renderPlan()
     expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    expect(drawnRing(screen.getByRole('status', { name: 'Loading' }))).toBe(true)
     expect(screen.getByRole('heading', { name: 'PLAN' })).toBeTruthy()
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(document.querySelector('[data-week]')).toBeNull()
@@ -226,6 +232,7 @@ describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => 
     expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
     expect(screen.getByRole('tablist')).toBeTruthy()
     expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    expect(drawnRing(screen.getByRole('status', { name: 'Loading' }))).toBe(true)
     for (const gone of ['COPY']) expect(screen.queryByText(gone)).toBeNull()
     expect(screen.queryByLabelText('Week 2 options')).toBeNull()
     expect(screen.queryByText(/^CHANGE THE PROGRAM/)).toBeNull()

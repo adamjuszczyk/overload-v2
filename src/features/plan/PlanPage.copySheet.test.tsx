@@ -7,6 +7,7 @@ import { format, startOfWeek, subWeeks } from 'date-fns'
 import type { Mesocycle, Program, WeekPlan, WeekPlanSet, WorkoutDay } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
+import { textOnAccent, textOnAccentColours } from '../../testing/textOnAccent'
 import { pe, plan, wset } from './weekPlanning.testutil'
 
 // Chunk 52 (TASKS-1.2 "Plan's header" → CopySheet; SPEC Weeks and copying [1.2] → COPY (2c); G53; Defaults 7; board 2). What COPY's sheet
@@ -167,6 +168,21 @@ describe('the COPY sheet (board 2)', () => {
     expect(row(sheet, 'Push Day').textContent).toContain('MON')
     expect(row(sheet, 'Pull Day').textContent).toContain('WED')
     expect(legs.textContent).toContain('FRI')
+  })
+
+  it('text on the accent is --on-accent (DECISIONS 128 (g)): the five ticks and the button, and nothing else in the sheet sits on the accent', () => {
+    world('week_dependent')
+    openSheet()
+    const dialog = screen.getByRole('dialog')
+    // three field ticks, two workout ticks (Legs is locked), the button
+    expect(textOnAccent(dialog)).toHaveLength(6)
+    expect(textOnAccentColours(dialog)).toEqual(Array(6).fill('var(--on-accent)'))
+    // a tick unticked is off the accent, and so is the button when there is nothing to send
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'REPS' }))
+    expect(textOnAccent(dialog)).toHaveLength(5)
+    for (const name of ['WEIGHT', 'RIR']) fireEvent.click(within(dialog).getByRole('checkbox', { name }))
+    expect(textOnAccent(dialog)).toHaveLength(2) // the two workout ticks; the button is disabled, so it is not the accent's
+    expect(textOnAccentColours(dialog)).toEqual(Array(2).fill('var(--on-accent)'))
   })
 
   it('a past week (week 2, planned) has no COPY and no WEEK ⋯ (board 1c), though week 3 has both', () => {

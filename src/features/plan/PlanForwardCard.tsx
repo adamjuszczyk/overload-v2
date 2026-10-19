@@ -144,8 +144,8 @@ export default function PlanForwardCard({ mesoId, week, unit, planningType, note
                   borderTopColor: 'var(--border-subtle)',
                 }}
               >
-                <span style={{ ...MONO, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }}>{row.label}</span>
-                <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text-secondary)' }}>{row.name}</span>
+                <span style={{ ...MONO, flex: '0 0 auto', fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }}>{row.label}</span>
+                <span style={{ minWidth: 0, marginLeft: 12, textAlign: 'right', overflowWrap: 'anywhere', fontWeight: 600, fontSize: 15, color: 'var(--text-secondary)' }}>{row.name}</span>
               </div>
             ))}
           </div>

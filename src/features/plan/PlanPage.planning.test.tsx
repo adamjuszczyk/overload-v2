@@ -353,6 +353,9 @@ describe('PLAN FORWARD plans the week of the tile that carries it, then the next
     expect(within(list).getByText('Push Day')).toBeTruthy()
     expect(within(list).getByText('WED')).toBeTruthy()
     expect(within(list).getByText('Pull Day')).toBeTruthy()
+    // a workout name wraps inside its row (an unbroken 80-letter name must not run past the screen: the 375 px check)
+    expect(within(list).getByText('Pull Day').style.overflowWrap).toBe('anywhere')
+    expect(within(list).getByText('Pull Day').style.minWidth).toBe('0px')
     // a week-dependent run takes each workout's last planned week with sets: week 2, and numbers come with COPY
     expect(screen.getByText("Takes week 2's sets and set types. Numbers come with COPY. Week 4 opens once week 3 is planned.")).toBeTruthy()
   })

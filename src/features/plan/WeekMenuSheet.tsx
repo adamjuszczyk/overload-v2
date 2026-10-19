@@ -67,7 +67,7 @@ export default function WeekMenuSheet({ programName, unit, weekNumber, marked, p
             onClick={onToggle}
             disabled={pending}
             aria-disabled={pending}
-            style={{ ...ROW, color: marked ? 'var(--accent)' : 'var(--text-primary)', cursor: pending ? 'default' : 'pointer' }}
+            style={{ ...ROW, color: pending ? 'var(--text-muted)' : marked ? 'var(--accent)' : 'var(--text-primary)', cursor: pending ? 'default' : 'pointer' }}
           >
             <span>{label}</span>
             {marked && !pending && (

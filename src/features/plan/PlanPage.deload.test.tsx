@@ -377,6 +377,7 @@ describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 5
     openWeekMenu()
     const button = within(wordsOf()).getByText('MARKING…').closest('button') as HTMLButtonElement
     expect(button.disabled).toBe(true)
+    expect(button.style.color).toBe('var(--text-muted)') // board 1e: the row is muted while it works
     fireEvent.click(button)
     expect(setWeekDeloadMutate).not.toHaveBeenCalled()
     expect(within(wordsOf()).queryByText('MARK WEEK AS DELOAD')).toBeNull()
@@ -388,6 +389,7 @@ describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 5
     renderPlanPage()
     openWeekMenu()
     expect(within(wordsOf()).getByText('UNMARKING…')).toBeTruthy()
+    expect((within(wordsOf()).getByText('UNMARKING…').closest('button') as HTMLButtonElement).style.color).toBe('var(--text-muted)')
     expect(within(wordsOf()).queryByText('DELOAD')).toBeNull()
   })
 

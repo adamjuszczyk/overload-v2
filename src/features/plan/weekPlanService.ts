@@ -53,11 +53,10 @@ export type DbWeekPlanSet = {
   rep_min?: number | null
   rep_max?: number | null
   is_amrap?: boolean
-  // Chunk 19 — read by toSet() below (Plan's own tags editor); never
-  // referenced by copySetsWithGrouping's insert payloads, which is what
-  // keeps "tags are never copied" true structurally, not just by omission
-  // at the call site (weekPlanService.test.ts's own "never includes tags in
-  // the payload" test pins this).
+  // Chunk 19 — read by toSet() below (Plan's own tags editor). Tags are
+  // never copied: since chunk 52 the only week-to-week copy is COPY's numbers
+  // (copySheetLogic.ts's numbersOps names target_weight, rep_min, rep_max,
+  // is_amrap, target_rir and target_rir_max, and no other column).
   tags?: string[] | null
   // Migration 042 (TASKS-1.2 chunk 36) — the RIR range's high end (SPEC [1.2]
   // "Targets"); target_rir stays the number / the low end. Read by toSet()
@@ -317,21 +316,17 @@ export async function createWeekPlan(
   const plan = data as DbWeekPlan
   // Chunk 7 — a brand-new week plan row ("ADD SET" lazily creating one,
   // useAddSet/useWeekPlan.ts) starts with the workout's CURRENT program
-  // exercises, in program order — the one path that reads straight off
-  // v2_program_exercises rather than copying another week's own list
-  // forward (copyOnePlanForward below), since there is no other week to
-  // copy from here. Same shape migration 029's backfill writes for every
+  // exercises, in program order — the one client path that reads straight
+  // off v2_program_exercises (there is no other week to copy from here; the
+  // client copy of another week's own list is gone, chunk 52). Same shape
+  // migration 029's backfill writes for every
   // pre-existing row, so an old row and a brand new one end up identical.
   await writeWeekPlanExercisesFromProgram(userId, plan.id, workoutDayId)
   return toPlan(plan)
 }
 
 // Shared by createWeekPlan above (a fresh plan, no previous week to copy)
-// and nowhere else — copyOnePlanForward's own fresh-insert branch instead
-// copies the PREVIOUS week's own v2_week_plan_exercises forward
-// (copyExercisesForward, below copySetsWithGrouping), not the program's
-// current state, since "copy" means "copy that specific source", not
-// "reset to the program". Plain insert (not upsert): a week plan row this
+// and nowhere else. Plain insert (not upsert): a week plan row this
 // function has just created cannot already have any v2_week_plan_exercises
 // rows, so a real collision here would be a genuine bug, not a benign race.
 //
@@ -777,8 +772,7 @@ export async function reorderWeekExercises(
 // what the calculated sets are, the restore snapshot's own shape) all live
 // in deloadRules.ts; this section is the I/O that gathers what those
 // functions need and applies their output, same split as every other
-// feature in this file (weekSources.ts/weekEdits.ts's own pure cores,
-// copyOneWorkoutFromHistory's gather-then-copy shape above).
+// feature in this file (weekSources.ts/weekEdits.ts's own pure cores).
 //
 // Outcome of a mark/unmark attempt, reported back to the UI so it can show
 // reviewer's note 5's one-line notice ("Already started — sets left as
@@ -786,9 +780,8 @@ export async function reorderWeekExercises(
 export type DeloadMarkOutcome = 'flagOnly' | 'calculated' | 'alreadyStarted'
 export type DeloadUnmarkOutcome = 'flagOnly' | 'restored' | 'alreadyStarted'
 
-// ─── Gather (thin, unbranched Supabase reads — same posture this file's
-// own fetchEmptyWorkoutPlanIds/fetchPlannedWeekHistory above already take:
-// no logic of their own to break, so left untested directly here; the
+// ─── Gather (thin, unbranched Supabase reads — no logic of their own to
+// break, so left untested directly here; the
 // DECISIONS built from what they return are each pure-tested in
 // deloadRules.ts) ───────────────────────────────────────────────────────────
 
@@ -875,8 +868,7 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
 // workout occupies (R16) — resolveDeloadBaseOccurrence itself needs no
 // change at all (it already just searches whatever `occurrences` list it's
 // handed, same posture as weekSources.ts's findLastUsableWeek); this is the
-// one gathering step that decides what counts as "this workout's history",
-// same fix shape as fetchPlannedWeekHistory above.
+// one gathering step that decides what counts as "this workout's history".
 async function fetchDeloadOccurrenceHistory(
   mesocycleId: string,
   workoutDayId: string,
@@ -988,9 +980,8 @@ function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null, programExerc
   }
 }
 
-// ─── Write order (injectable — same seam as copySetsWithGrouping's own
-// insertPlanSet above, so a test can assert exact call ORDER with a fake,
-// never a real Supabase round trip) ─────────────────────────────────────────
+// ─── Write order (injectable, so a test can assert exact call ORDER with a
+// fake, never a real Supabase round trip) ───────────────────────────────────
 
 export interface DeloadMarkWriteOps {
   // Bundles the snapshot write with the is_deload flip — ONE statement,
@@ -1021,11 +1012,9 @@ async function defaultInsertOneSet(payload: Record<string, unknown>): Promise<{ 
   return data as { id: string }
 }
 
-// Heads first (so each stage's new parent id is resolvable), same
-// insert-order/idMap pattern as copySetsWithGrouping above. `insertOneSet`
+// Heads first (so each stage's new parent id is resolvable). `insertOneSet`
 // is this function's own injection seam (defaults to a real Supabase
-// insert) — same reason copySetsWithGrouping's own insertPlanSet is
-// injectable: the id-remap (a dropped head must take its stages with it;
+// insert), because the id-remap (a dropped head must take its stages with it;
 // a KEPT head's stages must land on ITS new id, never a sibling's) is the
 // part genuinely at risk of a bug, and a test can exercise it directly
 // with a fake that just records payloads and mints synthetic ids.
@@ -1229,8 +1218,7 @@ export async function applyDeloadRestore(
 
 // ─── Orchestrators — the one function per direction useWeekPlan.ts's hooks
 // call, gluing the gather/decide/write pieces above together. Left thin and
-// untested directly (same posture copyOneWorkoutFromHistory above already
-// takes for its own gather-then-copy glue): every DECISION it makes is
+// untested directly: every DECISION it makes is
 // pure-tested in deloadRules.ts, every destructive WRITE ORDER it relies on
 // is tested above via the injectable ops, and the whole thing is proven
 // end-to-end against real Postgres (this chunk's scratch-SQL verification).

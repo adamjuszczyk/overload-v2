@@ -17,6 +17,11 @@ describe('forwardSource — which week a week planned now would take its sets an
     expect(forwardSource({ planningType: 'stable', week: 3, slots, allWeekPlans: all })).toEqual({ kind: 'default' })
   })
 
+  it('week 1 of any run starts from the program (nothing is before it)', () => {
+    const all = [slotPlan('wd-a', 2)]
+    expect(forwardSource({ planningType: 'week_dependent', week: 1, slots, allWeekPlans: all })).toEqual({ kind: 'default' })
+  })
+
   it('a week-dependent run takes the one earlier week every workout takes', () => {
     const all = [slotPlan('wd-a', 1), slotPlan('wd-a', 2), slotPlan('wd-b', 1), slotPlan('wd-b', 2)]
     expect(forwardSource({ planningType: 'week_dependent', week: 3, slots, allWeekPlans: all })).toEqual({ kind: 'week', week: 2 })

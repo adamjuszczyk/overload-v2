@@ -78,6 +78,12 @@ describe('copyRows — each workout copies from its own last planned normal, non
     expect(rows[1].source?.id).toBe('wp-2-1')
   })
 
+  it('a done workout with no usable earlier week is done (the lock says why), not "no earlier week"', () => {
+    const thisWeek = [planOf('a', 2)]
+    const rows = copyRows({ thisWeek, allWeekPlans: thisWeek, doneWeekPlanIds: done('wp-a-2'), label })
+    expect(rows.map((r) => [r.state, r.sourceWeek, r.source])).toEqual([['done', null, null]])
+  })
+
   it('names each row by the caller\'s label', () => {
     const thisWeek = [planOf('a', 2)]
     const rows = copyRows({ thisWeek, allWeekPlans: [planOf('a', 1), ...thisWeek], doneWeekPlanIds: done(), label })
