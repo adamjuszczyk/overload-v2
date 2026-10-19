@@ -241,6 +241,12 @@ function check(s: Session, label: string): void {
     }
     // an open added set's row names its own draft, never another set's
     for (const r of heads) if (r.draftKey !== null) expect(r.draftKey.localId, `${label}: ${r.key}'s draft`).toBe(r.localId)
+    // …and every set is drawn with its own log: a planned set's is its planned set's, an added set's the one its card's entry names
+    const entries = new Map((s.cards.find((c) => c.key === cardKey)?.added ?? []).map((a) => [a.localId, a]))
+    for (const r of heads) {
+      if (r.added) expect(entries.get(r.localId!)?.logId ?? null, `${label}: ${r.key} is drawn with its own log`).toBe(r.logId)
+      else if (r.logId !== null) expect(s.server.logs.find((l) => l.id === r.logId)!.weekPlanSetId, `${label}: ${r.key}'s log`).toBe(r.weekPlanSetId)
+    }
   }
   // a deleted set stays deleted
   for (const change of s.server.held()) {

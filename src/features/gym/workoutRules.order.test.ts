@@ -364,6 +364,15 @@ describe('resolveRows: the sets added in the session keep the order they were ad
     ])
   })
 
+  it('a logged set whose old draft the phone still holds (a render before the card drops it) is drawn logged, names no draft, and the draft is not a set of its own', () => {
+    const log = addedLog('bench', 2, { number: 4 })
+    const order = orderOf([card('bench', 'n n', { added: [added(3), log], drafts: [key(4)] })])
+    const rows = rowsOf(order, [...planned, added(3), log])
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓', 'bench 04✓'])
+    expect(rows[3]).toMatchObject({ key: 'added:bench:a2', logId: log.id, draftKey: null })
+    expect(rows.map((r) => r.draftKey)).toEqual([null, null, null, null])
+  })
+
   it('an entry whose log is not among the logs (the logs and the card lag one another for a render) is an open set with its type', () => {
     const order = orderOf([card('bench', 'n n', { added: [{ localId: 'a1', logId: 'log.not.yet', type: { kind: 'warmup' } }, { kind: 'normal' }] })])
     const rows = rowsOf(order, planned)
