@@ -321,6 +321,12 @@ describe('the sets a swap for today moves are added sets of the new exercise (DE
     expect(movedSetEntries(card('dip', ''), [], moved).map((e) => e.place)).toEqual([1, 2, 3])
   })
 
+  it('reported (board W5 draws it otherwise): W5\'s swap, Lat Pulldown 01 and 02 logged and its 03 (a dropset) moved, is 01 on Machine Pulldown, its rank there (170, 179); W5 draws 03', () => {
+    const machine = card('machine', '')
+    const entries = movedSetEntries(machine, [], [{ localId: 'm3', type: staged('dropset', 1) }])
+    expect(resolveRows(orderOf([{ ...machine, added: entries }]), []).map(brief)).toEqual(['machine 01·', 'machine 01.1·'])
+  })
+
   it('refuses a set the new card already lists, and a set with no type', () => {
     expect(() => movedSetEntries(target(), targetLogs(), [{ localId: 'd1', type: NORMAL }])).toThrow(RangeError)
     expect(() => movedSetEntries(target(), targetLogs(), [{ localId: 'm1', type: NORMAL }, { localId: 'm1', type: NORMAL }])).toThrow(RangeError)
