@@ -125,7 +125,7 @@ export default function SessionPreview({
           className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
           style={{
             backgroundColor: 'var(--accent)',
-            color: 'var(--on-accent)',
+            color: 'var(--base)',
             fontFamily: 'var(--font-mono)',
             opacity: isStarting ? 0.6 : 1,
           }}

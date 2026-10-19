@@ -99,7 +99,7 @@ function ChipRow<T extends string>({
             style={{
               minHeight: 36,
               backgroundColor: active ? 'var(--accent)' : 'var(--surface-raised)',
-              color: active ? 'var(--on-accent)' : 'var(--text-muted)',
+              color: active ? 'var(--base)' : 'var(--text-muted)',
               border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
               fontFamily: 'var(--font-mono)',
               letterSpacing: '0.08em',

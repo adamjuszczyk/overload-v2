@@ -109,7 +109,7 @@ export default function SettingsPage() {
               // 2px under this app's 44px touch-target convention.
               minHeight: 44,
               backgroundColor: current === value ? 'var(--accent)' : 'var(--surface-raised)',
-              color: current === value ? 'var(--on-accent)' : 'var(--text-muted)',
+              color: current === value ? 'var(--base)' : 'var(--text-muted)',
               border: `1px solid ${current === value ? 'transparent' : 'var(--border)'}`,
               fontFamily: 'var(--font-mono)',
               letterSpacing: '0.08em',
