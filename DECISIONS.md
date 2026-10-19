@@ -1,12 +1,14 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 51a's review: merged (#149).*
-- *Your answers of 2026-10-19 are in. The re-seed is done (138), and the checks that waited on it ran. 170's answer is in its entry word for word, with a SPEC line, and chunk 46's fifth attempt is building on Opus. 51a's question is 171: answered, and 51b's scope now names an added exercise's default sets. Day mode: two builders at a time again.*
-- *Chunk 51a merged: CHANGE THE PROGRAM's screen and SAVE, the first writer through `v2_apply_ops`. A real save on staging landed as SPEC says; the done and in-progress sessions and the saved program are byte-identical. Its display choices are 172 (provisional, D31).*
-- *What follows: 51b, the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
+*Rewritten at every boundary. Last: 2026-10-19, chunk 46's review 5: not merged (new 173).*
+- *Chunk 46's fifth attempt builds your 170 right for the working sets. Every set has a fixed place and its number is its rank; LOG stores that number, and a delete or a Warmup switch patches the logged sets after it. 161 (b)(i) is built right too, review 4's four sequences come out as they should, and your named break (attempt 4's claim put back) fails the sequence test.*
+- *Two behaviour bugs remain, both executed: 173. A warmup's log keeps a number it no longer shows. And a set added in a reopened session is drawn before the earlier added sets.*
+- *TASKS 63 now keeps the card's list of added sets across a reload (the builder's question 2; a TASKS addition from the review, as for 51b).*
+- *What follows: 51b (building), the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
 
 Decisions:
+- **173** — chunk 46's fifth attempt has two behaviour bugs. A warmup's log keeps a number it no longer shows, so two added Warmups can be one REVIEW item, and unlog then log isn't exact. A set added in a reopened session is drawn before the earlier added sets, and two logs can end up holding one number. Recommended: (a), a sixth attempt that fixes both in 46. When: before 58a. Blocks: chunk 46's merge, and so 58a–64; nothing before 58a.
 - **172** — chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31): twelve, (a)–(l). Three differ from a drawing or a count: SUPERSET isn't shown on the last single exercise (PL1 draws it on every single card); "+ ADD ITEM" stays while a routine item is tapped or edited (PL9 draws neither with it); and on the day a week's last open session is in progress, Plan's button names that week where the screen names the next. Recommended: accept all (display only). When: any time. Blocks: nothing.
 
 To-dos:
@@ -124,7 +126,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - Verification adds a sequence test: many generated sequences of add, log, unlog, delete and warmup switches, asserting after every step that numbers are contiguous with no duplicates, every set's identity and order are unchanged, and unlog then log is an exact undo. Break proof: reintroduce attempt 4's "draft claims its number" and the test fails.
   - This attempt's builder runs on Opus (the process allows it after two behaviour failures)."
 
-  Written into SPEC.md (Logging mechanics → Delete set (18b)). Chunk 46's fifth attempt is building (from 2026-10-19, in the main checkout, beside chunk 51a's review). Full text in HISTORY.md.
+  Written into SPEC.md (Logging mechanics → Delete set (18b)). Built in chunk 46's fifth attempt (`d09a241`) and reviewed on 2026-10-19. It is right for the working sets, and the named break fails the sequence test. Not merged, on 173. Full text in HISTORY.md.
 - Date: 2026-10-18
 
 ### 171 An exercise added on a stable run in chunk 51a lands with no sets until 51b (chunk 51a)
@@ -151,6 +153,48 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (l) A superset's within-round rest stored as 0 reads 0:00 in PL3 (unset reads NO TIMER; the planner shows 0s).
 **Answer:**
 **Evidence:** the builder's report (`<scratchpad>/build/chunk-51a-builder-1.md`, "Provisional choices under D31": (a)–(g) and (j)) and the review's real-screen checks on staging's data (`<scratchpad>/build/chunk-51a-review-1.md`), which found (h), (i), (k) and (l). What would be redone if an answer goes against them: display code in `ChangeProgramPage.tsx`, `ChangeProgramExerciseCard.tsx`, `ChangeProgramWarmupCard.tsx` and `PlanPage.tsx`; no data.
+
+### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
+**Ask:** Chunk 46's fifth attempt builds your 170 right for the working sets, and your named break fails its sequence test. Two behaviour bugs remain. Allow a sixth attempt that fixes both?
+- (1) A warmup's log keeps a number it no longer shows.
+  - A logged set made a Warmup keeps its working number: logged as 04, it shows W1 and still holds 4. A logged warmup keeps its W number when a set before it is switched or deleted.
+  - So unlog then log stores another number (4 → 1).
+  - Two added sets, logged and then both made Warmups, hold the same number. REVIEW then shows one item, "warmup 04", for the two.
+  - SPEC 18b says "LOG stores the number the row shows; a delete or a switch … that changes logged sets' numbers patches them". That, and 18c's exact undo, cover warmups too, and 1.1 stores a warmup's W number.
+- (2) A set added while the card's list doesn't name the earlier added sets is drawn before them. That happens in a session reopened with CONTINUE SESSION, or on another phone.
+  - Example: bench 01–03 and two added sets logged as 04 and 05. Reopened, + ADD SET: the new set shows 04, and the two older ones 05 and 06, while their logs still hold 4 and 5.
+  - Logging the new set stores a second 4, and REVIEW shows two items for the three added sets.
+  - 170 says "added sets by when they were added".
+
+**Recommendation:** (a). Both fixes are small and in 46.
+- The renumbering also gives each logged warmup its W number.
+- Any added set the card's list doesn't name is taken into the list before a new set is added, so a new set always comes last.
+- The sequence test then checks warmups' stored numbers and the exact undo in full, and adds reload and reopen steps.
+- Nothing uses 46 before 58a.
+
+**Blocks:** chunk 46's merge, and so 58a, 58b and 59–64, which draw from it. Nothing before 58a.
+**Options:**
+- (a) A sixth attempt of 46 with both fixes, as recommended. (2) has a simpler form: draw the sets the list doesn't name before the listed ones. That is right on one phone, but wrong when you go back to a phone whose list is intact after another phone added sets.
+- (b) Merge as built, and make the fixes in 62 (which writes the warmups' numbers) and in 58a and 63 (the list). 46's module would then change inside those chunks.
+- (c) Merge as built and accept both bugs.
+  - A warmup's stored number can differ from what the workout showed. REVIEW can then show one item for two added Warmups, labelled with the old number.
+  - In a reopened session a new set comes before the earlier added sets, and two set logs can hold the same number.
+**Answer:**
+**Evidence:** executed in the review on `d09a241` (`<scratchpad>/build/chunk-46-review-5.md`), with probes on the reviewer's own driver and on the builder's `Session`. Each step is the module's own answer, applied as the card and the sync queue will apply it.
+- (1):
+  - Bench 01–03 logged; A and B added and logged as 04 and 05; A made a Warmup, then B. The rows read W1 = A, W2 = B, 01–03. Both logs hold 4, and REVIEW (chunk 43, merged) gives one item, `added-set:s1:ex.bench:w4`.
+  - A planned set: bench `w n n n`, all logged, 01 made a Warmup. It shows W2 and holds 1, beside W1, which also holds 1. Unlog then log stores 2.
+  - The builder's sequence test leaves warmups out of two of its checks. With those exceptions taken out, its generated sequences fail (seed 4, step 18: "shows 1 and its log holds 3").
+  - This is the builder's own question 1, and the builder recommended this fix.
+- (2):
+  - The module draws the sets the card's list doesn't name after the listed ones, and a test pins that.
+  - Its header names "the session after a reload, or a reopened one" as sessions with such sets, and TASKS 64's check reopens a session with CONTINUE SESSION.
+  - Control: with the two older sets in the card's list first, the result is A 04, B 05, N 06, stored 4, 5, 6, and three REVIEW items.
+- Right in the attempt, executed:
+  - 170's four sequences (D, W, 2D, MR), on the reviewer's own driver.
+  - 161's U1 and U2, and review 3's case.
+  - Your named break, in the builder's two forms and the reviewer's (attempt 4's claim and its ordering put back): 7 of the sequence test's 11 tests fail.
+  - Every script is green (4543 tests in 247 files). The reviewer's 15 breaks were all caught.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
