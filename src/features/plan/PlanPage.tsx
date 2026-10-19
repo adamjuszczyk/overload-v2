@@ -301,11 +301,11 @@ const ACTION_BUTTON: CSSProperties = {
 }
 
 // A card for the week the header opened when there is nothing of it to draw: a week that passed unplanned, or the current week while it is
-// being planned. `action` is what can be done about it, if anything.
-function WeekNote({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
+// being planned, or a week that couldn't be read. `error` makes it an alert; the children are what can be done about it, if anything.
+function WeekNote({ title, body, error = false, children }: { title: string; body: string; error?: boolean; children?: ReactNode }) {
   return (
     <div
-      role="status"
+      role={error ? 'alert' : 'status'}
       style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10, padding: '18px 16px', borderRadius: 12, background: 'var(--surface)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--border)' }}
     >
       <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 18, lineHeight: 1.2, color: 'var(--text-primary)' }}>{title}</span>
@@ -749,6 +749,7 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
           <WeekNote
             title={`${capitalWord(unit)} ${viewWeek} isn't planned yet`}
             body={planWeek.isError ? errorReason(planWeek.error, offline) : `Planning this ${unit} now.`}
+            error={planWeek.isError}
           >
             {planWeek.isError && (
               <button
@@ -763,7 +764,7 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
         )}
 
         {!contentLoading && hasSchedule && weekIsOpen && plansFailed && (
-          <WeekNote title="Couldn't load this week" body={errorReason(weekPlansRead.error, offline)} />
+          <WeekNote title="Couldn't load this week" body={errorReason(weekPlansRead.error, offline)} error />
         )}
 
         {!contentLoading && hasSchedule && weekIsOpen && !plansFailed && (

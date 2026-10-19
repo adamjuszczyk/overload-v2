@@ -1,0 +1,266 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { addWeeks, format, startOfWeek, subWeeks } from 'date-fns'
+import type { Mesocycle, Program, WeekPlan, WorkoutDay } from '../../types'
+import { EMPTY_SCHEDULE } from '../programs/programService'
+import { textOnAccentColours } from '../../testing/textOnAccent'
+import { pe, plan, wset } from './weekPlanning.testutil'
+
+// Chunk 52 (TASKS-1.2 "Plan's header"; SPEC Screens → Plan screen → Header (1, 8a), Week row, Loading and errors (board 12), Errors (15);
+// P1.2-5). The header and the three states of board 12, at the screen: PLAN | PROGRAMS over "[PROGRAM] · CURRENT PROGRAM" over the week
+// tiles, with none of the old header's controls; OPENING PLAN (a spinner under the title) while the run's weeks are out; PLAN COULDN'T
+// LOAD with the real reason when they can't be read; LOADING THE WEEK (the tiles, with the week's own spinner under them) while the open
+// week's plan is out, and its own error when that one can't be read. Hooks are mocked (the seam every Plan screen test uses) and driven by
+// the states below.
+
+afterEach(cleanup)
+beforeEach(() => {
+  Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
+  state.programsLoading = false
+})
+
+interface Read<T> { data: T | undefined; isLoading: boolean; isError?: boolean; error?: unknown }
+const state = vi.hoisted(() => ({
+  programsLoading: false,
+  meso: null as unknown as Mesocycle,
+  all: null as unknown as Read<WeekPlan[]>,
+  week: null as unknown as Read<WeekPlan[]>,
+}))
+
+const workoutDay: WorkoutDay = { id: 'wd-1', programId: 'prog-1', userId: 'user-1', name: 'Push Day', position: 0, exercises: [] }
+const program: Program = {
+  id: 'prog-1', userId: 'user-1', name: 'Test Program', workoutDays: [], schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1' },
+  createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', kind: 'run', planningType: 'week_dependent',
+}
+const BENCH = pe('pe-bench', 'bench', 0)
+const week = (n: number): WeekPlan => plan(n, [BENCH], [wset(`s-${n}`, 'pe-bench', 1)], { id: `wp-${n}`, workoutDayId: 'wd-1' })
+
+vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [state.meso], isLoading: false }) }))
+vi.mock('../programs/usePrograms', async () => ({
+  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
+  usePrograms: () => ({ data: state.programsLoading ? undefined : [program], isLoading: state.programsLoading }),
+  useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
+  useProgramExercises: () => ({ data: [], isLoading: false }),
+  useSequenceItems: () => ({ data: [] }),
+}))
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+}))
+vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+vi.mock('../programs/ProgramsPage', () => ({ default: () => <div>PROGRAMS PAGE</div> }))
+vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
+vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
+vi.mock('./usePlanForward', () => ({
+  usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
+  useDefaultHasSets: () => ({ data: undefined }),
+}))
+vi.mock('./useWeekPlan', () => ({
+  useWeekPlans: () => state.week,
+  useAllWeekPlans: () => state.all,
+  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
+  usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetDeload: () => ({ mutate: vi.fn() }),
+  useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddStage: () => ({ mutate: vi.fn() }),
+  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateSet: () => ({ mutate: vi.fn() }),
+  useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
+  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
+  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+
+const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile } = await import('./planMenus.testutil')
+
+const monday = (weeksAgo: number) => format(startOfWeek(subWeeks(new Date(), weeksAgo), { weekStartsOn: 1 }), 'yyyy-MM-dd')
+
+/** A run in its week `current` with the given weeks planned, whose open week's plan has been read. */
+function run(current: number, planned: number[]) {
+  state.meso = { id: 'meso-1', userId: 'user-1', name: 'Test Meso', programId: 'prog-1', status: 'active', startDate: monday(current - 1), endDate: null, createdAt: '2026-01-01T00:00:00Z' }
+  state.all = { data: planned.map(week), isLoading: false }
+  state.week = { data: [week(current)], isLoading: false }
+}
+
+const renderPlan = () => render(<MemoryRouter initialEntries={['/plan']}><PlanPage /></MemoryRouter>)
+const tileLabels = () => Array.from(document.querySelectorAll('[data-week]')).map((el) => el.getAttribute('aria-label'))
+
+describe('the header (boards 1, 1b, 1d)', () => {
+  it('PLAN | PROGRAMS tabs with PLAN selected, then "[PROGRAM] · CURRENT PROGRAM", then the tiles; the old header\'s controls are gone', () => {
+    run(2, [1, 2])
+    renderPlan()
+
+    const tabs = screen.getByRole('tablist')
+    expect(within(tabs).getAllByRole('tab').map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([['PLAN', 'true'], ['PROGRAMS', 'false']])
+    expect(screen.getByText('TEST MESO · CURRENT PROGRAM')).toBeTruthy()
+    expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
+    // in that order, one under the other
+    const caption = screen.getByText('TEST MESO · CURRENT PROGRAM')
+    expect(tabs.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(caption.compareDocumentPosition(document.querySelector('[data-week="1"]') as Element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // absence (Checks that lied #32): no arrows, no Programs icon, no PRIORITIES, no old title or week label
+    for (const gone of ['Previous week', 'Next week', 'Programs']) expect(screen.queryByLabelText(gone)).toBeNull()
+    expect(screen.queryByText('PRIORITIES')).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'PLAN' })).toBeNull()
+    expect(screen.queryByText('Test Meso')).toBeNull() // the name is only ever in the caption, in capitals
+  })
+
+  it('opens on the current week: its tile is the open one, and it is not read-only', () => {
+    run(3, [1, 2, 3])
+    renderPlan()
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('3')
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
+    expect(screen.getByLabelText('Week 3 options')).toBeTruthy()
+  })
+
+  it('tapping a tile opens that week: the open one moves, the panel follows, and the lock line shows only on a past week', () => {
+    run(3, [1, 2, 3])
+    state.week = { data: [week(3)], isLoading: false }
+    renderPlan()
+    openWeekTile('WEEK 1')
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('1')
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    openWeekTile('WEEK 3')
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
+  })
+
+  it('a run that has not started yet is in week 1 (it has no current week yet): THIS WEEK on week 1, week 2 NOT PLANNED', () => {
+    state.meso = { id: 'meso-1', userId: 'user-1', name: 'Test Meso', programId: 'prog-1', status: 'active', startDate: format(addWeeks(startOfWeek(new Date(), { weekStartsOn: 1 }), 1), 'yyyy-MM-dd'), endDate: null, createdAt: '2026-01-01T00:00:00Z' }
+    state.all = { data: [week(1)], isLoading: false }
+    state.week = { data: [week(1)], isLoading: false }
+    renderPlan()
+    expect(tileLabels()).toEqual(['WEEK 1 · THIS WEEK', 'WEEK 2 · NOT PLANNED'])
+    expect(screen.getByLabelText('Week 1 options')).toBeTruthy()
+  })
+
+  it('the PROGRAMS tab replaces the screen under the tabs and PLAN brings it back (the shell, P1.2-12)', () => {
+    run(2, [1, 2])
+    renderPlan()
+    fireEvent.click(screen.getByRole('tab', { name: 'PROGRAMS' }))
+    expect(screen.getByRole('tab', { name: 'PROGRAMS' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('PROGRAMS PAGE')).toBeTruthy()
+    expect(document.querySelector('[data-week]')).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'PLAN' }))
+    expect(tileLabels()).toHaveLength(3)
+  })
+})
+
+describe('board 12: opening Plan, Plan couldn\'t load, loading the week', () => {
+  it('OPENING PLAN: while the programs are out (DECISIONS 94), the title over a spinner, and no tab, tile or action', () => {
+    run(2, [1, 2])
+    state.programsLoading = true
+    renderPlan()
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'PLAN' })).toBeTruthy()
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(document.querySelector('[data-week]')).toBeNull()
+    expect(screen.queryByText('COPY')).toBeNull()
+  })
+
+  it('while the run\'s weeks are out the tabs and the run\'s name are there with a spinner, and no tile yet (none can be drawn: provisional, D31)', () => {
+    run(2, [1, 2])
+    state.all = { data: undefined, isLoading: true }
+    renderPlan()
+    expect(screen.getByRole('tablist')).toBeTruthy()
+    expect(screen.getByText('TEST MESO · CURRENT PROGRAM')).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    expect(document.querySelector('[data-week]')).toBeNull()
+    expect(screen.queryByText('COPY')).toBeNull()
+    expect(screen.queryByText(/^CHANGE THE PROGRAM/)).toBeNull()
+  })
+
+  it('PLAN COULDN\'T LOAD: the headline and the REAL reason, never the fixed "Check your connection" line', () => {
+    run(2, [1, 2])
+    state.all = { data: undefined, isLoading: false, isError: true, error: { message: 'JWT expired', code: 'PGRST301' } }
+    renderPlan()
+    const alert = screen.getByRole('alert')
+    expect(within(alert).getByText("COULDN'T LOAD PLAN")).toBeTruthy()
+    expect(within(alert).getByText('JWT expired')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('Check your connection')
+    expect(screen.queryByRole('status')).toBeNull() // not an endless spinner
+  })
+
+  it('...with no message: "Something went wrong."; offline with no message: "You may be offline."; offline with a message: the message', () => {
+    run(2, [1, 2])
+    state.all = { data: undefined, isLoading: false, isError: true, error: {} }
+    const { unmount } = renderPlan()
+    expect(screen.getByText('Something went wrong.')).toBeTruthy()
+    unmount()
+
+    const online = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      const again = renderPlan()
+      expect(screen.getByText('You may be offline.')).toBeTruthy()
+      expect(screen.queryByText('Something went wrong.')).toBeNull()
+      again.unmount()
+      state.all = { data: undefined, isLoading: false, isError: true, error: { message: 'Failed to fetch' } }
+      renderPlan()
+      expect(screen.getByText('Failed to fetch')).toBeTruthy()
+      expect(screen.queryByText('You may be offline.')).toBeNull()
+    } finally {
+      online.mockRestore()
+    }
+  })
+
+  it('a refetch that failed with the weeks still in hand does not blank the page', () => {
+    run(2, [1, 2])
+    state.all = { data: [week(1), week(2)], isLoading: false, isError: true, error: { message: 'Failed to fetch' } }
+    renderPlan()
+    expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
+    expect(screen.queryByText("COULDN'T LOAD PLAN")).toBeNull()
+  })
+
+  it('LOADING THE WEEK: the tiles stay, with the open week\'s own spinner under them, and no panel, actions or CHANGE THE PROGRAM until it has been read', () => {
+    run(2, [1, 2])
+    state.week = { data: undefined, isLoading: true }
+    renderPlan()
+    expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
+    expect(screen.getByRole('tablist')).toBeTruthy()
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    for (const gone of ['COPY']) expect(screen.queryByText(gone)).toBeNull()
+    expect(screen.queryByLabelText('Week 2 options')).toBeNull()
+    expect(screen.queryByText(/^CHANGE THE PROGRAM/)).toBeNull()
+    expect(screen.queryByText('SETS')).toBeNull()
+  })
+
+  it('the open week\'s own read failing: its note, "Couldn\'t load this week" and the real reason, under the tiles; the other tiles still open', () => {
+    run(2, [1, 2])
+    state.week = { data: undefined, isLoading: false, isError: true, error: { message: 'canceling statement due to statement timeout' } }
+    renderPlan()
+    expect(within(screen.getByRole('alert')).getByText("Couldn't load this week")).toBeTruthy()
+    expect(screen.getByText('canceling statement due to statement timeout')).toBeTruthy()
+    expect(screen.queryByText('COPY')).toBeNull()
+    expect(screen.queryByRole('status', { name: 'Loading' })).toBeNull()
+    expect(tileLabels()).toHaveLength(3)
+  })
+
+  it('a week that is not planned has no spinner while its (empty) read is out: the card is a card, not a week to load', () => {
+    run(2, [1, 2])
+    state.week = { data: undefined, isLoading: true }
+    renderPlan()
+    openWeekTile('WEEK 3')
+    expect(screen.getByText("Week 3 isn't planned yet")).toBeTruthy()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('text on the accent on the screen (DECISIONS 128 (g))', () => {
+  it('the open tile and PLAN FORWARD draw in --on-accent; nothing else sits on the accent', () => {
+    run(2, [1, 2])
+    renderPlan()
+    expect(textOnAccentColours(screen.getByLabelText('Weeks of this program'))).toEqual(['var(--on-accent)']) // the open tile (week 2)
+    openWeekTile('WEEK 3')
+    // the open tile (week 3) and the PLAN FORWARD button, and nothing else on the screen
+    expect(textOnAccentColours(document.body)).toEqual(['var(--on-accent)', 'var(--on-accent)'])
+    expect((screen.getByText('PLAN FORWARD').closest('button') as HTMLButtonElement).style.color).toBe('var(--on-accent)')
+  })
+})
