@@ -775,7 +775,8 @@ describe('a set edit changes the set it names, in the exercise and the workout i
 
 describe('REMOVE THIS SET through the planner and the tables: the set named goes from the default and from each session that still matches, the others stay (review 1, P1)', () => {
   const FIRST_EXERCISE = [PLACES[0], PLACES[2]] as const
-  it.each(FIRST_EXERCISE.flatMap((t) => POSITIONS.map((i) => ({ name: t.name, t, i }))))('$name, the set at place $i', ({ t, i }) => {
+  const PLACE_NAME = ['first', 'middle', 'last'] as const
+  it.each(FIRST_EXERCISE.flatMap((t) => POSITIONS.map((i) => ({ name: t.name, t, i, title: PLACE_NAME[i] }))))('$name: the $title set of three', ({ t, i }) => {
     const world = unevenStableWorld()
     const before = start(world)
     const gone = `${t.row}-s${i + 1}`
@@ -803,6 +804,48 @@ describe('REMOVE THIS SET through the planner and the tables: the set named goes
     for (const p of [1, 2, 3]) expect(after.v2_week_plan_sets.filter((r) => r.week_plan_id === `p${p}-${otherPlan}`)).toEqual(world.db.v2_week_plan_sets.filter((r) => r.week_plan_id === `p${p}-${otherPlan}`))
     // a done week is not written: the first week's rows are all still there
     expect(after.v2_week_plan_sets.filter((r) => r.week_plan_id === `p1-${t.workoutId}` && r.program_exercise_id === t.row)).toHaveLength(3)
+  })
+})
+
+describe('REMOVE THIS SET on a middle set with a warmup in front (review 1, P1)', () => {
+  // the warmup is place 0 of the heads, "02" the working set at place 1; sets 2 and 3 differ, so which one is removed shows
+  function warmupFirstWorld(): World {
+    const w = newWorld({ planningType: 'stable', scheduleType: 'weekday', currentWeek: 2 })
+    addWorkout(w, 'fb', 'Full Body', 0)
+    addWorkout(w, 'arms', 'Arms', 1)
+    setDays(w, { tuesday: 'fb', thursday: 'fb', saturday: 'arms' })
+    addExerciseRow(w, 'pe-leg', 'fb', 'ex-leg', 0, [{ reps: '12', warmup: true }, { reps: '10-12' }, { reps: '6-8', rest: 150 }])
+    addExerciseRow(w, 'pe-inc', 'fb', 'ex-inc', 1, [{ reps: '8-10' }, { reps: '8-10', kind: 'dropset', stages: ['6-8'] }])
+    for (const week of [1, 2, 3]) {
+      planSession(w, `p${week}-fb`, 'fb', week)
+      planSession(w, `p${week}-arms`, 'arms', week)
+    }
+    return w
+  }
+
+  it('removing Leg Press set 02 (place 1 of the heads) drops 02 and keeps the warmup and 03, in the draft, the default and each matching session', () => {
+    const w = warmupFirstWorld()
+    const s = removeSet(start(w), 'fb', 'e:pe-leg', 1)
+    const leg = s.edit.workouts[0].exercises[0].sets!
+    expect(leg.map((x) => x.id)).toEqual(['pe-leg-s1', 'pe-leg-s3'])
+    const ops = planProgramChange({ ...inputOf(w, s.edit, { statuses: { 'p2-fb': 'done' } }), newId: idGen('p1-') }).ops
+    const after = applyOpsToDb(cloneDb(w.db), ops)
+    expect(after.v2_program_sets.find((r) => r.id === 'pe-leg-s2')!.removed_at).not.toBeNull()
+    expect(after.v2_program_sets.find((r) => r.id === 'pe-leg-s3')!.removed_at).toBeNull()
+    expect(after.v2_program_sets.find((r) => r.id === 'pe-leg-s3')!.position).toBe(3) // a removal leaves a gap (chunk 45's placeInOrder), as 1.1's removeSet does
+    // week 3 (not started) lost its set 02 and kept the warmup and 03; week 2 (done) is untouched
+    const week3 = after.v2_week_plan_sets.filter((r) => r.week_plan_id === 'p3-fb' && r.program_exercise_id === 'pe-leg').sort((a, b) => a.set_number - b.set_number)
+    expect(week3.map((r) => [r.set_number, r.program_set_id, r.is_warmup, repText(repTargetOf({ repMin: r.rep_min, repMax: r.rep_max, isAmrap: r.is_amrap }))])).toEqual([
+      [1, 'pe-leg-s1', true, '12'],
+      [3, 'pe-leg-s3', false, '6–8'],
+    ])
+    expect(after.v2_week_plan_sets.filter((r) => r.week_plan_id === 'p2-fb' && r.program_exercise_id === 'pe-leg').map((r) => r.program_set_id).sort()).toEqual(['pe-leg-s1', 'pe-leg-s2', 'pe-leg-s3'])
+    // read back as the screen reads the run copy
+    const back = initialDraft(runCopyOf(after, w.programId, w.mesocycleId), 'stable').edit.workouts[0].exercises[0].sets!
+    expect(back.map((x) => [x.id, repText(repTargetOf(x)), x.restSeconds])).toEqual([
+      ['pe-leg-s1', '12', null],
+      ['pe-leg-s3', '6–8', 150],
+    ])
   })
 })
 
