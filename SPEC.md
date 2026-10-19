@@ -191,7 +191,9 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   colour or size that has no token maps to the nearest existing one.
   - Text on the accent (DECISIONS 128 (g), 129 (d), 130 (j); Adam
     2026-10-15): a new token, `--on-accent`, in global.css for both themes, set
-    to the near-black the boards draw, used wherever text sits on the accent.
+    to the near-black the boards draw, used wherever text sits on the accent in
+    the screens 1.2 rebuilds and the shared components they use (DECISIONS 154,
+    Adam 2026-10-16: Scope of the look, below).
 - **Sample data is sample data.** Names, numbers and dates on boards are
   examples. "Week 2", "Push Pull Legs", "Bulk" and so on are never literals.
 - **Scope of the look.** The screens 1.2 touches are rebuilt to their boards in
