@@ -18,7 +18,7 @@ import { fetchWarmupItems } from '../programs/warmupRoutineService'
 
 // ─── DB type + mapper ───────────────────────────────────────────────────────
 
-type DbProgramSet = {
+export type DbProgramSet = {
   id: string
   user_id: string
   program_exercise_id: string
@@ -38,7 +38,7 @@ type DbProgramSet = {
   removed_at?: string | null
 }
 
-function toProgramSet(row: DbProgramSet): ProgramSet {
+export function toProgramSet(row: DbProgramSet): ProgramSet {
   return {
     id: row.id,
     userId: row.user_id,

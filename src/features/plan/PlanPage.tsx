@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, CalendarDays } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, CalendarDays, Pencil } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit, PlanningType, ProgramSet } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
 import { hasScheduledWorkout } from '../programs/hasSchedule'
 import { scheduleForWeek } from '../programs/runSchedule'
+import { changeStartWeek } from '../programs/programChange'
 import {
   useWeekPlans,
   useAllWeekPlans,
@@ -336,6 +337,12 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // just the immediately preceding week — a partly-deload week can send it
   // further back). The same hook the scheduler already reuses elsewhere.
   const { data: allWeekPlans = [] } = useAllWeekPlans(activeMeso?.id ?? '')
+  // Chunk 51a: the week CHANGE THE PROGRAM's changes start in (chunk 45's `changeStartWeek`), for the button at the foot of the panel.
+  // A run whose start date is still ahead has no current week yet: week 1.
+  const changeFromWeek = changeStartWeek(
+    allWeekPlans.map((wp) => ({ weekNumber: wp.weekNumber, status: doneWeekPlanIds.has(wp.id) ? ('done' as const) : ('not_started' as const) })),
+    Math.max(1, currentWeek),
+  )
 
   const copyPrev = useCopyFromPreviousWeek(activeMeso?.id ?? '', viewWeek)
   const planWeek = usePlanWeek()
@@ -819,6 +826,22 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
               planningType={program?.planningType ?? 'week_dependent'}
             />
           </>
+        )}
+
+        {/* Chunk 51a (SPEC Plan screen [1.2] → Bottom; board 1): the one way into CHANGE THE PROGRAM from Plan. "FROM WEEK N" is the
+            week the changes start in (the week of the next session that isn't done), the number the screen's rule box gives; a past
+            week has no button (board 1c; chunk 52 draws the week row). Plan reads which sessions are done, not which one is in
+            progress, so on the one day a week's last open session is the one in progress this says the week the screen then
+            corrects (display only, D31). */}
+        {!isPast && !plansLoading && !daysLoading && (
+          <button
+            type="button"
+            onClick={() => navigate('/plan/change')}
+            style={{ marginTop: 16, width: '100%', height: 52, boxSizing: 'border-box', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 11, letterSpacing: '0.15em', color: 'var(--text-primary)', cursor: 'pointer' }}
+          >
+            <Pencil size={16} aria-hidden="true" />
+            CHANGE THE PROGRAM FROM {isSequence ? 'CYCLE' : 'WEEK'} {changeFromWeek}
+          </button>
         )}
       </div>
     </div>
