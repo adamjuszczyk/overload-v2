@@ -1,11 +1,11 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, chunk 46m's review: merged (#158).*
+*Rewritten at every boundary. Last: 2026-10-19, 177–179 answered (Adam, 2026-10-19); chunk 46's sixth attempt can start.*
 - *Chunk 46m merged (#158). Migration 044 adds `v2_set_logs.added_place`: a nullable number with no default, refused below 1, and no existing row touched. It is live on staging. The deploy succeeded and the column answers. A test write of 0 was refused by its check and wrote nothing. RLS and the smoke are unchanged. Nothing reads or writes the column until chunks 46 and 58a.*
 - *`check-migration` flags 044's check and its schema reload, as it did for 042 and 043. That is one more line under "For the release", for the migrations-first PR.*
 - *One docs fix, no decision needed: TASKS 46 now adds `SetLog.addedPlace` as an optional field, as `stageKind` is. As a required field it breaks typecheck in 25 files, three of them frozen Coach files.*
-- *What follows: the pre-read of 46, then 46's sixth attempt beside d31b; then 52 onward; 58a–64 once 46 merges.*
+- *Chunk 46's pre-read is done and its three questions, 177–179, are answered. What follows: 46's sixth attempt, beside d31b; then 52 onward; 58a–64 once 46 merges.*
 
 Decisions:
 - **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
@@ -194,6 +194,21 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) a tests-only follow-up, after d31b or folded into it (recommended); (b) leave it to the release checklist (RC16 on staging); (c) leave it.
 **Answer:**
 **Evidence:** made the first workout, these `selected.id` uses in `ChangeProgramPage.tsx` pass every test (line numbers as merged in #156): 366 the drag's commit, 383 UNLINK, 384 the split, 385 MOVE, 540 a routine item's move, 677 and 678 the exercise sheet's MOVE UP and MOVE DOWN. So does 533, the warmup card's `key` (a display state kept across a workout switch). The builder's results are in `<scratchpad>/build/c51b2/logs/x51-final-*.jsonl`. Chunk 51b's second review re-ran four of them, its own replacements, on the merged tests: the drag's commit, UNLINK, the routine move and MOVE UP; all four pass every test.
+
+### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
+- What: whether the drop and stage logs of an added set also carry `added_place`.
+- Answer: (Adam, 2026-10-19) "no. Only an added set's own log carries added_place; its drop and stage logs leave it null."
+- Date: 2026-10-19
+
+### 178 An added set left unlogged when the session ends: what patches the logged sets after it? (pre-read, chunk 46)
+- What: what patches the logged sets after an added set is left unlogged when the session ends.
+- Answer: (Adam, 2026-10-19) "(a), with limits. Chunk 46's rules report the logged sets whose stored number differs from the number their row shows; the workout screen writes the corrected numbers when it draws the session's rows. It writes only where they differ, so drawing the same session again writes nothing. It writes only from the workout screen for an in-progress or reopened session, never from History, Plan or any read-only view. Offline, the writes queue like a delete's. Tests: a session ended with an unlogged added set, reopened, gets one correction write; a second draw gets none (break-proven both ways)."
+- Date: 2026-10-19
+
+### 179 The sets a swap for today moves: added sets with a place, or none? (pre-read, chunk 46)
+- What: whether the sets a swap for today moves are added sets with a place.
+- Answer: (Adam, 2026-10-19) "yes. Sets moved by a swap for today count as added sets of the new exercise. Each gets its place at the swap, in their order, after any sets already added to that exercise; chunk 59 writes it."
+- Date: 2026-10-19
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
