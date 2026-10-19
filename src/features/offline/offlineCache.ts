@@ -26,6 +26,8 @@ type RawSetLogRow = {
   form_rating?: string | null
   // Absent until migration 027 has been applied.
   stage_kind?: string | null
+  // Absent until migration 044 has been applied (chunk 46m; read from chunk 46).
+  added_place?: number | null
 }
 
 type RawSessionRow = {
@@ -151,6 +153,7 @@ export async function primeOfflineCache(params: {
             sessionStatus: 'completed',
             formRating: row.form_rating ?? null,
             stageKind: row.stage_kind ?? null,
+            addedPlace: row.added_place ?? null,
           }),
         ),
       )

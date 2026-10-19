@@ -93,6 +93,11 @@ interface CachedSetLog {
   // no-version-bump precedent as formRating above: rows cached before this
   // shipped won't have it; readers must treat undefined as null.
   stageKind: string | null
+  // Chunk 46 (DECISIONS 174): v2_set_logs.added_place, an added set's
+  // place; null on every other log. Optional (no version bump, not an
+  // index): rows cached before this shipped and the LOG write's own row
+  // (58a adds it there) don't have it; readers treat undefined as null.
+  addedPlace?: number | null
 }
 
 interface SyncQueueItem {
