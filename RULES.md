@@ -221,6 +221,16 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **A save of a draft built from an earlier read reads again first, and refuses when the source changed** (chunk 51a; breaks S10, R07 and R11 in its review). CHANGE THE PROGRAM's SAVE compares the fresh run copy's draft, weekdays included, with the one the screen opened with (`ProgramChangedError`), and plans against the fresh sessions, one of which may have started since. Without it, a draft written back over a run copy changed on another device writes the old values over the new ones.
 - **`verify-rls-tables.test.mjs` reads every file under `src/` for a `.from(` whose table is computed: tests, test utilities and comments included** (chunk 51a's builder). A test's `supabase` mock written with a named parameter in `from` failed it after Vitest was green. Write a mock's `from` with spread arguments (`from: (...args) => …`), and don't quote the pattern in a comment.
 - **A picture is checked for the board variant and the state it was captured in** (chunk 51a's review). `design/1.2/built/PL1` was captured from the stable world (its dump says STABLE, has the stable rule sentence and no "New. It lands…" note), while TASKS and the builder's report said week-dependent. PL9's EDITING state lost its field to the fixture's later clicks. Read a dump's variant markers before holding it against a board, and check that each drawn state shows what it is named for.
+- **A test that leaves a field out of a check its spec names is read against SPEC before it is accepted** (chunk 46's fifth review; executed).
+  - What the spec asked: 170's verification says unlog then log is an exact undo.
+  - What the test left out: the attempt's sequence test dropped a warmup's `set_number` from that comparison, and dropped warmups from its "stored equals shown" check, because the module doesn't keep the number.
+  - What that hid: with both exclusions taken out, its generated sequences fail at seed 4. SPEC 18b and 18c cover warmups too (DECISIONS 173).
+  - What showed the cost: the builder's probe through REVIEW, the one reader of that number. Two added Warmups holding one number came out as one REVIEW item.
+  - So a value that one module writes and only another reads is probed through that reader.
+- **A rule that takes state the screen keeps is also run from the states a screen starts in without it: a reload, a reopened session, another phone** (chunk 46's fifth review; executed).
+  - The gap: the sequence test's cards always listed every added set, so no order check ever ran after a step that starts with no card list.
+  - What it hid: in a session reopened with no list, + ADD SET drew the new set before the two added sets logged earlier (04·, 05✓, 06✓, while their logs held 4 and 5). Logging the new set then stored a second 4 (DECISIONS 173).
+  - So a sequence test adds steps that drop the screen's state, as each of those starts does, and then goes on.
 
 ## The 1.2 usage rules (Adam, 2026-10-16) — cut tokens per chunk without changing what is checked
 - Test output: run vitest with a quiet reporter that prints failures only (e.g. `--reporter=dot`), and pipe long script output through a filter that keeps failures and summary lines. Never paste a full passing test log into context.
