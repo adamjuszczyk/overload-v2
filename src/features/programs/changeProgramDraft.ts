@@ -1,4 +1,4 @@
-import type { DayOfWeek, WeightUnit } from '../../types'
+import type { DayOfWeek, PlanningType, WeeklySchedule, WeightUnit } from '../../types'
 import { groupIntoUnits, isLinkedGap, moveUnit, planLinkToggle } from '../../lib/supersetGroups'
 import { normaliseTempo, type RepTarget } from '../../lib/plannerVocabulary.js'
 import type { SetType } from '../../components/pickers/pickerLogic'
@@ -16,7 +16,6 @@ import {
 } from './programChange'
 import { newSetAfter, withRepTarget, withSetType } from './changeProgramSets'
 import { fullSchedule } from './runSchedule'
-import type { PlanningType, WeeklySchedule } from '../../types'
 
 // Chunk 51a (TASKS-1.2, CHANGE THE PROGRAM) — the screen's local draft and every edit that changes it, as pure functions
 // from one draft to the next. Nothing is written until SAVE hands `state.edit` to `planProgramChange` (chunk 45), which
@@ -33,6 +32,11 @@ import type { PlanningType, WeeklySchedule } from '../../types'
 // Order is always the list's order, and a superset moves as one block (`supersetGroups.ts`, the helpers the planner's step 2
 // and Plan's STRUCTURE view use): every edit below that moves or links keeps a block's members next to each other, which
 // `planProgramChange` demands and refuses with a RangeError otherwise.
+//
+// Chunk 51b adds two more kinds of edit, in their own sections below: a stable run's default sets (an exercise's `sets`, which
+// `initialDraft` fills from the run copy; `addSet`, `removeSet`, `setSetType`, the rep target edits, `setSetRestAfter`) and the
+// weekdays of a weekday run (`dayToggle`, `toggleWorkoutDay`). `draftContent` holds both, so CANCEL and SAVE's changed-elsewhere
+// check see them.
 
 export type DraftEntry = DraftExercise & { key: string }
 export type DraftRoutine = DraftRoutineItem & { key: string }

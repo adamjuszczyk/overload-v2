@@ -379,6 +379,8 @@ describe('a set’s rep target (W)', () => {
     // it opens on none (the sets differ): no number until a segment is picked, and no "Use for all" row
     const sheet = dialog('Rep target')
     expect(within(sheet).getByRole('button', { name: 'NONE' }).getAttribute('aria-pressed')).toBe('true')
+    // the picker has no eyebrow for "all sets": it says set 1's (provisional, D31)
+    expect(within(sheet).getByText('Leg Press · SET 01')).toBeTruthy()
     expect(within(sheet).queryByRole('checkbox')).toBeNull()
     pickReps('Rep target', { segment: 'RANGE', from: '6', to: '8' }, 'SET 6–8 REPS')
     expect(screen.getByRole('button', { name: 'All sets of Leg Press: rep target' }).textContent).toBe('6–8')
@@ -417,6 +419,32 @@ describe('a set’s rep target (W)', () => {
     expect(world.db.v2_program_sets.find((r) => r.id === 'pe-curl-s2-t1')).toMatchObject({ is_amrap: true, rep_min: null })
     expect(weekSetOf(world, 'p2-arms', 'pe-curl-s2-t1')).toMatchObject({ is_amrap: true })
     expect(weekSetOf(world, 'p3-arms', 'pe-curl-s2-t1')).toMatchObject({ is_amrap: true })
+  })
+
+  it('of two stages the rep box of the second opens the second’s picker and writes the second only', async () => {
+    useWorld(stableWorld(), {})
+    await open()
+    click(/^Arms/)
+    // Cable Curl's set 02 is a dropset with one stage at 8–10: one more drop is a second stage with no target of its own
+    click('Set 02 of Cable Curl: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: 'More drops' }))
+    closeDialog('What is this set?')
+    expect(setRow('Set 02 of Cable Curl: rep target').textContent).toBe('10–12DROPSET · 2')
+    expect(setRow('Stage 1 of set 02 of Cable Curl: rep target').textContent).toBe('8–10')
+    expect(setRow('Stage 2 of set 02 of Cable Curl: rep target').textContent).toBe('—')
+    click('Stage 2 of set 02 of Cable Curl: rep target')
+    // it opens on the second stage's own target (none), not the first one's
+    expect(within(dialog('Rep target')).getByRole('button', { name: 'NONE' }).getAttribute('aria-pressed')).toBe('true')
+    pickReps('Rep target', { segment: 'NUMBER', number: '5' }, 'SET 5 REPS')
+    expect(setRow('Stage 1 of set 02 of Cable Curl: rep target').textContent).toBe('8–10')
+    expect(setRow('Stage 2 of set 02 of Cable Curl: rep target').textContent).toBe('5')
+    expect(setRow('Set 02 of Cable Curl: rep target').textContent).toBe('10–12DROPSET · 2')
+    await save()
+    const stages = world.db.v2_program_sets.filter((r) => r.parent_program_set_id === 'pe-curl-s2').sort((a, b) => a.stage_index - b.stage_index)
+    expect(stages.map((r) => [r.stage_index, r.rep_min, r.rep_max])).toEqual([
+      [1, 8, 10],
+      [2, 5, 5],
+    ])
   })
 })
 
@@ -519,6 +547,22 @@ describe('the set type picker, opened from a set’s number (W)', () => {
     expect(weekSetOf(world, 'p3-fb', 'pe-leg-s1').is_warmup).toBe(true)
   })
 
+  it('the eyebrow of both pickers numbers the working sets apart from the warmups, as the rows do', async () => {
+    await open()
+    click('Set 01 of Leg Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Warmup/ }))
+    closeDialog('What is this set?')
+    // the rows are W, 01, 02 now: the second row of the list is the first working set
+    click('Set 01 of Leg Press: type')
+    expect(within(dialog('What is this set?')).getByText('Leg Press · SET 01')).toBeTruthy()
+    closeDialog('What is this set?')
+    click('Set 01 of Leg Press: rep target')
+    expect(within(dialog('Rep target')).getByText('Leg Press · SET 01')).toBeTruthy()
+    closeDialog('Rep target')
+    click('Set 02 of Leg Press: type')
+    expect(within(dialog('What is this set?')).getByText('Leg Press · SET 02')).toBeTruthy()
+  })
+
   it('a pick of a set that is removed meanwhile draws nothing (REMOVE THIS SET closes the sheet)', async () => {
     await open()
     click('Set 03 of Leg Press: type')
@@ -610,6 +654,9 @@ describe('an exercise added on a stable run gets set rows like any other (DECISI
     await addDip()
     expect(screen.getByText('TRICEPS · NEW')).toBeTruthy()
     expect(screen.getByText('NO SETS YET')).toBeTruthy()
+    // a stable run's new exercise carries none of the week-dependent note, and no ALL row until it has a set to be ALL of
+    expect(screen.queryByText(/It lands in week/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'All sets of Dip: rep target' })).toBeNull()
     press('Add a set to Dip')
     expect(screen.queryByText('NO SETS YET')).toBeNull()
     expect(setRow('Set 01 of Dip: rep target').textContent).toBe('—')
@@ -708,6 +755,19 @@ describe('a swapped exercise on a stable run', () => {
   })
 })
 
+describe('SAVE reads the run copy again first (a stable run’s default sets are part of what it compares)', () => {
+  it('a default set changed elsewhere since the screen opened is never written back over: the save refuses and sends nothing', async () => {
+    await open()
+    press('Add a set to Leg Press')
+    // another device gave Incline Press's first set a new rep target in the meantime
+    world = { ...world, db: { ...world.db, v2_program_sets: world.db.v2_program_sets.map((r) => (r.id === 'pe-inc-s1' ? { ...r, rep_min: 12, rep_max: 12 } : r)) } }
+    click('SAVE CHANGES')
+    await screen.findByText("Couldn't save the changes.")
+    expect(screen.getByText('The program changed since you opened this screen. Go back and open it again to see it.')).toBeTruthy()
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+})
+
 function draftSetsWith(w: World, rowId: string, fn: (s: DraftSet, i: number) => DraftSet): DraftSet[] {
   const d = draftFromRunCopy(runCopyOf(w.db, w.programId, w.mesocycleId), w.planningType)
   const sets = d.workouts.flatMap((x) => x.exercises).find((e) => e.kind === 'kept' && e.id === rowId)!.sets!
@@ -742,6 +802,17 @@ describe('/plan/change#<exerciseId> scrolls to that exercise’s card', () => {
     expect(scroll).not.toHaveBeenCalled()
   })
 
+  it('once followed, the hash does not pull the screen back: the workout picked after it stays picked through an edit', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    await open(['/plan', '/plan/change#ex-curl'])
+    await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1))
+    click(/^Full Body/)
+    press('Add a set to Incline Press')
+    expect(screen.getByRole('button', { name: /^Full Body/ }).getAttribute('aria-current')).toBe('true')
+    expect(scroll).toHaveBeenCalledTimes(1)
+  })
+
   it('a malformed hash is ignored', async () => {
     const scroll = vi.fn()
     Element.prototype.scrollIntoView = scroll
@@ -767,6 +838,9 @@ describe('draws board PL1b (the stable screen)', () => {
     const { container } = await open()
     click('Set 02 of Incline Press: rep target')
     pickReps('Rep target', { segment: 'RANGE', from: '10', to: '12', useForAll: false }, 'SET 10–12 REPS')
+    click('Set 02 of Incline Press: type')
+    fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Dropset/ }))
+    closeDialog('What is this set?')
     click('Set 01 of Leg Press: type')
     fireEvent.click(within(dialog('What is this set?')).getByRole('button', { name: /^Warmup/ }))
     closeDialog('What is this set?')
@@ -775,6 +849,8 @@ describe('draws board PL1b (the stable screen)', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Add exercise' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Add Dip' }))
     press('Add a set to Dip', 2)
+    click('All sets of Dip: rep target')
+    pickReps('Rep target', { segment: 'RANGE', from: '15', to: '20' }, 'SET 15–20 REPS')
     captureRender('change-program-stable-page', container)
   })
 

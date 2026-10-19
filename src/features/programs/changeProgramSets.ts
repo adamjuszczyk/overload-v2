@@ -144,9 +144,12 @@ export function setChanged(set: DraftSet, original: DraftSet | undefined): boole
   return !sameType || repText(repTargetOf(set)) !== repText(repTargetOf(original)) || set.restSeconds !== original.restSeconds
 }
 
-/** Whether a stage row differs from the stage it was: a new stage, or one whose rep target changed. */
+/**
+ * Whether a stage row differs from the stage it was: a new stage, or one whose rep target changed. A new stage has no id and every
+ * stage of the original has one (it was read from the default's rows), so a new stage finds no original and is changed.
+ */
 export function stageChanged(stage: DraftStage, original: DraftSet | undefined): boolean {
-  if (original === undefined || stage.id === null) return true
+  if (original === undefined) return true
   const was = original.stages.find((st) => st.id === stage.id)
   return was === undefined || repText(repTargetOf(stage)) !== repText(repTargetOf(was))
 }

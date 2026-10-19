@@ -129,6 +129,7 @@ describe('the set type', () => {
     expect(kindText(set('a', { stageKind: 'dropset', stages: [stage('s1')] }))).toBe('DROPSET · 1')
     expect(kindText(set('a', { stageKind: 'rest_pause', stages: [stage('s1'), stage('s2')] }))).toBe('REST-PAUSE · 2')
     expect(kindText(set('a', { stageKind: 'myo_reps', stages: [stage('s1'), stage('s2'), stage('s3')] }))).toBe('MYO-REPS · 3')
+    expect(kindText(set('a', { stageKind: 'cluster', stages: [stage('s1'), stage('s2')] }))).toBe('CLUSTER · 2')
     expect(kindText(set('a', { stageKind: null, stages: [stage('s1')] }))).toBe('DROPSET · 1')
   })
 })

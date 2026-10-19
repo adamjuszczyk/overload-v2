@@ -14,6 +14,7 @@ import {
   applyOpsToDb,
   inputOf,
   inserts,
+  newWorld,
   runCopyOf,
   scheduleRowsOf,
   sessionsOf,
@@ -199,9 +200,12 @@ describe('the DAYS card of a weekday run (board PL1)', () => {
   it('RENAME is in the card’s header (PL1), and renames the selected workout', async () => {
     await open()
     fireEvent.click(within(card()).getByRole('button', { name: 'Rename Full Body' }))
+    // while the name is typed the card shows the box and DONE, and no RENAME beside them
+    expect(within(card()).queryByRole('button', { name: 'Rename Full Body' })).toBeNull()
     fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Full Body A' } })
     click('DONE')
     expect(within(card()).getByText('1 · FULL BODY A · DAYS')).toBeTruthy()
+    expect(within(card()).getByRole('button', { name: 'Rename Full Body A' })).toBeTruthy()
     await save()
     expect(sent().map((o) => [o.op, o.table])).toEqual([['update', 'v2_workout_days']])
   })
@@ -220,6 +224,8 @@ describe('the DAYS card of a weekday run (board PL1)', () => {
     await open()
     expect(day('Saturday').disabled).toBe(true)
     expect(within(card()).getByText("Sat is Arms's day")).toBeTruthy()
+    // only the other workouts' days are named: Full Body's own Tuesday and Thursday get no line
+    expect(within(card()).getAllByText(/ is .+'s day$/).map((n) => n.textContent)).toEqual(["Sat is Arms's day"])
     fireEvent.click(day('Saturday'))
     expect(isOn('Saturday')).toBe(false)
     // the free days are not disabled
@@ -323,6 +329,36 @@ describe('the DAYS card of a weekday run (board PL1)', () => {
     expect(isOn('Monday')).toBe(true)
     expect(day('Tuesday').disabled).toBe(true)
     expect(within(card()).getByText("Tue is Pull's day")).toBeTruthy()
+  })
+})
+
+// A family of similar controls is tested with a table over every member (RULES.md): each of the seven toggles is named, lettered and
+// keyed for its own day, on the workout's pill and in what SAVE writes. The workout is the run's only one, so every day is free.
+const WEEK = [
+  ['monday', 'Monday', 'M', 'MON'],
+  ['tuesday', 'Tuesday', 'T', 'TUE'],
+  ['wednesday', 'Wednesday', 'W', 'WED'],
+  ['thursday', 'Thursday', 'T', 'THU'],
+  ['friday', 'Friday', 'F', 'FRI'],
+  ['saturday', 'Saturday', 'S', 'SAT'],
+  ['sunday', 'Sunday', 'S', 'SUN'],
+] as const
+
+describe('every weekday toggle is its own (a table over all seven)', () => {
+  it.each(WEEK)('%s: the toggle is named %s and lettered %s, turns that day on alone, puts %s on the pill, and SAVE writes that day', async (key, name, letter, short) => {
+    const w = newWorld({ planningType: 'week_dependent', scheduleType: 'weekday', currentWeek: 2 })
+    addWorkout(w, 'solo', 'Solo', 0)
+    useWorld(w, {})
+    await open()
+    expect(WEEK.filter(([, n]) => isOn(n))).toEqual([])
+    expect(day(name).textContent).toBe(letter)
+    click(name)
+    expect(WEEK.filter(([, n]) => isOn(n)).map(([k]) => k)).toEqual([key])
+    expect(screen.getByRole('button', { name: new RegExp(`^Solo${short}$`) })).toBeTruthy()
+    await save()
+    const written = updates(sent(), 'v2_programs').map((o) => o.patch.schedule!)
+    expect(written).toHaveLength(1)
+    expect(Object.entries(written[0]).filter(([, workout]) => workout === 'solo').map(([k]) => k)).toEqual([key])
   })
 })
 

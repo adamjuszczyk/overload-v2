@@ -149,6 +149,16 @@ describe('rep targets', () => {
     expect(updates(ops, 'v2_week_plan_sets').map((o) => o.id)).toEqual(['p3-fb-pe-inc-s2-t1'])
   })
 
+  it("a stage's target is that stage's alone: of three stages the second one picked changes the second only, and the set keeps its own", () => {
+    const w = miniWorld()
+    const three = setSetType(start(w), 'fb', 'e:pe-inc', 1, { kind: 'staged', stageKind: 'dropset', stageCount: 3, stageRestSeconds: null })
+    const edited = setStageRepTarget(three, 'fb', 'e:pe-inc', 1, 1, { type: 'number', value: 5 })
+    const sets = edited.edit.workouts[0].exercises[1].sets!
+    // stage 1 is the default's own (6–8), stages 2 and 3 are new ones with no target of their own until one is picked
+    expect(sets[1].stages.map((st) => repText(repTargetOf(st)))).toEqual(['6–8', '5', '—'])
+    expect(sets.map((x) => repText(repTargetOf(x)))).toEqual(['8–10', '8–10'])
+  })
+
   it('an index that is not a set is an error, not a silent no-op', () => {
     const w = miniWorld()
     expect(() => setSetRepTarget(start(w), 'fb', 'e:pe-inc', 5, { type: 'none' })).toThrow(RangeError)

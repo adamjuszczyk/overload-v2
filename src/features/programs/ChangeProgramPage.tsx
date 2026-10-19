@@ -396,12 +396,12 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
   }
 
   // ── The set pickers of a stable run's cards (chunk 51b). Each reads the set from the draft as it is now; a pick that no longer names a
-  // set (it was removed, or the workout shown changed) draws nothing.
-  const pickEntry = setPick && setPick.workoutId === selected.id ? entryByKey(setPick.key) : undefined
-  const pickUnit = pickEntry ? units.find((u) => u.some((m) => m.id === pickEntry.key)) : undefined
-  const pickLetter = pickEntry && pickUnit && pickUnit.length >= 2 ? letterOf(pickUnit.findIndex((m) => m.id === pickEntry.key)) : null
+  // set (it was removed, or its card is in another workout than the one shown: a key is looked up in the selected workout alone) draws
+  // nothing.
+  const pickEntry = setPick ? entryByKey(setPick.key) : undefined
   const pickSets = pickEntry?.sets ?? []
-  const pickNumbering = numberSets(pickSets, pickLetter)
+  // The pickers' eyebrow says the set's number (among the working sets, or among the warmups); a superset member's letter is the row's label alone.
+  const pickNumbering = numberSets(pickSets, null)
   const pickSet = setPick && setPick.kind !== 'all' ? pickSets[setPick.index] : undefined
   const pickHeads: TargetableSet[] = pickSets.map((s, i) => ({ id: String(i), isWarmup: s.isWarmup }))
   const closeSetPick = () => setSetPick(null)
