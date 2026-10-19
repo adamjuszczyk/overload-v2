@@ -26870,3 +26870,9 @@ Decisions:
 - *Two behaviour bugs remain, both executed: 173. A warmup's log keeps a number it no longer shows. And a set added in a reopened session is drawn before the earlier added sets.*
 - *TASKS 63 now keeps the card's list of added sets across a reload (the builder's question 2; a TASKS addition from the review, as for 51b).*
 - *What follows: 51b (building), the second display follow-up (d31b), then 52 onward; 58a–64 once 46 merges. `staging-smoke.mjs` reads 50/51 since the re-seed, because the empty account has no exercises until its first app sign-in creates the defaults (125).*
+
+## 2026-10-19 chunk 46m scoped; migrations renumbered (Adam: 044 is 46m's `added_place`, 045 is 53's `v2_plan_week`); moved out of CONTEXT.md (replaced by a newer line there), word for word
+*Adam's answers of 2026-10-19 (the added set's place: (a); migration numbers: (a)) add chunk 46m, migration 044 `v2_set_logs.added_place`, before chunk 46's sixth attempt, and move `v2_plan_week` from 044 to 045 across TASKS-1.2, DECISIONS, CONTEXT and SPEC, docs only, in the same commit as 46m's scope note (his words). The question came from `<scratchpad>/build/chunk-46-builder-6.md`, section 3; the decision is DECISIONS 174.*
+
+### From CONTEXT.md: Where the build is, the next migration number (before the renumbering)
+- **Next migration number: 044** (043 is chunk 47's, #137, live on staging since #138's deploy and verified live on 2026-10-16; its own deploy failed at the config step, a config-sync failure only: DECISIONS 156. TASKS-1.2 plans 044 `v2_plan_week`, chunk 53, which also numbers 149's release data migration (DECISIONS 149 (c)); nothing else is reserved).
