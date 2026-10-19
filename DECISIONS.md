@@ -1,15 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, 177–179 answered (Adam, 2026-10-19); chunk 46's sixth attempt can start.*
-- *Chunk 46m merged (#158). Migration 044 adds `v2_set_logs.added_place`: a nullable number with no default, refused below 1, and no existing row touched. It is live on staging. The deploy succeeded and the column answers. A test write of 0 was refused by its check and wrote nothing. RLS and the smoke are unchanged. Nothing reads or writes the column until chunks 46 and 58a.*
-- *`check-migration` flags 044's check and its schema reload, as it did for 042 and 043. That is one more line under "For the release", for the migrations-first PR.*
-- *One docs fix, no decision needed: TASKS 46 now adds `SetLog.addedPlace` as an optional field, as `stageKind` is. As a required field it breaks typecheck in 25 files, three of them frozen Coach files.*
-- *Chunk 46's pre-read is done and its three questions, 177–179, are answered. What follows: 46's sixth attempt, beside d31b; then 52 onward; 58a–64 once 46 merges.*
+*Rewritten at every boundary. Last: 2026-10-19, d31b merged (#162).*
+- *The second display follow-up (d31b) merged (#162) with your 154, 155 (a), 157 (c) and 172 (j) built. Text on the accent is the near-black only in the screens 1.2 rebuilds and the shared parts they use; the other screens are back as they were before #135, and Coach is untouched. A picker switched to a segment the set doesn't have carries the set's own value (12 → RANGE 12–14, 6–9 → NUMBER 6). The app's op type can't delete a run's program or workout. Plan's CHANGE THE PROGRAM FROM WEEK N names the same week as the screen's rule box. On staging the deployed screens draw each side as it should, in both themes.*
+- *Two new entries, neither blocking: 180 (two picker cases your 155 words don't cover: an AMRAP set, and a number changed before the switch; recommended: keep as built) and 181 (one display choice, D31: the bottom bar's install strip; recommended: accept).*
+- *What follows: 46's sixth attempt (building now); then 52 onward; 58a–64 once 46 merges. 176's tests-only follow-up can run now that d31b is in.*
 
 Decisions:
+- **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, now that d31b has merged. Blocks: nothing.
+- **180** — 155 (a)'s cases outside your words: an AMRAP set switched to NUMBER or RANGE starts from the examples, and the value carried is the target the sheet opened with, not a number changed before the switch (the bound case follows your 155 (b)). Recommended: keep as built. Blocks: nothing.
 - **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
-- **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, after d31b or inside its scope. Blocks: nothing.
+- **181** — d31b's one display choice: the bottom bar's install strip back on `--base` with the update notice (D31). Recommended: accept. Blocks: nothing.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -61,7 +62,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 157 043 accepts a delete of a run's workout or program; TASKS says "only an update is allowed" (chunk 47)
 - What: whether `v2_apply_ops` (043) may delete a run's `v2_programs` or `v2_workout_days` row, where TASKS 47 says "only an update is allowed"; as built (#137) it refuses an insert into either and accepts a delete.
-- Answer: (Adam, 2026-10-16) "(c). Narrow the app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration." Queued for the second display follow-up (d31b). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "(c). Narrow the app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration." Built in d31b (#162, `bc2de7c`): `DeletableTable` leaves out both tables, with `@ts-expect-error` tests and the test stand-in refusing the same deletes; 043 is unchanged. Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 158 Chunk 49's display choices where SPEC and TASKS give no layout (provisional, D31)
@@ -142,7 +143,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
 - What: twelve display choices of chunk 51a's CHANGE THE PROGRAM, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
-- Answer: (Adam, 2026-10-19) "I meant the item about Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when the week's last open session is in progress — whichever letter that is in the entry. The button follows the screen. The other eleven are accepted." That item is the entry's (j) (his earlier "(l)" was the letter he gave; (l) as listed, a superset's within-round rest stored as 0 reading 0:00, is among the eleven accepted, and so are (a)–(i), (k)). The button fix goes to the second display follow-up, d31b (CONTEXT.md, "Where the build is"): the button names the same week as the screen's rule box (a session in progress is left as it is, so changes start the week after). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-19) "I meant the item about Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when the week's last open session is in progress — whichever letter that is in the entry. The button follows the screen. The other eleven are accepted." That item is the entry's (j) (his earlier "(l)" was the letter he gave; (l) as listed, a superset's within-round rest stored as 0 reading 0:00, is among the eleven accepted, and so are (a)–(i), (k)). Built in d31b (#162, `bc2de7c`): the button names the same week as the screen's rule box, read through the screen's own statuses (a session in progress is left as it is, so changes start the week after). Full text in HISTORY.md.
 - Date: 2026-10-19
 
 ### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
@@ -210,14 +211,36 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Answer: (Adam, 2026-10-19) "yes. Sets moved by a swap for today count as added sets of the new exercise. Each gets its place at the swap, in their order, after any sets already added to that exercise; chunk 59 writes it."
 - Date: 2026-10-19
 
+### 180 155 (a)'s cases outside Adam's words: an AMRAP set, and a number changed before the switch (d31b)
+**Ask:** your 155 (a) is built (d31b, #162): a picker switched to a segment the set doesn't have carries the set's own value over (NUMBER n → RANGE n–(n+2), RANGE a–b → NUMBER a), and the boards' examples start a segment only when the set has no target at all. Two cases aren't in your words, and each is built as below. Keep them?
+- (a) **An AMRAP set** has a target but no number to carry, so NUMBER and RANGE start from the examples (8, 8–10), as they did before d31b.
+- (b) **"The set's own value" is the target the sheet opened with.** A number stepped or typed in the set's own segment before the switch isn't carried: 12 stepped to 13, then RANGE, gives 12–14 (and NUMBER again gives 13); 6–9 with FROM typed 5, then NUMBER, gives 6 (and RANGE again gives 5–9).
+**Recommendation:** keep both. (a) is the only start a segment without a number can have: the footer always says what it will set (155 (b)), so an empty box isn't a state the sheet has. (b) reads your words literally and keeps each segment's own numbers while the sheet is open. Nothing is written that the user hasn't seen in the boxes and on the footer before SET, and each is a few lines in `pickerLogic.ts` to change.
+**Blocks:** nothing. The rep picker is on CHANGE THE PROGRAM's stable set rows (51b); the RIR picker has no screen until 54a.
+**Options:**
+- (a) as built, or NUMBER and RANGE opened with no number (the footer then has nothing to set until one is typed);
+- (b) as built, or carry what the box shows at the tap (13 → RANGE 13–15), with a mark per segment so that 6–9 → NUMBER → RANGE still gives 6–9.
+
+**Answer:**
+**Evidence:** the builder's 3A.2 and 3A.3 (`<scratchpad>/build/chunk-d31b-builder-1.md`). The bound case isn't here because your 155 (b) settles it: a number past a box's bound is "held to the nearest one the box can take" and "ends that meet are a number", so reps 99 → RANGE 99–100 and 100 → 100–100, which sets the number 100 (RIR 19 → 19–20; RIR 20 → 20–20, which sets RIR 20). The reviewer's real-Chromium driver ran every case on the branch's pickers, with taps from script that move no focus and what SET hands the caller (40 checks); staging's pickers before the merge failed 21 of them. On the real CHANGE THE PROGRAM after the merge, Leg Press 01 at 10–12 → NUMBER gives 10, Plank's AMRAP → RANGE gives 8–10, and a set with no target gives 8 and 8–10. This is behaviour (what SET writes after a switch), not D31; it is deferred because it is cheap to change and writes nothing the user hasn't seen (RULES.md: "An answer covers the cases its question held").
+
+### 181 d31b's display choice: the bottom bar's install strip (provisional, D31)
+**Ask:** d31b took `--on-accent` back off the screens 1.2 doesn't rebuild (26 places in 19 files, each as it was before #135). Your 154 words settle every place but one: the bottom bar's INSTALL strip. It is built on `--base`. Keep it?
+- The strip (`Nav.tsx`) and the update notice's RELOAD (`PwaUpdateNotice.tsx`) are drawn by the app around every screen, rebuilt or not. No 1.2 board draws either, no rebuilt screen loads either file, and chunk 65 leaves `Nav.tsx` "unchanged in tabs". 154's question listed the update notice among the screens 1.2 doesn't rebuild, and you answered it; the install strip it didn't name. So both are back on `--base`: near-white on the accent in the light theme, also over Plan or the workout.
+**Recommendation:** accept. The strip isn't part of a screen 1.2 rebuilds, and putting it back on the token is one value in `Nav.tsx` and one line of the static test's list.
+**Blocks:** nothing.
+**Options:** as built; or the strip (and the update notice) on `--on-accent` everywhere, as #135 had them.
+**Answer:**
+**Evidence:** the builder's 3A.5 (`<scratchpad>/build/chunk-d31b-builder-1.md`). The builder's other calls follow from the words, so they aren't here: Today's session preview and the screen after a finished session keep their code (SPEC, Today: "Its look is unchanged by 1.2 apart from wording"; chunk 64: "Finished session [P2] unchanged"; no board draws either); Settings' chips are Settings' own (`chipRow` inside `SettingsPage.tsx`, so chunk 49's two rows draw like the rest of the screen); `ConfirmDialog` is a shared component Plan and CHANGE THE PROGRAM load, so it keeps the token also where Library loads it; Coach stays as it is, its Q&A composer inside the workout's Coach sidebar included (`WorkoutSidebarSheet` → `QaPanel` → `QaComposer`, Adam only). The reviewer's census of the 99 accent backgrounds and Vite's own module graph from the rebuilt screens agreed with the builder's list place for place.
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
-- Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, in the second display follow-up (d31b); (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, built in d31b (#162, `bc2de7c`); its AMRAP case and "the set's own value" are 180; (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 154 Text on the accent in Coach, which is frozen: included or not? (the display follow-up)
 - What: whether frozen Coach's 15 places with text on the accent (still `--base`) take `--on-accent`, and whether "wherever" also covers the screens 1.2 doesn't rebuild, which the display follow-up (#135) converted.
-- Answer: (Adam, 2026-10-16) "no. Coach stays exactly as it is. --on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code." Written into SPEC.md (Design boards → Scope of the look). The second display follow-up (d31b) takes `--on-accent` back off the screens 1.2 doesn't rebuild and their non-shared components; Coach is untouched. Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "no. Coach stays exactly as it is. --on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code." Written into SPEC.md (Design boards → Scope of the look). Built in d31b (#162, `bc2de7c`): the 26 places on the screens 1.2 doesn't rebuild are back on `--base`, each as before #135, and Coach is untouched. Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 153 Chunk 43's fourth attempt: which of a set's two REVIEW items comes first (provisional, D31)
