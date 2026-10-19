@@ -33,6 +33,7 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 vi.mock('./useWeekPlan', () => ({
   useAllWeekPlans: () => ({ data: allWeekPlans, isError: errored.plans }),
 }))

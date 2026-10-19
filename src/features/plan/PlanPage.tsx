@@ -59,6 +59,7 @@ import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
 import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import { useDoneWeekPlanIds } from './useDoneWeekPlanIds'
+import { usePlanRowStatuses } from './usePlanRowStatuses'
 import { useRunSchedule } from './useRunSchedule'
 import MakeWeekDefault from './MakeWeekDefault'
 import { canMakeWeekDefault } from './makeWeekDefault'
@@ -338,9 +339,13 @@ function PlanScreen({ sequenceCycle = null }: { sequenceCycle?: number | null })
   // further back). The same hook the scheduler already reuses elsewhere.
   const { data: allWeekPlans = [] } = useAllWeekPlans(activeMeso?.id ?? '')
   // Chunk 51a: the week CHANGE THE PROGRAM's changes start in (chunk 45's `changeStartWeek`), for the button at the foot of the panel.
-  // A run whose start date is still ahead has no current week yet: week 1.
+  // A run whose start date is still ahead has no current week yet: week 1. The second display follow-up (DECISIONS 172 (j), Adam,
+  // 2026-10-19: "The button follows the screen."): the statuses are the screen's own, done, in progress or not started, and a session
+  // in progress is left as it is, so when the week's last open session is the one in progress the changes start the week after,
+  // as the screen's rule box says. (`doneWeekPlanIds` knows only the rows that are done, which is what locks a row.)
+  const planRowStatuses = usePlanRowStatuses(activeMeso?.id)
   const changeFromWeek = changeStartWeek(
-    allWeekPlans.map((wp) => ({ weekNumber: wp.weekNumber, status: doneWeekPlanIds.has(wp.id) ? ('done' as const) : ('not_started' as const) })),
+    allWeekPlans.map((wp) => ({ weekNumber: wp.weekNumber, status: planRowStatuses.get(wp.id) ?? ('not_started' as const) })),
     Math.max(1, currentWeek),
   )
 
