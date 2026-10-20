@@ -647,7 +647,11 @@ optional:
     release step, not during the build, one data migration at the release
     (migration 046: DECISIONS 196, Adam 2026-10-20) makes each active
     week-dependent run's program match its last planned week (exercises and
-    order), so nothing the user sees changes.
+    order), so nothing the user sees changes, with one case accepted
+    (DECISIONS 203, Adam 2026-10-20): on a sequence run, a repeated workout
+    whose slots were edited differently in 1.1 plans the earlier slot's next
+    cycle from the program, which matches the later slot's week; nothing
+    stored is lost.
 - The number of weeks stays open-ended, as today.
 
 ### Review: what went differently last week [1.2] (13)
@@ -1120,6 +1124,15 @@ optional:
     already has added sets: the moved sets come after them. A swap never
     renumbers sets that are already logged. The same exercise on two cards in
     one session: each card is numbered on its own, as today's display does.
+  - [1.2] (46r's Q1, Adam 2026-10-20) A swap never changes the number of a set
+    that's already logged, on either card. If moving open sets leaves a gap on
+    the original card, the gap shows; that's accepted (rare, and no stored data
+    is wrong).
+  - [1.2] Where a swap is offered (DECISIONS 199, Adam 2026-10-20): only where
+    today's app offers it, on a planned exercise that no swap has touched;
+    never on the card a swap made or on an exercise added today.
+  - [1.2] The swap row is saved before any set is skipped (DECISIONS 200, Adam
+    2026-10-20): a swap that can't be saved skips nothing.
 - [1.2] **Finishing (11, C6):** the finish screen (W18) shows the session's
   tiles, energy, pump and note, and COMPLETE. When planned sets aren't logged it
   says which ("2 planned sets aren't logged yet: EZ Bar Curl 01 and 02.") with
