@@ -118,6 +118,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               sessionStatus: 'completed',
               formRating: log.formRating,
               stageKind: log.stageKind ?? null,
+              addedPlace: log.addedPlace ?? null,
             }),
           ),
         )
@@ -164,6 +165,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               restSeconds: l.restSeconds,
               formRating: (l.formRating ?? null) as SetLog['formRating'],
               stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
+              addedPlace: l.addedPlace ?? null,
             }),
           )
       }
@@ -248,6 +250,7 @@ async function fetchReferenceSessionsFromCache(
       restSeconds: l.restSeconds,
       formRating: (l.formRating ?? null) as SetLog['formRating'],
       stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
+      addedPlace: l.addedPlace ?? null,
     }
     let bySession = byExercise.get(l.exerciseId)
     if (!bySession) {

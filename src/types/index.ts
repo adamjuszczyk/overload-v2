@@ -573,6 +573,17 @@ export interface SetLog {
   // unchanged. Absent/undefined reads as null (a legacy or unplanned head
   // — reads as a dropset once it has stages, same resolveStageKind rule).
   stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
+
+  // v2_set_logs.added_place (migration 044, chunk 46m; read from chunk 46,
+  // first written by 58a — DECISIONS 174, 177): a set added in the session,
+  // its place among the sets added to its exercise in that session, from 1,
+  // in the order they were added; assigned once, when the set is added, and
+  // never changed. Only the added set's own (head) log carries it: a planned
+  // set's log, a drop or stage log and every log written before 044 hold
+  // null. Optional for the same reason as stageKind above (every hand-built
+  // SetLog literal predates it, three frozen Coach files among them): absent
+  // reads as null, and every reader treats `undefined` as null.
+  addedPlace?: number | null
 }
 
 // ─── Coach Personalization ratings (v3, phase 1) ───────────────────────────

@@ -57,6 +57,8 @@ type DbSetLog = {
   form_rating?: string | null
   // Absent until migration 027 has been applied.
   stage_kind?: string | null
+  // Absent until migration 044 has been applied (chunk 46m; read from chunk 46).
+  added_place?: number | null
 }
 
 type DbSession = {
@@ -127,6 +129,9 @@ function toSetLog(row: DbSetLog): SetLog {
     // Chunk 14 — heads only; a stage row's own value is always null (the
     // DB's own check). Same fallback as formRating above.
     stageKind: (row.stage_kind ?? null) as SetLog['stageKind'],
+    // Chunk 46 (DECISIONS 174): an added set's place; null on every other
+    // log, and absent (read as null) until 044 is applied where this runs.
+    addedPlace: row.added_place ?? null,
   }
 }
 
