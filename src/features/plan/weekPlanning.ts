@@ -4,7 +4,7 @@
 //
 // ONE module for everything Plan decides about weeks:
 //   1. which weeks exist, and what each tile says ................... weekTiles
-//   2. what a planned week takes from its source (the TypeScript twin of migration 044, so the
+//   2. what a planned week takes from its source (the TypeScript twin of migration 045, so the
 //      two can be compared by an executed fixture: scripts/plan-week-parity.mjs) ... autoCopy
 //   3. how COPY matches last week's numbers, and what "overwrite" means ......... copyNumbers
 //   4. when an exercise is "THIS WEEK ONLY" ................................ thisWeekOnly
@@ -13,7 +13,7 @@
 //
 // Pure: no Supabase, no React, no clock. Every function takes what it reads, in the app's own
 // types (or a Pick of them, so a test builds only the fields a rule reads). Nothing calls it yet:
-// chunk 52 uses weekTiles and copyNumbers, 53 compares autoCopy with migration 044, 54a uses
+// chunk 52 uses weekTiles and copyNumbers, 53 compares autoCopy with migration 045, 54a uses
 // addSetDefaults and 54b thisWeekOnly and changesSinceSource. weekDiff.ts is NOT touched: it keeps
 // drawing Plan's marks until 54b replaces it with changesSinceSource, so the two coexist until then
 // (this module imports nothing from it, so 54b deletes it without moving anything).
@@ -106,13 +106,13 @@ export function weekTiles(input: { plannedWeeks: Iterable<number>; currentWeek: 
 // run copy), always"; week-dependent: "the last planned normal occurrence; the existing rules for
 // skipping deload and empty occurrences stay"; "Week 1 of any run starts from the program."
 //
-// This is the exact rule migration 044 (chunk 53) implements; autoCopy is its twin and the
+// This is the exact rule migration 045 (chunk 53) implements; autoCopy is its twin and the
 // harness scripts/plan-week-parity.mjs runs both on one fixture. Two readings to know:
 //   - rep targets travel with the SOURCE, not with the planning type. The program's rep targets
 //     are copied wherever the source is the program (week 1 of any run; every stable week) and
 //     never from a week, so a week-dependent week after week 1 gets none ("does not fall back to
 //     the run copy's (week 1's) target") while week 1 of a week-dependent run keeps the program's.
-//     That is what 041's 'program' branch does today and 044's stays ("unchanged for structure and
+//     That is what 041's 'program' branch does today and 045's stays ("unchanged for structure and
 //     rep targets", TASKS 53).
 //   - a week-dependent week copied from a week takes its EXERCISE LIST from the run copy and its
 //     SETS from that week (DECISIONS 143, Adam 2026-10-15: "A week-dependent week copied after a save
@@ -299,7 +299,7 @@ function copyOrder<T>(
   )
 }
 
-// 041's 'program' branch (044 keeps it for structure and rep targets): the run copy's current
+// 041's 'program' branch (045 keeps it for structure and rep targets): the run copy's current
 // exercises in program order and its live program sets, each set's rep target as the program has
 // it, `set_number` := the program set's position, `is_dropset` := it is a stage row.
 function copyFromRunCopy(runCopy: RunCopy): { exercises: AutoCopiedExercise[]; sets: AutoCopiedSet[] } {
@@ -334,7 +334,7 @@ function copyFromRunCopy(runCopy: RunCopy): { exercises: AutoCopiedExercise[]; s
   return { exercises: live.exercises.map((e) => ({ programExerciseId: e.id, position: e.position })), sets }
 }
 
-// 041's 'week' branch with 044's change (the numbers are dropped) and DECISIONS 143's (the exercise list
+// 041's 'week' branch with 045's change (the numbers are dropped) and DECISIONS 143's (the exercise list
 // follows the run copy).
 //
 // THE SETS come from the source week, as 041 copies them: every structure column rides along (kind,
