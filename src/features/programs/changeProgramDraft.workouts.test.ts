@@ -6,6 +6,8 @@ import { UNEVEN_WORKOUTS, unevenWorkoutsWorld } from './programChange.worlds.tes
 import {
   addExercise,
   addRoutineItem,
+  draftContent,
+  draftDiffers,
   editRoutineItem,
   initialDraft,
   linkWithBelow,
@@ -462,6 +464,24 @@ describe('a draft of four workouts, edit by edit, against a model made with plai
     for (const [name, edit] of edits) expect({ name, error: (() => { try { edit() } catch (e) { return `${(e as Error).name}: ${(e as Error).message}` } return 'no error' })() }).toEqual({ name, error: expect.stringMatching(/^RangeError: workout push has no exercise e:pe-row$/) })
     expect(() => undoRemove(s, 'e:pe-bench')).toThrow(new RangeError('no removed exercise e:pe-bench'))
     expect(() => setBlockRest(s, 'blk-nope', 'restWithinRoundSeconds', 15)).toThrow(new RangeError('the draft has no superset block blk-nope'))
+  })
+
+  // What CANCEL and SAVE compare (`draftContent`): the blocks are read with no order (`fetchSupersetBlockRests`), so two reads of the same rows may
+  // list them differently, and a block nothing points at is not part of the program.
+  it('what CANCEL and SAVE compare does not depend on the order the blocks were read in, ignores a block nothing uses, and sees a rest that changed', () => {
+    const s = start(unevenWorkoutsWorld())
+    expect(s.edit.blocks.map((b) => b.id)).toEqual(['blk-push', 'blk-pull', 'blk-legs', 'blk-arms'])
+    const withBlocks = (order: number[]): DraftState => ({ ...s, edit: { ...s.edit, blocks: order.map((i) => s.edit.blocks[i]) } })
+    for (const order of [[3, 2, 1, 0], [2, 0, 3, 1], [1, 0, 3, 2], [0, 2, 1, 3]]) {
+      expect({ order, same: draftContent(withBlocks(order)) === draftContent(s) }).toEqual({ order, same: true })
+      expect(draftDiffers(withBlocks(order), s)).toBe(false)
+    }
+    const orphan: DraftState = { ...s, edit: { ...s.edit, blocks: [...s.edit.blocks, { id: 'blk-orphan', restWithinRoundSeconds: 5, restAfterRoundSeconds: 5 }] } }
+    expect(draftDiffers(orphan, s)).toBe(false)
+    // a block's rest changed, or an exercise moved to another block, is a difference
+    expect(draftDiffers(setBlockRest(s, 'blk-legs', 'restAfterRoundSeconds', 45), s)).toBe(true)
+    expect(draftDiffers(setBlockRest(s, 'blk-legs', 'restWithinRoundSeconds', 30), s)).toBe(false) // as it was
+    expect(draftDiffers(unlinkBlock(s, 'legs', 'blk-legs'), s)).toBe(true)
   })
 
   it('400 walks of 25 edits: after every edit the draft is the model, and it reached every kind of edit in every workout', () => {

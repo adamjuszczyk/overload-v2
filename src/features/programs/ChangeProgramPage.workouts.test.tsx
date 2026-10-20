@@ -519,6 +519,25 @@ describe.each([
     expect(h.rpc).not.toHaveBeenCalled()
   })
 
+  // A whole superset removed member by member and put back in the reverse order (the last removed first) is where it was, member by member.
+  it.each(UNEVEN_WORKOUTS)('UNDO in $name puts a superset removed member by member back, last removed first, where it stood', async (wk) => {
+    const members = wk.exercises.filter((x) => x.block)
+    await open()
+    goTo(wk)
+    for (const m of members) {
+      click(`Remove ${m.name}`)
+      click('REMOVE')
+    }
+    expect(cardNames()).toEqual(wk.exercises.filter((x) => !x.block).map((x) => x.name))
+    expect(blockHeaders()).toEqual([])
+    for (const m of [...members].reverse()) click(`Undo removing ${m.name}`)
+    expect(cardNames()).toEqual(wk.exercises.map((x) => x.name))
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
   // Either line can be undone first, and the one pressed is the one that comes back. (Where it comes back is not pinned here: the draft
   // remembers the place an exercise stood in the list at the moment it was removed.)
   it.each(UNEVEN_WORKOUTS)('UNDO in $name: the line pressed is the exercise that comes back, whichever was removed first', async (wk) => {
@@ -614,6 +633,15 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
     click('Unlink superset B')
     expect(blockHeaders()).toEqual(['SUPERSET A'])
     await saveAndExpect(before, (e) => withBlock(withNewBlock(e, wk.id, ['pe-squat', 'pe-rdl']), wk.id, ['pe-lcurl', 'pe-calf'], null))
+  })
+
+  it.each(UNEVEN_WORKOUTS)('the members of the superset in $name wear the letters A, B (and C) and a single exercise wears none', async (wk) => {
+    await open()
+    goTo(wk)
+    // the first text on a card is the member's letter badge; a single exercise's card starts with its name
+    const firstText = (el: Element) => el.querySelector('span')?.textContent
+    let member = 0
+    expect(Array.from(document.querySelectorAll('[data-exercise-key]')).map(firstText)).toEqual(wk.exercises.map((x) => (x.block ? String.fromCharCode(65 + member++) : x.name)))
   })
 
   it.each(UNEVEN_WORKOUTS)('UNLINK in $name frees every member of its superset, in this workout alone', async (wk) => {
@@ -723,10 +751,16 @@ describe('order', () => {
     const before = world
     goTo(wk)
     for (const step of steps) {
-      fireEvent.keyDown(screen.getByRole('button', { name: step.grip }), { key: step.key })
+      // an arrow key the grip answers is taken (the page behind it doesn't scroll): fireEvent returns false for a prevented event
+      const notTaken = fireEvent.keyDown(screen.getByRole('button', { name: step.grip }), { key: step.key })
+      expect(notTaken).toBe(false)
       expect({ step: step.grip, order: cardKeys() }).toEqual({ step: step.grip, order: step.order })
     }
-    fireEvent.keyDown(screen.getByRole('button', { name: edge.grip }), { key: edge.key })
+    expect(fireEvent.keyDown(screen.getByRole('button', { name: edge.grip }), { key: edge.key })).toBe(false)
+    expect(cardKeys()).toEqual(edge.order)
+    // any other key is left alone
+    expect(fireEvent.keyDown(screen.getByRole('button', { name: edge.grip }), { key: 'Enter' })).toBe(true)
+    expect(fireEvent.keyDown(screen.getByRole('button', { name: edge.grip }), { key: 'a' })).toBe(true)
     expect(cardKeys()).toEqual(edge.order)
     // the other workouts keep their orders
     for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) {
@@ -1151,18 +1185,23 @@ describe.each([
     expect(world.db.v2_workout_days.map((d) => d.name)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? NAMES[wk.id] : o.name)))
   })
 
-  it.each([0, 3])('a workout can take the name another workout has: Pull renamed to %s’s workout’s name', async (other) => {
+  // A rename to the name another workout has (the first, the last, the second) is still a rename: it is only a rename to the workout's own name that is none.
+  it.each([
+    [1, 0],
+    [1, 3],
+    [2, 1],
+    [3, 0],
+  ])('a workout can take the name another workout has: workout %i renamed to workout %i’s name', async (renamed, other) => {
     await open()
-    const wk = UNEVEN_WORKOUTS[1]
-    const before = world
+    const wk = UNEVEN_WORKOUTS[renamed]
+    const to = UNEVEN_WORKOUTS[other].name
     goTo(wk)
     click(`Rename ${wk.name}`)
-    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: UNEVEN_WORKOUTS[other].name } })
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: to } })
     fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
-    expect(chips().map((b) => b.querySelector('span')?.textContent)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? UNEVEN_WORKOUTS[other].name : o.name)))
+    expect(chips().map((b) => b.querySelector('span')?.textContent)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? to : o.name)))
     await save()
-    expect(sent()).toEqual([{ op: 'update', table: 'v2_workout_days', id: wk.id, patch: { name: UNEVEN_WORKOUTS[other].name } }])
-    expect(before.db.v2_workout_days.find((d) => d.id === wk.id)!.name).toBe('Pull')
+    expect(sent()).toEqual([{ op: 'update', table: 'v2_workout_days', id: wk.id, patch: { name: to } }])
   })
 
   it('Escape, and a blank name, leave the workout as it is', async () => {
