@@ -1115,6 +1115,10 @@ optional:
     numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine
     Pulldown 03; + ADD SET there, 04. The original card draws no row for a
     set that moved.
+  - [1.2] (DECISIONS 183, Adam 2026-10-20) A swap into an exercise that
+    already has added sets: the moved sets come after them. A swap never
+    renumbers sets that are already logged. The same exercise on two cards in
+    one session: each card is numbered on its own, as today's display does.
 - [1.2] **Finishing (11, C6):** the finish screen (W18) shows the session's
   tiles, energy, pump and note, and COMPLETE. When planned sets aren't logged it
   says which ("2 planned sets aren't logged yet: EZ Bar Curl 01 and 02.") with
