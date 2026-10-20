@@ -40,6 +40,10 @@ import type { ChangeProgramSource } from './changeProgramService'
 // array operations (never with the screen's own draft functions), then reads the run copy's rows that chunk 45's stand-in for
 // migration 043 left, so a list that reads right and runs wrong fails too. The orders after each press are written out as literals.
 
+// Each test presses and saves through the real screen: on a slow machine (CI's two CPUs) the heaviest takes seconds, so the file's timeout is
+// far above Vitest's 5 s, and a timeout can't be read as a caught break.
+vi.setConfig({ testTimeout: 30000 })
+
 const h = vi.hoisted(() => ({
   meso: null as unknown as Mesocycle,
   programs: [] as Program[],
@@ -330,6 +334,9 @@ describe('the world: four workouts, no two alike', () => {
   it('the chips, and for each workout its cards in order, its superset, its routine', async () => {
     await open()
     expect(chips().map((b) => b.textContent)).toEqual(['PushMON', 'PullTUE', 'LegsTHU', 'ArmsSAT'])
+    // the screen opens on the first workout
+    expect(chips().map((b) => b.getAttribute('aria-current'))).toEqual(['true', 'false', 'false', 'false'])
+    expect(cardKeys()).toEqual(rowsOf(UNEVEN_WORKOUTS[0]))
     for (const wk of UNEVEN_WORKOUTS) {
       goTo(wk)
       expect(isShown(wk)).toBe(true)
@@ -705,9 +712,16 @@ describe('order', () => {
       const unit = document.querySelectorAll('[data-unit-key]')[from] as HTMLElement
       const grip = within(unit).getAllByRole('button', { name: /^Reorder / })[0]
       const y = (i: number, nudge: number) => i * 100 + 40 + nudge
+      const dragged = unit.dataset.unitKey
       await act(async () => {
         grip.dispatchEvent(pointer('pointerdown', y(from, 0)))
         window.dispatchEvent(pointer('pointermove', y(to, to < from ? -5 : 5)))
+      })
+      // while it is held, the unit follows the pointer by what the pointer has moved, and it is the only one that does
+      const following = Array.from(document.querySelectorAll('[style*="translateY"]')) as HTMLElement[]
+      expect(following.map((n) => n.querySelector('[data-unit-key]')?.getAttribute('data-unit-key'))).toEqual([dragged])
+      expect(following[0].style.transform).toBe(`translateY(${y(to, to < from ? -5 : 5) - y(from, 0)}px)`)
+      await act(async () => {
         window.dispatchEvent(pointer('pointerup', y(to, to < from ? -5 : 5)))
       })
       expect({ from, to, order: cardKeys() }).toEqual({ from, to, order })
@@ -849,6 +863,30 @@ describe('an exercise’s ⋯ writes to the exercise it was opened on', () => {
         expect([r.rest_seconds, r.rest_after_seconds, r.tempo, r.weight_unit]).toEqual([x.rest, x.restAfter, x.tempo, x.unit])
       }
     }
+  })
+
+  // The markers on a card say what is set on the exercise; one drawn in the accent is changed in this edit (CHANGED IN THIS EDIT), against the
+  // run copy's row of that workout. Each workout's markers are as the world has them, so none is changed until the exercise is edited.
+  const MARKERS: Record<string, { all: string[]; edit: { row: string; from: string; to: string } }> = {
+    push: { all: ['REST 2:30', 'REST 1:45', 'REST AFTER 0:30', 'TEMPO 3-0-1-0', 'UNIT LBS', 'REST 1:15', 'REST AFTER 0:45'], edit: { row: 'pe-bench', from: 'REST 2:30', to: 'REST 2:45' } },
+    pull: { all: ['REST 2:15', 'TEMPO 2-1-1-0', 'REST AFTER 1:00', 'UNIT LBS', 'REST 0:45', 'REST 1:30', 'REST AFTER 0:15', 'TEMPO 4-0-1-0'], edit: { row: 'pe-row', from: 'REST 2:15', to: 'REST 2:30' } },
+    legs: { all: ['REST 3:00', 'REST AFTER 1:00', 'REST 2:00', 'TEMPO 3-1-1-0', 'REST AFTER 0:30', 'REST 1:00', 'UNIT LBS'], edit: { row: 'pe-squat', from: 'REST 3:00', to: 'REST 3:15' } },
+    arms: { all: ['REST 1:30', 'REST AFTER 0:15', 'TEMPO 3-0-1-1', 'UNIT LBS', 'REST 1:15', 'REST AFTER 0:30', 'REST 2:00', 'REST 0:45', 'REST AFTER 1:00', 'TEMPO 2-0-2-0'], edit: { row: 'pe-curl', from: 'REST 1:30', to: 'REST 1:45' } },
+  }
+  const drawnChanged = (label: string): boolean => screen.getByText(label).style.color === 'var(--accent)'
+  it.each(UNEVEN_WORKOUTS)('the markers in $name are changed only where the exercise was edited', async (wk) => {
+    const { all, edit } = MARKERS[wk.id]
+    await open()
+    goTo(wk)
+    for (const label of all) expect({ label, changed: drawnChanged(label) }).toEqual({ label, changed: false })
+    const x = wk.exercises.find((y) => y.row === edit.row)!
+    click(`${x.name}: rest, tempo, unit`)
+    fireEvent.click(within(dialog(x.name)).getByRole('button', { name: 'Rest: more' }))
+    closeDialog(x.name)
+    // the edited exercise's rest is the one marker in the accent; the others, its own tempo and rest after included, are not
+    expect(screen.queryByText(edit.from)).toBeNull()
+    expect(drawnChanged(edit.to)).toBe(true)
+    for (const label of all.filter((l) => l !== edit.from)) expect({ label, changed: drawnChanged(label) }).toEqual({ label, changed: false })
   })
 
   // A superset's rests belong to its block: they are changed from any member's sheet and written to that block alone.
@@ -1010,6 +1048,8 @@ describe.each([
     await open()
     goTo(wk)
     click(`Rename ${wk.name}`)
+    // the box opens on this workout's own name
+    expect((screen.getByLabelText('Workout name') as HTMLInputElement).value).toBe(wk.name)
     fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: `  ${NAMES[wk.id]}  ` } })
     fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
     expect(screen.queryByLabelText('Workout name')).toBeNull()
@@ -1019,6 +1059,20 @@ describe.each([
     await save()
     expect(sent()).toEqual([{ op: 'update', table: 'v2_workout_days', id: wk.id, patch: { name: NAMES[wk.id] } }])
     expect(world.db.v2_workout_days.map((d) => d.name)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? NAMES[wk.id] : o.name)))
+  })
+
+  it.each([0, 3])('a workout can take the name another workout has: Pull renamed to %s’s workout’s name', async (other) => {
+    await open()
+    const wk = UNEVEN_WORKOUTS[1]
+    const before = world
+    goTo(wk)
+    click(`Rename ${wk.name}`)
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: UNEVEN_WORKOUTS[other].name } })
+    fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
+    expect(chips().map((b) => b.querySelector('span')?.textContent)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? UNEVEN_WORKOUTS[other].name : o.name)))
+    await save()
+    expect(sent()).toEqual([{ op: 'update', table: 'v2_workout_days', id: wk.id, patch: { name: UNEVEN_WORKOUTS[other].name } }])
+    expect(before.db.v2_workout_days.find((d) => d.id === wk.id)!.name).toBe('Pull')
   })
 
   it('Escape, and a blank name, leave the workout as it is', async () => {

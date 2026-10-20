@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { WeightUnit } from '../../types'
 import { planProgramChange, type Op } from './programChange'
 import { applyOpsToDb, cloneDb, idGen, inputOf, runCopyOf, type World } from './programChange.testutil'
@@ -34,6 +34,9 @@ import {
 //
 // The walk takes its targets from the model and names them to the draft by key. Rows of the run copy have the keys `e:<row>` and
 // `r:<id>`; an exercise or an item the draft made is found by what the walk gave it (an exercise id of its own, a body of its own).
+
+// The walk is 400 walks of 25 edits: a few seconds, with a timeout far above them.
+vi.setConfig({ testTimeout: 30000 })
 
 // ─── The model ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
