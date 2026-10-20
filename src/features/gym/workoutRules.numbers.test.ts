@@ -202,7 +202,7 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     expect(stored(s)).toEqual([`${bLog.id}:w1`, 'P1:1', 'P2:2', `${s.server.logs.find((l) => l.addedPlace === 3)!.id}:3`])
   })
 
-  it('reported (DECISIONS asks): two phones on one session, one holding an open added set the other can\'t see (G46), correct the same log back and forth while both draw it', () => {
+  it('185 (c): two phones on one session, one holding an open added set the other can\'t see (G46): the phone that holds it corrects none of the logs after it, the other corrects each once, and once the set is logged or deleted neither writes again (break: report a log after an open added set)', () => {
     // phone 1 adds A and B and logs B as 03 (A open, 02); phone 2 holds no list and no draft, so it draws B as 02
     const s = new Session([card('bench', 'n')], [], [headLog('bench', 1)])
     s.add('bench', 'A')
@@ -212,17 +212,51 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     const bLog = s.server.logs.find((l) => l.addedPlace === 2)!
     const phone2 = orderOf([card('bench', 'n')])
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
-    const fromPhone2 = numberCorrections(phone2, s.server.logs, s.server.held())
-    expect(fromPhone2).toEqual([{ id: bLog.id, setNumber: 2 }])
-    s.server.applyCorrections(fromPhone2)
-    // phone 1 draws again: B still shows 03 there, so it writes 3 back; phone 2's next draw writes 2 again
-    const fromPhone1 = numberCorrections(s.order(), s.server.logs, s.server.held())
-    expect(fromPhone1).toEqual([{ id: bLog.id, setNumber: 3 }])
-    s.server.applyCorrections(fromPhone1)
     expect(numberCorrections(phone2, s.server.logs, s.server.held())).toEqual([{ id: bLog.id, setNumber: 2 }])
-    // it settles once A is logged (or deleted, or gone with the session's end): every phone then draws the same rows
-    s.log('added:bench:A')
-    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
-    expect(numberCorrections(phone2, s.server.logs, s.server.held())).toEqual([])
+    // each phone draws at every refetch: phone 2 writes B once, phone 1 never; no stored number changes more than once
+    const writes: Array<[number, number]> = []
+    const numbers: number[] = []
+    for (let round = 0; round < 4; round++) {
+      const one = numberCorrections(s.order(), s.server.logs, s.server.held())
+      s.server.applyCorrections(one)
+      const two = numberCorrections(phone2, s.server.logs, s.server.held())
+      s.server.applyCorrections(two)
+      writes.push([one.length, two.length])
+      numbers.push(s.server.logs.find((l) => l.id === bLog.id)!.setNumber)
+    }
+    expect(writes).toEqual([[0, 1], [0, 0], [0, 0], [0, 0]])
+    expect(numbers).toEqual([2, 2, 2, 2])
+    // A logged on phone 1 stores its row's 02 beside B's 2 until phone 1's next draw (the refetch after its LOG) writes B's 3,
+    // once; then both phones draw the same rows and neither writes
+    const logged = s.copy()
+    logged.log('added:bench:A')
+    expect(numberCorrections(phone2, logged.server.logs, logged.server.held())).toEqual([{ id: bLog.id, setNumber: 3 }])
+    expect(logged.draw()).toEqual([{ id: bLog.id, setNumber: 3 }])
+    expect(numberCorrections(logged.order(), logged.server.logs, logged.server.held())).toEqual([])
+    expect(numberCorrections(phone2, logged.server.logs, logged.server.held())).toEqual([])
+    // A deleted on phone 1 instead: B is 02 on both phones, as phone 2 wrote it
+    const deleted = s.copy()
+    expect(deleted.delete('added:bench:A').renumber).toEqual([])
+    expect(numberCorrections(deleted.order(), deleted.server.logs, deleted.server.held())).toEqual([])
+    expect(numberCorrections(phone2, deleted.server.logs, deleted.server.held())).toEqual([])
+  })
+
+  it('185 (c): only the logs after the open added set are left: one before it, or on another card, is corrected as 178 says (break: leave out a log that doesn\'t come after one)', () => {
+    const b = addedLog('bench', 2, { number: 9, place: 2 })
+    const logs = [headLog('bench', 1), headLog('bench', 2, { number: 5 }), b, headLog('curl', 1, { number: 4 })]
+    const order = orderOf([card('bench', 'n n', { added: [{ kind: 'normal' }, b] }), card('curl', 'n n')])
+    expect(resolveRows(order, logs).map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03·', 'bench 04✓', 'curl 01✓', 'curl 02·'])
+    expect(numberCorrections(order, logs)).toEqual([
+      { id: 'log.bench.2', setNumber: 2 },
+      { id: 'log.curl.1', setNumber: 1 },
+    ])
+    // the open set logged: B after it is corrected too
+    const a = addedLog('bench', 1, { number: 3, place: 1 })
+    const both = orderOf([card('bench', 'n n', { added: [a, b] }), card('curl', 'n n')])
+    expect(numberCorrections(both, [...logs, a])).toEqual([
+      { id: 'log.bench.2', setNumber: 2 },
+      { id: b.id, setNumber: 4 },
+      { id: 'log.curl.1', setNumber: 1 },
+    ])
   })
 })

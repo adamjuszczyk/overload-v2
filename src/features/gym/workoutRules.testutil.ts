@@ -82,11 +82,14 @@ export function plannedSets(key: string, spec: string): WeekPlanSet[] {
  */
 export function heldDraft(entry: SetDraftKey | HeldDraft): HeldDraft {
   if ('key' in entry) return entry
-  return 'localId' in entry && !('drop' in entry) ? { key: entry, values: { type: { kind: 'normal' }, place: entry.position } } : { key: entry }
+  return 'localId' in entry && !('drop' in entry) ? { key: entry, values: { type: { kind: 'normal' }, place: entry.position, loggedAt: DRAFT_TIME } } : { key: entry }
 }
 
-/** The draft of a set added in the session with the type it keeps (DECISIONS 161) and its place (174; its key's position unless given). */
-export const draftOf = (key: AddedSetKey, type: SessionSetChangeType, place: number | null = key.position): HeldDraft => ({ key, values: { type, place } })
+/** The time a test's draft keeps of its log (DECISIONS 184 (b)) unless it says: the seed's Monday evening, as `baseLog`'s. */
+export const DRAFT_TIME = '2026-10-12T18:00:00Z'
+
+/** The draft of a set added in the session with the type it keeps (DECISIONS 161), its place (174; its key's position unless given) and its log's time (184). */
+export const draftOf = (key: AddedSetKey, type: SessionSetChangeType, place: number | null = key.position, loggedAt: string = DRAFT_TIME): HeldDraft => ({ key, values: { type, place, loggedAt } })
 
 /** The id a card gives the `n`-th set added to it in a test (1-based): its row key is `added:<card>:a<n>`. */
 export const addedId = (n: number): string => `a${n}`
@@ -177,7 +180,7 @@ export function keepType(cards: readonly OrderExercise[], row: ResolvedRow, type
   if (!row.added || row.kind === 'stage') return [...cards]
   return withEntry(cards, row, (entry, drafts) => ({
     entry: { ...entry, type },
-    drafts: drafts.map((d) => (isDraftOf(entry.localId)(d) ? { key: d.key as AddedSetKey, values: { ...(d.values as Pick<AddedSetDraft, 'type' | 'place'>), type } } : d)),
+    drafts: drafts.map((d) => (isDraftOf(entry.localId)(d) ? { key: d.key as AddedSetKey, values: { ...(d.values as Pick<AddedSetDraft, 'type' | 'place' | 'loggedAt'>), type } } : d)),
   }))
 }
 

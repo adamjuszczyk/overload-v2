@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionSetChangeType, SetLog } from '../../types'
 import { currentSet, finishWarning, lockDecision, numberCorrections, type ResolvedRow } from './workoutRules'
 import { Session } from './workoutRules.session.testutil'
-import { brief, card, headLog, lists, staged } from './workoutRules.testutil'
+import { addedLog, brief, card, headLog, lists, staged } from './workoutRules.testutil'
 
 // Chunk 46, fifth and sixth attempts: DECISIONS 170 (Adam, 2026-10-18): "Set numbers are never claimed or stored per rule. Each
 // set has a fixed place in the session order: planned sets by planned position, added sets by when they were added. A set's
@@ -197,15 +197,23 @@ function generator(seed: number) {
 }
 
 const WALK_BLOCKS = [{ id: 'blk', members: ['row', 'lat'] }]
-const ADDABLE = ['bench', 'row', 'lat', 'curl'] as const
+/** The exercises of the session's plan, and three a swap can bring in (their logs carry `ex.<name>`). */
+const PLANNED = ['bench', 'row', 'lat', 'curl'] as const
+const ELSEWHERE = ['dip', 'fly', 'press'] as const
+
+/** Logs of sets added before 1.2 (no place, no planned set: 044 came after them), numbered as 1.1 numbered them (the logged heads + 1). */
+function oldLogs(key: string, count: number): SetLog[] {
+  return Array.from({ length: count }, (_, i) => addedLog(key, i + 1, { number: i + 1, loggedAt: `2026-10-12T17:0${i}:00Z` }))
+}
 
 /**
  * A session of four cards: bench with two warmups and drops, a superset of two, a plain card; `added` sets added to each from
- * the start, of the types given in turn (made so right after ADD SET).
+ * the start, of the types given in turn (made so right after ADD SET); with `old`, bench and curl hold sets added before 1.2.
  */
-function startOf(added: readonly SessionSetChangeType[]): Session {
-  const s = new Session([card('bench', 'w w d2 n n d1'), card('row', 'n d1 n'), card('lat', 'n d1 n'), card('curl', 'n n n')], WALK_BLOCKS)
-  for (const key of ADDABLE) {
+function startOf(added: readonly SessionSetChangeType[], old = false): Session {
+  const logs = old ? [...oldLogs('bench', 3), ...oldLogs('curl', 2)] : []
+  const s = new Session([card('bench', 'w w d2 n n d1'), card('row', 'n d1 n'), card('lat', 'n d1 n'), card('curl', 'n n n')], WALK_BLOCKS, logs)
+  for (const key of PLANNED) {
     added.forEach((type, i) => {
       const rowKey = s.add(key, `${key}${i + 1}`)
       if (type.kind !== 'normal') s.retype(rowKey, type)
@@ -214,13 +222,15 @@ function startOf(added: readonly SessionSetChangeType[]): Session {
   return s
 }
 
-type Mode = 'mixed' | 'added' | 'warmups' | 'phones' | 'staged'
+type Mode = 'mixed' | 'added' | 'warmups' | 'phones' | 'staged' | 'swaps' | 'old'
 const START: Record<Mode, readonly SessionSetChangeType[]> = {
   mixed: [],
   added: [NORMAL, NORMAL, NORMAL],
   warmups: [WARMUP, NORMAL, WARMUP],
   phones: [NORMAL, WARMUP],
   staged: [staged('dropset', 1), WARMUP, NORMAL],
+  swaps: [NORMAL, WARMUP],
+  old: [NORMAL],
 }
 
 /** How often the sequences reached each case (a sequence test that never gets there proves nothing about it). */
@@ -244,6 +254,19 @@ const reached = {
   unlogNotListed: 0,
   logDraftNotListed: 0,
   unlogPlannedWarmup: 0,
+  // 46r's (183, 184, 185)
+  swapOpenBeforeLogged: 0,
+  swapIntoExerciseWithAdded: 0,
+  swapIntoSessionExercise: 0,
+  swapBackToOriginal: 0,
+  swapIntoSameCardAgain: 0,
+  editOnSwappedCard: 0,
+  editBeforeSwappedCard: 0,
+  logOnSwappedCard: 0,
+  dropStateAfterSwap: 0,
+  unlogOld: 0,
+  relogOld: 0,
+  leftAfterOpenAdded: 0,
 }
 
 /** What the user reads off a row, and which set it is: compared before and after a step that must move nothing. */
@@ -255,11 +278,48 @@ function storedLogs(logs: readonly SetLog[], rows: readonly ResolvedRow[]) {
   return logs.map((l) => JSON.stringify({ ...l, id: whose(l.id), parentSetId: whose(l.parentSetId), loggedAt: null })).sort()
 }
 
+/** Each row's place in its slot by the sequence's own record (a drop has its set's): the slot's cards' places, card by card. */
+function slotPlaces(s: Session): Map<string, { slot: string; at: number }> {
+  const at = new Map<string, { slot: string; at: number }>()
+  for (const slot of new Set(s.slotOf.values())) s.slotCards(slot).flatMap((k) => s.places.get(k)!).forEach((key, i) => at.set(key, { slot, at: i }))
+  return at
+}
+
+/** Is `row` after a set added in the session and still open, in its slot (by the sequence's record)? Such a set is only on this phone (185 (c)). */
+function afterOpenAdded(s: Session, rows: readonly ResolvedRow[], row: ResolvedRow): boolean {
+  const at = slotPlaces(s)
+  const mine = at.get(row.headKey ?? row.key)!
+  return rows.some((o) => o.added && o.kind !== 'stage' && o.state === 'unlogged' && at.get(o.key)?.slot === mine.slot && at.get(o.key)!.at < mine.at)
+}
+
+/** The logs on rows whose stored number is not their row's. */
+function differing(s: Session): Set<string> {
+  return new Set(s.rows().filter((r) => r.logId !== null && s.server.logs.find((l) => l.id === r.logId)!.setNumber !== r.number).map((r) => r.logId!))
+}
+
 /**
- * What must hold after every step (DECISIONS 170's three, 173's two, 178's, and the rules around them). `s.places` is the
- * sequence's own record of where each set is; the module never sees it.
+ * The screen draws after the step (58a writes 46's corrections, 178 and 185 (c)). Before it, a log may hold a number its row no
+ * longer shows only if it already did (`stale`) or the step itself moves numbers no writer patches (`allowed`: + ADD SET before
+ * logged sets of its slot, a swap, a set added before 1.2 logged again, 184 (b)); a writer that renumbers leaves no log wrong.
+ * After it, a log still wrong comes after a set added and still open in its slot, which only this phone holds (185 (c)). Returns
+ * the logs left wrong.
  */
-function check(s: Session, label: string): void {
+function drawAfter(s: Session, label: string, stale: ReadonlySet<string>, allowed: ReadonlySet<string> = new Set()): Set<string> {
+  for (const id of differing(s)) expect(stale.has(id) || allowed.has(id), `${label}: the step left the number of ${id} wrong`).toBe(true)
+  s.draw()
+  const left = differing(s)
+  const rows = s.rows()
+  for (const id of left) expect(afterOpenAdded(s, rows, rows.find((r) => r.logId === id)!), `${label}: the draw left ${id} wrong with no open added set before it`).toBe(true)
+  if (left.size > 0) reached.leftAfterOpenAdded++
+  return left
+}
+
+/**
+ * What must hold after every step (DECISIONS 170's three, 173's two, 178's, 183's, 185's and the rules around them).
+ * `s.places`, `s.slotOf` and `s.old` are the sequence's own record of where each set is; the module never sees them. `stale`:
+ * the logs the last draw left wrong, after a set only this phone holds (185 (c)).
+ */
+function check(s: Session, label: string, stale: ReadonlySet<string>): void {
   const rows = s.rows()
   expect(new Set(rows.map((r) => r.key)).size, `${label}: row keys are unique`).toBe(rows.length)
   for (const [cardKey, places] of s.places) {
@@ -269,22 +329,6 @@ function check(s: Session, label: string): void {
     // …and drawn in that order: the card's warmups, then its working sets
     const kinds = new Map(heads.map((r) => [r.key, r.kind]))
     expect(heads.map((r) => r.key), `${label}: ${cardKey} drawn in order`).toEqual([...places.filter((k) => kinds.get(k) === 'warmup'), ...places.filter((k) => kinds.get(k) === 'working')])
-    // numbers are contiguous with no duplicates: the working sets read 1 to n, the warmups 1 to m
-    const working = heads.filter((r) => r.kind === 'working')
-    const warmups = heads.filter((r) => r.kind === 'warmup')
-    expect(working.map((r) => r.number), `${label}: the working sets of ${cardKey}`).toEqual(working.map((_, i) => i + 1))
-    expect(warmups.map((r) => r.number), `${label}: the warmups of ${cardKey}`).toEqual(warmups.map((_, i) => i + 1))
-    // LOG stores the number the row shows, and every writer that moves numbers keeps it so: every log on a row, a warmup's,
-    // a working set's and a drop's (173: "a log never keeps a number its row no longer shows")
-    for (const r of rows.filter((x) => x.exerciseKey === cardKey && x.logId !== null)) {
-      const log = s.server.logs.find((l) => l.id === r.logId)!
-      expect(log.setNumber, `${label}: ${r.key} shows ${r.number} and its log holds ${log.setNumber}`).toBe(r.number)
-    }
-    // no two logs share a number: of the card's working sets' head logs, and of its warmups' (W1 and 01 are told apart, as REVIEW does)
-    for (const list of [working, warmups]) {
-      const numbers = list.filter((r) => r.logId !== null).map((r) => s.server.logs.find((l) => l.id === r.logId)!.setNumber)
-      expect(new Set(numbers).size, `${label}: two logs of ${cardKey} hold one number (${numbers.join(', ')})`).toBe(numbers.length)
-    }
     // an open added set's row names its own draft, never another set's
     for (const r of heads) if (r.draftKey !== null) expect(r.draftKey.localId, `${label}: ${r.key}'s draft`).toBe(r.localId)
     // …and every set is drawn with its own log: a planned set's is its planned set's, an added set's the one its card's entry
@@ -295,21 +339,50 @@ function check(s: Session, label: string): void {
       else if (r.added) expect(r.logId === null ? r.draftKey?.localId : r.logId, `${label}: ${r.key}, listed nowhere, is its log's or its draft's`).toBe(r.localId)
       else if (r.logId !== null) expect(s.server.logs.find((l) => l.id === r.logId)!.weekPlanSetId, `${label}: ${r.key}'s log`).toBe(r.weekPlanSetId)
     }
-    // an added set's log holds its place (174), a planned set's and a drop's none (177)
+    // an added set's log holds its place (174), a planned set's and a drop's none (177); a set added before 1.2 none (184)
     for (const r of rows.filter((x) => x.exerciseKey === cardKey && x.logId !== null)) {
       const log = s.server.logs.find((l) => l.id === r.logId)!
       expect(log.addedPlace ?? null, `${label}: ${r.key}'s log's place`).toBe(r.added && r.kind !== 'stage' ? r.addedPlace : null)
     }
-    if (warmups.filter((r) => r.added && r.state === 'logged').length >= 2) reached.twoLoggedAddedWarmups++
+    const old = s.old.get(cardKey)!
+    expect(heads.filter((r) => r.added && r.addedPlace === null).map((r) => r.key), `${label}: ${cardKey}'s sets added before 1.2, in the order they were logged`).toEqual(old)
+    if (heads.filter((r) => r.added && r.kind === 'warmup' && r.state === 'logged').length >= 2) reached.twoLoggedAddedWarmups++
   }
-  // 178: every stored number is its row's, so the screen drawing the session now writes nothing
+  // every slot is one numbering (183 (a)): a card a swap made with the card it replaced, every other card on its own (183's
+  // follow-up: each card numbered on its own)
+  for (const slot of new Set(s.slotOf.values())) {
+    const cards = s.slotCards(slot)
+    const heads = rows.filter((r) => cards.includes(r.exerciseKey) && r.kind !== 'stage').sort((a, b) => a.planIndex - b.planIndex)
+    expect(heads.map((r) => r.key), `${label}: the slot of ${slot} in its order`).toEqual(cards.flatMap((k) => s.places.get(k)!))
+    for (const r of rows.filter((x) => cards.includes(x.exerciseKey))) expect(r.slotKey, `${label}: ${r.key}'s slot`).toBe(slot)
+    // numbers are contiguous with no duplicates: the working sets read 1 to n, the warmups 1 to m
+    const working = heads.filter((r) => r.kind === 'working')
+    const warmups = heads.filter((r) => r.kind === 'warmup')
+    expect(working.map((r) => r.number), `${label}: the working sets of ${slot}'s slot`).toEqual(working.map((_, i) => i + 1))
+    expect(warmups.map((r) => r.number), `${label}: the warmups of ${slot}'s slot`).toEqual(warmups.map((_, i) => i + 1))
+    // LOG stores the number the row shows, and every writer that moves numbers keeps it so: every log on a row, a warmup's,
+    // a working set's and a drop's (173), but one the last draw left after a set only this phone holds (185 (c))
+    for (const r of rows.filter((x) => cards.includes(x.exerciseKey) && x.logId !== null)) {
+      const log = s.server.logs.find((l) => l.id === r.logId)!
+      if (stale.has(log.id)) continue
+      expect(log.setNumber, `${label}: ${r.key} shows ${r.number} and its log holds ${log.setNumber}`).toBe(r.number)
+    }
+    // no two logs share a number: of the slot's working sets' head logs, and of its warmups' (W1 and 01 are told apart, as REVIEW does)
+    for (const list of [working, warmups]) {
+      const numbers = list.filter((r) => r.logId !== null && !stale.has(r.logId)).map((r) => s.server.logs.find((l) => l.id === r.logId)!.setNumber)
+      expect(new Set(numbers).size, `${label}: two logs of ${slot}'s slot hold one number (${numbers.join(', ')})`).toBe(numbers.length)
+    }
+  }
+  // 178 and 185 (c): the screen drawing the session now writes nothing
   expect(numberCorrections(s.order(), s.server.logs, s.server.held()), `${label}: a draw now writes nothing`).toEqual([])
   // REVIEW (the one other reader of a log's number) sees each logged added set as an item of its own: two added Warmups are two
-  const want = rows
-    .filter((r) => r.added && r.kind !== 'stage' && r.state === 'logged')
-    .map((r) => `added-set:s1:${r.exerciseId}:${r.kind === 'warmup' ? 'w' : ''}${r.number}`)
-    .sort()
-  expect([...s.reviewAddedSetKeys()].sort(), `${label}: REVIEW's items for the added sets`).toEqual(want)
+  if (stale.size === 0) {
+    const want = rows
+      .filter((r) => r.added && r.kind !== 'stage' && r.state === 'logged')
+      .map((r) => `added-set:s1:${r.exerciseId}:${r.kind === 'warmup' ? 'w' : ''}${r.number}`)
+      .sort()
+    expect([...s.reviewAddedSetKeys()].sort(), `${label}: REVIEW's items for the added sets`).toEqual(want)
+  }
   // a deleted set stays deleted
   for (const change of s.server.held()) {
     if (change.kind === 'deleted') expect(rows.map((r) => r.key), `${label}: ${change.weekPlanSetId} is deleted`).not.toContain(`set:${change.weekPlanSetId}`)
@@ -324,18 +397,25 @@ function check(s: Session, label: string): void {
   expect(warning?.count ?? 0, `${label}: the finish warning`).toBe(openPlanned.length)
 }
 
-/** After `row` (a set) in its card, the open added sets: how many, and whether one of them keeps a draft. */
+/** After `row` (a set) in its slot, the open added sets: how many, and whether one of them keeps a draft. */
 function openAddedAfter(rows: readonly ResolvedRow[], row: ResolvedRow) {
-  const after = rows.filter((r) => r.exerciseKey === row.exerciseKey && r.kind !== 'stage' && r.added && r.state === 'unlogged' && r.planIndex > row.planIndex)
+  const after = rows.filter((r) => r.slotKey === row.slotKey && r.kind !== 'stage' && r.added && r.state === 'unlogged' && r.planIndex > row.planIndex)
   return { count: after.length, drafted: after.some((r) => r.draftKey !== null) }
+}
+
+/** The logs of the sets of `cardKey` added before 1.2 (no place): what a re-log of one of them may move (184 (b)). */
+function oldLogIds(s: Session, cardKey: string): Set<string> {
+  return new Set(s.rows().filter((r) => r.exerciseKey === cardKey && r.added && r.addedPlace === null && r.logId !== null).flatMap((r) => [r.logId!, ...s.server.logs.filter((l) => l.parentSetId === r.logId).map((l) => l.id)]))
 }
 
 /**
  * UNLOG on the row `key`, checked as 170 asks: the unlog itself moves nothing (every row reads as it did, the set itself open
  * again), and on a copy, logging it again with its draft is an exact undo (the rows, the stored logs, a warmup's number and an
- * added set's place included, the change rows).
+ * added set's place included, the change rows). A set added before 1.2 is the exception 184 (b) makes: its unlog moves nothing,
+ * and logging it again moves it to after the card's other sets added before 1.2 (the copy's record says where), the draw then
+ * writing the numbers it moved.
  */
-function unlogExactly(s: Session, key: string, label: string): void {
+function unlogExactly(s: Session, key: string, label: string, stale: ReadonlySet<string>): void {
   const before = s.rows()
   const logsBefore = s.server.logs.map((l) => ({ ...l }))
   const changesBefore = s.server.held()
@@ -348,13 +428,23 @@ function unlogExactly(s: Session, key: string, label: string): void {
     before.map((r) => (r.key === key ? ([r.key, r.kind, r.number, r.type, r.stageNumber, 'unlogged'] as const) : reading(r))),
   )
   if (set.added && set.kind !== 'stage') {
-    // the draft holds the type (161) and the place (174), and the card keeps the same (a set it didn't list is taken in)
+    // the draft holds the type (161), the place (174) and the log's time (184), and the card keeps the same (a set it didn't
+    // list is taken in; one added before 1.2 has its draft alone)
     expect('type' in effects.draft.values && effects.draft.values.type, `${label}: the draft of ${key}`).toEqual(set.type)
     expect('place' in effects.draft.values && effects.draft.values.place, `${label}: the draft's place for ${key}`).toBe(set.addedPlace)
-    expect(s.cardOf(key).added!.find((a) => a.localId === set.localId), `${label}: the card's entry for ${key}`).toMatchObject({ type: set.type, place: set.addedPlace, logId: null })
+    const log = logsBefore.find((l) => l.id === set.logId)!
+    expect('loggedAt' in effects.draft.values && effects.draft.values.loggedAt, `${label}: the draft's time for ${key}`).toBe(log.loggedAt)
+    if (set.addedPlace !== null) expect(s.cardOf(key).added!.find((a) => a.localId === set.localId), `${label}: the card's entry for ${key}`).toMatchObject({ type: set.type, place: set.addedPlace, logId: null })
   }
   // logging it again on a copy restores what was there
   const t = s.copy()
+  if (set.added && set.kind !== 'stage' && set.addedPlace === null) {
+    reached.relogOld++
+    t.relog(key, effects.draft)
+    const left = drawAfter(t, `${label} (logged again)`, stale, oldLogIds(t, set.exerciseKey))
+    check(t, `${label} (logged again)`, left)
+    return
+  }
   t.relog(key, effects.draft)
   const relogged = t.rows()
   expect(relogged.map(reading), `${label}: unlog and log of ${key} gives back the rows`).toEqual(before.map(reading))
@@ -367,35 +457,47 @@ function unlogExactly(s: Session, key: string, label: string): void {
 /**
  * A reopen or a reload (the phone's state for the session goes, all of it or the list alone), checked as 178 asks: the draw's
  * corrections write only logs whose stored number differs from their row's, and each to that number; the sets left are the ones
- * the sequence's own record keeps, in their places.
+ * the sequence's own record keeps, in their places. Returns the logs the draw left wrong (185 (c)).
  */
-function dropState(s: Session, how: 'reopen' | 'reload', label: string): void {
+function dropState(s: Session, how: 'reopen' | 'reload', label: string): Set<string> {
   const loggedAdded = s.rows().some((r) => r.added && r.kind !== 'stage' && r.logId !== null)
   if (how === 'reopen' && loggedAdded) reached.reopenWithLoggedAdded++
+  if (s.cards.some((c) => c.swappedFrom !== undefined && s.rows().some((r) => r.exerciseKey === c.key && r.logId !== null))) reached.dropStateAfterSwap++
   const corrections = how === 'reopen' ? s.reopen() : s.reload()
   for (const c of s.lastCorrections) expect(c.was, `${label}: the correction of ${c.id} writes only where the numbers differ`).not.toBe(c.setNumber)
   if (corrections.length > 0) reached.correctionsWritten++
   // and no card lists anything now: every added set is its log's or its draft's
   for (const c of s.cards) expect(c.added ?? [], `${label}: ${c.key}'s list after a ${how}`).toEqual([])
+  const left = differing(s)
+  const rows = s.rows()
+  for (const id of left) expect(afterOpenAdded(s, rows, rows.find((r) => r.logId === id)!), `${label}: the ${how}'s draw left ${id} wrong with no open added set before it`).toBe(true)
+  return left
 }
 
-type Op = 'add' | 'addWarmup' | 'log' | 'logNext' | 'logWarmup' | 'warmup' | 'type' | 'delete' | 'unlogSet' | 'unlogWarmup' | 'unlogDrop' | 'reopen' | 'reload'
+type Op = 'add' | 'addWarmup' | 'log' | 'logNext' | 'logWarmup' | 'warmup' | 'type' | 'delete' | 'unlogSet' | 'unlogWarmup' | 'unlogDrop' | 'reopen' | 'reload' | 'swap'
 
 const OPS: Record<Mode, readonly Op[]> = {
-  mixed: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'logNext', 'logNext', 'logWarmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'delete', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload'],
+  mixed: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'logNext', 'logNext', 'logWarmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'delete', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload', 'swap'],
   added: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'log', 'logNext', 'logWarmup', 'warmup', 'warmup', 'warmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'type', 'delete', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload'],
   warmups: ['add', 'addWarmup', 'addWarmup', 'log', 'log', 'log', 'logWarmup', 'logWarmup', 'warmup', 'warmup', 'warmup', 'warmup', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogWarmup', 'reopen', 'reload'],
   phones: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'logWarmup', 'warmup', 'warmup', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogWarmup', 'reopen', 'reopen', 'reload', 'reload'],
   staged: ['add', 'addWarmup', 'log', 'log', 'log', 'log', 'logWarmup', 'warmup', 'warmup', 'warmup', 'type', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogWarmup', 'unlogDrop', 'reopen', 'reload'],
+  swaps: ['add', 'add', 'addWarmup', 'log', 'log', 'log', 'log', 'logNext', 'warmup', 'warmup', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogWarmup', 'reopen', 'reload', 'swap', 'swap', 'swap', 'swap'],
+  old: ['add', 'log', 'log', 'log', 'logNext', 'warmup', 'type', 'delete', 'delete', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'unlogSet', 'reopen', 'reload', 'swap'],
 }
+
+/** The exercise a card's logs carry, as the name a swap takes (`ex.<name>`). */
+const nameOf = (exerciseId: string): string => exerciseId.replace(/^ex\./, '')
 
 /** One generated sequence: `steps` steps from the seed, each checked. Returns what it did. */
 function sequence(seed: number, steps: number, mode: Mode): string[] {
   const g = generator(seed)
-  const s = startOf(START[mode])
+  const s = startOf(START[mode], mode === 'old')
   const trace: string[] = [`seed ${seed} (${mode})`]
   const label = (step: number) => `seed ${seed} (${mode}), step ${step}\n${trace.join('\n')}`
-  check(s, label(0))
+  // the screen draws the session when it opens it: 1.1's numbers on the sets added before 1.2 are corrected (178)
+  let stale = drawAfter(s, label(0), new Set(), new Set([...oldLogIds(s, 'bench'), ...oldLogIds(s, 'curl')]))
+  check(s, label(0), stale)
   let values = 0
   const nextValues = () => {
     values++
@@ -407,22 +509,32 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
     const heads = rows.filter((r) => r.kind !== 'stage' && r.state !== 'skipped')
     // an open row that can be logged now: a set, or a drop whose set is logged
     const loggable = rows.filter((r) => r.state === 'unlogged' && (r.kind !== 'stage' || rows.some((h) => h.key === r.headKey && h.logId !== null)))
+    const swapped = (key: string) => s.card(key).swappedFrom !== undefined
+    const before = (r: ResolvedRow) => rows.some((x) => x.slotKey === r.slotKey && x.exerciseKey !== r.exerciseKey && x.planIndex > r.planIndex && x.logId !== null)
+    let allowed = new Set<string>()
     if (op === 'add' || op === 'addWarmup') {
-      const key = g.pick(ADDABLE)
+      const key = g.pick(s.cards.map((c) => c.key))
       if (rows.some((r) => r.exerciseKey === key && r.added && r.kind !== 'stage' && r.logId !== null && !lists(s.cards, r))) reached.addAfterReopen++
       const rowKey = s.add(key)
+      // + ADD SET writes nothing: the logged sets after it in its slot (a card a swap made, after the card it replaced) show one more
+      const at = s.rows().find((r) => r.key === rowKey)!
+      allowed = new Set(s.rows().filter((r) => r.slotKey === at.slotKey && r.planIndex > at.planIndex && r.logId !== null).map((r) => r.logId!))
       // there is no "add a warmup" action (SPEC 5a): ADD SET, then SET TYPE → Warmup
       if (op === 'addWarmup') s.retype(rowKey, WARMUP)
       trace.push(`${op === 'add' ? 'add' : 'add-warmup'} ${rowKey}`)
     } else if ((op === 'log' || op === 'logNext' || op === 'logWarmup') && loggable.length > 0) {
       const pool = op === 'logWarmup' ? loggable.filter((r) => r.kind === 'warmup') : loggable
       if (pool.length === 0) continue
-      // after a reload, the sets only a draft holds are logged often (the card takes each in first)
+      // after a reload, the sets only a draft holds are logged often (the card takes each in first), and so are a swap's
       const draftOnly = pool.filter((r) => r.added && r.kind !== 'stage' && r.draftKey !== null && !lists(s.cards, r))
-      const row = op === 'logNext' ? pool[0] : draftOnly.length > 0 && g.chance(0.6) ? g.pick(draftOnly) : g.pick(pool)
+      const onSwapped = pool.filter((r) => swapped(r.exerciseKey))
+      const row = op === 'logNext' ? pool[0] : draftOnly.length > 0 && g.chance(0.6) ? g.pick(draftOnly) : onSwapped.length > 0 && g.chance(0.5) ? g.pick(onSwapped) : g.pick(pool)
       if (row.added && row.kind !== 'stage' && !lists(s.cards, row)) reached.logDraftNotListed++
+      if (swapped(row.exerciseKey)) reached.logOnSwappedCard++
+      if (row.added && row.kind !== 'stage' && row.addedPlace === null) allowed = oldLogIds(s, row.exerciseKey)
       const empty = row.kind === 'warmup' && g.chance(0.5)
-      s.log(row.key, empty ? { weight: null, reps: null, rir: null } : nextValues())
+      const log = s.log(row.key, empty ? { weight: null, reps: null, rir: null } : nextValues())
+      if (row.added && row.kind !== 'stage' && row.addedPlace === null) allowed = new Set([...allowed, log.id])
       trace.push(`log ${row.key}${empty ? ' (empty)' : ''}`)
     } else if (op === 'warmup' && heads.length > 0) {
       // the switch to or from Warmup, on any set: an added one as often as not, and an open added Warmup back to working often
@@ -446,6 +558,8 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       if (row.added && row.kind === 'warmup' && row.logId === null && rows.some((r) => r.exerciseKey === row.exerciseKey && r.kind === 'working' && r.logId !== null && r.planIndex > row.planIndex)) {
         reached.addedWarmupMadeWorkingBeforeLogged++
       }
+      if (swapped(row.exerciseKey)) reached.editOnSwappedCard++
+      if (before(row)) reached.editBeforeSwappedCard++
       const effects = s.retype(row.key, pick)
       if (effects.renumber.some((p) => s.server.logs.find((l) => l.id === p.id)?.isWarmup)) reached.warmupLogMoved++
       trace.push(`${pick.kind === 'warmup' ? 'warmup' : 'from-warmup'} ${row.key}${pick.kind === 'staged' ? ' (a dropset)' : ''}`)
@@ -458,20 +572,25 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       if (effects.renumber.some((p) => s.server.logs.find((l) => l.id === p.id)?.isWarmup)) reached.warmupLogMoved++
       trace.push(`type ${row.key} ${JSON.stringify(pick)}`)
     } else if (op === 'delete' && rows.length > 0) {
-      // a set more often than a drop, and one with open added sets after it as often as the session has one
-      const before = rows.filter((r) => r.kind !== 'stage' && openAddedAfter(rows, r).count > 0)
-      const row = before.length > 0 && g.chance(0.6) ? g.pick(before) : g.pick(rows)
+      // a set more often than a drop, and one with open added sets after it as often as the session has one, and one before a
+      // card a swap made, or on one, as often as the session has one
+      const opened = rows.filter((r) => r.kind !== 'stage' && openAddedAfter(rows, r).count > 0)
+      const aroundSwap = rows.filter((r) => r.kind !== 'stage' && (swapped(r.exerciseKey) || before(r)))
+      const row = aroundSwap.length > 0 && g.chance(0.4) ? g.pick(aroundSwap) : opened.length > 0 && g.chance(0.6) ? g.pick(opened) : g.pick(rows)
       if (row.kind === 'working') {
         const shape = openAddedAfter(rows, row)
         if (shape.count >= 2) reached.deleteBeforeTwoOpenAdded++
         if (shape.drafted) reached.deleteBeforeUnloggedAdded++
       }
+      if (swapped(row.exerciseKey)) reached.editOnSwappedCard++
+      if (before(row)) reached.editBeforeSwappedCard++
       const effects = s.delete(row.key)
       if (effects.renumber.some((p) => s.server.logs.find((l) => l.id === p.id)?.isWarmup)) reached.warmupLogMoved++
       trace.push(`delete ${row.key}`)
     } else if (op === 'unlogSet' || op === 'unlogWarmup') {
       const every = rows.filter((r) => r.kind !== 'stage' && r.state === 'logged' && s.canUnlog(r.key) && (op === 'unlogSet' || r.kind === 'warmup'))
-      const pool = mode !== 'mixed' && every.some((r) => r.added) && g.chance(0.8) ? every.filter((r) => r.added) : every
+      const oldOnes = every.filter((r) => r.added && r.addedPlace === null)
+      const pool = mode === 'old' && oldOnes.length > 0 && g.chance(0.6) ? oldOnes : mode !== 'mixed' && every.some((r) => r.added) && g.chance(0.8) ? every.filter((r) => r.added) : every
       if (pool.length === 0) continue
       // a staged added set as often as the session has one (161: its draft brings its drops back)
       const stagedAdded = pool.filter((r) => r.added && r.type?.kind === 'staged')
@@ -480,10 +599,11 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       if (!row.added && row.kind === 'warmup') reached.unlogPlannedWarmup++
       if (row.added && row.type?.kind === 'staged') reached.unlogAddedStaged++
       if (row.added && !lists(s.cards, row)) reached.unlogNotListed++
+      if (row.added && row.addedPlace === null) reached.unlogOld++
       if (row.added && rows.some((r) => r.exerciseKey === row.exerciseKey && r.added && r.state === 'unlogged' && r.kind !== 'stage' && r.planIndex < row.planIndex)) reached.unlogWithOpenAddedBefore++
       if (row.added && row.kind === 'warmup' && rows.some((r) => r.exerciseKey === row.exerciseKey && r.added && r.kind === 'warmup' && r.key !== row.key)) reached.unlogWithAnotherAddedWarmup++
       trace.push(`unlog ${row.key}`)
-      unlogExactly(s, row.key, label(step))
+      unlogExactly(s, row.key, label(step), stale)
     } else if (op === 'unlogDrop') {
       const drops = rows.filter((r) => r.kind === 'stage' && r.state === 'logged' && s.canUnlog(r.key))
       if (drops.length === 0) continue
@@ -492,24 +612,62 @@ function sequence(seed: number, steps: number, mode: Mode): string[] {
       s.unlog(row.key)
     } else if (op === 'reopen' || op === 'reload') {
       trace.push(op)
-      dropState(s, op, label(step))
+      stale = dropState(s, op, label(step))
+      check(s, label(step), stale)
+      continue
+    } else if (op === 'swap') {
+      // a card with an open set (but none added before 1.2: the record can't name it) swapped for today
+      const open = (key: string) => rows.filter((r) => r.exerciseKey === key && r.kind !== 'stage' && r.state === 'unlogged')
+      const from = s.cards.filter((c) => open(c.key).length > 0 && !open(c.key).some((r) => r.added && r.addedPlace === null))
+      if (from.length === 0) continue
+      const card_ = g.pick(from)
+      // to a new exercise, one the session already has, or the exercise its slot began with again
+      const root = s.card(s.slotOf.get(card_.key)!)
+      const others = [...new Set(s.cards.map((c) => c.exerciseId))].filter((id) => id !== card_.exerciseId)
+      const pool = [
+        ...ELSEWHERE.map((n) => `ex.${n}`),
+        ...others,
+        ...(root.exerciseId !== card_.exerciseId ? [root.exerciseId, root.exerciseId] : []),
+      ].filter((id) => id !== card_.exerciseId)
+      const to = g.pick(pool)
+      const theOpen = open(card_.key)
+      if (theOpen.some((r) => rows.some((x) => x.exerciseKey === card_.key && x.logId !== null && x.planIndex > r.planIndex))) reached.swapOpenBeforeLogged++
+      if (rows.some((r) => r.exerciseId === to && r.added && r.kind !== 'stage')) reached.swapIntoExerciseWithAdded++
+      if (s.cards.some((c) => c.exerciseId === to && s.slotOf.get(c.key) !== s.slotOf.get(card_.key))) reached.swapIntoSessionExercise++
+      if (to === root.exerciseId && root.key !== card_.key) reached.swapBackToOriginal++
+      if (s.cards.some((c) => c.swappedFrom?.fromKey === card_.key && c.exerciseId === to)) reached.swapIntoSameCardAgain++
+      const slot = s.slotOf.get(card_.key)!
+      const logsBefore = new Map(s.server.logs.map((l) => [l.id, l.setNumber]))
+      const shownBefore = new Map(rows.filter((r) => r.logId !== null).map((r) => [r.logId!, r.number]))
+      const madeKey = s.swap(card_.key, nameOf(to))
+      // the open sets left their card and moved, each with its type; no logged set outside the slot shows another number
+      const after = s.rows()
+      for (const r of theOpen) expect(after.some((x) => x.key === r.key), `${label(step)}: ${r.key} moved, and its card draws no row for it`).toBe(false)
+      expect(after.filter((x) => x.exerciseKey === madeKey && x.kind !== 'stage' && x.state === 'unlogged').slice(-theOpen.length).map((x) => x.type), `${label(step)}: the moved sets keep their types`).toEqual(theOpen.map((r) => r.type))
+      for (const r of after) {
+        if (r.logId === null || s.slotOf.get(r.exerciseKey) === slot || !shownBefore.has(r.logId)) continue
+        expect(r.number, `${label(step)}: the swap renumbered ${r.key}, outside its slot`).toBe(shownBefore.get(r.logId))
+      }
+      allowed = new Set(after.filter((r) => r.slotKey === slot && r.logId !== null && logsBefore.get(r.logId) !== r.number).map((r) => r.logId!))
+      trace.push(`swap ${card_.key} ${nameOf(to)} -> ${madeKey}`)
     } else continue
-    check(s, label(step))
+    stale = drawAfter(s, label(step), stale, allowed)
+    check(s, label(step), stale)
   }
   return trace
 }
 
-describe('generated sequences of add, log, unlog, delete, Warmup switches, reopens and reloads (DECISIONS 170, 173, 178)', () => {
+describe('generated sequences of add, log, unlog, delete, Warmup switches, reopens, reloads and swaps (DECISIONS 170, 173, 178, 183, 184, 185)', () => {
   // Each of these runs thousands of checked steps: they are given a few minutes.
-  const LONG = { timeout: 240_000 }
+  const LONG = { timeout: 600_000 }
 
-  it('cards that start with their plan: after every step the numbers read 1 to n, every set is where it was, every log holds its row\'s number, and every unlog is undone exactly', LONG, () => {
+  it('cards that start with their plan: after every step the numbers read 1 to n in each slot, every set is where it was, every log holds its row\'s number, and every unlog is undone exactly', LONG, () => {
     let steps = 0
     for (let seed = 1; seed <= 250; seed++) steps += sequence(seed, 24, 'mixed').length - 1
     expect(steps).toBeGreaterThan(4000)
   })
 
-  it('…with sets added to every card from the start (some made Warmups), switched, logged out of order, unlogged, deleted around, and the session reopened and reloaded', LONG, () => {
+  it('…with sets added to every card from the start (some made Warmups), switched, logged out of order, unlogged, deleted around, swapped, the session reopened and reloaded, and sets added before 1.2', LONG, () => {
     let steps = 0
     for (const key of Object.keys(reached) as Array<keyof typeof reached>) reached[key] = 0
     for (let seed = 1001; seed <= 1300; seed++) steps += sequence(seed, 28, 'added').length - 1
@@ -519,16 +677,21 @@ describe('generated sequences of add, log, unlog, delete, Warmup switches, reope
     for (let seed = 3001; seed <= 3200; seed++) steps += sequence(seed, 28, 'phones').length - 1
     // …and with the first set added to each card a dropset, then a Warmup and a working set
     for (let seed = 4001; seed <= 4150; seed++) steps += sequence(seed, 28, 'staged').length - 1
-    expect(steps).toBeGreaterThan(17000)
-    // the sequences got to every case the fourth review's sequences are made of, DECISIONS 161's, and 173's and 178's
+    // …with swaps for today often: to a new exercise, to one the session has, back to the slot's own, into a card again (183)
+    for (let seed = 5001; seed <= 5250; seed++) steps += sequence(seed, 30, 'swaps').length - 1
+    // …and with sets added before 1.2 on two cards, unlogged and logged again often (184)
+    for (let seed = 6001; seed <= 6200; seed++) steps += sequence(seed, 28, 'old').length - 1
+    expect(steps).toBeGreaterThan(25000)
+    // the sequences got to every case the fourth review's sequences are made of, DECISIONS 161's, 173's, 178's and 183–185's
     expect(Object.entries(reached).filter(([, count]) => count <= 30), `the cases barely reached (${JSON.stringify(reached)})`).toEqual([])
   })
 
   it('every kind of step happens, and the same seed gives the same sequence', LONG, () => {
     const kinds = new Set<string>()
     for (let seed = 1; seed <= 80; seed++) for (const step of sequence(seed, 24, 'mixed').slice(1)) kinds.add(step.split(' ')[0])
-    expect([...kinds].sort()).toEqual(['add', 'add-warmup', 'delete', 'from-warmup', 'log', 'reload', 'reopen', 'type', 'unlog', 'warmup'])
+    expect([...kinds].sort()).toEqual(['add', 'add-warmup', 'delete', 'from-warmup', 'log', 'reload', 'reopen', 'swap', 'type', 'unlog', 'warmup'])
     expect(sequence(77, 24, 'added')).toEqual(sequence(77, 24, 'added'))
     expect(sequence(3077, 28, 'phones')).toEqual(sequence(3077, 28, 'phones'))
+    expect(sequence(5077, 30, 'swaps')).toEqual(sequence(5077, 30, 'swaps'))
   })
 })
