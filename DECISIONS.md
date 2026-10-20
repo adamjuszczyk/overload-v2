@@ -1,16 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, d31b merged (#162).*
-- *The second display follow-up (d31b) merged (#162) with your 154, 155 (a), 157 (c) and 172 (j) built. Text on the accent is the near-black only in the screens 1.2 rebuilds and the shared parts they use; the other screens are back as they were before #135, and Coach is untouched. A picker switched to a segment the set doesn't have carries the set's own value (12 → RANGE 12–14, 6–9 → NUMBER 6). The app's op type can't delete a run's program or workout. Plan's CHANGE THE PROGRAM FROM WEEK N names the same week as the screen's rule box. On staging the deployed screens draw each side as it should, in both themes.*
-- *Two new entries, neither blocking: 180 (two picker cases your 155 words don't cover: an AMRAP set, and a number changed before the switch; recommended: keep as built) and 181 (one display choice, D31: the bottom bar's install strip; recommended: accept).*
-- *What follows: 46's sixth attempt (building now); then 52 onward; 58a–64 once 46 merges. 176's tests-only follow-up can run now that d31b is in.*
+*Rewritten at every boundary. Last: 2026-10-20, chunk 52's first review: not merged (missing proofs; a builder retry).*
+- *Chunk 52 (Plan's header: the week tiles, PLAN FORWARD, COPY, WEEK ⋯; Plan plans only the current week) was reviewed and not merged. What it does is right on staging's three runs, checked on the branch's real screens with staging's data, read only: each account's tiles for today, nothing planned by opening Plan or any tile, your boards' words, text on the accent near-black. But three of its write paths can be broken with every test still passing (which week WEEK ⋯ marks when a week ahead is open; the current week planned when it moves on while Plan is open; two reader tests that went with the old copy code), and a past cycle's lock line says PAST WEEK on a sequence run. A builder retry adds the tests (and the one word). Nothing is asked of you.*
+- *Chunk 46 is stopped (unchanged): 182 is the write-up for its redraw, with 183–185.*
+- *What follows: 52's retry, 176's tests-only run, then 65 onward; 58a–64 wait on 46's redraw. Night mode: one agent at a time.*
 
 Decisions:
-- **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, now that d31b has merged. Blocks: nothing.
-- **180** — 155 (a)'s cases outside your words: an AMRAP set switched to NUMBER or RANGE starts from the examples, and the value carried is the target the sheet opened with, not a number changed before the switch (the bound case follows your 155 (b)). Recommended: keep as built. Blocks: nothing.
-- **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
-- **181** — d31b's one display choice: the bottom bar's install strip back on `--base` with the update notice (D31). Recommended: accept. Blocks: nothing.
+- **182** — how to redraw chunk 46. Recommended: (a), keep the sixth attempt's module as the base and change only what 183–185 decide, in one small chunk. Blocks: 58a–64 (not the chunks before 58a).
+- **183** — a swap's moved sets beyond W5's case: an open set between logged ones, a new exercise that already has added sets, the original card's rows for the sets that moved. Recommended: (a), one numbering for the exercise's place in the session. Blocks: 46's redraw, 59.
+- **185** — two phones on one session correct each other's stored numbers back and forth while one holds a set added and not logged yet. Recommended: (c), a phone never corrects a log after a set only it holds. Blocks: 58a.
+- **184** — a set added before 1.2, unlogged and logged again under 1.2, can't come back in its place. Recommended: (b), the unlog moves nothing; the re-log may. Blocks: 63, and 46's redraw.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -169,32 +169,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-19
 
 ### 175 Chunk 51b's display choices on CHANGE THE PROGRAM's DAYS card and set rows (provisional, D31)
-**Ask:** chunk 51b built the DAYS card and a stable run's set rows with these display choices, which no board or SPEC sentence settles, or where the screen differs from a board's drawing. Accept them, or change any?
-**Recommendation:** accept all: each is display only and changes nothing that is written. (b) changes 51a's chips on weekday runs and (l) is the contract 54b sends, so they are the ones to look at.
-**Blocks:** nothing.
-**Options:** accept as built, or change any of:
-- (a) RENAME is in the DAYS card's header (PL1) on a weekday run; a sequence run, which has no card, keeps 51a's row under the chips (172 (a), now for sequence runs only).
-- (b) The workout chips show the draft's days, as PL1 draws Pull 1 on WED beside "Was Tuesday"; 51a drew the days in force that week (172 (a)), which this replaces on weekday runs. The card's struck-through day and its "Was …" line say what this week has.
-- (c) The taken-day lines ("Sat is Arms's day") are always shown, not only when tapped: a disabled day can't be tapped.
-- (d) A workout that never had a day (a spare one) may be given days and lose them again, as `planSchedule` has it; "had a day" is read from the run copy's schedule, the one the edit starts from.
-- (e) A new stage has no rep target of its own (as the planner's `addProgramSetStage`).
-- (f) The kind label goes under the rep target when the two don't fit side by side (the box is about 115 px wide at 375) and ends in an ellipsis only at 360 px with `REST-PAUSE · 10`; the REST AFTER column is the board's 128 px and gives up to 32 px to the rep box on a narrower screen.
-- (g) "NO SETS YET", drawn in `--error`, on a stable card with no set (an exercise just added), and no ALL row until it has one.
-- (h) Warmups: the row says `W` (`AW` in a superset), numbered apart from the working sets (SPEC 18b, DECISIONS 170); a picker's eyebrow says the number among the working sets, or among the warmups for a warmup.
-- (i) ALL sets every set, a warmup too; its picker opens with one set, so "Use for all" isn't offered, and its eyebrow says `SET 01` (chunk 39's picker has no eyebrow for "all sets").
-- (j) "+ SET" copies the last set's rep target (a staged last set gives its own, not its last stage's); none when there is no set.
-- (k) A swapped exercise on a stable run shows and edits the old exercise's sets; the ops are exactly what a swap with no sets writes (a test compares them).
-- (l) `#<exerciseId>` is the catalogue exercise's id (the `exerciseId` field): the first workout that holds it is selected and its card scrolled to the top; an unknown or malformed hash is ignored. This is what 54b's "CHANGE EVERY WEEK →" must send.
-**Answer:**
-**Evidence:** the builder's report (`<scratchpad>/build/chunk-51b-builder-1.md`, "For the reviewer"), read on the branch on staging's data in chunk 51b's first review and on the deployed app after real saves in its second (`<scratchpad>/build/r51b2/`). What would be redone if an answer goes against them: display code in `ChangeProgramDaysCard.tsx`, `ChangeProgramSetRows.tsx`, `ChangeProgramExerciseCard.tsx` and `ChangeProgramPage.tsx`; no data.
+- What: chunk 51b's twelve display choices on CHANGE THE PROGRAM's DAYS card and a stable run's set rows, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
+- Answer: (Adam, 2026-10-19) "accepted as built (display only, D31; anything wrong comes up in my review on staging)." Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 176 51a's exercise-level writers on CHANGE THE PROGRAM are tested on the first workout only: a tests-only follow-up? (chunk 51b's retry)
-**Ask:** chunk 51b's retry builder found that 51a's exercise-level writers on CHANGE THE PROGRAM have the blind spot review 1 found in 51b's: each is only ever tested on the first workout. May a tests-only follow-up add the proof?
-**Recommendation:** yes. Schedule a tests-only follow-up, with no code change: each writer pressed on a workout that isn't the first, its list held against `planProgramChange`'s list for the same edit written by hand, proven by the builder's mutants and a sweep of every `selected.id` use, as 51b's retry did. The behaviour is right as built; only the proof is missing. It shares CHANGE THE PROGRAM's files with d31b, so it runs after it or inside its scope.
-**Blocks:** nothing (51a is merged and right).
-**Options:** (a) a tests-only follow-up, after d31b or folded into it (recommended); (b) leave it to the release checklist (RC16 on staging); (c) leave it.
-**Answer:**
-**Evidence:** made the first workout, these `selected.id` uses in `ChangeProgramPage.tsx` pass every test (line numbers as merged in #156): 366 the drag's commit, 383 UNLINK, 384 the split, 385 MOVE, 540 a routine item's move, 677 and 678 the exercise sheet's MOVE UP and MOVE DOWN. So does 533, the warmup card's `key` (a display state kept across a workout switch). The builder's results are in `<scratchpad>/build/c51b2/logs/x51-final-*.jsonl`. Chunk 51b's second review re-ran four of them, its own replacements, on the merged tests: the drag's commit, UNLINK, the routine move and MOVE UP; all four pass every test.
+- What: whether a tests-only follow-up may prove 51a's exercise-level writers on CHANGE THE PROGRAM on a workout that isn't the first (each is only ever tested on the first; recommended: yes, after d31b).
+- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
 - What: whether the drop and stage logs of an added set also carry `added_place`.
@@ -212,26 +194,75 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-19
 
 ### 180 155 (a)'s cases outside Adam's words: an AMRAP set, and a number changed before the switch (d31b)
-**Ask:** your 155 (a) is built (d31b, #162): a picker switched to a segment the set doesn't have carries the set's own value over (NUMBER n → RANGE n–(n+2), RANGE a–b → NUMBER a), and the boards' examples start a segment only when the set has no target at all. Two cases aren't in your words, and each is built as below. Keep them?
-- (a) **An AMRAP set** has a target but no number to carry, so NUMBER and RANGE start from the examples (8, 8–10), as they did before d31b.
-- (b) **"The set's own value" is the target the sheet opened with.** A number stepped or typed in the set's own segment before the switch isn't carried: 12 stepped to 13, then RANGE, gives 12–14 (and NUMBER again gives 13); 6–9 with FROM typed 5, then NUMBER, gives 6 (and RANGE again gives 5–9).
-**Recommendation:** keep both. (a) is the only start a segment without a number can have: the footer always says what it will set (155 (b)), so an empty box isn't a state the sheet has. (b) reads your words literally and keeps each segment's own numbers while the sheet is open. Nothing is written that the user hasn't seen in the boxes and on the footer before SET, and each is a few lines in `pickerLogic.ts` to change.
-**Blocks:** nothing. The rep picker is on CHANGE THE PROGRAM's stable set rows (51b); the RIR picker has no screen until 54a.
-**Options:**
-- (a) as built, or NUMBER and RANGE opened with no number (the footer then has nothing to set until one is typed);
-- (b) as built, or carry what the box shows at the tap (13 → RANGE 13–15), with a mark per segment so that 6–9 → NUMBER → RANGE still gives 6–9.
-
-**Answer:**
-**Evidence:** the builder's 3A.2 and 3A.3 (`<scratchpad>/build/chunk-d31b-builder-1.md`). The bound case isn't here because your 155 (b) settles it: a number past a box's bound is "held to the nearest one the box can take" and "ends that meet are a number", so reps 99 → RANGE 99–100 and 100 → 100–100, which sets the number 100 (RIR 19 → 19–20; RIR 20 → 20–20, which sets RIR 20). The reviewer's real-Chromium driver ran every case on the branch's pickers, with taps from script that move no focus and what SET hands the caller (40 checks); staging's pickers before the merge failed 21 of them. On the real CHANGE THE PROGRAM after the merge, Leg Press 01 at 10–12 → NUMBER gives 10, Plank's AMRAP → RANGE gives 8–10, and a set with no target gives 8 and 8–10. This is behaviour (what SET writes after a switch), not D31; it is deferred because it is cheap to change and writes nothing the user hasn't seen (RULES.md: "An answer covers the cases its question held").
+- What: two cases of 155 (a) that Adam's words don't cover, as d31b built them: an AMRAP set switched to NUMBER or RANGE starts from the examples (8, 8–10), and the value carried is the target the sheet opened with, not a number stepped or typed before the switch (recommended: keep both).
+- Answer: (Adam, 2026-10-19) "180, 181: accepted as built." Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 181 d31b's display choice: the bottom bar's install strip (provisional, D31)
-**Ask:** d31b took `--on-accent` back off the screens 1.2 doesn't rebuild (26 places in 19 files, each as it was before #135). Your 154 words settle every place but one: the bottom bar's INSTALL strip. It is built on `--base`. Keep it?
-- The strip (`Nav.tsx`) and the update notice's RELOAD (`PwaUpdateNotice.tsx`) are drawn by the app around every screen, rebuilt or not. No 1.2 board draws either, no rebuilt screen loads either file, and chunk 65 leaves `Nav.tsx` "unchanged in tabs". 154's question listed the update notice among the screens 1.2 doesn't rebuild, and you answered it; the install strip it didn't name. So both are back on `--base`: near-white on the accent in the light theme, also over Plan or the workout.
-**Recommendation:** accept. The strip isn't part of a screen 1.2 rebuilds, and putting it back on the token is one value in `Nav.tsx` and one line of the static test's list.
-**Blocks:** nothing.
-**Options:** as built; or the strip (and the update notice) on `--on-accent` everywhere, as #135 had them.
+- What: d31b's one display choice: the bottom bar's INSTALL strip back on `--base` with the update notice, as before #135 (recommended: accept).
+- Answer: (Adam, 2026-10-19) "180, 181: accepted as built." Full text in HISTORY.md.
+- Date: 2026-10-19
+
+### 182 Chunk 46 stopped after its sixth attempt: how to redraw it (chunk 46)
+**Ask:** your rule for 46's sixth attempt was "If this attempt fails review on behaviour again, don't retry: stop 46 and write it up for Adam as a chunk to redraw." It failed on behaviour (below), so 46 is stopped and not merged, and no seventh attempt starts. How should 46 be redrawn?
+**Recommendation:** (a). Everything else your answers settle is right in the sixth attempt, executed in its review, and every behaviour failure since the third attempt has been in one place: the number and the order of a set that isn't a planned set logged in order. So keep that module, answer 183–185, and let one small chunk change only what they decide, with a swap step and logs from before 1.2 added to its sequence test.
+**Blocks:** 58a–64, which draw from 46. Not the chunks before 58a: 176's tests-only run, 52–56, 65 and 66 go on.
+**Options:**
+- (a) A narrow redraw on the sixth attempt (`build/chunk-46` at `65dd197`, recommended): after 183–185, one chunk changes the swap's numbers (183), the unlog of a set added before 1.2 (184) and, if 185 says so, the correction report; reviewed as any chunk, under the same rule.
+- (b) A full redraw from a table: every kind of set (planned; added on this phone; added and seen without the card's list, after a reload, a reopen or on another phone; moved by a swap; logged before 1.2) against every event (log, unlog and log again, delete, a switch to or from Warmup, another type, reopen, reload, a swap, a second phone), each with the number and the place it gives. You sign the table off as SPEC 18b; then the whole module is built again against it.
+- (c) Merge the sixth attempt as it stands, and let 59 (the swap's numbers) and 63 (184) change the module when they reach those cases. The cheapest, but a known behaviour bug sits on staging, and 46 is no longer the one owner of the rules.
 **Answer:**
-**Evidence:** the builder's 3A.5 (`<scratchpad>/build/chunk-d31b-builder-1.md`). The builder's other calls follow from the words, so they aren't here: Today's session preview and the screen after a finished session keep their code (SPEC, Today: "Its look is unchanged by 1.2 apart from wording"; chunk 64: "Finished session [P2] unchanged"; no board draws either); Settings' chips are Settings' own (`chipRow` inside `SettingsPage.tsx`, so chunk 49's two rows draw like the rest of the screen); `ConfirmDialog` is a shared component Plan and CHANGE THE PROGRAM load, so it keeps the token also where Library loads it; Coach stays as it is, its Q&A composer inside the workout's Coach sidebar included (`WorkoutSidebarSheet` → `QaPanel` → `QaComposer`, Adam only). The reviewer's census of the 99 accent backgrounds and Vite's own module graph from the rebuilt screens agreed with the builder's list place for place.
+**Evidence:**
+- What 46 is for (TASKS 46's goal): the workout screen's decisions as one tested module, which 58a–64 call and write from: the current set, the log lock, a set type change, delete, unlog, the finish warning, + ADD ROUND. Since your 170–179 it also gives every row's number, every added set's place and the stored numbers to correct.
+- What failed, attempt by attempt (each review's findings: `<scratchpad>/build/chunk-46-review-<n>.md`):
+  1. 2026-10-15: a deleted set came back as an open row (behaviour); gaps 146 (a Warmup switch's numbers) and 147 (a drop on its own).
+  2. 2026-10-15: gap 151 (what unlog does to the numbers) and 152 (a warmup logged without numbers made a working set).
+  3. 2026-10-16: the rules couldn't see an added set's type before it was logged (behaviour); 161.
+  4. 2026-10-18: a fix for unlog let a later added set take an earlier one's number after a delete or a Warmup switch (behaviour); 170.
+  5. 2026-10-19: a warmup's log kept a number it no longer showed, and a set added in a reopened session was drawn before the earlier ones (both behaviour); 173, then 174 and chunk 46m (migration 044, `v2_set_logs.added_place`).
+  6. 2026-10-20: a set a swap for today moves shows 01 on the new exercise (behaviour, below); a set added before 1.2 and unlogged under 1.2 moves (184); two phones correct each other's stored numbers back and forth (185).
+- Right in the sixth attempt, executed in the review on the reviewer's own driver: 173's two bugs are fixed (two added Warmups are W1 and W2 and two REVIEW items, and unlog then log stores the same W number; a set added after a reopen comes after the earlier ones, stored 4, 5, 6); 174, 177 and 178 as you answered them (your 178 shape: one correction write, then none); 170, 151 and 161 (b)(i) (review 4's four sequences and 161's cases). Your named break fails the sequence test in three forms (6, 6 and 7 of its 12 tests). Every script is green on it (4811 tests in 258 files). The reviewer's breaks: 11 of 11 forms of review 5's two bugs, all of review 5's 15, and 15 of the reviewer's own 17 caught; of the two left, one is defensive (an unreadable logged time; `logged_at` is `timestamptz not null`) and one is the order 184 asks about. On the real tables (a replay of every migration), the generated walks in eight modes had 0 of 30,274 writes refused and ended equal to the stand-in, while the control was refused 1,200 times.
+- The failure: W5 draws the moved set as 03 on Machine Pulldown. SPEC C7 (164): "with their numbers, type, drops and targets, as W5 draws." Your 164 took (a): "its number (03 after 01–02)". Your 179 took (a): "ranked after the original's logged sets so they keep their numbers". The module ranks a moved set on the new card alone: 01 (LOG would store 1), and a test pins it.
+- What any redraw needs: answers to 183–185; a row for one exercise on two cards (today's swap sheet offers every exercise but the current one, and two cards with one exercise draw the same added log on both, even while the card's list names it); a sequence test with a swap step and logs from before 1.2.
+- The review: `<scratchpad>/build/chunk-46-review-6.md`; its probes, breaks and the real-table run: `<scratchpad>/build/r46f/`.
+
+### 183 The numbers of the sets a swap for today moves, beyond W5's case (for 46's redraw and 59)
+**Ask:** a swap's moved sets keep their numbers (your 164 (a) and 179 (a): W5's 03 after 01–02). What do a swapped exercise's two cards show in the cases W5 doesn't draw?
+- An open set stood between logged ones: Lat Pulldown 01 logged, 02 open, 03 logged, 04 open, and the swap moves 02 and 04.
+- The new exercise already has added sets (179: the moved sets come after them).
+- A set is added to the new card later, or one is deleted or made a Warmup on either card.
+- The original card's rows for the sets that moved. Today's swap logs them as skipped (TASKS 59), so the original card would show "03 skipped" beside the new card's 03. W5 draws neither (Lat Pulldown shows 01 and 02 only), and a skip the swap wrote can't be told from one you tapped.
+**Recommendation:** (a). It is your 170 rule (a set's number is its rank in a fixed order) applied to the exercise's place in the session instead of to each card, so the two cards read 1 to n with no number twice, W5 holds, and a delete or a Warmup switch works as it does on any card.
+**Blocks:** 46's redraw (the rows' numbers), 59 (what the swap writes).
+**Options:**
+- (a) One numbering for the exercise's place in the session (recommended): the original card's sets that didn't move, then the moved sets in the order they stood, then any set added to the new card, each numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine Pulldown 03; + ADD SET there, 04. In the first case above the original reads 01, 02 (its logged 03 becomes 02) and the new card 03, 04. The original card draws no row for a set that moved, so the swap has to record which sets moved (59).
+- (b) The moved sets keep exactly the numbers they showed (02 and 04 in the first case) for the rest of the session; a set added to the new card takes the next number after the highest. Numbers can have gaps, and a delete on the original card can make the two cards show one number twice.
+- (c) The new card numbers from 01, as the sixth attempt built it: SPEC C7's "with their numbers" and W5's 03 change to 01.
+**Answer:**
+**Evidence:** the reviewer's probes (`<scratchpad>/build/r46f/probe1.out` and `probe2.out`): W5's swap reads Lat Pulldown `01✓ 02✓ 03×` (the swap's skip) and Machine Pulldown `01·`, and its LOG stores 1; the first case reads `01· 02·` on the new card. With one numbering per card (the sixth attempt), every case keeps the new card from 01. The swap's skip today: TASKS 59 ("skipping the original's remaining sets (unchanged)"), and RULES.md (a swap's skip keeps the set's `retyped` row, which REVIEW reads).
+
+### 184 A set added before 1.2, unlogged and logged again under 1.2: it can't come back in its place (for 63, and 46's redraw)
+**Ask:** an added set logged before migration 044 has no place, so its order is the time it was logged (your 174). Unlogged under 1.2, its draft has neither a place nor a time, and logged again it gets a new time. With three added sets 02, 03 and 04 all logged before 1.2, UNLOG 03 draws the old 04 as 03 and the unlogged set as 04; LOG again stores 4, and the old 04 is then corrected to 3. Your 151 says an unlog moves nothing and unlog then log is an exact undo. What should happen?
+**Recommendation:** (b). The unlog then moves nothing (151), and only the re-log moves the set, to after the other sets added before 1.2. It needs a session holding sets added before 1.2 (the one in progress at the release, or one reopened later) and an unlog of one that isn't the last; numbers stay 1 to n with no number twice whichever option, so the exact undo isn't worth writing an old time into a new log.
+**Blocks:** 63 (what its re-log writes) and 46's redraw (where the draft is drawn).
+**Options:**
+- (a) Exact: the draft keeps the log's time and is drawn in its place (46), and the re-log writes that time back as the new log's `logged_at` (63). The set then reads as logged at its first time, and the newest log's time is what auto-finish and the session's end time read (`useAutoFinishSession.ts`, `sessionCompletion.ts`): a re-log wouldn't count as the session's latest activity.
+- (b) The draft keeps the log's time, so the unlog moves nothing (46); the re-log writes the time it happens, so the set moves to after the other old added sets then (recommended).
+- (c) As built: the unlog draws it after the other old added sets, and the re-log keeps it there.
+**Answer:**
+**Evidence:** executed on the reviewer's driver (`<scratchpad>/build/r46f/probe1.out`, the Q1 lines) and pinned by the builder's test ("reported", `workoutRules.place.test.ts`). Your 174 orders "a log with null added_place that has no planned set (anything logged before 045)" and says nothing of its draft or its re-log, and 151 was answered before places existed. The reviewer's break that draws such a draft among the sets that have a place passes every test (the order this entry asks about).
+
+### 185 Two phones on one session: 178's corrections go back and forth (for 58a)
+**Ask:** the workout screen writes a logged set's shown number over its stored one where they differ (your 178). A set added and not logged yet exists only on the phone that added it (G46). With the session open on two phones and such a set open on one, the phones show the logged sets after it with different numbers, and each writes its own: in the review's probe both phones wrote at every refetch (B stored 4, then 3, then 4 …) until the open set was logged or deleted, or went with the session's end. Meanwhile a set the other phone logs can take the number the first phone just wrote, so two logs hold one number. What should 58a write?
+**Recommendation:** (c). The phone that holds the open set is the only one that knows it is there, so it leaves the numbers after it alone; the other phone corrects them once; when the set is logged (both phones then see it) or deleted, both agree and nothing more is written.
+**Blocks:** 58a.
+**Options:**
+- (a) As built: accept the back-and-forth, the cost your 178's recommended option named.
+- (b) Correct only on the first draw after the session is opened, reopened or reloaded. Fewer writes, but a phone that later logs the open set keeps a number another log holds until its next reload.
+- (c) Never correct a log that comes after an open added set on its card (recommended); every other correction as 178 says.
+- (d) Keep a set added and not logged yet on the server, so every phone sees it. That changes G46 ("not on the server") and needs a migration.
+**Answer:**
+**Evidence:** executed (`<scratchpad>/build/r46f/probe1.out`, the Q2 line: writes per refetch round, phone 1 / phone 2: 0/1, 1/1, 1/1, 1/1) and pinned by the builder's test (`workoutRules.numbers.test.ts`). The shared number, executed (`probe3.out`): phone 1 corrected B to 4, then phone 2 added C (place 3, shown 04 there) and logged it, and B and C both hold 4. 178's question named another phone, and its recommended option said "with two phones open at once and a draft on one of them, each phone patches the numbers back to its own view when it refetches"; your answer, "(a), with limits", describes that option (the correction when the rows are drawn), and its limits (only where they differ; only the workout screen) don't say what two phones do. With (c), when phone 1 logs its open set, that set holds the number phone 2 wrote for the next one until phone 1's next draw (the refetch after its LOG) corrects it.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
