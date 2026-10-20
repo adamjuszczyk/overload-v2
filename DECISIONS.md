@@ -1,12 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-20, Adam's answers to 182–188 recorded.*
+*Rewritten at every boundary. Last: 2026-10-20, chunk 65 merged (#170).*
+- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing. No tests owed.*
 - *Adam answered 182–188. Chunk 46 is replaced by 46r: a narrow redraw on the sixth attempt's module that changes only what 183 (a), 184 (b) and 185 (c) decide, built by Opus; if it fails review on behaviour there is no retry and a requirement to simplify is written up instead. 58a–64 depend on 46r.*
 - *188 (a) is chunk 188f, its own small chunk after 54b and before the release (a bug live in production since phase 1, so it ships with the release); 187 (a) goes into 54a; 186 is accepted as built.*
-- *What follows: 176's tests-only run, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
+- *What follows: 176's tests-only run, 66, 53, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
 
-Decisions: Nothing.
+Decisions (neither blocks; for Adam's review pass after the release checklist):
+- **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
+- **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -238,6 +241,38 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - What: a week deload mark that stops part way leaves the week half marked, and marking it again saves a marked session's deloaded sets over its plan (older than 1.2; in production since phase 1).
 - Answer: (Adam, 2026-10-20) "(a). markSessionDeload leaves a session that already holds a saved copy as it is. Its own small chunk before the release, with a test for the interrupted-then-repeated mark; not inside 54a." Option (a), as the entry words it: "the guard in `markSessionDeload`, as recommended", the recommendation being: "`markSessionDeload` leaves a session that already holds a saved pre-deload copy as it is (its flag set, nothing recalculated or saved again), so marking a half-marked week again only finishes the mark. A small behaviour fix with a test of the sequence below … it changes no stored row." Queued as chunk 188f (TASKS-1.2). Full text in HISTORY.md.
 - Date: 2026-10-20
+
+### 189 Chunk 65's display choices on the PROGRAMS tab (provisional, D31; accepted as built)
+**Ask:** chunk 65's display choices, where SPEC and the boards give no single answer, are accepted as built. They are listed here for Adam's review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. None changes a stored value or what a write sends; each is a word, an order, an entry or a state's drawing, and cheap to change.
+**Blocks:** nothing.
+**Options:** (a)–(l) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-65-builder-1.md`, "For the reviewer"), held against SPEC Programs and runs [1.2], Screens → PROGRAMS and the boards in the review:
+- (a) PR10's failure is the board's banner over the scrim, where TASKS says "toast". It reads "Couldn't start [name]." with the real reason under it, and stays until the next START or until the sheet closes.
+- (b) A FINISHED row's dates take the board's en dash ("SEP 14 – OCT 4, 2026"). Every YOUR PROGRAMS row says "N DAYS A WEEK", where the board's second row says "4 DAYS".
+- (c) DON'T CARE lists its groups in the planner's order ("Forearms, calves"); the board has "Calves, forearms".
+- (d) The boards' `accentText` (a darker accent in light) has no app token, so the RUNNING tag and the picked radio rows draw `var(--accent)`.
+- (e) PR12 (the start sheet with nothing to start, and CREATE PROGRAM) appears only when the saved list empties under an open sheet. PR3 has NEW PROGRAM and no START, so TASKS 65's staging step "START shows PR12" can't run on the empty account. Tests and a fixture cover PR12.
+- (f) CREATE also needs a name ("Name the program to create it."), as the old page did; SPEC names only the two types. On staging, PR13b's CREATE turns on once a name is typed.
+- (g) PRIORITIES' back arrow ("Back to Programs") goes to `/program` with `replace`, not back in the history to Plan's week.
+- (h) A read that failed with nothing to show is "COULDN'T LOAD PROGRAMS" and the real reason, never an empty state. A failed CREATE says "Couldn't create the program." with the reason (no board draws one).
+- (i) The FOCUS and DON'T CARE rows are drawn only for a mark that is set (an unset feature shows nothing), where the boards always draw both. So a run with no marks has no way into PR5 from the card.
+- (j) A sequence run's week chip waits for the cycle (CYCLE n) and is left out until it is known. The types line waits for the run's own program.
+- (k) PR3 is for an account with no saved, running or finished program. Otherwise YOUR PROGRAMS just has nothing under its label.
+- (l) Smaller choices:
+  - FINISH doesn't open the start sheet afterwards (END RUN did).
+  - The PLAN lock's bubble also closes on a tap elsewhere.
+  - START is off while the picked program's workouts are being read.
+  - A FINISHED row is two lines: the name, then the dates and weeks.
+
+### 190 The current program's "N days a week" counts the run copy's newest weekdays, not the week in force (chunk 65; display)
+**Ask:** the CURRENT PROGRAM card says "Weekdays · stable · N days a week". Should N count this week's days in force (`scheduleForWeek`, as Today, Plan and the rest-day count do since chunk 50), or the run copy's own `schedule`, as built?
+**Recommendation:** (a), this week's days in force. A CHANGE THE PROGRAM DAYS change (51b) can start next week. Once one is saved, the run copy's `schedule` holds next week's days, so the card shows next week's count during this week, the same shape as the rest-day count chunk 50 fixed. The fix is a one-line display change with no write. YOUR PROGRAMS rows are saved programs and stay as built.
+**Blocks:** nothing in the build: it is display only and cheap to change. The release checklist's PR1 card check reads it.
+**Options:** (a) the week in force (recommended); (b) the run copy's newest days, as built; (c) no count on a run whose days change.
+**Answer:**
+**Evidence:** `programTypesLine` (`src/features/programs/programsTabLogic.ts`) counts `Object.values(program.schedule)` for the run's own program. TASKS 65 says "(P1.2-4's counting for days)", but P1.2-4 is the rule for a finished program's N weeks, so neither SPEC nor TASKS says which days count. `runScheduleReads.static.test.ts` scans only `features/gym` and `features/plan`, so it can't see this read in `features/programs` (chunk 65's review).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
