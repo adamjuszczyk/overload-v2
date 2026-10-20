@@ -260,6 +260,28 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
   })
 
+  it('185 (c) for a Warmup: an open added Warmup is a set only its phone holds too, so that phone corrects no warmup after it and the other corrects each once (break: an open Warmup not taken for one)', () => {
+    const s = new Session([card('bench', 'n')], [], [headLog('bench', 1)])
+    s.add('bench', 'A')
+    s.retype('added:bench:A', WARMUP)
+    s.add('bench', 'B')
+    s.retype('added:bench:B', WARMUP)
+    s.log('added:bench:B')
+    expect(read(s)).toEqual(['W1·=A', 'W2✓=B', '01✓=P1'])
+    const bLog = s.server.logs.find((l) => l.addedPlace === 2)!
+    const phone2 = orderOf([card('bench', 'n')])
+    const writes: Array<[number, number]> = []
+    for (let round = 0; round < 3; round++) {
+      const one = numberCorrections(s.order(), s.server.logs, s.server.held())
+      s.server.applyCorrections(one)
+      const two = numberCorrections(phone2, s.server.logs, s.server.held())
+      s.server.applyCorrections(two)
+      writes.push([one.length, two.length])
+    }
+    expect(writes).toEqual([[0, 1], [0, 0], [0, 0]])
+    expect(s.server.logs.find((l) => l.id === bLog.id)!.setNumber).toBe(1)
+  })
+
   it('185 (c): only the logs after the open added set are left: one before it, or on another card, is corrected as 178 says (break: leave out a log that doesn\'t come after one)', () => {
     const b = addedLog('bench', 2, { number: 9, place: 2 })
     const logs = [headLog('bench', 1), headLog('bench', 2, { number: 5 }), b, headLog('curl', 1, { number: 4 })]

@@ -454,6 +454,31 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
   })
 
+  it('…and so does a card of the plan that a swap brought sets into: its planned sets, then the moved sets, numbered on its own (break: it reads on from the card the sets left)', () => {
+    const s = lat('n n n', [1, 2], [card('press', 'n n')])
+    s.server.insertLog(headLog('press', 1))
+    const moves = movedSetEntries(s.order(), s.server.logs, { exerciseId: 'ex.press', name: 'Press' }, [{ row: s.row('set:lat.3'), localId: 'm' }])
+    s.cards = s.cards.map((c) => (c.key === 'press' ? { ...c, added: moves.entries, swappedFrom: moves.record } : c))
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'press 01✓', 'press 02·', 'press 03·'])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+  })
+
+  it('the rule reads every card of the exercise and every place a swap\'s record names: a set moved away with nothing else holding its place, and two cards of one exercise each holding open sets (break: the record\'s moved-away places, or the other card, left out)', () => {
+    // an added set of lat moved away; the card dropped it from its list and the swap wrote no skip: only the record names place 1
+    const lat1: OrderExercise = { ...card('lat', 'n'), added: [] }
+    const made: OrderExercise = { ...card('machine', ''), added: [{ localId: 'm', logId: null, type: NORMAL, place: 1 }], swappedFrom: { fromKey: 'lat', moved: [{ from: { addedPlace: 1 }, place: 1 }] } }
+    const order = orderOf([lat1, made])
+    expect(nextAddedPlace(order, 'ex.lat', [])).toBe(2)
+    // a set added to lat now is drawn there (place 1 would be taken for the set that moved, and drawn nowhere)
+    const withNew = orderOf([{ ...lat1, added: [{ localId: 'n', logId: null, type: NORMAL, place: nextAddedPlace(order, 'ex.lat', []) }] }, made])
+    expect(resolveRows(withNew, []).map(brief)).toEqual(['lat 01·', 'lat 02·', 'machine 03·'])
+    // two cards of dip, each with open sets: a set added to either takes a place after both cards' places
+    const own: OrderExercise = { ...card('dip', ''), added: [{ localId: 'd1', logId: null, type: NORMAL, place: 1 }, { localId: 'd4', logId: null, type: NORMAL, place: 4 }] }
+    const swapped: OrderExercise = { ...card('dipswap', ''), exerciseId: 'ex.dip', added: [{ localId: 'm3', logId: null, type: NORMAL, place: 3 }], swappedFrom: { fromKey: 'lat', moved: [{ from: { weekPlanSetId: 'lat.1' }, place: 3 }] } }
+    expect(nextAddedPlace(orderOf([card('lat', 'n'), swapped, own]), 'ex.dip', [])).toBe(5)
+    expect(nextAddedPlace(orderOf([card('lat', 'n'), own, swapped]), 'ex.dip', [])).toBe(5)
+  })
+
   it('183\'s follow-up: one exercise on two cards that no swap joins is numbered on each card on its own; a set of it that no list or record places is drawn on its first card (a reading: the words don\'t say which card)', () => {
     const second = { ...card('pressb', 'n n'), exerciseId: 'ex.press', name: 'Press again' }
     const a1 = addedLog('press', 1, { number: 3, place: 1 })
