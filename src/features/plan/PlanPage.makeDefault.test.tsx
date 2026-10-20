@@ -105,14 +105,15 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: lastDoneOrSkipped }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: plans, isLoading: false }),
   useApplyAhead: () => ({ mutate: record('useApplyAhead'), isPending: false }),
-  // Not recorded: the page itself plans the week it opens (v2_plan_week leaves rows that exist as they are),
-  // whenever a week is viewed, with or without this action.
+  // Not recorded: the page itself plans the current week when it has no rows (chunk 52; v2_plan_week leaves rows that exist as
+  // they are), with or without this action.
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: record('useSetDeload') }),
   useSetWeekDeload: () => ({ mutate: record('useSetWeekDeload'), isPending: false }),
@@ -121,8 +122,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: record('useAddWarmupSet'), isPending: false }),
   useUpdateSet: () => ({ mutate: record('useUpdateSet') }),
   useRemoveSet: () => ({ mutate: record('useRemoveSet'), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: record('useCopyFromPreviousWeek'), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: record('useCopyWorkoutFromPreviousWeek'), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: record('useSwapWeekExercise'), isPending: false }),
   useAddWeekExercise: () => ({ mutate: record('useAddWeekExercise'), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: record('useRemoveWeekExercise'), isPending: false }),
@@ -137,6 +136,7 @@ vi.mock('./useMakeWeekDefault', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -156,8 +156,9 @@ afterEach(() => {
 
 const ACTION = 'MAKE THIS WEEK THE NEW DEFAULT'
 const CYCLE_ACTION = 'MAKE THIS CYCLE THE NEW DEFAULT'
-const nextWeek = () => fireEvent.click(screen.getByLabelText('Next week'))
-const previousWeek = () => fireEvent.click(screen.getByLabelText('Previous week'))
+// Chunk 52: a week is opened by its tile (the week arrows are gone).
+const openWeek = (week: number) => openWeekTile(`WEEK ${week}`)
+const openCycle = (cycle: number) => openWeekTile(`CYCLE ${cycle}`)
 
 // ─── Where the action is offered ─────────────────────────────────────────────
 
@@ -172,7 +173,7 @@ describe('PlanPage — "Make this week the new default": where it is offered', (
   it('shows on a future week of a stable run too', () => {
     useWeekdayRun('stable', [plan(3), plan(4)])
     renderPlanPage()
-    nextWeek()
+    openWeek(4)
     expect(screen.getByText('WEEK 4')).toBeTruthy()
     expect(screen.getByText(ACTION)).toBeTruthy()
   })
@@ -181,10 +182,10 @@ describe('PlanPage — "Make this week the new default": where it is offered', (
     useWeekdayRun('stable', [plan(3)])
     renderPlanPage()
     const button = screen.getByText(ACTION)
-    const markDeload = screen.getByText('MARK WEEK AS DELOAD')
+    const weekMenu = screen.getByLabelText('Week 3 options')
     const switcher = screen.getByText('STRUCTURE')
-    // After MARK WEEK AS DELOAD, before the SETS / STRUCTURE switch in document order.
-    expect(markDeload.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // After the header's COPY and WEEK ⋯ row, before the SETS / STRUCTURE switch in document order.
+    expect(weekMenu.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(button.compareDocumentPosition(switcher) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(switcher)
     expect(screen.getByText(ACTION)).toBeTruthy()
@@ -195,7 +196,7 @@ describe('PlanPage — "Make this week the new default": where it is offered', (
     useWeekdayRun('week_dependent', [plan(3), plan(4)])
     renderPlanPage()
     expect(screen.queryByText(ACTION)).toBeNull()
-    nextWeek()
+    openWeek(4)
     expect(screen.queryByText(ACTION)).toBeNull()
   })
 
@@ -209,10 +210,12 @@ describe('PlanPage — "Make this week the new default": where it is offered', (
     useWeekdayRun('stable', [plan(2), plan(3), plan(4)])
     renderPlanPage()
     expect(screen.getByText(ACTION)).toBeTruthy()
-    previousWeek()
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    openWeek(2)
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
     expect(screen.queryByText(ACTION)).toBeNull()
-    nextWeek()
+    openWeek(3)
+    expect(screen.getByText(ACTION)).toBeTruthy()
+    openWeek(4)
     expect(screen.getByText(ACTION)).toBeTruthy()
   })
 
@@ -281,17 +284,17 @@ describe('PlanPage — on a sequence run the action follows chunk 35\'s current 
     renderPlanPage()
     // Opens on cycle 2: the next due workout is in it. The calendar week is 1.
     expect(screen.getByText('CYCLE 2')).toBeTruthy()
-    expect(screen.queryByText('PAST WEEK — READ ONLY')).toBeNull()
+    expect(screen.queryByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)).toBeNull() // the current cycle carries no lock line, in either word
     expect(screen.getByText(CYCLE_ACTION)).toBeTruthy()
     // A later cycle: offered.
-    nextWeek()
+    openCycle(3)
     expect(screen.getByText('CYCLE 3')).toBeTruthy()
     expect(screen.getByText(CYCLE_ACTION)).toBeTruthy()
     // Cycle 1 is the calendar's current week but a past cycle here: absent.
-    previousWeek()
-    previousWeek()
+    openCycle(1)
     expect(screen.getByText('CYCLE 1')).toBeTruthy()
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST CYCLE · READ ONLY')).toBeTruthy() // a sequence run's past cycle says cycle (review 1, F4), not week
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
     expect(screen.queryByText(CYCLE_ACTION)).toBeNull()
     expect(screen.queryByText(ACTION)).toBeNull()
   })
@@ -353,7 +356,7 @@ describe('PlanPage — "Make this week the new default": the confirm step', () =
   it('on a future week it is that week that is made the default', () => {
     useWeekdayRun('stable', [plan(3), plan(4)])
     renderPlanPage()
-    nextWeek()
+    openWeek(4)
     fireEvent.click(screen.getByText(ACTION))
     expect(screen.getByText('Make week 4 the new default?')).toBeTruthy()
     fireEvent.click(screen.getByText('MAKE DEFAULT'))
@@ -423,7 +426,7 @@ describe('PlanPage — after "Make this week the new default"', () => {
     renderPlanPage()
     writes.length = 0
     confirmAndAnswer((o) => o.onSuccess(answer()))
-    nextWeek()
+    openWeek(4)
     expect(screen.getByText('WEEK 4')).toBeTruthy()
     expect(screen.queryByText(/PLANNED WEEKS? AHEAD\?/)).toBeNull()
     expect(writes).toEqual([])

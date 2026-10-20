@@ -406,6 +406,10 @@ export function applyOpsToDb(input: Db, ops: readonly Op[], userId: string = USE
         checkRow(db, op.table, row)
       } else {
         if ((op.table as string) === 'v2_week_plans') fail('delete not allowed')
+        // DECISIONS 157 (c), Adam 2026-10-16: v2_programs and v2_workout_days take an update only. 043's function would accept the delete
+        // (a run's workout cascades through its weeks), but no op list the app builds holds one (`DeletableTable` leaves both tables out),
+        // so this stand-in refuses it in the same words as a week plan's: a test that builds one by a cast sees the refusal.
+        if ((op.table as string) === 'v2_programs' || (op.table as string) === 'v2_workout_days') fail('delete not allowed')
         const row = (db[op.table as TableName] as unknown as Array<Record<string, unknown>>).find((r) => r.id === op.id && r.user_id === userId)
         if (!row) fail(`row not found: ${op.table}/${op.id}`)
         deleteRow(db, op.table as TableName, op.id)

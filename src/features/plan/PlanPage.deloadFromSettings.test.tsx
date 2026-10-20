@@ -10,6 +10,7 @@ import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { createFakeDeloadDb, fakePlan, fakeSet, type FakeSetRow } from './fakeDeloadDb.testutil'
+import { openWeekMenu } from './planMenus.testutil'
 
 // Chunk 48 (TASKS-1.2: "Deload rules are read from Settings and nowhere else"; SPEC Deload [1.2]: "Settings
 // only; programs have no override"; "RIR rule: a range shifts both ends, floor 0"). The call-site proof:
@@ -76,6 +77,7 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
@@ -165,6 +167,9 @@ describe('PlanPage — MARK WEEK AS DELOAD follows the Settings rules too (chunk
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETTINGS_RULES })
     renderPlanPage()
 
+    // Chunk 52: the week's deload is in WEEK ⋯ (board 1e), not a button above the panel.
+    await screen.findByLabelText('Week 1 options', {}, FOUND)
+    openWeekMenu()
     fireEvent.click(await screen.findByText('MARK WEEK AS DELOAD', {}, FOUND))
     await screen.findByText('UNMARK THIS WEEK', {}, FOUND)
 
@@ -176,12 +181,17 @@ describe('PlanPage — MARK WEEK AS DELOAD follows the Settings rules too (chunk
 
     expect(setsNow()).toEqual(ORIGINAL)
     expect(fake.state.plans[0]).toMatchObject({ is_deload: false, deload_restore: null })
+    // Chunk 52: marking and unmarking a week plans nothing first (the week is planned by definition when its WEEK ⋯ exists): no
+    // `v2_plan_week` call, no call to any function at all.
+    expect(fake.writes.filter((w) => w.table === 'rpc')).toEqual([])
   })
 
   it('no rules in Settings: flag-only here too', async () => {
     buildWorld()
     renderPlanPage()
 
+    await screen.findByLabelText('Week 1 options', {}, FOUND)
+    openWeekMenu()
     fireEvent.click(await screen.findByText('MARK WEEK AS DELOAD', {}, FOUND))
     await screen.findByText('UNMARK THIS WEEK', {}, FOUND)
 

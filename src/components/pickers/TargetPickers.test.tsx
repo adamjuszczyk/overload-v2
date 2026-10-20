@@ -177,8 +177,8 @@ describe('RepTargetPicker: the segments', () => {
     expect(screen.queryByRole('textbox', { name: 'From' })).toBeNull()
     fireEvent.click(segment('RANGE'))
     expect(screen.queryByText('REPS')).toBeNull()
-    expect(box('From')).toBe('8') // the example: the set has no range, and 12 is not a number a range starts from
-    expect(box('To')).toBe('10')
+    expect(box('From')).toBe('12') // the set has no range: its 12 is carried over, 12-14 (DECISIONS 155 (a))
+    expect(box('To')).toBe('14')
     fireEvent.click(segment('NONE'))
     expect(screen.getByText('No rep target')).toBeTruthy()
     expect(screen.queryAllByRole('textbox')).toHaveLength(0)
@@ -188,14 +188,14 @@ describe('RepTargetPicker: the segments', () => {
     expect(screen.queryAllByRole('textbox')).toHaveLength(0)
   })
 
-  it('a number stepped in NUMBER stays there: RANGE starts from the example 8-10, not from the number, and NUMBER finds the stepped number again', () => {
+  it("a number stepped in NUMBER stays there: RANGE starts from the set's own 12 carried over (12-14), not from the stepped number, and NUMBER finds the stepped number again", () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     tap('More reps', 3)
     expect(box('REPS')).toBe('15')
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8')
-    expect(box('To')).toBe('10')
-    expect(button('SET 8–10 REPS')).toBeTruthy()
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
+    expect(button('SET 12–14 REPS')).toBeTruthy()
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('15')
     expect(button('SET 15 REPS')).toBeTruthy()
@@ -205,13 +205,13 @@ describe('RepTargetPicker: the segments', () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 6, max: 9 } })} />)
     tap('To: more', 2)
     fireEvent.click(segment('NUMBER'))
-    expect(box('REPS')).toBe('8') // the example: the set has no NUMBER
+    expect(box('REPS')).toBe('6') // the set has no NUMBER: the range's FROM is carried over (the set's 6-9, not the stepped 6-11)
     tap('More reps', 1)
     fireEvent.click(segment('RANGE'))
     expect(box('From')).toBe('6')
     expect(box('To')).toBe('11')
     fireEvent.click(segment('NUMBER'))
-    expect(box('REPS')).toBe('9')
+    expect(box('REPS')).toBe('7')
   })
 
   it('has no range helper line: that is the RIR picker\'s', () => {
@@ -458,7 +458,7 @@ describe('RirTargetPicker: the segments', () => {
     expect(screen.getByText(helper)).toBeTruthy()
     fireEvent.click(segment('NUMBER'))
     expect(screen.getByText('REPS IN RESERVE')).toBeTruthy()
-    expect(box('REPS IN RESERVE')).toBe('2') // the example: the set has a range, not a number
+    expect(box('REPS IN RESERVE')).toBe('1') // the set has a range, not a number: the range's FROM is carried over (1-2 gives 1)
     expect(screen.queryByText(helper)).toBeNull()
     fireEvent.click(segment('NONE'))
     expect(screen.getByText('No RIR target')).toBeTruthy()
@@ -467,14 +467,14 @@ describe('RirTargetPicker: the segments', () => {
     expect(screen.getByText(helper)).toBeTruthy()
   })
 
-  it('a number stepped in NUMBER stays there: RANGE starts from the example 1-2, not from the number, and NUMBER finds the stepped number again', () => {
+  it("a number stepped in NUMBER stays there: RANGE starts from the set's own 4 carried over (4-6), not from the stepped number, and NUMBER finds the stepped number again", () => {
     render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 4 } })} />)
     tap('More RIR', 1)
     expect(box('REPS IN RESERVE')).toBe('5')
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('1')
-    expect(box('To')).toBe('2')
-    expect(button('SET RIR 1–2')).toBeTruthy()
+    expect(box('From')).toBe('4')
+    expect(box('To')).toBe('6')
+    expect(button('SET RIR 4–6')).toBeTruthy()
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS IN RESERVE')).toBe('5')
     expect(button('SET RIR 5')).toBeTruthy()
@@ -483,7 +483,7 @@ describe('RirTargetPicker: the segments', () => {
   it('the footer button follows the choice', () => {
     render(<RirTargetPicker {...rirProps({ value: rirRange(3, 5) })} />)
     fireEvent.click(segment('NUMBER'))
-    expect(button('SET RIR 2')).toBeTruthy() // the example: the set has no NUMBER
+    expect(button('SET RIR 3')).toBeTruthy() // the set has no NUMBER: the range's FROM is carried over
     fireEvent.click(segment('NONE'))
     expect(button('CLEAR TARGET')).toBeTruthy()
     fireEvent.click(segment('RANGE'))
@@ -611,8 +611,8 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     // 16 px is the size below which iOS zooms the page when a field takes focus
     expect(Number.parseInt(reps.style.fontSize, 10)).toBeGreaterThanOrEqual(16)
     fireEvent.click(segment('RANGE'))
-    expect(boxEl('From').value).toBe('8')
-    expect(boxEl('To').value).toBe('10')
+    expect(boxEl('From').value).toBe('12') // the set's 12 carried over: 12-14
+    expect(boxEl('To').value).toBe('14')
     expect(boxEl('From').getAttribute('inputmode')).toBe('numeric')
     expect(boxEl('To').getAttribute('inputmode')).toBe('numeric')
   })
@@ -752,8 +752,8 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 4 }, onSubmit })} />)
     typeInto('REPS IN RESERVE', '21')
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('1')
-    expect(box('To')).toBe('2')
+    expect(box('From')).toBe('4') // the set's own 4 carried over: 4-6
+    expect(box('To')).toBe('6')
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS IN RESERVE')).toBe('20')
     fireEvent.click(button('SET RIR 20'))
@@ -768,12 +768,12 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     expect(button('Fewer reps').disabled).toBe(true) // held to 1, where - stops
   })
 
-  it('a number typed in NUMBER stays there when a segment is tapped: RANGE starts from the example 8-10, and NUMBER finds the typed 20', () => {
+  it("a number typed in NUMBER stays there when a segment is tapped: RANGE starts from the set's own 12 carried over (12-14), and NUMBER finds the typed 20", () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     typeInto('REPS', '20')
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8')
-    expect(box('To')).toBe('10')
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('20')
   })
@@ -782,8 +782,8 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     typeInto('REPS', '0')
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8')
-    expect(box('To')).toBe('10')
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('1')
     expect(button('SET 1 REP')).toBeTruthy()
@@ -798,8 +798,8 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     typeInto('REPS', '150')
     expect(box('REPS')).toBe('150') // still being typed
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8')
-    expect(box('To')).toBe('10')
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('100')
     expect(button('SET 100 REPS')).toBeTruthy()
@@ -813,7 +813,7 @@ describe('RepTargetPicker: the number boxes are inputs you can type into (choose
     typeInto('From', '12')
     expect(box('From')).toBe('12') // still being typed
     fireEvent.click(segment('NUMBER'))
-    expect(box('REPS')).toBe('8')
+    expect(box('REPS')).toBe('6') // the set's 6-9 carried over: its FROM
     fireEvent.click(segment('RANGE'))
     expect(box('From')).toBe('9') // held to TO when its text was settled; the 12 is gone
     expect(box('To')).toBe('9')
@@ -913,8 +913,10 @@ describe('RirTargetPicker: the number boxes are inputs you can type into, from 0
 
 // ─── A picker opens on the set's current target (DECISIONS 128, Adam 2026-10-15) ────────────────────────────────
 
-describe("a picker opens on the set's current target; the boards' examples start only a segment the set doesn't have", () => {
-  // Each target differs from the example it could be mistaken for (reps 8 / 8-10, RIR 2 / 1-2).
+describe("a picker opens on the set's current target; a segment the set doesn't have starts from the set's own value (DECISIONS 155 (a), Adam 2026-10-16)", () => {
+  // Adam: "a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b →
+  // NUMBER a. The boards' examples are used only when the set has no target at all." Each target differs from the example it could be
+  // mistaken for (reps 8 / 8-10, RIR 2 / 1-2) and from the other segment's numbers.
   it('reps: a number, a range and AMRAP open as the set has them', () => {
     const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NUMBER'])
@@ -947,13 +949,13 @@ describe("a picker opens on the set's current target; the boards' examples start
     expect(box('To')).toBe('1')
   })
 
-  it('a set with no target opens on NONE with no number anywhere, and nothing is pre-filled until a segment is picked', () => {
+  it("a set with no target opens on NONE with no number anywhere, and nothing is pre-filled until a segment is picked; the boards' examples are then what the segment starts from", () => {
     const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'none' } })} />)
     expect(Array.from(pressedSegments()).map((b) => b.textContent)).toEqual(['NONE'])
     expect(screen.queryAllByRole('textbox')).toHaveLength(0)
     expect(screen.getByText('No rep target')).toBeTruthy()
     expect(button('CLEAR TARGET')).toBeTruthy()
-    // the examples are only where a segment the set doesn't have starts
+    // the examples are only where a set with no target starts
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('8')
     fireEvent.click(segment('NONE'))
@@ -975,7 +977,7 @@ describe("a picker opens on the set's current target; the boards' examples start
     expect(box('To')).toBe('2')
   })
 
-  it("a segment the set doesn't have starts from the example, not from a number the set never had: AMRAP then NUMBER or RANGE", () => {
+  it("an AMRAP set is a target with no number to carry: NUMBER and RANGE start from the examples, not from a number the set never had (a choice under D31)", () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'amrap' } })} />)
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('8')
@@ -984,18 +986,103 @@ describe("a picker opens on the set's current target; the boards' examples start
     expect(box('To')).toBe('10')
   })
 
-  it("a segment the set doesn't have starts from the example, not from the set's number: 12 gives RANGE 8-10, 6-9 gives NUMBER 8", () => {
-    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
+  it("NUMBER n gives RANGE n-(n+2): 12 reps gives 12-14 and 1 gives 1-3, and what the footer returns is that range", () => {
+    const onSubmit = vi.fn()
+    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 }, onSubmit })} />)
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8')
-    expect(box('To')).toBe('10')
-    expect(button('SET 8–10 REPS')).toBeTruthy()
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
+    expect(button('SET 12–14 REPS')).toBeTruthy()
+    fireEvent.click(button('SET 12–14 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'range', min: 12, max: 14 }, applyToAll: true })
     unmount()
 
-    render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 6, max: 9 } })} />)
+    render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 1 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('1')
+    expect(box('To')).toBe('3')
+    expect(button('SET 1–3 REPS')).toBeTruthy()
+  })
+
+  it("RANGE a-b gives NUMBER a: 6-9 reps gives 6, and what the footer returns is that number", () => {
+    const onSubmit = vi.fn()
+    const { unmount } = render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 6, max: 9 }, onSubmit })} />)
     fireEvent.click(segment('NUMBER'))
-    expect(box('REPS')).toBe('8')
-    expect(button('SET 8 REPS')).toBeTruthy()
+    expect(box('REPS')).toBe('6')
+    expect(button('SET 6 REPS')).toBeTruthy()
+    fireEvent.click(button('SET 6 REPS'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { type: 'number', value: 6 }, applyToAll: true })
+    unmount()
+
+    render(<RepTargetPicker {...repProps({ value: { type: 'range', min: 12, max: 15 } })} />)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS')).toBe('12')
+  })
+
+  it("RIR the same: 4 gives RANGE 4-6 and comes back as 4, 3-5 gives NUMBER 3 and comes back as 3-5, 0 gives RANGE 0-2 and 0-1 gives NUMBER 0", () => {
+    const onSubmit = vi.fn()
+    const { unmount } = render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 4 }, onSubmit })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('4')
+    expect(box('To')).toBe('6')
+    fireEvent.click(button('SET RIR 4–6'))
+    expect(onSubmit).toHaveBeenCalledWith({ target: { kind: 'range', min: 4, max: 6 }, applyToAll: true })
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS IN RESERVE')).toBe('4')
+    unmount()
+
+    const second = render(<RirTargetPicker {...rirProps({ value: rirRange(3, 5) })} />)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS IN RESERVE')).toBe('3')
+    expect(button('SET RIR 3')).toBeTruthy()
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('3')
+    expect(box('To')).toBe('5')
+    second.unmount()
+
+    const third = render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 0 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('0')
+    expect(box('To')).toBe('2')
+    third.unmount()
+
+    render(<RirTargetPicker {...rirProps({ value: rirRange(0, 1) })} />)
+    fireEvent.click(segment('NUMBER'))
+    expect(box('REPS IN RESERVE')).toBe('0')
+    expect(button('SET RIR 0')).toBeTruthy()
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('0')
+    expect(box('To')).toBe('1')
+    expect(button('SET RIR 0–1')).toBeTruthy()
+  })
+
+  it("a number at the top of the bounds grows only to the bound (a choice under D31): 99 reps gives 99-100, 100 gives 100-100 and the footer says 100; RIR 19 gives 19-20 and 20 gives 20-20", () => {
+    const first = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 99 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('99')
+    expect(box('To')).toBe('100')
+    expect(button('SET 99–100 REPS')).toBeTruthy()
+    first.unmount()
+
+    const second = render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 100 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('100')
+    expect(box('To')).toBe('100')
+    expect(button('SET 100 REPS')).toBeTruthy() // ends that meet are a number
+    second.unmount()
+
+    const third = render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 19 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('19')
+    expect(box('To')).toBe('20')
+    expect(button('SET RIR 19–20')).toBeTruthy()
+    third.unmount()
+
+    render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 20 } })} />)
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('20')
+    expect(box('To')).toBe('20')
+    expect(button('SET RIR 20')).toBeTruthy()
   })
 
   it("the set's own segment keeps its numbers: 12 to RANGE to NUMBER is 12 again, 6-9 to NUMBER to RANGE is 6-9 again", () => {
@@ -1014,34 +1101,19 @@ describe("a picker opens on the set's current target; the boards' examples start
     expect(button('SET 6–9 REPS')).toBeTruthy()
   })
 
-  it("RIR the same: 4 gives RANGE 1-2 and comes back as 4, 0-1 gives NUMBER 2 and comes back as 0-1", () => {
-    const { unmount } = render(<RirTargetPicker {...rirProps({ value: { kind: 'number', value: 4 } })} />)
-    fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('1')
-    expect(box('To')).toBe('2')
-    fireEvent.click(segment('NUMBER'))
-    expect(box('REPS IN RESERVE')).toBe('4')
-    unmount()
-
-    render(<RirTargetPicker {...rirProps({ value: rirRange(0, 1) })} />)
-    fireEvent.click(segment('NUMBER'))
-    expect(box('REPS IN RESERVE')).toBe('2')
-    expect(button('SET RIR 2')).toBeTruthy()
-    fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('0')
-    expect(box('To')).toBe('1')
-    expect(button('SET RIR 0–1')).toBeTruthy()
-  })
-
-  it('a set that has AMRAP or no target has no number or range of its own: through AMRAP or NONE the set\'s own segment is still found where it was', () => {
+  it("a segment the set doesn't have starts from the set, whatever segment the sheet has been through: 12 to AMRAP to RANGE is 12-14, 12 to NONE to RANGE too", () => {
     render(<RepTargetPicker {...repProps({ value: { type: 'number', value: 12 } })} />)
     fireEvent.click(segment('AMRAP'))
     fireEvent.click(segment('RANGE'))
-    expect(box('From')).toBe('8') // the example, not 12-14 as when RANGE grew from the number
-    expect(box('To')).toBe('10')
+    expect(box('From')).toBe('12') // the set's own value, not the example 8-10
+    expect(box('To')).toBe('14')
     fireEvent.click(segment('NONE'))
     fireEvent.click(segment('NUMBER'))
     expect(box('REPS')).toBe('12')
+    fireEvent.click(segment('NONE'))
+    fireEvent.click(segment('RANGE'))
+    expect(box('From')).toBe('12')
+    expect(box('To')).toBe('14')
   })
 })
 

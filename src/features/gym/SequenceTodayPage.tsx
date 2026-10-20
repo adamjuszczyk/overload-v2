@@ -193,7 +193,7 @@ export default function SequenceTodayPage({
             className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
             style={{
               backgroundColor: 'var(--accent)',
-              color: 'var(--on-accent)',
+              color: 'var(--base)',
               fontFamily: 'var(--font-mono)',
               opacity: isPending ? 0.6 : 1,
             }}

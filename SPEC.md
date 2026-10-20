@@ -191,7 +191,9 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   colour or size that has no token maps to the nearest existing one.
   - Text on the accent (DECISIONS 128 (g), 129 (d), 130 (j); Adam
     2026-10-15): a new token, `--on-accent`, in global.css for both themes, set
-    to the near-black the boards draw, used wherever text sits on the accent.
+    to the near-black the boards draw, used wherever text sits on the accent in
+    the screens 1.2 rebuilds and the shared components they use (DECISIONS 154,
+    Adam 2026-10-16: Scope of the look, below).
 - **Sample data is sample data.** Names, numbers and dates on boards are
   examples. "Week 2", "Push Pull Legs", "Bulk" and so on are never literals.
 - **Scope of the look.** The screens 1.2 touches are rebuilt to their boards in
@@ -913,6 +915,10 @@ optional:
 - Deloads are marked manually only. Scheduled deloads are `later`.
 - Unmarking a session whose sets the rules calculated restores what was planned
   before it was marked.
+- [1.2] Marking a session that already holds a saved copy of its plan
+  (DECISIONS 188 (a), Adam 2026-10-20): leaves it as it is, with nothing
+  recalculated or saved again, so marking a half-marked week again only
+  finishes the mark and unmarking still restores the plan.
 - Reps rule: on a range it shifts both ends; on AMRAP it does nothing. [1.2] RIR
   rule: a range shifts both ends, floor 0.
 - Sets rule: removes the last working sets. A staged set counts as one set.
@@ -1032,6 +1038,11 @@ optional:
     number, so unlog then log is an exact undo. No other set's number changes
     on unlog. The open row shows its own number (a planned set's position; an
     added set's number from its draft), never "the next after the logged ones".
+  - [1.2] A set added before 1.2 (DECISIONS 184 (b), Adam 2026-10-20): its
+    unlog moves nothing (the draft keeps the log's time and is drawn in its
+    place); logging it again writes the time it happens, so it moves to after
+    the other sets added before 1.2 then. Not an exact undo, for these sets
+    only.
   - An added set's type on unlog (DECISIONS 161, Adam 2026-10-16): an added
     set's draft also keeps its type, so an unlog is undone exactly and nothing
     moves; the workout rules see every added set's type.
@@ -1052,6 +1063,10 @@ optional:
     drawing the same session again writes nothing. It does this only from the
     workout screen for an in-progress or reopened session, never from History,
     Plan or any read-only view; offline the writes queue like a delete's.
+  - [1.2] Two phones on one session (DECISIONS 185 (c), Adam 2026-10-20): a
+    phone never corrects a stored number after a set only it holds. It never
+    corrects a log that comes after an open added set on its card; every
+    other correction is as 178 says.
   - A drop on its own (DECISIONS 147, Adam 2026-10-15): deleting a set's last
     drop makes it a normal set. A logged drop can be unlogged under the same
     rule as any set: not while a later drop or stage of that set is logged. Its
@@ -1093,6 +1108,17 @@ optional:
   - [1.2] The moved sets are added sets (DECISIONS 179, Adam 2026-10-19): they
     count as added sets of the new exercise. Each gets its place at the swap,
     in the order they stood, after any sets already added to that exercise.
+  - [1.2] The numbers of the moved sets (DECISIONS 183 (a), Adam 2026-10-20):
+    one numbering for the exercise's place in the session, covering moved and
+    added sets: the original card's sets that didn't move, then the moved sets
+    in the order they stood, then any set added to the new card, each
+    numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine
+    Pulldown 03; + ADD SET there, 04. The original card draws no row for a
+    set that moved.
+  - [1.2] (DECISIONS 183, Adam 2026-10-20) A swap into an exercise that
+    already has added sets: the moved sets come after them. A swap never
+    renumbers sets that are already logged. The same exercise on two cards in
+    one session: each card is numbered on its own, as today's display does.
 - [1.2] **Finishing (11, C6):** the finish screen (W18) shows the session's
   tiles, energy, pump and note, and COMPLETE. When planned sets aren't logged it
   says which ("2 planned sets aren't logged yet: EZ Bar Curl 01 and 02.") with

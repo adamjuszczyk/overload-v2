@@ -17,8 +17,6 @@ import {
   addStage,
   updateSet,
   removeSet,
-  copyFromPreviousWeek,
-  copyWorkoutFromPreviousWeek,
   planWeek,
   swapWeekExercise,
   repointWeekExercise,
@@ -46,10 +44,12 @@ export function useWeekPlans(mesoId: string, weekNumber: number) {
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 // Chunk 8 (TASKS.md "Weeks plan themselves, from the right source") — calls
-// v2_plan_week. Callers: PlanPage.tsx, on every week it shows ("the first
-// time it's opened in Plan"); TodayPage.tsx/MissedSessionPrompt.tsx, right
-// before starting a session ("or when it starts, whichever comes first" —
-// see planWeekThenFindId below, which both use). Safe to call on an
+// v2_plan_week. Callers: PlanPage.tsx, for the CURRENT week (cycle) only and
+// only when it has no rows (chunk 52; before it Plan planned every week it
+// showed, SPEC [1.2] "Opening it doesn't plan it"); TodayPage.tsx/
+// MissedSessionPrompt.tsx, right before starting a session ("or when it
+// starts, whichever comes first" — see planWeekThenFindId below, which both
+// use); usePlanForward.ts, for the one week PLAN FORWARD names. Safe to call on an
 // already-planned week — it is atomic and idempotent, so this hook carries
 // no guard of its own against calling it more than once; invalidates the
 // two query keys a successful plan can change (this exact week's plans,
@@ -177,17 +177,16 @@ export function useSetDeload(mesoId: string, weekNumber: number) {
 // doesn't-hang reasoning as usePlanWeek/useUpdateSet above) and optimistic
 // the same way useSetDeload above is — onMutate patches every row already
 // in this week's own cache entry to the new value; a row this week doesn't
-// have yet (shouldn't happen — PlanPage.tsx's own planWeek effect already
-// plans the week on every view before this action can even render) simply
-// isn't in the optimistic patch, and onSettled's invalidate corrects
-// whatever the optimistic patch couldn't.
+// have yet simply isn't in the optimistic patch, and onSettled's invalidate
+// corrects whatever the optimistic patch couldn't.
 //
-// planWeek first (TASKS.md: "Before marking, plan the week first... so
-// every scheduled workout has a row") — v2_plan_week is idempotent
-// (weekPlanService.ts's own planWeek), so calling it again here is always
-// safe, never a second real plan; it's the defensive guarantee that every
-// scheduled workout already has a row to mark, independent of whether
-// PlanPage's own view-triggered plan has resolved yet.
+// Chunk 52 (TASKS-1.2 "WEEK ⋯ marks the week through useSetWeekDeload
+// without planning"; SPEC Weeks and copying [1.2]: "Opening it doesn't plan
+// it"): this no longer plans the week first. WEEK ⋯ exists only on a week
+// that is planned (Plan shows it for the current week, which it plans as it
+// opens, and for weeks planned ahead), so the week is planned by definition
+// and marking it never creates one. Until chunk 52 this called planWeek
+// before marking, which planned any week it was asked about.
 //
 // Chunk 22 — `rules` (the same resolved effective rules useSetDeload above
 // takes) is handed to markWeekDeload/unmarkWeekDeload, which run the exact
@@ -202,12 +201,8 @@ export function useSetWeekDeload(mesoId: string, weekNumber: number) {
   const qk = key(mesoId, weekNumber)
   return useMutation({
     networkMode: 'always',
-    mutationFn: async ({ isDeload, rules }: { isDeload: boolean; rules: DeloadRules | null }) => {
-      await planWeek(mesoId, weekNumber)
-      return isDeload
-        ? markWeekDeload(user!.id, mesoId, weekNumber, rules)
-        : unmarkWeekDeload(user!.id, mesoId, weekNumber)
-    },
+    mutationFn: ({ isDeload, rules }: { isDeload: boolean; rules: DeloadRules | null }) =>
+      isDeload ? markWeekDeload(user!.id, mesoId, weekNumber, rules) : unmarkWeekDeload(user!.id, mesoId, weekNumber),
     onMutate: async ({ isDeload }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
@@ -409,53 +404,6 @@ export function useRemoveSet(mesoId: string, weekNumber: number) {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       refreshWeeksComparedWithThisOne(mesoId, weekNumber)
-    },
-  })
-}
-
-export function useCopyFromPreviousWeek(mesoId: string, weekNumber: number) {
-  const { user } = useAuth()
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: () => copyFromPreviousWeek(user!.id, mesoId, weekNumber),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      // Scheduler's missed-session detection reads useAllWeekPlans (same
-      // reasoning as useSetDeload/useAddSet/useAddStage above) — a
-      // whole-week copy is exactly the kind of bulk plan mutation that
-      // needs this too. Found missing by Phase 3.7's adversarial review:
-      // its new sibling, useCopyWorkoutFromPreviousWeek, already had it.
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-// Phase 3.7's scoped copy (TASKS.md §4 item 31 / SPEC §5) — same shape as
-// useCopyFromPreviousWeek but filtered to one workout day. weekPlanId is
-// passed through when a (possibly empty) plan row already exists for this
-// workout/week, so copyWorkoutFromPreviousWeek reuses it instead of creating
-// a duplicate — same optional-id pattern useAddSet already uses.
-export function useCopyWorkoutFromPreviousWeek(mesoId: string, weekNumber: number) {
-  const { user } = useAuth()
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({
-      workoutDayId,
-      weekPlanId,
-      sequencePosition,
-    }: {
-      workoutDayId: string
-      weekPlanId?: string
-      // Chunk 25 (R16) — this slot's own identity; null (the default
-      // copyWorkoutFromPreviousWeek itself falls back to) for a weekday
-      // run, exactly as before this chunk.
-      sequencePosition?: number | null
-    }) => copyWorkoutFromPreviousWeek(user!.id, mesoId, weekNumber, workoutDayId, weekPlanId, sequencePosition ?? null),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
     },
   })
 }

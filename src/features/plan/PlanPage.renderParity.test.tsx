@@ -114,6 +114,17 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // panel; every other character is where it was. PlanPage.changeProgramButton.test.tsx proves the button, its number and where it
 // goes at the screen layer.
 
+// Chunk 52 re-capture (SPEC Screens → Plan screen → Header, Week row, Under the header; boards 1, 1b): the header is the PLAN | PROGRAMS
+// tabs, "TEST MESO · CURRENT PROGRAM" and the week tiles (week 1 THIS WEEK and open, week 2 NOT PLANNED: the first unplanned week after
+// the current one) instead of the old header (the run's name with PRIORITIES, the PLAN title, the Programs icon and the week stepper), and
+// the row under it is WEEK ⋯ (COPY is not on week 1, P1.2-1) instead of MARK WEEK AS DELOAD. Against the chunk 51a file, the old header and
+// that one button are gone and the new header and the one WEEK ⋯ button are in; the scroll area's side padding is the board's 16 px, not 20
+// (the gutter of the boards). Everything from the workout chip to the CHANGE THE PROGRAM button (117 of the render's elements, compared
+// element by element before the file was replaced) is where it was, byte for byte. PlanPage.programTabRemoved.test.tsx proves the
+// tabs, the tiles and WEEK ⋯ at the screen layer. One later edit, by literal replacement of that one span (the only difference when the
+// render was compared again): the run's name in the caption wraps inside its line (`overflow-wrap: anywhere`), so an unbroken long
+// name cannot run past the screen (the 375 px check of an 80-letter name; PlanPage.header.test.tsx pins it).
+
 afterEach(() => cleanup())
 
 const today = new Date().toISOString().slice(0, 10)
@@ -270,6 +281,7 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
@@ -291,8 +303,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   // Chunk 9 — week actions (TASKS.md "Edit a week's exercises"). None of
   // these mutate on a plain render; this fixture only needs them exported
   // so PlanPage.tsx's own import resolves against this mock, same reason

@@ -19,7 +19,7 @@
 //
 // ─── Slot identity across weeks (reviewer's note 2) ────────────────────────
 // "The slot, identified across weeks the same way copying identifies it" —
-// copyExercisesForward/copySetsWithGrouping (weekPlanService.ts) and the
+// the client copy that chunk 52 removed and the
 // server's v2_plan_week (migration 038) carry a row's OWN program_exercise_id
 // and position forward unchanged: "copying uses each week's actual content"
 // (SPEC [P1.1], chunk 27). The same identity is used here to COMPARE two

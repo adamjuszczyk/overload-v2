@@ -124,7 +124,7 @@ export default function LoginPage() {
             className="w-full font-bold py-3 rounded text-base transition-opacity"
             style={{
               backgroundColor: 'var(--accent)',
-              color: 'var(--on-accent)',
+              color: 'var(--base)',
               opacity: loading ? 0.5 : 1,
             }}
           >

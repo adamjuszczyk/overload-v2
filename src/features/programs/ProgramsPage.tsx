@@ -70,7 +70,10 @@ function fmtDate(iso: string): string {
   return format(parseISO(iso), 'MMM d, yyyy')
 }
 
-export default function ProgramsPage() {
+// Chunk 52 (TASKS-1.2 "Plan's header"; P1.2-12): Plan's PROGRAMS tab draws today's page under the PLAN | PROGRAMS tabs until chunk 65
+// rebuilds it, so `embedded` leaves out the page's own "PROGRAMS" title (the tab is the title there). Opened on its own route
+// (`/program`), nothing about it changes.
+export default function ProgramsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
 
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
@@ -174,14 +177,16 @@ export default function ProgramsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--base)' }}>
       {/* Header */}
-      <div style={{ padding: '20px 20px 16px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', marginBottom: 6 }}>
-          OVERLOAD v2
-        </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 28, letterSpacing: '-0.5px', color: 'var(--text-primary)', lineHeight: 1 }}>
-          PROGRAMS
-        </h1>
-      </div>
+      {!embedded && (
+        <div style={{ padding: '20px 20px 16px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', marginBottom: 6 }}>
+            OVERLOAD v2
+          </p>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 28, letterSpacing: '-0.5px', color: 'var(--text-primary)', lineHeight: 1 }}>
+            PROGRAMS
+          </h1>
+        </div>
+      )}
 
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
 

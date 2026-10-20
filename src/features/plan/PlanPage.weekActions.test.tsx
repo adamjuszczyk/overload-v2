@@ -110,6 +110,7 @@ vi.mock('../library/useExercises', () => ({
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
@@ -125,8 +126,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: addMutate, isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: removeMutate, isPending: false }),
@@ -142,7 +141,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openExerciseMenu, openStructureView } = await import('./planMenus.testutil')
+const { openExerciseMenu, openStructureView, openWeekTile } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -176,7 +175,7 @@ describe('PlanPage — week actions are visible on the current (non-past) week',
     expect(screen.queryByLabelText(/^Swap /)).toBeNull()
     expect(screen.queryByLabelText(/from this week$/)).toBeNull()
     expect(screen.queryByLabelText('Move down')).toBeNull()
-    expect(screen.getAllByLabelText(/ options$/).length).toBe(2)
+    expect(screen.getAllByLabelText(/^(Bench Press|Row) options$/).length).toBe(2) // (WEEK ⋯ is the week's own, not an exercise's)
     expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
 
     openExerciseMenu('Bench Press')
@@ -422,8 +421,8 @@ describe('PlanPage — a past week is read-only for week actions too', () => {
   it('hides swap/reorder/remove/add once the viewed week is stepped into the past', () => {
     // A meso started 3 calendar weeks ago (Monday-anchored, same
     // differenceInCalendarWeeks computeWeekNumber uses) puts the CURRENT
-    // week at 4; viewWeek mounts there (not past), then PREVIOUS WEEK steps
-    // it below currentWeek — isPast = viewWeek < currentWeek, the exact
+    // week at 4; viewWeek mounts there (not past), then week 1's tile (chunk 52:
+    // the week arrows are gone) opens it below currentWeek — isPast = viewWeek < currentWeek, the exact
     // flag WorkoutDayPanel/ExerciseSection gate every other per-row control
     // on too (RIR stepper, add set, remove set), so this proves week
     // actions share that same wiring rather than needing their own.
@@ -438,13 +437,11 @@ describe('PlanPage — a past week is read-only for week actions too', () => {
     openExerciseMenu()
     expect(screen.getByLabelText('Swap Bench Press')).toBeTruthy()
 
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 3
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 2
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 1 — now past (1 < 4)
+    openWeekTile('WEEK 1') // chunk 52: week 1's tile — now past (1 < 4)
 
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
     expect(screen.queryByLabelText(/^Swap /)).toBeNull()
-    expect(screen.queryByLabelText(/ options$/)).toBeNull()
+    expect(screen.queryByLabelText(/ options$/)).toBeNull() // no exercise ⋯, and no WEEK ⋯ either (a past week has none, board 1c)
     expect(screen.queryByText('ADD EXERCISE')).toBeNull()
     expect(screen.queryByLabelText('Move down')).toBeNull()
     expect(screen.queryByText(/from this week$/)).toBeNull()

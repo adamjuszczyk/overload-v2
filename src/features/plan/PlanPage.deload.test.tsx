@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format, subDays } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import type { DeloadRules } from '../../lib/deloadRules'
+import { openWeekMenu, openWeekTile } from './planMenus.testutil'
 
 // Chunk 21 (SPEC "Deload" / TASKS.md "Deload is a property of a session") —
-// the Plan screen's own marking UI: the week-level "MARK WEEK AS DELOAD" /
+// the Plan screen's own marking UI (since chunk 52 the week-level action is in WEEK ⋯'s sheet, board 1e: every test below opens
+// it first): the week-level "MARK WEEK AS DELOAD" /
 // "UNMARK THIS WEEK" action, the per-session toggle (unchanged mechanics,
 // proven still independent of the week-level one), and the shared-row note
 // (G14). Renders the real PlanPage/WorkoutDayPanel tree; only the data hooks
@@ -101,7 +103,10 @@ const setDeloadMutate = vi.fn()
 // CALLED WITH, only what its returned `mutate` was called with. Wrapping
 // it in a spy closes that gap — see the "created with the viewed week's
 // own (mesoId, weekNumber)" test below.
-const useSetWeekDeloadSpy = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: setWeekDeloadMutate, isPending: false }))
+// Chunk 52 (board 1e): what the sheet draws while a mark is out (MARKING…, UNMARKING…) and when it failed ("Couldn't mark the week."
+// and the real reason) is the hook's own state, so the stand-in carries it and a test sets it.
+const weekDeloadHook: { isPending: boolean; isError: boolean; error: unknown } = { isPending: false, isError: false, error: null }
+const useSetWeekDeloadSpy = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: setWeekDeloadMutate, ...weekDeloadHook }))
 
 vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [mockState.meso], isLoading: false }),
@@ -117,6 +122,7 @@ vi.mock('../library/useExercises', () => ({
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
@@ -132,8 +138,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -170,6 +174,7 @@ afterEach(() => {
   setWeekDeloadMutate.mockReset()
   setDeloadMutate.mockReset()
   useSetWeekDeloadSpy.mockClear()
+  Object.assign(weekDeloadHook, { isPending: false, isError: false, error: null })
   mockState.program = makeProgram()
   mockState.workoutDays = [workoutDay1]
   mockState.meso = activeMeso
@@ -198,6 +203,8 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
+    expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull() // not on the page: it is in WEEK ⋯
+    openWeekMenu()
     expect(screen.getByText('MARK WEEK AS DELOAD')).toBeTruthy()
     expect(screen.queryByText('UNMARK THIS WEEK')).toBeNull()
 
@@ -212,12 +219,14 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
   it('MARK then (once the week reads fully deload) UNMARK both go through the one hook built for this week', () => {
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
+    openWeekMenu()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     expect(firstArg(setWeekDeloadMutate, 0)).toEqual({ isDeload: true, rules: null })
     cleanup()
 
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
     renderPlanPage()
+    openWeekMenu()
     fireEvent.click(screen.getByText('UNMARK THIS WEEK'))
     expect(firstArg(setWeekDeloadMutate, 1)).toEqual({ isDeload: false, rules: null })
 
@@ -232,6 +241,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
     renderPlanPage()
 
+    openWeekMenu()
     expect(screen.getByText('UNMARK THIS WEEK')).toBeTruthy()
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
 
@@ -245,6 +255,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true }), makePlan(1, 'wd-2', pe2, { isDeload: false })]
     renderPlanPage()
 
+    openWeekMenu()
     expect(screen.getByText('MARK WEEK AS DELOAD')).toBeTruthy()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     // Completing the job marks every row true, including the one already true.
@@ -257,13 +268,12 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     renderPlanPage()
 
     expect(screen.getByText('WEEK 4')).toBeTruthy() // sanity: mounted on the current week
-    expect(screen.getByText('MARK WEEK AS DELOAD')).toBeTruthy()
+    expect(screen.getByLabelText('Week 4 options')).toBeTruthy()
 
-    fireEvent.click(screen.getByLabelText('Previous week'))
-    fireEvent.click(screen.getByLabelText('Previous week'))
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 1 — now past (1 < 4)
+    openWeekTile('WEEK 1') // week 1 — now past (1 < 4)
 
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    expect(screen.queryByLabelText(/^Week \d+ options$/)).toBeNull() // no WEEK ⋯: nothing to mark
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(screen.queryByText('UNMARK THIS WEEK')).toBeNull()
   })
@@ -274,6 +284,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = []
     renderPlanPage()
 
+    expect(screen.queryByLabelText(/^Week \d+ options$/)).toBeNull()
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(screen.queryByText('UNMARK THIS WEEK')).toBeNull()
   })
@@ -288,6 +299,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
+    openWeekMenu()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: settingsRules })
   })
@@ -304,6 +316,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
+    openWeekMenu()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: settingsRules })
     expect(screen.queryByText(/deload.*override|override.*deload/i)).toBeNull() // silent: no notice that one was set aside
@@ -315,6 +328,7 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
+    openWeekMenu()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     expect(firstArg(setWeekDeloadMutate)).toEqual({ isDeload: true, rules: null })
   })
@@ -328,9 +342,133 @@ describe('PlanPage — "Mark this week as deload" / "Unmark this week" (chunk 21
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
 
+    openWeekMenu()
     expect(screen.queryByText('Already started — sets left as they are')).toBeNull()
     fireEvent.click(screen.getByText('MARK WEEK AS DELOAD'))
     expect(screen.getByText('Already started — sets left as they are')).toBeTruthy()
+  })
+})
+
+describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 52, board 1e)', () => {
+  const wordsOf = () => screen.getByRole('dialog')
+
+  it('the sheet is "[PROGRAM] / Week 1": the run\'s name over the week\'s title, with the one action', () => {
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(screen.getByRole('dialog', { name: 'Week 1' })).toBeTruthy()
+    expect(within(wordsOf()).getByText('Test Meso')).toBeTruthy()
+    expect(within(wordsOf()).getByText('MARK WEEK AS DELOAD')).toBeTruthy()
+    expect(within(wordsOf()).queryByText('DELOAD')).toBeNull() // the chip is for a marked week
+  })
+
+  it('a marked week says UNMARK THIS WEEK with the DELOAD chip', () => {
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText('UNMARK THIS WEEK')).toBeTruthy()
+    expect(within(wordsOf()).getByText('DELOAD')).toBeTruthy()
+  })
+
+  it('while the mark is out the row says MARKING… and is disabled: a press calls nothing more', () => {
+    weekDeloadHook.isPending = true
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    const button = within(wordsOf()).getByText('MARKING…').closest('button') as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(button.style.color).toBe('var(--text-muted)') // board 1e: the row is muted while it works
+    fireEvent.click(button)
+    expect(setWeekDeloadMutate).not.toHaveBeenCalled()
+    expect(within(wordsOf()).queryByText('MARK WEEK AS DELOAD')).toBeNull()
+  })
+
+  it('while the unmark is out it says UNMARKING… (a marked week), without the chip', () => {
+    weekDeloadHook.isPending = true
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText('UNMARKING…')).toBeTruthy()
+    expect((within(wordsOf()).getByText('UNMARKING…').closest('button') as HTMLButtonElement).style.color).toBe('var(--text-muted)')
+    expect(within(wordsOf()).queryByText('DELOAD')).toBeNull()
+  })
+
+  it('a failed mark: "Couldn\'t mark the week." and the real reason (a server message, verbatim), the row still MARK so it can be tried again', () => {
+    weekDeloadHook.isError = true
+    weekDeloadHook.error = { message: 'row-level security: v2_week_plans refused the update', code: '42501' }
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText("Couldn't mark the week.")).toBeTruthy()
+    expect(within(wordsOf()).getByText('row-level security: v2_week_plans refused the update')).toBeTruthy()
+    expect((within(wordsOf()).getByText('MARK WEEK AS DELOAD').closest('button') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('a failed unmark says "unmark", not "mark" (the week is still marked)', () => {
+    weekDeloadHook.isError = true
+    weekDeloadHook.error = new Error('network down')
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText("Couldn't unmark the week.")).toBeTruthy()
+    expect(within(wordsOf()).getByText('network down')).toBeTruthy()
+    expect(within(wordsOf()).queryByText("Couldn't mark the week.")).toBeNull()
+  })
+
+  it('a failure with no message: "Something went wrong."', () => {
+    weekDeloadHook.isError = true
+    weekDeloadHook.error = {}
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText('Something went wrong.')).toBeTruthy()
+  })
+
+  it('a failure with no message while the phone is offline: "You may be offline."; with a message, offline too, the message wins', () => {
+    const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      weekDeloadHook.isError = true
+      weekDeloadHook.error = {}
+      mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+      const first = renderPlanPage()
+      openWeekMenu()
+      expect(within(wordsOf()).getByText('You may be offline.')).toBeTruthy()
+      expect(within(wordsOf()).queryByText('Something went wrong.')).toBeNull()
+      first.unmount()
+
+      weekDeloadHook.error = { message: 'Failed to fetch' }
+      renderPlanPage()
+      openWeekMenu()
+      expect(within(wordsOf()).getByText('Failed to fetch')).toBeTruthy()
+      expect(within(wordsOf()).queryByText('You may be offline.')).toBeNull()
+    } finally {
+      onLine.mockRestore()
+    }
+  })
+
+  it('a new attempt clears the "already started" notice before it asks again: the second ask is still out, and the first one\'s notice is gone', () => {
+    setWeekDeloadMutate.mockImplementationOnce((_vars, opts) => opts?.onSuccess?.({ anyAlreadyStarted: true }))
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    fireEvent.click(within(wordsOf()).getByText('MARK WEEK AS DELOAD'))
+    expect(within(wordsOf()).getByText('Already started — sets left as they are')).toBeTruthy()
+    fireEvent.click(within(wordsOf()).getByText('MARK WEEK AS DELOAD')) // the second mutation does not answer (no onSuccess)
+    expect(setWeekDeloadMutate).toHaveBeenCalledTimes(2)
+    expect(within(wordsOf()).queryByText('Already started — sets left as they are')).toBeNull()
+  })
+
+  it('the sheet closes with ×, and opened again it shows no notice from before', () => {
+    setWeekDeloadMutate.mockImplementation((_vars, opts) => opts?.onSuccess?.({ anyAlreadyStarted: true }))
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
+    renderPlanPage()
+    openWeekMenu()
+    fireEvent.click(within(wordsOf()).getByText('MARK WEEK AS DELOAD'))
+    expect(within(wordsOf()).getByText('Already started — sets left as they are')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Close'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    openWeekMenu() // opened again: no stale notice
+    expect(screen.queryByText('Already started — sets left as they are')).toBeNull()
   })
 })
 

@@ -1,15 +1,12 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-19, 177–179 answered (Adam, 2026-10-19); chunk 46's sixth attempt can start.*
-- *Chunk 46m merged (#158). Migration 044 adds `v2_set_logs.added_place`: a nullable number with no default, refused below 1, and no existing row touched. It is live on staging. The deploy succeeded and the column answers. A test write of 0 was refused by its check and wrote nothing. RLS and the smoke are unchanged. Nothing reads or writes the column until chunks 46 and 58a.*
-- *`check-migration` flags 044's check and its schema reload, as it did for 042 and 043. That is one more line under "For the release", for the migrations-first PR.*
-- *One docs fix, no decision needed: TASKS 46 now adds `SetLog.addedPlace` as an optional field, as `stageKind` is. As a required field it breaks typecheck in 25 files, three of them frozen Coach files.*
-- *Chunk 46's pre-read is done and its three questions, 177–179, are answered. What follows: 46's sixth attempt, beside d31b; then 52 onward; 58a–64 once 46 merges.*
+*Rewritten at every boundary. Last: 2026-10-20, Adam's answers to 182–188 recorded.*
+- *Adam answered 182–188. Chunk 46 is replaced by 46r: a narrow redraw on the sixth attempt's module that changes only what 183 (a), 184 (b) and 185 (c) decide, built by Opus; if it fails review on behaviour there is no retry and a requirement to simplify is written up instead. 58a–64 depend on 46r.*
+- *188 (a) is chunk 188f, its own small chunk after 54b and before the release (a bug live in production since phase 1, so it ships with the release); 187 (a) goes into 54a; 186 is accepted as built.*
+- *What follows: 176's tests-only run, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
 
-Decisions:
-- **175** — chunk 51b's twelve display choices on CHANGE THE PROGRAM (D31). Recommended: accept all. Blocks: nothing.
-- **176** — a tests-only follow-up for 51a's exercise-level writers on CHANGE THE PROGRAM, which are tested on the first workout only? Recommended: yes, after d31b or inside its scope. Blocks: nothing.
+Decisions: Nothing.
 
 To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
@@ -33,6 +30,10 @@ To-dos:
 - **045** — chunk 53, not built yet: `v2_plan_week` with the 1.2 copy rules (numbered 044 until Adam's numbering answer (a), 2026-10-19). `check-migration` will flag "function"; recorded here at 53's merge.
 - **149's data migration** — chunk 53, its number assigned there, after 045 (DECISIONS 149 (c), Adam 2026-10-16): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build.
 - Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
+- **188f** — chunk 188f (TASKS-1.2), Adam 2026-10-20 (DECISIONS 188 (a)): `markSessionDeload` leaves a session that already holds a saved copy as it is. It fixes a bug that is live in production since phase 1 (a week mark cut off part way and pressed again loses a session's saved plan), so it ships with the release; no migration, no stored row changes.
+
+## Tests owed
+*Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule"). Empty so far.*
 
 ## Format for all new entries
 
@@ -61,7 +62,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 157 043 accepts a delete of a run's workout or program; TASKS says "only an update is allowed" (chunk 47)
 - What: whether `v2_apply_ops` (043) may delete a run's `v2_programs` or `v2_workout_days` row, where TASKS 47 says "only an update is allowed"; as built (#137) it refuses an insert into either and accepts a delete.
-- Answer: (Adam, 2026-10-16) "(c). Narrow the app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration." Queued for the second display follow-up (d31b). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "(c). Narrow the app's op type so v2_programs and v2_workout_days allow update only, no delete, with a test. No migration." Built in d31b (#162, `bc2de7c`): `DeletableTable` leaves out both tables, with `@ts-expect-error` tests and the test stand-in refusing the same deletes; 043 is unchanged. Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 158 Chunk 49's display choices where SPEC and TASKS give no layout (provisional, D31)
@@ -142,7 +143,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 172 Chunk 51a's display choices on CHANGE THE PROGRAM (provisional, D31)
 - What: twelve display choices of chunk 51a's CHANGE THE PROGRAM, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
-- Answer: (Adam, 2026-10-19) "I meant the item about Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when the week's last open session is in progress — whichever letter that is in the entry. The button follows the screen. The other eleven are accepted." That item is the entry's (j) (his earlier "(l)" was the letter he gave; (l) as listed, a superset's within-round rest stored as 0 reading 0:00, is among the eleven accepted, and so are (a)–(i), (k)). The button fix goes to the second display follow-up, d31b (CONTEXT.md, "Where the build is"): the button names the same week as the screen's rule box (a session in progress is left as it is, so changes start the week after). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-19) "I meant the item about Plan's "CHANGE THE PROGRAM FROM WEEK N" button naming a different week than the screen's rule box when the week's last open session is in progress — whichever letter that is in the entry. The button follows the screen. The other eleven are accepted." That item is the entry's (j) (his earlier "(l)" was the letter he gave; (l) as listed, a superset's within-round rest stored as 0 reading 0:00, is among the eleven accepted, and so are (a)–(i), (k)). Built in d31b (#162, `bc2de7c`): the button names the same week as the screen's rule box, read through the screen's own statuses (a session in progress is left as it is, so changes start the week after). Full text in HISTORY.md.
 - Date: 2026-10-19
 
 ### 173 Chunk 46's fifth attempt: a warmup log's number, and a set added in a reopened session (chunk 46)
@@ -168,32 +169,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-19
 
 ### 175 Chunk 51b's display choices on CHANGE THE PROGRAM's DAYS card and set rows (provisional, D31)
-**Ask:** chunk 51b built the DAYS card and a stable run's set rows with these display choices, which no board or SPEC sentence settles, or where the screen differs from a board's drawing. Accept them, or change any?
-**Recommendation:** accept all: each is display only and changes nothing that is written. (b) changes 51a's chips on weekday runs and (l) is the contract 54b sends, so they are the ones to look at.
-**Blocks:** nothing.
-**Options:** accept as built, or change any of:
-- (a) RENAME is in the DAYS card's header (PL1) on a weekday run; a sequence run, which has no card, keeps 51a's row under the chips (172 (a), now for sequence runs only).
-- (b) The workout chips show the draft's days, as PL1 draws Pull 1 on WED beside "Was Tuesday"; 51a drew the days in force that week (172 (a)), which this replaces on weekday runs. The card's struck-through day and its "Was …" line say what this week has.
-- (c) The taken-day lines ("Sat is Arms's day") are always shown, not only when tapped: a disabled day can't be tapped.
-- (d) A workout that never had a day (a spare one) may be given days and lose them again, as `planSchedule` has it; "had a day" is read from the run copy's schedule, the one the edit starts from.
-- (e) A new stage has no rep target of its own (as the planner's `addProgramSetStage`).
-- (f) The kind label goes under the rep target when the two don't fit side by side (the box is about 115 px wide at 375) and ends in an ellipsis only at 360 px with `REST-PAUSE · 10`; the REST AFTER column is the board's 128 px and gives up to 32 px to the rep box on a narrower screen.
-- (g) "NO SETS YET", drawn in `--error`, on a stable card with no set (an exercise just added), and no ALL row until it has one.
-- (h) Warmups: the row says `W` (`AW` in a superset), numbered apart from the working sets (SPEC 18b, DECISIONS 170); a picker's eyebrow says the number among the working sets, or among the warmups for a warmup.
-- (i) ALL sets every set, a warmup too; its picker opens with one set, so "Use for all" isn't offered, and its eyebrow says `SET 01` (chunk 39's picker has no eyebrow for "all sets").
-- (j) "+ SET" copies the last set's rep target (a staged last set gives its own, not its last stage's); none when there is no set.
-- (k) A swapped exercise on a stable run shows and edits the old exercise's sets; the ops are exactly what a swap with no sets writes (a test compares them).
-- (l) `#<exerciseId>` is the catalogue exercise's id (the `exerciseId` field): the first workout that holds it is selected and its card scrolled to the top; an unknown or malformed hash is ignored. This is what 54b's "CHANGE EVERY WEEK →" must send.
-**Answer:**
-**Evidence:** the builder's report (`<scratchpad>/build/chunk-51b-builder-1.md`, "For the reviewer"), read on the branch on staging's data in chunk 51b's first review and on the deployed app after real saves in its second (`<scratchpad>/build/r51b2/`). What would be redone if an answer goes against them: display code in `ChangeProgramDaysCard.tsx`, `ChangeProgramSetRows.tsx`, `ChangeProgramExerciseCard.tsx` and `ChangeProgramPage.tsx`; no data.
+- What: chunk 51b's twelve display choices on CHANGE THE PROGRAM's DAYS card and a stable run's set rows, (a)–(l), that no board or SPEC sentence settles, or where the screen differs from a board's drawing (recommended: accept all).
+- Answer: (Adam, 2026-10-19) "accepted as built (display only, D31; anything wrong comes up in my review on staging)." Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 176 51a's exercise-level writers on CHANGE THE PROGRAM are tested on the first workout only: a tests-only follow-up? (chunk 51b's retry)
-**Ask:** chunk 51b's retry builder found that 51a's exercise-level writers on CHANGE THE PROGRAM have the blind spot review 1 found in 51b's: each is only ever tested on the first workout. May a tests-only follow-up add the proof?
-**Recommendation:** yes. Schedule a tests-only follow-up, with no code change: each writer pressed on a workout that isn't the first, its list held against `planProgramChange`'s list for the same edit written by hand, proven by the builder's mutants and a sweep of every `selected.id` use, as 51b's retry did. The behaviour is right as built; only the proof is missing. It shares CHANGE THE PROGRAM's files with d31b, so it runs after it or inside its scope.
-**Blocks:** nothing (51a is merged and right).
-**Options:** (a) a tests-only follow-up, after d31b or folded into it (recommended); (b) leave it to the release checklist (RC16 on staging); (c) leave it.
-**Answer:**
-**Evidence:** made the first workout, these `selected.id` uses in `ChangeProgramPage.tsx` pass every test (line numbers as merged in #156): 366 the drag's commit, 383 UNLINK, 384 the split, 385 MOVE, 540 a routine item's move, 677 and 678 the exercise sheet's MOVE UP and MOVE DOWN. So does 533, the warmup card's `key` (a display state kept across a workout switch). The builder's results are in `<scratchpad>/build/c51b2/logs/x51-final-*.jsonl`. Chunk 51b's second review re-ran four of them, its own replacements, on the merged tests: the drag's commit, UNLINK, the routine move and MOVE UP; all four pass every test.
+- What: whether a tests-only follow-up may prove 51a's exercise-level writers on CHANGE THE PROGRAM on a workout that isn't the first (each is only ever tested on the first; recommended: yes, after d31b).
+- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md.
+- Date: 2026-10-19
 
 ### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
 - What: whether the drop and stage logs of an added set also carry `added_place`.
@@ -210,14 +193,60 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Answer: (Adam, 2026-10-19) "yes. Sets moved by a swap for today count as added sets of the new exercise. Each gets its place at the swap, in their order, after any sets already added to that exercise; chunk 59 writes it."
 - Date: 2026-10-19
 
+### 180 155 (a)'s cases outside Adam's words: an AMRAP set, and a number changed before the switch (d31b)
+- What: two cases of 155 (a) that Adam's words don't cover, as d31b built them: an AMRAP set switched to NUMBER or RANGE starts from the examples (8, 8–10), and the value carried is the target the sheet opened with, not a number stepped or typed before the switch (recommended: keep both).
+- Answer: (Adam, 2026-10-19) "180, 181: accepted as built." Full text in HISTORY.md.
+- Date: 2026-10-19
+
+### 181 d31b's display choice: the bottom bar's install strip (provisional, D31)
+- What: d31b's one display choice: the bottom bar's INSTALL strip back on `--base` with the update notice, as before #135 (recommended: accept).
+- Answer: (Adam, 2026-10-19) "180, 181: accepted as built." Full text in HISTORY.md.
+- Date: 2026-10-19
+
+### 182 Chunk 46 stopped after its sixth attempt: how to redraw it (chunk 46)
+- What: chunk 46 stopped after its sixth attempt (Adam's rule: no retry after another behaviour failure); how to redraw it (a narrow redraw on the sixth attempt; a full redraw from a table; merge the sixth attempt as it stands).
+- Answer: (Adam, 2026-10-20) "(a). Redraw 46 as one small chunk on the sixth attempt's module, changing only what 183–185 decide. Opus builder. If it fails review on behaviour, don't retry: write up which requirement to simplify instead (a rare case may display imperfectly, but no data may be lost or written wrong)." Option (a), as the entry words it: "A narrow redraw on the sixth attempt (`build/chunk-46` at `65dd197`, recommended): after 183–185, one chunk changes the swap's numbers (183), the unlog of a set added before 1.2 (184) and, if 185 says so, the correction report; reviewed as any chunk, under the same rule." Queued as chunk 46r (TASKS-1.2). Full text in HISTORY.md.
+- Date: 2026-10-20
+
+### 183 The numbers of the sets a swap for today moves, beyond W5's case (for 46's redraw and 59)
+- What: the numbers of the sets a swap for today moves, beyond W5's case, and what the original card shows for them (recommended: one numbering for the exercise's place in the session).
+- Answer: (Adam, 2026-10-20) "(a). One numbering for the exercise's place in the session, covering moved and added sets." Option (a), as the entry words it: "One numbering for the exercise's place in the session (recommended): the original card's sets that didn't move, then the moved sets in the order they stood, then any set added to the new card, each numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine Pulldown 03; + ADD SET there, 04. In the first case above the original reads 01, 02 (its logged 03 becomes 02) and the new card 03, 04. The original card draws no row for a set that moved, so the swap has to record which sets moved (59)." Full text in HISTORY.md.
+- Answer, follow-ups (Adam, 2026-10-20): "A swap into an exercise that already has added sets: the moved sets come after them. A swap never renumbers sets that are already logged." "The same exercise on two cards in one session: each card is numbered on its own, as today's display does."
+- Date: 2026-10-20
+
+### 184 A set added before 1.2, unlogged and logged again under 1.2: it can't come back in its place (for 63, and 46's redraw)
+- What: a set added before 1.2, unlogged and logged again under 1.2, can't come back in its place (recommended: the unlog moves nothing; the re-log may).
+- Answer: (Adam, 2026-10-20) "(b). The unlog moves nothing; the re-log may." Option (b), as the entry words it: "The draft keeps the log's time, so the unlog moves nothing (46); the re-log writes the time it happens, so the set moves to after the other old added sets then (recommended)." Full text in HISTORY.md.
+- Date: 2026-10-20
+
+### 185 Two phones on one session: 178's corrections go back and forth (for 58a)
+- What: two phones on one session correct each other's stored numbers back and forth while one holds a set added and not logged yet (recommended: never correct a log after a set only that phone holds).
+- Answer: (Adam, 2026-10-20) "(c). A phone never corrects a stored number after a set only it holds." Option (c), as the entry words it: "Never correct a log that comes after an open added set on its card (recommended); every other correction as 178 says." Full text in HISTORY.md.
+- Date: 2026-10-20
+
+### 186 Chunk 52's display choices on Plan's header (provisional, D31)
+- What: chunk 52's eight display choices (a)–(h) on Plan's header (D31; recommended: accept all).
+- Answer: (Adam, 2026-10-20) "all accepted." Every display choice (a)–(h) stays as built. Full text in HISTORY.md.
+- Date: 2026-10-20
+
+### 187 WEEK ⋯'s row names the other direction while a mark or unmark is out (chunk 52; display)
+- What: WEEK ⋯'s row reads UNMARKING… while a mark is out and MARKING… while an unmark is (display; recommended: fix in 54a).
+- Answer: (Adam, 2026-10-20) "(a), fixed in 54a with a test through the real hook." Option (a), as the entry words it: "in 54a, as recommended", the recommendation being: "the row's pending label takes its direction from the request itself (the mutation's own `isDeload`), not from whether the week reads as marked, with a test through the real `useSetWeekDeload` that holds the request in flight (the review's probe A is one). Display only: nothing written differs, and the row is disabled while the write is out." Full text in HISTORY.md.
+- Date: 2026-10-20
+
+### 188 A week deload mark that stops part way leaves the week half marked, and marking it again loses a session's saved plan (older than 1.2; found in chunk 52's review)
+- What: a week deload mark that stops part way leaves the week half marked, and marking it again saves a marked session's deloaded sets over its plan (older than 1.2; in production since phase 1).
+- Answer: (Adam, 2026-10-20) "(a). markSessionDeload leaves a session that already holds a saved copy as it is. Its own small chunk before the release, with a test for the interrupted-then-repeated mark; not inside 54a." Option (a), as the entry words it: "the guard in `markSessionDeload`, as recommended", the recommendation being: "`markSessionDeload` leaves a session that already holds a saved pre-deload copy as it is (its flag set, nothing recalculated or saved again), so marking a half-marked week again only finishes the mark. A small behaviour fix with a test of the sequence below … it changes no stored row." Queued as chunk 188f (TASKS-1.2). Full text in HISTORY.md.
+- Date: 2026-10-20
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
-- Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, in the second display follow-up (d31b); (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, built in d31b (#162, `bc2de7c`); its AMRAP case and "the set's own value" are 180; (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 154 Text on the accent in Coach, which is frozen: included or not? (the display follow-up)
 - What: whether frozen Coach's 15 places with text on the accent (still `--base`) take `--on-accent`, and whether "wherever" also covers the screens 1.2 doesn't rebuild, which the display follow-up (#135) converted.
-- Answer: (Adam, 2026-10-16) "no. Coach stays exactly as it is. --on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code." Written into SPEC.md (Design boards → Scope of the look). The second display follow-up (d31b) takes `--on-accent` back off the screens 1.2 doesn't rebuild and their non-shared components; Coach is untouched. Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-16) "no. Coach stays exactly as it is. --on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code." Written into SPEC.md (Design boards → Scope of the look). Built in d31b (#162, `bc2de7c`): the 26 places on the screens 1.2 doesn't rebuild are back on `--base`, each as before #135, and Coach is untouched. Full text in HISTORY.md.
 - Date: 2026-10-16
 
 ### 153 Chunk 43's fourth attempt: which of a set's two REVIEW items comes first (provisional, D31)

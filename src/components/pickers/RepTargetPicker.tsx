@@ -30,8 +30,9 @@ export interface RepTargetPickerProps {
   isCycle?: boolean
   /**
    * The set's rep target now. Every caller passes the set's own current target, and the sheet opens on its segment and
-   * numbers (DECISIONS 128, Adam 2026-10-15): the boards' example numbers (8, 8-10) start only a segment the set doesn't
-   * have, and `{ type: 'none' }` opens on NONE with no number until a segment is picked.
+   * numbers (DECISIONS 128, Adam 2026-10-15). A segment the set doesn't have starts from that target carried over (12 gives
+   * RANGE 12-14, 6-9 gives NUMBER 6: DECISIONS 155 (a), Adam 2026-10-16); the boards' example numbers (8, 8-10) start
+   * a segment only for a set with no number, and `{ type: 'none' }` opens on NONE with no number until a segment is picked.
    */
   value: RepTarget
   /** The exercise's head sets, this one included. A rep target goes to every head, a warmup too. */
