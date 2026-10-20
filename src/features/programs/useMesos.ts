@@ -26,21 +26,33 @@ export function useMesos() {
 // invalidation also reaches ['v2_programs', 'saved'] (TanStack Query
 // matches by prefix), so usePrograms.ts's useSavedPrograms needs no
 // separate invalidation of its own.
+//
+// Chunk 65 (SPEC Programs and runs [1.2], Starting: "lands on Plan, week 1"): both START buttons navigate to Plan the moment this
+// resolves, and Plan decides what to open from the run list. The invalidations are returned, so the mutation stays pending until the runs
+// and programs have been read again: Plan then opens on the new run, not on the list as it was before the start (a stale list would
+// show "no program running" for the moment between). A refetch that fails doesn't fail the start: `invalidateQueries` swallows it.
+// `networkMode: 'always'`, like every write (CONTEXT.md, Offline): starting is online-only, so offline it fails with the real reason
+// (SPEC Errors (15): PR10) instead of pausing for ever.
 export function useStartRun() {
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({ name, programId }: { name: string; programId: string }) => {
       const today = format(new Date(), 'yyyy-MM-dd')
       return startRun(programId, name, today)
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: MESOS_KEY })
-      queryClient.invalidateQueries({ queryKey: ['v2_programs'] })
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: MESOS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
+      ]),
   })
 }
 
+// FINISH (chunk 65; SPEC Programs and runs [1.2], Finishing (8c)): `networkMode: 'always'` for the same reason as the start. The
+// invalidation is returned, so FINISHING… lasts until the list shows the run finished.
 export function useCompleteMeso() {
   return useMutation({
+    networkMode: 'always',
     mutationFn: (id: string) => completeMeso(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: MESOS_KEY }),
   })

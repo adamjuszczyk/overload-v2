@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { Dumbbell, LayoutList, TrendingUp, Clock, BookOpen, Settings, Sparkles } from 'lucide-react'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { useInstallPrompt } from '../features/offline/useInstallPrompt'
@@ -22,10 +22,15 @@ const baseTabs = [
 
 const coachTab = { to: '/coach', label: 'COACH', Icon: Sparkles } as const
 
+// Chunk 65 (TASKS-1.2: "the `/program` route renders Plan opened on PROGRAMS"; boards PR1-PR13b draw PLAN lit on every PROGRAMS frame): the page
+// at `/program` is Plan's PROGRAMS tab, so the PLAN tab is lit there too, though its link still opens `/plan` (which chooses the tab).
+const PLAN_ALSO_AT = '/program'
+
 export default function Nav() {
   const isOnline = useOnlineStatus()
   const { canInstall, install } = useInstallPrompt()
   const { user } = useAuth()
+  const { pathname } = useLocation()
   // Gated: a seventh tab is tight on a narrow phone (TASKS §5.6), so it
   // only renders for the one account it's actually for — no crowding for
   // anyone else. The route still exists unconditionally (see App.tsx).
@@ -89,7 +94,7 @@ export default function Nav() {
             to={to}
             className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors"
             style={({ isActive }) => ({
-              color: isActive ? 'var(--accent)' : 'var(--text-dim)',
+              color: isActive || (to === '/plan' && pathname === PLAN_ALSO_AT) ? 'var(--accent)' : 'var(--text-dim)',
               fontFamily: 'var(--font-mono)',
               fontSize: 8,
               letterSpacing: '1px',

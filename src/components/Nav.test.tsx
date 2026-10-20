@@ -85,6 +85,45 @@ describe('Nav — the bottom bar (chunk 26: PROGRAM removed)', () => {
   })
 })
 
+// Chunk 65 (TASKS-1.2: "the `/program` route renders Plan opened on PROGRAMS"; boards PR1-PR13b draw PLAN lit on every PROGRAMS frame): the page
+// at `/program` is Plan's PROGRAMS tab, so the PLAN tab is lit there though its link still opens `/plan`.
+describe('Nav — which tab is lit (chunk 65)', () => {
+  function renderNavAt(path: string) {
+    vi.stubEnv('VITE_COACH_USER_ID', GATED_ID)
+    mockUserId = OTHER_ID
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <Nav />
+      </MemoryRouter>,
+    )
+  }
+  const lit = () => screen.getAllByRole('link').filter((a) => a.style.color === 'var(--accent)').map((a) => a.textContent)
+
+  it('/program lights PLAN, and only PLAN (the PROGRAMS tab is Plan\'s)', () => {
+    renderNavAt('/program')
+    expect(lit()).toEqual(['PLAN'])
+  })
+
+  it('/plan and the screens under it light PLAN; the other screens light their own tab, never PLAN', () => {
+    renderNavAt('/plan')
+    expect(lit()).toEqual(['PLAN'])
+    cleanup()
+    renderNavAt('/plan/change')
+    expect(lit()).toEqual(['PLAN'])
+    cleanup()
+    renderNavAt('/history')
+    expect(lit()).toEqual(['HISTORY'])
+    cleanup()
+    renderNavAt('/today')
+    expect(lit()).toEqual(['TODAY'])
+  })
+
+  it('only the PLAN tab is lit by /program: no other tab is, and the planner under it (/program/:id) is a screen of its own that lights none, as before', () => {
+    renderNavAt('/program/prog-1')
+    expect(lit()).toEqual([])
+  })
+})
+
 describe('Nav — 375px', () => {
   it('no rendered element carries a fixed pixel width wider than 375px (six or seven tabs must fit)', () => {
     vi.stubEnv('VITE_COACH_USER_ID', GATED_ID)

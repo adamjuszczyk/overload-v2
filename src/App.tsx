@@ -10,7 +10,6 @@ import ProgressPage from './features/progress/ProgressPage'
 import HistoryPage from './features/history/HistoryPage'
 import ExerciseHistoryPage from './features/history/ExerciseHistoryPage'
 import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
-import ProgramsPage from './features/programs/ProgramsPage'
 import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
@@ -105,7 +104,10 @@ export function AppRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today"    element={<TodayPage />}    />
-          <Route path="/plan"     element={<PlanPage />}     />
+          {/* Chunk 65: `/plan` opens the week, or PROGRAMS when no program runs (PlanPage chooses the tab); `/program` is the same page
+              opened on PROGRAMS. Each has a key of its own: going from one to the other (the nav's PLAN from `/program`, START's
+              `/plan?week=1` from it) must start a new Plan, which opens on its own tab, not keep the other's choice. */}
+          <Route path="/plan"     element={<PlanPage key="plan" />}     />
           <Route path="/plan/priorities" element={<PrioritiesEditor />} />
           <Route path="/plan/change" element={<ChangeProgramPage />} />
           <Route path="/progress" element={<ProgressPage />} />
@@ -113,12 +115,11 @@ export function AppRoutes() {
           <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
           <Route path="/session-type/:workoutDayId" element={<SessionTypeHistoryPage />} />
           {/* Chunk 26 — PROGRAM is gone from the bottom bar (Nav.tsx); both
-              routes below are now reached only from Plan's header
-              (PlanPage.tsx). ProgramPage.tsx (the old "my programs" +
-              active/completed mesocycle screen) is replaced by
-              ProgramsPage.tsx at the same path — every old deep link to
-              /program or /program/:id still resolves. */}
-          <Route path="/program"                           element={<ProgramsPage />}        />
+              routes below are reached from Plan's PROGRAMS tab. Chunk 65: the
+              page at `/program` is Plan opened on PROGRAMS (ProgramsPage.tsx
+              is gone) — every old deep link to /program or /program/:id
+              still resolves. */}
+          <Route path="/program"                           element={<PlanPage key="programs" initialTab="programs" />} />
           {/* Chunk 11 — the stepped program planner replaces
               ProgramBuilderPage/WorkoutDayEditorPage/WeeklyScheduleGrid
               (removed) at this same route. */}
