@@ -411,6 +411,20 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓'])
   })
 
+  it('46r\'s Q1 for a Warmup added in the session: A and B added and made Warmups, B logged (W2), the swap moving A: B keeps W2 (the gap of A, a Warmup) through a reload and a reopen, where only the swap\'s skip of A holds its kind (break: an added set\'s gap always taken for a working set\'s)', () => {
+    const s = lat('n', [1])
+    for (const id of ['A', 'B']) s.retype(s.add('lat', id), WARMUP)
+    expect(s.log('added:lat:B').setNumber).toBe(2)
+    expect(s.rows().map(brief)).toEqual(['lat W1·', 'lat W2✓', 'lat 01✓'])
+    const m = s.swap('lat', 'machine')
+    expect(s.rows().map(brief)).toEqual(['lat W2✓', 'lat 01✓', `${m} W2·`])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    expect(s.reload()).toEqual([])
+    expect(s.rows().map(brief)).toEqual(['lat W2✓', 'lat 01✓'])
+    expect(s.reopen()).toEqual([])
+    expect(s.rows().map(brief)).toEqual(['lat W2✓', 'lat 01✓'])
+  })
+
   it('46r\'s Q1 for a warmup: W2 logged and W1 open, the swap moving W1 and the open working set: W2 keeps its number (a warmup\'s gap) and 01 keeps 01; the new card reads on after them, W2 and 02 (break: the gap of a moved Warmup counted among the working sets)', () => {
     const s = new Session([card('lat', 'w w n n')], [], [headLog('lat', 2, { warmup: true, number: 2 }), headLog('lat', 3, { number: 1 })])
     expect(s.rows().map(brief)).toEqual(['lat W1·', 'lat W2✓', 'lat 01✓', 'lat 02·'])
