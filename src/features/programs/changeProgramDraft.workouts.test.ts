@@ -775,15 +775,24 @@ describe('UNDO never puts an exercise inside a superset', () => {
   // between two members, UNLINK, one place up or down), then put the removed back in every order. After every UNDO each superset of the
   // workout is in one piece (read here by plain loops, not by the planner), and every list this ends on is one the planner accepts and the
   // tables take.
-  it('every way of removing some of a workout, regrouping it once and putting the removed back in any order leaves each superset in one piece', () => {
-    const inOnePiece = (s: DraftState, wid: string): string | null => {
-      const list = s.edit.workouts.find((x) => x.id === wid)!.exercises
+  //
+  // And nothing else changes: the rule as it was before 51c is written out here (a superset's member next to the others, any other entry at the
+  // place it stood), and wherever it kept every superset whole the new rule puts the entry in the same place.
+  it('every way of removing some of a workout, regrouping it once and putting the removed back in any order leaves each superset in one piece, and puts every entry where it went before wherever that kept them whole', () => {
+    const listInOnePiece = (list: readonly DraftEntry[]): string | null => {
       for (const b of new Set(list.map((e) => e.supersetBlockId))) {
         if (b === null) continue
         const at = list.flatMap((e, j) => (e.supersetBlockId === b ? [j] : []))
         if (at[at.length - 1] - at[0] + 1 !== at.length) return `${b} at ${at.join(',')}`
       }
       return null
+    }
+    const inOnePiece = (s: DraftState, wid: string): string | null => listInOnePiece(s.edit.workouts.find((x) => x.id === wid)!.exercises)
+    const oldPlace = (list: readonly DraftEntry[], block: string | null, recorded: number): number => {
+      const at = Math.min(recorded, list.length)
+      if (block === null) return at
+      const mates = list.flatMap((e, j) => (e.supersetBlockId === block ? [j] : []))
+      return mates.length === 0 ? at : at <= mates[0] ? mates[0] : mates[mates.length - 1] + 1
     }
     const regroupings = (s: DraftState, wid: string): DraftState[] => {
       const list = s.edit.workouts.find((x) => x.id === wid)!.exercises
@@ -803,18 +812,28 @@ describe('UNDO never puts an exercise inside a superset', () => {
     }
     const finals = new Map<string, DraftState>()
     const bad: string[] = []
+    const moved: string[] = []
     let undos = 0
+    let oldSplit = 0 // how many times the rule before 51c would have put an entry inside a superset
     for (const wk of UNEVEN_WORKOUTS) {
-      const putBack = (s: DraftState, left: string[], trace: string): void => {
+      const putBack =(s: DraftState, left: string[], trace: string): void => {
         if (left.length === 0) {
           finals.set(`${wk.id} ${JSON.stringify(s.edit.workouts.find((x) => x.id === wk.id)!.exercises.map((e) => [e.key, e.supersetBlockId]))}`, s)
           return
         }
         for (const k of left) {
+          // where the rule before 51c would have put this entry, in this list
+          const list = s.edit.workouts.find((x) => x.id === wk.id)!.exercises
+          const r = s.removed.find((x) => x.entry.key === k)!
+          const at = oldPlace(list, r.entry.supersetBlockId, r.at)
+          const before = [...list.slice(0, at), r.entry, ...list.slice(at)]
           const t = undoRemove(s, k)
           undos++
           const split = inOnePiece(t, wk.id)
           if (split !== null) bad.push(`${trace} then UNDO ${k}: ${split}`)
+          if (listInOnePiece(before) === null) {
+            if (keysIn(t, wk.id).join() !== before.map((e) => e.key).join()) moved.push(`${trace} then UNDO ${k}`)
+          } else oldSplit++
           putBack(t, left.filter((x) => x !== k), `${trace} then UNDO ${k}`)
         }
       }
@@ -825,7 +844,9 @@ describe('UNDO never puts an exercise inside a superset', () => {
       remove(original(), rowsOf(wk.id), [])
     }
     expect({ bad: bad.slice(0, 3), count: bad.length }).toEqual({ bad: [], count: 0 })
+    expect({ moved: moved.slice(0, 3), count: moved.length }).toEqual({ moved: [], count: 0 })
     expect(undos).toBeGreaterThan(100000)
+    expect(oldSplit).toBeGreaterThan(1000)
     for (const s of finals.values()) accepted(s)
     expect(finals.size).toBeGreaterThan(100)
   })
