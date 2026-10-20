@@ -420,6 +420,50 @@ describe('a draft of four workouts, edit by edit, against a model made with plai
     expect(viewOfDraft(start(w))).toEqual(viewOfModel(initialModel()))
   })
 
+  // An edit names a workout and, for an exercise, one of its keys: a workout the draft doesn't have, or an exercise the workout doesn't hold, is a
+  // mistake in the caller and an error that says which, never an edit that lands somewhere else or nowhere.
+  it('an unknown workout is an error naming it, for every edit', () => {
+    const s = start(unevenWorkoutsWorld())
+    const key = 'e:pe-bench'
+    const edits: Array<[string, () => unknown]> = [
+      ['renameWorkout', () => renameWorkout(s, 'nope', 'X')],
+      ['addExercise', () => addExercise(s, 'nope', 'ex-x', 'kg')],
+      ['swapExercise', () => swapExercise(s, 'nope', key, 'ex-x')],
+      ['removeExercise', () => removeExercise(s, 'nope', key)],
+      ['moveExercise', () => moveExercise(s, 'nope', key, 'down')],
+      ['moveExerciseToUnit', () => moveExerciseToUnit(s, 'nope', key, 1)],
+      ['linkWithBelow', () => linkWithBelow(s, 'nope', key)],
+      ['splitAfter', () => splitAfter(s, 'nope', key)],
+      ['unlinkBlock', () => unlinkBlock(s, 'nope', 'blk-push')],
+      ['setExerciseRest', () => setExerciseRest(s, 'nope', key, 'restSeconds', 30)],
+      ['setExerciseTempo', () => setExerciseTempo(s, 'nope', key, '3-0-1-0')],
+      ['setExerciseUnit', () => setExerciseUnit(s, 'nope', key, 'kg')],
+      ['addRoutineItem', () => addRoutineItem(s, 'nope', 'X')],
+      ['editRoutineItem', () => editRoutineItem(s, 'nope', 'r:push-r1', 'X')],
+      ['moveRoutineItem', () => moveRoutineItem(s, 'nope', 'r:push-r1', 'down')],
+      ['removeRoutineItem', () => removeRoutineItem(s, 'nope', 'r:push-r1')],
+    ]
+    for (const [name, edit] of edits) expect({ name, error: (() => { try { edit() } catch (e) { return `${(e as Error).name}: ${(e as Error).message}` } return 'no error' })() }).toEqual({ name, error: 'RangeError: the draft has no workout nope' })
+  })
+
+  it('an exercise the workout does not hold is an error naming it, for the edits that go by an exercise; another workout’s exercise is one', () => {
+    const s = start(unevenWorkoutsWorld())
+    const other = 'e:pe-row' // Pull's, not Push's
+    const edits: Array<[string, () => unknown]> = [
+      ['swapExercise', () => swapExercise(s, 'push', other, 'ex-x')],
+      ['removeExercise', () => removeExercise(s, 'push', other)],
+      ['moveExercise', () => moveExercise(s, 'push', other, 'down')],
+      ['moveExerciseToUnit', () => moveExerciseToUnit(s, 'push', other, 1)],
+      ['splitAfter', () => splitAfter(s, 'push', other)],
+      ['setExerciseRest', () => setExerciseRest(s, 'push', other, 'restSeconds', 30)],
+      ['setExerciseTempo', () => setExerciseTempo(s, 'push', other, '3-0-1-0')],
+      ['setExerciseUnit', () => setExerciseUnit(s, 'push', other, 'kg')],
+    ]
+    for (const [name, edit] of edits) expect({ name, error: (() => { try { edit() } catch (e) { return `${(e as Error).name}: ${(e as Error).message}` } return 'no error' })() }).toEqual({ name, error: expect.stringMatching(/^RangeError: workout push has no exercise e:pe-row$/) })
+    expect(() => undoRemove(s, 'e:pe-bench')).toThrow(new RangeError('no removed exercise e:pe-bench'))
+    expect(() => setBlockRest(s, 'blk-nope', 'restWithinRoundSeconds', 15)).toThrow(new RangeError('the draft has no superset block blk-nope'))
+  })
+
   it('400 walks of 25 edits: after every edit the draft is the model, and it reached every kind of edit in every workout', () => {
     const w = unevenWorkoutsWorld()
     const reached = new Map<string, number>()

@@ -492,6 +492,54 @@ describe.each([
     await screen.findByText('AT PLAN')
     expect(h.rpc).not.toHaveBeenCalled()
   })
+
+  // A superset's first member is put back before the rest of its block and its last member after it: the place it stood. (A member from the
+  // middle of a bigger block is put back next to the others, which is not pinned here.)
+  const ENDS: Record<string, [string, string]> = {
+    push: ['pe-ohp', 'pe-lateral'],
+    pull: ['pe-row', 'pe-face'],
+    legs: ['pe-lcurl', 'pe-calf'],
+    arms: ['pe-hammer', 'pe-dip'],
+  }
+  it.each(UNEVEN_WORKOUTS)('UNDO in $name puts the first and the last member of its superset back before and after the rest of it', async (wk) => {
+    const [firstRow, lastRow] = ENDS[wk.id]
+    await open()
+    goTo(wk)
+    for (const row of [firstRow, lastRow]) {
+      const name = nameOf(wk, row)
+      click(`Remove ${name}`)
+      click('REMOVE')
+      expect(cardNames()).not.toContain(name)
+      click(`Undo removing ${name}`)
+      expect(cardNames()).toEqual(wk.exercises.map((x) => x.name))
+      expect(blockHeaders()).toEqual(['SUPERSET A'])
+    }
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  // Either line can be undone first, and the one pressed is the one that comes back. (Where it comes back is not pinned here: the draft
+  // remembers the place an exercise stood in the list at the moment it was removed.)
+  it.each(UNEVEN_WORKOUTS)('UNDO in $name: the line pressed is the exercise that comes back, whichever was removed first', async (wk) => {
+    const [firstRow, secondRow] = UNDOS[wk.id]
+    const first = wk.exercises.find((x) => x.row === firstRow)!
+    const second = wk.exercises.find((x) => x.row === secondRow)!
+    await open()
+    goTo(wk)
+    click(`Remove ${first.name}`)
+    click('REMOVE')
+    click(`Remove ${second.name}`)
+    click('REMOVE')
+    click(`Undo removing ${first.name}`)
+    expect(cardNames()).toContain(first.name)
+    expect(cardNames()).not.toContain(second.name)
+    expect(screen.queryByRole('button', { name: `Undo removing ${first.name}` })).toBeNull()
+    expect(screen.getByRole('button', { name: `Undo removing ${second.name}` })).toBeTruthy()
+    click(`Undo removing ${second.name}`)
+    expect([...cardNames()].sort()).toEqual(wk.exercises.map((x) => x.name).sort())
+    expect(screen.queryByText('REMOVED FROM WEEK 2')).toBeNull()
+  })
 })
 
 // ─── The cards: SUPERSET, UNLINK and the toggle between members ────────────────────────────────────────────────────────────────
@@ -538,6 +586,10 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
     closeDialog('Overhead Press')
     click('Remove Overhead Press')
     click('REMOVE')
+    // left alone, it is drawn as a single exercise: no superset header, no UNLINK, and it offers SUPERSET again
+    expect(blockHeaders()).toEqual([])
+    expect(screen.queryByRole('button', { name: /^Unlink superset/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Link Lateral Raise with the exercise below' })).toBeTruthy()
     click('Lateral Raise: rest, tempo, unit')
     const alone = dialog('Lateral Raise')
     expect(within(alone).getByText('PUSH')).toBeTruthy()
@@ -604,12 +656,17 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
 
 // ─── Order: the grip's arrow keys, a drag, and MOVE UP / MOVE DOWN in an exercise's ⋯ ─────────────────────────────────────────────
 
+// The units stack with 10 px between them and are not all the same height (a superset's card is taller than a single exercise's): 60 px for the
+// even places and 140 px for the odd ones. The drag goes by where a unit's centre is, so a centre taken from the height wrongly shows.
+const UNIT_HEIGHT = (i: number): number => (i % 2 === 0 ? 60 : 140)
+const unitTop = (i: number): number => Array.from({ length: i }, (_, j) => UNIT_HEIGHT(j) + 10).reduce((a, b) => a + b, 0)
+const unitCentre = (i: number): number => unitTop(i) + UNIT_HEIGHT(i) / 2
 function stubRects() {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     const i = this.dataset?.unitIndex
     return i === undefined
       ? ({ top: 0, height: 0, bottom: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
-      : ({ top: Number(i) * 100, height: 80, bottom: Number(i) * 100 + 80, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+      : ({ top: unitTop(Number(i)), height: UNIT_HEIGHT(Number(i)), bottom: unitTop(Number(i)) + UNIT_HEIGHT(Number(i)), left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
   })
 }
 const pointer = (type: string, clientY: number) => new MouseEvent(type, { bubbles: true, button: 0, clientY })
@@ -679,7 +736,7 @@ describe('order', () => {
     await saveAndExpect(before, (e) => reorderTo(e, wk.id, steps[steps.length - 1].order))
   })
 
-  // A drag by the grip: the last unit (the third one of the Arms list) to the top, then a second unit to the bottom, by pointer events.
+  // A drag by the grip, by pointer events: a unit from one place to another, twice.
   interface Drag {
     from: number
     to: number
@@ -711,10 +768,16 @@ describe('order', () => {
       // the grip of the unit in place `from`, by what the screen draws now
       const unit = document.querySelectorAll('[data-unit-key]')[from] as HTMLElement
       const grip = within(unit).getAllByRole('button', { name: /^Reorder / })[0]
-      const y = (i: number, nudge: number) => i * 100 + 40 + nudge
+      const y = (i: number, nudge: number) => unitCentre(i) + nudge
       const dragged = unit.dataset.unitKey
       await act(async () => {
         grip.dispatchEvent(pointer('pointerdown', y(from, 0)))
+      })
+      // pressed, not moved yet: the unit is already the one held
+      const held = Array.from(document.querySelectorAll('[style*="translateY"]')) as HTMLElement[]
+      expect(held.map((n) => n.querySelector('[data-unit-key]')?.getAttribute('data-unit-key'))).toEqual([dragged])
+      expect(held[0].style.transform).toBe('translateY(0px)')
+      await act(async () => {
         window.dispatchEvent(pointer('pointermove', y(to, to < from ? -5 : 5)))
       })
       // while it is held, the unit follows the pointer by what the pointer has moved, and it is the only one that does
@@ -740,12 +803,39 @@ describe('order', () => {
     await saveAndExpect(before, (e) => reorderTo(e, wk.id, DRAGS[wk.id][1].order))
   })
 
+  // A drag the system takes away (the pointer is cancelled) changes nothing and is over: the card lets go, and nothing that follows moves it.
+  it.each(UNEVEN_WORKOUTS)('a cancelled drag in $name changes nothing and is over', async (wk) => {
+    await open()
+    goTo(wk)
+    const last = document.querySelectorAll('[data-unit-key]').length - 1
+    const grip = within(document.querySelectorAll('[data-unit-key]')[last] as HTMLElement).getAllByRole('button', { name: /^Reorder / })[0]
+    await act(async () => {
+      grip.dispatchEvent(pointer('pointerdown', unitCentre(last)))
+      window.dispatchEvent(pointer('pointermove', 5))
+    })
+    expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(1)
+    await act(async () => {
+      window.dispatchEvent(pointer('pointercancel', 5))
+    })
+    expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(0)
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    // nothing that comes after moves the card or commits a move
+    await act(async () => {
+      window.dispatchEvent(pointer('pointermove', 5))
+      window.dispatchEvent(pointer('pointerup', 5))
+    })
+    expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(0)
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    click('CANCEL')
+    expect(screen.queryByText('Discard your changes?')).toBeNull()
+  })
+
   it.each(UNEVEN_WORKOUTS)('a press of $name’s grip with a button other than the main one starts no drag', async (wk) => {
     await open()
     goTo(wk)
     const grip = within(document.querySelectorAll('[data-unit-key]')[0] as HTMLElement).getAllByRole('button', { name: /^Reorder / })[0]
     await act(async () => {
-      grip.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2, clientY: 40 }))
+      grip.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2, clientY: unitCentre(0) }))
       window.dispatchEvent(pointer('pointermove', 340))
     })
     expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(0)
