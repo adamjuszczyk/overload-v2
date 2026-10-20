@@ -32,6 +32,9 @@ To-dos:
 - Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
 - **188f** — chunk 188f (TASKS-1.2), Adam 2026-10-20 (DECISIONS 188 (a)): `markSessionDeload` leaves a session that already holds a saved copy as it is. It fixes a bug that is live in production since phase 1 (a week mark cut off part way and pressed again loses a session's saved plan), so it ships with the release; no migration, no stored row changes.
 
+## Tests owed
+*Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule"). Empty so far.*
+
 ## Format for all new entries
 
 Every entry opens with the ask and a recommendation; evidence comes after it, short.
@@ -208,6 +211,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 ### 183 The numbers of the sets a swap for today moves, beyond W5's case (for 46's redraw and 59)
 - What: the numbers of the sets a swap for today moves, beyond W5's case, and what the original card shows for them (recommended: one numbering for the exercise's place in the session).
 - Answer: (Adam, 2026-10-20) "(a). One numbering for the exercise's place in the session, covering moved and added sets." Option (a), as the entry words it: "One numbering for the exercise's place in the session (recommended): the original card's sets that didn't move, then the moved sets in the order they stood, then any set added to the new card, each numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine Pulldown 03; + ADD SET there, 04. In the first case above the original reads 01, 02 (its logged 03 becomes 02) and the new card 03, 04. The original card draws no row for a set that moved, so the swap has to record which sets moved (59)." Full text in HISTORY.md.
+- Answer, follow-ups (Adam, 2026-10-20): "A swap into an exercise that already has added sets: the moved sets come after them. A swap never renumbers sets that are already logged." "The same exercise on two cards in one session: each card is numbered on its own, as today's display does."
 - Date: 2026-10-20
 
 ### 184 A set added before 1.2, unlogged and logged again under 1.2: it can't come back in its place (for 63, and 46's redraw)

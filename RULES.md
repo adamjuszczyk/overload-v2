@@ -280,3 +280,6 @@ Usage is the constraint now. From the next chunk on:
 - Chunks that write data or add a migration (46's redraw, the 188 chunk, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check.
 - Everything else (54b, 55, 58b, 60, 64, 65, 66, 67, 68, 69, display follow-ups): reviewer at high effort, not max; no per-chunk staging click-through — the fixture screenshots and tests are the review, and the release checklist covers staging for these screens; break proofs only where the chunk writes data.
 - Remaining D31 display choices: accept as built and list them; I'll change any in the review pass after the release checklist, not one follow-up at a time.
+
+## The 1.2 tests-owed rule (Adam, 2026-10-20)
+"Missing-proof failures (behaviour verified right, a test missing) no longer go back to a builder. The reviewer merges, and logs each missing test in one list in DECISIONS.md ("tests owed"). One tests-only builder run before the release checklist adds them all, the way 176 does. Behaviour failures still go back to the builder as before."
