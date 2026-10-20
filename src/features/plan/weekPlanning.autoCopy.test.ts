@@ -14,7 +14,7 @@ import { plan, pe, pset, wset, stage } from './weekPlanning.testutil'
 // Chunk 42 — what a planned week takes from its source (SPEC, Weeks and copying → What the auto-copy takes (2b)):
 // structure, volume and set types from the source; the default's rep targets on a stable week; never a weight, a
 // RIR, a week-dependent week's reps (AMRAP included), tags or the deload flag. autoCopy is the twin of migration
-// 044 (chunk 53); scripts/plan-week-parity.mjs runs it against 041's `v2_plan_week` on the replayed database.
+// 045 (chunk 53); scripts/plan-week-parity.mjs runs it against 041's `v2_plan_week` on the replayed database.
 
 // ─── The fixture: one workout, "Pull 1", as its run copy holds it ──────────────────────────────────────────────
 
@@ -226,7 +226,7 @@ describe('autoCopy — from the program (a stable week; week 1 of any run)', () 
     }
   })
 
-  it('week 1 of a week-dependent run starts from the program too, rep targets included (041\'s program branch, kept by 044)', () => {
+  it('week 1 of a week-dependent run starts from the program too, rep targets included (041\'s program branch, kept by 045)', () => {
     const r = autoCopy({ planningType: 'week_dependent', weekNumber: 1, runCopy: runCopy(), priorWeeks: [] })
     expect(r.source).toEqual({ kind: 'program' })
     const rows = byId(r.sets)

@@ -22,8 +22,10 @@
 // couldn't even be created before chunk 11). That
 // mapping rule is written down once, in the migration's own comment.
 
+// Chunk 53 (TASKS-1.2; SPEC [1.2], Objects stored -> Settings): "The 'new week starts' setting is removed". Migration 045's
+// v2_plan_week no longer reads `week_start`, so the `WeekStartSetting` type and the 'empty' branch of resolveWeekSources are gone
+// from here; a week-dependent week beyond week 1 is empty only when it has no usable source (DECISIONS 42).
 export type PlanningType = 'stable' | 'week_dependent'
-export type WeekStartSetting = 'copy' | 'empty'
 
 // One planned occurrence of ONE workout, as far as source selection cares.
 // Callers pass only this workout's own history — a different workout in
@@ -88,10 +90,9 @@ export function findLastUsableWeek(
 export function resolveWeekSources(input: {
   planningType: PlanningType
   weekNumber: number
-  weekStart: WeekStartSetting
   priorWeeks: PlannedWeekRecord[]
 }): WeekSourceDecision {
-  const { planningType, weekNumber, weekStart, priorWeeks } = input
+  const { planningType, weekNumber, priorWeeks } = input
   const lastUsable = findLastUsableWeek(priorWeeks, weekNumber)
   const weightRir: WeightRirSource =
     lastUsable === null ? { kind: 'none' } : { kind: 'week', weekNumber: lastUsable }
@@ -101,19 +102,15 @@ export function resolveWeekSources(input: {
     // SPEC: "stable → the run's copy, always" / "week-dependent → ...
     // week 1 from the run copy".
     volume = { kind: 'program' }
-  } else if (weekStart === 'empty') {
-    // SPEC: "a setting lets weeks start empty instead" — governs the
-    // AUTOMATIC fill only; the manual copy actions below don't consult it.
-    volume = { kind: 'empty' }
   } else if (lastUsable !== null) {
     volume = { kind: 'week', weekNumber: lastUsable }
   } else {
-    // week_start = 'copy' but there is nothing usable to copy yet (e.g.
-    // this workout's only prior occurrence(s) were all deload, all empty,
-    // or it has never been planned at all) — SPEC names exactly two
-    // sources for a week-dependent week beyond week 1 ("the last planned
-    // [usable] week", or empty); with neither available, empty is what's
-    // left.
+    // Nothing usable to copy yet (e.g. this workout's only prior
+    // occurrence(s) were all deload, all empty, or it has never been planned
+    // at all) — SPEC names exactly two sources for a week-dependent week
+    // beyond week 1 ("the last planned [usable] week", or empty); with
+    // neither available, empty is what's left. [1.2] There is no setting
+    // that makes a week start empty any more.
     volume = { kind: 'empty' }
   }
 
