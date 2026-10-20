@@ -425,6 +425,35 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(nextAddedPlace(s.order(), 'ex.dip', s.server.logs)).toBe(4)
   })
 
+  it('…the record\'s places count when nothing else holds them: reloaded before the moved set is logged, a set added to the exercise\'s own card takes the next place and stays on that card (break: the rule ignores the record)', () => {
+    const dip = card('dip', '', { added: [addedLog('dip', 1, { number: 1, place: 1 })] })
+    const s = lat('n n n', [1, 2], [dip])
+    s.server.insertLog(addedLog('dip', 1, { number: 1, place: 1 }))
+    const m = s.swap('lat', 'dip')
+    s.reload()
+    // the moved set had neither a log nor a draft: it is gone with the list, but its place is the swap's
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'dip 01✓'])
+    const added = s.add('dip', 'X')
+    expect([s.row(added).addedPlace, s.row(added).exerciseKey]).toEqual([3, 'dip'])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'dip 01✓', 'dip 02·'])
+    void m
+  })
+
+  it('183\'s follow-up: a swap into a card that held sets of its own before (an exercise added in the session): the moved sets come after its sets, and it keeps its own numbering, so no logged set of it is renumbered (break: it reads on from the card the sets left)', () => {
+    // the screen may move the sets into the exercise's own card instead of a new one: the record on that card
+    const own = addedLog('dip', 1, { number: 1, place: 1 })
+    const s = lat('n n n', [1, 2], [card('dip', '', { added: [own] })])
+    s.server.insertLog(own)
+    const rows = s.rows()
+    const moves = movedSetEntries(s.order(), s.server.logs, { exerciseId: 'ex.dip', name: 'Dip' }, [{ row: rows.find((r) => r.key === 'set:lat.3')!, localId: 'm' }])
+    expect(moves.entries.map((e) => e.place)).toEqual([2])
+    s.cards = s.cards.map((c) => (c.key === 'dip' ? { ...c, added: [...c.added!, ...moves.entries], swappedFrom: moves.record } : c))
+    const after = s.rows()
+    expect(after.map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'dip 01✓', 'dip 02·'])
+    expect(after.filter((r) => r.exerciseKey === 'dip').map((r) => r.slotKey)).toEqual(['dip', 'dip'])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+  })
+
   it('183\'s follow-up: one exercise on two cards that no swap joins is numbered on each card on its own; a set of it that no list or record places is drawn on its first card (a reading: the words don\'t say which card)', () => {
     const second = { ...card('pressb', 'n n'), exerciseId: 'ex.press', name: 'Press again' }
     const a1 = addedLog('press', 1, { number: 3, place: 1 })

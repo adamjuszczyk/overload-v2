@@ -241,6 +241,25 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     expect(numberCorrections(phone2, deleted.server.logs, deleted.server.held())).toEqual([])
   })
 
+  it('185 (c) with a swap (183 (a): one list for the two cards): a log on the swap\'s card after an open set added to the card it replaced is left on the phone that holds that set, and corrected once on the other (break: leave out only the logs on the open set\'s own card)', () => {
+    const s = new Session([card('lat', 'n n')], [], [headLog('lat', 1)])
+    const m = s.swap('lat', 'machine')
+    const moved = s.log(s.rows().find((r) => r.exerciseKey === m)!.key)
+    expect(moved.setNumber).toBe(2)
+    // a set added to the original card after the swap is one of its sets: the swap's card reads on after it, on this phone
+    s.add('lat', 'N')
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02·', `${m} 03✓`])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    // phone 2 holds no list: it draws the moved set from its log, as 02, which is what it stores
+    const phone2 = orderOf(s.cards.map((c) => ({ ...c, added: [] })))
+    expect(resolveRows(phone2, s.server.logs, s.server.held()).map(brief)).toEqual(['lat 01✓', `${m} 02✓`])
+    expect(numberCorrections(phone2, s.server.logs, s.server.held())).toEqual([])
+    // logged, N is on both phones: phone 1 corrects the moved set to 03, once
+    s.log('added:lat:N')
+    expect(s.draw()).toEqual([{ id: moved.id, setNumber: 3 }])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+  })
+
   it('185 (c): only the logs after the open added set are left: one before it, or on another card, is corrected as 178 says (break: leave out a log that doesn\'t come after one)', () => {
     const b = addedLog('bench', 2, { number: 9, place: 2 })
     const logs = [headLog('bench', 1), headLog('bench', 2, { number: 5 }), b, headLog('curl', 1, { number: 4 })]
