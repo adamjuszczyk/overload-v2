@@ -27646,3 +27646,146 @@ In general: remove B from A, B, C, D; link A with C; UNDO B. Also, unpinned: UND
 **Options:** (a) by place (recommended); (b) by number, as chunk 43 built it (two such sets are one item, and the second one's change is not offered); (c) by number and card (no card is stored, so after a reload the two can't be told apart).
 **Answer:**
 **Evidence:** the builder's Q6 (`<scratchpad>/build/chunk-46r-builder-1.md`), seen in its sequence test. Executed in the review (probe P6, `<scratchpad>/build/r46r/`): Lat Pulldown 01 logged, a set added and logged (03), then the open 02 swapped to Machine Pulldown and from there back to Lat Pulldown and logged. Two Lat Pulldown added logs hold 3, at places 1 and 2, on two cards. `reviewItems` gives both one key, `added-set:<session>:<exercise>:3`. Nothing in 46r writes a REVIEW key.
+
+## 2026-10-20 chunk 53 review — reviewed, merge held (staging re-seeded with staging's seed.sql: new 204); 197–201 answered and shrunk; new 202 and 203 (answered); eight rules; moved out of DECISIONS.md, CONTEXT.md, TASKS-1.2.md and SPEC.md (replaced by newer lines there), word for word
+
+The review (long form: the reviewer's notes, `<scratchpad>/build/chunk-53-review-1.md`): the branch `build/chunk-53` at `1f9c3f2` passed every script (5607 tests in 288 files; 349 script tests; the stylesheet staging's `index-ra14cXRp.css`; check-embeds 29/29; replay 47 of 47). check-migration: 045 flagged three times, 046 once (its `do` block). Parity on 045: fixtures a–k identical, `--fuzz 100` 100/100, `--safeupdate` a–k identical. 046: 183/183 replay worlds, `--safeupdate` 123/123. The reviewer's breaks: 045 B1, B2b, B2c, B3, B4, B5 caught, B6 refused under pg-safeupdate only, the control not caught (B2, rep_min alone, is refused by a CHECK first: a flag); 046 M1–M5 caught, M6 refused under pg-safeupdate only, the control not; the seed's S1 and S2 change the 045 dump. Rollback of 045 by 041's block proven by md5. Staging, read only, before the merge: staging-sequence 0 changes (the rule says 7 on 6 for the branch's seed), staging-test 0, staging-stable 0: the re-seed of 20:35 UTC ran staging's seed.sql, so the merge was held (204). 51c's smoke ran on it: 51/51, one set logged (203 → 204).
+
+### From DECISIONS.md
+
+## Waiting on Adam
+*Rewritten at every boundary. Last: 2026-10-20, the pre-read of 58a–64 against 46r's rules.*
+- *The pre-read of 58a–64 against 46r's final rules is done: five new entries, 197–201. Two block a chunk, below: 197 (58a: an offline number patch has no queue item) and 199 (59: which cards offer "Swap for today"). Three are built as recommended unless you say otherwise: 198 (58a: a swap with no record, every swap before 047), 200 (59: the swap's row before its skips) and 201 (64: the finish warning lists a moved set that was planned). 58b, 60, 61, 62 and 63 have no gap; TASKS got wording fixes that follow from answered decisions (151, 162, 163, 166, 168, 170, 146, and 46r's draft contract), listed in the PR.*
+- *Chunk 51c (UNDO on CHANGE THE PROGRAM keeps a superset in one piece: the fix for 191) is merged, with no behaviour failure and no tests owed. On staging both recipes now save (before the merge, recipe 1 refused there too). The smoke waits for your re-seed (To-dos). Left as built, as TASKS 51c says: an UNDO out of stack order can still land one place off where the exercise stood, never inside a superset (191).*
+- *Your answers of 2026-10-20 are recorded: 046 is 149's release data migration (chunk 53) and 047 chunk 59's swap column, so the release range is 042–047 (196); 194 is accepted as listed, with 59's tightened scope; 195 (a) is in TASKS 56. 53's builder is unblocked. One point for 53 and the release: step 5's migrations-first PR holds 047 but not 046, so 53 writes into Release where 046 goes for production to apply it in order ("For the release").*
+- *Chunk 66 (a finished program: PR14, PR15) is merged. Its display choices and readings are 192, accepted as built for Adam's review pass. One question is open, 193: whether the finished program's rows show superset labels. SPEC says supersets aren't in the history; TASKS and the board draw them. The recommendation is SPEC's, a one-line change, and it blocks nothing. No tests owed.*
+- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing.*
+- *188 (a) is chunk 188f, its own small chunk after 54b and before the release (a bug live in production since phase 1, so it ships with the release); 187 (a) goes into 54a; 186 is accepted as built. 46r's one test owed is under "Tests owed".*
+- *What follows (Adam, 2026-10-20): the read-only pre-read of 58a–64 against 46r's rules (done: 197–201), then 53, 54a onward, and 58a–64 (58a's 57 and 46r are both in; 58a waits for 197, 59 for 199). Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
+
+Decisions that block a chunk:
+- **197** — an offline `set_number` patch has no queue item: the queue sends whole-row upserts and deletes, and `useUpdateSetLog` never queues. 58a's corrections (178) write the first such patch; 61's delete and 62's Warmup switch (168) the next. Recommended: (a), a patch item on the queue (`update` of the number by id), built in 58a. Blocks: 58a.
+- **199** — "Swap for today" on the card a swap made meets 025's unique index, and on an ADDED TODAY card it can leave a record that a reload or the other phone can't draw (the session then can't be drawn there). Recommended: (a), offer it only on a planned slot's card that no swap has touched, as today. Blocks: 59.
+
+Decisions (none blocks; for Adam's review pass after the release checklist):
+- **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
+- **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
+- **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
+- **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
+
+To-dos:
+- **Re-seed** — re-seed staging before the next smoke and send "re-seeded" (Adam, 2026-10-20: "Re-seed: I'll do it before the next smoke test and send "re-seeded". Don't run a smoke test that needs a LOG button until then."). Today has one LOG button left on the test account. When: before the next smoke. Blocks: every smoke and every staging step that presses LOG; owed so far: 51c's smoke.
+- **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
+- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
+- **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
+
+- **045** — chunk 53, not built yet: `v2_plan_week` with the 1.2 copy rules (numbered 044 until Adam's numbering answer (a), 2026-10-19). `check-migration` will flag "function"; recorded here at 53's merge.
+
+- **046** — chunk 53, not built yet: 149's data migration (DECISIONS 149 (c), Adam 2026-10-16; numbered 046 by Adam, 2026-10-20, DECISIONS 196): makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows (the run copies' `v2_program_exercises`: `week_only`, `removed_at`, `position`), so it is **blocking**: the manual backup first (TASKS-1.2 Release, step 3), then Adam's decision, with before/after counts and a fingerprint as in its staging rehearsal. Not applied to production during the build. It is not in step 5's migrations-first PR, which holds 047, so chunk 53 writes into Release where 046 goes for production to apply it in order.
+
+### 197 An offline number patch has no queue item, and 58a writes the first one (pre-read, chunk 58a)
+**Ask:** 178 (a) says the workout screen's number corrections "queue like a delete's" offline, and 168 (a) says the same of a Warmup switch's renumbering. The sync queue has no item that changes one column of a log: it sends a whole-row upsert or a delete by id (57). The patch TASKS 61 names for a delete's renumber is `useUpdateSetLog`, a direct update that never queues. 58a writes number patches first, before 61 and 62. How does a `set_number` patch go out offline?
+**Recommendation:** (a), a patch item on the queue, built in 58a and used by 61 and 62. An update of a log another phone has deleted changes no row, so it can never bring the log back, and it writes no column but the number.
+**Blocks:** 58a (61 and 62 use what 58a builds).
+**Options:**
+- (a) A patch item: `update({ set_number }).eq('id', id)`, payload `{ id, set_number }` with the session beside it as on a delete (`sessionId`), held behind earlier writes to the same log by 57's dependency keys and counted by `hasQueuedWritesFor`. Tested on 57's order fake (RULES: a new queue rule is): a patch queued after its log's upsert goes after it, also when the upsert fails in that pass; a patch of a log whose delete is queued recreates nothing (recommended).
+- (b) A whole-row upsert of the log with its new number. A log deleted on another phone comes back (a ghost row, as 57's E04), and this phone's cached copy writes over the other phone's edit of its weight or reps.
+- (c) Number patches online only: offline nothing is written, and the next draw online corrects what differs (178 re-derives on every draw). This narrows 168 (a) and 178's "offline the writes queue": a delete or a switch made offline leaves stored numbers stale until then, and 185 (c) leaves some out for good while an open added set stands before them.
+**Answer:**
+**Evidence:** `useSyncQueue.ts`:207–219 (an `upsert` sends `upsert(row)`; a `delete`, `delete().eq('id', …)`); `db.ts`, `SyncQueueItem.operation: 'upsert' | 'delete'`; `useSession.ts`, `useUpdateSetLog` (a direct `updateSetLog` with the default `networkMode`, which TanStack pauses offline). TASKS 58a ("through the same patch a delete's renumber uses … Offline, the writes queue like a delete's (57's queue)"); TASKS 61 ("then the renumber patches … through `useUpdateSetLog`"; its offline verification queues the deletes and the change row only). 168's own evidence quotes 57's note for 61 ("a full-row upsert per log, or a patch item"), which left the choice to the first producer: that is now 58a.
+
+### 198 A swap with no record (every swap before 047): how the workout draws it (pre-read, chunk 58a)
+**Ask:** 46r draws a swap from its record (`OrderExercise.swappedFrom`), which 59 stores from 047 on. Every swap row before 047 has none: a reopened session with a swap made since 025 (the seed's week-1 swap is one), the session in progress at the release, and on staging every swap made between 58a and 59 (59 replaces today's swap sheet). Today such a swap is one merged card holding both exercises' logs; a 46r card has one exercise. How do 58a and 59 draw a swap row with no record?
+**Recommendation:** (a). It reads nothing from the logs (Q5: "never inferred from the logs"), and in the usual case it writes nothing: today's swap stored the replacement's numbers from 1 on its own logs, and skipped the original's sets in order.
+**Blocks:** nothing. 58a and 59 build (a) unless Adam says otherwise.
+**Options:**
+- (a) Two cards, laid out as W5 lays them out, with no `swappedFrom`: the original card (its logs and the swap's skips, drawn as skipped rows), then the replacement on a card of its own right after it, numbered on its own as 1.1 stored it, with no sets moved. The original card offers no second swap (025's unique index refuses one). A replacement logged before 025 (no swap row) stays a card after the plan's, as today. The cost: in the session in progress at the release, the replacement's sets not logged yet aren't drawn (today draws as many open rows as the original planned); + ADD SET adds them (recommended).
+- (b) The replacement continues the original's numbering, as W5's 03 after 01–02. Nothing says which sets moved, and 178's draw would rewrite every 1.1 replacement log's stored number on the next reopen (1 → 3), against Q1 ("A swap never changes the number of a set that's already logged").
+**Answer:**
+**Evidence:** `GymSession.tsx`:287–385 (a recorded swap's slot is one merged card; a replacement logged before 025 is an extra card found from the logs); `useExerciseCardState.ts`:164–175 and 396–400 (the replacement's logs store `ownLoggedHeadCount + 1`, counted on its own exercise); `workoutRules.ts`, `OrderExercise.exerciseId` (one per card) and `structureOf` (gaps and moved sets come only from a record). TASKS 58a and 59 name no swap without a record; 59's migration check expects every existing swap row to read null.
+
+### 199 Which cards offer "Swap for today": a second swap of a slot meets 025's unique index, and an added exercise's card lives on one phone (pre-read, chunk 59)
+**Ask:** 194 (b) allows a swap from the card a swap made and keeps "one swap row per card, an added exercise's card included", and TASKS 59 asks that the record's `fromKey` be "that card's key as every phone builds it, after a reload and a reopen too". Two cards can't meet that as the tables stand:
+- the card a swap made: a second swap row with the slot's `program_exercise_id` is refused by 025's unique index on `(session_id, program_exercise_id)`;
+- an ADDED TODAY card (+ ADD EXERCISE): it lives in one phone's memory until a set of it is logged. Once a swap has moved all its open sets, no log names it, so a reload, a reopen or the other phone builds no such card, and `sessionOrder` refuses the record that names it: that phone can't draw the session at all.
+
+On which cards does 59 offer "Swap for today"?
+**Recommendation:** (a). It is today's behaviour (025: "no re-swap affordance once a replacement is showing"; today's swap of an added card is refused, below), and a session no phone can draw is the one outcome 46r's rules can't recover from.
+**Blocks:** 59.
+**Options:**
+- (a) Only on a card of a planned slot that no swap has touched, as today: no "Swap for today" on a card a swap made or on an ADDED TODAY card. One swap row per slot then holds through 025's index, and every record names a card every phone builds from the plan. The cost: the replacement can't be swapped again; its ⋯ keeps skip and "Add a set" (recommended).
+- (b) Also on the card a swap made: its swap row carries `program_exercise_id` null (the index then lets it in), and its record's `fromKey` is the first swap's card, which every phone builds from the first swap's row (keyed by that row's id). None on an ADDED TODAY card.
+- (c) (b), and on an ADDED TODAY card too: every phone builds the card a swap moved sets from out of the swap row itself (`original_exercise_id`, `program_exercise_id` null), keyed by its exercise, even when no log names it.
+**Answer:**
+**Evidence:** `025_v3_session_exercise_swaps.sql` (`v2_session_exercise_swaps_slot_uk`, and the comment quoted); `GymSession.tsx`, `handleAddExercise` ("purely local state") and the extra cards' `syntheticProgramExercise` (`id: extra-${ex.id}`), which `handleSwap` passes to `recordExerciseSwap` as `program_exercise_id`, a `uuid` column, so the insert is refused (read in the code, not executed); `workoutRules.ts`, `structureOf` ("was swapped from …, which is not a card of the session"). 194 (b) in full (HISTORY.md) and 46r's builder report 2, section 3 (reading B).
+
+### 200 A swap's writes in order: today it skips the original's sets before it records the swap (pre-read, chunk 59)
+**Ask:** today's swap awaits the skips (queued, so they go out offline too) and then records the swap online (`useRecordExerciseSwap`, which TanStack pauses offline). Offline, or when the swap's insert is refused, the original's open sets end skipped with no swap row: no card holds them, and the user's sets are gone from the workout. 59 adds the record to the swap's row and skips every moved set, and its staging step expects "a swap attempted offline shows the real reason". In which order does 59 write?
+**Recommendation:** (a). A swap that fails writes nothing, and once the row with its record has landed the original card already draws its gaps from the record (the skips add only the kind of a moved added set's gap: 46r's review, P1).
+**Blocks:** nothing. 59 builds (a) unless Adam says otherwise.
+**Options:**
+- (a) The swap's row with its record first, online (`networkMode: 'always'`: offline it fails at once with the reason and nothing is written), then the skips of the moved sets through the queue. Break: skips first → a refused swap leaves them skipped → fails (recommended).
+- (b) Today's order: the skips, then the swap's row.
+**Answer:**
+**Evidence:** `useExerciseCardState.ts`, `handleConfirmSwap` (`await handleSkipExercise()`, then `onSwap`); `useSession.ts`, `useRecordExerciseSwap` ("Online-only", default `networkMode`) and `useLogSet` (`networkMode: 'always'`, queue-capable). TASKS 59's parity line names the payloads ("the same `recordExerciseSwap` payload and skip writes as before the chunk"), not their order.
+
+### 201 The finish warning, and auto-finish with it, don't see a swap's moved sets (pre-read, chunk 64)
+**Ask:** 46r's `finishWarning` lists the unlogged working sets that have a planned set. A set a swap moved is an added set of the new exercise (179), so it is never listed: with W5's Machine Pulldown 03 still open, W18 says nothing about it, and auto-finish, which waits for the same view (166 (a); 61), can complete the session while it is open. Should a moved set that was planned be listed?
+**Recommendation:** (a). 164 (a) moves the planned sets "with their numbers, type, drops and targets", so they are still the session's planned work, and the record already says which ones were planned.
+**Blocks:** nothing. 64 builds (a) unless Adam says otherwise; 61's auto-finish follows the warning either way.
+**Options:**
+- (a) List it: a set on a swap's card whose record names a planned set (`from.weekPlanSetId`) is listed under the new card's name and the number its row shows ("Machine Pulldown 03"). A change to 46r's `finishWarning` in 64, with a break that leaves it out; a set added in the workout, or moved from an added set, stays unlisted (recommended).
+- (b) As 46r built it: moved sets are added sets (179) and are not listed.
+**Answer:**
+**Evidence:** `workoutRules.ts`, `finishWarning` (`row.kind === 'working' && row.state === 'unlogged' && row.weekPlanSetId !== null`) and `movedSetEntries` (a moved set's entry carries no planned set; the record's `from` does). The swap's skip gives the moved planned set a log, so today's auto-finish (a log on every planned set id) doesn't wait for it either.
+
+### From CONTEXT.md
+
+- **Re-seed pending (Adam, 2026-10-20): "Re-seed: I'll do it before the next smoke test and send "re-seeded". Don't run a smoke test that needs a LOG button until then."** Today has one LOG button left on the test account. Until the coordinator passes on "re-seeded", no reviewer runs the smoke or any staging step that presses LOG; each runs the staging steps that don't log and records the skipped ones here as owed. Owed after the re-seed: 51c's smoke (`staging-smoke.mjs` and the screen smoke with its one LOG).
+
+(renumbered from 044 by Adam's numbering answer (a), 2026-10-19). Then **046**, 149's release data migration, also written in chunk 53 (DECISIONS 149 (c): a release step, blocking, the manual backup first), and **047**
+
+Its dates are relative to the day it runs: since Adam's re-seed of 2026-10-19 (DECISIONS 138) the test account's week 3
+
+ Since chunk 52's second review (2026-10-20) the test account's week 4 and the sequence account's cycle 3 are planned (PLAN FORWARD, 041's body: week 3's and cycle 2's rows with their numbers), so from Monday 2026-10-26 the test account's current week 4 is planned and week 5 is its first NOT PLANNED tile.
+
+- **Re-seeded (Adam, 2026-10-19; DECISIONS 138, done):** the checks recorded "waiting on re-seed" (every smoke's log step since the display follow-up's review) ran in chunk 51a's review. Today shows 1 LOG button since chunk 46r's smoke log (set logs 211; still 211 after chunk 51c's review, which logged nothing). Adam re-seeds before the next smoke and sends "re-seeded" (2026-10-20; "Where the build is"); until then, no smoke and no staging step that presses LOG.
+
+### From TASKS-1.2.md
+
+046 is 149's release data migration (written in chunk 53; a release step, blocking, the manual backup first: Release, step 3) and 047 is chunk 59's
+
+The one exception is 046, 149's release data migration: written and rehearsed in chunk 53 with counts and a fingerprint of its own, and a blocking release step after the manual backup (Release, step 3).
+
+All six go to staging during the build and to production only at the release: the five add-only ones in the migrations-first PR (Release, step 5), and 046 as step 3's blocking decision, after the manual backup.
+
+at the release a blocking decision of Adam's, after the manual backup (Release, step 3); not in the migrations-first PR |
+
+149's release data migration `046_*.sql` (its name chunk 53's)
+
+Face Pull ×2 including week 1's added set
+
+The migrations-first PR (Release, step 5) holds 047 and not 046: the builder says in the report where 046 goes in Release so that production applies 045, 046 and 047 in order, and the reviewer writes it into Release.
+
+lists every flagged migration (042's new policies if flagged, 043 and 045 as functions, 044's check if flagged, 046 as the data migration that changes rows (step 3), 047's column if flagged)
+
+(149's data migration, 046, step 3, is the exception and has counts of its own)
+
+   - **Then 149's data migration, as a blocking decision** (DECISIONS 149 (c), Adam 2026-10-16; DECISIONS "For the release"; migration 046, DECISIONS 196): the separate data-migration file chunk 53 wrote, tested and rehearsed on staging makes each active week-dependent run's program match its last planned week (exercises and order), so nothing the user sees changes. It touches existing rows, so it goes ahead only after the manual backup above and Adam's decision, with before/after counts (every table the file mentions, scoped to Adam's `user_id`) and a fingerprint, as in its staging rehearsal.
+
+4. **A time when nobody is training** (Adam and his friend).
+
+holding only `supabase/migrations/042_*`, `043_*`, `044_*`, `045_*` and `047_*` (chunk 59's) and `scripts/probe-specs/042.json`, `043.json`, `044.json` and `047.json` (no code; `migration-replay` green). Not `046_*`: 149's data migration changes rows and is step 3's blocking decision, after the manual backup; where it goes in this order, so that production applies 045, 046 and 047 in order, is chunk 53's to write here (DECISIONS 196). Merge; wait for the production deploy: every `Supabase Preview` run on the merge commit read, `node scripts/probe-live-columns.mjs 042` (and `043`, `044`, `047`) against production `200 []` / `400` control; the current app keeps working on the new schema (the migrations are additive; the old bundle reads none of the new objects).
+
+| `staging-sequence@example.com` (`…0004`, **revision**) | Its own STG Rotation (A, B, rest, A, C, rest) as an active run, cycle 1 done, cycle 2 current with Rotation A next due. | 52, 54b |
+
+Offline, the writes queue like a delete's (57's queue). It never writes `added_place`.
+
+Offline, the correction lands in the queue as a delete's does (the fake queue asserts it).
+
+one swap row per card, an added exercise's card included (two rows make `sessionOrder` refuse the session);
+
+### From SPEC.md
+
+    week-dependent run's program match its last planned week (exercises and
+    order), so nothing the user sees changes.
