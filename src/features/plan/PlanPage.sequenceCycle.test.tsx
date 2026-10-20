@@ -342,8 +342,17 @@ function renderPlan() {
 
 // ─── Screen helpers ──────────────────────────────────────────────────────────
 
-const READ_ONLY_BANNER = 'PAST WEEK · READ ONLY'
-const banner = () => screen.queryByText(READ_ONLY_BANNER)
+// The lock line of a past week (board 1c). SPEC Scheduling → Sequence: "The cycle replaces the week everywhere the week is used (week plan,
+// copying, …, labels, …)", so a sequence run's past cycle reads CYCLE and a weekday run's past week reads WEEK (review 1, F4: the line was
+// WEEK on both). `banner()` is whichever of the two is on screen; the helpers below pin which one.
+const CYCLE_LOCK_LINE = 'PAST CYCLE · READ ONLY'
+const WEEK_LOCK_LINE = 'PAST WEEK · READ ONLY'
+const banner = () => screen.queryByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)
+// A sequence run's past cycle: the cycle's word is there, and the week's is not.
+function expectCycleLockLine() {
+  expect(screen.queryByText(CYCLE_LOCK_LINE)).not.toBeNull()
+  expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+}
 // The week tiles (chunk 52): a tile is a week's name over its state. `WEEK_OR_CYCLE_HEADER` is a tile's name: none is on screen
 // while a read is out, and none is when the load error shows.
 const WEEK_OR_CYCLE_HEADER = /^(WEEK|CYCLE) \d+$/
@@ -552,8 +561,8 @@ function expectEditable(cycle: number, slot = 0) {
 // would change it is gone or dead, in both views — nothing opens, nothing reaches
 // a hook. Leaves the STRUCTURE view open.
 function expectReadOnly() {
-  // — the page: no COPY, no CYCLE ⋯ (board 1c: a past week has no action row), no offer
-  expect(banner()).not.toBeNull()
+  // — the page: the lock line in the cycle's word, no COPY, no CYCLE ⋯ (board 1c: a past week has no action row), no offer
+  expectCycleLockLine()
   expect(weekMenuButton()).toBeNull()
   expect(screen.queryByText('COPY')).toBeNull()
   expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
@@ -657,7 +666,7 @@ function expectEmptyCycleEditable(cycle: number) {
 
 // An EMPTY past cycle: nothing to copy into — no COPY — and nothing else to change it with either, in either view.
 function expectEmptyCycleReadOnly() {
-  expect(banner()).not.toBeNull()
+  expectCycleLockLine()
   expect(asButton(labelled('Mark this session as deload')).disabled).toBe(true)
   for (const openView of [openSetsView, openStructureView]) {
     openView()
@@ -724,13 +733,14 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expectEditable(1)
     })
 
-    it('cycle 1 carries no "PAST WEEK — READ ONLY" however it is reached (the calendar week would flag it past)', () => {
+    it('cycle 1 carries no lock line (neither "PAST CYCLE · READ ONLY" nor "PAST WEEK · READ ONLY") however it is reached (the calendar week would flag it past)', () => {
       setUpSequenceRun(NINE_DAY)
       renderPlan()
 
       goTo(1)
       expect(banner()).toBeNull()
-      expect(screen.queryByText(READ_ONLY_BANNER)).toBeNull()
+      expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+      expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
       expect(weekMenuButton()).not.toBeNull()
     })
 
@@ -1221,9 +1231,55 @@ describe('PlanPage — a weekday run keeps the calendar week (chunk 35)', () => 
     expect(plannedWeeks()).toEqual([])
     // The weekday run never asked for a last event.
     expect(lastEventHook).not.toHaveBeenCalled()
-    // ... and its weeks before the calendar week are still the past ones.
+    // ... and its weeks before the calendar week are still the past ones, with the week's word on the lock line.
     openWeekTile('WEEK 2')
     expect(isOpen('WEEK 2')).toBe(true)
-    expect(banner()).not.toBeNull()
+    expect(screen.queryByText(WEEK_LOCK_LINE)).not.toBeNull()
+    expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+  })
+})
+
+// Review 1, F4. The lock line of a past week is "PAST WEEK · READ ONLY" on board 1c, and SPEC Scheduling → Sequence says the cycle replaces the
+// week in labels, so a sequence run's past cycle says CYCLE. The first attempt drew WEEK on both, and the tests above pinned it. The two runs are
+// told apart here on the same component in turn, so a line that hard-codes either word fails one of them.
+describe('PlanPage — the lock line names the run\'s own unit (review 1, F4)', () => {
+  const lockLine = () => screen.getByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)
+
+  it('a sequence run\'s past cycle reads PAST CYCLE · READ ONLY and a weekday run\'s past week PAST WEEK · READ ONLY: the whole line, one word each', () => {
+    setUpSequenceRun(THREE_DAY)
+    renderPlan()
+    goTo(2) // cycle 3 is the current cycle, so cycle 2 is a past one
+    expect(isMarkedCurrent('CYCLE 3')).toBe(false)
+    expect(lockLine().textContent).toBe(CYCLE_LOCK_LINE)
+    expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+    cleanup()
+
+    setUpWeekdayRun()
+    renderPlan()
+    openWeekTile('WEEK 2') // week 3 is the current week, so week 2 is a past one
+    expect(isOpen('WEEK 2')).toBe(true)
+    expect(lockLine().textContent).toBe(WEEK_LOCK_LINE)
+    expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+  })
+
+  it('a cycle that passed unplanned is a past cycle too: the note and the lock line both speak of the cycle (cycle 1 has no rows; cycle 3 is current)', () => {
+    const missedFirst: Scenario = { ...THREE_DAY, cyclesWithPlans: [2, 3, 4] }
+    expect(allPlansOf(missedFirst).some((w) => w.weekNumber === 1)).toBe(false)
+    setUpSequenceRun(missedFirst)
+    renderPlan()
+
+    goTo(1)
+    expect(screen.getByText("Cycle 1 wasn't planned")).toBeTruthy()
+    expect(lockLine().textContent).toBe(CYCLE_LOCK_LINE)
+    expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+  })
+
+  it('the current cycle and a cycle planned ahead carry no lock line in either word', () => {
+    setUpSequenceRun(THREE_DAY)
+    renderPlan()
+    expect(isMarkedCurrent('CYCLE 3')).toBe(true)
+    expect(banner()).toBeNull()
+    goTo(4)
+    expect(banner()).toBeNull()
   })
 })

@@ -699,11 +699,12 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
 
       {/* Content */}
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 32px', minHeight: 0 }}>
-        {/* Past week (board 1c): the lock line. A week that passed unplanned is one too. */}
+        {/* Past week (board 1c): the lock line. A week that passed unplanned is one too. On a sequence run the cycle replaces the week in
+            labels (SPEC Scheduling → Sequence: "The cycle replaces the week everywhere the week is used"), so a past cycle reads PAST CYCLE. */}
         {isPast && (
           <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, height: 32, ...MONO_CAPTION, fontSize: 9, letterSpacing: '0.15em' }}>
             <Lock size={13} strokeWidth={2.5} aria-hidden="true" />
-            PAST WEEK · READ ONLY
+            {`PAST ${UNIT} · READ ONLY`}
           </div>
         )}
 

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { format, startOfWeek, subWeeks } from 'date-fns'
+import { addDays, differenceInCalendarWeeks, format, set, startOfWeek, subWeeks } from 'date-fns'
 import type { Mesocycle, Program, SequenceItem, WorkoutDay } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
@@ -28,7 +28,8 @@ import { createFakeSupabase, fakeWeekPlan, fakeWeekPlanSet, type FakePlanWeek, t
 //  - the week that is open is not the current week when the browsing tests tap tiles, so a plan of "the week on screen" is not one of
 //    "the current week".
 // Break proofs (chunk 52's report): the planning effect planning the open week; PLAN FORWARD naming the current week plus one or the
-// highest planned week plus one; the effect restored to plan every week shown.
+// highest planned week plus one; the effect restored to plan every week shown. Attempt 2 (review 1, F2) adds the last describe: the current
+// week moving on under an open Plan, which is where "the open week" and "the current week" part; the break is the effect naming the open week.
 
 afterEach(() => {
   cleanup()
@@ -544,5 +545,120 @@ describe('PLAN FORWARD on a stable run whose default has no set (P1.2-10)', () =
     expect(state.defaultAsked.filter((a) => a.enabled)).toEqual([])
     expect(screen.queryByText('Nothing to plan from')).toBeNull()
     expect((screen.getByText('PLAN FORWARD').closest('button') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+// ─── The current week moves on while Plan is open ─────────────────────────────
+
+// Review 1, F2 (RULES: "A writer that takes its target from what the screen has open is tested with something open other than what the
+// screen opens on"). On opening, the week that is open IS the current week, so a plan of "the open week" and a plan of "the current week" are
+// the same call and every test above passes under either. They part when the current week moves on under an open page: `computeWeekNumber`
+// reads `new Date()`, `useToday` re-renders the screen at midnight and whenever the tab becomes visible again, and the week that is open stays
+// the one the user was on (it follows a run change only). The planning effect's own comment claims the case ("a new current week (Plan left
+// open over Sunday midnight) is tried on its own"): the call must name the NEW current week, once, and not the week still on screen.
+//
+// The clock is moved with a fake `Date` alone (timers stay real, so the queries and the waits run as everywhere else in this file). Its
+// dates are derived from a Monday and printed by the first test (Checks that lied #21), not typed as "Sunday" and "Monday".
+describe('the current week moves on while Plan is open: the new current week is planned by its own call, and the week on screen is not', () => {
+  const WEEK_1_MONDAY = startOfWeek(new Date(2026, 9, 12), { weekStartsOn: 1 })
+  /** Sunday, ten minutes to midnight: the last night of week 2 of a run whose week 1 starts on WEEK_1_MONDAY. */
+  const LAST_NIGHT_OF_WEEK_2 = set(addDays(WEEK_1_MONDAY, 13), { hours: 23, minutes: 50, seconds: 0, milliseconds: 0 })
+  /** Monday, one minute past midnight: the first minute of week 3. */
+  const FIRST_MINUTE_OF_WEEK_3 = set(addDays(WEEK_1_MONDAY, 14), { hours: 0, minutes: 1, seconds: 0, milliseconds: 0 })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    delete (document as unknown as Record<string, unknown>).visibilityState // the own property the tests define; the prototype's reading is back
+  })
+
+  /** The tab becomes visible again: `useToday` reads the clock and re-renders the screen (it does the same at midnight). */
+  async function tabBecomesVisible() {
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+  }
+
+  /** `useRun` for a run that is in `current` at the moment the (fake) clock reads: the start date follows the clock, so the weeks are as named. */
+  function useRunAt(now: Date, options: RunOptions) {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+    useRun(options)
+    expect(state.meso.startDate).toBe(format(WEEK_1_MONDAY, 'yyyy-MM-dd'))
+  }
+
+  it('the fixture: week 2 ends on a Sunday night and week 3 starts on a Monday', () => {
+    expect([format(LAST_NIGHT_OF_WEEK_2, 'EEEE HH:mm'), format(FIRST_MINUTE_OF_WEEK_3, 'EEEE HH:mm')]).toEqual(['Sunday 23:50', 'Monday 00:01'])
+    const weekOf = (date: Date) => differenceInCalendarWeeks(date, WEEK_1_MONDAY, { weekStartsOn: 1 }) + 1
+    expect([weekOf(LAST_NIGHT_OF_WEEK_2), weekOf(FIRST_MINUTE_OF_WEEK_3)]).toEqual([2, 3])
+  })
+
+  it('weeks 1 and 2 planned, week 2 open on the Sunday night: nothing is planned; once Monday has come, exactly one call, for week 3 (not the open week 2)', async () => {
+    useRunAt(LAST_NIGHT_OF_WEEK_2, { current: 2, planned: [1, 2], planWeek: plans() })
+    renderPlan()
+    await stripOpen()
+    await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED']), FOUND)
+    expect(calledWeeks()).toEqual([])
+
+    vi.setSystemTime(FIRST_MINUTE_OF_WEEK_3)
+    await tabBecomesVisible()
+    await waitFor(() => expect(calledWeeks()).toEqual([3]), FOUND)
+    // week 3 is planned now and is the current one; week 2, still the open one, is a past week and the strip reaches the next unplanned week
+    await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · DONE', 'WEEK 3 · THIS WEEK', 'WEEK 4 · NOT PLANNED']), FOUND)
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(calledWeeks()).toEqual([3])
+  })
+
+  it('week 2 was itself planned when Plan opened (that attempt is spent): the week that starts under the open page is still tried, by its own call — weeks 2, then 3', async () => {
+    useRunAt(LAST_NIGHT_OF_WEEK_2, { current: 2, planned: [1], planWeek: plans() })
+    renderPlan()
+    await waitFor(() => expect(calledWeeks()).toEqual([2]), FOUND)
+    await screen.findByLabelText('Week 2 options', {}, FOUND)
+
+    vi.setSystemTime(FIRST_MINUTE_OF_WEEK_3)
+    await tabBecomesVisible()
+    await waitFor(() => expect(calledWeeks()).toEqual([2, 3]), FOUND)
+    await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · DONE', 'WEEK 3 · THIS WEEK', 'WEEK 4 · NOT PLANNED']), FOUND)
+  })
+
+  it('the next day of the same week changes nothing: the tab coming back on the Monday after, with week 2 still the current week, plans nothing', async () => {
+    useRunAt(set(addDays(WEEK_1_MONDAY, 7), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 }), { current: 2, planned: [1, 2], planWeek: plans() })
+    renderPlan()
+    await stripOpen()
+    vi.setSystemTime(set(addDays(WEEK_1_MONDAY, 9), { hours: 18, minutes: 0, seconds: 0, milliseconds: 0 })) // Wednesday of the same week
+    await tabBecomesVisible()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · THIS WEEK', 'WEEK 3 · NOT PLANNED'])
+    expect(calledWeeks()).toEqual([])
+  })
+
+  it('a sequence run: the current cycle moves on under the open Plan (cycle 2 to cycle 3): cycle 3 is planned, once, not the open cycle 2', async () => {
+    useRun({ current: 2, calendarWeek: 1, planned: [1, 2], sequence: true, planWeek: plans(true) })
+    const view = renderPlan()
+    await stripOpen()
+    await waitFor(() => expect(tileLabels()).toEqual(['CYCLE 1 · DONE', 'CYCLE 2 · THIS CYCLE', 'CYCLE 3 · NOT PLANNED']), FOUND)
+    expect(calledWeeks()).toEqual([])
+
+    // the last workout of cycle 2 is done and Plan's read of the current cycle answers again (the stand-in reads `state.cycle` on every render)
+    state.cycle = 3
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/plan']}>
+          <PlanPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(calledWeeks()).toEqual([3]), FOUND)
+    await waitFor(() => expect(tileLabels()).toEqual(['CYCLE 1 · DONE', 'CYCLE 2 · DONE', 'CYCLE 3 · THIS CYCLE', 'CYCLE 4 · NOT PLANNED']), FOUND)
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(calledWeeks()).toEqual([3])
   })
 })
