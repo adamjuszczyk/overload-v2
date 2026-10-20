@@ -280,8 +280,9 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 
 ## The 1.2 cost rule (Adam, 2026-10-20)
 Usage is the constraint now. From the next chunk on:
-- Chunks that write data or add a migration (46's redraw, the 188 chunk, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check.
+- Chunks that write data or add a migration (46's redraw, the 188 chunk, 51c, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check. 59 adds a migration and runs alone (Adam, 2026-10-20); 51c is a data fix (UNDO in CHANGE THE PROGRAM, before 54a).
 - Everything else (54b, 55, 58b, 60, 64, 65, 66, 67, 68, 69, display follow-ups): reviewer at high effort, not max; no per-chunk staging click-through — the fixture screenshots and tests are the review, and the release checklist covers staging for these screens; break proofs only where the chunk writes data.
+- The release checklist is split (Adam, 2026-10-20): the final reviewer runs the rows that write data or migrate; the screen-only rows go on Adam's list for his review pass on staging. The reviewer records each row as RUN with PASS or FAIL, or as "ADAM'S LIST".
 - Remaining D31 display choices: accept as built and list them; I'll change any in the review pass after the release checklist, not one follow-up at a time.
 
 ## The 1.2 tests-owed rule (Adam, 2026-10-20)
