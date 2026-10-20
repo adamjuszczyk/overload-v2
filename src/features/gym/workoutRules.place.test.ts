@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionSetChangeType, SetLog } from '../../types'
 import {
+  addRound,
   applySetTypeChange,
   deleteEffects,
   finishWarning,
@@ -17,7 +18,7 @@ import {
 } from './workoutRules'
 import { FakeServer } from './workoutRules.server.testutil'
 import { Session } from './workoutRules.session.testutil'
-import { addedLog, brief, card, draftOf, dropLog, headLog, orderOf, rowKeyed, staged, viewOf } from './workoutRules.testutil'
+import { addedLog, addSet, brief, card, draftOf, dropLog, headLog, orderOf, rowKeyed, staged, viewOf } from './workoutRules.testutil'
 
 // Chunk 46, sixth attempt: an added set's place (DECISIONS 173's second bullet, 174 (a), 177, 179; Adam 2026-10-19).
 //   174: "an added set's place among the sets added to its exercise in that session, from 1, in the order they were added.
@@ -326,7 +327,7 @@ describe('a log with no place and no planned set (logged before 044) orders as t
 
 // ─── 179 and 183: the sets a swap for today moves ──────────────────────────────────────────────
 
-describe('a swap for today: the moved sets are added sets of the new exercise, numbered in one list with the card they left (DECISIONS 179, 183 (a) and its follow-ups)', () => {
+describe('a swap for today: the moved sets are added sets of the new exercise, numbered in one list with the card they left, which keeps a gap where each stood (DECISIONS 179, 183 (a) and its follow-ups, 46r\'s Q1)', () => {
   // The swap as 59 makes it (the session driver's `swap`): the open sets of a card move to a card of their own for the new
   // exercise, drawn after it; today's swap skips them on the old card; the new card lists them and keeps the swap's record.
   const lat = (spec: string, logged: number[], more: OrderExercise[] = []) => new Session([card('lat', spec), ...more], [], logged.map((i) => headLog('lat', i)))
@@ -351,36 +352,42 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', `${m} 03✓`, `${m} 03.1·`])
   })
 
-  it('183\'s first case: Lat Pulldown 01 logged, 02 open, 03 logged, 04 open, the swap moving 02 and 04: Lat Pulldown 01, 02 (its logged 03 becomes 02) and the new card 03, 04; the draw writes 03\'s number', () => {
+  it('183\'s first case, as Adam answered 46r\'s Q1: Lat Pulldown 01 logged, 02 open, 03 logged, 04 open, the swap moving 02 and 04: Lat Pulldown 01, 03 (its logged 03 keeps its number, and the gap where 02 stood shows) and the new card 03, 04; nothing to correct (break: renumber a logged set on the original card after a swap, the logged 03 read 02)', () => {
     const s = lat('n n n n', [1, 3])
     const m = s.swap('lat', 'machine')
-    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', `${m} 03·`, `${m} 04·`])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓', `${m} 03·`, `${m} 04·`])
     expect(s.rows().map((r) => r.key).slice(0, 2)).toEqual(['set:lat.1', 'set:lat.3'])
     // in the order they stood, each with the place it took (179)
     expect(s.rows().slice(2).map((r) => r.addedPlace)).toEqual([1, 2])
     expect(s.card(m).swappedFrom).toEqual({ fromKey: 'lat', moved: [{ from: { weekPlanSetId: 'lat.2' }, place: 1 }, { from: { weekPlanSetId: 'lat.4' }, place: 2 }] })
-    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([{ id: 'log.lat.3', setNumber: 2 }])
-    s.draw()
+    // "no stored data is wrong": the logged 03 holds 3 and shows 03, so the screen's draw writes nothing
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    expect(s.server.logs.find((l) => l.id === 'log.lat.3')!.setNumber).toBe(3)
+    // the new card's sets logged store 03 and 04; a reopen draws the same and writes nothing
     expect(s.rows().slice(2).map((r) => s.log(r.key).setNumber)).toEqual([3, 4])
+    expect(s.reopen()).toEqual([])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓', `${m} 03✓`, `${m} 04✓`])
   })
 
-  it('a delete or a Warmup switch on either card renumbers both, as on any card (break: renumber one card only)', () => {
+  it('a delete or a Warmup switch on either card renumbers both, as on any card, the gap holding its place (break: renumber one card only; leave the gaps out of the renumbering)', () => {
     const s = lat('n n n n', [1, 3])
     const m = s.swap('lat', 'machine')
-    s.draw()
     const first = s.rows().find((r) => r.exerciseKey === m)!
     const firstLog = s.log(first.key)
-    // DELETE lat's 01: its 03 (now 02) and the new card's logged 03 each move down one
+    expect(firstLog.setNumber).toBe(3)
+    // DELETE lat's 01: its logged 03 (after the gap 02 left) and the new card's logged 03 each move down one
     const effects = s.delete('set:lat.1')
     expect(effects.renumber).toEqual([
-      { id: 'log.lat.3', setNumber: 1 },
+      { id: 'log.lat.3', setNumber: 2 },
       { id: firstLog.id, setNumber: 2 },
     ])
-    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 03·`])
-    // lat's last set made a Warmup: the new card's logged set takes 01
+    expect(s.rows().map(brief)).toEqual(['lat 02✓', `${m} 02✓`, `${m} 03·`])
+    // lat's last set made a Warmup: it leaves the working sets (W1) and the new card's logged set takes 01
     const switched = s.retype('set:lat.3', WARMUP)
-    expect(switched.renumber).toEqual([{ id: firstLog.id, setNumber: 1 }])
+    expect(switched.renumber).toEqual([
+      { id: 'log.lat.3', setNumber: 1 },
+      { id: firstLog.id, setNumber: 1 },
+    ])
     expect(s.rows().map(brief)).toEqual(['lat W1✓', `${m} 01✓`, `${m} 02·`])
     // and on the new card: its logged set made a Warmup is W2 (after lat's W1), its open one 01
     expect(s.retype(first.key, WARMUP).renumber).toEqual([{ id: firstLog.id, setNumber: 2 }])
@@ -388,25 +395,81 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
   })
 
-  it('183\'s follow-up: a swap into a card that already has added sets puts the moved sets after them, and no logged set is renumbered (break: put them before; restart the places at 1)', () => {
-    // a second swap from the same card into the card the first one made
+  it('46r\'s Q1 with sets added in the session: Lat Pulldown 01 logged, A, B and C added and B logged (03), the swap moving A and C: B keeps 03 (the gap where A stood), the new card 03, 04; reloaded and reopened the same (break: no gap for a moved added set)', () => {
+    const s = lat('n', [1])
+    for (const id of ['A', 'B', 'C']) s.add('lat', id)
+    expect(s.log('added:lat:B').setNumber).toBe(3)
+    const m = s.swap('lat', 'machine')
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓', `${m} 03·`, `${m} 04·`])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+    // the record names A and C by their places on Lat Pulldown, where the swap's skips of them hold those places
+    expect(s.card(m).swappedFrom!.moved.map((x) => x.from)).toEqual([{ addedPlace: 1 }, { addedPlace: 3 }])
+    // with no list, the gaps come from the record and the skips: B still reads 03, and nothing is written
+    expect(s.reload()).toEqual([])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓'])
+    expect(s.reopen()).toEqual([])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03✓'])
+  })
+
+  it('46r\'s Q1 for a warmup: W2 logged and W1 open, the swap moving W1 and the open working set: W2 keeps its number (a warmup\'s gap) and 01 keeps 01; the new card reads on after them, W2 and 02 (break: the gap of a moved Warmup counted among the working sets)', () => {
+    const s = new Session([card('lat', 'w w n n')], [], [headLog('lat', 2, { warmup: true, number: 2 }), headLog('lat', 3, { number: 1 })])
+    expect(s.rows().map(brief)).toEqual(['lat W1·', 'lat W2✓', 'lat 01✓', 'lat 02·'])
+    const m = s.swap('lat', 'machine')
+    expect(s.rows().map(brief)).toEqual(['lat W2✓', 'lat 01✓', `${m} W2·`, `${m} 02·`])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+  })
+
+  it('46r\'s Q1 on the card a swap made: swapped on in its turn, it keeps a gap where its open set stood and its logged sets keep their numbers; the third card reads on after them (break: count a gap for the slot\'s later cards too)', () => {
+    const s = lat('n n n n', [1])
+    const m = s.swap('lat', 'machine')
+    const onM = s.rows().filter((r) => r.exerciseKey === m)
+    s.log(onM[0].key)
+    s.log(onM[2].key)
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 03·`, `${m} 04✓`])
+    const d = s.swap(m, 'dip')
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 04✓`, `${d} 04·`])
+    expect(s.rows().map((r) => r.slotKey)).toEqual(['lat', 'lat', 'lat', 'lat'])
+    expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
+  })
+
+  it('46r\'s Q1 and 183\'s follow-ups: a card\'s sets are swapped once; a set added to the original card after its swap comes after the gaps, and the swap\'s card reads on after it (break: let a card be swapped again)', () => {
     const s = lat('n n n', [1])
     const m = s.swap('lat', 'machine')
     const kept = s.log(s.rows().find((r) => r.exerciseKey === m)!.key)
-    const later = s.add(m)
+    s.add(m)
     expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 03·`, `${m} 04·`])
-    // a set added to the original card after the swap is one of its sets that didn't move: the new card's sets come after it
+    // a set added to the original card after the swap comes after the gaps 02 and 03 left: 04; on this phone the swap's card reads
+    // on after it, and its logged 02 is left as it is stored while that set is open (185 (c))
     s.add('lat', 'N')
-    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02·', `${m} 03✓`, `${m} 04·`, `${m} 05·`])
-    expect(s.swap('lat', 'machine')).toBe(m)
-    const rows = s.rows()
-    expect(rows.map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 03·`, `${m} 04·`, `${m} 05·`])
-    // the moved set came after the new card's earlier sets, the one added after the first swap included
-    expect(rows.filter((r) => r.exerciseKey === m).map((r) => r.addedPlace)).toEqual([1, 2, 3, 4])
-    expect(rows.find((r) => r.addedPlace === 3)!.key).toBe(later)
-    expect(s.server.logs.find((l) => l.id === kept.id)!.setNumber).toBe(2)
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 04·', `${m} 03✓`, `${m} 04·`, `${m} 05·`])
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
-    expect(s.card(m).swappedFrom!.moved.map((x) => x.place)).toEqual([1, 2, 4])
+    // the original card is not swapped again, whatever the exercise, and neither is a session holding two swaps from one card
+    expect(() => s.swap('lat', 'machine')).toThrow(RangeError)
+    expect(() => s.swap('lat', 'dip')).toThrow(RangeError)
+    expect(() => orderOf([...s.cards, { ...card('dip', ''), swappedFrom: { fromKey: 'lat', moved: [] } }])).toThrow(RangeError)
+    // logged, N keeps its 04, and the draw corrects the swap's card's logged set once
+    expect(s.log('added:lat:N').setNumber).toBe(4)
+    expect(s.draw()).toEqual([{ id: kept.id, setNumber: 3 }])
+    expect(s.draw()).toEqual([])
+  })
+
+  it('addRound counts the gaps a swap left on a member\'s card: its new set comes after them, the number it shows once added (46r\'s Q1; break: leave the gaps out)', () => {
+    const row = card('row', 'n n n')
+    const lat2 = card('lat', 'n n')
+    const made: OrderExercise = { ...card('machine', ''), added: [{ localId: 'm', logId: null, type: NORMAL, place: 1 }], swappedFrom: { fromKey: 'row', moved: [{ from: { weekPlanSetId: 'row.2' }, place: 1 }] } }
+    const blocks = [{ id: 'blk', members: ['row', 'lat'] }]
+    const order = orderOf([row, lat2, made], blocks)
+    const logs = [headLog('row', 1), headLog('row', 3), headLog('row', 2, { skipped: true })]
+    const rows = resolveRows(order, logs)
+    expect(rows.filter((r) => r.exerciseKey === 'row').map((r) => r.number)).toEqual([1, 3])
+    const answer = addRound(order, rows, 'blk', logs)
+    expect(answer.map((a) => [a.exerciseKey, a.position])).toEqual([
+      ['row', 4],
+      ['lat', 3],
+    ])
+    const cards = addSet(addSet([row, lat2, made], 'row', 'r1', answer[0].place), 'lat', 'l1', answer[1].place)
+    const after = resolveRows(orderOf(cards, blocks), logs)
+    expect(['r1', 'l1'].map((id) => after.find((r) => r.localId === id)!.number)).toEqual([4, 3])
   })
 
   it('183\'s follow-ups: a swap into an exercise that has a card of its own with added sets: the moved sets\' places come after its added sets, the swap\'s card reads on from the card it replaced, and the exercise\'s own card is numbered on its own and keeps its sets (break: number the two cards of one exercise as one list)', () => {
@@ -473,9 +536,10 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     const made: OrderExercise = { ...card('machine', ''), added: [{ localId: 'm', logId: null, type: NORMAL, place: 1 }], swappedFrom: { fromKey: 'lat', moved: [{ from: { addedPlace: 1 }, place: 1 }] } }
     const order = orderOf([lat1, made])
     expect(nextAddedPlace(order, 'ex.lat', [])).toBe(2)
-    // a set added to lat now is drawn there (place 1 would be taken for the set that moved, and drawn nowhere)
+    // a set added to lat now is drawn there (place 1 would be taken for the set that moved, and drawn nowhere), after the gap the
+    // moved set left in place 1, which only the record names (46r's Q1)
     const withNew = orderOf([{ ...lat1, added: [{ localId: 'n', logId: null, type: NORMAL, place: nextAddedPlace(order, 'ex.lat', []) }] }, made])
-    expect(resolveRows(withNew, []).map(brief)).toEqual(['lat 01·', 'lat 02·', 'machine 03·'])
+    expect(resolveRows(withNew, []).map(brief)).toEqual(['lat 01·', 'lat 03·', 'machine 03·'])
     // two cards of dip, each with open sets: a set added to either takes a place after both cards' places
     const own: OrderExercise = { ...card('dip', ''), added: [{ localId: 'd1', logId: null, type: NORMAL, place: 1 }, { localId: 'd4', logId: null, type: NORMAL, place: 4 }] }
     const swapped: OrderExercise = { ...card('dipswap', ''), exerciseId: 'ex.dip', added: [{ localId: 'm3', logId: null, type: NORMAL, place: 3 }], swappedFrom: { fromKey: 'lat', moved: [{ from: { weekPlanSetId: 'lat.1' }, place: 3 }] } }

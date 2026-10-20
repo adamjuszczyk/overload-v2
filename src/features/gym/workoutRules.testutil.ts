@@ -162,11 +162,24 @@ function entryOf(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerci
   return { exercise, at }
 }
 
-function withEntry(cards: readonly OrderExercise[], row: ResolvedRow, change: (entry: AddedSet, drafts: readonly HeldDraft[]) => { entry: AddedSet | null; drafts: readonly HeldDraft[] }) {
+/**
+ * Changes the entry of the added set a row stands for, and its draft wherever the card keeps it: the phone keeps a session's
+ * drafts by the set's key, not by card (chunk 63), so a set drawn on one card of an exercise on two (183's follow-up) may have its
+ * draft on the other; `change` is given each card's drafts (`own`: the card that lists the set) and changes the set's own there.
+ */
+function withEntry(
+  cards: readonly OrderExercise[],
+  row: ResolvedRow,
+  change: (entry: AddedSet, drafts: readonly HeldDraft[], own: boolean) => { entry: AddedSet | null; drafts: readonly HeldDraft[] },
+) {
   const { exercise, at } = entryOf(cards, row)
-  const { entry, drafts } = change(exercise.added![at], exercise.drafts ?? [])
+  const original = exercise.added![at]
+  const { entry } = change(original, exercise.drafts ?? [], true)
   const added = exercise.added!.flatMap((a, i) => (i !== at ? [a] : entry === null ? [] : [entry]))
-  return cards.map((c) => (c === exercise ? { ...c, added, drafts } : c))
+  return cards.map((c) => {
+    const { drafts } = change(original, c.drafts ?? [], c === exercise)
+    return c === exercise ? { ...c, added, drafts } : { ...c, drafts }
+  })
 }
 
 const isDraftOf = (localId: string) => (draft: HeldDraft): boolean => 'localId' in draft.key && !('drop' in draft.key) && draft.key.localId === localId
@@ -200,9 +213,9 @@ export function takeIn(cards: readonly OrderExercise[], row: ResolvedRow): Order
   return cards.map((c) => (c.key === row.exerciseKey ? { ...c, added: [...(c.added ?? []), entry] } : c))
 }
 
-/** A set the card doesn't list and that has only its draft (after a reload), deleted: its draft goes. */
+/** A set the card doesn't list and that has only its draft (after a reload), deleted or logged: its draft goes, wherever it is kept. */
 export function dropDraft(cards: readonly OrderExercise[], row: ResolvedRow): OrderExercise[] {
-  return cards.map((c) => (c.key === row.exerciseKey ? { ...c, drafts: (c.drafts ?? []).filter((d) => !isDraftOf(row.localId!)(d)) } : c))
+  return cards.map((c) => ({ ...c, drafts: (c.drafts ?? []).filter((d) => !isDraftOf(row.localId!)(d)) }))
 }
 
 /** LOG (or SKIP) of an added set: its entry names the new log, and its draft goes. */
@@ -210,9 +223,9 @@ export function loggedAdded(cards: readonly OrderExercise[], row: ResolvedRow, l
   return withEntry(cards, row, (entry, drafts) => ({ entry: { ...entry, logId }, drafts: drafts.filter((d) => !isDraftOf(entry.localId)(d)) }))
 }
 
-/** UNLOG of an added set: its entry names no log, and the draft `unlogEffects` answered is kept beside it. */
+/** UNLOG of an added set: its entry names no log, and the draft `unlogEffects` answered is kept beside it (and only there). */
 export function unloggedAdded(cards: readonly OrderExercise[], row: ResolvedRow, draft: HeldDraft): OrderExercise[] {
-  return withEntry(cards, row, (entry, drafts) => ({ entry: { ...entry, logId: null }, drafts: [...drafts.filter((d) => !isDraftOf(entry.localId)(d)), draft] }))
+  return withEntry(cards, row, (entry, drafts, own) => ({ entry: { ...entry, logId: null }, drafts: [...drafts.filter((d) => !isDraftOf(entry.localId)(d)), ...(own ? [draft] : [])] }))
 }
 
 /** DELETE of an added set: its entry goes, and its draft with it. */

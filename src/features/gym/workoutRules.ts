@@ -49,20 +49,29 @@
 //   - DECISIONS 178 (Adam, 2026-10-19): the logged sets whose stored number differs from their row's are reported
 //     (`numberCorrections`); the workout screen writes them when it draws an in-progress or reopened session (58a). They
 //     arise where a set left the card with no writer in between: a session reopened, or a list lost, with an added set that
-//     was never logged (or unlogged) before them; a swap that moved an open set from before a logged one (183 (a), below);
-//     and 1.1's logs, numbered in the order they were logged. 185 (c) (Adam, 2026-10-20): "A phone never corrects a stored
+//     was never logged (or unlogged) before them; and 1.1's logs, numbered in the order they were logged. A swap is not one of
+//     them: it leaves a gap where a set moved from (46r's Q1, below). 185 (c) (Adam, 2026-10-20): "A phone never corrects a stored
 //     number after a set only it holds": the report leaves out every log after an open added set in its list.
 //   - DECISIONS 183 (a) (Adam, 2026-10-20): "One numbering for the exercise's place in the session, covering moved and added
 //     sets." Its option: "the original card's sets that didn't move, then the moved sets in the order they stood, then any set
 //     added to the new card, each numbered by its rank in that list. W5: Lat Pulldown 01, 02; Machine Pulldown 03; + ADD SET
-//     there, 04. … the original reads 01, 02 (its logged 03 becomes 02) and the new card 03, 04. The original card draws no
-//     row for a set that moved." So the numbers above are ranks in a slot (`ResolvedRow.slotKey`): a card a swap made (it
-//     holds only the moved sets and the sets added to it after: `numberedHeads`) and the card it replaced are one list, so a
-//     delete or a Warmup switch on either renumbers both. Its follow-ups (Adam, the same day): "A swap into an exercise that
-//     already has added sets: the moved sets come after them. A swap never renumbers sets that are already logged." and "The
-//     same exercise on two cards in one session: each card is numbered on its own, as today's display does." So a card that
-//     held sets of its own when a swap brought sets into it keeps its own numbering, the moved sets after its added ones, and
-//     every card no swap made is a slot of its own; a set added to an exercise on two cards is drawn on one of them only.
+//     there, 04. … The original card draws no row for a set that moved." So the numbers above are counted over a slot
+//     (`ResolvedRow.slotKey`): a card a swap made (it holds only the moved sets and the sets added to it after: `numberedHeads`)
+//     and the card it replaced are one list, so a delete or a Warmup switch on either renumbers both. Its follow-ups (Adam, the
+//     same day): "A swap into an exercise that already has added sets: the moved sets come after them. A swap never renumbers
+//     sets that are already logged." and "The same exercise on two cards in one session: each card is numbered on its own, as
+//     today's display does." So a card that held sets of its own when a swap brought sets into it keeps its own numbering, the
+//     moved sets after its added ones, and every card no swap made is a slot of its own; a set added to an exercise on two
+//     cards is drawn on one of them only.
+//   - 46r's Q1 (Adam, 2026-10-20): "A swap never changes the number of a set that's already logged, on either card. If moving
+//     open sets leaves a gap on the original card, the gap shows; that's accepted (rare, and no stored data is wrong)." So a set
+//     a swap moved away leaves a gap in its place on the card it left: never drawn, of the type it had there (`ResolvedRow.
+//     gapsBefore`). A set's number is 1 + the sets of its list drawn before it in its slot + the gaps of its list before it on
+//     its own card: the sets after a gap keep their numbers (Lat Pulldown 01 and 03 logged, 02 and 04 moved: 01, 03, and the new
+//     card 03, 04), and the moved sets are numbered after the sets drawn before them. A card's sets are swapped once (today's app
+//     offers no second swap of a slot, and 025 keeps one swap row per planned slot): the card a swap moves sets from is then the
+//     last card of its slot, so a swap changes the number of no set that stays, logged or open, on any card. A delete or a
+//     Warmup switch renumbers the sets after it as on any card, the gaps holding their places.
 //
 // ─── An added set's place (DECISIONS 173, 174, 177, 179; `v2_set_logs.added_place`, migration 044) ───
 // 174: "an added set's place among the sets added to its exercise in that session, from 1, in the order they were added.
@@ -80,7 +89,8 @@
 //     the swap, in their order, after any sets already added to that exercise"): `movedSetEntries` gives the moved sets
 //     their entries on the new card, places from `nextAddedPlace` on, in the order they stood, and the swap's record
 //     (`SwapRecord`: which sets moved and where to; 183 (a)), which 59 writes with the swap; 59 writes each one's place with
-//     its log. The card they moved from draws no row for them, the swap's skip of them included.
+//     its log. The card they moved from draws no row for them, the swap's skip of them included: it keeps a gap in each one's
+//     place (46r's Q1), and its sets are not swapped again.
 //   - The order: a card's added sets by place, whichever record holds the place (the card's entry, the log, or a draft). Two
 //     sets in one place come only from two phones adding at once: they go by their log's id, which every phone reads the same
 //     (so two phones order the same logs alike, and their corrections, 178, agree), and a set not logged yet, which only one
@@ -125,7 +135,7 @@
 // changes it at:
 //   - ADD SET, ADD ROUND (`addRound`), "Add a set" (59): a new entry `{ localId: <a new id>, logId: null, type: Normal,
 //     place: nextAddedPlace(order, card.exerciseId, logs) }`; a swap for today: the entries `movedSetEntries` answers, on the
-//     card it made (with the record as its `swappedFrom`) (59);
+//     card it made (with the record as its `swappedFrom`: one swap's, a card holds one) (59);
 //   - LOG and SKIP: the entry's `logId` is the new log's id (the draft, if any, goes); the log carries `row.addedPlace`;
 //   - UNLOG: `logId` back to null, the draft `unlogEffects` answers kept beside it;
 //   - SET TYPE and a drop deleted on its own: the entry's `type` is the answer's `type`;
@@ -255,6 +265,13 @@
 //   it was added (its place says when): a set added to a swap's card after the swap stays there, and one added to the
 //   exercise's other card after the swap is drawn on the swap's card (183's follow-up says each card is numbered on its own,
 //   not which card such a set is on).
+// - A gap a swap left (46r's Q1) holds its place for every set after it on its card, a set added to that card after the swap
+//   included (Lat Pulldown 01 logged and 02 moved: a set added there then is 03). Q1 speaks of the sets already logged; the
+//   gap's place is fixed, so a set that comes after it is numbered after it whenever it came.
+// - A card's sets are swapped once: a second swap of one card is refused (`movedSetEntries`, `sessionOrder`). Q1's words give it
+//   no single answer: the first swap's card stands between the card and the second swap's sets, so either that card's sets move
+//   down a number for each set the second swap moves (its logged ones too), or, counting the second swap's gaps for them, the
+//   second swap's sets take numbers that card already shows.
 //
 // ─── Provisional, D31 (display wording where no board gives it) ───────────────────────────────────
 // A plain row is called "set 03" in the lock's question (the board names a superset member "A2"); a drop
@@ -360,6 +377,7 @@ export interface OrderExercise {
    * A card a swap for today moved sets to (W5: "SWAPPED FROM LAT PULLDOWN"): the record of which sets moved, which chunk 59
    * writes with the swap (DECISIONS 183 (a): "The original card draws no row for a set that moved, so the swap has to record
    * which sets moved"). The moved sets are also entries of this card's `added` list (`movedSetEntries`), while it keeps one.
+   * One swap's record: a card's sets are swapped once, so no two cards' records name one card they moved from.
    */
   swappedFrom?: SwapRecord
 }
@@ -368,8 +386,9 @@ export interface OrderExercise {
  * What a swap for today moved, as chunk 59 records it (DECISIONS 164, 179, 183 (a)). `fromKey` is the card the sets moved
  * from (drawn before this one). `moved` names each set that moved, in the order they stood there: what it was on that card
  * (`from`) and the place it took among the sets added to this card's exercise (`place`, 179), which its log carries once
- * logged. The card it moved from draws no row for it, its skip included; this card draws it, also when its list is gone (a
- * reload, a reopened session, another phone); and a card the swap made continues the numbering of the card it replaced.
+ * logged. The card it moved from draws no row for it, its skip included, and keeps a gap in its place (46r's Q1); this card draws
+ * it, also when its list is gone (a reload, a reopened session, another phone); and a card the swap made continues the numbering
+ * of the card it replaced.
  */
 export interface SwapRecord {
   fromKey: string
@@ -436,9 +455,16 @@ export interface ResolvedRow {
   added: boolean
   /**
    * What the row shows: a working set's rank among its slot's working sets, a warmup's among its warmups (DECISIONS 170, 183
-   * (a)); a drop shows its head's.
+   * (a)), counting the gaps before it on its card (`gapsBefore`); a drop shows its head's.
    */
   number: number
+  /**
+   * The gaps before the set on its own card (46r's Q1, Adam 2026-10-20: "If moving open sets leaves a gap on the original card,
+   * the gap shows"): the places of the sets a swap for today moved away from it that come before this set, in the working list
+   * and in the warmups' (a set switched to or from Warmup takes its number in the other list after these). Its number counts
+   * the ones of its own list; a drop has its head's. The writers that renumber read them, as the rows are numbered.
+   */
+  gapsBefore: { working: number; warmup: number }
   /**
    * The set's place in its slot's list (DECISIONS 170, 183 (a)): card by card, the plan's sets in the order of their planned
    * position (warmups and working sets together), then the sets added in the session in the order they were added, counted
@@ -642,10 +668,15 @@ export function sessionOrder(exercises: readonly OrderExercise[], supersets: rea
     byKey.set(exercise.key, exercise)
   }
   // A swap's record names the card the sets moved from (183 (a)): a record that names no other card is a caller bug, because
-  // the card it made would be numbered as if no swap had been.
+  // the card it made would be numbered as if no swap had been; and so are two records from one card, whose sets are swapped
+  // once (46r's Q1: the gaps a swap leaves keep the numbers of that card's slot only while it is the slot's last card).
+  const swappedFrom = new Set<string>()
   for (const exercise of exercises) {
     const from = exercise.swappedFrom?.fromKey
-    if (from !== undefined && (from === exercise.key || !byKey.has(from))) throw new RangeError(`${exercise.key} was swapped from ${from}, which is no other card`)
+    if (from === undefined) continue
+    if (from === exercise.key || !byKey.has(from)) throw new RangeError(`${exercise.key} was swapped from ${from}, which is no other card`)
+    if (swappedFrom.has(from)) throw new RangeError(`two swaps moved sets from ${from}: a card's sets are swapped once`)
+    swappedFrom.add(from)
   }
   const blockOf = new Map<string, { id: string; members: OrderExercise[] }>()
   for (const superset of supersets) {
@@ -733,6 +764,9 @@ interface Head {
   localId: string | null
   addedPlace: number | null
   draftKey: AddedSetKey | null
+  /** A set a swap for today moved away from this card: the gap it leaves in its place (46r's Q1), counted and never drawn. */
+  gap: boolean
+  gapsBefore: { working: number; warmup: number }
 }
 
 /** A type as the card or a draft hands it over, checked and copied (the rows share the frozen Normal and Warmup). */
@@ -796,6 +830,8 @@ interface AddedSlot {
   draftKey: AddedSetKey | null
   place: number | null
   time: number | null
+  /** A set a swap moved away from this card: its gap (46r's Q1). */
+  gap: boolean
 }
 
 const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
@@ -854,19 +890,22 @@ interface Owners {
   since: ReadonlyArray<{ key: string; since: number }>
 }
 
-/** What a swap for today did to the cards (183 (a)): the sets it moved away, which no card draws, and who draws what. */
+/** What a swap for today did to the cards (183 (a)): the sets it moved away, which no card draws, the gaps they leave, and who draws what. */
 interface Structure {
   owners: Map<string, Owners>
   /** The planned sets a swap moved away: "The original card draws no row for a set that moved." */
   movedPlanned: Set<string>
   /** The added sets a swap moved away, by their exercise and place (their log, if the swap skipped them, holds the place). */
   movedAdded: Map<string, Set<number>>
+  /** The places of the added sets a swap moved away, by the card they left: each keeps a gap there (46r's Q1). */
+  gapPlaces: Map<string, number[]>
 }
 
 function structureOf(cards: readonly OrderExercise[]): Structure {
   const byKey = new Map(cards.map((card) => [card.key, card]))
   const movedPlanned = new Set<string>()
   const movedAdded = new Map<string, Set<number>>()
+  const gapPlaces = new Map<string, number[]>()
   for (const card of cards) {
     const swap = card.swappedFrom
     if (swap === undefined) continue
@@ -876,9 +915,12 @@ function structureOf(cards: readonly OrderExercise[]): Structure {
       entryPlace(place, `a set moved to ${card.name}`)
       if ('weekPlanSetId' in set) movedPlanned.add(set.weekPlanSetId)
       else {
+        const at = entryPlace(set.addedPlace, `a set moved from ${from.name}`)
         const places = movedAdded.get(from.exerciseId) ?? new Set<number>()
-        places.add(entryPlace(set.addedPlace, `a set moved from ${from.name}`))
+        places.add(at)
         movedAdded.set(from.exerciseId, places)
+        const left = gapPlaces.get(from.key) ?? []
+        if (!left.includes(at)) gapPlaces.set(from.key, [...left, at])
       }
     }
   }
@@ -904,7 +946,7 @@ function structureOf(cards: readonly OrderExercise[]): Structure {
     const since = group.map((card) => ({ key: card.key, since: card.swappedFrom === undefined ? 0 : Math.min(...card.swappedFrom.moved.map((m) => m.place)) }))
     owners.set(exerciseId, { byId, byPlace, own: (group.find((card) => card.swappedFrom === undefined) ?? group[0]).key, since })
   }
-  return { owners, movedPlanned, movedAdded }
+  return { owners, movedPlanned, movedAdded, gapPlaces }
 }
 
 /** Does `exercise`'s card draw the added set `id` (a log's id or a draft's local id) at `place`? */
@@ -925,7 +967,8 @@ function drawsAdded(structure: Structure, exercise: OrderExercise, id: string, p
  * place) come first, in the order they were logged (`loggedAt`, then id); the draft of such a set, unlogged under 1.2, keeps
  * its log's time and is drawn in its place among them (DECISIONS 184 (b)). Every set with a place was added after those.
  * Nothing else orders them: the list's own order, a log's number or a draft's position never moves a set. A set a swap moved
- * away is not drawn, and a set of an exercise on two cards is drawn on the one card that `drawsAdded` names (183).
+ * away is not drawn: the card it left keeps a gap in its place (`gap`, 46r's Q1). A set of an exercise on two cards is drawn on
+ * the one card that `drawsAdded` names (183).
  */
 function addedSlots(exercise: OrderExercise, session: SessionIndex, structure: Structure): AddedSlot[] {
   const ownAdded = isAddedHeadOf(exercise.exerciseId)
@@ -953,7 +996,16 @@ function addedSlots(exercise: OrderExercise, session: SessionIndex, structure: S
       }
     }
     if (movedAway(place)) continue
-    slots.push({ localId: entry.localId, log, openType, draftKey: log === null ? drafts.get(entry.localId)?.draft.key ?? null : null, place, time: null })
+    slots.push({ localId: entry.localId, log, openType, draftKey: log === null ? drafts.get(entry.localId)?.draft.key ?? null : null, place, time: null, gap: false })
+  }
+  // The sets a swap moved away from this card leave a gap in each one's place (46r's Q1), of the type it had here: its log's (the
+  // swap's skip of it), else the card's entry's, else its draft's; Normal when only the swap's record names it.
+  for (const place of structure.gapPlaces.get(exercise.key) ?? []) {
+    const entry = (exercise.added ?? []).find((e) => e.place === place)
+    const log = (entry !== undefined && entry.logId !== null ? session.logById.get(entry.logId) : undefined) ?? session.headLogs.find((l) => ownAdded(l) && logPlace(l) === place)
+    const draft = [...drafts.values()].find((d) => d.place === place)
+    const type = log !== undefined ? (log.isWarmup ? WARMUP : NORMAL) : entry !== undefined ? heldType(entry.type, `the set ${entry.localId} added to ${exercise.name}`) : (draft?.type ?? NORMAL)
+    slots.push({ localId: entry?.localId ?? log?.id ?? draft?.draft.key.localId ?? '', log: null, openType: type, draftKey: null, place, time: null, gap: true })
   }
   // A log whose id is a listed set's own id is that set's (a card that took the set over from its log keeps the id), so it is
   // not drawn a second time while its unlog has not reached the logs.
@@ -961,11 +1013,11 @@ function addedSlots(exercise: OrderExercise, session: SessionIndex, structure: S
   const unlistedIds = new Set(unlisted.map((log) => log.id))
   for (const log of unlisted) {
     const place = logPlace(log)
-    slots.push({ localId: log.id, log, openType: NORMAL, draftKey: null, place, time: place === null ? timeOf(log.loggedAt) : null })
+    slots.push({ localId: log.id, log, openType: NORMAL, draftKey: null, place, time: place === null ? timeOf(log.loggedAt) : null, gap: false })
   }
   for (const { draft, type, place, time } of drafts.values()) {
     if (listed.has(draft.key.localId) || unlistedIds.has(draft.key.localId) || !drawsAdded(structure, exercise, draft.key.localId, place)) continue
-    slots.push({ localId: draft.key.localId, log: null, openType: type, draftKey: draft.key, place, time })
+    slots.push({ localId: draft.key.localId, log: null, openType: type, draftKey: draft.key, place, time, gap: false })
   }
 
   // Before 044 (no place): the logs and the drafts of such sets by time, then by id; then every set with a place, by place. Two
@@ -981,18 +1033,21 @@ function addedSlots(exercise: OrderExercise, session: SessionIndex, structure: S
   )
 }
 
-/** A card's heads in its own order (the plan's sets, then the added ones in their places), not numbered yet. */
+/**
+ * A card's heads in its own order (the plan's sets, then the added ones in their places), not numbered yet, with the gaps the
+ * sets a swap moved away leave in their places (`gap`: counted, never drawn; 46r's Q1).
+ */
 function exerciseHeads(exercise: OrderExercise, session: SessionIndex, structure: Structure): Head[] {
   const heads: Head[] = []
 
-  // The plan's sets, in the plan's order, minus the ones the session deleted and the ones a swap moved away (183 (a)).
+  // The plan's sets, in the plan's order, minus the ones the session deleted; a set a swap moved away is a gap (183 (a), Q1).
   const groups = groupByParent(
     [...exercise.plannedSets],
     (s) => s.id,
     (s) => s.parentWeekPlanSetId,
     (s) => s.stageIndex,
   )
-    .filter((group) => !session.deleted.has(group.head.id) && !structure.movedPlanned.has(group.head.id))
+    .filter((group) => !session.deleted.has(group.head.id))
     .sort((a, b) => a.head.setNumber - b.head.setNumber)
   for (const { head: planned, stages } of groups) {
     const plannedStages = stages.length
@@ -1021,6 +1076,8 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex, structure
       localId: null,
       addedPlace: null,
       draftKey: null,
+      gap: structure.movedPlanned.has(planned.id),
+      gapsBefore: { working: 0, warmup: 0 },
     })
   }
 
@@ -1028,7 +1085,7 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex, structure
   // (DECISIONS 170, 174). A logged one has the type of its log; an open one the type the card keeps for it (DECISIONS 161),
   // or, for a set the card doesn't list, its draft's. A set added and then switched to Warmup is still that set in that
   // place, drawn as a warmup.
-  for (const { localId, log, openType, draftKey, place } of addedSlots(exercise, session, structure)) {
+  for (const { localId, log, openType, draftKey, place, gap } of addedSlots(exercise, session, structure)) {
     const stageLogs = log ? session.stagesByParent.get(log.id) ?? [] : []
     heads.push({
       key: addedRowKey(exercise.key, localId),
@@ -1046,6 +1103,8 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex, structure
       localId,
       addedPlace: place,
       draftKey,
+      gap,
+      gapsBefore: { working: 0, warmup: 0 },
     })
   }
   return heads
@@ -1053,9 +1112,12 @@ function exerciseHeads(exercise: OrderExercise, session: SessionIndex, structure
 
 /** Every card's heads, numbered: each slot (the cards one numbering covers) as one list, in its cards' order. */
 interface Numbered {
+  /** Each card's heads that are drawn (no gap), numbered. */
   heads: Map<string, Head[]>
   /** Each slot's cards in their numbering order, by the slot's first card (its key is the rows' `slotKey`). */
   slots: Map<string, string[]>
+  /** Each card's gaps (46r's Q1), all of them: what a set appended to the card counts. */
+  gaps: Map<string, { working: number; warmup: number }>
 }
 
 /**
@@ -1067,19 +1129,23 @@ interface Numbered {
  * swap brought sets into it keeps its own numbering, the moved sets after its added ones (183's follow-up: "A swap into an
  * exercise that already has added sets: the moved sets come after them. A swap never renumbers sets that are already logged."),
  * and so does every card no swap made: the same exercise on two cards is numbered on each on its own. In each list a working
- * set's number is its rank among the working sets, logged, skipped or open alike, and a warmup's its rank among the warmups.
+ * set's number is its rank among the working sets, logged, skipped or open alike, and a warmup's its rank among the warmups,
+ * where a set a swap moved away still counts in its place for the sets after it on its own card (46r's Q1, Adam 2026-10-20: "A
+ * swap never changes the number of a set that's already logged, on either card. If moving open sets leaves a gap on the
+ * original card, the gap shows"), and the sets of the slot's later cards count the moved sets where they are drawn now. So
+ * the sets that didn't move keep their numbers (01, 03), and the moved sets come after the sets drawn before them (03, 04).
  */
 function numberedHeads(order: SessionOrder, session: SessionIndex): Numbered {
   const cards = cardsOf(order)
   const structure = structureOf(cards)
-  const heads = new Map(cards.map((card) => [card.key, exerciseHeads(card, session, structure)]))
+  const all = new Map(cards.map((card) => [card.key, exerciseHeads(card, session, structure)]))
   const at = new Map(cards.map((card, i) => [card.key, i]))
   const parent = new Map<string, string>()
   for (const card of cards) {
     const swap = card.swappedFrom
     if (swap === undefined || card.plannedSets.length > 0 || at.get(swap.fromKey)! >= at.get(card.key)!) continue
     const first = swap.moved.length > 0 ? Math.min(...swap.moved.map((m) => m.place)) : -Infinity
-    if (heads.get(card.key)!.some((head) => head.added && (head.addedPlace === null || head.addedPlace < first))) continue
+    if (all.get(card.key)!.some((head) => head.added && !head.gap && (head.addedPlace === null || head.addedPlace < first))) continue
     parent.set(card.key, swap.fromKey)
   }
   // A slot's cards in the order the screen draws them, top to bottom (a card a swap made is drawn after the card it replaced).
@@ -1092,17 +1158,35 @@ function numberedHeads(order: SessionOrder, session: SessionIndex): Numbered {
     const root = rootOf(card.key)
     slots.set(root, [...(slots.get(root) ?? []), card.key])
   }
+  const heads = new Map<string, Head[]>()
+  const gaps = new Map<string, { working: number; warmup: number }>()
   for (const [slotKey, keys] of slots) {
-    const all = keys.flatMap((key) => heads.get(key)!)
+    // The sets drawn so far in the slot, of each list; a gap counts only on its own card (the card a swap moves sets from is the
+    // last of its slot, so no card stands between it and the sets it moved).
     let warmups = 0
     let workings = 0
-    all.forEach((head, i) => {
-      head.planIndex = i + 1
-      head.slotKey = slotKey
-      head.number = head.type.kind === 'warmup' ? ++warmups : ++workings
-    })
+    let index = 0
+    for (const key of keys) {
+      const own = { working: 0, warmup: 0 }
+      const drawn: Head[] = []
+      for (const head of all.get(key)!) {
+        const warmup = head.type.kind === 'warmup'
+        if (head.gap) {
+          if (warmup) own.warmup++
+          else own.working++
+          continue
+        }
+        head.planIndex = ++index
+        head.slotKey = slotKey
+        head.gapsBefore = { ...own }
+        head.number = warmup ? ++warmups + own.warmup : ++workings + own.working
+        drawn.push(head)
+      }
+      heads.set(key, drawn)
+      gaps.set(key, own)
+    }
   }
-  return { heads, slots }
+  return { heads, slots, gaps }
 }
 
 type Block = NonNullable<ResolvedRow['block']>
@@ -1118,6 +1202,7 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
     number: head.number,
     planIndex: head.planIndex,
     slotKey: head.slotKey,
+    gapsBefore: head.gapsBefore,
     block,
   }
   const rows: ResolvedRow[] = [
@@ -1271,7 +1356,8 @@ const stagesOf = <L extends LoggedSet>(logs: readonly L[], headId: string): L[] 
  * afterwards is given it: a working set with its drops (the app writes a drop with its head's `set_number`), a warmup, and the
  * moved set's own log (173: "a log never keeps a number its row no longer shows"). With stored numbers that are the ranks
  * (LOG stores the number its row shows) those are exactly the logged sets after it in the lists it leaves and joins, each
- * down or up one; the open ones follow by themselves, and an open set between them holds its place (DECISIONS 151).
+ * down or up one; the open ones follow by themselves, and an open set between them holds its place (DECISIONS 151), as does
+ * a gap a swap left (46r's Q1: a rank counts the gaps before the set on its card, `gapsBefore`, in the list it is in then).
  * `going`: logs that are being deleted, which keep no number.
  */
 function renumberCard(
@@ -1280,7 +1366,8 @@ function renumberCard(
   session: Pick<SessionView, 'rows' | 'logs'>,
   going: ReadonlySet<string> = new Set(),
 ): NumberPatch[] {
-  // The set's slot (183 (a)): a card a swap made and the card it replaced are one list, so a change on either moves both.
+  // The set's slot (183 (a)): a card a swap made and the card it replaced are one list, so a change on either moves both. The
+  // gaps a swap left before a set on its card hold their places (46r's Q1), whatever the change: a set's number counts them.
   const sets = session.rows.filter((r) => r.slotKey === row.slotKey && r.kind !== 'stage').sort((a, b) => a.planIndex - b.planIndex)
   const patches: NumberPatch[] = []
   let warmups = 0
@@ -1289,7 +1376,7 @@ function renumberCard(
     // The kind each set has afterwards: the changed one leaves the card or moves; every other keeps its own.
     const warmup = set.key !== row.key ? set.kind === 'warmup' : change === 'deleted' ? null : change === 'toWarmup'
     if (warmup === null) continue
-    const rank = warmup ? ++warmups : ++workings
+    const rank = warmup ? ++warmups + set.gapsBefore.warmup : ++workings + set.gapsBefore.working
     if (set.logId === null) continue
     const head = logOf(set, session.logs)
     for (const log of [head, ...stagesOf(session.logs, head.id)]) {
@@ -1759,11 +1846,12 @@ export interface SwapMoves {
  * follow-up: "A swap into an exercise that already has added sets: the moved sets come after them." `moved` are the open sets
  * of one card that the swap moves (their rows, from `resolveRows`), each with the id the new card gives it; `target` is the
  * exercise they move to. Each moved set keeps its type (its drops come with it) and gets a place from `nextAddedPlace` for
- * that exercise on, in the order they stood (by their place on their card, whatever order they are given in). The new card
- * appends `entries` to its list and keeps `record` as its `swappedFrom` (a record it already holds from the same card grows
- * by `record.moved`); 59 writes the record with the swap and each set's place with its log. A logged, skipped or drop row,
- * rows of two cards, a set added before 044 (it has no place to be named by) and an id another card of the exercise lists
- * are refused.
+ * that exercise on, in the order they stood (by their place on their card, whatever order they are given in). The card they
+ * move to (a card of their own, drawn after the card they left: W5; or a card that holds no record yet) appends `entries` to
+ * its list and keeps `record` as its `swappedFrom`; 59 writes the record with the swap and each set's place with its log. The
+ * card they left keeps a gap in each one's place (46r's Q1). A logged, skipped or drop row, rows of two cards, rows of a card
+ * whose sets a swap already moved (a card's sets are swapped once), a set added before 044 (it has no place to be named by)
+ * and an id another card of the exercise lists are refused.
  */
 export function movedSetEntries(
   order: SessionOrder,
@@ -1772,6 +1860,7 @@ export function movedSetEntries(
   moved: ReadonlyArray<{ row: ResolvedRow; localId: string }>,
 ): SwapMoves {
   const fromKey = moved[0]?.row.exerciseKey ?? ''
+  if (cardsOf(order).some((card) => card.swappedFrom?.fromKey === fromKey)) throw new RangeError(`a swap already moved the sets of ${fromKey}: a card's sets are swapped once`)
   const taken = new Set(cardsOf(order).filter((card) => card.exerciseId === target.exerciseId).flatMap((card) => (card.added ?? []).map((entry) => entry.localId)))
   const sets = [...moved].sort((a, b) => a.row.planIndex - b.row.planIndex)
   const first = nextAddedPlace(order, target.exerciseId, logs)
@@ -1798,7 +1887,7 @@ export function movedSetEntries(
  * member has (3 and 2 sets become 4 and 3). Returns the new set of each member in block order, with the
  * number it takes and its place (`nextAddedPlace` for that member's exercise: DECISIONS 174); the caller adds one entry to
  * each member's list (`OrderExercise.added`: a new id, no log, Normal, that place), where it takes that number (DECISIONS 170):
- * after the working sets of its slot up to and on its card (183 (a)).
+ * after the working sets of its slot up to and on its card (183 (a)) and the gaps on its card (46r's Q1).
  */
 export function addRound(
   order: SessionOrder,
@@ -1808,14 +1897,14 @@ export function addRound(
 ): Array<{ exerciseKey: string; exerciseId: string; position: number; place: number }> {
   const unit = order.units.find((u): u is Extract<OrderUnit, { kind: 'block' }> => u.kind === 'block' && u.id === blockId)
   if (unit === undefined) throw new RangeError(`no superset block ${blockId}`)
-  const { slots } = numberedHeads(order, indexSession(logs, []))
+  const { slots, gaps } = numberedHeads(order, indexSession(logs, []))
   const slotOf = new Map([...slots].flatMap(([slotKey, keys]) => keys.map((key, i) => [key, { slotKey, keys: keys.slice(0, i + 1) }] as const)))
   return unit.members.map((member) => {
     const { keys } = slotOf.get(member.key)!
     return {
       exerciseKey: member.key,
       exerciseId: member.exerciseId,
-      position: rows.filter((row) => keys.includes(row.exerciseKey) && row.kind === 'working').length + 1,
+      position: rows.filter((row) => keys.includes(row.exerciseKey) && row.kind === 'working').length + gaps.get(member.key)!.working + 1,
       place: nextAddedPlace(order, member.exerciseId, logs),
     }
   })

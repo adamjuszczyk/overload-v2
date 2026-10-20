@@ -246,9 +246,10 @@ describe('numberCorrections: the logged sets whose stored number differs from th
     const m = s.swap('lat', 'machine')
     const moved = s.log(s.rows().find((r) => r.exerciseKey === m)!.key)
     expect(moved.setNumber).toBe(2)
-    // a set added to the original card after the swap is one of its sets: the swap's card reads on after it, on this phone
+    // a set added to the original card after the swap is one of its sets, after the gap the moved set left (46r's Q1): the swap's
+    // card reads on after it, on this phone
     s.add('lat', 'N')
-    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02·', `${m} 03✓`])
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 03·', `${m} 03✓`])
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
     // phone 2 holds no list: it draws the moved set from its log, as 02, which is what it stores
     const phone2 = orderOf(s.cards.map((c) => ({ ...c, added: [] })))

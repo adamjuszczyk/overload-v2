@@ -4,8 +4,9 @@
 // it (workoutRules.ts' header, "What the card keeps for the sets added in the session"). Beside that it keeps its own record of
 // where every set is, which the module never sees: the plan's sets in their planned order, then the added sets in the order
 // they were added, a deleted one taken out, and, at a reopen or a reload, the sets that end with the phone's state taken out;
-// a swap for today moves the open sets of a card to a card of their own (chunk 46r, DECISIONS 183 (a)), and the record keeps
-// which cards one numbering covers (the slots). Nothing here decides what a rule decides.
+// a swap for today moves the open sets of a card to a card of their own (chunk 46r, DECISIONS 183 (a)), each leaving a gap in
+// its place on the card it left (46r's Q1), and the record keeps which cards one numbering covers (the slots) and every gap
+// with the kind its set had at the swap. Nothing here decides what a rule decides.
 
 import type { SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
 import { reviewItems } from '../plan/review'
@@ -64,18 +65,24 @@ export class Session {
   cards: OrderExercise[]
   blocks: OrderSuperset[]
   server: FakeServer
-  /** Where every set is, by its row key, card by card: the plan's order, then the order the sets were added in (170). */
+  /**
+   * Where every set is, by its row key, card by card: the plan's order, then the order the sets were added in (170); a set a
+   * swap moved away leaves a gap token in its place (`gaps`).
+   */
   places: Map<string, string[]>
   /** The slot each card is numbered in (183 (a)): a card a swap made shares the slot of the card it replaced. */
   slotOf: Map<string, string>
   /** The row keys of the sets added before 044 (no place), card by card, in the order they were logged (174, 184). */
   old: Map<string, string[]>
+  /** The gaps a swap left (46r's Q1), by their token in `places`: whether the set was a warmup at the swap, and its added place. */
+  gaps: Map<string, { warmup: boolean; place: number | null }>
   private serial = 0
 
   constructor(cards: OrderExercise[], blocks: OrderSuperset[] = [], logs: SetLog[] = []) {
     this.cards = cards
     this.blocks = blocks
     this.server = new FakeServer({ logs })
+    this.gaps = new Map()
     this.slotOf = new Map(cards.map((c) => [c.key, c.key]))
     const oldLogs = (c: OrderExercise) =>
       logs
@@ -102,6 +109,7 @@ export class Session {
       places: new Map([...this.places].map(([k, v]) => [k, [...v]])),
       slotOf: new Map(this.slotOf),
       old: new Map([...this.old].map(([k, v]) => [k, [...v]])),
+      gaps: new Map(this.gaps),
       serial: this.serial,
       clock: this.clock,
       lastCorrections: [],
@@ -140,6 +148,11 @@ export class Session {
   /** The cards of a slot, in the order the screen draws them (the sequence's own record, 183 (a)). */
   slotCards(slot: string): string[] {
     return this.cards.filter((c) => this.slotOf.get(c.key) === slot).map((c) => c.key)
+  }
+
+  /** The sets of a card in their places, by the sequence's own record, without the gaps (what the card draws). */
+  drawn(cardKey: string): string[] {
+    return this.places.get(cardKey)!.filter((k) => !this.gaps.has(k))
   }
 
   /**
@@ -200,7 +213,8 @@ export class Session {
         const old = this.old.get(row.exerciseKey)!.filter((k) => k !== key)
         const places = this.places.get(row.exerciseKey)!.filter((k) => k !== key)
         const newKey = addedRowKey(row.exerciseKey, id)
-        const after = old.length === 0 ? places.findIndex((k) => k.startsWith('added:')) : places.indexOf(old[old.length - 1]) + 1
+        // (before the first set with a place, or the gap one left: those were added after every set added before 044)
+        const after = old.length === 0 ? places.findIndex((k) => k.startsWith('added:') || (this.gaps.get(k)?.place ?? null) !== null) : places.indexOf(old[old.length - 1]) + 1
         places.splice(after < 0 ? places.length : after, 0, newKey)
         this.places.set(row.exerciseKey, places)
         this.old.set(row.exerciseKey, [...old, newKey])
@@ -286,17 +300,16 @@ export class Session {
 
   /**
    * A swap for today on the card `fromKey`, as chunk 59 makes it (DECISIONS 164, 179, 183 (a)): its open sets move to the
-   * exercise `to` (its logs carry `ex.<to>`) on a card of their own drawn after the cards already in its slot, or on the card an
-   * earlier swap from the same card to the same exercise made; today's swap skips them on the old card (a skipped log of a
-   * planned set, and of an added one with its place); the new card lists them and keeps the swap's record (`swappedFrom`).
-   * Returns the card the sets moved to. A card that holds an open set added before 044 can't be swapped here: the record has
-   * no place to name it by (`movedSetEntries` refuses it).
+   * exercise `to` (its logs carry `ex.<to>`) on a card of their own drawn after the cards already in its slot; today's swap skips
+   * them on the old card (a skipped log of a planned set, and of an added one with its place), where each leaves a gap in its
+   * place (46r's Q1: the sequence's record keeps it, with the kind the set had); the new card lists them and keeps the swap's
+   * record (`swappedFrom`). Returns the card the sets moved to. A card's sets are swapped once, and a card that holds an open set
+   * added before 044 can't be swapped: the record has no place to name it by (`movedSetEntries` refuses both).
    */
   swap(fromKey: string, to: string): string {
     const open = this.rows().filter((r) => r.exerciseKey === fromKey && r.kind !== 'stage' && r.state === 'unlogged')
     const exerciseId = exerciseIdOf(to)
-    const reuse = this.cards.find((c) => c.swappedFrom?.fromKey === fromKey && c.exerciseId === exerciseId)
-    const key = reuse?.key ?? `${to}~${++this.serial}`
+    const key = `${to}~${++this.serial}`
     const moves = movedSetEntries(this.order(), this.server.logs, { exerciseId, name: to }, open.map((row) => ({ row, localId: `m${++this.serial}` })))
     for (const row of open) {
       const id = `walk.${++this.serial}`
@@ -316,24 +329,25 @@ export class Session {
       })
       if (row.added) this.cards = loggedAdded(takeIn(this.cards, row), row, id)
     }
-    const places = this.places.get(fromKey)!.filter((k) => !open.some((r) => r.key === k))
+    // each moved set leaves a gap in its place on the card it left, of the kind it had at the swap
+    const places = this.places.get(fromKey)!.map((k) => {
+      const row = open.find((r) => r.key === k)
+      if (row === undefined) return k
+      const gap = `gap:${fromKey}:${++this.serial}`
+      this.gaps.set(gap, { warmup: row.kind === 'warmup', place: row.added ? row.addedPlace : null })
+      return gap
+    })
     this.places.set(fromKey, places)
     const movedKeys = moves.entries.map((e) => addedRowKey(key, e.localId))
-    if (reuse !== undefined) {
-      const record = { fromKey, moved: [...reuse.swappedFrom!.moved, ...moves.record.moved] }
-      this.cards = this.cards.map((c) => (c.key === key ? { ...c, added: [...(c.added ?? []), ...moves.entries], swappedFrom: record } : c))
-      this.places.get(key)!.push(...movedKeys)
-    } else {
-      const slot = this.slotOf.get(fromKey)!
-      const last = Math.max(...this.slotCards(slot).map((k) => this.cards.findIndex((c) => c.key === k)))
-      const made: OrderExercise = { key, exerciseId, name: to, plannedSets: [], added: moves.entries, swappedFrom: moves.record }
-      this.cards = [...this.cards.slice(0, last + 1), made, ...this.cards.slice(last + 1)]
-      this.places.set(key, movedKeys)
-      this.slotOf.set(key, slot)
-      this.old.set(key, [])
-      // a member with a swap leaves its block, as today's screen moves a swapped member out of its round grid
-      this.blocks = this.blocks.map((b) => ({ ...b, members: b.members.filter((m) => m !== fromKey) }))
-    }
+    const slot = this.slotOf.get(fromKey)!
+    const last = Math.max(...this.slotCards(slot).map((k) => this.cards.findIndex((c) => c.key === k)))
+    const made: OrderExercise = { key, exerciseId, name: to, plannedSets: [], added: moves.entries, swappedFrom: moves.record }
+    this.cards = [...this.cards.slice(0, last + 1), made, ...this.cards.slice(last + 1)]
+    this.places.set(key, movedKeys)
+    this.slotOf.set(key, slot)
+    this.old.set(key, [])
+    // a member with a swap leaves its block, as today's screen moves a swapped member out of its round grid
+    this.blocks = this.blocks.map((b) => ({ ...b, members: b.members.filter((m) => m !== fromKey) }))
     return key
   }
 
@@ -403,6 +417,13 @@ export class Session {
     for (const [cardKey, places] of this.places) {
       const next: string[] = []
       for (const key of places) {
+        // a gap stays in its place: the swap's record, which the server keeps, names its set
+        const gap = this.gaps.get(key)
+        if (gap !== undefined) {
+          next.push(key)
+          placeOf.set(key, gap.place)
+          continue
+        }
         const row = rows.find((r) => r.key === key)!
         const kept = !row.added ? key : row.logId !== null ? addedRowKey(cardKey, row.logId) : keepDrafts && row.draftKey !== null ? key : null
         if (kept === null) continue
@@ -433,6 +454,11 @@ export class Session {
       for (const c of group) {
         const keep: string[] = []
         for (const key of this.places.get(c.key)!) {
+          // a gap is the card's own, wherever the exercise's sets are drawn
+          if (this.gaps.has(key)) {
+            keep.push(key)
+            continue
+          }
           const place = placeOf.get(key) ?? null
           const to = place === null || c.swappedFrom?.moved.some((m) => m.place === place) ? c.key : latest(place)
           if (to === c.key) keep.push(key)
