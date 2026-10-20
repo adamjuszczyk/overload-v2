@@ -421,7 +421,7 @@ export async function fetchSnapshot(get) {
     mesocycles,
     programs,
     workout_days,
-    program_exercises: pes.map((r) => ({ id: r.id, workout_day_id: r.workout_day_id, position: r.position, week_only: r.week_only === true, removed: r.removed_at != null })),
+    program_exercises: pes.map((r) => ({ id: r.id, workout_day_id: r.workout_day_id, position: r.position, week_only: r.week_only === true, removed: r.removed_at != null, removed_at: r.removed_at ?? null })),
     week_plans: wps.map((w) => ({ id: w.id, mesocycle_id: w.mesocycle_id, workout_day_id: w.workout_day_id, week_number: w.week_number, sequence_position: w.sequence_position, is_deload: w.is_deload, n_sets: nSets.get(w.id) ?? 0 })),
     week_plan_exercises: wpe.map((x) => ({ week_plan_id: x.week_plan_id, program_exercise_id: x.program_exercise_id, position: x.position })),
   }
@@ -437,7 +437,7 @@ export async function fetchSnapshot(get) {
       v2_week_plans: md5(wps), v2_week_plan_exercises: md5(wpe), v2_week_plan_sets: md5(wps_sets),
     },
   }
-  return { snapshot, fingerprint, rows: pes.map((r) => ({ id: r.id, workout_day_id: r.workout_day_id, position: r.position, week_only: r.week_only === true, removed: r.removed_at != null })) }
+  return { snapshot, fingerprint }
 }
 
 async function signIn(account) {
@@ -472,6 +472,29 @@ function describePlan(plan, snap) {
   for (const c of plan.changes.slice(0, 40)) console.log(`    ${c.id.slice(0, 8)} (workout ${names.get(c.id)?.workout_day_id?.slice(0, 8)}): ${c.column} ${c.from} → ${c.to}`)
 }
 
+// The staging rehearsal's verdict: what changed in v2_program_exercises between the reading taken before the merge (`before`,
+// as --out saved it) and now, against what the rule said from the first reading.
+export function compareSnapshots(before, now) {
+  const expected = plan046(before.snapshot)
+  const diff = diffRows(before.snapshot, now.snapshot)
+  const { missing, extra } = missingAndExtra(expected.changes, diff.changes)
+  // 046 writes none of these tables; they must be equal. The week tables are told, not judged: a PLAN FORWARD or a save between
+  // the two readings changes them and is not 046.
+  const weekTables = ['v2_week_plans', 'v2_week_plan_exercises', 'v2_week_plan_sets']
+  const differing = fingerprintDiff(before.fingerprint, now.fingerprint)
+  const isWeek = (k) => weekTables.some((t) => k.endsWith(`.${t}`))
+  const others = differing.filter((k) => !isWeek(k))
+  const weeks = differing.filter(isWeek)
+  const problems = []
+  if (missing.length) problems.push(`${missing.length} change(s) the rule says were not made`)
+  if (extra.length) problems.push(`${extra.length} change(s) the rule does not say were made`)
+  if (diff.added.length || diff.gone.length) problems.push('rows appeared or vanished')
+  if (others.length) problems.push(`${others.join(', ')} differ, and 046 writes none of them`)
+  const after = plan046(now.snapshot)
+  if (after.changes.length) problems.push(`046 would still change ${after.changes.length} value(s): it is not idempotent here`)
+  return { expected, diff, weeks, problems }
+}
+
 async function staging(o) {
   const { get, ref } = await signIn(o.account)
   console.log(`rehearse-046: staging project ${ref} (not production) · ${o.account} · read only`)
@@ -481,27 +504,12 @@ async function staging(o) {
   const plan = plan046(now.snapshot)
   if (o.compare) {
     const before = JSON.parse(readFileSync(o.compare, 'utf8'))
-    const expected = plan046(before.snapshot)
-    const diff = diffRows(before.snapshot, now.snapshot)
-    const { missing, extra } = missingAndExtra(expected.changes, diff.changes)
-    // 046 writes none of these; they must be equal. The week tables are told, not judged: a PLAN FORWARD or a save between the
-    // two readings changes them and is not 046.
-    const weekTables = ['v2_week_plans', 'v2_week_plan_exercises', 'v2_week_plan_sets']
-    const differing = fingerprintDiff(before.fingerprint, now.fingerprint)
-    const others = differing.filter((k) => !weekTables.some((t) => k.endsWith(`.${t}`)))
-    const weeks = differing.filter((k) => weekTables.some((t) => k.endsWith(`.${t}`)))
-    if (weeks.length) console.log(`  note: ${weeks.join(', ')} differ since ${path.basename(o.compare)} (046 writes none of them: another writer, such as a PLAN FORWARD, ran in between)`)
-    console.log(`  since ${path.basename(o.compare)}: ${diff.changes.length} change(s) in v2_program_exercises (the rule said ${expected.changes.length}); rows added ${diff.added.length}, removed ${diff.gone.length}`)
-    for (const c of diff.changes.slice(0, 40)) console.log(`    ${c.id.slice(0, 8)}: ${c.column} ${c.from} → ${c.to}`)
-    const problems = []
-    if (missing.length) problems.push(`${missing.length} change(s) the rule says were not made`)
-    if (extra.length) problems.push(`${extra.length} change(s) the rule does not say were made`)
-    if (diff.added.length || diff.gone.length) problems.push('rows appeared or vanished')
-    if (others.length) problems.push(`${others.join(', ')} differ, and 046 writes none of them`)
-    const after = plan046(now.snapshot)
-    if (after.changes.length) problems.push(`046 would still change ${after.changes.length} value(s): it is not idempotent here`)
-    console.log(`  ${problems.length === 0 ? 'OK  ' : 'FAIL'} ${problems.length === 0 ? 'exactly the changes the rule says, nothing else, and a second run would change nothing' : problems.join(' · ')}`)
-    return problems.length === 0 ? 0 : 1
+    const c = compareSnapshots(before, now)
+    if (c.weeks.length) console.log(`  note: ${c.weeks.join(', ')} differ since ${path.basename(o.compare)} (046 writes none of them: another writer, such as a PLAN FORWARD, ran in between)`)
+    console.log(`  since ${path.basename(o.compare)}: ${c.diff.changes.length} change(s) in v2_program_exercises (the rule said ${c.expected.changes.length}); rows added ${c.diff.added.length}, removed ${c.diff.gone.length}`)
+    for (const x of c.diff.changes.slice(0, 40)) console.log(`    ${x.id.slice(0, 8)}: ${x.column} ${x.from} → ${x.to}`)
+    console.log(`  ${c.problems.length === 0 ? 'OK  ' : 'FAIL'} ${c.problems.length === 0 ? 'exactly the changes the rule says, nothing else, and a second run would change nothing' : c.problems.join(' · ')}`)
+    return c.problems.length === 0 ? 0 : 1
   }
   describePlan(plan, now.snapshot)
   if (o.out) {
