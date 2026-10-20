@@ -1,15 +1,19 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-20, chunk 65 merged (#170).*
-- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing. No tests owed.*
+*Rewritten at every boundary. Last: 2026-10-20, chunk 66 merged (#175).*
+- **Migration number clash** — 53 numbers 149's release data file after 045 (046), Adam gave 046 to 59's swap column. Recommended: 149's file 046, 59's column 047. Blocks: 53's builder.
+- *Chunk 66 (a finished program: PR14, PR15) is merged. Its display choices and readings are 192, accepted as built for Adam's review pass. One question is open, 193: whether the finished program's rows show superset labels. SPEC says supersets aren't in the history; TASKS and the board draw them. The recommendation is SPEC's, a one-line change, and it blocks nothing. No tests owed.*
+- *Chunk 176 (tests only: 51a's exercise-level writers on four unlike workouts) is merged. Its builder found that 51a's UNDO can put an exercise back inside another superset, and SAVE then refuses the draft with no visible cause: entry 191. Adam already queued the fix as chunk 51c (after 53, before 54a), which now has 176 under it. No tests owed, no D31 choices.*
+- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing.*
 - *46r's questions are answered (Adam, 2026-10-20): Q1, a swap never renumbers a logged set on either card (the gap on the original shows, accepted), so the built branch `build/chunk-46r` (`8620f24`), which followed the old example, gets a change run before its review; Q5 (a), chunk 59 becomes a migration chunk that runs alone. 51c (UNDO keeps a superset in one piece) goes before 54a, and the release checklist is split between the final reviewer (rows that write data or migrate) and Adam's list (screen-only rows).*
 - *Adam answered 182–188. Chunk 46 is replaced by 46r: a narrow redraw on the sixth attempt's module that changes only what 183 (a), 184 (b) and 185 (c) decide, built by Opus; if it fails review on behaviour there is no retry and a requirement to simplify is written up instead. 58a–64 depend on 46r.*
 - *188 (a) is chunk 188f, its own small chunk after 54b and before the release (a bug live in production since phase 1, so it ships with the release); 187 (a) goes into 54a; 186 is accepted as built.*
-- *What follows: 176's tests-only run, 66, 53, 51c, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
-- **Migration number clash** — 53 numbers 149's release data file after 045 (046), Adam gave 046 to 59's swap column. Recommended: 149's file 046, 59's column 047. Blocks: 53's builder.
+- *What follows: 53, 51c, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
 
-Decisions (neither blocks; for Adam's review pass after the release checklist):
+Decisions (none blocks; for Adam's review pass after the release checklist):
+- **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
+- **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
 - **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
 - **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
 
@@ -180,7 +184,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 176 51a's exercise-level writers on CHANGE THE PROGRAM are tested on the first workout only: a tests-only follow-up? (chunk 51b's retry)
 - What: whether a tests-only follow-up may prove 51a's exercise-level writers on CHANGE THE PROGRAM on a workout that isn't the first (each is only ever tested on the first; recommended: yes, after d31b).
-- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md. Built: chunk 176 (#172, 2026-10-20), tests only; its builder's finding is 191.
 - Date: 2026-10-19
 
 ### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
@@ -276,6 +280,78 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) the week in force (recommended); (b) the run copy's newest days, as built; (c) no count on a run whose days change.
 **Answer:**
 **Evidence:** `programTypesLine` (`src/features/programs/programsTabLogic.ts`) counts `Object.values(program.schedule)` for the run's own program. TASKS 65 says "(P1.2-4's counting for days)", but P1.2-4 is the rule for a finished program's N weeks, so neither SPEC nor TASKS says which days count. `runScheduleReads.static.test.ts` scans only `features/gym` and `features/plan`, so it can't see this read in `features/programs` (chunk 65's review).
+
+### 191 UNDO on CHANGE THE PROGRAM can put an exercise back inside another superset, and the draft then can't be saved (merged 51a; found by chunk 176's builder)
+**Ask:** fix 51a's UNDO so it never splits a superset? And where: its own small fix chunk, or with the tests-owed run?
+**Recommendation:** fix it in a small chunk of its own, after 176 (merged). 51a is merged, so the fix is a follow-up. The tests-owed run adds tests only, so a change to `changeProgramDraft.ts` doesn't belong there. The fix: `undoRemove` applies the member rule it already has for a removed superset member (`at <= first ? first : last + 1`) to any exercise whose recorded place falls strictly inside a block's span. Then the guard in the 176 draft walk's `case 'undo'` comes out (its comment names this bug), and both recipes below become page tests.
+**Blocks:** nothing in the build. Nothing wrong is ever written: SAVE refuses the draft and sends no request. But the person can't save, and nothing on the screen shows why.
+**Options:** (a) the builder's fix above: the exercise lands just before or just after the block, never inside it (recommended); (b) UNDO is refused while a block stands where the exercise was; (c) the exercise goes to the end of the list.
+**Answer:** (Adam, 2026-10-20, before this entry was written; TASKS-1.2 "Chunk 51c") "write it up as a small DATA fix chunk, placed before 54a". Chunk 51c builds (a): the member rule for any exercise whose recorded place falls inside a block's span, after 53 and before 54a, and it needs 176 merged. Under the cost rule it is a data chunk: full review, break proofs, and a staging check of CHANGE THE PROGRAM's SAVE.
+**Evidence:** `undoRemove` (`src/features/programs/changeProgramDraft.ts`, ~190–203) puts the exercise back at `Math.min(gone.at, length)`. It snaps to the block only when the removed exercise was itself a member. SPEC says nothing on where UNDO puts an exercise back; the code comment says "so the block stays in one piece".
+
+Reproduced in the review on the rebased branch, with the builder's probe (`<scratchpad>/build/c176/probes/zzProbe176.test.tsx`; the review's copy, which writes its lines to a file because this repo's test setup hides console output, is in `<scratchpad>/build/r176/probes/`) run through the real screen and hooks:
+- Recipe 1 (Push: Bench Press, Overhead Press, then the Lateral Raise + Triceps Pushdown superset): REMOVE Bench Press, REMOVE Triceps Pushdown, UNDO Bench Press, UNDO Triceps Pushdown. The cards then read Bench Press, Overhead Press, Triceps Pushdown, Lateral Raise, and no SUPERSET header is drawn.
+- Recipe 2 (Legs): REMOVE Romanian Deadlift; SUPERSET on Back Squat (it joins the block below); UNDO Romanian Deadlift. The cards read Back Squat, Romanian Deadlift, Leg Curl, Calf Raise.
+- In both, SAVE shows "Couldn't save the changes." and then the planner's own message, "workout push: the members of superset block blk-push are not next to each other" (`blk-legs` in recipe 2). No request is sent.
+- The control, UNDO in stack order (Triceps Pushdown first), restores the original list.
+
+In general: remove B from A, B, C, D; link A with C; UNDO B. Also, unpinned: UNDO of a trio's middle member brings it back last in its block, which the code comment allows.
+
+### 192 Chunk 66's display choices and readings on a finished program (provisional, D31; accepted as built)
+**Ask:** where SPEC and the boards give no single answer, chunk 66's choices on the finished program screen (PR14, PR15) are accepted as built. They are listed here for Adam's review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each is a word, an order, a state's drawing, or what a tile's dot means. None changes a stored value or what a write sends, and each is cheap to change. The superset labels are a separate entry, 193.
+**Blocks:** nothing.
+**Options:** (a)–(h) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-66-builder-1.md`, section 3), held in the review against SPEC (Defaults 11, Known gaps, Programs and runs [1.2], Screens → PROGRAMS) and boards PR14 and PR15:
+- (a) **SPEC over the board, not a choice.** PR14's change list has "Face Pull added, in a superset with Seated Cable Row" and "Romanian Deadlift tempo 3-1-1-0", and a row reads "3 SETS · TEMPO 3-1-1-0". SPEC's Known gaps: "PR14's example lists a tempo change and a superset change; the history shows only what weeks store (Defaults, 11)". So no tempo is shown anywhere, and the item reads "Face Pull added".
+- (b) **One card per workout, in the program's order, each with its rows.** The board's last card groups the unchanged workouts as "MON · THU · FRI / Push 1, Push 2, Pull 2 / NO CHANGES", with no rows. TASKS: "the week's structure cards per workout".
+- (c) **What "the week before" is.** It is the nearest earlier week the run planned. Only planned weeks get a tile, so a week nobody planned has none. The header's "N weeks" (P1.2-4: calendar weeks) can then be more than the number of tiles.
+- (d) **Deload weeks.**
+  - A deload week is one whose every planned session is marked (Plan's `weekIsFullyDeload`). A half-marked week reads WK and isn't counted. "1 deload" is left out when there is none.
+  - A deload week is compared literally with the week before. With the deload rules on, a deload halves its sets, so it and the week after it both read as changed ("~ … 4 → 2 sets"); the board draws DL 7 with no dot. Using the week before the deload as the base for the week after it would be a one-line change in `buildProgramHistory`.
+- (e) **Where PRIORITIES leads.**
+  - Marks in neither table: the editor (SPEC: a finished program's priorities "stay editable").
+  - Marks in both tables: the new table's editor (the 1.1 migration mapped an active run's old marks onto it).
+  - The row's second line ("Focus: chest, back · Don't care: calves") is drawn only for marks in the new table; the old page shows its own. The row is only its label when nothing is marked.
+  - Until the marks are read, the row is drawn but isn't a link. A failed read says "Couldn't load priorities."
+- (f) **A sequence run.** The tiles are cycles (CY), and the cards say SLOT n (position + 1, as Plan). The header still counts calendar weeks.
+- (g) **States and words no board draws:**
+  - "COULDN'T LOAD THIS PROGRAM" with the real reason;
+  - "COULDN'T FIND THIS PROGRAM" for an unknown id or a running program;
+  - "NO WEEKS WERE PLANNED" (DELETE still offered);
+  - a failed delete: "Couldn't delete [name]." with the reason, inside the confirm;
+  - "NO SETS";
+  - "set 3 is now a rest-pause set / myo-reps set / cluster set / normal set";
+  - "X: 0 → 2 warmup sets";
+  - "X moved before Y" or "moved to the end" (two neighbours swapped make exactly one item).
+- (h) **Smaller choices:**
+  - It opens on the first week whose structure changed, else week 1 (the board opens on a changed week).
+  - The legend, and a changed week's dot, are drawn only when some week changed.
+  - The chips' and the changed rows' accent text is `var(--accent)`; there is no `accentText` token, as in 189 (d).
+  - In the confirm, DELETE is `ConfirmDialog`'s solid danger button, where the board tints it.
+  - Both back arrows use `replace` (as 65's priorities screen does).
+  - The PLAN tab is lit on `/program/finished/*`, as PR14 draws it.
+- **Outside the screen (Escalation 13, read in the review and accepted):**
+  - `useDeleteMeso` now has `networkMode: 'always'` and returns its invalidations. Both apply to its other caller too, History's meso filter (`HistorySessions.tsx`).
+  - Offline, History's CONFIRM DELETE used to wait on DELETING… until the phone was back online, and then delete. Now it fails at once, and the confirm returns to CONFIRM DELETE with no message, because History passes no `onError`. Nothing is written wrong. History's tests pass.
+  - `StepPriorities` takes `showOptionalNote` (default true, so the planner is unchanged); the finished editor passes false.
+  - `deleteMeso` still deletes only the `v2_mesocycles` row, for a completed run only. The run copy's program and its marks stay, and History still needs the program's workout days.
+
+### 193 Superset labels (A1, A2) on a finished program's week rows: SPEC Defaults 11 says supersets aren't in the history; TASKS 66 and board PR14 draw them (chunk 66)
+**Ask:** should a finished program's structure rows show a superset's place ("A1 · 3 SETS", as built), or leave supersets out of the history entirely?
+**Recommendation:** (a), leave them out, as SPEC says. A superset is stored once per run, on the run copy's program exercises (`superset_block_id`), not per week. So the label drawn on every week is the run's last grouping, and it can show a superset in weeks before it was made. For example, two exercises in the program from week 1 and linked by CHANGE THE PROGRAM in week 5 read A1 and A2 from week 1 on. The change is one line (`superset: null` from `structureOf` in `programHistory.ts`) and two test expectations. It can go in Adam's review pass with the D31 list (192).
+**Blocks:** nothing. It is display only: no count changes, and nothing is written.
+**Options:** (a) no superset labels on the rows (SPEC Defaults 11; recommended); (b) labels from the run copy's blocks, as built (TASKS 66: "A1/A2 for supersets as stored in `v2_week_plan_exercises` + the run copy's blocks"; the board's rows).
+**Answer:**
+**Evidence:**
+- **SPEC.** Defaults 11 (confirmed by Adam on 2026-10-12): "Finished program history (C1) shows what the weeks store: exercises, their order, set counts and set kinds. Tempo, rest, supersets and the warmup routine are stored once per program, not per week, so they aren't in it."
+- **TASKS and the board.** TASKS 66's scope asks for A1/A2 "as stored in `v2_week_plan_exercises`", but that table stores no grouping: only `v2_program_exercises.superset_block_id` does (027). TASKS' own absence test covers only the change list ("tempo and supersets never appear in the change list"). Board PR14 draws "A1 · 3 SETS" and "A2 · 2 SETS".
+- **Which document wins.** TASKS' header says SPEC "decides behaviour and wins a disagreement", and SPEC says boards decide wording and "this spec wins". So the docs lean to (a). The builder followed TASKS and the board and escalated, as it should have. Whether a label is behaviour or wording reads both ways (Escalation 9), and it changes no number and no write, so it is listed here rather than sent back.
+- **As built.**
+  - A label is drawn only when both members are in that week (a one-member block is unlabelled: break H14).
+  - The superset never makes a change item (break H4).
+  - In week 4 of the board's world, Seated Cable Row reads "A1 · 3 SETS" without the changed highlight, where the board highlights it.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.

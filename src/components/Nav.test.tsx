@@ -122,6 +122,14 @@ describe('Nav — which tab is lit (chunk 65)', () => {
     renderNavAt('/program/prog-1')
     expect(lit()).toEqual([])
   })
+
+  it('chunk 66: a finished program and its priorities editor light PLAN, and only PLAN (board PR14 draws PLAN lit)', () => {
+    renderNavAt('/program/finished/meso-1')
+    expect(lit()).toEqual(['PLAN'])
+    cleanup()
+    renderNavAt('/program/finished/meso-1/priorities')
+    expect(lit()).toEqual(['PLAN'])
+  })
 })
 
 describe('Nav — 375px', () => {

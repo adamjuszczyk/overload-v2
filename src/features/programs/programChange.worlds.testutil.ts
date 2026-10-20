@@ -16,7 +16,15 @@
 //                        THREE sets, and no two sets alike in a column a set edit writes (rep target, rest after, kind,
 //                        stages), so an edit that lands on another set, another exercise or the other workout shows in
 //                        what it writes. Weeks 1-3 planned from the default, the run in week 2.
+//   unevenWorkoutsWorld  (DECISIONS 176's tests-only follow-up) four workouts, each unlike the others, for the tests of WHICH
+//                        workout an exercise-level edit of CHANGE THE PROGRAM lands on (UNEVEN_WORKOUTS says what is in them): a
+//                        different number of exercises, a superset of two or three members in a different place, a routine of two
+//                        to four items, and no two exercises alike in a column an exercise edit writes (rest, rest after, tempo,
+//                        unit), so an edit that lands on another workout, another exercise or another place is a different list
+//                        of ops. A weekday run on Monday, Tuesday, Thursday and Saturday (or a sequence run with one slot each),
+//                        weeks 2 and 3 (cycles 2 and 3) planned, the run in week 2.
 
+import type { PlanningType, ScheduleType, WeightUnit } from '../../types'
 import {
   type World,
   addBlock,
@@ -100,6 +108,127 @@ export function unevenStableWorld(): World {
   for (const week of [1, 2, 3]) {
     planSession(w, `p${week}-fb`, 'fb', week)
     planSession(w, `p${week}-arms`, 'arms', week)
+  }
+  return w
+}
+
+// ─── unevenWorkoutsWorld ───────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface UnevenExercise {
+  row: string // the run copy's program-exercise row
+  exerciseId: string // the catalogue exercise
+  name: string
+  sets: readonly string[] // rep targets of its default sets
+  rest: number | null
+  restAfter: number | null
+  tempo: string | null
+  unit: WeightUnit | null
+  block?: string // the workout's superset block, when it is a member
+}
+export interface UnevenWorkout {
+  id: string
+  name: string
+  day: string // the weekday of a weekday run
+  exercises: readonly UnevenExercise[]
+  block: { id: string; within: number | null; after: number | null }
+  routine: readonly string[]
+}
+
+const ue = (row: string, exerciseId: string, name: string, sets: readonly string[], rest: number | null, restAfter: number | null, tempo: string | null, unit: WeightUnit | null, block?: string): UnevenExercise => ({
+  row,
+  exerciseId,
+  name,
+  sets,
+  rest,
+  restAfter,
+  tempo,
+  unit,
+  ...(block ? { block } : {}),
+})
+
+// Push: four exercises, a pair in the middle. Pull: five, a trio first. Legs: four, a pair last. Arms: five, a pair second.
+export const UNEVEN_WORKOUTS: readonly UnevenWorkout[] = [
+  {
+    id: 'push',
+    name: 'Push',
+    day: 'monday',
+    exercises: [
+      ue('pe-bench', 'ex-bench', 'Bench Press', ['6-8', '6-8', '6-8'], 150, null, null, null),
+      ue('pe-ohp', 'ex-ohp', 'Overhead Press', ['8-10', '8-10'], 105, 30, '3-0-1-0', 'lbs', 'blk-push'),
+      ue('pe-lateral', 'ex-lateral', 'Lateral Raise', ['12-15', '12-15'], null, null, null, 'kg', 'blk-push'),
+      ue('pe-pushdown', 'ex-pushdown', 'Triceps Pushdown', ['10-12', '10-12'], 75, 45, null, null),
+    ],
+    block: { id: 'blk-push', within: 15, after: 90 },
+    routine: ['Arm circles, 30 s', 'Band dislocates, 10', 'Push-up plus, 8'],
+  },
+  {
+    id: 'pull',
+    name: 'Pull',
+    day: 'tuesday',
+    exercises: [
+      ue('pe-row', 'ex-row', 'Barbell Row', ['8-10', '8-10', '8-10'], 135, null, '2-1-1-0', null, 'blk-pull'),
+      ue('pe-pd', 'ex-pd', 'Lat Pulldown', ['10-12', '10-12'], null, 60, null, 'lbs', 'blk-pull'),
+      ue('pe-face', 'ex-face', 'Face Pull', ['15-20', '15-20'], 45, null, null, null, 'blk-pull'),
+      ue('pe-bcurl', 'ex-bcurl', 'Biceps Curl', ['10-12', '10-12'], 90, 15, '4-0-1-0', 'kg'),
+      ue('pe-shrug', 'ex-shrug', 'Shrug', ['12-15', '12-15'], null, null, null, null),
+    ],
+    block: { id: 'blk-pull', within: null, after: 120 },
+    routine: ['Dead hang, 30 s', 'Scap pull-ups, 8'],
+  },
+  {
+    id: 'legs',
+    name: 'Legs',
+    day: 'thursday',
+    exercises: [
+      ue('pe-squat', 'ex-squat', 'Back Squat', ['5', '5', '5'], 180, 60, null, null),
+      ue('pe-rdl', 'ex-rdl', 'Romanian Deadlift', ['8-10', '8-10'], 120, null, '3-1-1-0', 'kg'),
+      ue('pe-lcurl', 'ex-lcurl', 'Leg Curl', ['10-12', '10-12'], null, 30, null, null, 'blk-legs'),
+      ue('pe-calf', 'ex-calf', 'Calf Raise', ['12-15', '12-15'], 60, null, null, 'lbs', 'blk-legs'),
+    ],
+    block: { id: 'blk-legs', within: 30, after: null },
+    routine: ['Bike, 5 min', 'Bodyweight squat, 10', 'Hip airplanes, 6', 'Glute bridge, 12'],
+  },
+  {
+    id: 'arms',
+    name: 'Arms',
+    day: 'saturday',
+    exercises: [
+      ue('pe-curl', 'ex-curl', 'Cable Curl', ['10-12', '10-12'], 90, 15, null, null),
+      ue('pe-hammer', 'ex-hammer', 'Hammer Curl', ['10-12', '10-12'], null, null, '3-0-1-1', 'lbs', 'blk-arms'),
+      ue('pe-dip', 'ex-dip', 'Dip', ['8-12', '8-12'], 75, 30, null, null, 'blk-arms'),
+      ue('pe-skull', 'ex-skull', 'Skull Crusher', ['10-12', '10-12'], 120, null, null, 'kg'),
+      ue('pe-wrist', 'ex-wrist', 'Wrist Curl', ['15-20', '15-20'], 45, 60, '2-0-2-0', null),
+    ],
+    block: { id: 'blk-arms', within: 30, after: 60 },
+    routine: ['Band curls, 15', 'Triceps stretch, 20 s', 'Wrist circles, 10'],
+  },
+]
+
+/**
+ * Four workouts that no edit can mistake for each other. A weekday run puts them on Monday, Tuesday, Thursday and Saturday; a
+ * sequence run gives each one slot of the cycle. Weeks (cycles) 2 and 3 are planned from the run copy, the run is in week 2.
+ */
+export function unevenWorkoutsWorld(planningType: PlanningType = 'week_dependent', scheduleType: ScheduleType = 'weekday'): World {
+  const w = newWorld({ planningType, scheduleType, currentWeek: 2 })
+  UNEVEN_WORKOUTS.forEach((wk, i) => addWorkout(w, wk.id, wk.name, i))
+  if (scheduleType === 'weekday') setDays(w, Object.fromEntries(UNEVEN_WORKOUTS.map((wk) => [wk.day, wk.id])))
+  for (const wk of UNEVEN_WORKOUTS) {
+    addBlock(w, wk.block.id, wk.id, wk.block.within, wk.block.after)
+    wk.exercises.forEach((x, position) => {
+      addExercise(
+        w,
+        x.row,
+        wk.id,
+        x.exerciseId,
+        position,
+        x.sets.map((reps) => ({ reps })),
+        { rest_seconds: x.rest, rest_after_seconds: x.restAfter, tempo: x.tempo, weight_unit: x.unit, superset_block_id: x.block ?? null },
+      )
+    })
+    addRoutine(w, wk.id, [...wk.routine])
+  }
+  for (const week of [2, 3]) {
+    UNEVEN_WORKOUTS.forEach((wk, slot) => planSession(w, `p${week}-${wk.id}`, wk.id, week, scheduleType === 'sequence' ? { sequencePosition: slot } : {}))
   }
   return w
 }

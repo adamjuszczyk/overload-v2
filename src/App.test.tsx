@@ -69,6 +69,12 @@ vi.mock('./features/history/SessionTypeHistoryPage', () => ({
 vi.mock('./features/planner/PlannerPage', () => ({
   default: () => <div>PLANNER PAGE programId={useParams().programId}</div>,
 }))
+vi.mock('./features/programs/FinishedProgramPage', () => ({
+  default: () => <div>FINISHED PROGRAM mesocycleId={useParams().mesocycleId}</div>,
+}))
+vi.mock('./features/programs/FinishedProgramPriorities', () => ({
+  default: () => <div>FINISHED PROGRAM PRIORITIES mesocycleId={useParams().mesocycleId}</div>,
+}))
 vi.mock('./features/coach/MesoPrioritiesPage', () => ({
   default: () => <div>MESO PRIORITIES mesocycleId={useParams().mesocycleId}</div>,
 }))
@@ -174,6 +180,16 @@ describe('App routes — old deep links resolve unchanged', () => {
   it('/session-type/:workoutDayId → SessionTypeHistoryPage, with the real id', () => {
     renderAt('/session-type/wd-3')
     expect(screen.getByText('SESSION TYPE HISTORY workoutDayId=wd-3')).toBeTruthy()
+  })
+
+  it('chunk 66: /program/finished/:mesocycleId → the finished program, and /program/finished/:mesocycleId/priorities its editor, each with the real id; neither is the planner (/program/:programId)', () => {
+    renderAt('/program/finished/meso-7')
+    expect(screen.getByText('FINISHED PROGRAM mesocycleId=meso-7')).toBeTruthy()
+    expect(screen.queryByText(/PLANNER PAGE/)).toBeNull()
+    cleanup()
+    renderAt('/program/finished/meso-7/priorities')
+    expect(screen.getByText('FINISHED PROGRAM PRIORITIES mesocycleId=meso-7')).toBeTruthy()
+    expect(screen.queryByText(/PLANNER PAGE/)).toBeNull()
   })
 
   it('/meso/:mesocycleId/priorities → MesoPrioritiesPage (Coach, untouched by this chunk), with the real id', () => {

@@ -24,11 +24,24 @@ export function plannerPath(programId: string): string {
 }
 
 /**
- * A finished program's row. Chunk 66 builds the finished program screen at `/program/finished/:id`; until then the row opens today's
- * completed-run priorities page (TASKS 65: "until 66 the row opens today's `/meso/:id/priorities`"), which is also what G50 keeps for a
- * pre-1.1 run's PRIORITIES row. Chunk 66 changes this one function.
+ * A finished program's row (chunk 66; TASKS 65: "FINISHED: ... → `/program/finished/:id` (66)"). It opened the completed-run priorities
+ * page of that run until the finished program screen (PR14) existed; that page is now reached from the screen's PRIORITIES row, for the one
+ * kind of run G50 keeps it for (`legacyPrioritiesPath`).
  */
 export function finishedProgramPath(mesoId: string): string {
+  return `/program/finished/${mesoId}`
+}
+
+/** PR14's PRIORITIES row, for a run whose marks are in the new table: the editor over the run's own copy (chunk 66). */
+export function finishedPrioritiesPath(mesoId: string): string {
+  return `/program/finished/${mesoId}/priorities`
+}
+
+/**
+ * PR14's PRIORITIES row, for a run whose marks exist only in the old table (`v2_coach_meso_tag_priorities`, a run finished before 1.1):
+ * today's completed-run priorities page, as it is, wording included (G50; the Coach module's page, frozen).
+ */
+export function legacyPrioritiesPath(mesoId: string): string {
   return `/meso/${mesoId}/priorities`
 }
 
@@ -67,6 +80,14 @@ export function programTypesLine(program: TypesOf, capitals = false): string {
 // ─── A finished program ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * A finished run's number of weeks (P1.2-4): calendar weeks from the start date to the end date, Monday-anchored, as `weekOfRun` counts them.
+ * The FINISHED row (`finishedMeta`) and the finished program's header (chunk 66) say this number.
+ */
+export function finishedWeekCount(run: { startDate: string; endDate: string }): number {
+  return Math.max(1, differenceInCalendarWeeks(parseISO(run.endDate), parseISO(run.startDate), { weekStartsOn: 1 }) + 1)
+}
+
+/**
  * What the second line of a FINISHED row says: "SEP 14 – OCT 4, 2026 · 3 WEEKS" (PR1; SPEC Language: "[name] · [dates] · [N] weeks"). The
  * weeks are calendar weeks from the start date to the end date, Monday-anchored, as `weekOfRun` counts them (P1.2-4). The year is said once
  * when both dates are in it. A run with no end date (not expected on a finished one) says only when it started.
@@ -75,7 +96,7 @@ export function finishedMeta(run: Pick<Mesocycle, 'startDate' | 'endDate'>): str
   const start = parseISO(run.startDate)
   if (!run.endDate) return format(start, 'MMM d, yyyy').toUpperCase()
   const end = parseISO(run.endDate)
-  const weeks = Math.max(1, differenceInCalendarWeeks(end, start, { weekStartsOn: 1 }) + 1)
+  const weeks = finishedWeekCount({ startDate: run.startDate, endDate: run.endDate })
   const startText = start.getFullYear() === end.getFullYear() ? format(start, 'MMM d') : format(start, 'MMM d, yyyy')
   return `${startText} – ${format(end, 'MMM d, yyyy')} · ${weeks} ${weeks === 1 ? 'week' : 'weeks'}`.toUpperCase()
 }
@@ -109,6 +130,20 @@ export function markSummary(rows: readonly StoredMark[], mark: PriorityMark): st
   if (parts.length === 0) return null
   const text = parts.join(', ')
   return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/**
+ * PR14's PRIORITIES row: "Focus: chest, back · Don't care: calves", each half only when something is marked so, the groups as `markSummary`
+ * says them. Null when nothing is marked (an unset feature shows nothing: the row is then only its label).
+ */
+export function markLine(rows: readonly StoredMark[]): string | null {
+  const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1)
+  const parts: string[] = []
+  const focus = markSummary(rows, 'focus')
+  if (focus) parts.push(`Focus: ${lowerFirst(focus)}`)
+  const dontCare = markSummary(rows, 'dont_care')
+  if (dontCare) parts.push(`Don't care: ${lowerFirst(dontCare)}`)
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 // ─── Starting and creating ────────────────────────────────────────────────────────────────────────────────────────────────
