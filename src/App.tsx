@@ -17,6 +17,8 @@ import CoachPage from './features/coach/CoachPage'
 import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
 import PrioritiesEditor from './features/plan/PrioritiesEditor'
 import ChangeProgramPage from './features/programs/ChangeProgramPage'
+import FinishedProgramPage from './features/programs/FinishedProgramPage'
+import FinishedProgramPriorities from './features/programs/FinishedProgramPriorities'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
@@ -120,6 +122,10 @@ export function AppRoutes() {
               is gone) — every old deep link to /program or /program/:id
               still resolves. */}
           <Route path="/program"                           element={<PlanPage key="programs" initialTab="programs" />} />
+          {/* Chunk 66 — a finished program (PR14), opened from a FINISHED row of the PROGRAMS tab, and the editor its PRIORITIES row opens
+              for a run whose marks are in the new table. A pre-1.1 run's PRIORITIES row goes on to the Coach page below, as it is (G50). */}
+          <Route path="/program/finished/:mesocycleId"            element={<FinishedProgramPage />}       />
+          <Route path="/program/finished/:mesocycleId/priorities" element={<FinishedProgramPriorities />} />
           {/* Chunk 11 — the stepped program planner replaces
               ProgramBuilderPage/WorkoutDayEditorPage/WeeklyScheduleGrid
               (removed) at this same route. */}

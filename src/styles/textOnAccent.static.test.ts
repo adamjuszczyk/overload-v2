@@ -32,6 +32,8 @@ const SRC = fileURLToPath(new URL('../', import.meta.url))
 const REBUILT_SCREENS: Record<string, string> = {
   'features/plan/PlanPage.tsx': 'Plan',
   'features/programs/ProgramsTab.tsx': 'PROGRAMS',
+  'features/programs/FinishedProgramPage.tsx': 'a finished program (PR14)',
+  'features/programs/FinishedProgramPriorities.tsx': "a finished program's priorities",
   'features/programs/ChangeProgramPage.tsx': 'CHANGE THE PROGRAM',
   'features/planner/PlannerPage.tsx': 'the stepped program planner',
   'features/gym/GymSession.tsx': 'the workout screen',
@@ -90,6 +92,7 @@ const NOTHING_TO_READ: Record<string, number> = {
   'features/gym/RestTimer.tsx': 1, // the bar (over time it turns to the accent)
   'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
+  'features/programs/FinishedProgramPage.tsx': 2, // a week tile's dot (a changed week) and the legend's dot
   'features/programs/RadioDot.tsx': 1, // the picked option's dot in the PROGRAMS tab's two sheets
   'features/progress/MesoProgress.tsx': 1, // the legend's square
   'features/settings/DeloadRulesEditor.tsx': 1, // a toggle's track (its knob is a shape)
