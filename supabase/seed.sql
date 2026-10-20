@@ -29,7 +29,9 @@
 --     planned, nothing done in it.
 --   staging-sequence@example.com  its own STG Rotation, started as an active
 --     SEQUENCE run: cycle 1 done, cycle 2 planned and current, Rotation A next
---     due.
+--     due. Cycle 2 also carries the edits 1.1 let a user make in the week view
+--     (the 1.1-shaped run migration 046 is rehearsed on: see "STG Rotation run,
+--     cycle 2" below).
 --   staging-empty@example.com     the account and nothing else (no programs,
 --     runs, exercises or settings row).
 --   The three newer accounts sign in with the test account's password: when
@@ -77,10 +79,39 @@
 --                     all-skipped session
 --   STG Rotation      saved, SEQUENCE (workout and rest slots, a repeat).
 --                     Also owned by staging-sequence, as an active run.
+--   STG Rotation run, cycle 2 (staging-sequence)   1.1-shaped (TASKS-1.2 chunk
+--                     53; DECISIONS 149 (c), 196): a run that 1.1 changed in the
+--                     week view, which migration 046 reconciles (it makes each
+--                     active week-dependent run's program match its last planned
+--                     week). Written the way 1.1 wrote it (weekPlanService.ts,
+--                     runProgramExercises.ts), in the week that is each
+--                     workout's last planned one:
+--                       Rotation A, slot 4  SWAP Back Squat for Leg Press: the
+--                                           week lists a week-only Leg Press and
+--                                           the run copy still lists the squat
+--                       Rotation B          the program tab's REMOVE of Bench
+--                                           Press (soft-removed; the week still
+--                                           lists it) and an added Barbell Row
+--                       Rotation C          an added Dumbbell Curl, REORDERed
+--                                           above Farmer Carry
+--                     Rotation A's slot 1 is left as planned (a repeated
+--                     workout edited in one of its slots). The run copy's
+--                     program and these weeks disagree until 046 has run; a
+--                     re-seed makes the shape again, and 046 is not re-run by a
+--                     seed (it runs once, at a deploy), see the block's comment.
 --   STG Empty         saved, no workouts, no schedule (empty states)
 --   STG No exercises  saved, one workout with no exercises, no schedule
 -- Settings: global deload rules on (so the override and the default differ),
 -- on the test account and on staging-stable.
+--
+-- Numbers in later weeks: since migration 045, v2_plan_week plans a week-
+-- dependent week from the week before with its structure and none of its
+-- numbers (SPEC [1.2], "What the auto-copy takes": weight, RIR, reps and AMRAP
+-- come with COPY in the app). The seed copies them itself where a later week
+-- needs them (STG Upper/Lower's weeks 2 and 3, STG Rotation's cycle 2), set by
+-- set from the week before (the same planned set's weight, RIR, rep targets and
+-- AMRAP), so the world is the same whichever version of v2_plan_week the
+-- database has.
 
 -- ── Privileges a new branch lacks ───────────────────────────────────────────
 -- Supabase creates a branch "without default privileges on the public
@@ -147,6 +178,7 @@ declare
   sp_fb uuid; sw_fb uuid; sw_arms uuid; m_st uuid;
   -- staging-sequence: its own STG Rotation, active sequence run
   qe_squat uuid; qe_bench uuid; qe_farmer uuid;
+  qe_leg_press uuid; qe_row uuid; qe_curl uuid;   -- the 1.1-shaped cycle 2's swapped-in and added exercises
   qp_rot uuid; qw_ra uuid; qw_rb uuid; qw_rc uuid; m_q uuid;
 begin
   -- ── Guard ────────────────────────────────────────────────────────────────
@@ -437,6 +469,22 @@ begin
       (select id from v2_workout_days where program_id = (select program_id from v2_mesocycles where id = m_ul) and name = 'Upper A'));
   perform v2_plan_week(m_ul, 2);
   perform v2_plan_week(m_ul, 3);
+  -- Weeks 2 and 3 copy the week before: v2_plan_week gives them its structure (since
+  -- migration 045 no number), so each planned set takes the numbers of the same planned
+  -- set a week earlier, week 2 from week 1 and then week 3 from week 2. With
+  -- 041's v2_plan_week these columns are already equal and the update changes nothing.
+  for wk in 2..3 loop
+    update v2_week_plan_sets ws set
+      target_weight = src.target_weight, target_rir = src.target_rir,
+      rep_min = src.rep_min, rep_max = src.rep_max, is_amrap = src.is_amrap
+    from v2_week_plans wp
+    join v2_week_plans swp on swp.mesocycle_id = wp.mesocycle_id and swp.workout_day_id = wp.workout_day_id
+                          and swp.sequence_position is not distinct from wp.sequence_position
+                          and swp.week_number = wp.week_number - 1
+    join v2_week_plan_sets src on src.week_plan_id = swp.id
+    where wp.mesocycle_id = m_ul and wp.week_number = wk
+      and ws.week_plan_id = wp.id and ws.program_set_id = src.program_set_id;
+  end loop;
   -- Week 2's Lower A is a deload session.
   update v2_week_plans set is_deload = true
   where mesocycle_id = m_ul and week_number = 2
@@ -503,6 +551,10 @@ begin
   values (u_seq, 'Barbell Bench Press', 'chest', '{mid_chest}', 'horizontal_push') returning id into qe_bench;
   insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_seq, 'Back Squat', 'quads', 'squat') returning id into qe_squat;
   insert into exercises (user_id, name, muscle_group) values (u_seq, 'Farmer Carry', 'other') returning id into qe_farmer;
+  -- Not in the program: the 1.1-shaped cycle 2 (below) swaps the first in and adds the other two.
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_seq, 'Leg Press', 'quads', 'squat') returning id into qe_leg_press;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_seq, 'Barbell Row', 'back', 'horizontal_pull') returning id into qe_row;
+  insert into exercises (user_id, name, muscle_group, movement_pattern) values (u_seq, 'Dumbbell Curl', 'biceps', 'isolation') returning id into qe_curl;
 
   insert into v2_programs (user_id, name, kind, schedule_type, planning_type)
   values (u_seq, 'STG Rotation', 'saved', 'sequence', 'week_dependent') returning id into qp_rot;
@@ -521,6 +573,92 @@ begin
   m_q := v2_start_run(qp_rot, 'STG Rotation run', d_today - 6);
   perform v2_plan_week(m_q, 1);
   perform v2_plan_week(m_q, 2);
+  -- Cycle 2 copies cycle 1 (see "Numbers in later weeks" in the header): each planned set
+  -- takes the numbers of the same planned set of the same slot a cycle earlier.
+  update v2_week_plan_sets ws set
+    target_weight = src.target_weight, target_rir = src.target_rir,
+    rep_min = src.rep_min, rep_max = src.rep_max, is_amrap = src.is_amrap
+  from v2_week_plans wp
+  join v2_week_plans swp on swp.mesocycle_id = wp.mesocycle_id and swp.workout_day_id = wp.workout_day_id
+                        and swp.sequence_position is not distinct from wp.sequence_position
+                        and swp.week_number = wp.week_number - 1
+  join v2_week_plan_sets src on src.week_plan_id = swp.id
+  where wp.mesocycle_id = m_q and wp.week_number = 2
+    and ws.week_plan_id = wp.id and ws.program_set_id = src.program_set_id;
+
+  -- ── STG Rotation run, cycle 2: the edits 1.1 let a user make (the 1.1-shaped run) ─────
+  -- TASKS-1.2 chunk 53; DECISIONS 149 (c) and 196. Migration 046 is the release's data
+  -- migration: it makes each active week-dependent run's program match its last planned week
+  -- (the exercises it lists and their order), so that nothing the user sees changes when 1.2's
+  -- v2_plan_week plans the next week from the program. It is rehearsed on a run 1.1 changed in
+  -- the week view, and this is that run. What 1.1 wrote, as it wrote it (weekPlanService.ts:
+  -- swapWeekExercise, addWeekExercise, reorderWeekExercises; runProgramExercises.ts:
+  -- removeRunProgramExercise), in cycle 2, the last planned week of every workout here:
+  --   Rotation A, slot 4  SWAP Back Squat for Leg Press: a week-only Leg Press at the squat's
+  --                       place; the slot's exercise row and its sets point at it. The run
+  --                       copy still lists the squat. (Slot 1 stays as planned: a repeated
+  --                       workout edited in one of its slots; the later slot is the last week.)
+  --   Rotation B          the program tab's REMOVE of Bench Press (soft: removed_at; planned
+  --                       weeks keep their rows, so cycle 2 still lists it) and an ADD of
+  --                       Barbell Row after it (a week-only row, two sets).
+  --   Rotation C          an ADD of Dumbbell Curl after Farmer Carry (a week-only row, two
+  --                       sets), then a REORDER putting the curl first (the two week rows
+  --                       trade positions; the run copy never hears of it).
+  -- Before 046 the run copy's program and these weeks disagree. After it, A lists Leg Press and
+  -- not the squat, B lists Bench Press (brought back) and then Barbell Row, and C lists the curl
+  -- and then the carry. A seed does not run 046: a migration runs at a deploy, a seed after one.
+  -- Seeded before the deploy that applies 045 and 046, this shape is there for the deploy to
+  -- reconcile (`node scripts/rehearse-046.mjs --staging --out FILE` reads it before the merge,
+  -- `--compare FILE` after). Seeded once 046 is live, it stays as it is until 046's text is run
+  -- by hand in the SQL editor (it changes nothing that already matches, and runs twice safely).
+  declare
+    q_a_wp uuid; q_a_pe uuid; q_a_new uuid;   -- Rotation A, slot 4: its plan row, the squat's run-copy row, the swapped-in row
+    q_b_wp uuid; q_b_pe uuid; q_b_new uuid;   -- Rotation B: its plan row, Bench Press's run-copy row, the added row
+    q_c_wp uuid; q_c_pe uuid; q_c_new uuid;   -- Rotation C: its plan row, Farmer Carry's run-copy row, the added row
+  begin
+    select wp.id, (select x.program_exercise_id from v2_week_plan_exercises x where x.week_plan_id = wp.id)
+      into q_a_wp, q_a_pe
+      from v2_week_plans wp join v2_workout_days wd on wd.id = wp.workout_day_id
+     where wp.mesocycle_id = m_q and wp.week_number = 2 and wp.sequence_position = 4 and wd.name = 'Rotation A';
+    select wp.id, (select x.program_exercise_id from v2_week_plan_exercises x where x.week_plan_id = wp.id)
+      into q_b_wp, q_b_pe
+      from v2_week_plans wp join v2_workout_days wd on wd.id = wp.workout_day_id
+     where wp.mesocycle_id = m_q and wp.week_number = 2 and wd.name = 'Rotation B';
+    select wp.id, (select x.program_exercise_id from v2_week_plan_exercises x where x.week_plan_id = wp.id)
+      into q_c_wp, q_c_pe
+      from v2_week_plans wp join v2_workout_days wd on wd.id = wp.workout_day_id
+     where wp.mesocycle_id = m_q and wp.week_number = 2 and wd.name = 'Rotation C';
+
+    -- Rotation A, slot 4: SWAP. The replacement is a week-only program row at the replaced row's
+    -- place (and block, if any, never its unit); the week's row and its sets are pointed at it.
+    insert into v2_program_exercises (user_id, workout_day_id, exercise_id, position, weight_unit, superset_block_id, week_only)
+    select u_seq, pe.workout_day_id, qe_leg_press, pe.position, null, pe.superset_block_id, true
+    from v2_program_exercises pe where pe.id = q_a_pe
+    returning id into q_a_new;
+    update v2_week_plan_exercises set program_exercise_id = q_a_new, carry_program_exercise_id = null
+    where week_plan_id = q_a_wp and program_exercise_id = q_a_pe;
+    update v2_week_plan_sets set program_exercise_id = q_a_new
+    where week_plan_id = q_a_wp and program_exercise_id = q_a_pe;
+
+    -- Rotation B: the program tab's REMOVE (soft) of Bench Press, then ADD Barbell Row in the week.
+    update v2_program_exercises set removed_at = now() where id = q_b_pe;
+    insert into v2_program_exercises (user_id, workout_day_id, exercise_id, position, week_only)
+    select u_seq, pe.workout_day_id, qe_row, 2, true from v2_program_exercises pe where pe.id = q_b_pe
+    returning id into q_b_new;
+    insert into v2_week_plan_exercises (user_id, week_plan_id, program_exercise_id, position) values (u_seq, q_b_wp, q_b_new, 2);
+    insert into v2_week_plan_sets (week_plan_id, user_id, program_exercise_id, set_number, rep_min, rep_max)
+    values (q_b_wp, u_seq, q_b_new, 1, 8, 10), (q_b_wp, u_seq, q_b_new, 2, 8, 10);
+
+    -- Rotation C: ADD Dumbbell Curl, then REORDER (the two week rows trade positions).
+    insert into v2_program_exercises (user_id, workout_day_id, exercise_id, position, week_only)
+    select u_seq, pe.workout_day_id, qe_curl, 2, true from v2_program_exercises pe where pe.id = q_c_pe
+    returning id into q_c_new;
+    insert into v2_week_plan_exercises (user_id, week_plan_id, program_exercise_id, position) values (u_seq, q_c_wp, q_c_new, 2);
+    insert into v2_week_plan_sets (week_plan_id, user_id, program_exercise_id, set_number, rep_min, rep_max)
+    values (q_c_wp, u_seq, q_c_new, 1, 10, 12), (q_c_wp, u_seq, q_c_new, 2, 10, 12);
+    update v2_week_plan_exercises set position = 2, carry_position = null where week_plan_id = q_c_wp and program_exercise_id = q_c_pe;
+    update v2_week_plan_exercises set position = 1, carry_position = null where week_plan_id = q_c_wp and program_exercise_id = q_c_new;
+  end;
 
   -- staging-empty owns nothing: no programs, runs, exercises or settings row.
 
@@ -725,6 +863,9 @@ begin
     c_seq_email, (select count(*) from v2_sessions where user_id = u_seq), (select count(*) from v2_set_logs where user_id = u_seq),
     (select status || ' ' || start_date from v2_mesocycles where id = m_q),
     c_empty_email, (select count(*) from v2_programs where user_id = u_empty);
+  raise notice 'staging seed: % has a 1.1-shaped cycle 2 for migration 046 (% week-only program row(s), % soft-removed)',
+    c_seq_email, (select count(*) from v2_program_exercises where user_id = u_seq and week_only),
+    (select count(*) from v2_program_exercises where user_id = u_seq and removed_at is not null);
 end
 $seed$;
 

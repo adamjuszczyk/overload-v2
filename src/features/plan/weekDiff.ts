@@ -1,7 +1,12 @@
 import type { ProgramExercise, ProgramSet, WeekPlan, WeekPlanSet } from '../../types'
 import { groupWeekPlanSets } from '../gym/setGroupLogic'
 import { columnsToRepTarget, formatRepTarget, resolveStageKind, type StageKind } from '../../lib/plannerVocabulary.js'
-import { findLastUsableWeek, type PlannedWeekRecord, type PlanningType, type WeekStartSetting } from './weekSources'
+import { findLastUsableWeek, type PlannedWeekRecord, type PlanningType } from './weekSources'
+
+// Chunk 53: weekSources.ts no longer has this type (migration 045's v2_plan_week ignores the 'new week starts' setting). This 1.1
+// highlighting module is replaced by `changesSinceSource()` in chunk 54b; until then PlanPage still passes the stored value on
+// (CONTEXT.md: Plan's highlighting reads it until 54b), and 'empty' still means "no marks" here.
+type WeekStartSetting = 'copy' | 'empty'
 
 // Chunk 31 (TASKS-1.1 "Differences from the week's source are highlighted"; SPEC
 // Plan screen [P1.1]: "Anything different from the week's source is
