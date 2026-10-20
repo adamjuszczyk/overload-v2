@@ -284,7 +284,7 @@ describe('PlanPage — on a sequence run the action follows chunk 35\'s current 
     renderPlanPage()
     // Opens on cycle 2: the next due workout is in it. The calendar week is 1.
     expect(screen.getByText('CYCLE 2')).toBeTruthy()
-    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
+    expect(screen.queryByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)).toBeNull() // the current cycle carries no lock line, in either word
     expect(screen.getByText(CYCLE_ACTION)).toBeTruthy()
     // A later cycle: offered.
     openCycle(3)
@@ -293,7 +293,8 @@ describe('PlanPage — on a sequence run the action follows chunk 35\'s current 
     // Cycle 1 is the calendar's current week but a past cycle here: absent.
     openCycle(1)
     expect(screen.getByText('CYCLE 1')).toBeTruthy()
-    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST CYCLE · READ ONLY')).toBeTruthy() // a sequence run's past cycle says cycle (review 1, F4), not week
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
     expect(screen.queryByText(CYCLE_ACTION)).toBeNull()
     expect(screen.queryByText(ACTION)).toBeNull()
   })
