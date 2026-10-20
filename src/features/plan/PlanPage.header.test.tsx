@@ -56,7 +56,7 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await import('./structureHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
-vi.mock('../programs/ProgramsPage', () => ({ default: () => <div>PROGRAMS PAGE</div> }))
+vi.mock('../programs/ProgramsTab', async () => ({ default: (await import('./programsTab.standIn.testutil')).default }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
@@ -161,7 +161,7 @@ describe('the header (boards 1, 1b, 1d)', () => {
     renderPlan()
     fireEvent.click(screen.getByRole('tab', { name: 'PROGRAMS' }))
     expect(screen.getByRole('tab', { name: 'PROGRAMS' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByText('PROGRAMS PAGE')).toBeTruthy()
+    expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     expect(document.querySelector('[data-week]')).toBeNull()
     fireEvent.click(screen.getByRole('tab', { name: 'PLAN' }))
     expect(tileLabels()).toHaveLength(3)

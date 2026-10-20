@@ -6,6 +6,7 @@ import { usePrograms, useWorkoutDays, useUpdateProgramName } from '../programs/u
 import { useStartRun } from '../programs/useMesos'
 import { useProgramHasSchedule } from '../programs/useProgramHasSchedule'
 import { NO_SCHEDULE_START_REASON } from '../programs/hasSchedule'
+import { PLAN_WEEK_ONE_PATH } from '../programs/programsTabLogic'
 import { useToastStore } from '../notifications/toastStore'
 import { detectSharedWeekdayWorkouts, useSplitSharedWeekdayWorkouts, type SharedWeekdayGroup } from './usePlanner'
 import StepPriorities from './StepPriorities'
@@ -27,9 +28,9 @@ import StepVolume from './StepVolume'
 // (so "open, then save unchanged" writes nothing at all — reviewer note 1's
 // own proof); START activates it (v2_start_run, chunk 6).
 //
-// Reached only against a `kind = 'saved'` program (ProgramsPage.tsx's
-// "saved programs" list and its "+" create flow, since chunk 26 — formerly
-// ProgramPage.tsx's "my programs"). A run's copy is refused (chunk 33, SPEC
+// Reached only against a `kind = 'saved'` program (the PROGRAMS tab's YOUR
+// PROGRAMS list and its New program sheet since chunk 65; ProgramsPage.tsx
+// before it, since chunk 26 — formerly ProgramPage.tsx's "my programs"). A run's copy is refused (chunk 33, SPEC
 // Programs and runs [P1.1]: "The planner refuses to open a run's copy"): a
 // running program's schedule and workouts are fixed for the run (its deload
 // rules are Settings', since chunk 48), and the rest of what Plan's program tab
@@ -38,7 +39,7 @@ import StepVolume from './StepVolume'
 //
 // Starting needs a schedule (chunk 33, G39): START is disabled while the program
 // has no scheduled workout, with the reason under it (programs/hasSchedule.ts is
-// the one check, shared with the Programs page's START RUN and Plan's
+// the one check, shared with the PROGRAMS tab's START sheet and Plan's
 // no-schedule line).
 type Step = 'priorities' | 'exercises' | 'volume'
 
@@ -143,7 +144,8 @@ export default function PlannerPage() {
   async function handleStart() {
     try {
       await startRun.mutateAsync({ name: program!.name, programId: program!.id })
-      navigate('/plan')
+      // Chunk 65 (SPEC Programs and runs [1.2], Starting: "lands on Plan, week 1"): both STARTs go to Plan with the week forced to 1.
+      navigate(PLAN_WEEK_ONE_PATH)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not start this program')
     }

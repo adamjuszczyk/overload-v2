@@ -4,7 +4,7 @@ import { hasScheduledWorkout } from './hasSchedule'
 
 // Chunk 33 (SPEC.md Programs and runs [P1.1], G39) — whether a program has a
 // scheduled workout, read the way every START needs it: the planner's own, and
-// the Programs page's sheet (a saved program's START there starts a run
+// the PROGRAMS tab's START sheet (a saved program's START there starts a run
 // without opening the planner). hasSchedule.ts is the rule; this only gathers
 // what it reads (the program's workouts, and, for a sequence program only, its
 // sequence — a weekday program makes no sequence read at all).

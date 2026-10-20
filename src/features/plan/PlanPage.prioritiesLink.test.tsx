@@ -9,7 +9,7 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // header's Programs icon and PRIORITIES button go"; SPEC Screens → Plan screen → Header (1, 8a): the PLAN | PROGRAMS tabs, then
 // "[PROGRAM] · CURRENT PROGRAM"; PR1: FOCUS / DON'T CARE sit on the CURRENT PROGRAM card, which chunk 65 builds) takes it out. Absence
 // test (Checks that lied #32): no control on Plan opens /plan/priorities. The route itself stays (App.tsx; PrioritiesEditor.test.tsx
-// proves the screen), and the PROGRAMS tab's page (today's, until chunk 65) is where a run's priorities are reached.
+// proves the screen), and the PROGRAMS tab's CURRENT PROGRAM card (chunk 65: its FOCUS and DON'T CARE rows) is where a run's priorities are reached.
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -44,7 +44,7 @@ vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
-vi.mock('../programs/ProgramsPage', () => ({ default: () => <div>PROGRAMS PAGE</div> }))
+vi.mock('../programs/ProgramsTab', async () => ({ default: (await import('./programsTab.standIn.testutil')).default }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here

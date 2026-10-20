@@ -1,12 +1,13 @@
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
 import type { MuscleGroup } from '../../types'
 import { MUSCLE_GROUPS, MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags.js'
 import { buildGroupMarkEntries, MARK_LABELS } from '../../lib/priorityMarks.js'
 import type { PriorityMark } from '../../lib/priorityMarks.js'
+import { errorReason } from '../../components/exercisePickerLogic'
 import { useMesos } from '../programs/useMesos'
-import { usePrograms } from '../programs/usePrograms'
 import { useProgramPriorities } from './useProgramPriorities'
 
 // The active run's priorities, VIEW-ONLY (chunk 28; SPEC.md Programs and runs
@@ -33,6 +34,12 @@ import { useProgramPriorities } from './useProgramPriorities'
 // compact read-only label only where a mark is stored, and a group or
 // subgroup without one shows just its name. Groups still unfold to their
 // subgroups, as before.
+//
+// Chunk 65 (TASKS-1.2 "The PROGRAMS tab": boards PR5 (entry; "the editor is today's PrioritiesEditor, view-only") and 12's PRIORITIES
+// states): it is entered from the FOCUS and DON'T CARE rows of PROGRAMS' CURRENT PROGRAM card. Its header is the boards': the back arrow
+// ("Back to Programs"), the run's name over PRIORITIES. The three states board 12 draws are its own: the spinner, "COULDN'T LOAD
+// PRIORITIES" with the real reason under it (SPEC Errors (15): the board's "Check your connection and try again." is for every error, and
+// the rule replaces it), and "No current program". The groups' list is not rebuilt to PR5's single card: TASKS keeps today's screen.
 
 // A mark, as text on its row: the compact accent label the Plan rows already
 // use for a set's kind (WARMUP, DROPSET, …). Not a control.
@@ -44,19 +51,27 @@ function MarkLabel({ mark }: { mark: PriorityMark }) {
   )
 }
 
+// The spinner's ring, one side at a time: a captured render drops a `border` shorthand with `var()` (RULES, jsdom), so a picture would show no ring.
+const SPINNER_RING: CSSProperties = {
+  borderWidth: 2,
+  borderStyle: 'solid',
+  borderTopColor: 'var(--accent)',
+  borderRightColor: 'var(--border-strong)',
+  borderBottomColor: 'var(--border-strong)',
+  borderLeftColor: 'var(--border-strong)',
+}
+
 export default function PrioritiesEditor() {
   const navigate = useNavigate()
 
-  const { data: mesos = [], isLoading: mesosLoading, isError: mesosError } = useMesos()
+  const { data: mesos = [], isLoading: mesosLoading, isError: mesosError, error: mesosFailure } = useMesos()
   const activeMeso = mesos.find((m) => m.status === 'active') ?? null
-
-  const { data: programs = [] } = usePrograms()
-  const program = programs.find((p) => p.id === activeMeso?.programId)
 
   const {
     data: rows,
     isLoading: rowsLoading,
     isError: rowsError,
+    error: rowsFailure,
   } = useProgramPriorities(activeMeso?.programId ?? null)
 
   // Which groups are expanded — page-local view state, same precedent as
@@ -86,54 +101,46 @@ export default function PrioritiesEditor() {
 
   const loading = mesosLoading || rowsLoading
   const failed = mesosError || rowsError
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
   const groupEntries = rows ? buildGroupMarkEntries(rows) : []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--base)' }}>
-      {/* Header */}
-      <div style={{ padding: '16px 20px 14px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
+      {/* Header: the back arrow, the run's name over PRIORITIES (boards PR5 and 12) */}
+      <div style={{ padding: '16px 16px 14px', display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
         <button
           onClick={handleDone}
-          style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 9, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }}
+          aria-label="Back to Programs"
+          style={{ flex: '0 0 auto', width: 44, height: 44, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-raised)', border: '1px solid var(--border-strong)', borderRadius: 10, color: 'var(--text-secondary)', cursor: 'pointer' }}
         >
-          <ArrowLeft size={16} />
+          <ArrowLeft size={18} />
         </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeMeso?.name ?? 'PRIORITIES'}
-          </div>
-          {program && (
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {program.name}
-            </div>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {activeMeso && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)', overflowWrap: 'anywhere' }}>
+              {activeMeso.name.toUpperCase()}
+            </span>
           )}
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 22, lineHeight: 1.05, color: 'var(--text-primary)' }}>PRIORITIES</h1>
         </div>
       </div>
 
       <div className="hide-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 32px', minHeight: 0 }}>
         {loading && (
           <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 60 }}>
-            <div className="animate-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+            <div role="status" aria-label="Loading" className="animate-spin" style={{ width: 22, height: 22, borderRadius: '50%', ...SPINNER_RING }} />
           </div>
         )}
 
         {!loading && failed && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--error)' }}>
-              COULDN'T LOAD PRIORITIES
-            </p>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)', marginTop: 8 }}>
-              Check your connection and try again.
-            </p>
+          <div role="alert" style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 60 }}>
+            <p style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--error)' }}>COULDN'T LOAD PRIORITIES</p>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>{errorReason(mesosError ? mesosFailure : rowsFailure, offline)}</p>
           </div>
         )}
 
         {!loading && !failed && !activeMeso && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
-              NO ACTIVE MESOCYCLE
-            </p>
-          </div>
+          <div style={{ textAlign: 'center', paddingTop: 60, fontSize: 15, color: 'var(--text-secondary)' }}>No current program</div>
         )}
 
         {!loading && !failed && activeMeso && (

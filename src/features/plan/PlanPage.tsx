@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, Lock, Pencil } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit, PlanningType, ProgramSet } from '../../types'
@@ -65,7 +65,7 @@ import WeekMenuSheet from './WeekMenuSheet'
 import { copyRows } from './copySheetLogic'
 import { forwardNote, forwardSource } from './planForwardLogic'
 import { weekTiles } from './weekPlanning'
-import ProgramsPage from '../programs/ProgramsPage'
+import ProgramsTab from '../programs/ProgramsTab'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { usePlanRowStatuses } from './usePlanRowStatuses'
 import { useRunSchedule } from './useRunSchedule'
@@ -172,7 +172,7 @@ type SetChanges = {
 // unplanned, opens with PLAN FORWARD (`PlanForwardCard`), which plans exactly that week. A week nobody planned that has passed shows NOT
 // PLANNED, read-only and empty, and nothing is ever written for it (DECISIONS 131). Under the header: COPY (`CopySheet`, hidden on week 1,
 // P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week as it was before this chunk until 54a and
-// 54b rebuild it. The PROGRAMS tab draws today's Programs page under the tabs until chunk 65 (P1.2-12).
+// 54b rebuild it. The PROGRAMS tab is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
 //
 // Chunk 35 (SPEC Scheduling → Sequence [P1.1], G40: "The current cycle is the
 // one containing the next due workout. Cycles before it are past.") — what
@@ -191,37 +191,62 @@ type SetChanges = {
 // before the cycle is known. The existing spinner shows instead; a programs
 // read that failed with nothing to show gets the load error. Display-only
 // choices (D31), provisional.
-export default function PlanPage() {
-  const [tab, setTab] = useState<PlanTab>('plan')
-  const { data: mesos = [] } = useMesos()
+//
+// Chunk 65 (TASKS-1.2 "The PROGRAMS tab"; SPEC Navigation and settings [1.2] → PLAN | PROGRAMS (8): "Tapping Plan in the nav opens straight
+// into the week. With no program running it opens on PROGRAMS; PLAN shows a lock"; Programs and runs [1.2], Starting: "lands on Plan, week
+// 1") makes this the shell that chooses the tab:
+//   - `/plan` opens the week of the program that runs, or PROGRAMS when none does (PLAN is locked then, PR2: nothing can open it; a program
+//     that finishes under an open Plan leaves PROGRAMS too). `/program` is the same page opened on PROGRAMS (`initialTab`).
+//   - START (both of them: the PROGRAMS tab's sheet and the planner's) goes to `/plan?week=1`. The shell reads `week` once, opens Plan on that
+//     week, and takes it out of the address: a one-shot, so a reload or a later visit opens the current week as ever.
+//   - A run list that couldn't be read is the load error (board 12), never "no program running": an empty answer and a failed one differ.
+export default function PlanPage({ initialTab }: { initialTab?: PlanTab } = {}) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [chosen, setChosen] = useState<PlanTab | null>(initialTab ?? null)
+  const [forcedWeek, setForcedWeek] = useState<number | null>(null)
+  const mesosRead = useMesos()
   const programsRead = usePrograms()
-  const activeMeso = mesos.find((m) => m.status === 'active') ?? null
+  const mesos = mesosRead.data
+  const activeMeso = mesos?.find((m) => m.status === 'active') ?? null
 
-  if (tab === 'programs') return <ProgramsTab onTab={setTab} />
+  // The one-shot `?week=N`: a whole number from 1 opens Plan on that week; anything else is only taken out of the address.
+  const weekParam = parseWeekParam(searchParams.get('week'))
+  useEffect(() => {
+    if (searchParams.get('week') === null) return
+    if (weekParam !== null) {
+      setChosen('plan')
+      setForcedWeek(weekParam)
+    }
+    const rest = new URLSearchParams(searchParams)
+    rest.delete('week')
+    setSearchParams(rest, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  const noRun = mesos !== undefined && activeMeso === null
+  const tab: PlanTab = noRun ? 'programs' : weekParam !== null ? 'plan' : (chosen ?? 'plan')
+
+  if (tab === 'programs') return <ProgramsTab onTab={setChosen} />
+
+  if (mesosRead.isError === true && mesos === undefined) return <PlanLoadError error={mesosRead.error} />
 
   if (activeMeso && programsRead.data === undefined) {
     return programsRead.isError ? <PlanLoadError error={programsRead.error} /> : <PlanSpinner />
   }
 
+  const initialWeek = forcedWeek ?? weekParam ?? undefined
   const program = programsRead.data?.find((p) => p.id === activeMeso?.programId)
   if (activeMeso && (program?.scheduleType ?? 'weekday') === 'sequence') {
-    return <SequencePlanPage mesoId={activeMeso.id} programId={activeMeso.programId} onTab={setTab} />
+    return <SequencePlanPage mesoId={activeMeso.id} programId={activeMeso.programId} onTab={setChosen} initialWeek={initialWeek} />
   }
-  return <PlanScreen onTab={setTab} />
+  return <PlanScreen onTab={setChosen} initialWeek={initialWeek} />
 }
 
-// The PROGRAMS tab until chunk 65: today's Programs page under the tabs (P1.2-12), without its own title.
-function ProgramsTab({ onTab }: { onTab: (tab: PlanTab) => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--base)' }}>
-      <div style={{ padding: '14px 16px 8px', flexShrink: 0, borderBottom: '1px solid var(--border-subtle)' }}>
-        <PlanTabs active="programs" onSelect={onTab} />
-      </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <ProgramsPage embedded />
-      </div>
-    </div>
-  )
+/** `?week=N` as a week number: a whole number from 1, else null. */
+function parseWeekParam(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value)) return null
+  const week = Number(value)
+  return Number.isSafeInteger(week) && week >= 1 ? week : null
 }
 
 // The sequence run's wrapper: finds the current cycle, then renders the same
@@ -232,10 +257,10 @@ function ProgramsTab({ onTab }: { onTab: (tab: PlanTab) => void }) {
 // to show, the spinner would never end: the load error shows instead, and
 // nothing is planned (a fallback to the calendar week or cycle 1 would plan
 // the wrong cycle). Display-only choices (D31), provisional.
-function SequencePlanPage({ mesoId, programId, onTab }: { mesoId: string; programId: string; onTab: (tab: PlanTab) => void }) {
+function SequencePlanPage({ mesoId, programId, onTab, initialWeek }: { mesoId: string; programId: string; onTab: (tab: PlanTab) => void; initialWeek?: number }) {
   const { cycle, failed, error } = useSequenceCurrentCycle(mesoId, programId)
   if (cycle === null) return failed ? <PlanLoadError error={error} /> : <PlanSpinner />
-  return <PlanScreen sequenceCycle={cycle} onTab={onTab} />
+  return <PlanScreen sequenceCycle={cycle} onTab={onTab} initialWeek={initialWeek} />
 }
 
 // Board 12's two states with nothing to draw but the title: "PLAN" over a spinner (OPENING PLAN) or over the error (PLAN COULDN'T LOAD).
@@ -327,8 +352,9 @@ function WeekNote({ title, body, error = false, children }: { title: string; bod
 }
 
 // `sequenceCycle`: the current cycle of a sequence run (SequencePlanPage), null
-// for a weekday run, whose current week is the calendar week.
-function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | null; onTab: (tab: PlanTab) => void }) {
+// for a weekday run, whose current week is the calendar week. `initialWeek` (chunk 65): the week Plan opens on instead of the current one,
+// when START sent it to week 1 (`?week=1`, read by the shell); one that isn't among the tiles opens the current week as ever.
+function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycle?: number | null; onTab: (tab: PlanTab) => void; initialWeek?: number }) {
   const navigate = useNavigate()
   const today = useToday()
   const { data: mesos = [], isLoading: mesosLoading } = useMesos()
@@ -341,7 +367,7 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
   // The week the header has open. It opens on the current week (the current cycle on a sequence run) from the first render, not after an
   // effect, so no other week is shown (or flagged read-only) first: a run in week 5 whose weeks are already read would otherwise draw
   // week 1 and its lock line for a render. What is shown is `viewWeek` below, which is always one of the tiles.
-  const [openedWeek, setOpenedWeek] = useState(sequenceCycle ?? tilesCurrent)
+  const [openedWeek, setOpenedWeek] = useState(initialWeek ?? sequenceCycle ?? tilesCurrent)
 
   // Workout switcher (TASKS.md §4 item 30) — which single workout day is
   // showing. No effect needed to keep it valid: `selected` below always
@@ -364,9 +390,9 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
   // this replaces) is gone — "There's no compact view" (G17).
   const [planView, setPlanView] = useState<PlanView>('sets')
 
-  // The opening view is the current week (the current cycle on a sequence run).
+  // The opening view is the current week (the current cycle on a sequence run), or the week START asked for.
   useEffect(() => {
-    if (activeMeso) setOpenedWeek(tilesCurrent)
+    if (activeMeso) setOpenedWeek(initialWeek ?? tilesCurrent)
   }, [activeMeso?.id])
 
   // Which sheet is open, if any: COPY (board 2) or WEEK ⋯ (board 1e).
@@ -617,36 +643,10 @@ function PlanScreen({ sequenceCycle = null, onTab }: { sequenceCycle?: number | 
 
   // ── No active meso ────────────────────────────────────────────────────────
 
-  if (mesosLoading) return <PlanSpinner />
-
-  if (!activeMeso) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--base)', padding: '20px 20px' }}>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2.5px', color: 'var(--text-muted)', marginBottom: 6 }}>
-          OVERLOAD v2
-        </p>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 28, color: 'var(--text-primary)', lineHeight: 1 }}>
-          PLAN
-        </h1>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', textAlign: 'center' }}>
-            NO ACTIVE MESOCYCLE
-          </p>
-          {/* Chunk 11 (SPEC.md "Plan screen" — "no active run → 'Start a
-              program', leading to the planner"): the programs page (/program
-              — ProgramsPage.tsx since chunk 26, same route, same target) is
-              where a program is picked or created — "+" there opens the
-              planner (PlannerPage, /program/:id). */}
-          <button
-            onClick={() => navigate('/program')}
-            style={{ background: 'var(--accent)', border: 'none', borderRadius: 9, padding: '10px 22px', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--on-accent)', cursor: 'pointer' }}
-          >
-            START A PROGRAM →
-          </button>
-        </div>
-      </div>
-    )
-  }
+  // Chunk 65: no program running is PROGRAMS' page with PLAN locked (PR2; SPEC: "With no program running it opens on PROGRAMS"), which the
+  // shell above chooses, so this screen is drawn without a run only while the run list is still out. Chunk 11's "NO ACTIVE MESOCYCLE /
+  // START A PROGRAM →" page is gone with the page it led to.
+  if (mesosLoading || !activeMeso) return <PlanSpinner />
 
   // A run's weeks that can't be read leave nothing to draw the header from: board 12's error, with the real reason.
   if (allWeeksRead.isError === true && allWeeksRead.data === undefined) return <PlanLoadError error={allWeeksRead.error} />
