@@ -645,8 +645,9 @@ optional:
   copying uses each week's actual content.
   - Weeks 1.1 changed in the week view (DECISIONS 149, Adam 2026-10-16): as a
     release step, not during the build, one data migration at the release
-    makes each active week-dependent run's program match its last planned week
-    (exercises and order), so nothing the user sees changes.
+    (migration 046: DECISIONS 196, Adam 2026-10-20) makes each active
+    week-dependent run's program match its last planned week (exercises and
+    order), so nothing the user sees changes.
 - The number of weeks stays open-ended, as today.
 
 ### Review: what went differently last week [1.2] (13)
