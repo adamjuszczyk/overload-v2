@@ -45,7 +45,6 @@ const week = (n: number): WeekPlan => plan(n, [BENCH], [wset(`s-${n}`, 'pe-bench
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [state.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: state.programsLoading ? undefined : [program], isLoading: state.programsLoading }),
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -53,7 +52,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/ProgramsTab', async () => ({ default: (await import('./programsTab.standIn.testutil')).default }))

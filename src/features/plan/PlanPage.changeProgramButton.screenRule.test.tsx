@@ -39,7 +39,6 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'u-test' }, loading: false, signOut: vi.fn() }) }))
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [h.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: h.programs, isLoading: false }),
   useWorkoutDays: () => ({ data: h.workoutDays, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -47,7 +46,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./useDoneWeekPlanIds', async (importOriginal) => ({

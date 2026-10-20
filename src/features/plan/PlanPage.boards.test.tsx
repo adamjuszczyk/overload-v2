@@ -47,7 +47,6 @@ const setWeekDeloadMutate = vi.hoisted(() => vi.fn())
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [state.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: state.programsLoading ? undefined : [state.program], isLoading: state.programsLoading }),
   useWorkoutDays: () => ({ data: state.days, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -55,7 +54,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done }))

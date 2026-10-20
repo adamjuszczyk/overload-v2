@@ -63,7 +63,6 @@ const addWarmupMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [makeProgram()], isLoading: false }),
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -73,7 +72,7 @@ vi.mock('../programs/usePrograms', async () => ({
 // file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.

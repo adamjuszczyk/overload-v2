@@ -102,7 +102,6 @@ const programSetReads: string[][] = []
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [mockState.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [mockState.program], isLoading: false }),
   useWorkoutDays: () => ({ data: mockState.days, isLoading: false }),
   useProgramExercises: (workoutDayId: string) => ({ data: mockState.runCopy[workoutDayId], isLoading: false }),
@@ -110,7 +109,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
   // The program sets of the rows asked for (the highlighting asks for the run's copy; the STRUCTURE view for the week's).
   useProgramSets: (ids: string[]) => {
     programSetReads.push(ids)

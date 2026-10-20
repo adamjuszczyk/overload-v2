@@ -132,50 +132,208 @@ describe('updateSet — weight target, rep target, tags (chunk 19)', () => {
   })
 })
 
-// "Add warmup sets" (Plan's exercise ⋯ menu, 2026-10-10). addWarmupSet reads
-// the exercise's rows, shifts the working sets down (highest first), then
-// inserts the warmup at the freed number with is_warmup set.
-describe('addWarmupSet — a warmup above the first working set', () => {
-  it('shifts the working sets down one, then inserts a warmup head at the top', async () => {
-    const { addWarmupSet } = await import('./weekPlanService')
-    const calls: { op: string; payload?: unknown; id?: unknown }[] = []
-    const rows = [
-      { id: 'a', set_number: 1, is_warmup: false, parent_week_plan_set_id: null },
-      { id: 'b', set_number: 2, is_warmup: false, parent_week_plan_set_id: null },
-    ]
-    fromMock.mockImplementation(() => {
+// Chunk 54a — the RIR picker writes a range: `target_rir` and `target_rir_max` together (042). A key is written only when named.
+describe('updateSet — a RIR range (chunk 54a, migration 042)', () => {
+  it('a range writes both ends in one update: { target_rir: 1, target_rir_max: 2 }', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetRir: 1, targetRirMax: 2 })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ target_rir: 1, target_rir_max: 2 })
+    expect(fromMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('a number writes the high end null (not an absent key), so a range it replaces does not keep its old end', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetRir: 2, targetRirMax: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ target_rir: 2, target_rir_max: null })
+  })
+
+  it('NONE clears both', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetRir: null, targetRirMax: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ target_rir: null, target_rir_max: null })
+  })
+
+  it('a change that names neither end leaves both columns out of the update', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSet('head-1', { targetWeight: 80 })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect('target_rir' in payload).toBe(false)
+    expect('target_rir_max' in payload).toBe(false)
+  })
+})
+
+// Chunk 54a — "+ ADD SET" (SPEC Defaults 8): a Normal set with the previous set's rep target and no weight or RIR. addSet writes what the
+// caller names, every column of the new set, so the set is never what a column default happens to be.
+describe('addSet — a Normal set with the caller\'s defaults (chunk 54a)', () => {
+  const insertChain = () => {
+    const chain: Record<string, unknown> = {
+      insert: vi.fn(() => chain),
+      select: vi.fn(() => chain),
+      single: vi.fn(() => Promise.resolve({ data: { id: 'new', week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 4, target_rir: null, is_dropset: false }, error: null })),
+    }
+    return chain
+  }
+  const NORMAL = { isWarmup: false, stageKind: null, repMin: 8, repMax: 10, isAmrap: false, targetWeight: null, targetRir: null, targetRirMax: null } as const
+
+  it('inserts the week plan row, the exercise, the number and the defaults: the rep target, and null weight and RIR', async () => {
+    const { addSet } = await import('./weekPlanService')
+    const chain = insertChain()
+    fromMock.mockReturnValue(chain)
+
+    await addSet('u', 'wp-1', 'pe-1', 4, NORMAL)
+
+    expect(fromMock).toHaveBeenCalledWith('v2_week_plan_sets')
+    expect((chain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual({
+      week_plan_id: 'wp-1',
+      user_id: 'u',
+      program_exercise_id: 'pe-1',
+      set_number: 4,
+      is_dropset: false,
+      is_warmup: false,
+      stage_kind: null,
+      rep_min: 8,
+      rep_max: 10,
+      is_amrap: false,
+      target_weight: null,
+      target_rir: null,
+    })
+  })
+
+  it('an AMRAP target is written as the flag with no numbers, and a set with no target to follow writes none', async () => {
+    const { addSet } = await import('./weekPlanService')
+    const amrap = insertChain()
+    fromMock.mockReturnValue(amrap)
+    await addSet('u', 'wp-1', 'pe-1', 2, { ...NORMAL, repMin: null, repMax: null, isAmrap: true })
+    expect((amrap.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ rep_min: null, rep_max: null, is_amrap: true })
+
+    const none = insertChain()
+    fromMock.mockReturnValue(none)
+    await addSet('u', 'wp-1', 'pe-1', 1, { ...NORMAL, repMin: null, repMax: null })
+    expect((none.insert as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({ rep_min: null, rep_max: null, is_amrap: false })
+  })
+
+  it('writes no target_rir_max: a new set has no range, and the column\'s own default is null (the write needs no migration 042)', async () => {
+    const { addSet } = await import('./weekPlanService')
+    const chain = insertChain()
+    fromMock.mockReturnValue(chain)
+
+    await addSet('u', 'wp-1', 'pe-1', 4, NORMAL)
+
+    expect('target_rir_max' in ((chain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as object)).toBe(false)
+  })
+
+  it('throws what the insert answered, and returns the mapped set on success', async () => {
+    const { addSet } = await import('./weekPlanService')
+    const ok = insertChain()
+    fromMock.mockReturnValue(ok)
+    await expect(addSet('u', 'wp-1', 'pe-1', 4, NORMAL)).resolves.toMatchObject({ id: 'new', setNumber: 4 })
+
+    const failing: Record<string, unknown> = {
+      insert: vi.fn(() => failing),
+      select: vi.fn(() => failing),
+      single: vi.fn(() => Promise.resolve({ data: null, error: { message: 'refused' } })),
+    }
+    fromMock.mockReturnValue(failing)
+    await expect(addSet('u', 'wp-1', 'pe-1', 4, NORMAL)).rejects.toMatchObject({ message: 'refused' })
+  })
+})
+
+// Chunk 54a — one set type change: planSetRows.ts decides the list, this applies it in order and stops at the first refusal.
+describe('applySetTypeOps — the writes of one set type change, in order, stopping at the first failure (chunk 54a)', () => {
+  type Call = { table: string; op: string; payload?: unknown; eq?: unknown[] }
+  function recorder(failOn?: (call: Call) => boolean) {
+    const calls: Call[] = []
+    fromMock.mockImplementation((table: string) => {
+      const call: Call = { table, op: 'read', eq: [] }
       const chain: Record<string, unknown> = {
-        select: vi.fn(() => chain),
-        eq: vi.fn((_col: string, val: unknown) => {
-          if (calls.length && calls[calls.length - 1].op === 'update') calls[calls.length - 1].id = val
-          return chain
-        }),
-        update: vi.fn((payload: unknown) => {
-          calls.push({ op: 'update', payload })
-          return chain
-        }),
-        insert: vi.fn((payload: unknown) => {
-          calls.push({ op: 'insert', payload })
-          return chain
-        }),
-        single: vi.fn(() => Promise.resolve({ data: { id: 'new', week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 1, is_warmup: true, is_dropset: false, stage_index: 0 }, error: null })),
-        then: (resolve: (v: unknown) => unknown) => {
-          const isRead = calls.length === 0
-          return Promise.resolve(isRead ? { data: rows, error: null } : { error: null }).then(resolve)
+        update: (payload: unknown) => ((call.op = 'update'), (call.payload = payload), chain),
+        delete: () => ((call.op = 'delete'), chain),
+        insert: (payload: unknown) => ((call.op = 'insert'), (call.payload = payload), chain),
+        select: () => chain,
+        eq: (col: string, val: unknown) => (call.eq?.push([col, val]), chain),
+        single: () => {
+          calls.push(call)
+          return Promise.resolve({ data: { id: 'new', week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 3, is_dropset: true, stage_index: 1 }, error: null })
+        },
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
+          calls.push(call)
+          return Promise.resolve({ error: failOn?.(call) ? { message: 'refused' } : null }).then(resolve, reject)
         },
       }
       return chain
     })
+    return calls
+  }
 
-    await addWarmupSet('u', 'wp-1', 'pe-1')
+  it('Warmup on a staged head: the stage rows are deleted first (highest first), then the head is switched, one request each, in that order', async () => {
+    const { applySetTypeOps } = await import('./weekPlanService')
+    const calls = recorder()
 
-    expect(calls).toEqual([
-      { op: 'update', payload: { set_number: 3 }, id: 'b' },
-      { op: 'update', payload: { set_number: 2 }, id: 'a' },
-      {
-        op: 'insert',
-        payload: { week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 1, target_rir: null, is_dropset: false, is_warmup: true },
-      },
+    await applySetTypeOps('u', [
+      { kind: 'removeStage', id: 'stage2' },
+      { kind: 'removeStage', id: 'stage1' },
+      { kind: 'updateHead', id: 'head', changes: { isWarmup: true, stageKind: null } },
     ])
+
+    expect(calls.map((c) => [c.table, c.op, c.eq, c.payload])).toEqual([
+      ['v2_week_plan_sets', 'delete', [['id', 'stage2']], undefined],
+      ['v2_week_plan_sets', 'delete', [['id', 'stage1']], undefined],
+      ['v2_week_plan_sets', 'update', [['id', 'head']], { is_warmup: true, stage_kind: null }],
+    ])
+  })
+
+  it('a staged kind on a plain set: the head\'s kind is written, then each stage row is inserted under it with its number and index', async () => {
+    const { applySetTypeOps } = await import('./weekPlanService')
+    const calls = recorder()
+
+    await applySetTypeOps('u', [
+      { kind: 'updateHead', id: 'head', changes: { stageKind: 'dropset' } },
+      { kind: 'addStage', weekPlanId: 'wp-1', programExerciseId: 'pe-1', parentId: 'head', setNumber: 3, stageIndex: 1 },
+      { kind: 'addStage', weekPlanId: 'wp-1', programExerciseId: 'pe-1', parentId: 'head', setNumber: 3, stageIndex: 2 },
+    ])
+
+    expect(calls.map((c) => [c.op, c.payload])).toEqual([
+      ['update', { stage_kind: 'dropset' }],
+      ['insert', { week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 3, target_rir: null, is_dropset: true, parent_week_plan_set_id: 'head', stage_index: 1 }],
+      ['insert', { week_plan_id: 'wp-1', user_id: 'u', program_exercise_id: 'pe-1', set_number: 3, target_rir: null, is_dropset: true, parent_week_plan_set_id: 'head', stage_index: 2 }],
+    ])
+  })
+
+  it('stops at the first refusal: nothing after it is sent, and the refusal is thrown', async () => {
+    const { applySetTypeOps } = await import('./weekPlanService')
+    const calls = recorder((call) => call.op === 'delete' && (call.eq as unknown[][])[0][1] === 'stage2')
+
+    await expect(
+      applySetTypeOps('u', [
+        { kind: 'removeStage', id: 'stage2' },
+        { kind: 'removeStage', id: 'stage1' },
+        { kind: 'updateHead', id: 'head', changes: { isWarmup: true } },
+      ]),
+    ).rejects.toMatchObject({ message: 'refused' })
+
+    expect(calls).toHaveLength(1)
+  })
+
+  it('an empty list sends nothing', async () => {
+    const { applySetTypeOps } = await import('./weekPlanService')
+    const calls = recorder()
+    await applySetTypeOps('u', [])
+    expect(calls).toHaveLength(0)
+    expect(fromMock).not.toHaveBeenCalled()
   })
 })

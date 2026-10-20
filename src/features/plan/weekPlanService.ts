@@ -1,13 +1,8 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, MuscleSubgroup, MovementPattern } from '../../types'
-import {
-  fetchRunProgramExercises,
-  createWeekOnlyProgramExercise,
-  fetchSwapSourceSlot,
-} from '../programs/runProgramExercises'
-import { planWarmupInsert } from './warmupInsert'
-import { resolveSwapSlot, resolveAddSlot } from './weekEdits'
+import type { SetChanges, SetTypeOp } from './planSetRows'
+import type { NewSetDefaults } from './weekPlanning'
 import {
   resolveDeloadBaseOccurrence,
   resolveDeloadExerciseMapping,
@@ -120,8 +115,8 @@ type DbProgramExerciseJoin = {
 // values that nothing reads any more — copying and matching use a row's own
 // program_exercise_id and position (migration 038 does the same on the
 // server). They are typed here only because `select(*)` still returns them
-// and because a swap / reorder still clears one of them (weekPlanService's
-// swapWeekExercise / reorderWeekExercises / repointWeekExercise).
+// (chunk 54a took the week's swap and reorder out with the rest of its exercise-level
+// actions, so nothing here writes one any more).
 export type DbWeekPlanExercise = {
   id: string
   week_plan_id: string
@@ -295,66 +290,6 @@ export async function fetchWeekPlans(mesoId: string, weekNumber: number): Promis
   return (data as DbWeekPlan[]).map(toPlan)
 }
 
-export async function createWeekPlan(
-  userId: string,
-  mesoId: string,
-  workoutDayId: string,
-  weekNumber: number,
-): Promise<WeekPlan> {
-  const { data, error } = await supabase
-    .from('v2_week_plans')
-    .insert({
-      user_id: userId,
-      mesocycle_id: mesoId,
-      workout_day_id: workoutDayId,
-      week_number: weekNumber,
-      is_deload: false,
-    })
-    .select('*, v2_week_plan_sets(*), v2_week_plan_exercises(*, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(*, exercises(*)))')
-    .single()
-  if (error) throw error
-  const plan = data as DbWeekPlan
-  // Chunk 7 — a brand-new week plan row ("ADD SET" lazily creating one,
-  // useAddSet/useWeekPlan.ts) starts with the workout's CURRENT program
-  // exercises, in program order — the one client path that reads straight
-  // off v2_program_exercises (there is no other week to copy from here; the
-  // client copy of another week's own list is gone, chunk 52). Same shape
-  // migration 029's backfill writes for every
-  // pre-existing row, so an old row and a brand new one end up identical.
-  await writeWeekPlanExercisesFromProgram(userId, plan.id, workoutDayId)
-  return toPlan(plan)
-}
-
-// Shared by createWeekPlan above (a fresh plan, no previous week to copy)
-// and nowhere else. Plain insert (not upsert): a week plan row this
-// function has just created cannot already have any v2_week_plan_exercises
-// rows, so a real collision here would be a genuine bug, not a benign race.
-//
-// Chunk 9 — reads through fetchRunProgramExercises (runProgramExercises.ts)
-// rather than v2_program_exercises directly, so this fresh-from-program read
-// excludes week_only/removed_at rows exactly like migration 032's own
-// 'program' branch does for the automatic case (v2_plan_week) — the one
-// other place a week's volume is ever built straight from the program
-// instead of copied from a previous week.
-async function writeWeekPlanExercisesFromProgram(
-  userId: string,
-  weekPlanId: string,
-  workoutDayId: string,
-): Promise<void> {
-  const rows = await fetchRunProgramExercises(workoutDayId)
-  if (rows.length === 0) return
-
-  const { error: insertError } = await supabase.from('v2_week_plan_exercises').insert(
-    rows.map((pe) => ({
-      week_plan_id: weekPlanId,
-      user_id: userId,
-      program_exercise_id: pe.id,
-      position: pe.position,
-    })),
-  )
-  if (insertError) throw insertError
-}
-
 export async function setDeload(weekPlanId: string, isDeload: boolean): Promise<void> {
   const { error } = await supabase
     .from('v2_week_plans')
@@ -385,11 +320,16 @@ export async function setWeekDeload(mesoId: string, weekNumber: number, isDeload
 
 // ─── Sets ─────────────────────────────────────────────────────────────────────
 
+// "+ ADD SET" (chunk 54a; SPEC Defaults 8: "a Normal set with the previous set's rep target and no weight or RIR"). The caller names
+// what the new set holds (weekPlanning.ts's `addSetDefaults`), and every column of it is written, so a new set is never what a
+// column default happens to be: a Normal head, the previous set's rep target, no weight, no RIR, no range. A week is always planned
+// before it is shown now (chunk 52), so the week plan row is given, never made here.
 export async function addSet(
   userId: string,
   weekPlanId: string,
   programExerciseId: string,
   setNumber: number,
+  defaults: NewSetDefaults,
 ): Promise<WeekPlanSet> {
   const { data, error } = await supabase
     .from('v2_week_plan_sets')
@@ -398,53 +338,15 @@ export async function addSet(
       user_id: userId,
       program_exercise_id: programExerciseId,
       set_number: setNumber,
-      target_rir: null,
       is_dropset: false,
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return toSet(data as DbWeekPlanSet)
-}
-
-// "Add warmup sets" (Plan's exercise ⋯ menu): one warmup head above this
-// exercise's first working set. warmupInsert.ts decides the number and which
-// rows move down one; this reads the rows, writes the shifts (highest first),
-// then inserts the warmup. Not atomic — a failure part-way leaves the sets in
-// order with a gap at the insert point, never a duplicated or reordered set.
-export async function addWarmupSet(
-  userId: string,
-  weekPlanId: string,
-  programExerciseId: string,
-): Promise<WeekPlanSet> {
-  const { data: existing, error: readError } = await supabase
-    .from('v2_week_plan_sets')
-    .select('id, set_number, is_warmup, parent_week_plan_set_id')
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-  if (readError) throw readError
-  const plan = planWarmupInsert(
-    (existing ?? []).map((r) => ({
-      id: r.id as string,
-      setNumber: r.set_number as number,
-      isWarmup: (r.is_warmup as boolean | null) ?? false,
-      isStage: r.parent_week_plan_set_id != null,
-    })),
-  )
-  for (const shift of plan.shifts) {
-    const { error } = await supabase.from('v2_week_plan_sets').update({ set_number: shift.setNumber }).eq('id', shift.id)
-    if (error) throw error
-  }
-  const { data, error } = await supabase
-    .from('v2_week_plan_sets')
-    .insert({
-      week_plan_id: weekPlanId,
-      user_id: userId,
-      program_exercise_id: programExerciseId,
-      set_number: plan.insertAt,
-      target_rir: null,
-      is_dropset: false,
-      is_warmup: true,
+      is_warmup: defaults.isWarmup,
+      stage_kind: defaults.stageKind,
+      rep_min: defaults.repMin,
+      rep_max: defaults.repMax,
+      is_amrap: defaults.isAmrap,
+      target_weight: defaults.targetWeight,
+      target_rir: defaults.targetRir,
+      // No `target_rir_max`: a new set has no range, and the column's own default is null, so this write needs no 042.
     })
     .select()
     .single()
@@ -486,29 +388,26 @@ export async function addStage(
   return toSet(data as DbWeekPlanSet)
 }
 
-export async function updateSet(
-  id: string,
-  changes: {
-    targetRir?: number | null
-    stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
-    isWarmup?: boolean
-    // Chunk 19 — SPEC "Targets": weight target (kg; week plan only, never
-    // in the program) and the week's own rep-target override (writes only
-    // THIS row's rep_min/rep_max/is_amrap, never the program set — this
-    // function has no notion of a program set at all, so that's true by
-    // construction, not by a guard). tags: SPEC "Tags" — several per set,
-    // head rows in practice (PlanPage.tsx never offers this change on a
-    // stage row), several allowed, no DB-level stage/head restriction the
-    // way stage_kind has one.
-    targetWeight?: number | null
-    repMin?: number | null
-    repMax?: number | null
-    isAmrap?: boolean
-    tags?: string[] | null
-  },
-): Promise<void> {
+// One set type change (chunk 54a; planSetRows.ts's `planSetTypeChange` decides the list): its writes in order, each after the one before
+// has been answered, and the first failure stops the rest. The order is what keeps an interrupted change harmless. Stages come off
+// before the head is switched to Normal or Warmup (a stopped change leaves a head with fewer stages, never a warmup with stages), and
+// the head's kind is written before its stages are added (a stopped change leaves a plain set, never stages under the wrong kind).
+// Nothing here is atomic; the caller reads the week again whatever the outcome.
+export async function applySetTypeOps(userId: string, ops: readonly SetTypeOp[]): Promise<void> {
+  for (const op of ops) {
+    if (op.kind === 'removeStage') await removeSet(op.id)
+    else if (op.kind === 'updateHead') await updateSet(op.id, op.changes)
+    else await addStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.setNumber, op.stageIndex)
+  }
+}
+
+// The columns a change names are the only ones written ("named only when present"): `SetChanges` (planSetRows.ts) lists them.
+// Chunk 54a: `targetRirMax` joins them (042's range high end); the RIR picker writes it with `targetRir`.
+export async function updateSet(id: string, changes: SetChanges): Promise<void> {
   const patch: Record<string, unknown> = {}
   if ('targetRir' in changes) patch.target_rir = changes.targetRir
+  // Migration 042 — a RIR range's high end (SPEC [1.2] "Targets": "a number or a range"). A number writes it null.
+  if ('targetRirMax' in changes) patch.target_rir_max = changes.targetRirMax
   // Chunk 14 — the week plan's own stage-kind picker (PlanPage.tsx), a
   // head-only field (the DB's own check — v2_week_plan_sets_stage_row_check
   // — refuses it on a stage row; this UI never targets one).
@@ -577,194 +476,6 @@ export async function planWeek(mesoId: string, weekNumber: number): Promise<numb
 // with its hooks and tests, and so is the helper that never sent `is_warmup` (F1: a copied warmup became a working
 // set). Numbers now travel one way, COPY's sheet: `copyNumbers` (weekPlanning.ts) decides what changes and
 // `v2_apply_ops` writes it in one request (useCopyNumbers.ts), into sets that already exist.
-
-// ─── Week actions — swap, reorder, add, remove ─────────────────────────────
-// Chunk 9 (TASKS.md "Edit a week's exercises" / SPEC.md "Weeks and
-// copying"). The pure slot decisions live in weekEdits.ts (unit tested
-// there, directly); this file gathers what each decision needs and
-// performs the writes, same split as every other action in this file.
-//
-// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): a swap or reorder
-// in a week is a normal week edit — it carries forward — and writes exactly
-// what a permanent edit always wrote. A swap clears carry_program_exercise_id
-// and leaves carry_position out of its payload; a reorder clears
-// carry_position and leaves carry_program_exercise_id out of its payload.
-// Until migration 038 is live the server still honours a stored
-// carry_program_exercise_id / carry_position when it plans a week (037), so
-// the clear keeps a stale value from outliving the edit it would contradict
-// (after 038 it is harmless). A value of the other kind stays in the row,
-// untouched. Neither action needs the row's carry any more (there is no
-// existing carry to preserve), but each still confirms the week HAS the row
-// it is about to change before writing anything (requireWeekExerciseRow).
-
-// A stale screen (another tab removed the exercise from this week) must fail
-// before anything is written, not "succeed" after updating zero rows. Until
-// chunk 27 this fell out of the carry lookup these actions made first
-// (.single() raises PGRST116 when the week has no such row); the lookup is
-// gone, so this keeps that failure on purpose. It reads only `id` — no carry
-// column is read by anything any more.
-async function requireWeekExerciseRow(weekPlanId: string, programExerciseId: string): Promise<void> {
-  const { error } = await supabase
-    .from('v2_week_plan_exercises')
-    .select('id')
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-    .single()
-  if (error) throw error
-}
-
-// A swap: creates a week-only program exercise for the replacement
-// (runProgramExercises.ts — takes the replaced slot's superset block, never
-// its weight_unit), points this week's own
-// v2_week_plan_exercises row at it, and moves this week's own planned sets
-// for that exercise onto it too (so the exercise card and its sets agree on
-// what's actually planned this week). The swap is a permanent, carried-
-// forward change: it clears carry_program_exercise_id (whatever an earlier
-// edit left there) and does not touch carry_position. The week's row is
-// confirmed first (alongside the source-slot read, as before), so a swap of
-// a row the week no longer has throws before the replacement is created.
-export async function swapWeekExercise(params: {
-  userId: string
-  weekPlanId: string
-  programExerciseId: string
-  replacementExerciseId: string
-}): Promise<ProgramExercise> {
-  const { userId, weekPlanId, programExerciseId, replacementExerciseId } = params
-
-  const [source] = await Promise.all([
-    fetchSwapSourceSlot(programExerciseId),
-    requireWeekExerciseRow(weekPlanId, programExerciseId),
-  ])
-  const slot = resolveSwapSlot(source, replacementExerciseId)
-  const replacement = await createWeekOnlyProgramExercise(userId, slot)
-
-  const { error: exError } = await supabase
-    .from('v2_week_plan_exercises')
-    .update({
-      program_exercise_id: replacement.id,
-      carry_program_exercise_id: null,
-    })
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-  if (exError) throw exError
-
-  // "its planned sets move with it" (TASKS.md) — this week's own sets for
-  // the replaced slot now belong to the replacement, so the exercise card
-  // and its sets keep agreeing on what's planned this week (and so a later
-  // copy-forward, which keeps each set's own program_exercise_id, finds the
-  // matching v2_week_plan_exercises row for them).
-  const { error: setsError } = await supabase
-    .from('v2_week_plan_sets')
-    .update({ program_exercise_id: replacement.id })
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-  if (setsError) throw setsError
-
-  return replacement
-}
-
-// Chunk 20 — "Apply this change to planned weeks ahead", review fix: a swap
-// applied ahead must repoint each matched LATER week at the SAME resulting
-// row swapWeekExercise already created for the edited week — never a
-// second createWeekOnlyProgramExercise insert (a fresh row per week would
-// give each week its own distinct id, so a follow-up edit on the edited
-// week's own id could never again find them — the executor's
-// applyAhead.ts has the full reasoning). This is exactly swapWeekExercise's
-// own second half (the two updates), minus the insert: it clears
-// carry_program_exercise_id on the row it repoints, the same way
-// swapWeekExercise does.
-export async function repointWeekExercise(
-  weekPlanId: string,
-  fromProgramExerciseId: string,
-  toProgramExerciseId: string,
-): Promise<void> {
-  const { error: exError } = await supabase
-    .from('v2_week_plan_exercises')
-    .update({ program_exercise_id: toProgramExerciseId, carry_program_exercise_id: null })
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', fromProgramExerciseId)
-  if (exError) throw exError
-
-  const { error: setsError } = await supabase
-    .from('v2_week_plan_sets')
-    .update({ program_exercise_id: toProgramExerciseId })
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', fromProgramExerciseId)
-  if (setsError) throw setsError
-}
-
-// An add: a brand-new week-only slot (never in a superset — weekEdits.ts's
-// resolveAddSlot), inserted into this week's own exercise list with no
-// carry_* value at all — week-dependent carries it forward purely
-// because the next week's copy includes whatever this week's own
-// v2_week_plan_exercises row names; stable never carries it forward,
-// because a stable week is always built fresh from the program, never from
-// the previous week.
-export async function addWeekExercise(params: {
-  userId: string
-  weekPlanId: string
-  workoutDayId: string
-  exerciseId: string
-  position: number
-}): Promise<ProgramExercise> {
-  const { userId, weekPlanId, workoutDayId, exerciseId, position } = params
-  const slot = resolveAddSlot(workoutDayId, exerciseId, position)
-  const created = await createWeekOnlyProgramExercise(userId, slot)
-
-  const { error } = await supabase.from('v2_week_plan_exercises').insert({
-    user_id: userId,
-    week_plan_id: weekPlanId,
-    program_exercise_id: created.id,
-    position,
-  })
-  if (error) throw error
-  return created
-}
-
-// A remove: drops this week's own exercise row and its planned sets (both
-// heads and stages — no FK links v2_week_plan_sets to
-// v2_week_plan_exercises, only the application-level (week_plan_id,
-// program_exercise_id) convention 027 establishes, so both need an explicit
-// delete). No carry_* to write: a row that doesn't exist in the week being
-// copied forward is simply absent from the copy.
-export async function removeWeekExercise(weekPlanId: string, programExerciseId: string): Promise<void> {
-  const { error: setsError } = await supabase
-    .from('v2_week_plan_sets')
-    .delete()
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-  if (setsError) throw setsError
-
-  const { error } = await supabase
-    .from('v2_week_plan_exercises')
-    .delete()
-    .eq('week_plan_id', weekPlanId)
-    .eq('program_exercise_id', programExerciseId)
-  if (error) throw error
-}
-
-// A reorder: each moved row's own new position. It is a permanent, carried-
-// forward change: it clears carry_position on the row (whatever an earlier
-// edit left there) and does not touch carry_program_exercise_id. `oldPosition`
-// is part of the move shape the screen and apply-ahead build (applyAhead.ts
-// matches a later week on it), but the write itself no longer needs it.
-// Every moved row is confirmed to exist in the week BEFORE the first update,
-// so a stale screen fails with nothing written (before chunk 27 the per-move
-// carry lookup threw too, but only as it reached that move).
-export async function reorderWeekExercises(
-  weekPlanId: string,
-  moves: { programExerciseId: string; oldPosition: number; newPosition: number }[],
-): Promise<void> {
-  await Promise.all(moves.map((m) => requireWeekExerciseRow(weekPlanId, m.programExerciseId)))
-  for (const m of moves) {
-    const { error } = await supabase
-      .from('v2_week_plan_exercises')
-      .update({ position: m.newPosition, carry_position: null })
-      .eq('week_plan_id', weekPlanId)
-      .eq('program_exercise_id', m.programExerciseId)
-    if (error) throw error
-  }
-}
 
 // ─── Deload rules (chunk 22) ────────────────────────────────────────────────
 // SPEC.md "Deload": "with rules on, a deload session is pre-calculated from

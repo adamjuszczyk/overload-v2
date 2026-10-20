@@ -54,7 +54,6 @@ vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [activeMeso], isLoading: false }),
 }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [program], isLoading: false }),
   useWorkoutDays: () => ({ data: workoutDays, isLoading: daysLoading }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -62,7 +61,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // A sequence run waits for its current cycle (three reads, chunk 35); the cycle is the subject of

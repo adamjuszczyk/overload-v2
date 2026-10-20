@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import type { ProgramExercise, ProgramSet, WeekPlan, WeekPlanSet } from '../../types'
-import { groupWeekPlanSets } from '../gym/setGroupLogic'
-import { setPositionOf } from './applyAhead'
 import {
   chooseDiffSources,
   computeWeekDiff,
@@ -252,7 +250,7 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
     expect(flagsOf(d, 'e').removedHeads).toEqual([])
   })
 
-  it('a position is chunk 20\'s set position: the head ordinal (a rank, not the raw set number) then the stage index — the same one apply-ahead uses', () => {
+  it('a position is the head ordinal (a rank, not the raw set number) then the stage index (chunk 20\'s definition, kept when 54a took apply-ahead out)', () => {
     // Set numbers with gaps and a duplicate; stages out of order.
     const rows = [
       wset('c', 'e', 7),
@@ -263,11 +261,6 @@ describe('diffWeek — sets are matched by position (G23): head ordinal, then st
       wset('d', 'e', 3),
     ]
     const [exercise] = weekToDiffExercises(ex, rows)
-    const groups = groupWeekPlanSets(rows).sort((x, y) => x.head.setNumber - y.head.setNumber)
-    exercise.heads.forEach((head, i) => {
-      expect(setPositionOf(groups, head.id)).toEqual({ headOrdinal: i + 1, stageIndex: null })
-      head.stages.forEach((st) => expect(setPositionOf(groups, st.id)).toEqual({ headOrdinal: i + 1, stageIndex: st.stageIndex }))
-    })
     expect(exercise.heads.map((h) => h.id)).toEqual(['a', 'b', 'd', 'c'])
     expect(exercise.heads[1].stages.map((st) => st.id)).toEqual(['b1', 'b2'])
 

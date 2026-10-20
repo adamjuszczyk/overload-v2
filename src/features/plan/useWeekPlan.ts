@@ -7,24 +7,18 @@ import {
   fetchWeekPlans,
   fetchAllWeekPlansForMeso,
   fetchWeekPlanById,
-  createWeekPlan,
   markSessionDeload,
   unmarkSessionDeload,
   markWeekDeload,
   unmarkWeekDeload,
   addSet,
-  addWarmupSet,
-  addStage,
+  applySetTypeOps,
   updateSet,
   removeSet,
   planWeek,
-  swapWeekExercise,
-  repointWeekExercise,
-  addWeekExercise,
-  removeWeekExercise,
-  reorderWeekExercises,
 } from './weekPlanService'
-import { planApplyAheadBundle, summarizeApplyAhead, type ChangeRecord, type ApplyAheadOp, type ApplyAheadSummary } from './applyAhead'
+import type { SetChanges, SetTypeOp } from './planSetRows'
+import type { NewSetDefaults } from './weekPlanning'
 
 function key(mesoId: string, weekNumber: number) {
   return ['v2_weekPlans', mesoId, weekNumber] as const
@@ -220,60 +214,25 @@ export function useSetWeekDeload(mesoId: string, weekNumber: number) {
   })
 }
 
+// "+ ADD SET" (chunk 54a). The week plan row is given: a week is planned before it is shown (chunk 52), so nothing here makes one. `defaults`
+// is what the new set holds (weekPlanning.ts's `addSetDefaults`: the previous set's rep target, no weight, no RIR) and `setNumber` the next
+// head number (planSetRows.ts's `nextSetNumber`); both are the caller's, so the write is exactly what the screen showed it would add.
 export function useAddSet(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
     networkMode: 'always',
-    mutationFn: async ({
-      workoutDayId,
+    mutationFn: ({
       weekPlanId,
       programExerciseId,
       setNumber,
+      defaults,
     }: {
-      workoutDayId: string
-      weekPlanId?: string
+      weekPlanId: string
       programExerciseId: string
       setNumber: number
-    }) => {
-      let planId = weekPlanId
-      if (!planId) {
-        const plan = await createWeekPlan(user!.id, mesoId, workoutDayId, weekNumber)
-        planId = plan.id
-      }
-      return addSet(user!.id, planId, programExerciseId, setNumber)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-// "Add warmup sets" (Plan's exercise ⋯ menu) — one warmup above the first
-// working set. Same optional-weekPlanId pattern as useAddSet; networkMode
-// 'always' per the house rule (offline fails fast instead of pausing).
-export function useAddWarmupSet(mesoId: string, weekNumber: number) {
-  const { user } = useAuth()
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: async ({
-      workoutDayId,
-      weekPlanId,
-      programExerciseId,
-    }: {
-      workoutDayId: string
-      weekPlanId?: string
-      programExerciseId: string
-    }) => {
-      let planId = weekPlanId
-      if (!planId) {
-        const plan = await createWeekPlan(user!.id, mesoId, workoutDayId, weekNumber)
-        planId = plan.id
-      }
-      return addWarmupSet(user!.id, planId, programExerciseId)
-    },
+      defaults: NewSetDefaults
+    }) => addSet(user!.id, weekPlanId, programExerciseId, setNumber, defaults),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk })
       queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
@@ -309,22 +268,7 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
     // (they now attempt offline and fail fast instead of hanging forever),
     // never a narrowing, so no existing behaviour is removed.
     networkMode: 'always',
-    mutationFn: ({
-      id,
-      changes,
-    }: {
-      id: string
-      changes: {
-        targetRir?: number | null
-        stageKind?: 'dropset' | 'rest_pause' | 'myo_reps' | 'cluster' | null
-        isWarmup?: boolean
-        targetWeight?: number | null
-        repMin?: number | null
-        repMax?: number | null
-        isAmrap?: boolean
-        tags?: string[] | null
-      }
-    }) => updateSet(id, changes),
+    mutationFn: ({ id, changes }: { id: string; changes: SetChanges }) => updateSet(id, changes),
     onMutate: async ({ id, changes }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
@@ -336,6 +280,7 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
               ? {
                   ...s,
                   ...('targetRir' in changes ? { targetRir: changes.targetRir } : {}),
+                  ...('targetRirMax' in changes ? { targetRirMax: changes.targetRirMax } : {}),
                   ...('stageKind' in changes ? { stageKind: changes.stageKind } : {}),
                   ...('isWarmup' in changes ? { isWarmup: changes.isWarmup } : {}),
                   ...('targetWeight' in changes ? { targetWeight: changes.targetWeight } : {}),
@@ -358,31 +303,19 @@ export function useUpdateSet(mesoId: string, weekNumber: number) {
   })
 }
 
-// Phase 3.1's stage-authoring mutation — ADD STAGE on a specific existing
-// set, passing its id directly as the new stage's parent (TASKS.md §4 item
-// 10). See weekPlanService.ts's addStage() for why this retires the old
-// DROP-toggle inference entirely rather than keeping it as a fallback.
-export function useAddStage(mesoId: string, weekNumber: number) {
+// One set type change from the set type picker (chunk 54a), which replaces ADD STAGE, the STAGE KIND chips and the warmup toggle:
+// `ops` is planSetRows.ts's `planSetTypeChange`, applied in order by weekPlanService.ts's `applySetTypeOps` (stages off before a switch to
+// Normal or Warmup, the head's kind before its stages are added). Nothing is patched into the cache first: the change is several rows, so
+// the week is read again when it ends, a failed or part-done one included, and what the screen then shows is what the database holds.
+export function useChangeSetType(mesoId: string, weekNumber: number) {
   const { user } = useAuth()
   const qk = key(mesoId, weekNumber)
   return useMutation({
     networkMode: 'always',
-    mutationFn: ({
-      weekPlanId,
-      programExerciseId,
-      parentId,
-      setNumber,
-      stageIndex,
-    }: {
-      weekPlanId: string
-      programExerciseId: string
-      parentId: string
-      setNumber: number
-      stageIndex: number
-    }) => addStage(user!.id, weekPlanId, programExerciseId, parentId, setNumber, stageIndex),
-    onSuccess: () => {
+    mutationFn: ({ ops }: { ops: SetTypeOp[] }) => applySetTypeOps(user!.id, ops),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
+      refreshWeeksComparedWithThisOne(mesoId, weekNumber)
     },
   })
 }
@@ -423,188 +356,5 @@ export function useWeekPlanById(id: string | null) {
     queryKey: ['v2_weekPlan', id],
     queryFn: () => fetchWeekPlanById(id!),
     enabled: !!user && !!id,
-  })
-}
-
-// ─── Week actions — swap, reorder, add, remove (chunk 9) ───────────────────
-// Each invalidates this week's own plans (exercises AND sets both live on
-// the same WeekPlan query) and the meso-wide history (the copy-forward
-// buttons' own source search reads it, same as every other plan-mutating
-// hook above).
-
-export function useSwapWeekExercise(mesoId: string, weekNumber: number) {
-  const { user } = useAuth()
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: (params: { weekPlanId: string; programExerciseId: string; replacementExerciseId: string }) =>
-      swapWeekExercise({ userId: user!.id, ...params }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-export function useAddWeekExercise(mesoId: string, weekNumber: number) {
-  const { user } = useAuth()
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: (params: { weekPlanId: string; workoutDayId: string; exerciseId: string; position: number }) =>
-      addWeekExercise({ userId: user!.id, ...params }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-export function useRemoveWeekExercise(mesoId: string, weekNumber: number) {
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({ weekPlanId, programExerciseId }: { weekPlanId: string; programExerciseId: string }) =>
-      removeWeekExercise(weekPlanId, programExerciseId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-export function useReorderWeekExercises(mesoId: string, weekNumber: number) {
-  const qk = key(mesoId, weekNumber)
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({
-      weekPlanId,
-      moves,
-    }: {
-      weekPlanId: string
-      moves: { programExerciseId: string; oldPosition: number; newPosition: number }[]
-    }) => reorderWeekExercises(weekPlanId, moves),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk })
-      queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-    },
-  })
-}
-
-// ─── Apply this change to planned weeks ahead (chunk 20) ───────────────────
-// Thin executor (reviewer's note 1): applyAhead.ts's planApplyAhead (pure)
-// decides, per candidate week, whether to skip it and why, or exactly which
-// op(s) to run; this hook just runs each op through the SAME exported
-// functions above (never a new Supabase call of its own) and reports which
-// weeks were actually written. `weeks` is whatever candidate list the
-// caller already computed (PlanPage.tsx: laterPlannedWeeks off its own
-// useAllWeekPlans; ProgramTab.tsx: allPlannedWeeks) — this hook fetches
-// nothing itself, consistent with applyAhead.ts being pure.
-//
-// Reviewer's note 8 ("Execution"): networkMode: 'always' (same reasoning as
-// every other write mutation in this file); runs weeks in order and STOPS
-// at the first op that throws — ApplyAheadError carries which week numbers
-// were already written before the failure, so onError can invalidate
-// exactly those (and the UI can report exactly those) rather than
-// pretending nothing happened or silently retrying (TanStack Query
-// mutations never retry by default, and nothing here changes that).
-export class ApplyAheadError extends Error {
-  writtenWeekNumbers: number[]
-  summary: ApplyAheadSummary
-  constructor(message: string, writtenWeekNumbers: number[], summary: ApplyAheadSummary) {
-    super(message)
-    this.name = 'ApplyAheadError'
-    this.writtenWeekNumbers = writtenWeekNumbers
-    this.summary = summary
-  }
-}
-
-export interface ApplyAheadResult {
-  summary: ApplyAheadSummary
-  writtenWeekNumbers: number[]
-}
-
-async function runApplyAheadOp(op: ApplyAheadOp, userId: string): Promise<void> {
-  switch (op.kind) {
-    case 'updateSet':
-      return updateSet(op.setId, op.changes)
-    case 'addSet':
-      await addSet(userId, op.weekPlanId, op.programExerciseId, op.setNumber)
-      return
-    case 'addWarmupSet':
-      await addWarmupSet(userId, op.weekPlanId, op.programExerciseId)
-      return
-    case 'removeSet':
-      return removeSet(op.setId)
-    case 'addStage':
-      await addStage(userId, op.weekPlanId, op.programExerciseId, op.parentId, op.setNumber, op.stageIndex)
-      return
-    case 'repointExercise':
-      // Review fix: repoint the matched row at the SAME resulting exercise
-      // row the edited week's own swap already created (repointWeekExercise
-      // — swapWeekExercise's own second half, minus the insert) — never a
-      // fresh createWeekOnlyProgramExercise per later week. A repoint clears
-      // the row's carry_program_exercise_id, as a swap does.
-      await repointWeekExercise(op.weekPlanId, op.fromProgramExerciseId, op.toProgramExerciseId)
-      return
-    case 'addExercise':
-      await addWeekExercise({
-        userId,
-        weekPlanId: op.weekPlanId,
-        workoutDayId: op.workoutDayId,
-        exerciseId: op.exerciseId,
-        position: op.position,
-      })
-      return
-    case 'removeExercise':
-      return removeWeekExercise(op.weekPlanId, op.programExerciseId)
-    case 'reorderExercises':
-      return reorderWeekExercises(op.weekPlanId, op.moves)
-  }
-}
-
-export function useApplyAhead(mesoId: string) {
-  const { user } = useAuth()
-  return useMutation({
-    networkMode: 'always',
-    // `changes` is a bundle (reviewer's note 2 — a single onUpdate call can
-    // write more than one field at once, e.g. plannerVocabulary.ts's
-    // applyAmrapRirDefault also defaulting RIR); almost always length 1.
-    // planApplyAheadBundle (applyAhead.ts) applies every record in it to
-    // each candidate week as one atomic unit — never a partial write.
-    mutationFn: async ({ changes, weeks }: { changes: ChangeRecord[]; weeks: WeekPlan[] }): Promise<ApplyAheadResult> => {
-      const results = planApplyAheadBundle(changes, weeks)
-      const summary = summarizeApplyAhead(results)
-      const written: number[] = []
-      try {
-        for (const r of results) {
-          if (r.status !== 'applied') continue
-          for (const op of r.ops) {
-            await runApplyAheadOp(op, user!.id)
-          }
-          written.push(r.weekNumber)
-        }
-      } catch (err) {
-        throw new ApplyAheadError(err instanceof Error ? err.message : 'Apply failed', written, summary)
-      }
-      return { summary, writtenWeekNumbers: written }
-    },
-    onSuccess: (data) => {
-      for (const wn of data.writtenWeekNumbers) {
-        queryClient.invalidateQueries({ queryKey: key(mesoId, wn) })
-      }
-      if (data.writtenWeekNumbers.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-      }
-    },
-    onError: (err) => {
-      if (!(err instanceof ApplyAheadError)) return
-      for (const wn of err.writtenWeekNumbers) {
-        queryClient.invalidateQueries({ queryKey: key(mesoId, wn) })
-      }
-      if (err.writtenWeekNumbers.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ['v2_allWeekPlans', mesoId] })
-      }
-    },
   })
 }

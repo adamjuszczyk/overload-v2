@@ -103,7 +103,6 @@ vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [activeMeso], isLoading: false }),
 }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   // Chunk 30: every workout's routine holds one item. An empty routine draws no card at all on a past
   // cycle, which would leave the routine's read-only controls with nothing to be absent from.
   useWarmupRoutineItems: () => ({ data: [ROUTINE_ITEM], isLoading: false }),
@@ -116,7 +115,7 @@ vi.mock('../programs/usePrograms', async () => ({
 // file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Today's own hook, the one read Plan adds on a sequence run.
