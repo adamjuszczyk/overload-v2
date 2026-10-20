@@ -274,3 +274,9 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - Reviewers: read RULES.md in full, but from CONTEXT.md only the sections the chunk touches plus "Where the build is".
 - Screenshots: compare boards from the text dumps first; open a PNG only where the text dump can't settle it.
 - Never resume a long-running agent; start a fresh one with a short summary file instead (a resumed agent carries its whole earlier run).
+
+## The 1.2 cost rule (Adam, 2026-10-20)
+Usage is the constraint now. From the next chunk on:
+- Chunks that write data or add a migration (46's redraw, the 188 chunk, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check.
+- Everything else (54b, 55, 58b, 60, 64, 65, 66, 67, 68, 69, display follow-ups): reviewer at high effort, not max; no per-chunk staging click-through — the fixture screenshots and tests are the review, and the release checklist covers staging for these screens; break proofs only where the chunk writes data.
+- Remaining D31 display choices: accept as built and list them; I'll change any in the review pass after the release checklist, not one follow-up at a time.
