@@ -284,7 +284,7 @@ export function formatTable(cmp) {
 
 // ─── Running it ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-function psql(container, args, input, role = 'postgres') {
+export function psql(container, args, input, role = 'postgres') {
   const r = spawnSync(
     'docker',
     ['exec', '-i', '-e', 'PGPASSWORD=postgres', container, 'psql', '-h', '127.0.0.1', '-U', role, '-d', 'postgres', '-X', '-q', '-tA', '-v', 'ON_ERROR_STOP=1', ...args],
@@ -313,7 +313,7 @@ $canary$;
 
 // The kept replay container (`replay-migrations.sh --keep`). With more than one running the answer would depend on which
 // migrations each holds (041's body or 044's), so the script refuses to guess: `--container NAME` says which.
-function findContainer(explicit) {
+export function findContainer(explicit) {
   if (explicit) return { name: explicit }
   const r = spawnSync('docker', ['ps', '--filter', 'name=migration-replay', '--format', '{{.Names}}'], { encoding: 'utf8' })
   if (r.status !== 0) return { name: null }
