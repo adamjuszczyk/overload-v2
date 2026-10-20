@@ -30,6 +30,8 @@ import { createFakeSupabase, fakeWeekPlan, fakeWeekPlanSet, type FakePlanWeek, t
 // Break proofs (chunk 52's report): the planning effect planning the open week; PLAN FORWARD naming the current week plus one or the
 // highest planned week plus one; the effect restored to plan every week shown. Attempt 2 (review 1, F2) adds the last describe: the current
 // week moving on under an open Plan, which is where "the open week" and "the current week" part; the break is the effect naming the open week.
+// Its mutation sweep of the planning effect and its retry added three more: a run that has not started yet plans week 1 (never week 0), a
+// second run in the same week is tried on its own, and a failed attempt does not hold back the week that starts under the open page.
 
 afterEach(() => {
   cleanup()
@@ -163,6 +165,15 @@ function renderPlan() {
     </QueryClientProvider>,
   )
 }
+
+/** The same tree renderPlan() draws, for a rerender (a run or a cycle that changes under a mounted Plan). */
+const planTree = () => (
+  <QueryClientProvider client={queryClient}>
+    <MemoryRouter initialEntries={['/plan']}>
+      <PlanPage />
+    </MemoryRouter>
+  </QueryClientProvider>
+)
 
 const FOUND = { timeout: 3000 }
 const planCalls = () => fake.writes.filter((w) => w.table === 'rpc' && w.method === 'v2_plan_week').map((w) => w.args[0])
@@ -323,6 +334,34 @@ describe('the current week is planned when it has no rows, once, and nothing els
     expect(planCalls()[0]).toEqual({ p_mesocycle_id: 'meso-1', p_week_number: 7 })
     await screen.findByLabelText('Cycle 7 options', {}, FOUND)
     expect(calledWeeks()).toEqual([7])
+  })
+
+  // The effect names `tilesCurrent`, the current week clamped to 1; the unclamped week of a run that starts next Monday is 0, and
+  // `v2_plan_week` for week 0 is not a week of the run. Break proof (attempt 2's sweep): `weekNumber: currentWeek` in the effect.
+  it('a run that has not started yet (its first week begins next Monday) is in week 1: with no rows, week 1 is planned, never week 0', async () => {
+    useRun({ current: 0, planned: [], planWeek: plans() })
+    renderPlan()
+    await waitFor(() => expect(planCalls()).toHaveLength(1), FOUND)
+    expect(planCalls()[0]).toEqual({ p_mesocycle_id: 'meso-1', p_week_number: 1 })
+    await screen.findByLabelText('Week 1 options', {}, FOUND)
+    expect(calledWeeks()).toEqual([1])
+  })
+
+  // The effect's comment says a week is tried "once per run and week", so a spent attempt belongs to the run it was made for. (A run
+  // changes under a mounted Plan only when the runs are read again; the PROGRAMS tab unmounts the screen.) Break proof (attempt 2's sweep):
+  // the attempt key without the run's id.
+  it('once per run and week: another run, in the same week, is tried on its own — the spent attempt was the first run\'s', async () => {
+    useRun({ current: 2, planned: [1], planWeek: plans() })
+    const view = renderPlan()
+    await waitFor(() => expect(calledWeeks()).toEqual([2]), FOUND)
+    await screen.findByLabelText('Week 2 options', {}, FOUND)
+
+    // another run, in the same calendar week, with its own database and no rows at all: its current week (2) has none
+    fake = createFakeSupabase([], { planWeek: plans() })
+    state.meso = { ...state.meso, id: 'meso-2' }
+    view.rerender(planTree())
+    await waitFor(() => expect(planCalls()).toHaveLength(1), FOUND)
+    expect(planCalls()[0]).toEqual({ p_mesocycle_id: 'meso-2', p_week_number: 2 })
   })
 })
 
@@ -627,6 +666,28 @@ describe('the current week moves on while Plan is open: the new current week is 
     await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · DONE', 'WEEK 3 · THIS WEEK', 'WEEK 4 · NOT PLANNED']), FOUND)
   })
 
+  // The effect re-runs when the current week moves although nothing about the planned weeks changed (week 2 had no rows and week 3 has
+  // none), which only a dependency on the current week itself does. Break proof (attempt 2's sweep): `tilesCurrent` left out of the
+  // effect's dependencies.
+  it('week 2\'s own attempt failed (nothing was planned): the week that starts under the open page is still tried — weeks 2, then 3', async () => {
+    let failing = true
+    useRunAt(LAST_NIGHT_OF_WEEK_2, {
+      current: 2,
+      planned: [1],
+      planWeek: (week) => (failing ? { message: 'v2_plan_week: row-level security refused the plan', code: '42501' } : rowsOfWeek(week, false)),
+    })
+    renderPlan()
+    await screen.findByText('v2_plan_week: row-level security refused the plan', {}, FOUND)
+    expect(calledWeeks()).toEqual([2]) // a failure does not loop
+
+    failing = false
+    vi.setSystemTime(FIRST_MINUTE_OF_WEEK_3)
+    await tabBecomesVisible()
+    await waitFor(() => expect(calledWeeks()).toEqual([2, 3]), FOUND)
+    // week 3 is planned; week 2, which nobody planned, is a week that passed unplanned (131)
+    await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · NOT PLANNED', 'WEEK 3 · THIS WEEK', 'WEEK 4 · NOT PLANNED']), FOUND)
+  })
+
   it('the next day of the same week changes nothing: the tab coming back on the Monday after, with week 2 still the current week, plans nothing', async () => {
     useRunAt(set(addDays(WEEK_1_MONDAY, 7), { hours: 9, minutes: 0, seconds: 0, milliseconds: 0 }), { current: 2, planned: [1, 2], planWeek: plans() })
     renderPlan()
@@ -649,13 +710,7 @@ describe('the current week moves on while Plan is open: the new current week is 
 
     // the last workout of cycle 2 is done and Plan's read of the current cycle answers again (the stand-in reads `state.cycle` on every render)
     state.cycle = 3
-    view.rerender(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/plan']}>
-          <PlanPage />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    )
+    view.rerender(planTree())
     await waitFor(() => expect(calledWeeks()).toEqual([3]), FOUND)
     await waitFor(() => expect(tileLabels()).toEqual(['CYCLE 1 · DONE', 'CYCLE 2 · DONE', 'CYCLE 3 · THIS CYCLE', 'CYCLE 4 · NOT PLANNED']), FOUND)
     expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2') // the open cycle stays 2, as above

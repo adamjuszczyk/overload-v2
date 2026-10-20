@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createFakeSupabase, fakeWeekPlan, fakeWeekPlanExercise, fakeWeekPlanSet } from './fakeWeekPlanDb.testutil'
+import { createFakeSupabase, fakeWeekPlan, fakeWeekPlanExercise, fakeWeekPlanSet, type FakeWeekPlanExerciseRow } from './fakeWeekPlanDb.testutil'
 
 // Chunk 27 (TASKS-1.1: "`carryProgramExerciseId` / `carryPosition` leave `src/types/index.ts` and the mappers"; RULES, "Carry fields are
 // unread (chunk 27)": `carry_program_exercise_id` / `carry_position` stay in `v2_week_plan_exercises`, nothing reads them, "Don't add a reader").
@@ -16,9 +16,13 @@ import { createFakeSupabase, fakeWeekPlan, fakeWeekPlanExercise, fakeWeekPlanSet
 //   - 'pe-swapped-in' was swapped in only-this-week, so its row stores carry_program_exercise_id = 'pe-original' (the slot copying used to
 //     revert to) and carry_position = 0 (an old reorder's pre-move spot), while its own position is 1;
 //   - 'pe-b' stores a carry_position (5) different from its own position (0).
+// The program exercises they point at have positions of their own in their workouts (4 and 7), which are neither the week rows' nor the carry's:
+// the week lists its exercises in the order of ITS rows (v2_week_plan_exercises.position), so a position read from the program exercise would
+// reorder the week too (the last test; found by attempt 2's mutation sweep).
 // Break proofs (chunk 52's report, attempt 2): put `carryProgramExerciseId: row.carry_program_exercise_id` and `carryPosition:
 // row.carry_position` back into toProgramExerciseFromWeekPlanExercise (the mapped exercise grows two keys); take `position` from
-// `row.carry_position ?? row.position` (the week reads in another order, with the stored positions). A comment-only change to the mapper passes.
+// `row.carry_position ?? row.position` (the week reads in another order, with the stored positions) or from the program exercise's `pe.position`.
+// A comment-only change to the mapper passes.
 
 let fake = createFakeSupabase([])
 
@@ -31,6 +35,11 @@ vi.mock('../../lib/supabase', () => ({
 
 const { fetchWeekPlans, fetchAllWeekPlansForMeso } = await import('./weekPlanService')
 
+/** The program exercise a week row points at, with a position of its own in its workout. */
+function withProgramPosition(row: FakeWeekPlanExerciseRow, position: number): FakeWeekPlanExerciseRow {
+  return { ...row, v2_program_exercises: { ...row.v2_program_exercises, position } }
+}
+
 function weekOneRow() {
   return fakeWeekPlan('wp-1', 1, {
     sets: [
@@ -38,8 +47,8 @@ function weekOneRow() {
       fakeWeekPlanSet('wp-1', 's-swapped-1', 'pe-swapped-in', { set_number: 1 }),
     ],
     exercises: [
-      fakeWeekPlanExercise('wp-1', 'pe-swapped-in', 1, { programExerciseId: 'pe-original', position: 0 }),
-      fakeWeekPlanExercise('wp-1', 'pe-b', 0, { position: 5 }),
+      withProgramPosition(fakeWeekPlanExercise('wp-1', 'pe-swapped-in', 1, { programExerciseId: 'pe-original', position: 0 }), 4),
+      withProgramPosition(fakeWeekPlanExercise('wp-1', 'pe-b', 0, { position: 5 }), 7),
     ],
   })
 }
@@ -50,11 +59,11 @@ function buildWorld() {
 }
 
 describe('reading a week whose rows store carry values — the mapped exercises carry none', () => {
-  it('fixture: the stored week really holds the carry values the readers must ignore (so the two tests below are not vacuous)', () => {
-    const stored = weekOneRow().v2_week_plan_exercises.map((e) => [e.program_exercise_id, e.position, e.carry_program_exercise_id, e.carry_position])
+  it('fixture: the stored week really holds the carry values the readers must ignore, and program exercises with positions of their own (so the tests below are not vacuous)', () => {
+    const stored = weekOneRow().v2_week_plan_exercises.map((e) => [e.program_exercise_id, e.position, e.carry_program_exercise_id, e.carry_position, e.v2_program_exercises.position])
     expect(stored).toEqual([
-      ['pe-swapped-in', 1, 'pe-original', 0],
-      ['pe-b', 0, null, 5],
+      ['pe-swapped-in', 1, 'pe-original', 0, 4],
+      ['pe-b', 0, null, 5, 7],
     ])
   })
 
@@ -81,5 +90,13 @@ describe('reading a week whose rows store carry values — the mapped exercises 
         expect('carryPosition' in e).toBe(false)
       }
     }
+  })
+
+  it('a week lists its exercises in the order of its own rows: the position is the week row\'s, not the program exercise\'s (4 and 7 here) and not the stored carry\'s (0 and 5)', async () => {
+    buildWorld()
+    const [plan] = await fetchWeekPlans('meso-1', 1)
+    expect(plan.exercises.map((e) => [e.id, e.position])).toEqual([['pe-b', 0], ['pe-swapped-in', 1]])
+    const all = await fetchAllWeekPlansForMeso('meso-1')
+    expect(all.find((p) => p.weekNumber === 1)!.exercises.map((e) => [e.id, e.position])).toEqual([['pe-b', 0], ['pe-swapped-in', 1]])
   })
 })
