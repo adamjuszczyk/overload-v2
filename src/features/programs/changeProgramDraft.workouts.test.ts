@@ -25,6 +25,7 @@ import {
   swapExercise,
   undoRemove,
   unlinkBlock,
+  type DraftEntry,
   type DraftState,
 } from './changeProgramDraft'
 
@@ -107,6 +108,36 @@ function runAround(list: readonly Entry[], i: number): [number, number] {
   while (a > 0 && list[a - 1].block === b) a--
   while (z < list.length - 1 && list[z + 1].block === b) z++
   return [a, z]
+}
+// Where UNDO puts a removed entry back in the model's list, by plain array operations (never the draft's own function): the place it
+// stood in, or the end of the list when the list is shorter now, and not inside a superset (chunk 51c, DECISIONS 191). A superset's
+// member whose others are in the list goes next to them: before the first when its place is at or before it, else after the last. Any
+// other entry whose place is between two neighbours of one superset goes after that superset; a place right before or right after a
+// superset stays.
+function placeBackInModel(list: readonly Entry[], x: Removed): number {
+  const at = Math.min(x.at, list.length)
+  const mates = x.entry.block === null ? [] : list.flatMap((e, j) => (e.block === x.entry.block ? [j] : []))
+  if (mates.length > 0) return at <= mates[0] ? mates[0] : mates[mates.length - 1] + 1
+  const between = at > 0 && at < list.length && list[at - 1].block !== null && list[at - 1].block === list[at].block
+  return between ? runAround(list, at)[1] + 1 : at
+}
+// Which case of that rule an UNDO is, read off the model's list before the entry goes back; the focused walk counts them.
+const UNDO_CASES = ['a member, the others of its superset there', 'a member, its superset gone, place inside another superset', 'a member, its superset gone, place outside', 'in no superset, place inside a superset', 'in no superset, place outside'] as const
+// The fewest times the focused walk must reach each case, in each workout and over the four (about half of what its seeded walks reach). The
+// case that needs a second superset in the workout, after the first has gone, is counted over the four.
+const FLOOR: Record<(typeof UNDO_CASES)[number], { each: number; all: number }> = {
+  'a member, the others of its superset there': { each: 50, all: 0 },
+  'a member, its superset gone, place inside another superset': { each: 0, all: 10 },
+  'a member, its superset gone, place outside': { each: 30, all: 0 },
+  'in no superset, place inside a superset': { each: 3, all: 0 },
+  'in no superset, place outside': { each: 100, all: 0 },
+}
+function undoCaseOf(list: readonly Entry[], x: Removed): (typeof UNDO_CASES)[number] {
+  const at = Math.min(x.at, list.length)
+  const between = at > 0 && at < list.length && list[at - 1].block !== null && list[at - 1].block === list[at].block
+  if (x.entry.block !== null && list.some((e) => e.block === x.entry.block)) return UNDO_CASES[0]
+  if (x.entry.block !== null) return between ? UNDO_CASES[1] : UNDO_CASES[2]
+  return between ? UNDO_CASES[3] : UNDO_CASES[4]
 }
 
 // ─── Two views of a state, made comparable ─────────────────────────────────────────────────────────────────────────────────
@@ -219,19 +250,21 @@ interface Step {
   kind: EditKind
   changed: boolean
   workoutId: string
+  undo?: string // an UNDO's case (`undoCaseOf`), read off the model before the entry went back
 }
 
 let blockCounter = 0
 
 // One random edit: picked from the model's own state, applied to the draft by the draft's function and to the model by plain array
 // operations. Returns the new draft and whether the edit changed anything.
-function step(s: DraftState, m: Model, r: () => number, n: number): Step & { state: DraftState } {
+function step(s: DraftState, m: Model, r: () => number, n: number, kinds: readonly EditKind[] = KINDS, only?: string): Step & { state: DraftState } {
   const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(r() * xs.length)]
-  const w = pick(m.workouts)
+  const w = only === undefined ? pick(m.workouts) : m.workouts.find((x) => x.id === only)!
   const wid = w.id
-  const kind = pick(KINDS)
+  const kind = pick(kinds)
   const before = JSON.stringify(viewOfModel(m))
   let state = s
+  let undo: string | undefined
   const nothing = () => ({ kind, changed: false, workoutId: wid, state })
   const e = w.exercises.length > 0 ? pick(w.exercises) : undefined
   const i = e ? w.exercises.indexOf(e) : -1
@@ -258,21 +291,16 @@ function step(s: DraftState, m: Model, r: () => number, n: number): Step & { sta
       break
     }
     case 'undo': {
-      // A single exercise (no superset) is put back where it stood, or last when the list is shorter now. Not into the middle of a
-      // superset made since: the draft puts it there all the same, and SAVE refuses the result (the builder's report, DECISIONS 176's
-      // finding), so the walk leaves those removals where they are rather than pin the place.
-      const candidates = m.removed.filter((x) => {
-        if (x.entry.block !== null) return false
-        const list = m.workouts.find((y) => y.id === x.workoutId)!.exercises
-        const at = Math.min(x.at, list.length)
-        return !(at > 0 && at < list.length && list[at - 1].block !== null && list[at - 1].block === list[at].block)
-      })
-      if (candidates.length === 0) return nothing()
-      const gone = pick(candidates)
+      // Any removed entry can come back, a superset's member and one whose place is inside a superset made since included: the model
+      // puts it where `placeBackInModel` says (51c; before 51c this walk left out members and those places, which the draft put
+      // between two members of a superset and SAVE refused).
+      if (m.removed.length === 0) return nothing()
+      const gone = pick(m.removed)
       state = undoRemove(s, gone.entry.key!)
       m.removed.splice(m.removed.indexOf(gone), 1)
       const home = m.workouts.find((x) => x.id === gone.workoutId)!
-      home.exercises.splice(Math.min(gone.at, home.exercises.length), 0, gone.entry)
+      undo = undoCaseOf(home.exercises, gone)
+      home.exercises.splice(placeBackInModel(home.exercises, gone), 0, gone.entry)
       break
     }
     case 'move': {
@@ -409,7 +437,7 @@ function step(s: DraftState, m: Model, r: () => number, n: number): Step & { sta
       break
     }
   }
-  return { kind, changed: JSON.stringify(viewOfModel(m)) !== before, workoutId: wid, state }
+  return { kind, changed: JSON.stringify(viewOfModel(m)) !== before, workoutId: wid, state, undo }
 }
 
 // ─── The walk ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -488,37 +516,316 @@ describe('a draft of four workouts, edit by edit, against a model made with plai
     expect(draftDiffers(unlinkBlock(s, 'legs', 'blk-legs'), s)).toBe(true)
   })
 
+  // One walk: `steps` random edits of `kinds` on the four workouts as the run copy holds them. After every edit the draft is the model (the
+  // whole state, so a write to the wrong place shows whichever place it was) and each superset is in one piece; the walk ends on a draft
+  // the planner accepts and the tables take. `seen` is told of each edit.
+  function walkOnce(w: World, walk: number, steps: number, kinds: (n: number) => readonly EditKind[], seen: (done: Step) => void, only?: string): void {
+    const r = rng(walk + 1)
+    let s = start(w)
+    const m = initialModel()
+    blockCounter = 0
+    const trace: string[] = []
+    for (let n = 0; n < steps; n++) {
+      const done = step(s, m, r, walk * 100 + n, kinds(n), only)
+      s = done.state
+      trace.push(`${done.kind} in ${done.workoutId}${done.changed ? '' : ' (no change)'}`)
+      for (const wk of s.edit.workouts) {
+        const blocks = wk.exercises.map((x) => x.supersetBlockId).filter((b): b is string => b !== null)
+        for (const b of new Set(blocks)) {
+          const places = wk.exercises.map((x, j) => (x.supersetBlockId === b ? j : -1)).filter((j) => j >= 0)
+          if (places[places.length - 1] - places[0] + 1 !== places.length) throw new Error(`walk ${walk}: the members of ${b} in ${wk.id} are not next to each other (${places.join(',')}) after: ${trace.join(' | ')}`)
+        }
+      }
+      seen(done)
+      expect({ walk, n, kind: done.kind, view: viewOfDraft(s) }).toEqual({ walk, n, kind: done.kind, view: viewOfModel(m) })
+    }
+    const ops: Op[] = planProgramChange({ ...inputOf(w, s.edit), newId: idGen(`w${walk}-`) }).ops
+    applyOpsToDb(cloneDb(w.db), ops)
+  }
+
   it('400 walks of 25 edits: after every edit the draft is the model, and it reached every kind of edit in every workout', () => {
     const w = unevenWorkoutsWorld()
     const reached = new Map<string, number>()
     for (let walk = 0; walk < 400; walk++) {
-      const r = rng(walk + 1)
-      let s = start(w)
-      const m = initialModel()
-      blockCounter = 0
-      const trace: string[] = []
-      for (let n = 0; n < 25; n++) {
-        const done = step(s, m, r, walk * 100 + n)
-        s = done.state
-        trace.push(`${done.kind} in ${done.workoutId}${done.changed ? '' : ' (no change)'}`)
-        for (const wk of s.edit.workouts) {
-          const blocks = wk.exercises.map((x) => x.supersetBlockId).filter((b): b is string => b !== null)
-          for (const b of new Set(blocks)) {
-            const places = wk.exercises.map((x, j) => (x.supersetBlockId === b ? j : -1)).filter((j) => j >= 0)
-            if (places[places.length - 1] - places[0] + 1 !== places.length) throw new Error(`walk ${walk}: the members of ${b} in ${wk.id} are not next to each other (${places.join(',')}) after: ${trace.join(' | ')}`)
-          }
-        }
+      walkOnce(w, walk, 25, () => KINDS, (done) => {
         if (done.changed) reached.set(`${done.kind} in ${done.workoutId}`, (reached.get(`${done.kind} in ${done.workoutId}`) ?? 0) + 1)
-        // the whole state, so a write to the wrong place shows whichever place it was
-        expect({ walk, n, kind: done.kind, view: viewOfDraft(s) }).toEqual({ walk, n, kind: done.kind, view: viewOfModel(m) })
-      }
-      // the draft the walk ends on is one the planner accepts and the tables take
-      const ops: Op[] = planProgramChange({ ...inputOf(w, s.edit), newId: idGen(`w${walk}-`) }).ops
-      applyOpsToDb(cloneDb(w.db), ops)
+      })
     }
     // every kind that can change something did, in every workout, many times over
     const missing: string[] = []
     for (const wk of UNEVEN_WORKOUTS) for (const kind of KINDS) if ((reached.get(`${kind} in ${wk.id}`) ?? 0) < 20) missing.push(`${kind} in ${wk.id}: ${reached.get(`${kind} in ${wk.id}`) ?? 0}`)
     expect(missing).toEqual([])
+  })
+
+  // The walk above puts a removed exercise back in about one step of eight, and the places that matter (inside a superset made since) are a
+  // small part of those. This one stays in one workout per walk and goes in phases: three removals, some regrouping (SUPERSET, the toggle
+  // between members, UNLINK, MOVE, a drag), the removed put back in a random order, then a mix, so every case of the rule is reached in every
+  // workout, many times over (chunk 51c; DECISIONS 191), and each entry lands where the model puts it.
+  const MIX: readonly EditKind[] = ['remove', 'remove', 'remove', 'undo', 'undo', 'undo', 'link', 'link', 'split', 'unlink', 'move', 'drag', 'add', 'swap']
+  const focusedKinds = (n: number): readonly EditKind[] =>
+    n < 3 ? ['remove'] : n < 8 ? ['link', 'link', 'split', 'unlink', 'move', 'drag'] : n < 13 ? ['undo'] : MIX
+  it('400 walks of 30 edits in phases (remove, regroup, put back, mix): UNDO reached every case of its rule in every workout', () => {
+    const w = unevenWorkoutsWorld()
+    const reached = new Map<string, number>()
+    for (let walk = 0; walk < 400; walk++) {
+      walkOnce(w, 1000 + walk, 30, focusedKinds, (done) => {
+        if (done.undo) reached.set(`${done.undo} in ${done.workoutId}`, (reached.get(`${done.undo} in ${done.workoutId}`) ?? 0) + 1)
+      }, UNEVEN_WORKOUTS[walk % UNEVEN_WORKOUTS.length].id)
+    }
+    const counts = UNDO_CASES.flatMap((c) => UNEVEN_WORKOUTS.map((wk) => `${c} in ${wk.id}: ${reached.get(`${c} in ${wk.id}`) ?? 0}`))
+    const total = (c: string) => UNEVEN_WORKOUTS.reduce((n, wk) => n + (reached.get(`${c} in ${wk.id}`) ?? 0), 0)
+    const missing = UNDO_CASES.flatMap((c) => [
+      ...UNEVEN_WORKOUTS.filter((wk) => (reached.get(`${c} in ${wk.id}`) ?? 0) < FLOOR[c].each).map((wk) => `${c} in ${wk.id}`),
+      ...(total(c) < FLOOR[c].all ? [`${c} in all four`] : []),
+    ])
+    expect({ missing, counts }).toEqual({ missing: [], counts })
+  })
+})
+
+// ─── UNDO and the supersets of the list now (chunk 51c; DECISIONS 191) ─────────────────────────────────────────────────────────
+// UNDO used to put an exercise back at the index it stood at when it was removed, even where a superset stands now. Two ways to get
+// there: the exercises that stood before it come back first, which moves the place by one (recipe 1), or a superset grows over the place
+// (recipe 2). The list then had an exercise between two members of a superset, which `planProgramChange` refuses and SAVE shows as
+// "Couldn't save the changes." The rule now: an exercise whose place is strictly inside a superset goes after it; a superset's member
+// goes next to the others when they are there; a place right before or after a superset stays.
+
+describe('UNDO never puts an exercise inside a superset', () => {
+  const world = unevenWorkoutsWorld()
+  const original = (): DraftState => initialDraft(runCopyOf(world.db, world.programId, world.mesocycleId), world.planningType)
+  const keysIn = (s: DraftState, workoutId: string): string[] => s.edit.workouts.find((x) => x.id === workoutId)!.exercises.map((e) => e.key)
+  const blockOfKey = (s: DraftState, workoutId: string, key: string): string | null => s.edit.workouts.find((x) => x.id === workoutId)!.exercises.find((e) => e.key === key)!.supersetBlockId
+  // the draft goes to the planner as SAVE hands it over, and what the planner makes of it goes to the tables' stand-in
+  const accepted = (s: DraftState): void => {
+    applyOpsToDb(cloneDb(world.db), planProgramChange({ ...inputOf(world, s.edit), newId: idGen('u-') }).ops)
+  }
+  const rowsOf = (workoutId: string): string[] => UNEVEN_WORKOUTS.find((x) => x.id === workoutId)!.exercises.map((x) => `e:${x.row}`)
+
+  it('recipe 1 (Push): the exercise above the pair and the one below it removed, put back in the order they were removed, are back where they were', () => {
+    const base = original()
+    const gone = removeExercise(removeExercise(base, 'push', 'e:pe-bench'), 'push', 'e:pe-pushdown')
+    expect(keysIn(gone, 'push')).toEqual(['e:pe-ohp', 'e:pe-lateral'])
+    expect(gone.removed.map((r) => [r.entry.key, r.at])).toEqual([['e:pe-bench', 0], ['e:pe-pushdown', 2]])
+    const first = undoRemove(gone, 'e:pe-bench')
+    expect(keysIn(first, 'push')).toEqual(['e:pe-bench', 'e:pe-ohp', 'e:pe-lateral'])
+    // Triceps Pushdown stood at place 2, which is now between Overhead Press and Lateral Raise (places 1 and 2): after the pair
+    const back = undoRemove(first, 'e:pe-pushdown')
+    expect(keysIn(back, 'push')).toEqual(['e:pe-bench', 'e:pe-ohp', 'e:pe-lateral', 'e:pe-pushdown'])
+    expect(['e:pe-bench', 'e:pe-ohp', 'e:pe-lateral', 'e:pe-pushdown'].map((k) => blockOfKey(back, 'push', k))).toEqual([null, 'blk-push', 'blk-push', null])
+    expect(back.removed).toEqual([])
+    expect(draftDiffers(back, base)).toBe(false)
+    accepted(back)
+  })
+
+  it('recipe 2 (Legs): the exercise removed from above a pair, and the exercise above it linked with the pair, comes back after the three', () => {
+    const base = original()
+    const gone = removeExercise(base, 'legs', 'e:pe-rdl')
+    const linked = linkWithBelow(gone, 'legs', 'e:pe-squat') // Back Squat joins the pair below it
+    expect(keysIn(linked, 'legs')).toEqual(['e:pe-squat', 'e:pe-lcurl', 'e:pe-calf'])
+    expect(['e:pe-squat', 'e:pe-lcurl', 'e:pe-calf'].map((k) => blockOfKey(linked, 'legs', k))).toEqual(['blk-legs', 'blk-legs', 'blk-legs'])
+    // Romanian Deadlift stood at place 1: between Back Squat and Leg Curl, now two members of one superset
+    const back = undoRemove(linked, 'e:pe-rdl')
+    expect(keysIn(back, 'legs')).toEqual(['e:pe-squat', 'e:pe-lcurl', 'e:pe-calf', 'e:pe-rdl'])
+    expect(['e:pe-squat', 'e:pe-lcurl', 'e:pe-calf', 'e:pe-rdl'].map((k) => blockOfKey(back, 'legs', k))).toEqual(['blk-legs', 'blk-legs', 'blk-legs', null])
+    accepted(back)
+    // and the other workouts are as they were
+    expect(keysIn(back, 'push')).toEqual(rowsOf('push'))
+  })
+
+  it('a superset that moved over the place since the removal: the exercise comes back after it, not inside it (Pull: Biceps Curl, with the trio moved below Shrug)', () => {
+    const gone = removeExercise(original(), 'pull', 'e:pe-bcurl') // the trio, then Shrug; Biceps Curl stood at place 3
+    const moved = moveExercise(gone, 'pull', 'e:pe-row', 'down') // the trio is one block: it goes below Shrug
+    expect(keysIn(moved, 'pull')).toEqual(['e:pe-shrug', 'e:pe-row', 'e:pe-pd', 'e:pe-face'])
+    const back = undoRemove(moved, 'e:pe-bcurl')
+    expect(keysIn(back, 'pull')).toEqual(['e:pe-shrug', 'e:pe-row', 'e:pe-pd', 'e:pe-face', 'e:pe-bcurl'])
+    accepted(back)
+  })
+
+  it('the general case: B removed from A, B, C, D (no superset), A linked with C, then B put back: B comes back after A and C, which are one block now', () => {
+    const unlinked = unlinkBlock(original(), 'arms', 'blk-arms') // Cable Curl, Hammer Curl, Dip, Skull Crusher, Wrist Curl: none in a superset
+    const gone = removeExercise(unlinked, 'arms', 'e:pe-hammer') // A = Cable Curl, B = Hammer Curl (place 1), C = Dip
+    const linked = linkWithBelow(gone, 'arms', 'e:pe-curl') // A and C: Cable Curl and Dip
+    expect(keysIn(linked, 'arms')).toEqual(['e:pe-curl', 'e:pe-dip', 'e:pe-skull', 'e:pe-wrist'])
+    const block = blockOfKey(linked, 'arms', 'e:pe-curl')
+    expect(block).not.toBeNull()
+    expect(blockOfKey(linked, 'arms', 'e:pe-dip')).toBe(block)
+    const back = undoRemove(linked, 'e:pe-hammer')
+    expect(keysIn(back, 'arms')).toEqual(['e:pe-curl', 'e:pe-dip', 'e:pe-hammer', 'e:pe-skull', 'e:pe-wrist'])
+    expect(['e:pe-curl', 'e:pe-dip', 'e:pe-hammer'].map((k) => blockOfKey(back, 'arms', k))).toEqual([block, block, null])
+    accepted(back)
+  })
+
+  // As the code was built: the middle member of a trio comes back last in its block, the first one before the others, the last one after.
+  it('a superset’s member goes next to the others: a trio’s middle member comes back last in its block, as it always has', () => {
+    const gone = removeExercise(original(), 'pull', 'e:pe-pd')
+    expect(keysIn(gone, 'pull')).toEqual(['e:pe-row', 'e:pe-face', 'e:pe-bcurl', 'e:pe-shrug'])
+    const back = undoRemove(gone, 'e:pe-pd')
+    expect(keysIn(back, 'pull')).toEqual(['e:pe-row', 'e:pe-face', 'e:pe-pd', 'e:pe-bcurl', 'e:pe-shrug'])
+    expect(['e:pe-row', 'e:pe-face', 'e:pe-pd'].map((k) => blockOfKey(back, 'pull', k))).toEqual(['blk-pull', 'blk-pull', 'blk-pull'])
+    // the first and the last member of the trio go back where they stood
+    expect(keysIn(undoRemove(removeExercise(original(), 'pull', 'e:pe-row'), 'e:pe-row'), 'pull')).toEqual(rowsOf('pull'))
+    expect(keysIn(undoRemove(removeExercise(original(), 'pull', 'e:pe-face'), 'e:pe-face'), 'pull')).toEqual(rowsOf('pull'))
+    accepted(back)
+  })
+
+  // The control: UNDO in stack order (the last removed first) puts back the list as it was, whatever was removed, in every workout. The one
+  // exception is the middle member of a trio (Pull's Lat Pulldown), which comes back last in its block, in any order (the test above).
+  it('UNDO in stack order restores the original list for every way of removing any of the exercises of each workout, a trio’s middle member apart', () => {
+    const base = original()
+    let ways = 0
+    const bad: string[] = []
+    for (const wk of UNEVEN_WORKOUTS) {
+      const rows = rowsOf(wk.id)
+      const visit = (s: DraftState, left: string[], gone: string[]): void => {
+        if (gone.length > 0 && !gone.includes('e:pe-pd')) {
+          ways++
+          const back = [...gone].reverse().reduce((t, k) => undoRemove(t, k), s)
+          if (keysIn(back, wk.id).join() !== rows.join() || draftDiffers(back, base)) bad.push(`${wk.id}: removed ${gone.join(' ')} -> ${keysIn(back, wk.id).join(' ')}`)
+        }
+        for (const k of left) visit(removeExercise(s, wk.id, k), left.filter((x) => x !== k), [...gone, k])
+      }
+      visit(base, rows, [])
+    }
+    expect({ bad: bad.slice(0, 3), count: bad.length }).toEqual({ bad: [], count: 0 })
+    // the ordered ways of removing one or more of 4 exercises: 4 + 12 + 24 + 24 (Push and Legs, and Pull without Lat Pulldown); of 5: 5 + 20 + 60 + 120 + 120 (Arms)
+    expect(ways).toBe(3 * (4 + 12 + 24 + 24) + (5 + 20 + 60 + 120 + 120))
+  })
+
+  // ── Where the place falls: tables over every place a removal can have stood in, for lists written out letter by letter ──
+  type Layout = ReadonlyArray<readonly [string, string | null]>
+  const entry = (key: string, block: string | null): DraftEntry => ({ kind: 'added', exerciseId: `ex-${key}`, supersetBlockId: block, restSeconds: null, restAfterSeconds: null, tempo: null, weightUnit: null, key })
+  // A draft of one workout, 'w', holding `layout` in order, and `x` (its key and superset) removed from the place `at`.
+  const drafted = (layout: Layout, x: readonly [string, string | null], at: number): DraftState => {
+    const base = original()
+    return {
+      ...base,
+      edit: { ...base.edit, workouts: [{ id: 'w', name: 'W', exercises: layout.map(([k, b]) => entry(k, b)), routine: [] }] },
+      removed: [{ workoutId: 'w', entry: entry(x[0], x[1]), at }],
+    }
+  }
+  const comesBack = (layout: Layout, x: readonly [string, string | null], at: number): string => keysIn(undoRemove(drafted(layout, x, at), x[0]), 'w').join(' ')
+
+  // two supersets, a b and c d, then two single exercises: the places 0..6 are the seven gaps of the list
+  const TWO: Layout = [['a', 'b1'], ['b', 'b1'], ['c', 'b2'], ['d', 'b2'], ['e', null], ['f', null]]
+  const FREE_IN_TWO: ReadonlyArray<readonly [number, string]> = [
+    [0, 'X a b c d e f'], // before the first superset
+    [1, 'a b X c d e f'], // between a and b: after the first superset
+    [2, 'a b X c d e f'], // between the two supersets: stays (right after the first, right before the second)
+    [3, 'a b c d X e f'], // between c and d: after the second superset
+    [4, 'a b c d X e f'], // right after the second superset: stays
+    [5, 'a b c d e X f'],
+    [6, 'a b c d e f X'],
+    [7, 'a b c d e f X'], // the list is shorter now: last
+    [99, 'a b c d e f X'],
+  ]
+  it.each(FREE_IN_TWO)('an exercise in no superset removed from place %i of the list a b | c d | e f comes back: %s', (at, expected) => {
+    expect(comesBack(TWO, ['X', null], at)).toBe(expected)
+  })
+
+  // a superset's member with its others in the list: next to them, before the first when its place is at or before it, else after the last
+  it.each([
+    [0, 'a b X c d e f'],
+    [1, 'a b X c d e f'], // its place is inside the first superset: it goes to its own (c d), not after the first
+    [2, 'a b X c d e f'], // at the first member: before it
+    [3, 'a b c d X e f'], // between c and d, its own members: after them
+    [4, 'a b c d X e f'],
+    [5, 'a b c d X e f'],
+    [99, 'a b c d X e f'],
+  ] as const)('a member of the second superset removed from place %i comes back next to c d: %s', (at, expected) => {
+    const back = undoRemove(drafted(TWO, ['X', 'b2'], at), 'X')
+    expect(keysIn(back, 'w').join(' ')).toBe(expected)
+    expect(blockOfKey(back, 'w', 'X')).toBe('b2')
+  })
+
+  // a member whose superset has no other member in the list now is any other exercise: it must not split a superset it falls inside
+  it.each(FREE_IN_TWO)('a member of a superset with no other member in the list, removed from place %i, comes back as any other exercise would: %s', (at, expected) => {
+    const back = undoRemove(drafted(TWO, ['X', 'b3'], at), 'X')
+    expect(keysIn(back, 'w').join(' ')).toBe(expected)
+    expect(blockOfKey(back, 'w', 'X')).toBe('b3')
+  })
+
+  it('a member whose superset moved away goes to it, wherever its place is now (even inside another superset)', () => {
+    const away: Layout = [['a', 'b1'], ['b', 'b1'], ['e', null], ['f', null], ['c', 'b2'], ['d', 'b2']]
+    expect(comesBack(away, ['X', 'b2'], 1)).toBe('a b e f X c d') // place 1 is inside a b, but X belongs with c d
+    expect(comesBack(away, ['X', 'b2'], 5)).toBe('a b e f c d X') // place 5 is inside c d, its own: after them
+    expect(comesBack(away, ['X', 'b2'], 99)).toBe('a b e f c d X')
+  })
+
+  // one superset that is the whole list, and one that is the end of the list
+  it.each([
+    [0, 'X a b c'],
+    [1, 'a b c X'],
+    [2, 'a b c X'],
+    [3, 'a b c X'],
+    [4, 'a b c X'],
+  ])('an exercise in no superset removed from place %i of a list that is one superset of three comes back: %s', (at, expected) => {
+    expect(comesBack([['a', 'b1'], ['b', 'b1'], ['c', 'b1']], ['X', null], at)).toBe(expected)
+  })
+  it.each([
+    [0, 'X e a b'],
+    [1, 'e X a b'],
+    [2, 'e a b X'], // between a and b
+    [3, 'e a b X'],
+  ])('an exercise in no superset removed from place %i of the list e | a b comes back: %s', (at, expected) => {
+    expect(comesBack([['e', null], ['a', 'b1'], ['b', 'b1']], ['X', null], at)).toBe(expected)
+  })
+
+  // ── Every way of removing, regrouping and putting back ──
+  // For each workout: remove any of its exercises (any number, any order), change its supersets once (SUPERSET on an exercise, the toggle
+  // between two members, UNLINK, one place up or down), then put the removed back in every order. After every UNDO each superset of the
+  // workout is in one piece (read here by plain loops, not by the planner), and every list this ends on is one the planner accepts and the
+  // tables take.
+  it('every way of removing some of a workout, regrouping it once and putting the removed back in any order leaves each superset in one piece', () => {
+    const inOnePiece = (s: DraftState, wid: string): string | null => {
+      const list = s.edit.workouts.find((x) => x.id === wid)!.exercises
+      for (const b of new Set(list.map((e) => e.supersetBlockId))) {
+        if (b === null) continue
+        const at = list.flatMap((e, j) => (e.supersetBlockId === b ? [j] : []))
+        if (at[at.length - 1] - at[0] + 1 !== at.length) return `${b} at ${at.join(',')}`
+      }
+      return null
+    }
+    const regroupings = (s: DraftState, wid: string): DraftState[] => {
+      const list = s.edit.workouts.find((x) => x.id === wid)!.exercises
+      const content = draftContent(s)
+      const made = [s]
+      const add = (t: DraftState): void => {
+        if (draftContent(t) !== content) made.push(t)
+      }
+      for (const e of list) {
+        add(linkWithBelow(s, wid, e.key))
+        add(splitAfter(s, wid, e.key))
+        add(moveExercise(s, wid, e.key, 'up'))
+        add(moveExercise(s, wid, e.key, 'down'))
+      }
+      for (const b of new Set(list.map((e) => e.supersetBlockId))) if (b !== null) add(unlinkBlock(s, wid, b))
+      return made
+    }
+    const finals = new Map<string, DraftState>()
+    const bad: string[] = []
+    let undos = 0
+    for (const wk of UNEVEN_WORKOUTS) {
+      const putBack = (s: DraftState, left: string[], trace: string): void => {
+        if (left.length === 0) {
+          finals.set(`${wk.id} ${JSON.stringify(s.edit.workouts.find((x) => x.id === wk.id)!.exercises.map((e) => [e.key, e.supersetBlockId]))}`, s)
+          return
+        }
+        for (const k of left) {
+          const t = undoRemove(s, k)
+          undos++
+          const split = inOnePiece(t, wk.id)
+          if (split !== null) bad.push(`${trace} then UNDO ${k}: ${split}`)
+          putBack(t, left.filter((x) => x !== k), `${trace} then UNDO ${k}`)
+        }
+      }
+      const remove = (s: DraftState, left: string[], gone: string[]): void => {
+        if (gone.length > 0) regroupings(s, wk.id).forEach((t, i) => putBack(t, gone, `${wk.id}: remove ${gone.join(' ')}, regrouping ${i}`))
+        for (const k of left) remove(removeExercise(s, wk.id, k), left.filter((x) => x !== k), [...gone, k])
+      }
+      remove(original(), rowsOf(wk.id), [])
+    }
+    expect({ bad: bad.slice(0, 3), count: bad.length }).toEqual({ bad: [], count: 0 })
+    expect(undos).toBeGreaterThan(100000)
+    for (const s of finals.values()) accepted(s)
+    expect(finals.size).toBeGreaterThan(100)
   })
 })

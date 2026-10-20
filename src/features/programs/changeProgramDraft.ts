@@ -184,22 +184,42 @@ export function removeExercise(state: DraftState, workoutId: string, key: string
 }
 
 /**
- * UNDO puts the exercise back where it stood (or at the end when the list is shorter now). One in a superset goes next to
- * the block's other members when they are still there, so the block stays in one piece.
+ * UNDO puts the exercise back where it stood (or at the end when the list is shorter now), and never inside a superset, so the
+ * block stays in one piece: a block with an exercise between its members is a draft SAVE refuses ("the members of superset
+ * block … are not next to each other"), with nothing on the screen to say why (chunk 51c, DECISIONS 191).
+ *
+ * The place a removal recorded is the exercise's index in the list at that moment. The list has changed since: a superset grew
+ * over that place (SUPERSET on the exercise above it), or the exercises that stood before it came back first and moved the
+ * place. So where the place falls now decides:
+ *   - an exercise of a superset goes next to the block's other members when they are still there: before the first when its
+ *     place is at or before it, else after the last (wherever the others have moved to);
+ *   - any other exercise, including one whose own block has no member left, whose place falls strictly inside a superset (between
+ *     two of its members) goes after that superset.
+ * A place right before the first member or right after the last is not inside the block and stays.
  */
 export function undoRemove(state: DraftState, key: string): DraftState {
   const gone = state.removed.find((r) => r.entry.key === key)
   if (!gone) throw new RangeError(`no removed exercise ${key}`)
   const rest = { ...state, removed: state.removed.filter((r) => r !== gone) }
   return mapWorkout(rest, gone.workoutId, (w) => {
-    const block = gone.entry.supersetBlockId
-    let at = Math.min(gone.at, w.exercises.length)
-    if (block !== null) {
-      const members = w.exercises.map((e, j) => (e.supersetBlockId === block ? j : -1)).filter((j) => j >= 0)
-      if (members.length > 0) at = at <= members[0] ? members[0] : members[members.length - 1] + 1
-    }
+    const at = placeBack(w.exercises, gone.entry.supersetBlockId, Math.min(gone.at, w.exercises.length))
     return { ...w, exercises: [...w.exercises.slice(0, at), gone.entry, ...w.exercises.slice(at)] }
   })
+}
+
+/** The index in `list` where an exercise of superset `block` (null: of none) goes back, given the place `at` it stood in (`undoRemove`). */
+function placeBack(list: readonly DraftEntry[], block: string | null, at: number): number {
+  const membersOf = (b: string): number[] => list.map((e, j) => (e.supersetBlockId === b ? j : -1)).filter((j) => j >= 0)
+  if (block !== null) {
+    const members = membersOf(block)
+    if (members.length > 0) return at <= members[0] ? members[0] : members[members.length - 1] + 1
+  }
+  for (const other of new Set(list.map((e) => e.supersetBlockId))) {
+    if (other === null) continue
+    const members = membersOf(other)
+    if (members[0] < at && at <= members[members.length - 1]) return members[members.length - 1] + 1
+  }
+  return at
 }
 
 // ─── Order ───────────────────────────────────────────────────────────────────────────────────────────────────────────

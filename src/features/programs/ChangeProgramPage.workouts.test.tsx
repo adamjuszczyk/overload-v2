@@ -458,8 +458,7 @@ describe.each([
   })
 
   // Two single exercises removed (never a superset's member, which UNDO puts next to the rest of its block) and put back in the other order.
-  // Not tested, on purpose: a single exercise put back where a superset now stands (the draft puts it between two of its members and SAVE
-  // refuses the list); that is the builder's finding in DECISIONS 176's report, and the draft test's walk leaves such removals alone too.
+  // A single exercise put back where a superset stands now is the next group of tests (chunk 51c; DECISIONS 191).
   const UNDOS: Record<string, [string, string]> = {
     push: ['pe-bench', 'pe-pushdown'],
     pull: ['pe-bcurl', 'pe-shrug'],
@@ -560,6 +559,123 @@ describe.each([
     click(`Undo removing ${second.name}`)
     expect([...cardNames()].sort()).toEqual(wk.exercises.map((x) => x.name).sort())
     expect(screen.queryByText('REMOVED FROM WEEK 2')).toBeNull()
+  })
+
+  // ── UNDO never puts an exercise inside a superset (chunk 51c; DECISIONS 191) ──
+  // UNDO puts an exercise back at the place it stood in the list when it was removed. When the exercises before it have come back first
+  // (recipe 1), or a superset has grown over that place (recipe 2), that place is now between two members of a superset: the old draft
+  // put the exercise there, the superset's header went and SAVE said "Couldn't save the changes." with the planner's own message under it
+  // and sent nothing. Now the exercise comes back after the superset. Each workout has its own shape: Push and Arms have an exercise above
+  // the pair and one below it; Legs gets its pair grown by SUPERSET on the exercise above; Pull's trio is moved below the exercise that
+  // follows it. The letters are the first text on a card: a superset's member wears its letter, a single exercise its name.
+  const firstTexts = (): string[] => Array.from(document.querySelectorAll('[data-exercise-key]')).map((n) => n.querySelector('span')?.textContent ?? '')
+  type Press = readonly ['remove' | 'undo' | 'link', string] | readonly ['move the superset down']
+  function press(steps: readonly Press[]) {
+    for (const step of steps) {
+      if (step[0] === 'remove') {
+        click(`Remove ${step[1]}`)
+        click('REMOVE')
+      } else if (step[0] === 'undo') click(`Undo removing ${step[1]}`)
+      else if (step[0] === 'link') click(`Link ${step[1]} with the exercise below`)
+      else expect(fireEvent.keyDown(screen.getByRole('button', { name: 'Reorder superset A' }), { key: 'ArrowDown' })).toBe(false)
+    }
+  }
+  interface Undone {
+    wk: string
+    title: string
+    steps: readonly Press[]
+    rows: readonly string[] // the order of the cards after the steps, by the run copy's rows
+    letters: readonly string[] // the first text on each card after them
+    save: ((e: Edit) => Edit) | null // null: the list is the original, and SAVE has nothing to send
+  }
+  const UNDONE: readonly Undone[] = [
+    {
+      wk: 'push',
+      title: 'recipe 1: the exercise above the pair and the one below it removed and put back in the order removed',
+      steps: [['remove', 'Bench Press'], ['remove', 'Triceps Pushdown'], ['undo', 'Bench Press'], ['undo', 'Triceps Pushdown']],
+      rows: ['pe-bench', 'pe-ohp', 'pe-lateral', 'pe-pushdown'],
+      letters: ['Bench Press', 'A', 'B', 'Triceps Pushdown'],
+      save: null,
+    },
+    {
+      wk: 'arms',
+      title: 'the exercise above the pair and the one below it removed and put back in the order removed',
+      steps: [['remove', 'Cable Curl'], ['remove', 'Skull Crusher'], ['undo', 'Cable Curl'], ['undo', 'Skull Crusher']],
+      rows: ['pe-curl', 'pe-hammer', 'pe-dip', 'pe-skull', 'pe-wrist'],
+      letters: ['Cable Curl', 'A', 'B', 'Skull Crusher', 'Wrist Curl'],
+      save: null,
+    },
+    {
+      wk: 'legs',
+      title: 'recipe 2: an exercise removed, SUPERSET on the one above it (it joins the pair below), the exercise put back',
+      steps: [['remove', 'Romanian Deadlift'], ['link', 'Back Squat'], ['undo', 'Romanian Deadlift']],
+      rows: ['pe-squat', 'pe-lcurl', 'pe-calf', 'pe-rdl'],
+      letters: ['A', 'B', 'C', 'Romanian Deadlift'],
+      save: (e) => withBlock(reorderTo(e, 'legs', ['pe-squat', 'pe-lcurl', 'pe-calf', 'pe-rdl']), 'legs', ['pe-squat'], 'blk-legs'),
+    },
+    {
+      wk: 'pull',
+      title: 'an exercise removed, the trio moved below the exercise that follows it, the exercise put back',
+      steps: [['remove', 'Biceps Curl'], ['move the superset down'], ['undo', 'Biceps Curl']],
+      rows: ['pe-shrug', 'pe-row', 'pe-pd', 'pe-face', 'pe-bcurl'],
+      letters: ['Shrug', 'A', 'B', 'C', 'Biceps Curl'],
+      save: (e) => reorderTo(e, 'pull', ['pe-shrug', 'pe-row', 'pe-pd', 'pe-face', 'pe-bcurl']),
+    },
+  ]
+  it.each(UNDONE)('UNDO in $wk, $title: the superset stays in one piece and SAVE is accepted', async ({ wk: wkId, steps, rows, letters, save: saveAs }) => {
+    const wk = UNEVEN_WORKOUTS.find((x) => x.id === wkId)!
+    await open()
+    const before = world
+    goTo(wk)
+    press(steps)
+    expect(cardKeys()).toEqual(rows)
+    expect(firstTexts()).toEqual(letters)
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    expect(screen.queryByText('REMOVED FROM WEEK 2')).toBeNull()
+    // the other workouts keep their own lists and their superset
+    for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) {
+      goTo(other)
+      expect(cardKeys()).toEqual(rowsOf(other))
+      expect(blockHeaders()).toEqual(['SUPERSET A'])
+    }
+    goTo(wk)
+    if (saveAs === null) {
+      click('SAVE CHANGES')
+      await screen.findByText('AT PLAN')
+      expect(h.rpc).not.toHaveBeenCalled()
+    } else {
+      await saveAndExpect(before, saveAs)
+    }
+  })
+
+  // The control: the same removals put back in stack order (the last removed first) are back where they were, as before the change.
+  const CONTROLS: ReadonlyArray<{ wk: string; steps: readonly Press[] }> = [
+    { wk: 'push', steps: [['remove', 'Bench Press'], ['remove', 'Triceps Pushdown'], ['undo', 'Triceps Pushdown'], ['undo', 'Bench Press']] },
+    { wk: 'arms', steps: [['remove', 'Cable Curl'], ['remove', 'Skull Crusher'], ['undo', 'Skull Crusher'], ['undo', 'Cable Curl']] },
+  ]
+  it.each(CONTROLS)('UNDO in $wk in stack order puts the same removals back where they were, and SAVE has nothing to send', async ({ wk: wkId, steps }) => {
+    const wk = UNEVEN_WORKOUTS.find((x) => x.id === wkId)!
+    await open()
+    goTo(wk)
+    press(steps)
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  // As it always was: the middle member of a trio comes back last in its block (the first goes back before the others, the last after).
+  it('UNDO in Pull puts the middle member of the trio back last in its block, and SAVE sends the new order', async () => {
+    const wk = UNEVEN_WORKOUTS[1]
+    await open()
+    const before = world
+    goTo(wk)
+    press([['remove', 'Lat Pulldown'], ['undo', 'Lat Pulldown']])
+    expect(cardKeys()).toEqual(['pe-row', 'pe-face', 'pe-pd', 'pe-bcurl', 'pe-shrug'])
+    expect(firstTexts()).toEqual(['A', 'B', 'C', 'Biceps Curl', 'Shrug'])
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    await saveAndExpect(before, (e) => reorderTo(e, 'pull', ['pe-row', 'pe-face', 'pe-pd', 'pe-bcurl', 'pe-shrug']))
   })
 })
 
