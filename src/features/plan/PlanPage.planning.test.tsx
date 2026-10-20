@@ -603,8 +603,11 @@ describe('the current week moves on while Plan is open: the new current week is 
     vi.setSystemTime(FIRST_MINUTE_OF_WEEK_3)
     await tabBecomesVisible()
     await waitFor(() => expect(calledWeeks()).toEqual([3]), FOUND)
-    // week 3 is planned now and is the current one; week 2, still the open one, is a past week and the strip reaches the next unplanned week
+    // week 3 is planned now and is the current one; week 2 is a past week and the strip reaches the next unplanned week
     await waitFor(() => expect(tileLabels()).toEqual(['WEEK 1 · DONE', 'WEEK 2 · DONE', 'WEEK 3 · THIS WEEK', 'WEEK 4 · NOT PLANNED']), FOUND)
+    // what makes this test tell the two weeks apart: the week the user had open stays open (it follows a run change only), so the open
+    // week (2) and the current week (3) are different weeks. If Plan ever follows the current week by itself, this stops holding and the
+    // test needs another way to part them.
     expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
@@ -655,7 +658,7 @@ describe('the current week moves on while Plan is open: the new current week is 
     )
     await waitFor(() => expect(calledWeeks()).toEqual([3]), FOUND)
     await waitFor(() => expect(tileLabels()).toEqual(['CYCLE 1 · DONE', 'CYCLE 2 · DONE', 'CYCLE 3 · THIS CYCLE', 'CYCLE 4 · NOT PLANNED']), FOUND)
-    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2')
+    expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-week')).toBe('2') // the open cycle stays 2, as above
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50))
     })

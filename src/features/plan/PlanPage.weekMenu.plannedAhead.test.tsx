@@ -9,7 +9,7 @@ import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { createFakeDeloadDb, fakePlan, fakeSet, type FakePlanRow, type FakeSetRow } from './fakeDeloadDb.testutil'
-import { openWeekMenu, openWeekTile } from './planMenus.testutil'
+import { closeSheet, openWeekMenu, openWeekTile } from './planMenus.testutil'
 
 // Chunk 52, review 1, F1 (RULES: "A writer that takes its target from what the screen has open is tested with something open other than what
 // the screen opens on"). WEEK ⋯ is offered on a week planned ahead as well as on the current week (a week PLAN FORWARD has planned is one),
@@ -175,7 +175,7 @@ describe('WEEK ⋯ on a week planned ahead marks that week, not the current one 
     fireEvent.click(await screen.findByText('MARK WEEK AS DELOAD', {}, FOUND))
     await screen.findByText('UNMARK THIS WEEK', {}, FOUND)
     expect(deloaded()).toEqual(idsOfWeek(4).sort())
-    fireEvent.click(screen.getByLabelText('Close')) // the sheet's own close button
+    closeSheet()
 
     openWeekTile('WEEK 3')
     await screen.findByLabelText('Week 3 options', {}, FOUND)
