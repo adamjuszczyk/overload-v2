@@ -20,8 +20,11 @@
 //               rows that changed since FILE, and passes only when they are exactly what `plan046` said from FILE.
 //               This is the before/after of the staging rehearsal. It writes nothing and prints no secret.
 //
-// Usage:  node scripts/rehearse-046.mjs --replay [--worlds 120] [--container NAME] [--migration PATH]
+// Usage:  node scripts/rehearse-046.mjs --replay [--worlds 120] [--container NAME] [--migration PATH] [--safeupdate]
 //         node scripts/rehearse-046.mjs --staging [--account EMAIL] [--out FILE | --compare FILE]
+//         --safeupdate  production runs pg-safeupdate, which rejects an UPDATE or DELETE with no WHERE clause, inside a DO block
+//                       too, and the replay image doesn't load it: the worlds then run as supabase_admin with it loaded (and a
+//                       canary: a bare UPDATE must be refused), the way scripts/plan-week-parity.mjs --safeupdate does.
 // Exit:   0 every check passed · 1 one failed · 2 couldn't run.
 //
 // Nothing is kept: every replay world runs in one transaction that is rolled back.
@@ -30,7 +33,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { FIRST_LINE, findContainer, psql } from './plan-week-parity.mjs'
+import { FIRST_LINE, SAFEUPDATE_PREFIX, findContainer, psql } from './plan-week-parity.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO = path.resolve(HERE, '..')
@@ -315,16 +318,24 @@ function findMigration() {
   return path.join(dir, f)
 }
 
-function runWorld(container, script, world, seed) {
-  const r = psql(container, ['-v', `world=${world}`, '-v', `seed=${seed}`, '-f', '-'], script)
+// --safeupdate: pg-safeupdate loaded (with its canary) right after the world's `begin;`, in a session of the role that can load it.
+export function withSafeupdate(script) {
+  const marker = '\nbegin;\n'
+  const at = script.indexOf(marker)
+  if (at < 0 || script.indexOf(marker, at + 1) >= 0) throw new Error("world.sql must hold exactly one line 'begin;'")
+  return script.slice(0, at + marker.length) + SAFEUPDATE_PREFIX + script.slice(at + marker.length)
+}
+
+function runWorld(container, script, world, seed, role = 'postgres') {
+  const r = psql(container, ['-v', `world=${world}`, '-v', `seed=${seed}`, '-f', '-'], script, role)
   const line = (r.stdout ?? '').trim().split('\n').filter(Boolean).pop()
   if (r.status !== 0 || !line || !line.startsWith('{')) return { error: FIRST_LINE(r.stderr) || 'no output' }
   const notices = (r.stderr ?? '').split('\n').filter((l) => l.includes('NOTICE:  046:')).map((l) => l.replace(/^.*NOTICE:\s+/, ''))
   return { world: JSON.parse(line), notices }
 }
 
-function parseArgs(argv) {
-  const o = { mode: null, worlds: 120, container: null, migration: null, account: 'staging-test@example.com', out: null, compare: null }
+export function parseArgs(argv) {
+  const o = { mode: null, worlds: 120, container: null, migration: null, account: 'staging-test@example.com', out: null, compare: null, safeupdate: false }
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--replay') o.mode = 'replay'
@@ -332,6 +343,7 @@ function parseArgs(argv) {
     else if (a === '--worlds') o.worlds = Number(argv[++i])
     else if (a === '--container') o.container = argv[++i]
     else if (a === '--migration') o.migration = argv[++i]
+    else if (a === '--safeupdate') o.safeupdate = true
     else if (a === '--account') o.account = argv[++i]
     else if (a === '--out') o.out = argv[++i]
     else if (a === '--compare') o.compare = argv[++i]
@@ -340,6 +352,7 @@ function parseArgs(argv) {
   if (!o.mode) throw new Error('say --replay or --staging')
   if (!Number.isInteger(o.worlds) || o.worlds < 0) throw new Error('--worlds takes a whole number')
   if (o.mode === 'staging' && o.out && o.compare) throw new Error('--out and --compare are for before and after: one at a time')
+  if (o.safeupdate && o.mode !== 'replay') throw new Error('--safeupdate is for --replay (the staging reading writes nothing)')
   return o
 }
 
@@ -354,8 +367,10 @@ async function replay(o) {
   const migrationText = readFileSync(migrationPath, 'utf8')
   const text041 = readFileSync(path.join(REPO, 'supabase', 'migrations', '041_safeupdate_where_true.sql'), 'utf8')
   const worldSql = readFileSync(WORLD_SQL, 'utf8')
-  const script = worldScript(worldSql, text041, migrationText)
-  console.log(`rehearse-046: container ${container} · migration ${path.basename(migrationPath)}`)
+  const plain = worldScript(worldSql, text041, migrationText)
+  const script = o.safeupdate ? withSafeupdate(plain) : plain
+  const role = o.safeupdate ? 'supabase_admin' : 'postgres'
+  console.log(`rehearse-046: container ${container} · migration ${path.basename(migrationPath)}${o.safeupdate ? ' · as supabase_admin with pg-safeupdate loaded (canary: a bare UPDATE is refused)' : ''}`)
   const tables = 'select ' + ['auth.users', 'exercises', 'v2_programs', 'v2_workout_days', 'v2_program_exercises', 'v2_program_sets', 'v2_mesocycles', 'v2_week_plans', 'v2_week_plan_exercises', 'v2_week_plan_sets', 'v2_sessions', 'v2_set_logs']
     .map((t) => `(select count(*) from ${t})`).join(" || '/' || ")
   const rowsBefore = psql(container, ['-c', tables]).stdout.trim()
@@ -366,7 +381,7 @@ async function replay(o) {
   let totalChanges = 0
   const notices = []
   const run = (world, seed, label) => {
-    const ran = runWorld(container, script, world, seed)
+    const ran = runWorld(container, script, world, seed, role)
     if (ran.error) {
       console.log(`  ERROR ${label}: ${ran.error}`)
       failed++

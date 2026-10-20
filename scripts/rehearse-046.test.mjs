@@ -13,14 +13,18 @@ import {
   floorFor,
   judgeWorld,
   missingAndExtra,
+  parseArgs,
   parseNotice,
   plan041Function,
   plan046,
   sameChanges,
   sameSlot,
   slotKey,
+  withSafeupdate,
   worldScript,
 } from './rehearse-046.mjs'
+import { SAFEUPDATE_PREFIX } from './plan-week-parity.mjs'
+import { readFileSync } from 'node:fs'
 
 // ─── A snapshot builder ───────────────────────────────────────────────────────────────────────────────────────────────
 const pe = (id, workout, position, over = {}) => ({ id, workout_day_id: workout, position, week_only: false, removed: false, removed_at: null, ...over })
@@ -417,4 +421,29 @@ test('the before and after of a staging rehearsal pass only when exactly the rul
   const gone = structuredClone(afterTables)
   gone.v2_program_exercises.pop()
   assert.match(compareSnapshots(before, await fetchSnapshot(fakeGet(gone))).problems.join('|'), /appeared or vanished/)
+})
+
+// ─── --safeupdate: production's pg-safeupdate, loaded for the replay worlds ──────────────────────────────────────────
+test('--safeupdate is a replay option, off by default, and refused for the read-only staging reading', () => {
+  assert.equal(parseArgs(['node', 'x', '--replay']).safeupdate, false)
+  assert.equal(parseArgs(['node', 'x', '--replay', '--safeupdate']).safeupdate, true)
+  assert.throws(() => parseArgs(['node', 'x', '--staging', '--safeupdate']), /--safeupdate is for --replay/)
+})
+
+test('withSafeupdate loads pg-safeupdate and its canary once, right after the world\'s begin, before anything else runs', () => {
+  const script = '\\set ON_ERROR_STOP on\nbegin;\ncreate function rh_swap() returns void language sql as $$ select 1 $$;\n'
+  const out = withSafeupdate(script)
+  assert.equal(out, '\\set ON_ERROR_STOP on\nbegin;\n' + SAFEUPDATE_PREFIX + 'create function rh_swap() returns void language sql as $$ select 1 $$;\n')
+  assert.ok(out.indexOf("load 'safeupdate'") > out.indexOf('begin;') && out.indexOf("load 'safeupdate'") < out.indexOf('create function'))
+  assert.match(out, /canary: pg-safeupdate did not refuse a bare UPDATE/)
+  assert.throws(() => withSafeupdate('select 1;\n'), /exactly one line 'begin;'/)
+  assert.throws(() => withSafeupdate('\nbegin;\nselect 1;\nbegin;\n'), /exactly one line 'begin;'/)
+})
+
+test('the real world.sql takes the prefix once, between its begin and its first function', () => {
+  const world = readFileSync(new URL('./rehearse-046/world.sql', import.meta.url), 'utf8')
+  const out = withSafeupdate(world)
+  assert.equal(out.split("load 'safeupdate'").length - 1, 1)
+  assert.ok(out.indexOf("load 'safeupdate'") < out.indexOf('create function rh_swap'))
+  assert.ok(out.indexOf('begin;') < out.indexOf("load 'safeupdate'"))
 })

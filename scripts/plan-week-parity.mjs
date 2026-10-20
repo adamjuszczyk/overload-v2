@@ -312,7 +312,7 @@ $canary$;
 `
 
 // The kept replay container (`replay-migrations.sh --keep`). With more than one running the answer would depend on which
-// migrations each holds (041's body or 044's), so the script refuses to guess: `--container NAME` says which.
+// migrations each holds (041's body or 045's), so the script refuses to guess: `--container NAME` says which.
 export function findContainer(explicit) {
   if (explicit) return { name: explicit }
   const r = spawnSync('docker', ['ps', '--filter', 'name=migration-replay', '--format', '{{.Names}}'], { encoding: 'utf8' })
