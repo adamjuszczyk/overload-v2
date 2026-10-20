@@ -28,7 +28,7 @@ import { openWeekMenu, openWeekTile, closeSheet } from './planMenus.testutil'
 //     stored one is not read), nothing when no rule is on, and exactly the rules a
 //     tap on the action hands to marking. Since chunk 52 the action and its line are
 //     in WEEK ⋯ (board 1e), so they are read in its sheet, and the header's Programs
-//     icon is the PROGRAMS tab (P1.2-12: the tab draws today's Programs page).
+//     icon is the PROGRAMS tab (chunk 65 built it).
 
 const START_DATE = format(new Date(), 'yyyy-MM-dd') // the viewed week is week 1, the current one
 
@@ -93,8 +93,8 @@ vi.mock('./useWeekPlan', () => ({
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-// The PROGRAMS tab draws today's page (P1.2-12): this file proves that it is drawn there, under the tabs, not what the page says.
-vi.mock('../programs/ProgramsPage', () => ({ default: ({ embedded }: { embedded?: boolean }) => <div>PROGRAMS PAGE {embedded ? 'under the tabs' : 'with its own title'}</div> }))
+// The PROGRAMS tab is chunk 65's: this file proves that the shell draws it, under the tabs, not what it says (ProgramsTab.test.tsx does).
+vi.mock('../programs/ProgramsTab', async () => ({ default: (await import('./programsTab.standIn.testutil')).default }))
 
 const { default: PlanPage } = await import('./PlanPage')
 
@@ -226,23 +226,23 @@ describe('PlanPage — there is no program tab (chunk 33)', () => {
     expectNoProgramTab()
   })
 
-  it('the header has no Programs icon any more: PROGRAMS is a tab beside PLAN, and it draws the Programs page under the tabs (chunk 52, P1.2-12)', () => {
+  it('the header has no Programs icon any more: PROGRAMS is a tab beside PLAN, and it draws the PROGRAMS tab under the tabs (chunk 52, 65)', () => {
     renderPlan()
 
     expect(screen.queryByLabelText('Programs')).toBeNull()
     expect(screen.getByRole('tab', { name: 'PLAN' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tab', { name: 'PROGRAMS' }).getAttribute('aria-selected')).toBe('false')
-    expect(screen.queryByText(/^PROGRAMS PAGE/)).toBeNull()
+    expect(screen.queryByText('PROGRAMS TAB')).toBeNull()
 
     fireEvent.click(screen.getByRole('tab', { name: 'PROGRAMS' }))
 
-    expect(screen.getByText('PROGRAMS PAGE under the tabs')).toBeTruthy()
+    expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     expect(screen.getByRole('tab', { name: 'PROGRAMS' }).getAttribute('aria-selected')).toBe('true')
     expect(screen.queryByText('WEEK 1')).toBeNull() // the week's tiles are the PLAN tab's
 
     fireEvent.click(screen.getByRole('tab', { name: 'PLAN' }))
     expect(screen.getByText('WEEK 1')).toBeTruthy()
-    expect(screen.queryByText(/^PROGRAMS PAGE/)).toBeNull()
+    expect(screen.queryByText('PROGRAMS TAB')).toBeNull()
   })
 })
 
@@ -287,7 +287,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
 
       fireEvent.click(screen.getByText(LINK))
 
-      expect(screen.getByText('PROGRAMS PAGE under the tabs')).toBeTruthy()
+      expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     })
 
     it('a weekday that names a workout the program no longer has does not count as scheduled', () => {
@@ -345,7 +345,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
 
       fireEvent.click(screen.getByText(LINK))
 
-      expect(screen.getByText('PROGRAMS PAGE under the tabs')).toBeTruthy()
+      expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     })
 
     it('a weekday map left under a sequence run does not schedule it', () => {

@@ -82,7 +82,8 @@ const MONDAY_SCHEDULE = { ...EMPTY_SCHEDULE, monday: 'wd-1' }
 
 function LocationProbe() {
   const location = useLocation()
-  return <div>AT {location.pathname}</div>
+  // the query too (chunk 65): START goes to `/plan?week=1`, and a probe that read the path alone couldn't tell it from `/plan`
+  return <div>AT {location.pathname}{location.search}</div>
 }
 
 function renderPlanner() {
@@ -162,7 +163,7 @@ describe('PlannerPage — Save and Start', () => {
     expect(screen.getByText('AT /program')).toBeTruthy()
   })
 
-  it('START calls v2_start_run (via useStartRun) with the program\'s own name and id, then goes to /plan', async () => {
+  it('START calls v2_start_run (via useStartRun) with the program\'s own name and id, then goes to Plan with the week forced to 1 (/plan?week=1: chunk 65, SPEC Starting: "lands on Plan, week 1")', async () => {
     programs = [program({ name: 'Hypertrophy', schedule: MONDAY_SCHEDULE })]
     workoutDays = [WORKOUT_DAY]
     startRunMutateAsyncMock.mockResolvedValue('meso-1')
@@ -171,7 +172,7 @@ describe('PlannerPage — Save and Start', () => {
     await fireEvent.click(screen.getByText('START'))
 
     expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Hypertrophy', programId: 'prog-1' })
-    expect(await screen.findByText('AT /plan')).toBeTruthy()
+    expect(await screen.findByText('AT /plan?week=1')).toBeTruthy()
   })
 
   it('a failed START surfaces the error through the toast store and stays on the planner', async () => {
@@ -183,7 +184,7 @@ describe('PlannerPage — Save and Start', () => {
     await fireEvent.click(screen.getByText('START'))
 
     expect(showToastMock).toHaveBeenCalledWith('network down')
-    expect(screen.queryByText('AT /plan')).toBeNull()
+    expect(screen.queryByText(/^AT \/plan/)).toBeNull()
   })
 })
 
@@ -275,7 +276,7 @@ describe('PlannerPage — START needs a schedule (chunk 33)', () => {
 
       fireEvent.click(startButton())
       expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
-      expect(screen.queryByText('AT /plan')).toBeNull()
+      expect(screen.queryByText(/^AT \/plan/)).toBeNull()
     })
 
     it('with a workout on a weekday: START is enabled, no reason shows, and it starts the program', async () => {
@@ -290,7 +291,7 @@ describe('PlannerPage — START needs a schedule (chunk 33)', () => {
       fireEvent.click(startButton())
       expect(startRunMutateAsyncMock).toHaveBeenCalledTimes(1)
       expect(startRunMutateAsyncMock).toHaveBeenCalledWith({ name: 'Hypertrophy', programId: 'prog-1' })
-      expect(await screen.findByText('AT /plan')).toBeTruthy()
+      expect(await screen.findByText('AT /plan?week=1')).toBeTruthy()
     })
 
     it('a weekday that names a workout the program no longer has is not a scheduled workout', () => {

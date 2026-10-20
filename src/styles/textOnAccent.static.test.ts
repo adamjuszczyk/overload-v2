@@ -28,10 +28,10 @@ import { reachableFrom } from '../testing/moduleGraph'
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 
 // The screens 1.2 rebuilds, by the file each starts from. A chunk that adds one (66's finished program), renames one or replaces one
-// (65 replaces ProgramsPage with the PROGRAMS tab) changes its line here; a missing file fails the test instead of leaving it reading nothing.
+// (65 replaced ProgramsPage with the PROGRAMS tab) changes its line here; a missing file fails the test instead of leaving it reading nothing.
 const REBUILT_SCREENS: Record<string, string> = {
   'features/plan/PlanPage.tsx': 'Plan',
-  'features/programs/ProgramsPage.tsx': 'PROGRAMS',
+  'features/programs/ProgramsTab.tsx': 'PROGRAMS',
   'features/programs/ChangeProgramPage.tsx': 'CHANGE THE PROGRAM',
   'features/planner/PlannerPage.tsx': 'the stepped program planner',
   'features/gym/GymSession.tsx': 'the workout screen',
@@ -90,6 +90,7 @@ const NOTHING_TO_READ: Record<string, number> = {
   'features/gym/RestTimer.tsx': 1, // the bar (over time it turns to the accent)
   'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
+  'features/programs/RadioDot.tsx': 1, // the picked option's dot in the PROGRAMS tab's two sheets
   'features/progress/MesoProgress.tsx': 1, // the legend's square
   'features/settings/DeloadRulesEditor.tsx': 1, // a toggle's track (its knob is a shape)
   'features/settings/SettingsPage.tsx': 1, // a toggle's track

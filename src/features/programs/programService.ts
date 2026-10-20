@@ -197,10 +197,27 @@ export async function fetchSavedPrograms(): Promise<Program[]> {
   return (data as DbProgram[]).map(toProgram)
 }
 
-export async function createProgram(userId: string, name: string): Promise<Program> {
+// The two types a new program is created with (SPEC Programs and runs [1.2], Creating a program (16a): "the New program sheet asks for
+// the name, the schedule type and the planning type. Neither type is preselected"). Both are required, with no default: leaving them
+// out would let the columns' own defaults ('weekday', 'week_dependent') stand in for a choice nobody made, silently. Both can be
+// changed later in the stepped program planner, as before.
+export interface NewProgramTypes {
+  scheduleType: ScheduleType
+  planningType: PlanningType
+}
+
+const SCHEDULE_TYPES: readonly ScheduleType[] = ['weekday', 'sequence']
+const PLANNING_TYPES: readonly PlanningType[] = ['stable', 'week_dependent']
+
+export async function createProgram(userId: string, name: string, types: NewProgramTypes): Promise<Program> {
+  // Refused at run time as well as by the compiler: a caller that gets past the types (a cast, a plain-JS call) must not create a program
+  // whose types are the columns' defaults by accident.
+  if (!SCHEDULE_TYPES.includes(types?.scheduleType) || !PLANNING_TYPES.includes(types?.planningType)) {
+    throw new Error('createProgram needs a schedule type and a planning type')
+  }
   const { data, error } = await supabase
     .from('v2_programs')
-    .insert({ user_id: userId, name: name.trim(), schedule: EMPTY_SCHEDULE })
+    .insert({ user_id: userId, name: name.trim(), schedule: EMPTY_SCHEDULE, schedule_type: types.scheduleType, planning_type: types.planningType })
     .select(PROGRAM_COLUMNS)
     .single()
   if (error) throw error

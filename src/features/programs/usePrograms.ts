@@ -4,6 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import type { QueryKey } from '@tanstack/react-query'
 import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem, WeekPlan } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
+import type { NewProgramTypes } from './programService'
 import {
   fetchPrograms,
   fetchSavedPrograms,
@@ -69,10 +70,15 @@ export function useSavedPrograms() {
   })
 }
 
+// Chunk 65 (SPEC Programs and runs [1.2], Creating a program (16a)): a program is created with both its types, in one insert. The
+// mutation is `networkMode: 'always'` like every write (CONTEXT.md, Offline): creating a program is online-only, so offline it must fail
+// with the real reason (SPEC Errors (15)), not pause for ever with the sheet saying CREATING….
 export function useCreateProgram() {
   const { user } = useAuth()
   return useMutation({
-    mutationFn: (name: string) => createProgram(user!.id, name),
+    networkMode: 'always',
+    mutationFn: ({ name, scheduleType, planningType }: { name: string } & NewProgramTypes) =>
+      createProgram(user!.id, name, { scheduleType, planningType }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }
