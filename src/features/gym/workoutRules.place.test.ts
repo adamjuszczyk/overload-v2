@@ -97,6 +97,10 @@ describe('nextAddedPlace: 1 + the highest place the card knows (DECISIONS 174)',
     const draftNoPlace = { ...card('bench', 'n'), drafts: [{ key, values: { type: NORMAL } } as unknown as HeldDraft] }
     expect(() => resolveRows(orderOf([draftNoPlace]), [])).toThrow(TypeError)
     expect(() => placeFor(draftNoPlace, [])).toThrow(TypeError)
+    // …also when it keeps a time: a draft with no place at all is not one of a set logged before 044 (its place is null)
+    const timedNoPlace = { ...card('bench', 'n'), drafts: [{ key, values: { type: NORMAL, loggedAt: '2026-10-12T18:10:00Z' } } as unknown as HeldDraft] }
+    expect(() => resolveRows(orderOf([timedNoPlace]), [])).toThrow(/has no place \(a whole number from 1\)/)
+    expect(() => placeFor(timedNoPlace, [])).toThrow(TypeError)
     // a draft's place may be null: the set was logged before 044 and had none
     const draftNull = { ...card('bench', 'n'), drafts: [draftOf(key, NORMAL, null)] }
     expect(resolveRows(orderOf([draftNull]), []).map((r) => r.addedPlace)).toEqual([null, null])
