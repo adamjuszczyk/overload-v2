@@ -1,13 +1,14 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-20, chunk 65 merged (#170).*
-- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing. No tests owed.*
+*Rewritten at every boundary. Last: 2026-10-20, chunk 176 merged (#172).*
+- **Migration number clash** — 53 numbers 149's release data file after 045 (046), Adam gave 046 to 59's swap column. Recommended: 149's file 046, 59's column 047. Blocks: 53's builder.
+- *Chunk 176 (tests only: 51a's exercise-level writers on four unlike workouts) is merged. Its builder found that 51a's UNDO can put an exercise back inside another superset, and SAVE then refuses the draft with no visible cause: entry 191. Adam already queued the fix as chunk 51c (after 53, before 54a), which now has 176 under it. No tests owed, no D31 choices.*
+- *Chunk 65 (the PROGRAMS tab) is merged. Its display choices are 189, accepted as built for Adam's review pass after the release checklist (the 1.2 cost rule). 190 (what the current program's "N days a week" counts) is deferred on its recommendation and blocks nothing.*
 - *46r's questions are answered (Adam, 2026-10-20): Q1, a swap never renumbers a logged set on either card (the gap on the original shows, accepted), so the built branch `build/chunk-46r` (`8620f24`), which followed the old example, gets a change run before its review; Q5 (a), chunk 59 becomes a migration chunk that runs alone. 51c (UNDO keeps a superset in one piece) goes before 54a, and the release checklist is split between the final reviewer (rows that write data or migrate) and Adam's list (screen-only rows).*
 - *Adam answered 182–188. Chunk 46 is replaced by 46r: a narrow redraw on the sixth attempt's module that changes only what 183 (a), 184 (b) and 185 (c) decide, built by Opus; if it fails review on behaviour there is no retry and a requirement to simplify is written up instead. 58a–64 depend on 46r.*
 - *188 (a) is chunk 188f, its own small chunk after 54b and before the release (a bug live in production since phase 1, so it ships with the release); 187 (a) goes into 54a; 186 is accepted as built.*
-- *What follows: 176's tests-only run, 66, 53, 51c, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
-- **Migration number clash** — 53 numbers 149's release data file after 045 (046), Adam gave 046 to 59's swap column. Recommended: 149's file 046, 59's column 047. Blocks: 53's builder.
+- *What follows: 66, 53, 51c, 54a onward, 46r, then 58a–64. Day mode: two builders at a time. The 1.2 cost rule (RULES.md) says which chunks keep the full review.*
 
 Decisions (neither blocks; for Adam's review pass after the release checklist):
 - **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
@@ -180,7 +181,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 176 51a's exercise-level writers on CHANGE THE PROGRAM are tested on the first workout only: a tests-only follow-up? (chunk 51b's retry)
 - What: whether a tests-only follow-up may prove 51a's exercise-level writers on CHANGE THE PROGRAM on a workout that isn't the first (each is only ever tested on the first; recommended: yes, after d31b).
-- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-19) "yes, queue those tests as one builder run in tonight's order, after 46's review." Full text in HISTORY.md. Built: chunk 176 (#172, 2026-10-20), tests only; its builder's finding is 191.
 - Date: 2026-10-19
 
 ### 177 Do the drop and stage logs of an added set also carry `added_place`? (pre-read, chunk 46)
@@ -276,6 +277,22 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) the week in force (recommended); (b) the run copy's newest days, as built; (c) no count on a run whose days change.
 **Answer:**
 **Evidence:** `programTypesLine` (`src/features/programs/programsTabLogic.ts`) counts `Object.values(program.schedule)` for the run's own program. TASKS 65 says "(P1.2-4's counting for days)", but P1.2-4 is the rule for a finished program's N weeks, so neither SPEC nor TASKS says which days count. `runScheduleReads.static.test.ts` scans only `features/gym` and `features/plan`, so it can't see this read in `features/programs` (chunk 65's review).
+
+### 191 UNDO on CHANGE THE PROGRAM can put an exercise back inside another superset, and the draft then can't be saved (merged 51a; found by chunk 176's builder)
+**Ask:** fix 51a's UNDO so it never splits a superset? And where: its own small fix chunk, or with the tests-owed run?
+**Recommendation:** fix it in a small chunk of its own, after 176 (merged). 51a is merged, so the fix is a follow-up. The tests-owed run adds tests only, so a change to `changeProgramDraft.ts` doesn't belong there. The fix: `undoRemove` applies the member rule it already has for a removed superset member (`at <= first ? first : last + 1`) to any exercise whose recorded place falls strictly inside a block's span. Then the guard in the 176 draft walk's `case 'undo'` comes out (its comment names this bug), and both recipes below become page tests.
+**Blocks:** nothing in the build. Nothing wrong is ever written: SAVE refuses the draft and sends no request. But the person can't save, and nothing on the screen shows why.
+**Options:** (a) the builder's fix above: the exercise lands just before or just after the block, never inside it (recommended); (b) UNDO is refused while a block stands where the exercise was; (c) the exercise goes to the end of the list.
+**Answer:** (Adam, 2026-10-20, before this entry was written; TASKS-1.2 "Chunk 51c") "write it up as a small DATA fix chunk, placed before 54a". Chunk 51c builds (a): the member rule for any exercise whose recorded place falls inside a block's span, after 53 and before 54a, and it needs 176 merged. Under the cost rule it is a data chunk: full review, break proofs, and a staging check of CHANGE THE PROGRAM's SAVE.
+**Evidence:** `undoRemove` (`src/features/programs/changeProgramDraft.ts`, ~190–203) puts the exercise back at `Math.min(gone.at, length)`. It snaps to the block only when the removed exercise was itself a member. SPEC says nothing on where UNDO puts an exercise back; the code comment says "so the block stays in one piece".
+
+Reproduced in the review on the rebased branch, with the builder's probe (`<scratchpad>/build/c176/probes/zzProbe176.test.tsx`; the review's copy, which writes its lines to a file because this repo's test setup hides console output, is in `<scratchpad>/build/r176/probes/`) run through the real screen and hooks:
+- Recipe 1 (Push: Bench Press, Overhead Press, then the Lateral Raise + Triceps Pushdown superset): REMOVE Bench Press, REMOVE Triceps Pushdown, UNDO Bench Press, UNDO Triceps Pushdown. The cards then read Bench Press, Overhead Press, Triceps Pushdown, Lateral Raise, and no SUPERSET header is drawn.
+- Recipe 2 (Legs): REMOVE Romanian Deadlift; SUPERSET on Back Squat (it joins the block below); UNDO Romanian Deadlift. The cards read Back Squat, Romanian Deadlift, Leg Curl, Calf Raise.
+- In both, SAVE shows "Couldn't save the changes." and then the planner's own message, "workout push: the members of superset block blk-push are not next to each other" (`blk-legs` in recipe 2). No request is sent.
+- The control, UNDO in stack order (Triceps Pushdown first), restores the original list.
+
+In general: remove B from A, B, C, D; link A with C; UNDO B. Also, unpinned: UNDO of a trio's middle member brings it back last in its block, which the code comment allows.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
