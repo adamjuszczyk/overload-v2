@@ -495,7 +495,7 @@ describe.each([
   })
 
   // A superset's first member is put back before the rest of its block and its last member after it: the place it stood. (A member from the
-  // middle of a bigger block is put back next to the others, which is not pinned here.)
+  // middle of a bigger block is put back next to the others, last in its block: pinned in Pull's test of the 51c group below.)
   const ENDS: Record<string, [string, string]> = {
     push: ['pe-ohp', 'pe-lateral'],
     pull: ['pe-row', 'pe-face'],
@@ -663,6 +663,27 @@ describe.each([
     click('SAVE CHANGES')
     await screen.findByText('AT PLAN')
     expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  // Recipe 1 and then a real change: the list the four exercises end on is the original, so SAVE sends the new exercise and nothing that moves one
+  // of the four (the request is held against the planner's list for that one edit, and the rows it left are read back).
+  it.each(['push', 'arms'])('UNDO in %s (the exercise above the pair and the one below it put back in the order removed) and then ADD EXERCISE: SAVE sends only the new exercise', async (wkId) => {
+    const wk = UNEVEN_WORKOUTS.find((x) => x.id === wkId)!
+    const recipe = UNDONE.find((u) => u.wk === wkId && u.save === null)!
+    await open()
+    const before = world
+    goTo(wk)
+    press(recipe.steps)
+    click('+ ADD EXERCISE')
+    const sheet = await screen.findByRole('dialog', { name: 'Add exercise' })
+    await within(sheet).findByRole('button', { name: 'Add Plank' })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Add Plank' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(cardNames()).toEqual([...wk.exercises.map((x) => x.name), 'Plank'])
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    await saveAndExpect(before, (e) => addExerciseTo(e, wk.id, { exerciseId: 'ex-plank', weightUnit: 'kg' }))
+    // no exercise of the run copy is moved, and the superset is as it was
+    expect(sent().filter((o) => o.op === 'update' && o.table === 'v2_program_exercises')).toEqual([])
   })
 
   // As it always was: the middle member of a trio comes back last in its block (the first goes back before the others, the last after).

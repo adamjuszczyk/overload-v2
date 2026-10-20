@@ -38,7 +38,8 @@ import {
 // The walk takes its targets from the model and names them to the draft by key. Rows of the run copy have the keys `e:<row>` and
 // `r:<id>`; an exercise or an item the draft made is found by what the walk gave it (an exercise id of its own, a body of its own).
 
-// The walk is 400 walks of 25 edits: a few seconds, with a timeout far above them.
+// The walks are 400 of 25 edits and 400 of 30 in phases (UNDO's cases, chunk 51c), then an enumeration of every order of removing and putting back: a few
+// seconds each, with a timeout far above them.
 vi.setConfig({ testTimeout: 30000 })
 
 // ─── The model ───────────────────────────────────────────────────────────────────────────────────────────────────────────
