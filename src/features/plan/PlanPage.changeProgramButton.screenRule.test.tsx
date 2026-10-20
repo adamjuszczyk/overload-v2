@@ -4,7 +4,7 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { queryClient } from '../../lib/queryClient'
-import type { Mesocycle, Program, WeekPlan } from '../../types'
+import type { Mesocycle, Program, SequenceItem, WeekPlan, WorkoutDay } from '../../types'
 import { NOW, USER, cloneDb, type World } from '../programs/programChange.testutil'
 import { sequenceWorld, stableWorld, weekDependentWorld } from '../programs/programChange.worlds.testutil'
 import type { RunChangeStatus } from '../programs/programChange'
@@ -18,12 +18,16 @@ import { fakePostgrest, type FakePostgrest, type Row, type Tables } from '../pro
 // `fetchChangeProgramSource` for real; what is mocked is the rest of what PlanPage draws (its week plans, workouts, schedule), which
 // do not decide N. A button that counted only the sessions that are done (what it did until this follow-up) names the week of the
 // session in progress, and the rule box the week after: the third row of the table below.
+// Chunk 52: the week body (and its button) is drawn for a run that has a schedule, so the run's workouts and a sequence run's slots are
+// handed to the page too, from the same world.
 
 const h = vi.hoisted(() => ({
   client: null as unknown,
   meso: null as unknown as Mesocycle,
   programs: [] as Program[],
   plans: [] as WeekPlan[],
+  workoutDays: [] as WorkoutDay[],
+  sequenceItems: [] as SequenceItem[],
   done: new Set<string>(),
   cycle: 2,
 }))
@@ -34,12 +38,18 @@ vi.mock('../../lib/supabase', () => ({
 }))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'u-test' }, loading: false, signOut: vi.fn() }) }))
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [h.meso], isLoading: false }) }))
-vi.mock('../programs/usePrograms', () => ({
+vi.mock('../programs/usePrograms', async () => ({
+  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: h.programs, isLoading: false }),
-  useWorkoutDays: () => ({ data: [], isLoading: false }),
+  useWorkoutDays: () => ({ data: h.workoutDays, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
-  useSequenceItems: () => ({ data: [] }),
+  useSequenceItems: () => ({ data: h.sequenceItems }),
 }))
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+}))
+vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./useDoneWeekPlanIds', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./useDoneWeekPlanIds')>()),
   useDoneWeekPlanIds: () => h.done,
@@ -50,7 +60,7 @@ vi.mock('./useRunSchedule', async (importOriginal) => ({
 }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: h.cycle, failed: false }) }))
 vi.mock('./useWeekPlan', () => ({
-  useWeekPlans: () => ({ data: [], isLoading: false }),
+  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: h.plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: h.plans, isLoading: false }),
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -61,8 +71,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -139,6 +147,15 @@ function useWorld(w: World, statuses: Record<string, RunChangeStatus>) {
     exercises: [],
     createdAt: '',
   })) as WeekPlan[]
+  // what the page needs to draw a week at all: the run's workouts, and a sequence run's slots (the slot's workout, by position)
+  h.workoutDays = w.db.v2_workout_days
+    .filter((d) => d.program_id === w.programId)
+    .map((d) => ({ id: d.id, programId: d.program_id, userId: 'u-test', name: d.name, position: d.position, exercises: [] }))
+  const slots = new Map<number, string>()
+  for (const p of w.db.v2_week_plans) if (p.sequence_position !== null && !slots.has(p.sequence_position)) slots.set(p.sequence_position, p.workout_day_id)
+  h.sequenceItems = [...slots.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([position, workoutDayId]) => ({ id: `si-${position}`, userId: 'u-test', programId: w.programId, position, workoutDayId }))
   // what locks a row in Plan: the rows with a session done
   h.done = new Set(Object.entries(statuses).filter(([, status]) => status === 'done').map(([planId]) => planId))
 }

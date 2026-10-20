@@ -1,7 +1,6 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import type { WeekPlan, WeekPlanSet, ProgramExercise, MuscleSubgroup, MovementPattern } from '../../types'
-import { resolveManualCopySource, type PlannedWeekRecord } from './weekSources'
 import {
   fetchRunProgramExercises,
   createWeekOnlyProgramExercise,
@@ -54,11 +53,10 @@ export type DbWeekPlanSet = {
   rep_min?: number | null
   rep_max?: number | null
   is_amrap?: boolean
-  // Chunk 19 — read by toSet() below (Plan's own tags editor); never
-  // referenced by copySetsWithGrouping's insert payloads, which is what
-  // keeps "tags are never copied" true structurally, not just by omission
-  // at the call site (weekPlanService.test.ts's own "never includes tags in
-  // the payload" test pins this).
+  // Chunk 19 — read by toSet() below (Plan's own tags editor). Tags are
+  // never copied: since chunk 52 the only week-to-week copy is COPY's numbers
+  // (copySheetLogic.ts's numbersOps names target_weight, rep_min, rep_max,
+  // is_amrap, target_rir and target_rir_max, and no other column).
   tags?: string[] | null
   // Migration 042 (TASKS-1.2 chunk 36) — the RIR range's high end (SPEC [1.2]
   // "Targets"); target_rir stays the number / the low end. Read by toSet()
@@ -318,21 +316,17 @@ export async function createWeekPlan(
   const plan = data as DbWeekPlan
   // Chunk 7 — a brand-new week plan row ("ADD SET" lazily creating one,
   // useAddSet/useWeekPlan.ts) starts with the workout's CURRENT program
-  // exercises, in program order — the one path that reads straight off
-  // v2_program_exercises rather than copying another week's own list
-  // forward (copyOnePlanForward below), since there is no other week to
-  // copy from here. Same shape migration 029's backfill writes for every
+  // exercises, in program order — the one client path that reads straight
+  // off v2_program_exercises (there is no other week to copy from here; the
+  // client copy of another week's own list is gone, chunk 52). Same shape
+  // migration 029's backfill writes for every
   // pre-existing row, so an old row and a brand new one end up identical.
   await writeWeekPlanExercisesFromProgram(userId, plan.id, workoutDayId)
   return toPlan(plan)
 }
 
 // Shared by createWeekPlan above (a fresh plan, no previous week to copy)
-// and nowhere else — copyOnePlanForward's own fresh-insert branch instead
-// copies the PREVIOUS week's own v2_week_plan_exercises forward
-// (copyExercisesForward, below copySetsWithGrouping), not the program's
-// current state, since "copy" means "copy that specific source", not
-// "reset to the program". Plain insert (not upsert): a week plan row this
+// and nowhere else. Plain insert (not upsert): a week plan row this
 // function has just created cannot already have any v2_week_plan_exercises
 // rows, so a real collision here would be a genuine bug, not a benign race.
 //
@@ -577,353 +571,12 @@ export async function planWeek(mesoId: string, weekNumber: number): Promise<numb
   return data as number
 }
 
-// ─── Copy from previous week (manual) ──────────────────────────────────────────
-// SPEC "Weeks and copying": "'Copy last week' stays as a manual action" —
-// under the SAME source rules as the automatic v2_plan_week (deload
-// sessions are never a copy source; tags and is_deload never copied), not
-// literally "week N − 1": a week that's partly deload still copies its
-// normal sessions, and its deload sessions copy from the last normal
-// occurrence, found independently per workout — see weekSources.ts's
-// resolveManualCopySource, which both copy actions below share.
-
-// This week's own workout_day_ids with nothing planned yet (zero of its
-// own v2_week_plan_exercises) — the discovery mechanism for COPY WEEK.
-// Reads the CURRENT week's own rows rather than the program's schedule:
-// v2_plan_week already creates one v2_week_plans row per scheduled workout
-// (possibly empty) the moment the week is opened/started, so by the time a
-// manual copy can even be offered, every workout that belongs to this week
-// already has a row — this just finds which ones are still empty.
-// Chunk 25 — also reads sequence_position: for a sequence cycle this is
-// per SLOT (R16's "one row per slot"), not per workout, so the SAME
-// workoutDayId can appear twice here with two different slots, each its
-// own independent copy target (reviewer's note "copying is per slot").
-async function fetchEmptyWorkoutPlanIds(
-  mesoId: string,
-  weekNumber: number,
-): Promise<{ weekPlanId: string; workoutDayId: string; sequencePosition: number | null }[]> {
-  const { data, error } = await supabase
-    .from('v2_week_plans')
-    .select('id, workout_day_id, sequence_position, v2_week_plan_exercises(id)')
-    .eq('mesocycle_id', mesoId)
-    .eq('week_number', weekNumber)
-  if (error) throw error
-  const rows = (data ?? []) as {
-    id: string
-    workout_day_id: string
-    sequence_position: number | null
-    v2_week_plan_exercises: { id: string }[]
-  }[]
-  return rows
-    .filter((r) => (r.v2_week_plan_exercises ?? []).length === 0)
-    .map((r) => ({ weekPlanId: r.id, workoutDayId: r.workout_day_id, sequencePosition: r.sequence_position ?? null }))
-}
-
-// Every planned occurrence of one SLOT in this meso (any week number), for
-// resolveManualCopySource's backward search — the client-side equivalent
-// of what v2_plan_week reads straight from v2_week_plans itself. isEmpty
-// (DECISIONS 42 (b)) is computed the same way the migration's SQL does —
-// zero v2_week_plan_sets rows, never the exercise list (a week can carry
-// exercise rows with no sets under them) — via the embed below,
-// unambiguous (one FK, v2_week_plan_sets.week_plan_id → v2_week_plans.id).
-//
-// Chunk 25 (reviewer's note "copying is per slot: a slot's source is the
-// same slot's last normal occurrence") — `sequencePosition` scopes this to
-// the SAME slot, not just the same workout: a workout occupying two slots
-// in one cycle (R16, SPEC G8) has two independent copy histories, each
-// only ever looking at its own slot's prior occurrences. `null` (every
-// weekday row, and every call from before this chunk) matches exactly as
-// it always has — `.is()`, not `.eq()`, since Postgres (and PostgREST)
-// never match NULL with `=`.
-async function fetchPlannedWeekHistory(
-  mesoId: string,
-  workoutDayId: string,
-  sequencePosition: number | null,
-): Promise<PlannedWeekRecord[]> {
-  let query = supabase
-    .from('v2_week_plans')
-    .select('week_number, is_deload, v2_week_plan_sets(id)')
-    .eq('mesocycle_id', mesoId)
-    .eq('workout_day_id', workoutDayId)
-  query = sequencePosition === null ? query.is('sequence_position', null) : query.eq('sequence_position', sequencePosition)
-  const { data, error } = await query
-  if (error) throw error
-  const rows = (data ?? []) as { week_number: number; is_deload: boolean; v2_week_plan_sets: { id: string }[] }[]
-  return rows.map((r) => ({
-    weekNumber: r.week_number,
-    isDeload: r.is_deload,
-    isEmpty: (r.v2_week_plan_sets ?? []).length === 0,
-  }))
-}
-
-// Shared by both manual copy actions below: resolves this one SLOT's
-// source (weekSources.ts), fetches that source week's plan if one was
-// found, and copies it forward via copyOnePlanForward — a no-op when there
-// is nothing non-deload to copy ("missing source").
-async function copyOneWorkoutFromHistory(
-  userId: string,
-  mesoId: string,
-  weekNumber: number,
-  workoutDayId: string,
-  sequencePosition: number | null,
-  existingWeekPlanId?: string,
-): Promise<void> {
-  const history = await fetchPlannedWeekHistory(mesoId, workoutDayId, sequencePosition)
-  const source = resolveManualCopySource(history, weekNumber)
-  if (source.kind === 'none') return
-
-  let query = supabase
-    .from('v2_week_plans')
-    .select('*, v2_week_plan_sets(*), v2_week_plan_exercises(*, v2_program_exercises!v2_week_plan_exercises_program_exercise_id_fkey(*, exercises(*)))')
-    .eq('mesocycle_id', mesoId)
-    .eq('week_number', source.weekNumber)
-    .eq('workout_day_id', workoutDayId)
-  query = sequencePosition === null ? query.is('sequence_position', null) : query.eq('sequence_position', sequencePosition)
-  const { data: prevPlan, error } = await query.maybeSingle()
-  if (error) throw error
-  if (!prevPlan) return
-
-  await copyOnePlanForward(userId, mesoId, weekNumber, prevPlan as DbWeekPlan, existingWeekPlanId)
-}
-
-export async function copyFromPreviousWeek(
-  userId: string,
-  mesoId: string,
-  weekNumber: number,
-): Promise<void> {
-  const empties = await fetchEmptyWorkoutPlanIds(mesoId, weekNumber)
-  for (const { weekPlanId, workoutDayId, sequencePosition } of empties) {
-    await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, sequencePosition, weekPlanId)
-  }
-}
-
-// Phase 3.7's scoped twin of copyFromPreviousWeek (TASKS.md §4 item 31 /
-// SPEC §5) — same source rules, but filtered to one SLOT instead of every
-// empty workout in the week. `existingWeekPlanId` lets the caller pass an
-// already-created (possibly still-empty) week_plan row for this slot so
-// this doesn't create a duplicate — same optional-id pattern useAddSet/
-// addSet already uses. `sequencePosition` defaults to null (every caller
-// before chunk 25, and every weekday caller after it, reads unaffected —
-// see this file's own header on R16's slot identity); PlanPage.tsx passes
-// the viewed workout's OWN plan row's sequencePosition for a sequence run.
-export async function copyWorkoutFromPreviousWeek(
-  userId: string,
-  mesoId: string,
-  weekNumber: number,
-  workoutDayId: string,
-  existingWeekPlanId?: string,
-  sequencePosition: number | null = null,
-): Promise<void> {
-  await copyOneWorkoutFromHistory(userId, mesoId, weekNumber, workoutDayId, sequencePosition, existingWeekPlanId)
-}
-
-// Shared by both copy actions above — the two differ only in how they pick
-// which previous-week plan(s) to walk (every plan in the week vs. one
-// workout's plan); once a source plan is picked, copying it forward is
-// identical either way. Creates the destination week_plan row unless the
-// caller already has one (copyWorkoutFromPreviousWeek's existingWeekPlanId),
-// then hands the set-copying itself to copySetsWithGrouping unchanged.
-async function copyOnePlanForward(
-  userId: string,
-  mesoId: string,
-  weekNumber: number,
-  prevPlan: DbWeekPlan,
-  existingWeekPlanId?: string,
-): Promise<void> {
-  const prevSets = (prevPlan.v2_week_plan_sets ?? []) as DbWeekPlanSet[]
-  if (prevSets.length === 0) return
-
-  let newWeekPlanId = existingWeekPlanId
-  if (!newWeekPlanId) {
-    // Chunk 8 (TASKS.md "Found in the code", fact 1) — is_deload is never
-    // copied (SPEC "Weeks and copying"): the column default (false) is what
-    // a freshly planned session gets, regardless of the source's own flag.
-    // Before this chunk this insert wrote `is_deload: prevPlan.is_deload`,
-    // so copying a deload week made the next week deload too.
-    const { data: newPlan, error } = await supabase
-      .from('v2_week_plans')
-      .insert({
-        user_id: userId,
-        mesocycle_id: mesoId,
-        workout_day_id: prevPlan.workout_day_id,
-        week_number: weekNumber,
-      })
-      .select()
-      .single()
-    if (error) throw error
-    newWeekPlanId = (newPlan as { id: string }).id
-  }
-  // Else: reusing an already-created plan row (v2_plan_week already created
-  // it — possibly empty — when the week was opened/started; useAddSet's
-  // lazy-create precedes it too). Its is_deload is already false (the
-  // column default, never copied) and chunk 8 removes the old sync that
-  // used to overwrite it from the source — is_deload is never copied,
-  // whichever branch creates the row.
-
-  // Chunk 7 — the destination week's own exercise list, copied forward from
-  // the SOURCE week's list (prevPlan's own v2_week_plan_exercises), not
-  // re-read from the program's current state: "copy" means "copy that
-  // specific source", exactly like copySetsWithGrouping below copies
-  // prevPlan's own sets rather than resetting to some other source. Upsert
-  // (copyExercisesForward's default), not plain insert: the
-  // existingWeekPlanId branch above may be reusing a row
-  // createWeekPlan/writeWeekPlanExercisesFromProgram already gave a full
-  // exercise list (useAddSet's lazy-create, TASKS.md §4 item 31's own
-  // existingWeekPlanId precedent) — the same (week_plan_id,
-  // program_exercise_id) pairs would otherwise collide on the unique key.
-  const prevExercises = (prevPlan.v2_week_plan_exercises ?? []) as DbWeekPlanExercise[]
-  await copyExercisesForward(userId, newWeekPlanId, prevExercises)
-  // Chunk 27 — each copied set keeps its own program_exercise_id (it already
-  // points at its exercise row in the source week, so it still does in the
-  // copy); no mapping through the source rows' carry_* columns any more.
-  await copySetsWithGrouping(userId, newWeekPlanId, prevSets)
-}
-
-// A single batched upsert, factored out so tests can substitute a fake and
-// assert on exactly what copyExercisesForward tried to write — same
-// injection-seam pattern as defaultInsertPlanSet/copySetsWithGrouping below.
-// Upsert, not plain insert: see copyOnePlanForward's own comment above for
-// why its existingWeekPlanId branch can hand this a week plan that already
-// has some of these rows.
-async function defaultUpsertPlanExercises(payloads: Record<string, unknown>[]): Promise<void> {
-  if (payloads.length === 0) return
-  const { error } = await supabase
-    .from('v2_week_plan_exercises')
-    .upsert(payloads, { onConflict: 'week_plan_id,program_exercise_id' })
-  if (error) throw error
-}
-
-// Copies one week_plan's exercise list forward: each row's OWN
-// program_exercise_id and position, verbatim — "copying uses each week's
-// actual content" (SPEC [P1.1], Weeks and copying). Chunk 27: the
-// carry_program_exercise_id / carry_position columns an "only this week"
-// swap or reorder used to fill are STORED values that nothing reads any
-// more (SPEC: "'only this week' values already stored are ignored from now
-// on"), so a source row that still has one copies its own slot and position
-// like any other. The new row never gets carry_* (omitted from the payload,
-// same as every other write in this file).
-//
-// Exported (and takes an injectable upsertPlanExercises) for the same
-// reason copySetsWithGrouping is: so a test can exercise the copy directly,
-// without a real Supabase round-trip.
-export async function copyExercisesForward(
-  userId: string,
-  newWeekPlanId: string,
-  prevExercises: DbWeekPlanExercise[],
-  upsertPlanExercises: (payloads: Record<string, unknown>[]) => Promise<void> = defaultUpsertPlanExercises,
-): Promise<void> {
-  const payloads = prevExercises.map((ex) => ({
-    week_plan_id: newWeekPlanId,
-    user_id: userId,
-    program_exercise_id: ex.program_exercise_id,
-    position: ex.position,
-  }))
-  await upsertPlanExercises(payloads)
-}
-
-// A single new-row insert, factored out so tests can substitute a fake and
-// assert on exactly what copySetsWithGrouping tried to write — real behaviour
-// (the supabase call) is unchanged, this is purely an injection seam.
-async function defaultInsertPlanSet(
-  payload: Record<string, unknown>,
-): Promise<DbWeekPlanSet> {
-  const { data, error } = await supabase
-    .from('v2_week_plan_sets')
-    .insert(payload)
-    .select()
-    .single()
-  if (error) throw error
-  return data as DbWeekPlanSet
-}
-
-// Copies one week_plan's sets forward via a direct old-id → new-id map,
-// instead of re-inferring grouping from set_number ordering the way this
-// used to work (AUDIT M5's plan-side fix, pre-Phase-3.1). That re-inference
-// assumed every stage's set_number was strictly greater than its head's —
-// true for legacy rows, but no longer true for Phase 3.1's ADD STAGE, which
-// writes stages sharing their head's set_number (TASKS.md §2.1). It would
-// silently fail to reattach any dropset authored through ADD STAGE. A direct
-// map works for both: Phase 3.0's backfill + M5 fixes mean
-// parent_week_plan_set_id is now correctly populated on every existing row
-// (log side 8/8, plan side 7/7, independently verified — see CONTEXT.md), so
-// there's no longer a reason to re-derive it here at all. Heads are inserted
-// first so each stage's new parent id is already resolvable when its own row
-// is created.
-//
-// Exported (and takes an injectable insertPlanSet) so Phase 3.7's test suite
-// can exercise the reattachment logic directly without a real Supabase
-// round-trip — the id-remapping is the part that's actually risky, not the
-// insert call itself. Called once per week_plan by both copyFromPreviousWeek
-// (in a loop, one call per workout in the week) and
-// copyWorkoutFromPreviousWeek (a single call) — this function has no
-// awareness of which caller it's serving, which is exactly what makes it
-// safe to share: whole-week scope is just "call this per plan," never a
-// different code path through here.
-//
-// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): every copied set
-// keeps its OWN program_exercise_id. Chunk 9 used to map it through the
-// source week's carry_program_exercise_id (a fifth `prevExercises`
-// argument) so a set that "moved with" an only-this-week swap followed its
-// exercise row back to the original slot; with the tick gone, stored carry
-// values are ignored and a set simply stays on the exercise row it already
-// points at, which is also the row copyExercisesForward copies.
-export async function copySetsWithGrouping(
-  userId: string,
-  newWeekPlanId: string,
-  prevSets: DbWeekPlanSet[],
-  insertPlanSet: (payload: Record<string, unknown>) => Promise<DbWeekPlanSet> = defaultInsertPlanSet,
-): Promise<void> {
-  const idMap = new Map<string, string>()
-  const heads = prevSets.filter((s) => s.parent_week_plan_set_id == null)
-  const stages = prevSets.filter((s) => s.parent_week_plan_set_id != null)
-
-  for (const s of heads) {
-    const newRow = await insertPlanSet({
-      week_plan_id: newWeekPlanId,
-      user_id: userId,
-      program_exercise_id: s.program_exercise_id,
-      set_number: s.set_number,
-      target_rir: s.target_rir,
-      is_dropset: s.is_dropset,
-      stage_index: s.stage_index ?? 0,
-      // Chunk 8 — every column 027 added, carried through verbatim (a
-      // week-to-week copy needs no mapping: the source row already carries
-      // its own weight/RIR target, unlike a fresh copy from the program,
-      // which has none to carry — see weekSources.ts's header). tags is
-      // deliberately absent: "Tags are never copied" (SPEC).
-      program_set_id: s.program_set_id ?? null,
-      stage_kind: s.stage_kind ?? null,
-      target_weight: s.target_weight ?? null,
-      rep_min: s.rep_min ?? null,
-      rep_max: s.rep_max ?? null,
-      is_amrap: s.is_amrap ?? false,
-    })
-    idMap.set(s.id, newRow.id)
-  }
-
-  for (const s of stages) {
-    const newParentId = s.parent_week_plan_set_id ? idMap.get(s.parent_week_plan_set_id) : undefined
-    const newRow = await insertPlanSet({
-      week_plan_id: newWeekPlanId,
-      user_id: userId,
-      program_exercise_id: s.program_exercise_id,
-      set_number: s.set_number,
-      target_rir: s.target_rir,
-      is_dropset: s.is_dropset,
-      parent_week_plan_set_id: newParentId ?? null,
-      stage_index: s.stage_index ?? 0,
-      // A stage row's own stage_kind is already null by 027's own check
-      // (v2_week_plan_sets_stage_row_check) — carried through the same as
-      // a head's, never forced.
-      program_set_id: s.program_set_id ?? null,
-      stage_kind: s.stage_kind ?? null,
-      target_weight: s.target_weight ?? null,
-      rep_min: s.rep_min ?? null,
-      rep_max: s.rep_max ?? null,
-      is_amrap: s.is_amrap ?? false,
-    })
-    idMap.set(s.id, newRow.id)
-  }
-}
+// ─── Copying numbers ───────────────────────────────────────────────────────────────
+// Chunk 52 (TASKS-1.2 "Plan's header"; SPEC Weeks and copying [1.2]: COPY (2c) "replaces 'Copy last week' and
+// copy-week"): the client copy of a whole week or one workout (COPY WEEK, COPY LAST CYCLE, COPY THIS WORKOUT) is gone
+// with its hooks and tests, and so is the helper that never sent `is_warmup` (F1: a copied warmup became a working
+// set). Numbers now travel one way, COPY's sheet: `copyNumbers` (weekPlanning.ts) decides what changes and
+// `v2_apply_ops` writes it in one request (useCopyNumbers.ts), into sets that already exist.
 
 // ─── Week actions — swap, reorder, add, remove ─────────────────────────────
 // Chunk 9 (TASKS.md "Edit a week's exercises" / SPEC.md "Weeks and
@@ -1119,8 +772,7 @@ export async function reorderWeekExercises(
 // what the calculated sets are, the restore snapshot's own shape) all live
 // in deloadRules.ts; this section is the I/O that gathers what those
 // functions need and applies their output, same split as every other
-// feature in this file (weekSources.ts/weekEdits.ts's own pure cores,
-// copyOneWorkoutFromHistory's gather-then-copy shape above).
+// feature in this file (weekSources.ts/weekEdits.ts's own pure cores).
 //
 // Outcome of a mark/unmark attempt, reported back to the UI so it can show
 // reviewer's note 5's one-line notice ("Already started — sets left as
@@ -1128,9 +780,8 @@ export async function reorderWeekExercises(
 export type DeloadMarkOutcome = 'flagOnly' | 'calculated' | 'alreadyStarted'
 export type DeloadUnmarkOutcome = 'flagOnly' | 'restored' | 'alreadyStarted'
 
-// ─── Gather (thin, unbranched Supabase reads — same posture this file's
-// own fetchEmptyWorkoutPlanIds/fetchPlannedWeekHistory above already take:
-// no logic of their own to break, so left untested directly here; the
+// ─── Gather (thin, unbranched Supabase reads — no logic of their own to
+// break, so left untested directly here; the
 // DECISIONS built from what they return are each pure-tested in
 // deloadRules.ts) ───────────────────────────────────────────────────────────
 
@@ -1217,8 +868,7 @@ async function fetchDeloadWeekPlanCore(weekPlanId: string): Promise<DeloadWeekPl
 // workout occupies (R16) — resolveDeloadBaseOccurrence itself needs no
 // change at all (it already just searches whatever `occurrences` list it's
 // handed, same posture as weekSources.ts's findLastUsableWeek); this is the
-// one gathering step that decides what counts as "this workout's history",
-// same fix shape as fetchPlannedWeekHistory above.
+// one gathering step that decides what counts as "this workout's history".
 async function fetchDeloadOccurrenceHistory(
   mesocycleId: string,
   workoutDayId: string,
@@ -1330,9 +980,8 @@ function toSourceSet(s: DbWeekPlanSet, loggedWeight: number | null, programExerc
   }
 }
 
-// ─── Write order (injectable — same seam as copySetsWithGrouping's own
-// insertPlanSet above, so a test can assert exact call ORDER with a fake,
-// never a real Supabase round trip) ─────────────────────────────────────────
+// ─── Write order (injectable, so a test can assert exact call ORDER with a
+// fake, never a real Supabase round trip) ───────────────────────────────────
 
 export interface DeloadMarkWriteOps {
   // Bundles the snapshot write with the is_deload flip — ONE statement,
@@ -1363,11 +1012,9 @@ async function defaultInsertOneSet(payload: Record<string, unknown>): Promise<{ 
   return data as { id: string }
 }
 
-// Heads first (so each stage's new parent id is resolvable), same
-// insert-order/idMap pattern as copySetsWithGrouping above. `insertOneSet`
+// Heads first (so each stage's new parent id is resolvable). `insertOneSet`
 // is this function's own injection seam (defaults to a real Supabase
-// insert) — same reason copySetsWithGrouping's own insertPlanSet is
-// injectable: the id-remap (a dropped head must take its stages with it;
+// insert), because the id-remap (a dropped head must take its stages with it;
 // a KEPT head's stages must land on ITS new id, never a sibling's) is the
 // part genuinely at risk of a bug, and a test can exercise it directly
 // with a fake that just records payloads and mints synthetic ids.
@@ -1571,8 +1218,7 @@ export async function applyDeloadRestore(
 
 // ─── Orchestrators — the one function per direction useWeekPlan.ts's hooks
 // call, gluing the gather/decide/write pieces above together. Left thin and
-// untested directly (same posture copyOneWorkoutFromHistory above already
-// takes for its own gather-then-copy glue): every DECISION it makes is
+// untested directly: every DECISION it makes is
 // pure-tested in deloadRules.ts, every destructive WRITE ORDER it relies on
 // is tested above via the injectable ops, and the whole thing is proven
 // end-to-end against real Postgres (this chunk's scratch-SQL verification).

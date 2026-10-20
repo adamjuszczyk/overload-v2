@@ -88,6 +88,7 @@ const NOTHING_TO_READ: Record<string, number> = {
   'components/pickers/SetTypePicker.tsx': 1, // the picked row's radio dot
   'features/gym/RestDayScreen.tsx': 1, // the week's dots
   'features/gym/RestTimer.tsx': 1, // the bar (over time it turns to the accent)
+  'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
   'features/progress/MesoProgress.tsx': 1, // the legend's square
   'features/settings/DeloadRulesEditor.tsx': 1, // a toggle's track (its knob is a shape)

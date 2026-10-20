@@ -18,8 +18,9 @@ import type { ChangeRecord } from './applyAhead'
 //   STRUCTURE  the exercise ⋯ (swap, move up/down, add warmup sets, remove);
 //              ADD EXERCISE; each set's kind: a working set's ADD STAGE and
 //              STAGE KIND, a stage's DELETE STAGE, a warmup's DELETE SET.
-//   Above both the per-session DELOAD toggle, the apply-ahead banner and COPY
-//   THIS WORKOUT (and, above the panel, COPY WEEK / MARK WEEK AS DELOAD).
+//   Above both the per-session DELOAD toggle and the apply-ahead banner (and, above the
+//   panel, COPY and WEEK ⋯; chunk 52 took COPY WEEK / COPY THIS WORKOUT / MARK WEEK AS
+//   DELOAD off the page: COPY and WEEK ⋯ are the header's).
 //   COMPACT is gone.
 //
 // Every expected argument below is what MASTER's PlanPage hands the same
@@ -111,8 +112,6 @@ const swapMutate = vi.fn().mockResolvedValue({ id: 'swap-result-row' })
 const addExerciseMutate = vi.fn()
 const removeExerciseMutate = vi.fn()
 const reorderMutate = vi.fn()
-const copyWorkoutMutate = vi.fn()
-const copyWeekMutate = vi.fn()
 const setDeloadMutate = vi.fn()
 let applyAheadLast: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
 const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }) => {
@@ -151,8 +150,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: removeSetMutate, isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: copyWeekMutate, isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: copyWorkoutMutate, isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: addExerciseMutate, isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: removeExerciseMutate, isPending: false }),
@@ -175,10 +172,10 @@ vi.mock('./MoveSessionControl', () => ({
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openSetsView, openStructureView, openExerciseMenu, openStageMenu } = await import('./planMenus.testutil')
+const { openSetsView, openStructureView, openExerciseMenu, openStageMenu, openWeekTile } = await import('./planMenus.testutil')
 
 afterEach(() => {
-  for (const m of [addSetMutate, addStageMutate, addWarmupMutate, updateSetMutate, removeSetMutate, addExerciseMutate, removeExerciseMutate, reorderMutate, copyWorkoutMutate, copyWeekMutate, setDeloadMutate, applyAheadMutate]) m.mockClear()
+  for (const m of [addSetMutate, addStageMutate, addWarmupMutate, updateSetMutate, removeSetMutate, addExerciseMutate, removeExerciseMutate, reorderMutate, setDeloadMutate, applyAheadMutate]) m.mockClear()
   swapMutate.mockReset().mockResolvedValue({ id: 'swap-result-row' })
   applyAheadLast = null
   mockState.program = makeProgram()
@@ -271,7 +268,7 @@ describe('PlanPage — the SETS / STRUCTURE switch', () => {
     expect(screen.getByText('WEEK 2')).toBeTruthy()
 
     openStructureView()
-    fireEvent.click(screen.getByLabelText('Next week'))
+    openWeekTile('WEEK 3')
     expect(screen.getByText('WEEK 3')).toBeTruthy()
     expect(screen.getByText('STRUCTURE').style.background).toBe('var(--accent)')
     expect(screen.getByLabelText('Bench Press options')).toBeTruthy()
@@ -284,7 +281,7 @@ describe('PlanPage — the SETS / STRUCTURE switch', () => {
     // ... and the same the other way round.
     openSetsView()
     fireEvent.click(screen.getByText('MON'))
-    fireEvent.click(screen.getByLabelText('Previous week'))
+    openWeekTile('WEEK 2')
     expect(screen.getByText('SETS').style.background).toBe('var(--accent)')
     expect(screen.getByLabelText('Add set to Bench Press')).toBeTruthy()
   })
@@ -450,7 +447,7 @@ describe('PlanPage — SETS view', () => {
   it('has none of the STRUCTURE view\'s controls: no exercise ⋯, no ADD EXERCISE, no ADD WARMUP SETS, no stage or kind controls', () => {
     arrange()
 
-    expect(screen.queryByLabelText(/ options$/)).toBeNull()
+    expect(screen.queryByLabelText(/^(Bench Press|Squat) options$/)).toBeNull() // (WEEK ⋯ is the week's, in both views)
     expect(screen.queryByText('ADD EXERCISE')).toBeNull()
     expect(screen.queryByLabelText('Add warmup sets')).toBeNull()
     expect(screen.queryByText('ADD WARMUP SETS')).toBeNull()
@@ -622,9 +619,8 @@ describe('PlanPage — STRUCTURE view', () => {
 // ─── Page-level actions ───────────────────────────────────────────────────────
 
 describe('PlanPage — page-level actions render above the switch\'s content, in both views (G17)', () => {
-  it('COPY THIS WORKOUT, the apply-ahead banner and the session DELOAD toggle sit above the switch and the card; COPY WEEK and MARK WEEK AS DELOAD above the panel', () => {
-    // Week 2 is empty, so both copy buttons are offered; week 1 is the source; week 3 is
-    // planned, so adding an exercise offers "apply ahead".
+  it('the apply-ahead banner and the session DELOAD toggle sit above the switch and the card; COPY and WEEK ⋯ above the panel', () => {
+    // Week 2 is empty, so COPY has week 1 to copy from; week 3 is planned, so adding an exercise offers "apply ahead".
     mockState.all = [plan(1, SETS, [pe1, pe2]), plan(2, [], []), plan(3, [], [])]
     renderPlanPage()
     expect(screen.getByText('WEEK 2')).toBeTruthy()
@@ -636,35 +632,32 @@ describe('PlanPage — page-level actions render above the switch\'s content, in
 
     for (const open of [openStructureView, openSetsView]) {
       open()
-      const copyWeek = screen.getByText('COPY WEEK')
-      const markWeek = screen.getByText('MARK WEEK AS DELOAD')
+      const copy = screen.getByText('COPY')
+      const weekMenu = screen.getByLabelText('Week 2 options')
       const sessionDeload = screen.getByLabelText('Mark this session as deload')
       const banner = screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')
-      const copyWorkout = screen.getByText('COPY THIS WORKOUT')
       const switchBar = screen.getByText('SETS').parentElement as HTMLElement
       const card = screen.getByText('NO EXERCISES IN THIS DAY')
 
       // The page's actions, above the panel (its header, where the session toggle is) ...
-      expectBefore(copyWeek, sessionDeload)
-      expectBefore(markWeek, sessionDeload)
+      expectBefore(copy, sessionDeload)
+      expectBefore(weekMenu, sessionDeload)
       // ... the panel's own actions, above the switch ...
       expectBefore(sessionDeload, switchBar)
       expectBefore(banner, switchBar)
-      expectBefore(copyWorkout, switchBar)
       // ... and the switch above the view's content.
       expectBefore(switchBar, card)
     }
+    // The page-level buttons the header replaced are gone, in both views.
+    for (const gone of ['COPY WEEK', 'COPY THIS WORKOUT', 'MARK WEEK AS DELOAD']) expect(screen.queryByText(gone)).toBeNull()
   })
 
-  it('and they are live in either view: COPY THIS WORKOUT and the session toggle act the same from SETS and from STRUCTURE', () => {
+  it('and the session toggle acts the same from SETS and from STRUCTURE', () => {
     mockState.all = [plan(1, SETS, [pe1, pe2]), plan(2, [], []), plan(3, [], [])]
     renderPlanPage()
 
     for (const open of [openSetsView, openStructureView]) {
       open()
-      copyWorkoutMutate.mockClear()
-      fireEvent.click(screen.getByText('COPY THIS WORKOUT'))
-      expect(copyWorkoutMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-1', weekPlanId: 'wp-2', sequencePosition: null })
       setDeloadMutate.mockClear()
       fireEvent.click(screen.getByLabelText('Mark this session as deload'))
       expect(setDeloadMutate).toHaveBeenCalledTimes(1)
@@ -727,11 +720,11 @@ describe('PlanPage — MOVE THIS SESSION sits above the panel, in both views (G1
       expect(stub().getAttribute('data-workout')).toBe('wd-2')
       expect(stub().getAttribute('data-plan')).toBe('wp-2-wd-2')
       // A later week is not the current one (the real control then renders nothing).
-      fireEvent.click(screen.getByLabelText('Next week'))
+      openWeekTile('WEEK 3')
       expect(screen.getByText('WEEK 3')).toBeTruthy()
       expect(stub().getAttribute('data-plan')).toBe('wp-3-wd-2')
       expect(stub().getAttribute('data-current')).toBe('false')
-      fireEvent.click(screen.getByLabelText('Previous week'))
+      openWeekTile('WEEK 2')
       expect(stub().getAttribute('data-current')).toBe('true')
     }
   })
@@ -927,9 +920,9 @@ describe('PlanPage — a past week is read-only in both views', () => {
     expect(screen.getByLabelText('Bench Press options')).toBeTruthy()
     expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
     openSetsView()
-    // ... then step back to week 1.
-    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByLabelText('Previous week'))
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    // ... then open week 1's tile.
+    openWeekTile('WEEK 1')
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
   }
 
   it('SETS: the numbers are drawn but dead, with no `+` and no ⋯', () => {
@@ -938,7 +931,7 @@ describe('PlanPage — a past week is read-only in both views', () => {
 
     expect(screen.queryByLabelText(/^Add set to /)).toBeNull()
     expect(screen.queryAllByLabelText(/^Options for /)).toHaveLength(0)
-    expect(screen.queryAllByLabelText(/ options$/)).toHaveLength(0)
+    expect(screen.queryAllByLabelText(/ options$/)).toHaveLength(0) // no exercise ⋯, and no WEEK ⋯ on a past week
     // The rows are there, each cell disabled.
     expect(squash(rowOf('02').textContent)).toBe(squash('02100kg × 8–12 − RIR 2 +'))
     for (const cell of buttonsOf(rowOf('02'))) expect((cell as HTMLButtonElement).disabled).toBe(true)

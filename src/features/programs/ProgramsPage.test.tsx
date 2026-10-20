@@ -135,6 +135,29 @@ function renderProgramsPage() {
   )
 }
 
+// ─── Under Plan's PLAN | PROGRAMS tabs (chunk 52, P1.2-12) ─────────────────
+
+describe('ProgramsPage — embedded in Plan\'s PROGRAMS tab', () => {
+  it('on its own route it has its own "OVERLOAD v2 / PROGRAMS" header, as it always did', () => {
+    renderProgramsPage()
+    expect(screen.getByRole('heading', { name: 'PROGRAMS' })).toBeTruthy()
+    expect(screen.getByText('OVERLOAD v2')).toBeTruthy()
+  })
+
+  it('embedded, the tab is the title: the page leaves out its own header and keeps everything else', () => {
+    savedPrograms = [SAVED_PROGRAM_1]
+    render(
+      <MemoryRouter initialEntries={['/plan']}>
+        <ProgramsPage embedded />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('heading', { name: 'PROGRAMS' })).toBeNull()
+    expect(screen.queryByText('OVERLOAD v2')).toBeNull()
+    expect(screen.getByText('ACTIVE RUN')).toBeTruthy()
+    expect(screen.getByLabelText('Create a program')).toBeTruthy()
+  })
+})
+
 // ─── Create a program ──────────────────────────────────────────────────────
 
 describe('ProgramsPage — create a program', () => {

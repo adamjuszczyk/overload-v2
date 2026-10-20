@@ -229,8 +229,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: swapMutate, isPending: false }),
   useAddWeekExercise: () => ({ mutate: addExerciseMutate, isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: removeExerciseMutate, isPending: false }),
@@ -243,7 +241,7 @@ vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openStructureView, openExerciseMenu } = await import('./planMenus.testutil')
+const { openStructureView, openExerciseMenu, openWeekTile } = await import('./planMenus.testutil')
 
 const allMocks = [
   updateRestMutate, updateTempoMutate, updateUnitMutate, toggleLinkMutate, updateBlockRestMutate, updateSetRestMutate,
@@ -568,7 +566,7 @@ describe('PlanPage STRUCTURE — superset grouping: any two neighbours IN THIS W
     expect(screen.getAllByText('WITHIN ROUND')).toHaveLength(1) // one block, edited once
     expect(toggles()[0].textContent).toContain('TAP TO UNLINK')
 
-    fireEvent.click(screen.getByLabelText('Next week'))
+    openWeekTile('WEEK 3') // chunk 52: week 3's tile (the week arrows are gone)
     expect(screen.getByText('WEEK 3')).toBeTruthy()
     expect(screen.getByLabelText('Bench Press options')).toBeTruthy() // not a past week: still editable
     // Apart in this week: two plain exercises, no marker, no block rests, a LINK toggle between each pair.
@@ -1327,7 +1325,7 @@ describe('PlanPage STRUCTURE — a past week is read-only for the run-wide field
 
   it('current week first: every control is there (so the absences below mean something)', () => {
     arrangePast()
-    expect(screen.queryByText('PAST WEEK — READ ONLY')).toBeNull()
+    expect(screen.queryByText('PAST WEEK · READ ONLY')).toBeNull()
     expect(screen.getByLabelText('Bench Press options')).toBeTruthy()
     expect(toggles()).toHaveLength(4)
     expect(screen.getAllByText('WITHIN ROUND')).toHaveLength(1)
@@ -1338,9 +1336,9 @@ describe('PlanPage STRUCTURE — a past week is read-only for the run-wide field
 
   it('in the past: no exercise ⋯, no set ⋯, no link toggle, no round-rest stepper, no ADD ITEM, no item ⋯ — the routine\'s text and every marker stay', () => {
     arrangePast()
-    fireEvent.click(screen.getByLabelText('Previous week'))
+    openWeekTile('WEEK 1')
     expect(screen.getByText('WEEK 1')).toBeTruthy()
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
 
     expect(screen.queryByLabelText(/ options$/)).toBeNull()
     expect(screen.queryByLabelText(/^Options for /)).toBeNull()
@@ -1375,7 +1373,7 @@ describe('PlanPage STRUCTURE — a past week is read-only for the run-wide field
     mockState.routine = []
     arrange()
     expect(screen.getByRole('group', { name: 'Warmup routine' })).toBeTruthy() // the current week: ADD ITEM
-    fireEvent.click(screen.getByLabelText('Previous week'))
+    openWeekTile('WEEK 1')
     expect(screen.queryByRole('group', { name: 'Warmup routine' })).toBeNull()
     expect(screen.queryByText('WARMUP ROUTINE')).toBeNull()
   })

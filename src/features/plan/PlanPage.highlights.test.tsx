@@ -136,8 +136,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -150,7 +148,7 @@ vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openStructureView, openSetsView } = await import('./planMenus.testutil')
+const { openStructureView, openSetsView, openWeekTile } = await import('./planMenus.testutil')
 
 afterEach(() => {
   mockState.meso = mesoStarting(5)
@@ -1075,7 +1073,7 @@ describe('PlanPage — a sequence run compares each slot with its own source slo
       slotPlan(2, 0, cycle2.a0), slotPlan(2, 1, 80), slotPlan(2, 2, cycle2.a2),
     ]
     renderPlan(1)
-    fireEvent.click(screen.getByLabelText('Next week')) // cycle 2
+    openWeekTile('CYCLE 2')
   }
 
   it('each of A\'s slots is compared with the same slot last cycle: equal to its own source → not marked, although it differs from the other slot\'s', () => {
@@ -1137,10 +1135,9 @@ describe('PlanPage — past weeks highlight too, compared as they are now', () =
       plan(5, [BENCH], staged('dropset')),
     ]
     renderPlan(5)
-    fireEvent.click(screen.getByLabelText('Previous week'))
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 3
+    openWeekTile('WEEK 3')
     expect(screen.getByText('WEEK 3')).toBeTruthy()
-    expect(screen.getByText('PAST WEEK — READ ONLY')).toBeTruthy()
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
 
     const cells = cellsOf(rowOf('01'))
     expect(mark(cells.weight)).toBe('changed')
@@ -1160,10 +1157,9 @@ describe('PlanPage — past weeks highlight too, compared as they are now', () =
       plan(5, [BENCH], [wset('w5', 'pe-bench', 1, { targetWeight: 130 })]),
     ]
     renderPlan(5)
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 4: not planned
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 3
+    openWeekTile('WEEK 3') // (week 4 was never planned: a tile that draws no weights)
     expect(markedCells('01').weight).toBe('changed') // 120 against week 2's 110 (week 5's 130 is no source of it)
-    fireEvent.click(screen.getByLabelText('Previous week')) // week 2
+    openWeekTile('WEEK 2')
     expect(markedCells('01').weight).toBe('changed') // 110 against week 1's 100
   })
 })
@@ -1185,12 +1181,18 @@ describe('PlanPage — a week with nothing to flag renders exactly what it did b
       wset(`r${suffix}`, 'pe-row', 1, { targetWeight: null, targetRir: null, repMin: null, repMax: null }),
     ]
     const rows = [pe('pe-bench', EX_BENCH, 0, { restSeconds: 120, tempo: '3-1-1-0', weightUnit: 'lbs' }), pe('pe-row', EX_ROW, 1, { supersetBlockId: 'blk' })]
+    // The tile strip is taken out of both: which weeks have a plan decides its tiles (week 4 is DONE in one render and NOT PLANNED in
+    // the other, by construction), and it is the header's, not the week panel's whose markup this compares.
+    const htmlOf = (container: HTMLElement) => {
+      const strip = container.querySelector('[aria-label="Weeks of this program"]')
+      return strip ? container.innerHTML.replace(strip.outerHTML, '') : container.innerHTML
+    }
     const markup = (withSource: boolean) => {
       mockState.all = withSource ? [plan(4, rows, sets('4')), plan(5, rows, sets('5'))] : [plan(5, rows, sets('5'))]
       const { container } = renderPlan(5)
-      const setsView = container.innerHTML
+      const setsView = htmlOf(container)
       openStructureView()
-      const structureView = container.innerHTML
+      const structureView = htmlOf(container)
       cleanup()
       return { sets: setsView, structure: structureView }
     }
@@ -1206,7 +1208,7 @@ describe('PlanPage — a week with nothing to flag renders exactly what it did b
     // The control: against a source that differs, the same week's markup does change (so the equality above means something).
     mockState.all = [plan(4, rows, sets('4').map((s) => (s.id === 'h4' ? { ...s, targetWeight: 90 } : s))), plan(5, rows, sets('5'))]
     const { container } = renderPlan(5)
-    expect(container.innerHTML).not.toBe(alone.sets)
+    expect(htmlOf(container)).not.toBe(alone.sets)
     expect(container.innerHTML).toContain('data-diff="changed"')
   })
 })
@@ -1238,7 +1240,7 @@ describe('PlanPage — each workout is compared with its own history', () => {
     ]
     renderPlan(5)
     expect(markedCells('01').weight).toBe('changed')
-    fireEvent.click(screen.getByLabelText('Next week'))
+    openWeekTile('WEEK 6')
     expect(screen.getByText('WEEK 6')).toBeTruthy()
     expect(markedCells('01').weight).toBeNull() // 105 = week 5's 105
   })

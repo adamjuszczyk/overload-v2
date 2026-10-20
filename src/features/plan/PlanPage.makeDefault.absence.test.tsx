@@ -71,8 +71,8 @@ const makeWeekDefaultMock = vi.fn()
 // by any path, is seen, including one that does not exist yet.
 const WEEK_PLAN_SERVICE_EXPORTS = [...readFileSync(resolve(process.cwd(), 'src/features/plan/weekPlanService.ts'), 'utf8').matchAll(/^export (?:async )?function (\w+)/gm)].map((m) => m[1])
 const READS = new Set(['fetchWeekPlans', 'fetchAllWeekPlansForMeso', 'fetchWeekPlanById'])
-// Not a write to a week's content: the page plans the week it opens (v2_plan_week leaves rows that exist as
-// they are), whenever a week is viewed, with or without this action.
+// Not a write to a week's content: the page plans the current week when it has no rows (chunk 52; v2_plan_week
+// leaves rows that exist as they are), with or without this action.
 const OPENING_A_WEEK = new Set(['planWeek'])
 const serviceCalls: string[] = []
 
@@ -114,6 +114,7 @@ vi.mock('./weekPlanService', () => {
 })
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile } = await import('./planMenus.testutil')
 
 afterEach(() => {
   makeWeekDefaultMock.mockReset()
@@ -149,7 +150,7 @@ const writesToWeeks = () => serviceCalls.filter((name) => !OPENING_A_WEEK.has(na
 
 describe('the proof can fail: the recorder sees what it is meant to see', () => {
   it('knows the service\'s reads and its writes, and records a write made through it', async () => {
-    expect(WEEK_PLAN_SERVICE_EXPORTS).toEqual(expect.arrayContaining(['fetchWeekPlans', 'fetchAllWeekPlansForMeso', 'updateSet', 'removeSet', 'addSet', 'swapWeekExercise', 'repointWeekExercise', 'addWeekExercise', 'removeWeekExercise', 'reorderWeekExercises', 'copyFromPreviousWeek', 'markWeekDeload']))
+    expect(WEEK_PLAN_SERVICE_EXPORTS).toEqual(expect.arrayContaining(['fetchWeekPlans', 'fetchAllWeekPlansForMeso', 'updateSet', 'removeSet', 'addSet', 'swapWeekExercise', 'repointWeekExercise', 'addWeekExercise', 'removeWeekExercise', 'reorderWeekExercises', 'unmarkWeekDeload', 'markWeekDeload']))
     const service = await import('./weekPlanService')
     await service.updateSet('s1-w4', { repMin: 5 })
     await service.removeWeekExercise('wp-4', 'pe-bench')
@@ -216,7 +217,7 @@ describe('PlanPage — make this week the default: nothing follows it (real hook
     await confirmMakeDefault()
     await waitFor(() => expect(useToastStore.getState().message).toBe('Week 3 is now the default.'))
     await screen.findByText(ACTION)
-    fireEvent.click(screen.getByLabelText('Next week'))
+    openWeekTile('WEEK 4')
     await screen.findByText('WEEK 4')
     await settle()
 
