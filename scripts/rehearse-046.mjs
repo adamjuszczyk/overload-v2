@@ -20,6 +20,19 @@
 //               rows that changed since FILE, and passes only when they are exactly what `plan046` said from FILE.
 //               This is the before/after of the staging rehearsal. It writes nothing and prints no secret.
 //
+// The staging rehearsal, step by step (the seed, supabase/seed.sql, holds a 1.1-shaped run on staging-sequence: cycle 2 with a
+// swap, an add, a program-tab remove and a reorder, written the way 1.1 wrote them):
+//   1. Adam re-seeds staging with this branch's seed, BEFORE the chunk is merged into staging (a merge applies 045 and 046).
+//   2. node scripts/rehearse-046.mjs --staging --account staging-sequence@example.com --out before-seq.json
+//      prints the counts, the fingerprint and what 046 would change: "046 would match 3 workout(s) and make 7 change(s) on 6
+//      row(s)" on the seed as written. The same for staging-test@example.com says 0 changes (its run already matches).
+//   3. The merge; the reviewer reads every `Supabase Preview` run on the merge commit.
+//   4. node scripts/rehearse-046.mjs --staging --account staging-sequence@example.com --compare before-seq.json
+//      passes ("OK  exactly the changes the rule says, nothing else, and a second run would change nothing") when the rows
+//      that changed are exactly the ones step 2 listed.
+// A seed run AFTER 046 is live recreates the shape and nothing reconciles it (a seed does not run migrations): run 046's text
+// by hand in the SQL editor to rehearse it again; it changes nothing that already matches and is safe to run twice.
+//
 // Usage:  node scripts/rehearse-046.mjs --replay [--worlds 120] [--container NAME] [--migration PATH] [--safeupdate]
 //         node scripts/rehearse-046.mjs --staging [--account EMAIL] [--out FILE | --compare FILE]
 //         --safeupdate  production runs pg-safeupdate, which rejects an UPDATE or DELETE with no WHERE clause, inside a DO block
