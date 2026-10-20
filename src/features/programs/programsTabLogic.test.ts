@@ -11,6 +11,8 @@ import {
   createState,
   finishedMeta,
   finishedProgramPath,
+  finishedPrioritiesPath,
+  legacyPrioritiesPath,
   markSummary,
   plannerPath,
   programTypesLine,
@@ -229,7 +231,9 @@ describe('where the tab\'s links go', () => {
     expect(PLAN_WEEK_ONE_PATH).toBe('/plan?week=1')
   })
 
-  it('until chunk 66 a finished program opens the completed-run priorities page of that run', () => {
-    expect(finishedProgramPath('meso-3')).toBe('/meso/meso-3/priorities')
+  it('a FINISHED row opens the finished program (chunk 66); its PRIORITIES row opens the editor, or for a pre-1.1 run the completed-run page as it is (G50)', () => {
+    expect(finishedProgramPath('meso-3')).toBe('/program/finished/meso-3')
+    expect(finishedPrioritiesPath('meso-3')).toBe('/program/finished/meso-3/priorities')
+    expect(legacyPrioritiesPath('meso-3')).toBe('/meso/meso-3/priorities')
   })
 })

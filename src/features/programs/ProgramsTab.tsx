@@ -24,7 +24,7 @@ import { finishedMeta, finishedProgramPath, plannerPath, programTypesLine, weekO
 // START RUN are gone with the page, as is the 'Mesocycle' literal.
 //
 // Where it goes: OPEN → the stepped planner on that saved program (`/program/:id`); FOCUS and DON'T CARE → the run's priorities, view-only
-// (`/plan/priorities`); EDIT PROGRAM → `/plan/change`; a FINISHED row → the finished program (chunk 66; until then `finishedProgramPath`).
+// (`/plan/priorities`); EDIT PROGRAM → `/plan/change`; a FINISHED row → the finished program (chunk 66: `finishedProgramPath`).
 //
 // Display choices no board settles, provisional under D31: a read that failed with nothing to show says so with the real reason
 // ("COULDN'T LOAD PROGRAMS", never the empty states: an empty answer and a failed one are different things); a finished run is drawn the way the board

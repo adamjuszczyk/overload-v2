@@ -383,11 +383,11 @@ describe('where each link goes (real routes, read back out of the location)', ()
     expect(at()).toBe('AT /program/prog-ul')
   })
 
-  it('a FINISHED row opens that run\'s page (until chunk 66: the completed-run priorities page of that run)', () => {
+  it('a FINISHED row opens that run\'s finished program (chunk 66)', () => {
     running()
     renderTab()
     fireEvent.click(screen.getByText('Cut PPL'))
-    expect(at()).toBe('AT /meso/meso-fin-2/priorities')
+    expect(at()).toBe('AT /program/finished/meso-fin-2')
   })
 })
 
