@@ -870,3 +870,6 @@ end
 $seed$;
 
 notify pgrst, 'reload schema';
+
+-- Whoever changes this seed changes the version below, so a wrong seed shows in the result pane the moment it runs.
+select 'overload seed 2026-10-20 chunk 53' as seed_version;
