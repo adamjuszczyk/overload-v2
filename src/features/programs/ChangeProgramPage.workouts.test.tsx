@@ -35,8 +35,8 @@ import type { ChangeProgramSource } from './changeProgramService'
 // different list of ops.
 //
 // The screen runs as it does in the app (the real hooks, the real exercise picker, the real `planProgramChange` and `applyOps`); what
-// is mocked is the edge, as in the 51a test: the reads, the exercise library and the one request SAVE makes. Each test holds the list
-// that request carried against the list `planProgramChange` makes for the same edit written by hand on chunk 45's draft with plain
+// is mocked is the edge, as in the 51a test: the reads, the exercise library and the one request SAVE makes. A test that saves holds the
+// list that request carried against the list `planProgramChange` makes for the same edit written by hand on chunk 45's draft with plain
 // array operations (never with the screen's own draft functions), then reads the run copy's rows that chunk 45's stand-in for
 // migration 043 left, so a list that reads right and runs wrong fails too. The orders after each press are written out as literals.
 
@@ -661,14 +661,14 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
   })
 
   // The toggle between two members splits there: the left side keeps the block when it still has two, else the right side does.
-  const SPLITS: ReadonlyArray<{ wk: string; toggle: number; free: string[]; keep: string[] }> = [
-    { wk: 'push', toggle: 0, free: ['pe-ohp', 'pe-lateral'], keep: [] },
-    { wk: 'pull', toggle: 0, free: ['pe-row'], keep: ['pe-pd', 'pe-face'] },
-    { wk: 'pull', toggle: 1, free: ['pe-face'], keep: ['pe-row', 'pe-pd'] },
-    { wk: 'legs', toggle: 0, free: ['pe-lcurl', 'pe-calf'], keep: [] },
-    { wk: 'arms', toggle: 0, free: ['pe-hammer', 'pe-dip'], keep: [] },
+  const SPLITS: ReadonlyArray<{ wk: string; toggle: number; place: string; free: string[]; keep: string[] }> = [
+    { wk: 'push', toggle: 0, place: 'first', free: ['pe-ohp', 'pe-lateral'], keep: [] },
+    { wk: 'pull', toggle: 0, place: 'first', free: ['pe-row'], keep: ['pe-pd', 'pe-face'] },
+    { wk: 'pull', toggle: 1, place: 'second', free: ['pe-face'], keep: ['pe-row', 'pe-pd'] },
+    { wk: 'legs', toggle: 0, place: 'first', free: ['pe-lcurl', 'pe-calf'], keep: [] },
+    { wk: 'arms', toggle: 0, place: 'first', free: ['pe-hammer', 'pe-dip'], keep: [] },
   ]
-  it.each(SPLITS)('the toggle $toggle of the superset in $wk splits it there', async ({ wk: wkId, toggle, free, keep }) => {
+  it.each(SPLITS)('the $place toggle of the superset in $wk splits it there', async ({ wk: wkId, toggle, free, keep }) => {
     const wk = UNEVEN_WORKOUTS.find((w) => w.id === wkId)!
     await open()
     const before = world
@@ -862,6 +862,41 @@ describe('order', () => {
     expect(cardKeys()).toEqual(rowsOf(wk))
     click('CANCEL')
     expect(screen.queryByText('Discard your changes?')).toBeNull()
+  })
+
+  // What a drag puts on the window (it listens for the pointer moving, being let go and being cancelled) is taken off again however it ended.
+  it('a drag leaves nothing listening on the window once it is over: let go, or cancelled', async () => {
+    const types = ['pointermove', 'pointerup', 'pointercancel']
+    const added = vi.spyOn(window, 'addEventListener')
+    const removed = vi.spyOn(window, 'removeEventListener')
+    const pairs = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter((c) => types.includes(c[0] as string)).map((c) => ({ type: c[0] as string, handler: c[1] }))
+    const stillListening = () => pairs(added).filter((a) => !pairs(removed).some((r) => r.type === a.type && r.handler === a.handler)).map((a) => a.type)
+    try {
+      await open()
+      goTo(UNEVEN_WORKOUTS[1])
+      const grip = () => within(document.querySelectorAll('[data-unit-key]')[0] as HTMLElement).getAllByRole('button', { name: /^Reorder / })[0]
+      await act(async () => {
+        grip().dispatchEvent(pointer('pointerdown', unitCentre(0)))
+      })
+      expect(stillListening().sort()).toEqual(['pointercancel', 'pointermove', 'pointerup'])
+      await act(async () => {
+        window.dispatchEvent(pointer('pointerup', unitCentre(0)))
+      })
+      expect(stillListening()).toEqual([])
+      await act(async () => {
+        grip().dispatchEvent(pointer('pointerdown', unitCentre(0)))
+      })
+      expect(stillListening().sort()).toEqual(['pointercancel', 'pointermove', 'pointerup'])
+      await act(async () => {
+        window.dispatchEvent(pointer('pointercancel', unitCentre(0)))
+      })
+      expect(stillListening()).toEqual([])
+      expect(pairs(added)).toHaveLength(6)
+    } finally {
+      added.mockRestore()
+      removed.mockRestore()
+    }
   })
 
   it.each(UNEVEN_WORKOUTS)('a press of $name’s grip with a button other than the main one starts no drag', async (wk) => {
