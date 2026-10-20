@@ -220,7 +220,7 @@ export default function StartProgramSheet({ programs, presetProgramId, runningNa
           })}
         </div>
 
-        {runningName !== null && <span style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text-secondary)' }}>{startNote(runningName)}</span>}
+        {runningName !== null && <span style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>{startNote(runningName)}</span>}
       </BottomSheet>
 
       {failure &&

@@ -104,6 +104,13 @@ describe('finishedMeta', () => {
     expect(finishedMeta({ startDate: day(2), endDate: day(2) })).toContain('1 WEEK')
   })
 
+  it('an end date before the start (bad data) never says 0 weeks or a negative number: 1 WEEK', () => {
+    // the end two Mondays before the start: the calendar weeks between them count -2, +1 is -1
+    expect(finishedMeta({ startDate: day(14), endDate: day(0) })).toBe('OCT 26 – OCT 12, 2026 · 1 WEEK')
+    // the end one Monday before the start: -1 + 1 = 0
+    expect(finishedMeta({ startDate: day(7), endDate: day(0) })).toContain('· 1 WEEK')
+  })
+
   it('dates in two years carry both', () => {
     expect(finishedMeta({ startDate: '2025-12-29', endDate: '2026-01-11' })).toBe('DEC 29, 2025 – JAN 11, 2026 · 2 WEEKS')
   })
@@ -140,6 +147,14 @@ describe('markSummary', () => {
     const rows = [mark('muscle_group', 'chest', 'focus'), mark('muscle_subgroup', 'upper_chest', 'dont_care'), mark('muscle_group', 'back', 'focus')]
     expect(markSummary(rows, 'focus')).toBe('Chest without upper chest, back')
     expect(markSummary(rows, 'dont_care')).toBe('Upper chest')
+  })
+
+  it('two subgroups marked otherwise are both named after "without", joined with commas as the planner\'s own summary joins them', () => {
+    // priorityMarks.test.ts pins the planner's phrase: 'chest without upper chest, lower chest'
+    const rows = [mark('muscle_group', 'chest', 'focus'), mark('muscle_subgroup', 'lower_chest', 'dont_care'), mark('muscle_subgroup', 'upper_chest', 'dont_care')]
+    expect(markSummary(rows, 'focus')).toBe('Chest without upper chest, lower chest')
+    // (in the planner's order, not the order they were stored in)
+    expect(markSummary(rows, 'dont_care')).toBe('Upper chest, lower chest')
   })
 
   it('a subgroup marked under a group with no mark is listed by its own name', () => {

@@ -149,15 +149,19 @@ describe('PR13b — both chosen', () => {
 })
 
 describe('a name is needed too (ours, D31)', () => {
-  it('both types chosen and no name (blank or spaces): CREATE is off and the line says to name it; typing one turns it on', () => {
+  it('both types chosen and no name (blank or spaces): CREATE is off, the line says to name it, and Enter writes nothing; typing one turns it on', async () => {
     renderSheet()
     fireEvent.click(radio('Weekdays'))
     fireEvent.click(radio('Stable'))
     expect(createButton().disabled).toBe(true)
     expect(screen.getByText('Name the program to create it.')).toBeTruthy()
+    fireEvent.keyDown(nameInput(), { key: 'Enter' })
 
     type('   ')
     expect(createButton().disabled).toBe(true)
+    fireEvent.keyDown(nameInput(), { key: 'Enter' })
+    await act(async () => {})
+    expect(createProgramMock).not.toHaveBeenCalled()
     type('Block')
     expect(createButton().disabled).toBe(false)
     expect(screen.queryByText('Name the program to create it.')).toBeNull()

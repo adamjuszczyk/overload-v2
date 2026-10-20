@@ -29,11 +29,12 @@ const state = vi.hoisted(() => ({
   pending: false,
 }))
 const startRunMock = vi.hoisted(() => vi.fn())
+const completeMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./useMesos', () => ({
   useMesos: () => (state.loading ? { data: undefined, isLoading: true } : { data: state.mesos }),
   useStartRun: () => ({ mutateAsync: startRunMock, isPending: state.pending }),
-  useCompleteMeso: () => ({ mutateAsync: vi.fn(), isPending: state.pending }),
+  useCompleteMeso: () => ({ mutateAsync: completeMock, isPending: state.pending }),
 }))
 vi.mock('./usePrograms', () => ({
   useSavedPrograms: () => ({ data: state.saved }),
@@ -62,6 +63,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   startRunMock.mockReset()
+  completeMock.mockReset()
 })
 
 const NO_DAYS: WeeklySchedule = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null }
@@ -236,6 +238,68 @@ describe('PR8 to PR12 — START', () => {
     expect(screen.getByRole('dialog', { name: 'Start a program' })).toBeTruthy()
     expect(screen.getByText('Create a program first.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'CREATE PROGRAM' })).toBeTruthy()
+  })
+})
+
+// Long names, for the Chromium checks at 375 px (the sheet check measures inside every dialog; the page check measures the tab): an unbroken
+// 80-letter name in every place a program's or a run's name is drawn (RULES, 128 (i): "nothing runs past its line"). Not boards.
+describe('long names (Chromium checks; not boards)', () => {
+  const LONG = 'B'.repeat(80)
+
+  it('the tab with a long run, program and finished-run name', () => {
+    running()
+    state.mesos = [{ ...ACTIVE, name: LONG }, { ...FINISHED[0], name: LONG }]
+    state.saved = [{ ...PPL, name: LONG }, UL]
+    render(ui())
+    captureRender('programs-pr1-long-name', document.body)
+    expect(screen.getAllByText(LONG).length).toBeGreaterThan(2)
+  })
+
+  it('PR9 with a long program name picked and a long running program\'s name in the line', () => {
+    running()
+    state.mesos = [{ ...ACTIVE, name: LONG }]
+    state.saved = [{ ...PPL, name: LONG }, UL, STRENGTH]
+    render(ui())
+    fireEvent.click(within(screen.getAllByText(LONG)[1].closest('[data-program]') as HTMLElement).getByText('START'))
+    captureRender('programs-pr9-long-name', document.body)
+    expect(screen.getByRole('radio', { name: LONG }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('PR10 with a long unbroken reason', async () => {
+    running()
+    state.saved = [{ ...PPL, name: LONG }, UL]
+    startRunMock.mockRejectedValue({ message: 'R'.repeat(120) })
+    render(ui())
+    fireEvent.click(within(screen.getByText(LONG).closest('[data-program]') as HTMLElement).getByText('START'))
+    fireEvent.click(screen.getByRole('button', { name: 'START PROGRAM' }))
+    await act(async () => { await Promise.resolve() })
+    await screen.findByRole('alert')
+    captureRender('programs-pr10-long-name', document.body)
+    expect(screen.getByText('R'.repeat(120))).toBeTruthy()
+  })
+
+  it('PR6 with a long run name in the question, and then a failed finish that names it', async () => {
+    running()
+    state.mesos = [{ ...ACTIVE, name: LONG }]
+    completeMock.mockRejectedValue({ message: 'R'.repeat(120) })
+    render(ui())
+    fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+    captureRender('programs-pr6-long-name', document.body)
+    expect(screen.getByText(`Finish ${LONG}?`)).toBeTruthy()
+
+    fireEvent.click(within(screen.getByText(`Finish ${LONG}?`).parentElement!.parentElement!).getByRole('button', { name: 'FINISH' }))
+    await screen.findByRole('alert')
+    captureRender('programs-pr6-failed-long-name', document.body)
+    expect(screen.getByText(`Couldn't finish ${LONG}.`)).toBeTruthy()
+  })
+
+  it('PR13 with a long name typed', () => {
+    running()
+    render(ui())
+    fireEvent.click(screen.getByText('+ NEW PROGRAM'))
+    fireEvent.change(screen.getByLabelText('PROGRAM NAME'), { target: { value: LONG } })
+    captureRender('programs-pr13-long-name', document.body)
+    expect((screen.getByLabelText('PROGRAM NAME') as HTMLInputElement).value).toBe(LONG)
   })
 })
 

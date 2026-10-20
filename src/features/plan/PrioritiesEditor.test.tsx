@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,7 @@ import type { StoredMark } from '../../lib/priorityMarks'
 import { MUSCLE_GROUPS, MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags'
 import type { MuscleSubgroupTag } from '../../lib/exerciseTags'
 import { PRIORITY_TREE } from '../../lib/priorityTags'
+import { captureRender } from '../../testing/captureRender'
 
 // Chunk 28 (SPEC.md Programs and runs [P1.1]: "Priorities are a property of
 // the program. They're set in the planner when the program is built, and
@@ -322,6 +323,8 @@ describe('PrioritiesEditor — the header and board 12\'s three states (chunk 65
     expect(document.body.textContent).not.toContain('Check your connection')
     expect(screen.queryByRole('status')).toBeNull() // not an endless spinner
     expect(screen.queryByText(MUSCLE_GROUP_LABELS.chest)).toBeNull()
+    // a read that failed is not "no program running": an empty answer and a failed one differ
+    expect(screen.queryByText('No current program')).toBeNull()
   })
 
   it('an error with no message says "Something went wrong." (P1.2-5), and "You may be offline." only when the phone is', () => {
@@ -352,22 +355,46 @@ describe('PrioritiesEditor — the header and board 12\'s three states (chunk 65
     expect(new Set(readProgramIds)).toEqual(new Set([null]))
   })
 
-  it('the back arrow goes back (to the PROGRAMS tab it was opened from; with no history, to /plan)', () => {
+  it('the back arrow goes to PROGRAMS (/program: Plan opened on that tab), whether or not there is history to pop, and does not keep this screen in the history', () => {
     rows = MARKED_RUN
     render(
       <MemoryRouter initialEntries={['/plan', '/plan/priorities']} initialIndex={1}>
         <PrioritiesEditor />
         <Where />
+        <GoBack />
       </MemoryRouter>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Back to Programs' }))
+    expect(screen.getByTestId('where').textContent).toBe('/program')
+    // it replaced this screen's entry: one step back in the history is where it came from, not this screen again
+    fireEvent.click(screen.getByRole('button', { name: 'history back' }))
     expect(screen.getByTestId('where').textContent).toBe('/plan')
+    cleanup()
+
+    // opened directly (a reload at /plan/priorities): the same
+    render(
+      <MemoryRouter initialEntries={['/plan/priorities']}>
+        <PrioritiesEditor />
+        <Where />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Programs' }))
+    expect(screen.getByTestId('where').textContent).toBe('/program')
   })
 })
 
 function Where() {
   const location = useLocation()
   return <div data-testid="where">{location.pathname}</div>
+}
+
+function GoBack() {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      history back
+    </button>
+  )
 }
 
 describe('PrioritiesEditor — checked at 375px', () => {
@@ -397,5 +424,32 @@ describe('PrioritiesEditor — checked at 375px', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+// Board 12's three PRIORITIES frames, rendered for the 390 px pictures (`CAPTURE_RENDER=1` writes `__fixtures__/priorities-<state>.html`; the pictures
+// are design/1.2/built/12-priorities-<state>.png + .txt). Each test captures first, then asserts the one thing that says the capture is that frame.
+// The frame's reason line reads "Check your connection and try again."; SPEC Errors (15) has the real reason there instead, so the capture shows one.
+describe('PrioritiesEditor: board 12\'s PRIORITIES frames (captured)', () => {
+  it('PRIORITIES · LOADING: the title and a spinner', () => {
+    reads.mesos = { data: undefined, isLoading: true, isError: false }
+    const { container } = renderEditor()
+    captureRender('priorities-loading', container)
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+  })
+
+  it('PRIORITIES · COULDN\'T LOAD: the title, COULDN\'T LOAD PRIORITIES and the reason', () => {
+    reads.rows = { data: undefined, isLoading: false, isError: true, error: new Error('Failed to fetch') }
+    const { container } = renderEditor()
+    captureRender('priorities-error', container)
+    expect(within(screen.getByRole('alert')).getByText('Failed to fetch')).toBeTruthy()
+  })
+
+  it('PRIORITIES · NO CURRENT PROGRAM: the title and "No current program"', () => {
+    reads.mesos = { data: [], isLoading: false, isError: false }
+    reads.rows = { data: undefined, isLoading: false, isError: false }
+    const { container } = renderEditor()
+    captureRender('priorities-no-program', container)
+    expect(screen.getByText('No current program')).toBeTruthy()
   })
 })

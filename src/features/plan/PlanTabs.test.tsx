@@ -68,6 +68,12 @@ describe('PlanTabs, with PLAN locked (PR1 and PR2: no program running)', () => {
     expect(screen.getByRole('status').textContent).toBe(PLAN_LOCKED_HINT)
     expect(PLAN_LOCKED_HINT).toBe('Start a program to plan your weeks.')
     expect(onSelect).not.toHaveBeenCalled()
+    // PR2's arrow at the tab: a 12 px square turned 45 degrees, hidden from a screen reader, inside the bubble
+    const arrow = screen.getByRole('status').querySelector('[aria-hidden="true"]') as HTMLElement
+    expect(arrow).not.toBeNull()
+    expect(arrow.style.width).toBe('12px')
+    expect(arrow.style.height).toBe('12px')
+    expect(arrow.style.transform).toBe('rotate(45deg)')
 
     fireEvent.click(programs())
     expect(onSelect).toHaveBeenCalledTimes(1)

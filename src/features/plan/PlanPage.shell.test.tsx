@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { format, startOfWeek, subWeeks } from 'date-fns'
 import type { Mesocycle, Program, SequenceItem, WeekPlan, WorkoutDay } from '../../types'
@@ -255,6 +256,26 @@ describe('START\'s one-shot ?week=1', () => {
     expect(planWeekMutate).not.toHaveBeenCalled()
   })
 
+  it('the FIRST render is already on that week: no frame of the current week before an effect moves it (a server render runs no effect)', () => {
+    weekdayRun(3)
+    const html = renderToString(ui('/plan?week=1'))
+    const opened = new DOMParser().parseFromString(html, 'text/html').querySelector('[aria-current="true"]')
+    expect(opened?.getAttribute('data-week')).toBe('1')
+    // ... and without it, the first render is the current week
+    const plain = new DOMParser().parseFromString(renderToString(ui('/plan')), 'text/html').querySelector('[aria-current="true"]')
+    expect(plain?.getAttribute('data-week')).toBe('3')
+  })
+
+  it('a sequence run\'s FIRST render is already on cycle 1 too, not on its current cycle (a server render runs no effect)', () => {
+    sequenceRun(3)
+    const html = renderToString(ui('/plan?week=1'))
+    const opened = new DOMParser().parseFromString(html, 'text/html').querySelector('[aria-current="true"]')
+    expect(opened?.getAttribute('data-week')).toBe('1')
+    // ... and without it, the first render is the current cycle
+    const plain = new DOMParser().parseFromString(renderToString(ui('/plan')), 'text/html').querySelector('[aria-current="true"]')
+    expect(plain?.getAttribute('data-week')).toBe('3')
+  })
+
   it('without it, Plan opens on the current week (week 3 of the same run): the param is what moves it', () => {
     weekdayRun(3)
     render(ui('/plan'))
@@ -321,6 +342,14 @@ describe('START\'s one-shot ?week=1', () => {
     render(ui('/plan?week=1', { initialTab: 'programs' }))
     expect(programsTab()).toBeNull()
     expect(openTile()).toBe('1')
+  })
+
+  it.each(['0', '-1', 'abc', ''])('?week=%s is no week for a page opened on PROGRAMS either: it stays there (a junk parameter must not take the tab away), and the param is taken out', (value) => {
+    weekdayRun(3)
+    render(ui(`/plan?week=${encodeURIComponent(value)}`, { initialTab: 'programs' }))
+    expect(programsTab()).not.toBeNull()
+    expect(document.querySelector('[data-week]')).toBeNull()
+    expect(at()).toBe('AT /plan')
   })
 
   it('with no program running yet (the run list not read again) it does not draw a week for a run that isn\'t there: PROGRAMS, until the run is', () => {

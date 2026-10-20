@@ -61,6 +61,8 @@ export default function ConfirmDialog({
             letterSpacing: '0.5px',
             color: 'var(--text-primary)',
             marginBottom: 12,
+            // a name typed by the person ("Finish [name]?", PR6) may have no break in it: it wraps inside the dialog (Chromium: it ran out of it)
+            overflowWrap: 'anywhere',
           }}
         >
           {title}

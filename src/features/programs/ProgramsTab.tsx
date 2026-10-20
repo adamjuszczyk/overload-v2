@@ -303,7 +303,7 @@ export default function ProgramsTab({ onTab }: ProgramsTabProps) {
               <span>The program stays saved, so you can start it again. Every week stays in History.</span>
               {finishError && (
                 <span role="alert" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em', color: 'var(--error)' }}>{`Couldn't finish ${activeMeso.name}.`}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em', color: 'var(--error)', overflowWrap: 'anywhere' }}>{`Couldn't finish ${activeMeso.name}.`}</span>
                   <span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{errorReason(finishError.reason, offline)}</span>
                 </span>
               )}

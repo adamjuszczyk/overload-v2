@@ -26,6 +26,12 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
+  it('a title with a word that has no break in it (a name the person typed) wraps inside the dialog: overflow-wrap anywhere (Chromium saw it run out of the card)', () => {
+    const long = `Finish ${'B'.repeat(80)}?`
+    render_({ title: long })
+    expect(screen.getByText(long).style.overflowWrap).toBe('anywhere')
+  })
+
   it('while pending the confirm button is disabled and says "…" unless it is given a pendingLabel (the default every caller had)', () => {
     render_({ isPending: true })
     const button = screen.getByRole('button', { name: '…' }) as HTMLButtonElement

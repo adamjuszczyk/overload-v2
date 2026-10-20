@@ -81,10 +81,33 @@ describe('PR8 — start a program (none running)', () => {
 
     expect(screen.getByRole('dialog', { name: 'Start a program' })).toBeTruthy()
     expect(screen.getByText('(OPTIONAL)')).toBeTruthy()
+    expect(nameInput().labels?.[0]?.textContent).toBe('NAME (OPTIONAL)')
     expect(screen.getByRole('radiogroup', { name: 'Program' })).toBeTruthy()
+    expect(screen.getByText('PROGRAM')).toBeTruthy() // the list's label, in capitals, singular, as PR8 has it
     expect(screen.getAllByRole('radio').map((r) => [r.textContent, r.getAttribute('aria-checked')])).toEqual([['Push Pull Legs', 'true'], ['Upper / Lower', 'false'], ['Strength', 'false']])
     expect(startButton().textContent).toBe('START PROGRAM')
     expect(screen.queryByText(/Starting it finishes/)).toBeNull()
+  })
+
+  it('two saved programs with one name are two options: exactly one is checked, and the one picked is the one started', async () => {
+    const TWIN = program({ id: 'prog-ppl-2', name: 'Push Pull Legs', schedule: { ...NO_DAYS, wednesday: 'wd-ppl-2' } })
+    state.workoutDays['prog-ppl-2'] = [{ id: 'wd-ppl-2' }]
+    startRunMock.mockResolvedValue('meso-new')
+    renderSheet({ programs: [PPL, TWIN, UL], presetProgramId: 'prog-ppl-2' })
+
+    const checked = () => screen.getAllByRole('radio').map((r) => r.getAttribute('aria-checked'))
+    expect(checked()).toEqual(['false', 'true', 'false'])
+    fireEvent.click(startButton())
+    await waitFor(() => expect(startRunMock).toHaveBeenCalledWith({ name: 'Push Pull Legs', programId: 'prog-ppl-2' }))
+    cleanup()
+    startRunMock.mockClear()
+
+    // picking the twin by a tap picks the twin, not the first of that name
+    renderSheet({ programs: [PPL, TWIN, UL], presetProgramId: 'prog-ul' })
+    fireEvent.click(screen.getAllByRole('radio')[1])
+    expect(checked()).toEqual(['false', 'true', 'false'])
+    fireEvent.click(startButton())
+    await waitFor(() => expect(startRunMock).toHaveBeenCalledWith({ name: 'Push Pull Legs', programId: 'prog-ppl-2' }))
   })
 
   it('the program a row\'s START was tapped on starts picked', () => {
@@ -350,6 +373,11 @@ describe('PR10 — a start that failed shows the real reason', () => {
     expect(alert.style.position).toBe('fixed')
     expect(alert.style.top).toBe('16px')
     expect(Number(alert.style.zIndex)).toBeGreaterThan(45) // above BottomSheet's layer
+    // the board's alert icon, in the error colour, hidden from a screen reader (the words say it)
+    const icon = alert.querySelector('svg')
+    expect(icon).not.toBeNull()
+    expect(icon!.getAttribute('aria-hidden')).toBe('true')
+    expect((icon!.parentElement as HTMLElement).style.color).toBe('var(--error)')
   })
 })
 
@@ -446,5 +474,7 @@ describe('375 px', () => {
     }
     expect(offenders).toEqual([])
     expect((radio(LONG).firstElementChild as HTMLElement).style.overflowWrap).toBe('anywhere')
+    // the running program's name in PR9's line too: real Chromium found it running 697 px in a 341 px line (programs-pr9-long-name.html, the sheet check)
+    expect(screen.getByText(`Starting it finishes ${LONG}. Its weeks stay in History.`).style.overflowWrap).toBe('anywhere')
   })
 })

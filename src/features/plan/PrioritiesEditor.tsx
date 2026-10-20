@@ -89,14 +89,11 @@ export default function PrioritiesEditor() {
   }
 
   function handleDone() {
-    // Same "pop back to wherever this was entered from" as
-    // MesoPrioritiesPage.tsx's handleDone — this screen has one entry point
-    // (Plan's header), but a hard reload has no in-app history to pop into.
-    if (window.history.state && window.history.state.idx > 0) {
-      navigate(-1)
-    } else {
-      navigate('/plan')
-    }
+    // Chunk 65: this screen has one entry point, the FOCUS and DON'T CARE rows of PROGRAMS' CURRENT PROGRAM card, and the arrow is "Back to
+    // Programs" (boards PR5 and 12). The PROGRAMS tab is `/program` (Plan opened on PROGRAMS); popping back to `/plan` would open Plan's week
+    // instead, because the tab Plan was on is its state, not its address. It replaces this screen's entry, so the history doesn't keep a way
+    // back into it.
+    navigate('/program', { replace: true })
   }
 
   const loading = mesosLoading || rowsLoading

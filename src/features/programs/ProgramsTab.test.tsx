@@ -22,7 +22,6 @@ const MONDAY = '2026-10-05'
 const day = (offset: number) => format(addDays(parseISO(MONDAY), offset), 'yyyy-MM-dd')
 const TODAY = day(16) // a Wednesday, in the run's third week
 
-interface Read<T> { data: T | undefined; isLoading?: boolean; isError?: boolean; error?: unknown }
 const state = vi.hoisted(() => ({
   mesos: { data: [] as unknown[] } as { data: unknown[] | undefined; isLoading?: boolean; isError?: boolean; error?: unknown },
   saved: { data: [] as unknown[] } as { data: unknown[] | undefined; isLoading?: boolean; isError?: boolean; error?: unknown },
@@ -105,7 +104,8 @@ const SAVED_PPL = program({ id: 'prog-ppl', name: 'Push Pull Legs', schedule: FI
 const SAVED_UL = program({ id: 'prog-ul', name: 'Upper / Lower', schedule: FOUR_DAYS, planningType: 'week_dependent' })
 // the same NAME as the running program, a different program: it is not the one that runs
 const SAVED_SAME_NAME = program({ id: 'prog-ppl-2', name: 'Push Pull Legs', schedule: FOUR_DAYS, planningType: 'week_dependent' })
-const RUN_COPY = program({ id: 'prog-run', name: 'Push Pull Legs', kind: 'run', schedule: FIVE_DAYS, planningType: 'stable' })
+// the run's own copy has FOUR weekdays where the saved program it came from has five (CHANGE THE PROGRAM moved days since the run started): the card's line comes from the copy
+const RUN_COPY = program({ id: 'prog-run', name: 'Push Pull Legs', kind: 'run', schedule: FOUR_DAYS, planningType: 'stable' })
 
 const ACTIVE: Mesocycle = { id: 'meso-active', userId: 'user-1', name: 'Push Pull Legs', programId: 'prog-run', sourceProgramId: 'prog-ppl', status: 'active', startDate: MONDAY, endDate: null, createdAt: '2026-10-05T08:00:00Z' }
 const FINISHED_1: Mesocycle = { id: 'meso-fin-1', userId: 'user-1', name: 'Push Pull Legs', programId: 'prog-old-1', status: 'completed', startDate: '2026-09-14', endDate: '2026-10-04', createdAt: '2026-09-14T08:00:00Z' }
@@ -139,15 +139,16 @@ function Probe() {
 }
 const at = () => screen.getByTestId('at').textContent
 
+const tabUi = () => (
+  <MemoryRouter initialEntries={['/plan']}>
+    <Routes>
+      <Route path="/plan" element={<><ProgramsTab onTab={onTab} /><Probe /></>} />
+      <Route path="*" element={<Probe />} />
+    </Routes>
+  </MemoryRouter>
+)
 function renderTab() {
-  return render(
-    <MemoryRouter initialEntries={['/plan']}>
-      <Routes>
-        <Route path="/plan" element={<><ProgramsTab onTab={onTab} /><Probe /></>} />
-        <Route path="*" element={<Probe />} />
-      </Routes>
-    </MemoryRouter>,
-  )
+  return render(tabUi())
 }
 
 const section = (label: string) => screen.getByText(label).parentElement as HTMLElement
@@ -195,7 +196,7 @@ describe('PR1 — a program running', () => {
     expect(within(card).getByText('WEEK 3')).toBeTruthy()
     expect(within(card).getByText('Push Pull Legs')).toBeTruthy()
     expect(within(card).getByText('Started Oct 5, 2026')).toBeTruthy()
-    expect(within(card).getByText('Weekdays · stable · 5 days a week')).toBeTruthy()
+    expect(within(card).getByText('Weekdays · stable · 4 days a week')).toBeTruthy() // the run's copy, not the saved program's five
     expect(within(card).getByText('FOCUS')).toBeTruthy()
     expect(within(card).getByText("DON'T CARE")).toBeTruthy()
     expect(within(card).getByText('EDIT PROGRAM')).toBeTruthy()
@@ -204,6 +205,22 @@ describe('PR1 — a program running', () => {
     // in the board's order
     const order = ['WEEK 3', 'Started Oct 5, 2026', 'FOCUS', "DON'T CARE", 'EDIT PROGRAM', 'FINISH'].map((text) => within(card).getByText(text))
     for (let i = 0; i < order.length - 1; i++) expect(order[i].compareDocumentPosition(order[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('the week chip is the accent with the near-black on it, and NEW PROGRAM (PR3) the same: text on the accent is --on-accent (RULES), asserted at the screen', () => {
+    running()
+    renderTab()
+    const chip = within(section('CURRENT PROGRAM')).getByText('WEEK 3')
+    expect(chip.style.background).toBe('var(--accent)')
+    expect(chip.style.color).toBe('var(--on-accent)')
+    cleanup()
+
+    state.mesos = { data: [] }
+    state.saved = { data: [] }
+    renderTab()
+    const button = screen.getByRole('button', { name: 'NEW PROGRAM' })
+    expect(button.style.background).toBe('var(--accent)')
+    expect(button.style.color).toBe('var(--on-accent)')
   })
 
   it('FOCUS and DON\'T CARE are summarised from the RUN\'s marks, not the saved program\'s (the two differ in this world)', () => {
@@ -299,7 +316,7 @@ describe('PR1 — a program running', () => {
     expect(screen.getByText('ROTATION · CYCLE 2')).toBeTruthy()
     expect(within(section('CURRENT PROGRAM')).getByText('Sequence · week-dependent')).toBeTruthy()
     expect(within(section('CURRENT PROGRAM')).queryByText('WEEK 3')).toBeNull()
-    expect(calls.cycle.at(-1)).toEqual(['meso-active', 'prog-run'])
+    expect(calls.cycle[calls.cycle.length - 1]).toEqual(['meso-active', 'prog-run'])
     cleanup()
 
     // while the cycle isn't known: no chip, no cycle in the line (it is read, not guessed)
@@ -531,11 +548,19 @@ describe('a read that failed with nothing to show (SPEC Errors 15)', () => {
     expect(plan().hasAttribute('aria-disabled')).toBe(false)
   })
 
-  it('an error with no message says "Something went wrong." (P1.2-5)', () => {
+  it.each([
+    [false, 'Something went wrong.'],
+    [true, 'You may be offline.'],
+  ])('an error with no message, the phone offline: %s, says "%s" (P1.2-5; the offline wording only when the phone is)', (offline, line) => {
     running()
     state.mesos = { data: undefined, isError: true, error: {} }
-    renderTab()
-    expect(within(screen.getByRole('alert')).getByText('Something went wrong.')).toBeTruthy()
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(!offline)
+    try {
+      renderTab()
+      expect(within(screen.getByRole('alert')).getByText(line)).toBeTruthy()
+    } finally {
+      onLine.mockRestore()
+    }
   })
 
   it('a refetch that failed but left data on screen shows the data, not the error (the earlier answer is still the answer)', () => {
@@ -601,6 +626,76 @@ describe('FINISH — PR6 and PR7', () => {
     })
 
     await waitFor(() => expect(completeMesoMock).toHaveBeenCalledTimes(1))
+  })
+
+  it.each([
+    [false, 'Something went wrong.'],
+    [true, 'You may be offline.'],
+  ])('a failed finish with no message, the phone offline: %s, says "%s" under "Couldn\'t finish [name]."', async (offline, line) => {
+    running()
+    completeMesoMock.mockRejectedValue({})
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(!offline)
+    try {
+      renderTab()
+      fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+      fireEvent.click(within(screen.getByText('Finish Push Pull Legs?').parentElement!.parentElement!).getByRole('button', { name: 'FINISH' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(within(alert).getByText("Couldn't finish Push Pull Legs.")).toBeTruthy()
+      expect(within(alert).getByText(line)).toBeTruthy()
+    } finally {
+      onLine.mockRestore()
+    }
+  })
+
+  it('a run name with no break in it wraps in the question and in the failure line (Chromium saw both run out of the dialog)', async () => {
+    running()
+    const LONG = 'B'.repeat(80)
+    state.mesos = { data: [{ ...ACTIVE, name: LONG }, FINISHED_1, FINISHED_2] }
+    completeMesoMock.mockRejectedValue({ message: 'R'.repeat(120) })
+    renderTab()
+    fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+    const title = screen.getByText(`Finish ${LONG}?`)
+    expect(title.style.overflowWrap).toBe('anywhere')
+
+    fireEvent.click(within(title.parentElement!.parentElement!).getByRole('button', { name: 'FINISH' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText(`Couldn't finish ${LONG}.`).style.overflowWrap).toBe('anywhere')
+    expect(within(alert).getByText('R'.repeat(120)).style.overflowWrap).toBe('anywhere')
+  })
+
+  it('a retry clears the earlier error at once, while it is out: the dialog is not left saying the last try failed', async () => {
+    running()
+    completeMesoMock.mockRejectedValueOnce({ message: 'first failure' })
+    renderTab()
+    fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+    const confirm = () => within(screen.getByText('Finish Push Pull Legs?').parentElement!.parentElement!).getByRole('button', { name: 'FINISH' })
+    fireEvent.click(confirm())
+    expect(await screen.findByText('first failure')).toBeTruthy()
+
+    completeMesoMock.mockReturnValueOnce(new Promise(() => undefined)) // never answers: the retry stays out
+    fireEvent.click(confirm())
+
+    expect(screen.queryByText('first failure')).toBeNull()
+    expect(completeMesoMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('after a failed finish was cancelled, FINISH on the card asks again with a clean question: no error left in it', async () => {
+    running()
+    completeMesoMock.mockRejectedValueOnce({ message: 'first failure' })
+    renderTab()
+    fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+    fireEvent.click(within(screen.getByText('Finish Push Pull Legs?').parentElement!.parentElement!).getByRole('button', { name: 'FINISH' }))
+    expect(await screen.findByText('first failure')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    expect(screen.queryByText('Finish Push Pull Legs?')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'FINISH' }))
+
+    expect(screen.getByText('Finish Push Pull Legs?')).toBeTruthy()
+    expect(screen.queryByText('first failure')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('a failed finish keeps the dialog open and says "Couldn\'t finish [name]." with the real reason (a Supabase error is no Error object)', async () => {
@@ -684,6 +779,36 @@ describe('the sheets the tab opens', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.getByText('EDIT PROGRAM')).toBeTruthy()
+  })
+
+  it('the start sheet closes with its close button too, and the tab is as it was', () => {
+    running()
+    renderTab()
+    fireEvent.click(within(programRow('prog-ul')).getByText('START'))
+    expect(screen.getByRole('dialog', { name: 'Start a new program' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('EDIT PROGRAM')).toBeTruthy()
+    expect(startRunMock).not.toHaveBeenCalled()
+  })
+
+  it('PR12 (the saved programs gone under an open start sheet): CREATE PROGRAM puts the start sheet away and opens the New program sheet', () => {
+    running()
+    const view = renderTab()
+    fireEvent.click(within(programRow('prog-ul')).getByText('START'))
+    expect(screen.getByRole('dialog', { name: 'Start a new program' })).toBeTruthy()
+
+    state.saved = { data: [] } // deleted elsewhere while the sheet was open
+    view.rerender(tabUi())
+    expect(screen.getByText('Create a program first.')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'CREATE PROGRAM' }))
+
+    expect(screen.getByRole('dialog', { name: 'New program' })).toBeTruthy()
+    expect(screen.queryByRole('dialog', { name: /^Start a/ })).toBeNull()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
   })
 })
 
