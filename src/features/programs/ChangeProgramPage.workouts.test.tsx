@@ -458,6 +458,8 @@ describe.each([
   })
 
   // Two single exercises removed (never a superset's member, which UNDO puts next to the rest of its block) and put back in the other order.
+  // Not tested, on purpose: a single exercise put back where a superset now stands (the draft puts it between two of its members and SAVE
+  // refuses the list); that is the builder's finding in DECISIONS 176's report, and the draft test's walk leaves such removals alone too.
   const UNDOS: Record<string, [string, string]> = {
     push: ['pe-bench', 'pe-pushdown'],
     pull: ['pe-bcurl', 'pe-shrug'],
