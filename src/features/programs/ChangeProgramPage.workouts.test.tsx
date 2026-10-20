@@ -324,6 +324,8 @@ const withRoutine = (e: Edit, wkId: string, items: Array<{ id: string | null; bo
 
 // ─── The world, as the screen draws it ────────────────────────────────────────────────────────────────────────────────────
 
+const AFTER_ROUND_LINE: Record<string, string | null> = { push: 'Rest 1:30 after each round', pull: 'Rest 2:00 after each round', legs: null, arms: 'Rest 1:00 after each round' }
+
 describe('the world: four workouts, no two alike', () => {
   it('the chips, and for each workout its cards in order, its superset, its routine', async () => {
     await open()
@@ -335,6 +337,9 @@ describe('the world: four workouts, no two alike', () => {
       expect(cardNames()).toEqual(wk.exercises.map((x) => x.name))
       expect(routineBodies()).toEqual([...wk.routine])
       expect(blockHeaders()).toEqual(['SUPERSET A'])
+      // the header says its own block's rest after each round, or nothing when the block has none
+      const rest = screen.queryByText(/ after each round$/)
+      expect(rest ? rest.textContent : null).toBe(AFTER_ROUND_LINE[wk.id])
     }
     // no two workouts alike in how much they hold: 4 exercises and 3 items, 5 and 2, 4 and 4, 5 and 3
     expect(UNEVEN_WORKOUTS.map((wk) => [wk.exercises.length, wk.routine.length])).toEqual([[4, 3], [5, 2], [4, 4], [5, 3]])
@@ -367,6 +372,7 @@ describe.each([
     for (const x of wk.exercises) expect(within(sheet).queryByRole('button', { name: `Add ${x.name}` })).toBeNull()
     for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) expect(within(sheet).getByRole('button', { name: `Add ${other.exercises[0].name}` })).toBeTruthy()
     fireEvent.click(within(sheet).getByRole('button', { name: 'Add Plank' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(cardNames()).toEqual([...wk.exercises.map((x) => x.name), 'Plank'])
     expect(screen.getByText('CORE · NEW')).toBeTruthy()
     for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) {
@@ -423,7 +429,14 @@ describe.each([
     goTo(wk)
     click(`Remove ${gone.name}`)
     expect(screen.getByText(`Remove ${gone.name} from week 2?`)).toBeTruthy()
+    // the confirm's CANCEL takes it away and removes nothing
+    inConfirm(`Remove ${gone.name} from week 2?`, 'CANCEL')
+    expect(screen.queryByText(`Remove ${gone.name} from week 2?`)).toBeNull()
+    expect(cardNames()).toEqual(wk.exercises.map((x) => x.name))
+    expect(screen.queryByText('REMOVED FROM WEEK 2')).toBeNull()
+    click(`Remove ${gone.name}`)
     click('REMOVE')
+    expect(screen.queryByText(`Remove ${gone.name} from week 2?`)).toBeNull()
     expect(screen.getByText('REMOVED FROM WEEK 2')).toBeTruthy()
     expect(cardNames()).toEqual(wk.exercises.filter((x) => x.row !== gone.row).map((x) => x.name))
     // the struck-through line belongs to this workout: the others show none, and this one shows it again when it is back
@@ -504,6 +517,44 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
       expect(blockHeaders()).toEqual(['SUPERSET A'])
       await saveAndExpect(before, (e) => withBlock(e, wk.id, [row, ...block], joins!))
     }
+  })
+
+  it('the ⋯ of an exercise left alone in its superset is a single exercise’s: no WITHIN ROUND, no AFTER ROUND', async () => {
+    await open()
+    const wk = UNEVEN_WORKOUTS[0]
+    goTo(wk)
+    click('Overhead Press: rest, tempo, unit')
+    // a member's sheet: its workout and superset in the eyebrow, and the two rests of the block
+    const member = dialog('Overhead Press')
+    expect(within(member).getByText('PUSH · SUPERSET A')).toBeTruthy()
+    expect(within(member).getByRole('button', { name: 'Within round: more' })).toBeTruthy()
+    closeDialog('Overhead Press')
+    click('Remove Overhead Press')
+    click('REMOVE')
+    click('Lateral Raise: rest, tempo, unit')
+    const alone = dialog('Lateral Raise')
+    expect(within(alone).getByText('PUSH')).toBeTruthy()
+    expect(within(alone).queryByRole('button', { name: 'Within round: more' })).toBeNull()
+    expect(within(alone).queryByRole('button', { name: 'After round: more' })).toBeNull()
+    expect(within(alone).getByText(/Swap, superset and remove are on the exercise card\./)).toBeTruthy()
+  })
+
+  it('a second superset in a workout is SUPERSET B, in its header, its ⋯ and its UNLINK, and UNLINK B frees its members alone', async () => {
+    const wk = UNEVEN_WORKOUTS[2]
+    await open()
+    const before = world
+    goTo(wk)
+    click('Link Back Squat with the exercise below')
+    // the new block is the first in the list, the old one (Leg Curl and Calf Raise) the second
+    expect(blockHeaders()).toEqual(['SUPERSET A', 'SUPERSET B'])
+    click('Leg Curl: rest, tempo, unit')
+    const sheet = dialog('Leg Curl')
+    expect(within(sheet).getByText('LEGS · SUPERSET B')).toBeTruthy()
+    expect(within(sheet).getByText(/^The two rests belong to superset B, so they change it for Calf Raise too\./)).toBeTruthy()
+    closeDialog('Leg Curl')
+    click('Unlink superset B')
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    await saveAndExpect(before, (e) => withBlock(withNewBlock(e, wk.id, ['pe-squat', 'pe-rdl']), wk.id, ['pe-lcurl', 'pe-calf'], null))
   })
 
   it.each(UNEVEN_WORKOUTS)('UNLINK in $name frees every member of its superset, in this workout alone', async (wk) => {
@@ -661,11 +712,35 @@ describe('order', () => {
       })
       expect({ from, to, order: cardKeys() }).toEqual({ from, to, order })
     }
+    // a drag that has ended is over: a pointer event after it moves nothing and no card follows the pointer
+    await act(async () => {
+      window.dispatchEvent(pointer('pointermove', 900))
+      window.dispatchEvent(pointer('pointerup', 900))
+    })
+    expect(cardKeys()).toEqual(DRAGS[wk.id][1].order)
+    expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(0)
     for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) {
       goTo(other)
       expect(cardKeys()).toEqual(rowsOf(other))
     }
     await saveAndExpect(before, (e) => reorderTo(e, wk.id, DRAGS[wk.id][1].order))
+  })
+
+  it.each(UNEVEN_WORKOUTS)('a press of $name’s grip with a button other than the main one starts no drag', async (wk) => {
+    await open()
+    goTo(wk)
+    const grip = within(document.querySelectorAll('[data-unit-key]')[0] as HTMLElement).getAllByRole('button', { name: /^Reorder / })[0]
+    await act(async () => {
+      grip.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2, clientY: 40 }))
+      window.dispatchEvent(pointer('pointermove', 340))
+    })
+    expect(document.querySelectorAll('[style*="translateY"]')).toHaveLength(0)
+    await act(async () => {
+      window.dispatchEvent(pointer('pointerup', 340))
+    })
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    click('CANCEL')
+    expect(screen.queryByText('Discard your changes?')).toBeNull()
   })
 
   // MOVE UP / MOVE DOWN in the exercise's ⋯: one press of one, two of the other, and the button at the end of the list is disabled.
@@ -699,6 +774,7 @@ describe('order', () => {
     move(endButton)
     expect(cardKeys()).toEqual(afterSecond)
     closeDialog(nameOf(wk, row))
+    expect(screen.queryByRole('dialog')).toBeNull()
     for (const o of UNEVEN_WORKOUTS.filter((x) => x.id !== wk.id)) {
       goTo(o)
       expect(cardKeys()).toEqual(rowsOf(o))
@@ -945,6 +1021,27 @@ describe.each([
     expect(world.db.v2_workout_days.map((d) => d.name)).toEqual(UNEVEN_WORKOUTS.map((o) => (o.id === wk.id ? NAMES[wk.id] : o.name)))
   })
 
+  it('Escape, and a blank name, leave the workout as it is', async () => {
+    await open()
+    const wk = UNEVEN_WORKOUTS[2]
+    const chipsBefore = chips().map((b) => b.textContent)
+    goTo(wk)
+    click(`Rename ${wk.name}`)
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Typed' } })
+    fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Escape' })
+    expect(screen.queryByLabelText('Workout name')).toBeNull()
+    expect(chips().map((b) => b.textContent)).toEqual(chipsBefore)
+    click(`Rename ${wk.name}`)
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: '   ' } })
+    expect((screen.getByRole('button', { name: 'DONE' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
+    expect(screen.queryByLabelText('Workout name')).toBeNull()
+    expect(chips().map((b) => b.textContent)).toEqual(chipsBefore)
+    click('CANCEL')
+    expect(screen.queryByText('Discard your changes?')).toBeNull()
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
   it('switching workouts closes an open RENAME: the name box is not carried to another workout', async () => {
     await open()
     const [a, b] = [UNEVEN_WORKOUTS[1], UNEVEN_WORKOUTS[2]]
@@ -992,6 +1089,37 @@ describe('the warmup routine card starts afresh in each workout', () => {
     expect(routineBodies()).toEqual([...a.routine])
     click('CANCEL')
     expect(screen.queryByText('Discard your changes?')).toBeNull()
+  })
+})
+
+// ─── CANCEL and a change in any workout ───────────────────────────────────────────────────────────────────────────────────────────
+
+describe('CANCEL asks when any workout was changed, and not when the change was put back', () => {
+  it.each(UNEVEN_WORKOUTS)('a change in $name: CANCEL asks, DISCARD leaves and nothing is sent', async (wk) => {
+    await open()
+    goTo(wk)
+    click('+ ADD ITEM')
+    fireEvent.change(screen.getByLabelText('New warmup item'), { target: { value: 'Cat-cow, 10' } })
+    click('ADD')
+    goTo(UNEVEN_WORKOUTS.find((o) => o.id !== wk.id)!)
+    click('CANCEL')
+    expect(screen.getByText('Discard your changes?')).toBeTruthy()
+    inConfirm('Discard your changes?', 'DISCARD')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  it.each(UNEVEN_WORKOUTS)('a rename of $name put back is no change: CANCEL goes straight back and SAVE sends nothing', async (wk) => {
+    await open()
+    goTo(wk)
+    for (const to of ['Zed', wk.name]) {
+      click(`Rename ${to === 'Zed' ? wk.name : 'Zed'}`)
+      fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: to } })
+      fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
+    }
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
   })
 })
 
