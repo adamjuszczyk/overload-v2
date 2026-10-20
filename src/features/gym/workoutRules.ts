@@ -350,7 +350,10 @@ export interface OrderExercise {
    * read: a listed set's draft is named on its row (`draftKey`), which is how the screen finds it; a draft that no listed
    * set has (`localId`) is a set of its own, drawn in its draft's place with its draft's type (DECISIONS 161 and 174:
    * `values.type` and `values.place`, both required), so the set is still a row after a reload. A draft of a planned set,
-   * of a drop or of another exercise is ignored.
+   * of a drop or of another exercise is ignored. A draft's key names its exercise, not its card, so every card of an
+   * exercise is handed the same drafts (the session's, as the phone holds them), and of an exercise on two cards each draft
+   * is drawn on the one card that `drawsAdded` names (183's follow-up); a draft handed to one of them only is drawn there or
+   * nowhere.
    */
   drafts?: readonly HeldDraft[]
   /**

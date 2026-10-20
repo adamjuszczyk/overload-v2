@@ -109,8 +109,14 @@ export class Session {
     return other
   }
 
+  /**
+   * The session as the screen hands it to the rules: every card with the drafts the phone holds for the session (a draft's key
+   * names its exercise, not its card, so the phone can't tell which of two cards of one exercise a draft is for: the rules say).
+   * The card keeps each draft beside its entry, as `unloggedAdded` puts it; the screen hands them all.
+   */
   order() {
-    return orderOf(this.cards, this.blocks)
+    const drafts = this.cards.flatMap((c) => c.drafts ?? [])
+    return orderOf(this.cards.map((c) => ({ ...c, drafts })), this.blocks)
   }
 
   rows(): ResolvedRow[] {

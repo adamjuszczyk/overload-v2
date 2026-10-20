@@ -479,6 +479,23 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(nextAddedPlace(orderOf([card('lat', 'n'), own, swapped]), 'ex.dip', [])).toBe(5)
   })
 
+  it('a draft of a set of an exercise on two cards is drawn on one card, never on both and never on none, whichever card it is handed to (the screen hands every card the session\'s drafts)', () => {
+    // lat swapped into dip, which has a card of its own; a set added to dip's own card after the swap is logged, unlogged, reloaded
+    const s = lat('n n n', [1, 2], [card('dip', '')])
+    const m = s.swap('lat', 'dip')
+    const x = s.add('dip', 'X')
+    s.log(x)
+    s.unlog(x)
+    s.reload()
+    const rows = s.rows().filter((r) => r.added && r.kind !== 'stage' && r.localId === 'X')
+    expect(rows.map((r) => [r.exerciseKey, r.state, r.addedPlace])).toEqual([[m, 'unlogged', 2]])
+    // the same with the draft handed only to the card it was kept on, or only to the other: drawn on the swap's card, or nowhere
+    const draft = s.cards.flatMap((c) => c.drafts ?? [])
+    const handed = (key: string) => orderOf(s.cards.map((c) => ({ ...c, drafts: c.key === key ? draft : [] })))
+    expect(resolveRows(handed(m), s.server.logs).filter((r) => r.localId === 'X').map((r) => r.exerciseKey)).toEqual([m])
+    expect(resolveRows(handed('dip'), s.server.logs).filter((r) => r.localId === 'X')).toEqual([])
+  })
+
   it('183\'s follow-up: one exercise on two cards that no swap joins is numbered on each card on its own; a set of it that no list or record places is drawn on its first card (a reading: the words don\'t say which card)', () => {
     const second = { ...card('pressb', 'n n'), exerciseId: 'ex.press', name: 'Press again' }
     const a1 = addedLog('press', 1, { number: 3, place: 1 })
