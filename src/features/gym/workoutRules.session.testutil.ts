@@ -103,6 +103,7 @@ export class Session {
       slotOf: new Map(this.slotOf),
       old: new Map([...this.old].map(([k, v]) => [k, [...v]])),
       serial: this.serial,
+      clock: this.clock,
       lastCorrections: [],
     })
     return other
@@ -164,7 +165,9 @@ export class Session {
       const headLog_ = this.server.logs.find((l) => l.id === head.logId)
       if (headLog_ === undefined) throw new Error(`${key}: its set is not logged`)
       const taken = this.server.logs.filter((l) => l.parentSetId === headLog_.id).map((l) => l.stageIndex)
-      const log: SetLog = { ...base, ...values, ...more, id, exerciseId: headLog_.exerciseId, weekPlanSetId: null, parentSetId: headLog_.id, isDropset: true, stageIndex: Math.max(0, ...taken) + 1, setNumber: headLog_.setNumber, stageKind: null, isWarmup: false }
+      // the number its row shows, its set's (a set whose stored number the draw left after a set only this phone holds, 185 (c),
+      // shows another number than it stores)
+      const log: SetLog = { ...base, ...values, ...more, id, exerciseId: headLog_.exerciseId, weekPlanSetId: null, parentSetId: headLog_.id, isDropset: true, stageIndex: Math.max(0, ...taken) + 1, setNumber: row.number, stageKind: null, isWarmup: false, loggedAt: more.loggedAt ?? this.now() }
       this.server.insertLog(log)
       return log
     }
@@ -390,27 +393,67 @@ export class Session {
 
   private dropPhoneState(keepDrafts: boolean): NumberPatch[] {
     const rows = this.rows()
+    const placeOf = new Map<string, number | null>()
     for (const [cardKey, places] of this.places) {
       const next: string[] = []
       for (const key of places) {
         const row = rows.find((r) => r.key === key)!
-        if (!row.added) next.push(key)
-        else if (row.logId !== null) next.push(addedRowKey(cardKey, row.logId))
-        else if (keepDrafts && row.draftKey !== null) next.push(key)
+        const kept = !row.added ? key : row.logId !== null ? addedRowKey(cardKey, row.logId) : keepDrafts && row.draftKey !== null ? key : null
+        if (kept === null) continue
+        next.push(kept)
+        if (row.added) placeOf.set(kept, row.addedPlace)
       }
       this.places.set(cardKey, next)
       this.old.set(cardKey, this.old.get(cardKey)!.filter((k) => next.includes(k)))
     }
+    this.followLatestCard(placeOf)
     this.cards = this.cards.map((c) => ({ ...c, added: [], drafts: keepDrafts ? (c.drafts ?? []) : [] }))
     return this.draw()
+  }
+
+  /**
+   * With no list, a set of an exercise on two cards that no swap's record places can't be told apart by what the server holds
+   * (183's follow-up doesn't say which card it is on). The module draws it on the card that was the exercise's latest when it
+   * was added (its place says when: the card made by the last swap whose moved places are below it, else the exercise's own
+   * card); the sequence's record follows that reading, then keeps each card's sets with a place in place order.
+   */
+  private followLatestCard(placeOf: Map<string, number | null>): void {
+    const groups = new Map<string, OrderExercise[]>()
+    for (const c of this.cards) groups.set(c.exerciseId, [...(groups.get(c.exerciseId) ?? []), c])
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const since = group.map((c) => ({ key: c.key, since: c.swappedFrom === undefined ? 0 : Math.min(...c.swappedFrom.moved.map((m) => m.place)) }))
+      const latest = (place: number) => since.reduce<{ key: string; since: number } | undefined>((best, x) => (x.since < place && (best === undefined || x.since > best.since) ? x : best), undefined)!.key
+      for (const c of group) {
+        const keep: string[] = []
+        for (const key of this.places.get(c.key)!) {
+          const place = placeOf.get(key) ?? null
+          const to = place === null || c.swappedFrom?.moved.some((m) => m.place === place) ? c.key : latest(place)
+          if (to === c.key) keep.push(key)
+          else {
+            const moved = addedRowKey(to, key.slice(`added:${c.key}:`.length))
+            this.places.get(to)!.push(moved)
+            placeOf.set(moved, place)
+          }
+        }
+        this.places.set(c.key, keep)
+      }
+    }
+    for (const [cardKey, places] of this.places) {
+      const fixed = places.filter((k) => (placeOf.get(k) ?? null) === null)
+      const placed = places.filter((k) => (placeOf.get(k) ?? null) !== null).sort((a, b) => placeOf.get(a)! - placeOf.get(b)!)
+      this.places.set(cardKey, [...fixed, ...placed])
+    }
   }
 
   /** The corrections the last draw wrote, each with the number its log held before (178: only where they differ). */
   lastCorrections: Array<NumberPatch & { was: number }> = []
 
-  /** A logged time later than every log the session holds (63's re-log writes the time it happens: 184 (b)). */
+  /** The clock: each write happens a second after the one before (63's re-log writes the time it happens: 184 (b)). */
+  private clock = Date.parse('2026-10-12T18:00:00Z')
+
   private now(): string {
-    const latest = Math.max(Date.parse('2026-10-12T18:00:00Z'), ...this.server.logs.map((l) => Date.parse(l.loggedAt)))
-    return new Date(latest + 1000).toISOString()
+    this.clock += 1000
+    return new Date(this.clock).toISOString()
   }
 }

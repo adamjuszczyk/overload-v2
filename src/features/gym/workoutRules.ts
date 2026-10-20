@@ -251,8 +251,10 @@
 // - The stored `stage_index` of the drops left after a drop is deleted is not renumbered (rows read the
 //   drops by count, and `nextStageIndex` already allows gaps).
 // - A set of an exercise on two cards that no card's list names and no swap's record places (a log from another phone, or seen
-//   after a reload or a reopen, of a set added to one of them by hand) is drawn on the exercise's own card (183's follow-up
-//   says each card is numbered on its own, not which card such a set is on).
+//   after a reload or a reopen, of a set added to one of them by hand) is drawn on the card that was the exercise's latest when
+//   it was added (its place says when): a set added to a swap's card after the swap stays there, and one added to the
+//   exercise's other card after the swap is drawn on the swap's card (183's follow-up says each card is numbered on its own,
+//   not which card such a set is on).
 //
 // ─── Provisional, D31 (display wording where no board gives it) ───────────────────────────────────
 // A plain row is called "set 03" in the lock's question (the board names a superset member "A2"); a drop
@@ -836,13 +838,17 @@ function cardsOf(order: SessionOrder): OrderExercise[] {
  * Which card draws a set added to an exercise that is on more than one card (183's follow-up, Adam 2026-10-20: "The same
  * exercise on two cards in one session: each card is numbered on its own, as today's display does"): a set is drawn on one
  * card, so it has one row, one number and one log number to keep. It is the card whose list names it (its own id, or its log's),
- * else the card a swap moved it to (its place is in that card's `swappedFrom.moved`), else the exercise's own card: the first
- * that no swap made, else its first. On an exercise with one card that card draws every set added to it, as before.
+ * else the card a swap moved it to (its place is in that card's `swappedFrom.moved`), else (a reading: the words don't say) the
+ * card that was the exercise's latest when the set was added: places are given in the order sets are added, so the card made by
+ * the last swap whose moved places are below the set's, or else the exercise's own card (the first that no swap made); a set
+ * logged before 044 (no place) is the own card's. On an exercise with one card that card draws every set added to it, as before.
  */
 interface Owners {
   byId: Map<string, string>
   byPlace: Map<number, string>
   own: string
+  /** Each card of the exercise with the first place it was given: 0 for a card no swap made, its lowest moved place else. */
+  since: ReadonlyArray<{ key: string; since: number }>
 }
 
 /** What a swap for today did to the cards (183 (a)): the sets it moved away, which no card draws, and who draws what. */
@@ -892,7 +898,8 @@ function structureOf(cards: readonly OrderExercise[]): Structure {
       }
       for (const { place } of card.swappedFrom?.moved ?? []) claim(byPlace, place, card.key)
     }
-    owners.set(exerciseId, { byId, byPlace, own: (group.find((card) => card.swappedFrom === undefined) ?? group[0]).key })
+    const since = group.map((card) => ({ key: card.key, since: card.swappedFrom === undefined ? 0 : Math.min(...card.swappedFrom.moved.map((m) => m.place)) }))
+    owners.set(exerciseId, { byId, byPlace, own: (group.find((card) => card.swappedFrom === undefined) ?? group[0]).key, since })
   }
   return { owners, movedPlanned, movedAdded }
 }
@@ -902,7 +909,10 @@ function drawsAdded(structure: Structure, exercise: OrderExercise, id: string, p
   if (place !== null && structure.movedAdded.get(exercise.exerciseId)?.has(place) === true) return false
   const owners = structure.owners.get(exercise.exerciseId)
   if (owners === undefined) return true
-  return (owners.byId.get(id) ?? (place !== null ? owners.byPlace.get(place) : undefined) ?? owners.own) === exercise.key
+  const latest = (at: number): string | undefined =>
+    owners.since.reduce<{ key: string; since: number } | undefined>((best, card) => (card.since < at && (best === undefined || card.since > best.since) ? card : best), undefined)?.key
+  const owner = owners.byId.get(id) ?? (place === null ? owners.own : owners.byPlace.get(place) ?? latest(place) ?? owners.own)
+  return owner === exercise.key
 }
 
 /**
@@ -1069,18 +1079,16 @@ function numberedHeads(order: SessionOrder, session: SessionIndex): Numbered {
     if (heads.get(card.key)!.some((head) => head.added && (head.addedPlace === null || head.addedPlace < first))) continue
     parent.set(card.key, swap.fromKey)
   }
-  const children = new Map<string, string[]>()
-  for (const card of cards) {
-    const from = parent.get(card.key)
-    if (from !== undefined) children.set(from, [...(children.get(from) ?? []), card.key])
+  // A slot's cards in the order the screen draws them, top to bottom (a card a swap made is drawn after the card it replaced).
+  const rootOf = (key: string): string => {
+    const from = parent.get(key)
+    return from === undefined ? key : rootOf(from)
   }
   const slots = new Map<string, string[]>()
-  const walk = (key: string, list: string[]): string[] => {
-    list.push(key)
-    for (const child of children.get(key) ?? []) walk(child, list)
-    return list
+  for (const card of cards) {
+    const root = rootOf(card.key)
+    slots.set(root, [...(slots.get(root) ?? []), card.key])
   }
-  for (const card of cards) if (!parent.has(card.key)) slots.set(card.key, walk(card.key, []))
   for (const [slotKey, keys] of slots) {
     const all = keys.flatMap((key) => heads.get(key)!)
     let warmups = 0
