@@ -1,11 +1,10 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-20, chunk 46's sixth review: stopped under your rule, not merged.*
-- *Chunk 46 is stopped. Your rule for its sixth attempt was "If this attempt fails review on behaviour again, don't retry: stop 46 and write it up for Adam as a chunk to redraw", and it failed on behaviour: a set a swap for today moves shows 01 on the new exercise, where W5 and your 164 and 179 keep its number (03 after 01–02). 182 is the write-up: what 46 is for, what failed in each of its six attempts, and what a redraw needs.*
-- *Everything else your answers settle is right in the sixth attempt, executed in the review: 173's two bugs are fixed (two added Warmups are W1 and W2 and two REVIEW items; a set added after a reopen comes after the earlier ones), 174, 177 and 178 are built as you answered them, and your named break still fails the sequence test.*
-- *Your night answers are in: 175, 180 and 181 accepted as built, 176 yes. Night mode: one agent at a time.*
-- *What follows: 176's tests-only run (next, as you asked), then 52 onward; 58a–64 wait on 46's redraw.*
+*Rewritten at every boundary. Last: 2026-10-20, chunk 52's first review: not merged (missing proofs; a builder retry).*
+- *Chunk 52 (Plan's header: the week tiles, PLAN FORWARD, COPY, WEEK ⋯; Plan plans only the current week) was reviewed and not merged. What it does is right on staging's three runs, checked on the branch's real screens with staging's data, read only: each account's tiles for today, nothing planned by opening Plan or any tile, your boards' words, text on the accent near-black. But three of its write paths can be broken with every test still passing (which week WEEK ⋯ marks when a week ahead is open; the current week planned when it moves on while Plan is open; two reader tests that went with the old copy code), and a past cycle's lock line says PAST WEEK on a sequence run. A builder retry adds the tests (and the one word). Nothing is asked of you.*
+- *Chunk 46 is stopped (unchanged): 182 is the write-up for its redraw, with 183–185.*
+- *What follows: 52's retry, 176's tests-only run, then 65 onward; 58a–64 wait on 46's redraw. Night mode: one agent at a time.*
 
 Decisions:
 - **182** — how to redraw chunk 46. Recommended: (a), keep the sixth attempt's module as the base and change only what 183–185 decide, in one small chunk. Blocks: 58a–64 (not the chunks before 58a).
