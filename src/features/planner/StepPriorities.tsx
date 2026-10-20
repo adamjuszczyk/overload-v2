@@ -19,7 +19,12 @@ import MarkSelector from '../plan/MarkSelector'
 // instead of PrioritiesEditor's hardcoded "the active run" lookup, and with
 // no page header/back button of its own (the planner's own shell already
 // provides one — see PlannerPage.tsx).
-export default function StepPriorities({ programId }: { programId: string }) {
+//
+// Chunk 66 reuses it as a finished program's priorities editor (SPEC Programs and runs [1.2]: "A finished program's priorities stay
+// editable"; TASKS 66: "the planner's StepPriorities writer reused on the finished run's program id"), where `programId` is the run's own copy
+// and the planner's "OPTIONAL — SKIP IF YOU DON'T NEED IT" line has nothing to say: `showOptionalNote={false}` leaves it out. Nothing else
+// differs; the planner passes nothing and reads as before.
+export default function StepPriorities({ programId, showOptionalNote = true }: { programId: string; showOptionalNote?: boolean }) {
   const showToast = useToastStore((s) => s.show)
   const { data: rows, isLoading, isError } = useProgramPriorities(programId)
   const setMark = useSetPriorityMark(programId)
@@ -70,9 +75,11 @@ export default function StepPriorities({ programId }: { programId: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
-        OPTIONAL — SKIP IF YOU DON'T NEED IT
-      </p>
+      {showOptionalNote && (
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+          OPTIONAL — SKIP IF YOU DON'T NEED IT
+        </p>
+      )}
 
       {MUSCLE_GROUPS.map((group) => {
         const isExpanded = expanded.has(group)

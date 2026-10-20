@@ -249,27 +249,30 @@ function keptInOrder(before: readonly string[], after: readonly string[]): Set<s
   return kept
 }
 
+// One workout's changes in the order board PR14 lists them: what was added, then what changed (an exercise's set count, its warmups, its set
+// kinds, then what moved), then what was removed; each in the order of the exercises.
 function changesBetween(before: readonly ExerciseStructure[], now: readonly ExerciseStructure[]): { changes: Change[]; removed: ExerciseStructure[] } {
-  const changes: Change[] = []
+  const added: Change[] = []
+  const changed: Change[] = []
   const was = new Map(before.map((exercise) => [exercise.key, exercise]))
   const is = new Map(now.map((exercise) => [exercise.key, exercise]))
 
   for (const exercise of now) {
     const old = was.get(exercise.key)
     if (!old) {
-      changes.push({ sign: '+', text: `${exercise.name} added`, key: exercise.key })
+      added.push({ sign: '+', text: `${exercise.name} added`, key: exercise.key })
       continue
     }
     if (old.kinds.length !== exercise.kinds.length) {
-      changes.push({ sign: '~', text: `${exercise.name}: ${old.kinds.length} → ${exercise.kinds.length} ${plural(exercise.kinds.length, 'set', 'sets')}`, key: exercise.key })
+      changed.push({ sign: '~', text: `${exercise.name}: ${old.kinds.length} → ${exercise.kinds.length} ${plural(exercise.kinds.length, 'set', 'sets')}`, key: exercise.key })
     }
     if (old.warmups !== exercise.warmups) {
       // ours: the board draws no warmup change
-      changes.push({ sign: '~', text: `${exercise.name}: ${old.warmups} → ${exercise.warmups} ${plural(exercise.warmups, 'warmup set', 'warmup sets')}`, key: exercise.key })
+      changed.push({ sign: '~', text: `${exercise.name}: ${old.warmups} → ${exercise.warmups} ${plural(exercise.warmups, 'warmup set', 'warmup sets')}`, key: exercise.key })
     }
     for (let i = 0; i < Math.min(old.kinds.length, exercise.kinds.length); i++) {
       if (old.kinds[i] !== exercise.kinds[i]) {
-        changes.push({ sign: '~', text: `${exercise.name} set ${i + 1} is now ${KIND_PHRASE[exercise.kinds[i]]}`, key: exercise.key })
+        changed.push({ sign: '~', text: `${exercise.name} set ${i + 1} is now ${KIND_PHRASE[exercise.kinds[i]]}`, key: exercise.key })
       }
     }
   }
@@ -281,12 +284,11 @@ function changesBetween(before: readonly ExerciseStructure[], now: readonly Exer
   now.forEach((exercise, index) => {
     if (!was.has(exercise.key) || kept.has(exercise.key)) return
     const next = now[index + 1]
-    changes.push({ sign: '~', text: next ? `${exercise.name} moved before ${next.name}` : `${exercise.name} moved to the end`, key: exercise.key })
+    changed.push({ sign: '~', text: next ? `${exercise.name} moved before ${next.name}` : `${exercise.name} moved to the end`, key: exercise.key })
   })
 
   const removed = before.filter((exercise) => !is.has(exercise.key))
-  for (const exercise of removed) changes.push({ sign: MINUS, text: `${exercise.name} removed`, key: null })
-  return { changes, removed }
+  return { changes: [...added, ...changed, ...removed.map((exercise): Change => ({ sign: MINUS, text: `${exercise.name} removed`, key: null }))], removed }
 }
 
 // ─── The history ──────────────────────────────────────────────────────────────────────────────────────────────────────────

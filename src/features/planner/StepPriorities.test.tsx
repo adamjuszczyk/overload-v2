@@ -56,6 +56,15 @@ describe('StepPriorities — parameterised by this step\'s own programId (not th
     expect(screen.getByText('OPTIONAL — SKIP IF YOU DON\'T NEED IT')).toBeTruthy()
   })
 
+  it('chunk 66: a finished program\'s editor leaves the planner\'s "skip" line out and keeps everything else (the planner passes nothing and keeps it)', () => {
+    render(<StepPriorities programId="prog-1" showOptionalNote={false} />)
+    expect(screen.queryByText('OPTIONAL — SKIP IF YOU DON\'T NEED IT')).toBeNull()
+    for (const label of Object.values(MUSCLE_GROUP_LABELS)) expect(screen.getByText(label)).toBeTruthy()
+    cleanup()
+    render(<StepPriorities programId="prog-1" showOptionalNote />)
+    expect(screen.getByText('OPTIONAL — SKIP IF YOU DON\'T NEED IT')).toBeTruthy()
+  })
+
   it('expanding a group reveals its own subgroups', () => {
     render(<StepPriorities programId="prog-1" />)
     fireEvent.click(screen.getByText(MUSCLE_GROUP_LABELS.chest))

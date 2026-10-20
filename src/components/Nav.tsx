@@ -25,6 +25,9 @@ const coachTab = { to: '/coach', label: 'COACH', Icon: Sparkles } as const
 // Chunk 65 (TASKS-1.2: "the `/program` route renders Plan opened on PROGRAMS"; boards PR1-PR13b draw PLAN lit on every PROGRAMS frame): the page
 // at `/program` is Plan's PROGRAMS tab, so the PLAN tab is lit there too, though its link still opens `/plan` (which chooses the tab).
 const PLAN_ALSO_AT = '/program'
+// Chunk 66 (board PR14 draws PLAN lit too): a finished program, and its priorities editor, are screens of the PROGRAMS tab's own.
+const PLAN_ALSO_UNDER = '/program/finished/'
+const planAlsoLit = (pathname: string) => pathname === PLAN_ALSO_AT || pathname.startsWith(PLAN_ALSO_UNDER)
 
 export default function Nav() {
   const isOnline = useOnlineStatus()
@@ -94,7 +97,7 @@ export default function Nav() {
             to={to}
             className="flex-1 flex flex-col items-center gap-1 py-3 transition-colors"
             style={({ isActive }) => ({
-              color: isActive || (to === '/plan' && pathname === PLAN_ALSO_AT) ? 'var(--accent)' : 'var(--text-dim)',
+              color: isActive || (to === '/plan' && planAlsoLit(pathname)) ? 'var(--accent)' : 'var(--text-dim)',
               fontFamily: 'var(--font-mono)',
               fontSize: 8,
               letterSpacing: '1px',

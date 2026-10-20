@@ -58,24 +58,31 @@ export function useCompleteMeso() {
   })
 }
 
+// Chunk 66: DELETE THIS FINISHED PROGRAM (PR15) is its second caller (History's meso filter is the first), and it navigates to PROGRAMS the
+// moment the delete resolves. So, like START and FINISH (chunk 65): `networkMode: 'always'` (CONTEXT.md, Offline: every write mutation is;
+// deleting is online-only, so offline it fails with the real reason, SPEC Errors (15), instead of pausing for ever behind DELETING…), and the
+// invalidations are returned, so the mutation stays pending until the run list has been read again and PROGRAMS doesn't open on the list as
+// it was, with the deleted run still under FINISHED. A refetch that fails doesn't fail a delete that happened.
 export function useDeleteMeso() {
   return useMutation({
+    networkMode: 'always',
     mutationFn: (id: string) => deleteMeso(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: MESOS_KEY })
-      queryClient.invalidateQueries({ queryKey: ['v2_history'] })
-      // v2_sessions.mesocycle_id is `on delete set null`, not cascade — a
-      // deleted meso's sessions survive, just orphaned, so any exercise's
-      // already-cached e1rmSessions can keep tagging them with the
-      // now-deleted meso's id until this invalidates. Same gap class (and
-      // same fix) useDeleteSession/useCompleteSession already apply for the
-      // identical reason — found by adversarial review, generically more
-      // relevant now that ExerciseHistoryView.tsx reads v2_exerciseProgress
-      // as its primary data source, not a secondary one.
-      queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] })
-      queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] })
-      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] })
-      queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] })
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: MESOS_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['v2_history'] }),
+        // v2_sessions.mesocycle_id is `on delete set null`, not cascade — a
+        // deleted meso's sessions survive, just orphaned, so any exercise's
+        // already-cached e1rmSessions can keep tagging them with the
+        // now-deleted meso's id until this invalidates. Same gap class (and
+        // same fix) useDeleteSession/useCompleteSession already apply for the
+        // identical reason — found by adversarial review, generically more
+        // relevant now that ExerciseHistoryView.tsx reads v2_exerciseProgress
+        // as its primary data source, not a secondary one.
+        queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] }),
+        queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] }),
+        queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] }),
+        queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] }),
+      ]),
   })
 }
