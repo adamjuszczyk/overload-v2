@@ -472,7 +472,11 @@ describe('a draft of four workouts, edit by edit, against a model made with plai
     const s = start(unevenWorkoutsWorld())
     expect(s.edit.blocks.map((b) => b.id)).toEqual(['blk-push', 'blk-pull', 'blk-legs', 'blk-arms'])
     const withBlocks = (order: number[]): DraftState => ({ ...s, edit: { ...s.edit, blocks: order.map((i) => s.edit.blocks[i]) } })
-    for (const order of [[3, 2, 1, 0], [2, 0, 3, 1], [1, 0, 3, 2], [0, 2, 1, 3]]) {
+    // all 24 orders the four blocks could be read in
+    const permutations = (xs: number[]): number[][] => (xs.length <= 1 ? [xs] : xs.flatMap((x, i) => permutations([...xs.slice(0, i), ...xs.slice(i + 1)]).map((rest) => [x, ...rest])))
+    const orders = permutations([0, 1, 2, 3])
+    expect(orders).toHaveLength(24)
+    for (const order of orders) {
       expect({ order, same: draftContent(withBlocks(order)) === draftContent(s) }).toEqual({ order, same: true })
       expect(draftDiffers(withBlocks(order), s)).toBe(false)
     }

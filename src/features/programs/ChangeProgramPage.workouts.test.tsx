@@ -1092,6 +1092,20 @@ describe('the warmup routine writes to the workout shown', () => {
     await saveAndExpect(before, (e) => withRoutine(e, wk.id, routineOf(wk, wk.routine.map((_, i) => (i === at ? ([i, body] as const) : i)))))
   })
 
+  it('tapping an item to edit it closes its open ⋯: the menu is not there when the edit is done', async () => {
+    await open()
+    const wk = UNEVEN_WORKOUTS[2]
+    goTo(wk)
+    click(`${wk.routine[1]}: options`)
+    expect(screen.getByRole('button', { name: 'MOVE UP' })).toBeTruthy()
+    click(`Edit ${wk.routine[1]}`)
+    expect(screen.queryByRole('button', { name: 'MOVE UP' })).toBeNull()
+    fireEvent.change(screen.getByLabelText('Warmup item'), { target: { value: 'Bodyweight squat, 12' } })
+    fireEvent.keyDown(screen.getByLabelText('Warmup item'), { key: 'Enter' })
+    expect(routineBodies()).toEqual(wk.routine.map((r, i) => (i === 1 ? 'Bodyweight squat, 12' : r)))
+    expect(screen.queryByRole('button', { name: 'MOVE UP' })).toBeNull()
+  })
+
   // MOVE DOWN on one item and MOVE UP on another, from the item's ⋯; the bodies after each press are written out.
   interface Move {
     item: string
@@ -1142,10 +1156,12 @@ describe('the warmup routine writes to the workout shown', () => {
     expect(screen.getByText('Remove this item?')).toBeTruthy()
     // CANCEL keeps it; the second REMOVE takes it out
     inConfirm('Remove this item?', 'CANCEL')
+    expect(screen.queryByText('Remove this item?')).toBeNull()
     expect(routineBodies()).toEqual([...wk.routine])
     click(`${wk.routine[at]}: options`)
     click('REMOVE')
     inConfirm('Remove this item?', 'REMOVE')
+    expect(screen.queryByText('Remove this item?')).toBeNull()
     expect(routineBodies()).toEqual(wk.routine.filter((_, i) => i !== at))
     for (const other of UNEVEN_WORKOUTS.filter((o) => o.id !== wk.id)) {
       goTo(other)
@@ -1172,8 +1188,9 @@ describe.each([
     await open()
     goTo(wk)
     click(`Rename ${wk.name}`)
-    // the box opens on this workout's own name
+    // the box opens on this workout's own name, ready to type in
     expect((screen.getByLabelText('Workout name') as HTMLInputElement).value).toBe(wk.name)
+    expect(document.activeElement).toBe(screen.getByLabelText('Workout name'))
     fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: `  ${NAMES[wk.id]}  ` } })
     fireEvent.keyDown(screen.getByLabelText('Workout name'), { key: 'Enter' })
     expect(screen.queryByLabelText('Workout name')).toBeNull()
