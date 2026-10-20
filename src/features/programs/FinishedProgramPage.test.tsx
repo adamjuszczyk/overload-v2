@@ -414,6 +414,9 @@ describe('DELETE THIS FINISHED PROGRAM (PR15)', () => {
     press()
     expect(screen.getByText('Delete this finished program?')).toBeTruthy()
     expect(screen.getByText("Cut PPL, Jul 6 – Sep 13. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone.")).toBeTruthy()
+    // the destructive variant of the shared confirm (the board draws DELETE in the error colour), not the accent's
+    expect(confirm().getAttribute('style')).toContain('var(--error)')
+    expect(confirm().getAttribute('style')).not.toContain('var(--accent)')
     expect(deleteMock).not.toHaveBeenCalled()
   })
 

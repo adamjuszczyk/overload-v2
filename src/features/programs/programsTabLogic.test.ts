@@ -13,7 +13,9 @@ import {
   finishedProgramPath,
   finishedPrioritiesPath,
   legacyPrioritiesPath,
+  markLine,
   markSummary,
+  finishedWeekCount,
   plannerPath,
   programTypesLine,
   runNameFor,
@@ -125,6 +127,41 @@ describe('finishedMeta', () => {
 describe('startedLine', () => {
   it('PR1: "Started Oct 5, 2026"', () => {
     expect(startedLine('2026-10-05')).toBe('Started Oct 5, 2026')
+  })
+})
+
+// Chunk 66: PR14's PRIORITIES row says the two halves of PR1's FOCUS and DON'T CARE rows on one line.
+describe('markLine (PR14)', () => {
+  const mark = (tagType: StoredMark['tagType'], tagValue: string, value: StoredMark['mark']): StoredMark => ({ tagType, tagValue, mark: value, updatedAt: '2026-01-01T00:00:00Z' })
+
+  it('"Focus: chest, back · Don\'t care: calves": each half in lower case after its label, joined with a dot', () => {
+    const rows = [mark('muscle_group', 'back', 'focus'), mark('muscle_group', 'chest', 'focus'), mark('muscle_group', 'calves', 'dont_care')]
+    expect(markLine(rows)).toBe("Focus: chest, back · Don't care: calves")
+  })
+
+  it('a half with nothing in it is left out, and a run with no marks has no line at all (an unset feature shows nothing)', () => {
+    expect(markLine([mark('muscle_group', 'chest', 'focus')])).toBe('Focus: chest')
+    expect(markLine([mark('muscle_group', 'calves', 'dont_care')])).toBe("Don't care: calves")
+    expect(markLine([])).toBeNull()
+  })
+
+  it('a group with a subgroup marked otherwise reads as the planner says it, in lower case', () => {
+    const rows = [mark('muscle_group', 'chest', 'focus'), mark('muscle_subgroup', 'upper_chest', 'dont_care')]
+    expect(markLine(rows)).toBe("Focus: chest without upper chest · Don't care: upper chest")
+  })
+})
+
+// Chunk 66: the weeks of a finished program (P1.2-4), the number the FINISHED row and PR14's header both say.
+describe('finishedWeekCount', () => {
+  it('calendar weeks from the start date to the end date, Monday-anchored: a Monday to the Sunday after next is 2 weeks, to the Monday after that 3, and a Sunday to the next Monday is 2', () => {
+    expect(finishedWeekCount({ startDate: day(0), endDate: day(13) })).toBe(2)
+    expect(finishedWeekCount({ startDate: day(0), endDate: day(14) })).toBe(3)
+    expect(finishedWeekCount({ startDate: day(6), endDate: day(7) })).toBe(2)
+    expect(finishedWeekCount({ startDate: day(0), endDate: day(0) })).toBe(1)
+  })
+
+  it('never fewer than one, even for dates the wrong way round', () => {
+    expect(finishedWeekCount({ startDate: day(14), endDate: day(0) })).toBe(1)
   })
 })
 
