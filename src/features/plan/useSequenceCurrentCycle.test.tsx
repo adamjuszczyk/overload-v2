@@ -29,16 +29,16 @@ let errored = { items: false, plans: false, lastEvent: false }
 
 vi.mock('../programs/usePrograms', () => ({
   useWorkoutDays: () => ({ data: workoutDays }),
-  useSequenceItems: () => ({ data: sequenceItems, isError: errored.items }),
+  useSequenceItems: () => ({ data: sequenceItems, isError: errored.items, error: errored.items ? new Error('sequence down') : null }),
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 vi.mock('./useWeekPlan', () => ({
-  useAllWeekPlans: () => ({ data: allWeekPlans, isError: errored.plans }),
+  useAllWeekPlans: () => ({ data: allWeekPlans, isError: errored.plans, error: errored.plans ? new Error('plans down') : null }),
 }))
 vi.mock('../gym/useSession', () => ({
-  useLastDoneOrSkippedSession: () => ({ data: lastDoneOrSkipped, isError: errored.lastEvent }),
+  useLastDoneOrSkippedSession: () => ({ data: lastDoneOrSkipped, isError: errored.lastEvent, error: errored.lastEvent ? new Error('last event down') : null }),
   useSessionsInRange: () => ({ data: sessions }),
 }))
 
@@ -64,12 +64,15 @@ const activeMeso: Mesocycle = {
 function Probe() {
   const plan = useSequenceCurrentCycle('meso-1', 'prog-1')
   const today = useSequenceScheduler('2026-03-01', activeMeso, 'prog-1')
-  return <div data-testid="out">{JSON.stringify({ plan: plan.cycle, failed: plan.failed, today: today.result, todayLoading: today.isLoading })}</div>
+  const reason = plan.error === null ? null : (plan.error as Error).message
+  return <div data-testid="out">{JSON.stringify({ plan: plan.cycle, failed: plan.failed, reason, today: today.result, todayLoading: today.isLoading })}</div>
 }
 
 function read(): {
   plan: number | null
   failed: boolean
+  /** The `error` the hook returns (chunk 52: the load error's second line is the real reason): the failed read's message, else null. */
+  reason: string | null
   today: { type: string; next?: { weekNumber: number }; session?: Session } | null
   todayLoading: boolean
 } {
@@ -108,6 +111,7 @@ describe('useSequenceCurrentCycle — no cycle until its three reads have answer
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(false)
+    expect(out.reason).toBeNull()
   })
 
   it('the meso\'s week plans not loaded → null (the last event can\'t be placed without them; still loading, not failed)', () => {
@@ -117,6 +121,7 @@ describe('useSequenceCurrentCycle — no cycle until its three reads have answer
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(false)
+    expect(out.reason).toBeNull()
   })
 
   it('the last-event read not answered (undefined) → null (still loading, not failed)', () => {
@@ -126,6 +131,7 @@ describe('useSequenceCurrentCycle — no cycle until its three reads have answer
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(false)
+    expect(out.reason).toBeNull()
   })
 
   it('the last-event read answered "none" (null) is an answer: cycle 1', () => {
@@ -147,6 +153,7 @@ describe('useSequenceCurrentCycle — a read that failed with nothing to show', 
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(true)
+    expect(out.reason).toBe('sequence down')
   })
 
   it('the week plans read errored, no data → no cycle, failed', () => {
@@ -157,6 +164,7 @@ describe('useSequenceCurrentCycle — a read that failed with nothing to show', 
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(true)
+    expect(out.reason).toBe('plans down')
   })
 
   it('the last-event read errored, no data → no cycle, failed (never "cycle 1")', () => {
@@ -167,6 +175,7 @@ describe('useSequenceCurrentCycle — a read that failed with nothing to show', 
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(true)
+    expect(out.reason).toBe('last event down')
   })
 
   it('one read errored while another is still loading → failed at once (waiting for the other would show a spinner that can never end)', () => {
@@ -177,6 +186,18 @@ describe('useSequenceCurrentCycle — a read that failed with nothing to show', 
     const out = read()
     expect(out.plan).toBeNull()
     expect(out.failed).toBe(true)
+    expect(out.reason).toBe('last event down')
+  })
+
+  it('two reads errored: the reason is the first of them in the order sequence, week plans, last event', () => {
+    sequenceItems = undefined
+    allWeekPlans = undefined
+    lastDoneOrSkipped = undefined
+    errored = { items: false, plans: true, lastEvent: true }
+    expect(read().reason).toBe('plans down')
+    cleanup()
+    errored = { items: true, plans: true, lastEvent: true }
+    expect(read().reason).toBe('sequence down')
   })
 
   it('a read that failed on a REFETCH keeps its earlier data: the cycle is named from it and nothing is failed', () => {
@@ -187,6 +208,7 @@ describe('useSequenceCurrentCycle — a read that failed with nothing to show', 
     const out = read()
     expect(out.plan).toBe(3)
     expect(out.failed).toBe(false)
+    expect(out.reason).toBeNull()
   })
 })
 

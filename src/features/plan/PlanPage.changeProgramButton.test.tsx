@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { format, startOfWeek, subWeeks } from 'date-fns'
-import type { Mesocycle, Program, WeekPlan } from '../../types'
+import type { Mesocycle, Program, WeekPlan, WorkoutDay } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 
 // Chunk 51a (SPEC Plan screen [1.2] → Bottom: "CHANGE THE PROGRAM FROM WEEK N (or CYCLE N)"; TASKS 51a: "today's PlanPage gets 'CHANGE THE
@@ -14,6 +14,8 @@ import { EMPTY_SCHEDULE } from '../programs/programService'
 // The second display follow-up (DECISIONS 172 (j), Adam, 2026-10-19: "The button follows the screen.") reads the screen's own
 // statuses, so a session in progress is left as it is and the changes start the week after (the last describe below; the twin
 // that holds the button against the screen's rule box on the same rows is PlanPage.changeProgramButton.screenRule.test.tsx).
+// Chunk 52 (the header): the week body is drawn only for a week that has a plan and a run that has a schedule, and a past week, or the
+// week PLAN FORWARD opens, has no button (boards 1b, 1c), so the run here has one scheduled workout and every week the tests open is planned.
 
 // The run started two Mondays ago, so today is in week 3 whatever day this runs.
 const startDate = format(startOfWeek(subWeeks(new Date(), 2), { weekStartsOn: 1 }), 'yyyy-MM-dd')
@@ -37,12 +39,14 @@ const state = vi.hoisted(() => ({
   cycle: 3,
 }))
 
+const workoutDay: WorkoutDay = { id: 'wd-1', programId: 'prog-1', userId: 'user-1', name: 'Push Day', position: 0, exercises: [] }
+
 function makeProgram(over: Partial<Program> = {}): Program {
   return {
     id: 'prog-1',
     userId: 'user-1',
     name: 'Test Program',
-    schedule: EMPTY_SCHEDULE,
+    schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1' },
     workoutDays: [],
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
@@ -56,18 +60,30 @@ function plan(id: string, weekNumber: number): WeekPlan {
 }
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
-vi.mock('../programs/usePrograms', () => ({
+vi.mock('../programs/usePrograms', async () => ({
+  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [state.program], isLoading: false }),
-  useWorkoutDays: () => ({ data: [], isLoading: false }),
+  useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
-  useSequenceItems: () => ({ data: [] }),
+  useSequenceItems: () => ({ data: [{ id: 'si-0', userId: 'user-1', programId: 'prog-1', position: 0, workoutDayId: 'wd-1' }] }),
+}))
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+}))
+vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+// PLAN FORWARD's card (a week ahead that isn't planned) owns its mutation; nothing here opens one.
+vi.mock('./usePlanForward', () => ({
+  usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
+  useDefaultHasSets: () => ({ data: undefined }),
 }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => state.statuses }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false }) }))
 vi.mock('./useWeekPlan', () => ({
-  useWeekPlans: () => ({ data: [], isLoading: false }),
+  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: state.plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: state.plans, isLoading: false }),
   useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
@@ -78,8 +94,6 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
@@ -87,6 +101,7 @@ vi.mock('./useWeekPlan', () => ({
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile } = await import('./planMenus.testutil')
 
 beforeEach(() => {
   state.program = makeProgram()
@@ -162,21 +177,33 @@ describe('the CHANGE THE PROGRAM button at the foot of the week panel', () => {
     expect(screen.getByText('AT /plan/change')).toBeTruthy()
   })
 
-  it('a past week has no button (SPEC: "A past week has no COPY / VOLUME / WEEK row and no CHANGE THE PROGRAM button")', () => {
-    state.plans = [plan('w3-a', 3)]
+  it('a past week has no button (SPEC: "A past week has no COPY / VOLUME / WEEK row and no CHANGE THE PROGRAM button"), planned or not', () => {
+    state.plans = [plan('w2-a', 2), plan('w3-a', 3)]
     renderPlan()
     expect(screen.queryByRole('button', { name: BUTTON })).not.toBeNull()
-    fireEvent.click(screen.getByLabelText('Previous week'))
+    openWeekTile('WEEK 2') // planned, and past
     expect(screen.getByText('WEEK 2')).toBeTruthy()
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: BUTTON })).toBeNull()
+    openWeekTile('WEEK 1') // never planned, and past
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
     expect(screen.queryByRole('button', { name: BUTTON })).toBeNull()
   })
 
-  it('a week ahead has it, still naming the week the changes start in (the next session that is not done), not the viewed week', () => {
-    state.plans = [plan('w3-a', 3)]
+  it('a week ahead that is planned has it, still naming the week the changes start in (the next session that is not done), not the viewed week', () => {
+    state.plans = [plan('w3-a', 3), plan('w4-a', 4)]
     renderPlan()
-    fireEvent.click(screen.getByLabelText('Next week'))
+    openWeekTile('WEEK 4')
     expect(screen.getByText('WEEK 4')).toBeTruthy()
     expect(screen.getByRole('button', { name: BUTTON }).textContent).toBe('CHANGE THE PROGRAM FROM WEEK 3')
+  })
+
+  it('the week PLAN FORWARD opens has none: it is a card, not a week of sessions (board 1b)', () => {
+    state.plans = [plan('w3-a', 3)]
+    renderPlan()
+    openWeekTile('WEEK 4')
+    expect(screen.getByText('PLAN FORWARD')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: BUTTON })).toBeNull()
   })
 
   it('a sequence run says CYCLE and names the cycle', () => {

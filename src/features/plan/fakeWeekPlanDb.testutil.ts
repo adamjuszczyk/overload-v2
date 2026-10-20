@@ -1,14 +1,10 @@
-// An in-memory stand-in for the slice of Supabase the manual COPY path
-// touches (chunk 27's "copying ignores stored values" proofs): v2_week_plans
-// reads in the three select shapes weekPlanService.ts uses on that path
-// (the empty-slot discovery, the per-slot history, and the full source-plan
-// read), plus recording every write so a test can assert the exact payloads
-// copyOnePlanForward sent. Reads of any other table throw, so a test can't
-// pass by silently reading nothing (Checks that lied #11 / #33).
+// An in-memory stand-in for the slice of Supabase COPY's path touches (chunk 27's "copying ignores stored values" proofs, carried to
+// chunk 52's COPY sheet): v2_week_plans read in the one select shape weekPlanService.ts uses for a week's plans (the whole row with its
+// sets and exercises), plus recording every write, `v2_apply_ops` calls included, so a test can assert the exact request COPY sent.
+// A read of any other table, or in any other shape, throws, so a test can't pass by silently reading nothing (Checks that lied #11 / #33).
 //
-// Rows are given in the shape PostgREST returns (snake_case, children
-// nested), including the carry_* columns, because the point of those tests
-// is that a row WITH stored carry values still copies as its own content.
+// Rows are given in the shape PostgREST returns (snake_case, children nested), including the carry_* columns, because the point of
+// those tests is that a row WITH stored carry values still copies as its own content.
 
 export interface FakeCall {
   table: string
@@ -48,6 +44,12 @@ export interface FakeWeekPlanSetRow {
   is_dropset: boolean
   parent_week_plan_set_id: string | null
   stage_index: number
+  // The numbers COPY reads and writes; absent is the same as the column being null (the mapper's own fallback).
+  target_weight?: number | null
+  rep_min?: number | null
+  rep_max?: number | null
+  is_amrap?: boolean
+  is_warmup?: boolean
 }
 
 export interface FakeWeekPlanRow {
@@ -73,6 +75,7 @@ export function fakeWeekPlanExercise(
   programExerciseId: string,
   position: number,
   carry: { programExerciseId?: string | null; position?: number | null } = {},
+  exerciseId = `ex-of-${programExerciseId}`,
 ): FakeWeekPlanExerciseRow {
   return {
     id: `wpe-${weekPlanId}-${programExerciseId}`,
@@ -83,7 +86,7 @@ export function fakeWeekPlanExercise(
     carry_program_exercise_id: carry.programExerciseId ?? null,
     carry_position: carry.position ?? null,
     created_at: '2026-01-01T00:00:00Z',
-    v2_program_exercises: fakeProgramExercise(programExerciseId, `ex-of-${programExerciseId}`, position),
+    v2_program_exercises: fakeProgramExercise(programExerciseId, exerciseId, position),
   }
 }
 
@@ -129,30 +132,22 @@ export function fakeWeekPlan(
   }
 }
 
-export function createFakeSupabase(weekPlans: FakeWeekPlanRow[]) {
+// What the stand-in does when `v2_plan_week` is called, when a test wants it to plan: the rows it makes for that week (they are added to
+// the world, so the next read has them: the week appears), a failure (the call fails with it: Supabase's errors are plain objects with a
+// `message`, not `Error`s, and the real client throws what it was given), or either of them later (a promise, so a test can hold the call
+// open). Without it the call is only recorded and answers 0, as a week that was already planned does.
+export interface FakeFailure {
+  message: string
+  code?: string
+}
+export type FakePlanWeek = (week: number) => FakeWeekPlanRow[] | FakeFailure | Promise<FakeWeekPlanRow[] | FakeFailure>
+
+export function createFakeSupabase(weekPlans: FakeWeekPlanRow[], options: { planWeek?: FakePlanWeek } = {}) {
   const writes: FakeCall[] = []
   let insertCounter = 0
 
   function shape(row: FakeWeekPlanRow, select: string): unknown {
-    // copyFromPreviousWeek's discovery of this week's still-empty slots.
-    if (select.includes('v2_week_plan_exercises(id)')) {
-      return {
-        id: row.id,
-        workout_day_id: row.workout_day_id,
-        sequence_position: row.sequence_position ?? null,
-        v2_week_plan_exercises: row.v2_week_plan_exercises.map((e) => ({ id: e.id })),
-      }
-    }
-    // fetchPlannedWeekHistory: one slot's planned weeks, for the source search.
-    if (select.startsWith('week_number, is_deload, v2_week_plan_sets(id)')) {
-      return {
-        week_number: row.week_number,
-        is_deload: row.is_deload,
-        v2_week_plan_sets: row.v2_week_plan_sets.map((s) => ({ id: s.id })),
-      }
-    }
-    // The full read (fetchWeekPlans / fetchAllWeekPlansForMeso / the copy's
-    // own source-plan read): the whole row with its children.
+    // The full read (fetchWeekPlans / fetchAllWeekPlansForMeso): the whole row with its children.
     if (select.startsWith('*, v2_week_plan_sets(*)')) return JSON.parse(JSON.stringify(row))
     throw new Error(`fakeWeekPlanDb: unexpected v2_week_plans select: ${select}`)
   }
@@ -225,9 +220,19 @@ export function createFakeSupabase(weekPlans: FakeWeekPlanRow[]) {
     return chain
   }
 
+  // `v2_apply_ops` answers the number of ops it was given (the real function's answer: the ops it applied); `v2_plan_week` plans what
+  // `options.planWeek` says it does, and answers the number of sessions it made.
   function rpc(name: string, args: unknown) {
     writes.push({ table: 'rpc', method: name, args: [args] })
-    return Promise.resolve({ data: 0, error: null })
+    const given = args as { p_ops?: unknown[]; p_week_number?: number } | undefined
+    if (name === 'v2_plan_week' && options.planWeek) {
+      return Promise.resolve(options.planWeek(given?.p_week_number as number)).then((made) => {
+        if (!Array.isArray(made)) return { data: null, error: made }
+        weekPlans.push(...made)
+        return { data: made.length, error: null }
+      })
+    }
+    return Promise.resolve({ data: given?.p_ops?.length ?? 0, error: null })
   }
 
   return { client: { from, rpc }, writes }

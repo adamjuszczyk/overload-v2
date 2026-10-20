@@ -62,7 +62,8 @@ const plan = (weekNumber: number, workoutDayId: string, sequencePosition?: numbe
   ...(sequencePosition === undefined ? {} : { sequencePosition }),
   isDeload: false, notes: null, sets: [], exercises: [], createdAt: '2026-01-01T00:00:00Z',
 })
-const PLANS = [2, 3].flatMap((week) => [plan(week, 'wd-push'), plan(week, 'wd-leg')])
+// Weeks 1 to 3 are planned (the run is in its week 3): a week with no plan is a tile that draws no weekdays at all (chunk 52).
+const PLANS = [1, 2, 3].flatMap((week) => [plan(week, 'wd-push'), plan(week, 'wd-leg')])
 
 const mockState: { rows: RunSchedule[] | undefined; program: Program; askedMeso: Array<string | undefined> } = {
   rows: ROWS,
@@ -107,12 +108,15 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+// PLAN FORWARD's card (week 4 here) owns its mutation; this file only reads what the card lists.
+vi.mock('./usePlanForward', () => ({
+  usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
+  useDefaultHasSets: () => ({ data: undefined }),
 }))
 // The control is given the date of the selected (week, weekday): captured, not drawn.
 vi.mock('./MoveSessionControl', () => ({
@@ -123,6 +127,7 @@ vi.mock('./MoveSessionControl', () => ({
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile } = await import('./planMenus.testutil')
 
 beforeEach(() => {
   mockState.rows = ROWS
@@ -159,22 +164,23 @@ describe('Plan draws the weekdays in force for the viewed week (chunk 50)', () =
 
   it('week 2: the days before the change: Monday, Wednesday and Thursday — and none of week 3\'s', () => {
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     expect(screen.getByText('WEEK 2')).toBeTruthy()
     expect(chips()).toEqual(['MON', 'WED', 'THU'])
   })
 
-  it('week 4, planned or not: the days of the last row still apply', () => {
+  it('week 4, not planned yet: its card lists the days of the last row (Tuesday and Friday), the weekdays the week will have', () => {
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Next week' }))
-    expect(screen.getByText('WEEK 4')).toBeTruthy()
+    openWeekTile('WEEK 4')
+    expect(screen.getByText('WEEK 4 WILL HAVE')).toBeTruthy() // PLAN FORWARD's card, which draws no weekday chips
     expect(chips()).toEqual(['TUE', 'FRI'])
+    expect(screen.getByText('Push Day')).toBeTruthy()
+    expect(screen.getByText('Leg Day')).toBeTruthy()
   })
 
   it('week 1 reads the row from week 1 as well (the run copy holds only the newest days)', () => {
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 1')
     expect(screen.getByText('WEEK 1')).toBeTruthy()
     expect(chips()).toEqual(['MON', 'WED', 'THU'])
   })
@@ -183,7 +189,7 @@ describe('Plan draws the weekdays in force for the viewed week (chunk 50)', () =
     mockState.rows = []
     renderPlan()
     expect(chips()).toEqual(['TUE', 'FRI'])
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     expect(chips()).toEqual(['TUE', 'FRI'])
   })
 })
@@ -191,14 +197,14 @@ describe('Plan draws the weekdays in force for the viewed week (chunk 50)', () =
 describe('the shared-plan note follows the viewed week\'s days (G14)', () => {
   it('week 2: Push Day is on Monday and Thursday, so its plan row says it covers both', () => {
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     expect(chip('MON').textContent).toContain('Push Day')
     expect(screen.getByText('Marks Mon, Thu — they share one plan.')).toBeTruthy()
   })
 
   it('week 2: Leg Day is on one day, so no note', () => {
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     fireEvent.click(chip('WED'))
     expect(screen.queryByText(SHARED_NOTE)).toBeNull()
   })
@@ -211,7 +217,7 @@ describe('the shared-plan note follows the viewed week\'s days (G14)', () => {
   it('with no rows the run copy\'s days decide it in every week: Push Day on one day, no note in week 2', () => {
     mockState.rows = []
     renderPlan()
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     expect(screen.queryByText(SHARED_NOTE)).toBeNull()
   })
 })
@@ -229,7 +235,7 @@ describe('MOVE THIS SESSION is given the date of the weekday the viewed week put
   it('week 2: Monday, Wednesday and Thursday of week 2 (the run copy has no such days: Tuesday and Friday)', () => {
     renderPlan()
     fireEvent.click(chip('FRI'))
-    fireEvent.click(screen.getByRole('button', { name: 'Previous week' }))
+    openWeekTile('WEEK 2')
     // Friday is not a day of week 2, so the first day is selected.
     expect(lastControl()).toMatchObject({ date: on(2, 'monday'), isCurrentWeek: false })
     expect(lastControl().workoutDay.name).toBe('Push Day')

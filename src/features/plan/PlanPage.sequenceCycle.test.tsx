@@ -19,9 +19,9 @@ import { scheduleSequence } from '../gym/sequenceSchedule'
 //     control that depends on a week being past follow the sequence's cycle, not
 //     the calendar week or the cycle before it. expectEditable / expectReadOnly
 //     walk the whole control matrix of the viewed cycle, in BOTH of the panel's
-//     views (chunk 29): the page's COPY LAST CYCLE (empty cycles) and MARK CYCLE
-//     AS DELOAD; the panel's per-session DELOAD toggle, apply-ahead offer and
-//     COPY THIS WORKOUT (above both views). SETS view: each exercise's ADD SET;
+//     views (chunk 29): the page's COPY and CYCLE ⋯ buttons (chunk 52: COPY LAST
+//     CYCLE and MARK CYCLE AS DELOAD became them); the panel's per-session DELOAD
+//     toggle and apply-ahead offer (above both views). SETS view: each exercise's ADD SET;
 //     each set row's weight, reps and RIR cells, ⋯ button and ⋯ menu (tags,
 //     delete); a stage row's cells (it has no ⋯ here). STRUCTURE view: ADD
 //     EXERCISE; each exercise's ⋯ button and ⋯ menu (swap, move, warmup,
@@ -35,8 +35,8 @@ import { scheduleSequence } from '../gym/sequenceSchedule'
 //     on the spot, and its apply-ahead offer and open menus go with it;
 //   - a skipped workout moves the current cycle exactly as a done one does;
 //   - cold load: nothing is mounted or planned until the programs have answered
-//     (no WEEK n header, no calendar-week plan), and the current cycle is the
-//     first and only cycle planned;
+//     (no week tiles, no calendar-week plan), and the current cycle, when it has no
+//     rows, is the first and only cycle planned (chunk 52: when it has rows, none is);
 //   - while a read is out, no cycle is shown or marked current; a read that
 //     failed with nothing to show gets the app's load error and nothing is planned;
 //   - a weekday run still uses the calendar week even when a last event exists.
@@ -91,15 +91,12 @@ let lastDoneOrSkipped: Session | null | undefined = null
 
 // A test can replace what any one read returns (still loading: data undefined;
 // failed: data undefined with isError; failed on a refetch: data with isError).
-type Read = { data?: unknown; isLoading?: boolean; isError?: boolean }
+type Read = { data?: unknown; isLoading?: boolean; isError?: boolean; error?: unknown }
 let readOverrides: { programs?: Read; items?: Read; plans?: Read; lastEvent?: Read } = {}
 
 const updateSetMutate = vi.fn()
 const planWeekMutate = vi.fn()
 const setDeloadMutate = vi.fn()
-const copyWeekMutate = vi.fn()
-const copyWeekHook = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: copyWeekMutate, isPending: false }))
-const copyWorkoutMutate = vi.fn()
 const lastEventHook = vi.fn((_mesoId: string): Read => readOverrides.lastEvent ?? { data: lastDoneOrSkipped })
 
 vi.mock('../programs/useMesos', () => ({
@@ -143,26 +140,23 @@ vi.mock('./useWeekPlan', () => ({
   useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: (mesoId: string, weekNumber: number) => copyWeekHook(mesoId, weekNumber),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: copyWorkoutMutate, isPending: false }),
   useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
   useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+// COPY's sheet writes through its own hook (chunk 52); this file opens the sheet only to read what it says.
+vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }) }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openSetsView, openStructureView } = await import('./planMenus.testutil')
+const { openSetsView, openStructureView, openWeekTile, openWeekMenu, closeSheet } = await import('./planMenus.testutil')
 
 afterEach(() => {
   readOverrides = {}
   updateSetMutate.mockClear()
   planWeekMutate.mockClear()
   setDeloadMutate.mockClear()
-  copyWeekHook.mockClear()
-  copyWeekMutate.mockClear()
-  copyWorkoutMutate.mockClear()
   lastEventHook.mockClear()
 })
 
@@ -348,12 +342,27 @@ function renderPlan() {
 
 // ─── Screen helpers ──────────────────────────────────────────────────────────
 
-const READ_ONLY_BANNER = 'PAST WEEK — READ ONLY'
-const banner = () => screen.queryByText(READ_ONLY_BANNER)
+// The lock line of a past week (board 1c). SPEC Scheduling → Sequence: "The cycle replaces the week everywhere the week is used (week plan,
+// copying, …, labels, …)", so a sequence run's past cycle reads CYCLE and a weekday run's past week reads WEEK (review 1, F4: the line was
+// WEEK on both). `banner()` is whichever of the two is on screen; the helpers below pin which one.
+const CYCLE_LOCK_LINE = 'PAST CYCLE · READ ONLY'
+const WEEK_LOCK_LINE = 'PAST WEEK · READ ONLY'
+const banner = () => screen.queryByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)
+// A sequence run's past cycle: the cycle's word is there, and the week's is not.
+function expectCycleLockLine() {
+  expect(screen.queryByText(CYCLE_LOCK_LINE)).not.toBeNull()
+  expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+}
+// The week tiles (chunk 52): a tile is a week's name over its state. `WEEK_OR_CYCLE_HEADER` is a tile's name: none is on screen
+// while a read is out, and none is when the load error shows.
 const WEEK_OR_CYCLE_HEADER = /^(WEEK|CYCLE) \d+$/
-// The week stepper's chip: filled with the accent colour only on the current cycle.
-const chipOf = (text: string) => screen.getByText(text).parentElement as HTMLElement
-const isMarkedCurrent = (text: string) => chipOf(text).style.background === 'var(--accent)'
+const tileOf = (text: string) => screen.getByText(text).closest('button') as HTMLButtonElement
+// The tile that is open: the one the week area is showing.
+const isOpen = (text: string) => tileOf(text).getAttribute('aria-current') === 'true'
+// The cycle that is open is the CURRENT cycle: its tile says THIS CYCLE (THIS WEEK) and it is the open one.
+const isMarkedCurrent = (text: string) => isOpen(text) && /THIS (WEEK|CYCLE)/.test(tileOf(text).textContent ?? '')
+// WEEK ⋯ / CYCLE ⋯: "Week 3 options" / "Cycle 3 options", there while the viewed week can be edited.
+const weekMenuButton = () => screen.queryByLabelText(/^(Week|Cycle) \d+ options$/)
 const asButton = (el: HTMLElement | null) => el as HTMLButtonElement
 const plannedWeeks = () => planWeekMutate.mock.calls.map(([v]) => (v as { weekNumber: number }).weekNumber)
 const MINUS = '−' // the RIR stepper's minus glyph
@@ -366,12 +375,11 @@ const labelled = (label: string | RegExp) => screen.getByLabelText(label) as HTM
 const maybeLabelled = (label: string | RegExp) => screen.queryByLabelText(label) as HTMLButtonElement | null
 const allLabelled = (label: string | RegExp) => screen.queryAllByLabelText(label) as HTMLButtonElement[]
 
+// Opens a week by its tile. The tile has to exist: the strip reaches week 1 through the current week, and the weeks planned ahead
+// and the first unplanned one (chunk 52).
 function goTo(cycle: number) {
-  for (let guard = 0; guard < 20 && screen.queryByText(`CYCLE ${cycle}`) === null; guard++) {
-    const showing = Number((screen.getByText(/^CYCLE \d+$/).textContent ?? '').replace('CYCLE ', ''))
-    fireEvent.click(screen.getByLabelText(showing > cycle ? 'Previous week' : 'Next week'))
-  }
-  expect(screen.getByText(`CYCLE ${cycle}`)).toBeTruthy()
+  openWeekTile(`CYCLE ${cycle}`)
+  expect(isOpen(`CYCLE ${cycle}`)).toBe(true)
 }
 
 // The numbers "01" of the set rows. (The routine item in the STRUCTURE view is numbered
@@ -410,9 +418,12 @@ function lastUpdate() {
 // it is there and live, in both views, and each edit reaches the hook with THIS
 // cycle's own row. Leaves the STRUCTURE view open; each call starts from SETS.
 function expectEditable(cycle: number, slot = 0) {
-  // — the page
+  // — the page: CYCLE ⋯ is there, and its sheet holds the cycle's deload
   expect(banner()).toBeNull()
+  expect(weekMenuButton()).not.toBeNull()
+  openWeekMenu()
   expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
+  closeSheet()
 
   // — the session's own DELOAD toggle (above both views)
   const sessionDeload = asButton(labelled('Mark this session as deload'))
@@ -550,8 +561,10 @@ function expectEditable(cycle: number, slot = 0) {
 // would change it is gone or dead, in both views — nothing opens, nothing reaches
 // a hook. Leaves the STRUCTURE view open.
 function expectReadOnly() {
-  // — the page
-  expect(banner()).not.toBeNull()
+  // — the page: the lock line in the cycle's word, no COPY, no CYCLE ⋯ (board 1c: a past week has no action row), no offer
+  expectCycleLockLine()
+  expect(weekMenuButton()).toBeNull()
+  expect(screen.queryByText('COPY')).toBeNull()
   expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
   expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
 
@@ -627,44 +640,38 @@ function expectReadOnly() {
   expect(allLabelled('Remove last set')).toHaveLength(0)
 }
 
-// An EMPTY cycle (plan rows, no exercises) that is current or later: copying is
-// offered — the whole cycle, and this workout — and each acts on THIS cycle; the
-// cycle can otherwise be edited (its cycle action, its session toggle, ADD
-// EXERCISE in the STRUCTURE view). The copy buttons are above both views.
-function expectEmptyCycleEditable(cycle: number, slot = 0) {
+// An EMPTY cycle (plan rows, no exercises) that is current or later: COPY is offered, above both views, and opens the sheet for THIS
+// cycle, which names the cycle it copies from (the last planned normal, non-empty cycle before it: cycle 1, the others hold no sets).
+// An empty cycle has no set to put numbers into, so the sheet says so and sends nothing (chunk 52: COPY writes into sets that
+// exist; it no longer copies a whole empty week). The cycle can otherwise be edited (its cycle action, its session toggle, ADD
+// EXERCISE in the STRUCTURE view).
+function expectEmptyCycleEditable(cycle: number) {
   expect(banner()).toBeNull()
-  expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
+  expect(weekMenuButton()).not.toBeNull()
   expect(asButton(labelled('Mark this session as deload')).disabled).toBe(false)
   openStructureView()
   expect(screen.getByText('ADD EXERCISE')).toBeTruthy()
 
   for (const openView of [openSetsView, openStructureView]) {
     openView()
-    expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
-    expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
+    expect(screen.getByText('COPY')).toBeTruthy()
   }
-  copyWeekMutate.mockClear()
-  fireEvent.click(screen.getByText('COPY LAST CYCLE'))
-  expect(copyWeekMutate).toHaveBeenCalledTimes(1)
-  expect(copyWeekHook).toHaveBeenLastCalledWith('meso-1', cycle)
-  copyWeekMutate.mockClear()
-
-  copyWorkoutMutate.mockClear()
-  fireEvent.click(screen.getByText('COPY THIS WORKOUT'))
-  expect(copyWorkoutMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-a', weekPlanId: planId(cycle, slot), sequencePosition: slot })
-  copyWorkoutMutate.mockClear()
+  fireEvent.click(screen.getByText('COPY'))
+  const sheet = within(screen.getByRole('dialog'))
+  expect(sheet.getByText(`CYCLE ${cycle} · FROM CYCLE 1'S PLAN`)).toBeTruthy()
+  expect(sheet.getByText('NOTHING TO COPY')).toBeTruthy()
+  expect(asButton(sheet.getByText('NOTHING TO COPY')).disabled).toBe(true)
+  closeSheet()
 }
 
-// An EMPTY past cycle: nothing to copy into — neither button — and nothing else
-// to change it with either, in either view.
+// An EMPTY past cycle: nothing to copy into — no COPY — and nothing else to change it with either, in either view.
 function expectEmptyCycleReadOnly() {
-  expect(banner()).not.toBeNull()
+  expectCycleLockLine()
   expect(asButton(labelled('Mark this session as deload')).disabled).toBe(true)
   for (const openView of [openSetsView, openStructureView]) {
     openView()
-    expect(screen.queryByText('COPY LAST CYCLE')).toBeNull()
-    expect(screen.queryByText('COPY THIS WORKOUT')).toBeNull()
-    expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
+    expect(screen.queryByText('COPY')).toBeNull()
+    expect(weekMenuButton()).toBeNull()
     expect(screen.queryByText('ADD EXERCISE')).toBeNull()
   }
 }
@@ -720,24 +727,32 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       renderPlan()
 
       expectOpensOnTheCycleTodayShowsNext(NINE_DAY, 1)
-      expect(screen.queryByText('CYCLE 2')).toBeNull()
+      expect(isOpen('CYCLE 2')).toBe(false) // planned ahead: its tile is there, and it isn't the one open
       expect(isMarkedCurrent('CYCLE 1')).toBe(true)
       expect(banner()).toBeNull()
       expectEditable(1)
     })
 
-    it('cycle 1 carries no "PAST WEEK — READ ONLY" however it is reached (the calendar week would flag it past)', () => {
+    it('cycle 1 carries no lock line (neither "PAST CYCLE · READ ONLY" nor "PAST WEEK · READ ONLY") however it is reached (the calendar week would flag it past)', () => {
       setUpSequenceRun(NINE_DAY)
       renderPlan()
 
       goTo(1)
       expect(banner()).toBeNull()
-      expect(screen.queryByText(READ_ONLY_BANNER)).toBeNull()
-      expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
+      expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+      expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+      expect(weekMenuButton()).not.toBeNull()
     })
 
-    it('plans (opens) the current cycle only — not the calendar week', () => {
+    it('opening it plans nothing: the current cycle has its rows, and no other cycle is planned by being the calendar week', () => {
       setUpSequenceRun(NINE_DAY)
+      renderPlan()
+      expect(plannedWeeks()).toEqual([])
+    })
+
+    it('plans the current cycle only when it has no rows — not the calendar week (2), and not a cycle that is already planned', () => {
+      // cycle 2 has rows, cycle 1 (current) has none; the calendar says week 2
+      setUpSequenceRun({ ...NINE_DAY, cyclesWithPlans: [2] })
       renderPlan()
       expect(plannedWeeks()).toEqual([1])
     })
@@ -773,10 +788,17 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       renderPlan()
 
       expectOpensOnTheCycleTodayShowsNext(THREE_DAY, 3)
-      expect(screen.queryByText('CYCLE 1')).toBeNull()
+      expect(isOpen('CYCLE 1')).toBe(false) // a past cycle: its tile is there, and it isn't the one open
       expect(isMarkedCurrent('CYCLE 3')).toBe(true)
       expect(banner()).toBeNull()
       expectEditable(3)
+      expect(plannedWeeks()).toEqual([]) // cycle 3 has its rows
+    })
+
+    it('cycle 3 without rows is the one cycle planned on opening: not the calendar week (1), not cycle 1 or 2, not 4', () => {
+      setUpSequenceRun({ ...THREE_DAY, cyclesWithPlans: [1, 2, 4] })
+      renderPlan()
+      expectOpensOnTheCycleTodayShowsNext(THREE_DAY, 3)
       expect(plannedWeeks()).toEqual([3])
     })
 
@@ -871,6 +893,24 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expectEditable(4)
     })
 
+    // Chunk 52: COPY's sheet and WEEK ⋯'s sheet belong to a week that has them; a past cycle has neither (board 1c), so an open one goes.
+    for (const [name, open] of [['COPY', () => fireEvent.click(screen.getByText('COPY'))], ['WEEK ⋯', () => openWeekMenu()]] as const) {
+      it(`the ${name} sheet that is open goes with it: the cycle turns read-only under it`, () => {
+        setUpSequenceRun(THREE_DAY)
+        const view = renderPlan()
+        expect(isMarkedCurrent('CYCLE 3')).toBe(true)
+        open()
+        expect(screen.getByRole('dialog')).toBeTruthy()
+
+        lastDoneOrSkipped = sessionFor(THREE_DAY.layout, { status: 'completed', cycle: 3, position: 2, on: dayOf(1, 'Sunday') })
+        view.rerender(ui())
+
+        expect(isMarkedCurrent('CYCLE 3')).toBe(false)
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(screen.queryByText('COPY')).toBeNull()
+      })
+    }
+
     it('STRUCTURE view: the same, with an exercise\'s ⋯ menu open — the offer (above both views) was still showing, and goes with it', () => {
       setUpSequenceRun(THREE_DAY)
       const view = renderPlan()
@@ -909,7 +949,7 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       )
     })
 
-    it('COPY LAST CYCLE and COPY THIS WORKOUT are offered on the current empty cycle (3) and on a later one (4), each acting on its own cycle', () => {
+    it('COPY is offered on the current empty cycle (3) and on a later one (4), each opening its own cycle and naming cycle 1 as the source', () => {
       setUpSequenceRun(EMPTY_AHEAD)
       renderPlan()
 
@@ -921,24 +961,22 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expectEmptyCycleEditable(4)
     })
 
-    it('neither is offered on a past empty cycle (2), though cycle 1 would be a valid source for it', () => {
+    it('COPY is not offered on a past empty cycle (2), though cycle 1 would be a valid source for it', () => {
       setUpSequenceRun(EMPTY_AHEAD)
       renderPlan()
 
       goTo(2)
       expect(isMarkedCurrent('CYCLE 2')).toBe(false)
       expectEmptyCycleReadOnly()
-      // ... and back on the current cycle they are there again.
+      // ... and back on the current cycle it is there again.
       goTo(3)
-      expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
-      expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
+      expect(screen.getByText('COPY')).toBeTruthy()
     })
 
-    it('the cycle moving on takes the copy buttons away from the cycle that was current', () => {
+    it('the cycle moving on takes COPY away from the cycle that was current', () => {
       setUpSequenceRun(EMPTY_AHEAD)
       const view = renderPlan()
-      expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
-      expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
+      expect(screen.getByText('COPY')).toBeTruthy()
 
       lastDoneOrSkipped = sessionFor(EMPTY_AHEAD.layout, { status: 'completed', cycle: 3, position: 2, on: dayOf(1, 'Sunday') })
       view.rerender(ui())
@@ -988,7 +1026,7 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(lastEventHook).toHaveBeenCalledWith('meso-1')
       expect(screen.queryByText(WEEK_OR_CYCLE_HEADER)).toBeNull()
       expect(banner()).toBeNull()
-      expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
+      expect(weekMenuButton()).toBeNull()
       expect(container.querySelector('.animate-spin')).not.toBeNull()
       expect(screen.queryByText("COULDN'T LOAD PLAN")).toBeNull() // loading is not an error
       // ... and nothing was planned for a cycle the screen can't name yet.
@@ -1014,8 +1052,8 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
   })
 
   describe('cold load: the programs read has not answered yet', () => {
-    it('a sequence run: no WEEK/CYCLE header and nothing planned while it is out, then only the current cycle is planned', () => {
-      setUpSequenceRun(NINE_DAY)
+    it('a sequence run: no week tiles and nothing planned while it is out, then only the current cycle is planned (it has no rows here)', () => {
+      setUpSequenceRun({ ...NINE_DAY, cyclesWithPlans: [2] })
       readOverrides.programs = { data: undefined, isLoading: true }
       const view = renderPlan()
 
@@ -1026,17 +1064,19 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(lastEventHook).not.toHaveBeenCalled()
 
       // The programs answer: the sequence program. The page opens on cycle 1 (the
-      // calendar says week 2) and plans cycle 1 — and only cycle 1.
+      // calendar says week 2) and plans cycle 1 — and only cycle 1, which has no rows
+      // while cycle 2 has (a cycle with rows is never planned again).
       readOverrides = {}
       view.rerender(ui())
       expect(screen.getByText('CYCLE 1')).toBeTruthy()
       expect(screen.queryByText('WEEK 2')).toBeNull()
-      expect(isMarkedCurrent('CYCLE 1')).toBe(true)
+      expect(isOpen('CYCLE 1')).toBe(true)
       expect(plannedWeeks()).toEqual([1])
     })
 
-    it('a weekday run: nothing is planned while it is out; then the page is what it always was (the calendar week)', () => {
+    it('a weekday run: nothing is planned while it is out; then the page opens on the calendar week, and plans it only when it has no rows', () => {
       setUpWeekdayRun()
+      allPlans = allPlans.filter((w) => !(w.weekNumber === 3 && w.sequencePosition === undefined))
       readOverrides.programs = { data: undefined, isLoading: true }
       const view = renderPlan()
 
@@ -1047,10 +1087,9 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       readOverrides = {}
       view.rerender(ui())
       expect(screen.getByText('WEEK 3')).toBeTruthy()
-      expect(isMarkedCurrent('WEEK 3')).toBe(true)
-      const planned = plannedWeeks()
-      expect(planned[planned.length - 1]).toBe(3)
-      expect(planned).not.toContain(2)
+      expect(isOpen('WEEK 3')).toBe(true)
+      // week 3 has no rows here (it is the current week; weeks 1, 2 and 4 do): the calendar week is planned, and no other
+      expect(plannedWeeks()).toEqual([3])
     })
   })
 
@@ -1070,7 +1109,9 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
 
         const title = screen.getByText("COULDN'T LOAD PLAN")
         expect(title.style.color).toBe('var(--error)') // the existing load error's look
-        expect(screen.getByText('Check your connection and try again.')).toBeTruthy()
+        // the second line is the reason (SPEC Errors (15)); none came with this failure, so P1.2-5's words
+        expect(screen.getByText('Something went wrong.')).toBeTruthy()
+        expect(screen.queryByText('Check your connection and try again.')).toBeNull()
         expect(container.querySelector('.animate-spin')).toBeNull()
         expect(screen.queryByText(WEEK_OR_CYCLE_HEADER)).toBeNull()
         expect(banner()).toBeNull()
@@ -1102,6 +1143,44 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(screen.getByText('CYCLE 3')).toBeTruthy()
       expect(isMarkedCurrent('CYCLE 3')).toBe(true)
     })
+
+    it('the real reason is the second line: a Supabase error object\'s message, on each read, verbatim', () => {
+      const reasons: [string, () => void][] = [
+        ['the programs read', () => { readOverrides = { programs: { data: undefined, isError: true, error: { message: 'JWT expired' } } } }],
+        ['the sequence read', () => { readOverrides = { items: { data: undefined, isError: true, error: { message: 'permission denied for table v2_program_sequence_items' } } } }],
+        ['the week plans read', () => { readOverrides = { plans: { data: undefined, isError: true, error: { message: 'canceling statement due to statement timeout' } } } }],
+        ['the last-event read', () => { readOverrides = { lastEvent: { data: undefined, isError: true, error: { message: 'connection reset' } } } }],
+      ]
+      const messages = ['JWT expired', 'permission denied for table v2_program_sequence_items', 'canceling statement due to statement timeout', 'connection reset']
+      reasons.forEach(([, fail], i) => {
+        cleanup()
+        setUpSequenceRun(THREE_DAY)
+        fail()
+        renderPlan()
+        expect(screen.getByText("COULDN'T LOAD PLAN")).toBeTruthy()
+        expect(screen.getByText(messages[i])).toBeTruthy()
+        expect(screen.queryByText('Something went wrong.')).toBeNull()
+        expect(screen.queryByText('You may be offline.')).toBeNull()
+      })
+    })
+
+    it('"You may be offline." is the reason only when the phone is offline and the read gave no message; a real message still wins', () => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+      try {
+        setUpSequenceRun(THREE_DAY)
+        readOverrides = { programs: { data: undefined, isError: true } }
+        renderPlan()
+        expect(screen.getByText('You may be offline.')).toBeTruthy()
+        cleanup()
+        setUpSequenceRun(THREE_DAY)
+        readOverrides = { programs: { data: undefined, isError: true, error: { message: 'Failed to fetch' } } }
+        renderPlan()
+        expect(screen.getByText('Failed to fetch')).toBeTruthy()
+        expect(screen.queryByText('You may be offline.')).toBeNull()
+      } finally {
+        delete (navigator as unknown as Record<string, unknown>).onLine
+      }
+    })
   })
 
   describe('a sequence with no workout in it', () => {
@@ -1125,7 +1204,7 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       renderPlan()
 
       expect(screen.getByText('CYCLE 1')).toBeTruthy()
-      expect(isMarkedCurrent('CYCLE 1')).toBe(true)
+      expect(isOpen('CYCLE 1')).toBe(true) // nothing is planned for it (there is no workout), so its tile says NOT PLANNED
       expect(banner()).toBeNull()
       // Chunk 33: one line for a run with no schedule, whichever type it is.
       expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
@@ -1147,16 +1226,60 @@ describe('PlanPage — a weekday run keeps the calendar week (chunk 35)', () => 
     expect(screen.queryByText(/^CYCLE \d+$/)).toBeNull()
     expect(isMarkedCurrent('WEEK 3')).toBe(true)
     expect(banner()).toBeNull()
-    expect(screen.getByText('MARK WEEK AS DELOAD')).toBeTruthy()
-    // The week it settles on (a weekday run has always planned week 1 on its way
-    // there, before its opening effect moves the view; that is not asserted).
-    const planned = plannedWeeks()
-    expect(planned[planned.length - 1]).toBe(3)
+    expect(weekMenuButton()?.getAttribute('aria-label')).toBe('Week 3 options')
+    // Week 3 has its rows, so opening plans nothing (chunk 52: no week is planned by being viewed, and week 1 no longer on the way).
+    expect(plannedWeeks()).toEqual([])
     // The weekday run never asked for a last event.
     expect(lastEventHook).not.toHaveBeenCalled()
-    // ... and its weeks before the calendar week are still the past ones.
-    fireEvent.click(screen.getByLabelText('Previous week'))
-    expect(screen.getByText('WEEK 2')).toBeTruthy()
-    expect(banner()).not.toBeNull()
+    // ... and its weeks before the calendar week are still the past ones, with the week's word on the lock line.
+    openWeekTile('WEEK 2')
+    expect(isOpen('WEEK 2')).toBe(true)
+    expect(screen.queryByText(WEEK_LOCK_LINE)).not.toBeNull()
+    expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+  })
+})
+
+// Review 1, F4. The lock line of a past week is "PAST WEEK · READ ONLY" on board 1c, and SPEC Scheduling → Sequence says the cycle replaces the
+// week in labels, so a sequence run's past cycle says CYCLE. The first attempt drew WEEK on both, and the tests above pinned it. The two runs are
+// told apart here on the same component in turn, so a line that hard-codes either word fails one of them.
+describe('PlanPage — the lock line names the run\'s own unit (review 1, F4)', () => {
+  const lockLine = () => screen.getByText(/^PAST (WEEK|CYCLE) · READ ONLY$/)
+
+  it('a sequence run\'s past cycle reads PAST CYCLE · READ ONLY and a weekday run\'s past week PAST WEEK · READ ONLY: the whole line, one word each', () => {
+    setUpSequenceRun(THREE_DAY)
+    renderPlan()
+    goTo(2) // cycle 3 is the current cycle, so cycle 2 is a past one
+    expect(isMarkedCurrent('CYCLE 3')).toBe(false)
+    expect(lockLine().textContent).toBe(CYCLE_LOCK_LINE)
+    expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+    cleanup()
+
+    setUpWeekdayRun()
+    renderPlan()
+    openWeekTile('WEEK 2') // week 3 is the current week, so week 2 is a past one
+    expect(isOpen('WEEK 2')).toBe(true)
+    expect(lockLine().textContent).toBe(WEEK_LOCK_LINE)
+    expect(screen.queryByText(CYCLE_LOCK_LINE)).toBeNull()
+  })
+
+  it('a cycle that passed unplanned is a past cycle too: the note and the lock line both speak of the cycle (cycle 1 has no rows; cycle 3 is current)', () => {
+    const missedFirst: Scenario = { ...THREE_DAY, cyclesWithPlans: [2, 3, 4] }
+    expect(allPlansOf(missedFirst).some((w) => w.weekNumber === 1)).toBe(false)
+    setUpSequenceRun(missedFirst)
+    renderPlan()
+
+    goTo(1)
+    expect(screen.getByText("Cycle 1 wasn't planned")).toBeTruthy()
+    expect(lockLine().textContent).toBe(CYCLE_LOCK_LINE)
+    expect(screen.queryByText(WEEK_LOCK_LINE)).toBeNull()
+  })
+
+  it('the current cycle and a cycle planned ahead carry no lock line in either word', () => {
+    setUpSequenceRun(THREE_DAY)
+    renderPlan()
+    expect(isMarkedCurrent('CYCLE 3')).toBe(true)
+    expect(banner()).toBeNull()
+    goTo(4)
+    expect(banner()).toBeNull()
   })
 })

@@ -11,16 +11,15 @@
 // source into a new week. A week-to-week copy (every case below except a
 // fresh "from program" one) is a straight old-id → new-id remap — weight,
 // RIR, rep targets and everything else ride along for free because the
-// source row already has them (weekPlanService.ts's copySetsWithGrouping /
-// copyExercisesForward do this client-side; v2_plan_week does the SQL
-// equivalent). A fresh "from program" copy (stable; week 1 of either type)
+// source row already has them (v2_plan_week does this in SQL; the client copy
+// of a week, removed in chunk 52, did it too). A fresh "from program" copy (stable; week 1 of either type)
 // has no weight/RIR of its own to carry — v2_program_sets has no such
 // columns, "week plan only, never in the program" — so mapping the last
 // planned week's weight/RIR onto the newly copied sets is a second, later
 // step with no TS equivalent at all: no client caller ever performs that
-// specific copy (the manual COPY WEEK/COPY THIS WORKOUT actions only ever
-// copy week-to-week — see weekPlanService.ts's copyOneWorkoutFromHistory —
-// since a real stable program can't even be created before chunk 11). That
+// specific copy (the manual COPY WEEK/COPY THIS WORKOUT actions, removed in
+// chunk 52, only ever copied week-to-week, since a real stable program
+// couldn't even be created before chunk 11). That
 // mapping rule is written down once, in the migration's own comment.
 
 export type PlanningType = 'stable' | 'week_dependent'
