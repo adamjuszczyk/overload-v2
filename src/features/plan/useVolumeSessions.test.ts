@@ -160,6 +160,17 @@ describe('useVolumeSessions', () => {
     expect(fake.to('v2_sessions')).toHaveLength(1) // the same key: not read again
   })
 
+  it('reads again each time the sheet opens, whatever the app\'s own cache says is fresh (its client keeps answers for five minutes): last week may still be running', async () => {
+    const fake = world()
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000 } } })
+    const first = renderHook(() => useVolumeSessions(['plan-a']), { wrapper: wrapper(client) })
+    await waitFor(() => expect(first.result.current.data).toBeDefined())
+    first.unmount()
+    const second = renderHook(() => useVolumeSessions(['plan-a']), { wrapper: wrapper(client) })
+    expect(second.result.current.data).toBeDefined() // the earlier answer shows at once
+    await waitFor(() => expect(fake.to('v2_sessions')).toHaveLength(2)) // and it is read again
+  })
+
   it('its key sits under the done list\'s prefix, so whatever refreshes that list (a start, a finish, a skip, a move) refreshes this one', async () => {
     world()
     const client = new QueryClient()

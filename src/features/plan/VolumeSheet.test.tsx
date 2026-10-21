@@ -202,6 +202,18 @@ describe('what the sheet reads, and from where', () => {
     expect(table()[table().length - 1]).toEqual(['Other', '3', '0', '−3', 'YOU PLANNED 0 LAST WEEK · DID 3'])
   })
 
+  it('an exercise only one of the two weeks\' plans names counts under its own muscle, not under Other: a squat dropped this week, a curl added', () => {
+    const lastLegs = weekPlan('w2-lg', [{ row: 'squat', exerciseId: 'squat', sets: 'n n n', joinedGroup: 'quads' }], { weekNumber: 2 })
+    const thisArms = weekPlan('w3-ar', [{ row: 'curl', exerciseId: 'curl', sets: 'n n', joinedGroup: 'biceps' }], { weekNumber: 3 })
+    h.read = { ...h.read, data: readOf([]) }
+    // Last week still running with nothing started: its plan counts, so the squat's three sets are found through last week's own exercise list.
+    open({ weekNumber: 3, ended: false, thisWeek: [thisArms], lastWeek: [lastLegs] })
+    expect(table()).toEqual([
+      ['Biceps', '0', '2', '+2', ''],
+      ['Quads', '3', '0', '−3', ''],
+    ])
+  })
+
   it('a muscle group comes from the exercise the read names: a pushdown filed under biceps leaves triceps', () => {
     h.read = { ...h.read, data: { ...seededRead(), exercises: seededRead().exercises.map((e) => (e.id === 'pushdown' ? { ...e, muscleGroup: 'biceps' as const } : e)) } }
     open()
@@ -278,6 +290,14 @@ describe('P1.2-2 (D31): a week with nothing in it, last week', () => {
     open({ weekNumber: 4, ended: true, thisWeek: seededWeek(3), lastWeek: seededWeek(2) })
     expect(table().find((r) => r[0] === 'Chest')).toEqual(['Chest', '0', '3', '+3', 'YOU PLANNED 3 LAST WEEK · DID 0'])
     expect(table().some((r) => r[1] === '—')).toBe(false)
+  })
+
+  it('last week\'s plan rows holding no set, but a session done in it: not empty, the session\'s numbers show', () => {
+    const hollow = { ...weekPlan('w2-ua', [], { weekNumber: 2 }), sets: [] }
+    h.read = { ...h.read, data: readOf([sessionRead('w2-ua', 'completed', UPPER_A_LOGS)]) }
+    open({ weekNumber: 3, ended: true, thisWeek: seededWeek(3), lastWeek: [hollow] })
+    expect(table().some((r) => r[1] === '—')).toBe(false)
+    expect(table().find((r) => r[0] === 'Chest')?.[1]).toBe('3') // bench's three working sets, as the session did them
   })
 
   it('two empty weeks say so, and the footer stays', () => {

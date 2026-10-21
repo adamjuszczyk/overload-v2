@@ -202,6 +202,17 @@ describe('what the sheet is handed', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('is gone with the week it opened on: when the page can no longer show that week\'s actions (its plans can\'t be read), the sheet closes, as COPY\'s and WEEK ⋯\'s do', () => {
+    weekdayRun()
+    const { rerender } = render(ui())
+    openVolume()
+    expect(screen.getByRole('dialog', { name: 'Volume' })).toBeTruthy()
+    state.week = { data: undefined, isLoading: false, isError: true, error: new Error('offline') }
+    rerender(ui())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(volumeButton()).toBeNull()
+  })
+
   it('asks for the sessions of last week\'s plan rows: week 1\'s on week 2, and week 2\'s on week 3 planned ahead', () => {
     weekdayRun({ weeks: [1, 2, 3] })
     render(ui())
