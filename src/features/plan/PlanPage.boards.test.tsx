@@ -40,7 +40,7 @@ const state = vi.hoisted(() => ({
   all: null as unknown as Read<WeekPlan[]>,
   week: null as unknown as Read<WeekPlan[]>,
   done: new Set<string>(),
-  deloadHook: { isPending: false, isError: false, error: null as unknown },
+  deloadHook: { isPending: false, isError: false, error: null as unknown, variables: undefined as { isDeload: boolean; rules: null } | undefined },
   cycle: 3,
 }))
 const setWeekDeloadMutate = vi.hoisted(() => vi.fn())
@@ -62,7 +62,6 @@ vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<strin
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false, error: null }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }) }))
 vi.mock('./usePlanForward', () => ({
   usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
@@ -109,7 +108,7 @@ function weekdayRun(opts: { planningType?: Program['planningType']; deload?: boo
   state.all = { data: [...forWeek(1), ...forWeek(2)], isLoading: false }
   state.week = { data: state.all.data, isLoading: false }
   state.done = new Set(['wp-wd-push1-2']) // Monday's Push 1 is done (board 2 locks it)
-  state.deloadHook = { isPending: false, isError: false, error: null }
+  state.deloadHook = { isPending: false, isError: false, error: null, variables: undefined }
 }
 
 const ITEMS = [['si-0', 'wd-upperA'], ['si-1', null], ['si-2', 'wd-lowerA'], ['si-3', 'wd-upperB']] as const
@@ -123,7 +122,7 @@ function sequenceRun(opts: { deload?: boolean } = {}) {
   state.all = { data: [...cycle(2), ...cycle(3)], isLoading: false }
   state.week = { data: state.all.data, isLoading: false }
   state.done = new Set()
-  state.deloadHook = { isPending: false, isError: false, error: null }
+  state.deloadHook = { isPending: false, isError: false, error: null, variables: undefined }
 }
 
 const ui = () => (
@@ -264,7 +263,7 @@ describe('board 1e: the week menu', () => {
   it('MARKING: MARKING… in the muted row, the rules under it', () => {
     weekdayRun()
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETS_AND_RIR })
-    state.deloadHook = { isPending: true, isError: false, error: null }
+    state.deloadHook = { isPending: true, isError: false, error: null, variables: { isDeload: true, rules: null } }
     render(ui())
     openWeekMenu()
     captureRender('plan-1e-marking', document.body)

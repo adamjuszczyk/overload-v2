@@ -56,7 +56,6 @@ vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<strin
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false, error: null }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 vi.mock('./usePlanForward', () => ({
   usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
   useDefaultHasSets: () => ({ data: undefined }),

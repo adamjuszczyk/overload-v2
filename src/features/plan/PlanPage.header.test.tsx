@@ -60,7 +60,6 @@ vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<strin
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 vi.mock('./usePlanForward', () => ({
   usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
   useDefaultHasSets: () => ({ data: undefined }),

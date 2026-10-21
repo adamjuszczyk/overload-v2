@@ -17,57 +17,101 @@ THU
 Push 2
 FRI
 Pull 2
-SAT
-Legs
 TUESDAY
 Pull 1
 DELOAD
-SETS
-STRUCTURE
 Lat Pulldown
-CHEST
+BACK
 01
-—
+55
+kg
 ×
 8–10
-−
-NO RIR
-+
+RIR
+2
+Push back
 02
-—
+55
+kg
 ×
 8–10
-−
-NO RIR
-+
+RIR
+2
+DROPSET · 1 DROP
 03
-—
+52.5
+kg
 ×
 8–10
-−
-NO RIR
-+
+RIR
+1
+↳
+40
+kg
+×
+AMRAP
+RIR
+0
 Seated Cable Row
-CHEST
+SUPERSET A · 1
+BACK
 01
-—
+60
+kg
 ×
-8–10
-−
-NO RIR
-+
+10–12
+RIR
+1–2
 02
-—
+60
+kg
 ×
-8–10
-−
-NO RIR
-+
+10–12
+RIR
+1–2
 03
-—
+60
+kg
 ×
-8–10
-−
-NO RIR
-+
+10–12
+RIR
+1–2
+Face Pull
+SUPERSET A · 2
+SHOULDERS
+01
+15
+kg
+×
+15–20
+RIR
+1
+02
+15
+kg
+×
+15–20
+RIR
+1
+EZ Bar Curl
+BICEPS
+W
+20
+kg
+×
+12
+01
+30
+kg
+×
+8
+RIR
+1
+02
+30
+kg
+×
+AMRAP
+RIR
+0
 CHANGE THE PROGRAM FROM WEEK 2

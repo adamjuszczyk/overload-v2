@@ -111,8 +111,6 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 // COPY's sheet writes through its own hook (chunk 52); this file opens the sheet only to read what it lists.
 vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }) }))
-// A stable week with content offers "Make this week the new default", which owns a mutation; nothing here is about it.
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
 

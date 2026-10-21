@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
+import { lbsToKg } from '../../lib/weightUnit'
 
 // Chunk 19 (SPEC "Targets" — "Weight targets: per set, in the week plan
 // only. Never in the program"; reviewer's note: "entered and shown in the
@@ -186,6 +187,38 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     fireEvent.blur(input)
 
     expect(updateSetMutate).not.toHaveBeenCalled()
+  })
+
+  // Chunk 54a (board 9, "WEIGHT · NOT A NUMBER", draws "5o"): a number is digits with at most one decimal separator. The editor this one replaced
+  // read "5o" as 5 (parseFloat) and wrote it.
+  it.each(['5o', '12abc', '1e3', '0x10', '12.5.3', '1 2', '+5', 'Infinity', '.', ','])('"%s" is not a number: refused inline, nothing written', (typed) => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({})])]
+    renderPlanPage()
+
+    openWeightEditor()
+    const input = screen.getByLabelText('Weight target')
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.blur(input)
+
+    expect(updateSetMutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('Enter a valid weight')
+    expect((input as HTMLInputElement).value).toBe(typed)
+  })
+
+  it.each([['100', 100], ['100.5', 100.5], ['100,5', 100.5], ['.5', 0.5], ['  80  ', 80], ['0', 0], ['12.', 12]])('"%s" is a number: written as %s lbs, in kg', (typed, lbs) => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({})])]
+    renderPlanPage()
+
+    openWeightEditor()
+    const input = screen.getByLabelText('Weight target')
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.blur(input)
+
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'set-1', changes: { targetWeight: lbsToKg(lbs) } })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('re-committing the same displayed value writes nothing (no spurious update)', () => {

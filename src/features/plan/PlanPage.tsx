@@ -89,8 +89,9 @@ function computeWeekNumber(startDate: string): number {
 // nothing. Plan plans one week by itself, the CURRENT one, when it has no rows; the week after the current one, once it is the first
 // unplanned, opens with PLAN FORWARD (`PlanForwardCard`), which plans exactly that week. A week nobody planned that has passed shows NOT
 // PLANNED, read-only and empty, and nothing is ever written for it (DECISIONS 131). Under the header: COPY (`CopySheet`, hidden on week 1,
-// P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week as it was before this chunk until 54a and
-// 54b rebuild it. The PROGRAMS tab is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
+// P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week: since chunk 54a one card per exercise with its set
+// rows (`PlanExerciseCard`), under the workout chips and the session toggle that chunk 54b redraws as the session chips and ⋯. The PROGRAMS tab
+// is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
 //
 // Chunk 35 (SPEC Scheduling → Sequence [P1.1], G40: "The current cycle is the
 // one containing the next due workout. Cycles before it are past.") — what
@@ -824,6 +825,7 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
           weekNumber={viewWeek}
           marked={weekIsFullyDeload}
           pending={setWeekDeload.isPending}
+          pendingDeload={setWeekDeload.variables?.isDeload === true}
           rulesLine={deloadRulesText}
           notice={weekDeloadNotice}
           error={setWeekDeload.isError ? setWeekDeload.error : null}
@@ -942,8 +944,9 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
     for (const patch of patches) updateSet.mutate(patch)
   }
 
-  // REMOVE THIS SET: the stages first, highest index first, then the head (setGroupLogic.ts's cascade order); the rows' foreign key
-  // would take the stages with the head, but the screen's cache would hold them until the next read.
+  // REMOVE THIS SET: the requests go out stages first, highest index first, then the head (setGroupLogic.ts's cascade order). The rows' foreign
+  // key would take the stages with the head, but each request also takes its row out of the screen's cache at once; a removal cut short
+  // leaves the head with fewer stages, never stages without a head.
   function handleRemoveRow(row: PlanRow) {
     for (const id of removalOrder(row)) removeSet.mutate(id)
   }

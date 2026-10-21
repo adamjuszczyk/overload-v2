@@ -87,7 +87,6 @@ vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<strin
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false, error: null }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 // Only the default's read is stood in for (it reads the program's tables, which this file has no rows for); the mutation is the real one.
 vi.mock('./usePlanForward', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./usePlanForward')>()),

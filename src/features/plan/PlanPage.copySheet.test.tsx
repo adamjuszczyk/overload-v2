@@ -70,7 +70,6 @@ vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done })
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: state.plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: state.plans, isLoading: false }),

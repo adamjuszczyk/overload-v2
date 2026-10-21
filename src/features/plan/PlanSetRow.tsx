@@ -141,12 +141,14 @@ function WeightCell({
       if (valueKg !== null) onChange(null)
       return
     }
-    const parsed = parseFloat(trimmed.replace(',', '.'))
-    if (Number.isNaN(parsed) || parsed < 0) {
+    // A number is digits with at most one decimal separator (a comma is one, as a phone's keypad types it): "5o" is not a number (board 9's own
+    // example), where parseFloat would have read it as 5, and neither is a minus, an exponent or a second point.
+    if (!/^(\d+([.,]\d*)?|[.,]\d+)$/.test(trimmed)) {
       // Refused inline, nothing written; the raw text stays (board 9: "WEIGHT · NOT A NUMBER").
       onError(true)
       return
     }
+    const parsed = parseFloat(trimmed.replace(',', '.'))
     setEditing(false)
     onError(false)
     // The round-trip guard only applies once there is a stored value to compare the re-displayed figure with (weightUnit.ts).
@@ -181,7 +183,7 @@ function WeightCell({
           }}
           placeholder="0"
           aria-label="Weight target"
-          style={{ flex: '1 1 0', minWidth: 0, width: '100%', height: '100%', padding: 0, border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: 16, color: 'var(--text-primary)', ...MONO }}
+          style={{ flex: '1 1 0%', minWidth: 0, width: '100%', height: '100%', padding: 0, border: 'none', background: 'transparent', outline: 'none', textAlign: 'center', fontSize: 16, color: 'var(--text-primary)', ...MONO }}
         />
         <span style={{ flex: '0 0 auto', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)' }}>{unit}</span>
       </div>
@@ -262,7 +264,7 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
         </button>
 
         {warmup ? (
-          <div style={{ flex: '1 1 0', minWidth: 0 }} />
+          <div aria-hidden="true" style={RIR_SLOT} />
         ) : (
           <button
             type="button"

@@ -74,8 +74,7 @@ vi.mock('../programs/usePrograms', async () => ({
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
-// Chunk 30: the STRUCTURE view's run-wide fields call these hooks (StructureFields.tsx); this
-// file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
+// The set type picker (a set's ⋯) reads the exercise's program sets for its rest row; this file gives it none.
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
   ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
