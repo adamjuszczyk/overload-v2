@@ -73,6 +73,7 @@ const TABLES = [
   'v2_programs',
   'v2_run_schedules',
   'v2_session_exercise_swaps',
+  'v2_session_set_changes',
   'v2_session_type_history',
   'v2_sessions',
   'v2_set_logs',
@@ -93,7 +94,6 @@ const TABLES = [
 // its name into TABLES (the same test fails until it does) and deletes it here
 // (verify-rls-ahead.test.mjs fails until it does).
 export const TABLES_AHEAD_OF_THE_APP = [
-  'v2_session_set_changes',
   'v2_week_review_decisions',
 ];
 

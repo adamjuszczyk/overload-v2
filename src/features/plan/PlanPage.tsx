@@ -23,6 +23,7 @@ import WeekTiles from './WeekTiles'
 import PlanForwardCard from './PlanForwardCard'
 import CopySheet from './CopySheet'
 import WeekMenuSheet from './WeekMenuSheet'
+import VolumeSheet from './VolumeSheet'
 import { copyRows } from './copySheetLogic'
 import { forwardNote, forwardSource } from './planForwardLogic'
 import { weekTiles } from './weekPlanning'
@@ -58,7 +59,7 @@ function computeWeekNumber(startDate: string): number {
 // nothing. Plan plans one week by itself, the CURRENT one, when it has no rows; the week after the current one, once it is the first
 // unplanned, opens with PLAN FORWARD (`PlanForwardCard`), which plans exactly that week. A week nobody planned that has passed shows NOT
 // PLANNED, read-only and empty, and nothing is ever written for it (DECISIONS 131). Under the header: COPY (`CopySheet`, hidden on week 1,
-// P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week: since chunk 54a one card per exercise with its set
+// P1.2-1), VOLUME (`VolumeSheet`, chunk 55: hidden there too) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week: since chunk 54a one card per exercise with its set
 // rows (`PlanExerciseCard`), under the session chips, the legend and the session header and ⋯ that chunk 54b drew (`WeekView`: boards 1, 1a,
 // 1c, 1d, 10, 11; a stable week's THIS WEEK ONLY, the marks of what differs from the week's source, done sessions and past weeks read-only).
 // The PROGRAMS tab is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
@@ -204,7 +205,7 @@ const SPINNER_RING: CSSProperties = {
 
 const MONO_CAPTION: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }
 
-// One of the buttons under the header (board 1: COPY, VOLUME, WEEK ⋯). The row sizes itself to how many there are: chunk 55 adds VOLUME.
+// One of the buttons under the header (board 1: COPY, VOLUME, WEEK ⋯). The row sizes itself to how many there are: week 1 has WEEK ⋯ alone.
 const ACTION_BUTTON: CSSProperties = {
   height: 44,
   boxSizing: 'border-box',
@@ -275,8 +276,9 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
     if (activeMeso) setOpenedWeek(initialWeek ?? tilesCurrent)
   }, [activeMeso?.id])
 
-  // Which sheet is open, if any: COPY (board 2) or WEEK ⋯ (board 1e).
+  // Which sheet is open, if any: COPY (board 2), VOLUME (board 3) or WEEK ⋯ (board 1e).
   const [showCopy, setShowCopy] = useState(false)
+  const [showVolume, setShowVolume] = useState(false)
   const [showWeekMenu, setShowWeekMenu] = useState(false)
 
   // Week plans with a completed or skipped session: read-only like a past week.
@@ -636,14 +638,23 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
 
         {!contentLoading && hasSchedule && weekIsOpen && !plansFailed && (
           <>
-            {/* Under the header (board 1): COPY and WEEK ⋯. A past week has neither (board 1c). COPY isn't offered on week 1: there is
-                nothing before it, and numbers never come from another program (P1.2-1, provisional under D31). */}
+            {/* Under the header (board 1): COPY, VOLUME and WEEK ⋯. A past week has none of them (board 1c). COPY and VOLUME aren't
+                offered on week 1: there is nothing before it, and numbers never come from another program (P1.2-1, provisional under
+                D31). VOLUME is a button and nothing more: the week itself carries no volume (SPEC 14). */}
             {actionsShown && (
               <div style={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: 'minmax(0, 1fr)', gap: 8, marginBottom: 14 }}>
                 {viewWeek > 1 && (
                   <button type="button" onClick={() => setShowCopy(true)} style={ACTION_BUTTON}>
                     <Copy size={14} strokeWidth={2} aria-hidden="true" />
                     COPY
+                  </button>
+                )}
+                {viewWeek > 1 && (
+                  <button type="button" onClick={() => setShowVolume(true)} style={ACTION_BUTTON}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 20V12M12 20V5M19 20v-9" />
+                    </svg>
+                    VOLUME
                   </button>
                 )}
                 <button
@@ -709,7 +720,7 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
         )}
       </div>
 
-      {/* COPY (board 2) and WEEK ⋯ (board 1e): sheets, mounted to open them. Outside the content above, which isn't clickable
+      {/* COPY (board 2), VOLUME (board 3) and WEEK ⋯ (board 1e): sheets, mounted to open them. Outside the content above, which isn't clickable
           but scrolls; each is drawn through a portal. */}
       {showCopy && actionsShown && (
         <CopySheet
@@ -724,6 +735,21 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
           })}
           thisWeek={orderedWeekPlans}
           onClose={() => setShowCopy(false)}
+        />
+      )}
+      {showVolume && actionsShown && viewWeek > 1 && (
+        <VolumeSheet
+          unit={unit}
+          weekNumber={viewWeek}
+          // Last week is over exactly when Plan shows the current week (the current cycle): on a week planned ahead it is still
+          // running (DECISIONS 133). A past week has no action row, so this is never asked of one.
+          ended={viewWeek <= tilesCurrent}
+          // The open week's own query (an edit shows in it at once), and last week's rows from the run's every-week list.
+          thisWeek={weekPlans}
+          lastWeek={allWeekPlans.filter((wp) => wp.weekNumber === viewWeek - 1)}
+          thisWeekSchedule={weekSchedule ?? null}
+          lastWeekSchedule={program && !isSequence ? scheduleForWeek(scheduleRows ?? [], program.schedule, viewWeek - 1) : null}
+          onClose={() => setShowVolume(false)}
         />
       )}
       {showWeekMenu && actionsShown && (
