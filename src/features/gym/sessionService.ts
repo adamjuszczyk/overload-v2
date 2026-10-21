@@ -590,6 +590,10 @@ export async function logSet(params: {
   // handleLogWarmup (useExerciseCardState.ts) is the one real caller that
   // ever sets it to true.
   isWarmup?: boolean
+  // Chunk 58a (DECISIONS 174, 177; 46m's mapping): an added set's place among the sets added to its exercise, written with the
+  // head log of a set made by + ADD SET or + ADD ROUND and nowhere else (a planned set, a drop and a skip of a planned set leave
+  // the key out, so their rows are the ones this function always wrote).
+  addedPlace?: number | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -620,6 +624,7 @@ export async function logSet(params: {
       form_rating: params.formRating,
       stage_kind: params.stageKind,
       is_warmup: params.isWarmup,
+      ...(params.addedPlace != null ? { added_place: params.addedPlace } : {}),
     })
     .select('*, exercises(*)')
     .single()

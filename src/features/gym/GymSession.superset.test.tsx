@@ -188,16 +188,15 @@ describe('GymSession — superset current-set zigzag (TASKS.md chunk 13 note 3)'
     session = { ...session, setLogs: [] }
     const { container, rerender } = renderSession()
 
-    const unloggedBefore = container.querySelector('[data-unlogged-set]') as HTMLElement
-    const labelBefore = unloggedBefore.parentElement!.parentElement!.querySelector('p')!.textContent!
-    expect(labelBefore).toContain('BENCH PRESS') // A1 is first
+    // Chunk 58a: the current set is the one row with boxes (`data-current-set`), named by its round and member letter.
+    const labelOf = (el: HTMLElement) => el.querySelector('span')!.textContent
+    const currentBefore = container.querySelector('[data-current-set]') as HTMLElement
+    expect(labelOf(currentBefore)).toBe('A1') // A1 is first
 
-    const weightInput = within(unloggedBefore).getAllByRole('textbox')[0]
-    const repsInput = within(unloggedBefore).getByRole('spinbutton')
-    fireEvent.change(weightInput, { target: { value: '60' } })
-    fireEvent.change(repsInput, { target: { value: '10' } })
+    fireEvent.change(within(currentBefore).getByLabelText('Weight'), { target: { value: '60' } })
+    fireEvent.change(within(currentBefore).getByLabelText('Reps'), { target: { value: '10' } })
     await act(async () => {
-      fireEvent.click(within(unloggedBefore).getByText('LOG'))
+      fireEvent.click(within(currentBefore).getByText('LOG'))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -208,10 +207,10 @@ describe('GymSession — superset current-set zigzag (TASKS.md chunk 13 note 3)'
       </MemoryRouter>,
     )
 
-    const unloggedAfter = container.querySelector('[data-unlogged-set]') as HTMLElement
-    expect(unloggedAfter).not.toBe(unloggedBefore)
-    const labelAfter = unloggedAfter.parentElement!.parentElement!.querySelector('p')!.textContent!
-    expect(labelAfter).toContain('BARBELL ROW') // B1 is next, not A2
+    const currentAfter = container.querySelector('[data-current-set]') as HTMLElement
+    expect(currentAfter).not.toBe(currentBefore)
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect(labelOf(currentAfter)).toBe('B1') // B1 is next, not A2
   })
 })
 

@@ -90,11 +90,11 @@ function recordKey(item: SyncQueueItem): string | null {
 }
 
 // The head a stage log hangs under, for an item that writes one. An upsert
-// says so in its payload; a delete's payload is only { id }, so it says so
-// beside it (`queueSetLogDelete`).
+// says so in its payload; a delete's payload is only { id } and a patch's only
+// { id, set_number }, so they say so beside it (`queueSetLogDelete`, `queueSetLogPatch`).
 function headIdOf(item: SyncQueueItem): string | null {
   if (item.table !== 'v2_set_logs') return null
-  return (item.operation === 'delete' ? item.parentSetId : payloadOf(item).parent_set_id) ?? null
+  return (item.operation === 'delete' || item.operation === 'patch' ? item.parentSetId : payloadOf(item).parent_set_id) ?? null
 }
 
 // A head's record key -> the record keys of its stage logs with a write in the queue.
@@ -190,6 +190,16 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
   return items.filter((item) => !cancelled.has(item.id!))
 }
 
+// A queued patch is `{ id, set_number }`: nothing else is ever sent for it (chunk 58a; the queue refuses any other shape).
+function setNumberPatchOf(payload: unknown): { id: string; set_number: number } {
+  const p = payload as { id?: unknown; set_number?: unknown } | null
+  const keys = p ? Object.keys(p).sort().join(',') : ''
+  if (!p || keys !== 'id,set_number' || typeof p.id !== 'string' || typeof p.set_number !== 'number') {
+    throw new Error('a queued patch is { id, set_number } and nothing else')
+  }
+  return { id: p.id, set_number: p.set_number }
+}
+
 async function flushOnce() {
   const { removePending } = useOfflineStore.getState()
   const items = await dropNeverSentPairs(await db.sync_queue.orderBy('createdAt').toArray())
@@ -211,6 +221,13 @@ async function flushOnce() {
         // From here the server may hold the row, whatever happens to the reply.
         if (!item.sendStarted) await db.sync_queue.update(item.id!, { sendStarted: true })
         const { error } = await supabase.from(item.table).upsert(row)
+        if (error) throw error
+      } else if (item.operation === 'patch') {
+        // Chunk 58a (DECISIONS 197): the whole request is `update({ set_number }).eq('id', id)`. An update of a log another
+        // phone has deleted matches no row, so it can never bring the log back, and it names no column but the number, so it
+        // can't write this phone's copy of the weight or reps over another phone's edit.
+        const patch = setNumberPatchOf(item.payload)
+        const { error } = await supabase.from(item.table).update({ set_number: patch.set_number }).eq('id', patch.id)
         if (error) throw error
       } else {
         // The whole request is `delete().eq('id', id)`: a delete naming no row
@@ -292,7 +309,7 @@ export async function hasQueuedWritesFor(sessionId: string): Promise<boolean> {
     return (
       payload?.session_id === sessionId ||
       (item.table === 'v2_sessions' && payload?.id === sessionId) ||
-      (item.operation === 'delete' && item.sessionId === sessionId)
+      ((item.operation === 'delete' || item.operation === 'patch') && item.sessionId === sessionId)
     )
   })
 }
@@ -317,4 +334,25 @@ export async function queueSetLogDelete(log: { id: string; sessionId: string; pa
     ...(log.parentSetId ? { parentSetId: log.parentSetId } : {}),
   })
   await db.set_logs.delete(log.id)
+}
+
+// Chunk 58a (DECISIONS 178, 185 (c), 197): the workout screen's number corrections, and chunk 61's delete renumber and 62's
+// Warmup switch renumber, go out as one of these per log: `update({ set_number }).eq('id', id)`, sent after every earlier write
+// to the same log (its own record key), so a patch queued behind an upsert that fails in a pass waits for it. A log that has
+// since been deleted on another phone matches no row. A stage log names its head (`parentSetId`), as on a delete, so the head's
+// delete waits for it. The device's own copy of the log changes at once (the queue first, so a failure in between leaves a
+// stale copy, never a patch that was lost); the caller changes the number on the screen's cache.
+export async function queueSetLogPatch(
+  log: { id: string; sessionId: string; parentSetId?: string | null },
+  setNumber: number,
+): Promise<void> {
+  await db.sync_queue.add({
+    table: 'v2_set_logs',
+    operation: 'patch',
+    payload: { id: log.id, set_number: setNumber },
+    createdAt: new Date().toISOString(),
+    sessionId: log.sessionId,
+    ...(log.parentSetId ? { parentSetId: log.parentSetId } : {}),
+  })
+  await db.set_logs.update(log.id, { setNumber })
 }
