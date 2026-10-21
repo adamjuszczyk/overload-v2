@@ -103,7 +103,10 @@ interface CachedSetLog {
 interface SyncQueueItem {
   id?: number // auto-increment
   table: string
-  operation: 'upsert' | 'delete'
+  // Chunk 58a (DECISIONS 197): `patch` changes one column of one log, `update({ set_number }).eq('id', id)`; its payload is
+  // `{ id, set_number }` and nothing else. A whole-row upsert of the log would bring back a log another phone deleted and
+  // write this phone's cached weight and reps over another phone's edit (`useSyncQueue.patch.test.ts` runs both).
+  operation: 'upsert' | 'delete' | 'patch'
   payload: unknown
   createdAt: string
   attempts?: number // failed replay attempts — dead-lettered after 3
@@ -127,7 +130,7 @@ interface SyncQueueItem {
   // belongs is kept beside it: the session it belongs to (the finish waits for
   // it, the "couldn't sync" notice is shown on its screen) and, for a stage
   // log, the head it hangs under (the head's delete waits for it). Plain
-  // fields, no bump; written by `queueSetLogDelete` only.
+  // fields, no bump; written by `queueSetLogDelete` and `queueSetLogPatch` only.
   sessionId?: string
   parentSetId?: string
 }

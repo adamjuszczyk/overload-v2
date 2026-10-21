@@ -1,0 +1,122 @@
+{
+  "steps": [
+    {
+      "typed": {
+        "weight": "60",
+        "reps": "8"
+      },
+      "payload": {
+        "weekPlanSetId": "set-1",
+        "setNumber": 1,
+        "weight": 60,
+        "reps": 8,
+        "rir": null,
+        "isDropset": false,
+        "isSkipped": false,
+        "restSeconds": null,
+        "setSeconds": null,
+        "enteredUnit": null,
+        "formRating": null,
+        "stageKind": null,
+        "exerciseId": "ex-1",
+        "parentSetId": null,
+        "stageIndex": 0,
+        "note": null
+      },
+      "rest": {
+        "running": true,
+        "targetSeconds": 90
+      }
+    },
+    {
+      "typed": {
+        "weight": "62.5",
+        "reps": "8"
+      },
+      "payload": {
+        "weekPlanSetId": "set-2",
+        "setNumber": 2,
+        "weight": 62.5,
+        "reps": 8,
+        "rir": null,
+        "isDropset": false,
+        "isSkipped": false,
+        "restSeconds": 95,
+        "setSeconds": null,
+        "enteredUnit": null,
+        "formRating": null,
+        "stageKind": null,
+        "exerciseId": "ex-1",
+        "parentSetId": null,
+        "stageIndex": 0,
+        "note": null
+      },
+      "rest": {
+        "running": true,
+        "targetSeconds": 90
+      }
+    },
+    {
+      "typed": {
+        "weight": "65",
+        "reps": "6"
+      },
+      "payload": {
+        "weekPlanSetId": "set-3",
+        "setNumber": 3,
+        "weight": 65,
+        "reps": 6,
+        "rir": null,
+        "isDropset": false,
+        "isSkipped": false,
+        "restSeconds": 100,
+        "setSeconds": null,
+        "enteredUnit": null,
+        "formRating": null,
+        "stageKind": null,
+        "exerciseId": "ex-1",
+        "parentSetId": null,
+        "stageIndex": 0,
+        "note": null
+      },
+      "rest": {
+        "running": true,
+        "targetSeconds": 90
+      }
+    },
+    {
+      "typed": {
+        "weight": "40",
+        "reps": "8"
+      },
+      "payload": {
+        "weekPlanSetId": "set-3-drop",
+        "setNumber": 3,
+        "weight": 40,
+        "reps": 8,
+        "rir": null,
+        "isDropset": true,
+        "isSkipped": false,
+        "restSeconds": 20,
+        "setSeconds": null,
+        "enteredUnit": null,
+        "formRating": null,
+        "stageKind": null,
+        "exerciseId": "ex-1",
+        "parentSetId": "log-3",
+        "stageIndex": 1,
+        "note": null
+      },
+      "rest": {
+        "running": true,
+        "targetSeconds": 90
+      }
+    }
+  ],
+  "finish": {
+    "id": "session-1",
+    "note": null,
+    "energyRating": null,
+    "pumpRating": null
+  }
+}
