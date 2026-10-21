@@ -80,6 +80,12 @@ export function stageKindWord(stageKind: StageKind | null): string {
 
 const pad2 = (n: number): string => String(n).padStart(2, '0')
 
+/** A time as the workout's boards write it: "1:12", "0:48", "2:00" (the rest bar, a superset's rest, TIMING). */
+export function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds))
+  return `${Math.floor(total / 60)}:${pad2(total % 60)}`
+}
+
 /** What a row's number cell says: "03", "A2" (a superset member: letter and round), "W" (a warmup), "↳" (a drop). */
 export function rowLabelText(row: Pick<ResolvedRow, 'kind' | 'number' | 'block'>): string {
   if (row.kind === 'stage') return '↳'

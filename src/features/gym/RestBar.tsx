@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { useRestTimerStore } from './restTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
-import { formatRestTime } from '../../lib/formatRestTime'
+import { formatClock } from './workoutRowView'
 
 interface RestBarProps {
   /** The current set is out of view: which way it is (null while it is on screen, or there is none), its name and the jump itself. */
@@ -83,11 +83,11 @@ export default function RestBar({ jump }: RestBarProps) {
               REST
             </span>
             <span className="text-lg font-black tabular-nums" style={{ color: isOver ? 'var(--accent)' : 'var(--text-primary)', fontFamily: MONO }}>
-              {formatRestTime(elapsed)}
+              {formatClock(elapsed)}
             </span>
             {isVisible && (
               <span className="text-xs tabular-nums" style={{ color: 'var(--text-muted)', fontFamily: MONO }}>
-                / {formatRestTime(target)}
+                / {formatClock(target)}
               </span>
             )}
             {isOver && (

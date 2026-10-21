@@ -11,12 +11,11 @@ import type { LogParams } from './useExerciseCardState'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
-import { formatRestTime } from '../../lib/formatRestTime'
 import { toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
 import { FORM_SCALE } from './ratingScales'
 import RatingChips from './RatingChips'
 import { CueLine, LastLine, RowLabel, boxStyle } from './setRowParts'
-import { rowDefaults, rowLabelText } from './workoutRowView'
+import { formatClock, rowDefaults, rowLabelText } from './workoutRowView'
 
 interface SetRowCurrentProps {
   row: ResolvedRow
@@ -176,7 +175,7 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, ca
             className="flex-1 flex items-center justify-center"
             style={{ height: 44, borderRadius: 8, backgroundColor: 'var(--accent-muted)', color: 'var(--accent)', fontFamily: MONO, fontSize: 12, fontWeight: 700, letterSpacing: '0.08em' }}
           >
-            TIMING {formatRestTime(setElapsed)}
+            TIMING {formatClock(setElapsed)}
           </div>
         ) : (
           <>

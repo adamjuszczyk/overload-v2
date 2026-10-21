@@ -12,7 +12,7 @@ import type { ResolvedRow } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
 import { memberLetter } from './workoutRules'
 import { useLastSessionLogs } from './useSession'
-import { formatRestTime } from '../../lib/formatRestTime'
+import { formatClock } from './workoutRowView'
 
 // Chunk 13 (SPEC "Supersets") and chunk 58a (board W1): a shared card for 2+ exercises sharing one `superset_block_id`, drawn as
 // rounds (round 1 = A1, B1, C1; round 2 = A2, B2, C2; …). The rounds are the ones chunk 46r's rules form (`resolveRows`: each row says
@@ -131,7 +131,7 @@ export default function SupersetBlock({
         <Link2 size={13} style={{ color: 'var(--accent)' }} />
         <span className="text-xs font-bold tracking-widest" style={{ color: 'var(--accent)', fontFamily: MONO }}>
           SUPERSET {letter}
-          {rest != null ? ` · REST ${formatRestTime(rest)} AFTER EACH ROUND` : ''}
+          {rest != null ? ` · REST ${formatClock(rest)} AFTER EACH ROUND` : ''}
         </span>
       </div>
 

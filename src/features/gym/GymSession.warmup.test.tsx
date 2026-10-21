@@ -121,6 +121,9 @@ vi.mock('./useSession', () => ({
 
 const { default: GymSession } = await import('./GymSession')
 
+// The number cell of every row, in the order the screen draws them.
+const rowLabels = (container: HTMLElement) => Array.from(container.querySelectorAll('[data-row-key]')).map((el) => el.querySelector('span')?.textContent)
+
 function renderSession() {
   return render(
     <MemoryRouter>
@@ -134,13 +137,11 @@ describe('GymSession — warmup sets are never counted in working-set numbering 
     session = { ...session, setLogs: [] }
     const { container } = renderSession()
 
-    expect(within(container as HTMLElement).getByText('WARMUP')).toBeTruthy()
-    const badges = Array.from(container.querySelectorAll('[data-unlogged-set]')).map(
-      (el) => el.textContent?.match(/^\s*(\d{2})/)?.[1],
-    )
-    // The warmup row carries no [data-unlogged-set] marker at all (SetRow's
-    // isWarmup branch never sets it) — only the two working rows do.
-    expect(badges).toEqual(['01', '02'])
+    // Chunk 58a: the warmup is its own row, numbered "W" apart from the working sets, which read 01 and 02. Only the first working
+    // set is the current set (a warmup never is: G54).
+    expect(rowLabels(container as HTMLElement)).toEqual(['W', '01', '02'])
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect((container.querySelector('[data-current-set]') as HTMLElement).dataset.rowKey).toBe('set:wps-work-1')
   })
 
   it('logging the warmup writes is_warmup: true and does not shift the working rows', async () => {
@@ -165,10 +166,7 @@ describe('GymSession — warmup sets are never counted in working-set numbering 
 
     // Working rows are still 01/02 — the now-logged warmup never occupied
     // a slot in that sequence.
-    const badges = Array.from(container.querySelectorAll('[data-unlogged-set]')).map(
-      (el) => el.textContent?.match(/^\s*(\d{2})/)?.[1],
-    )
-    expect(badges).toEqual(['01', '02'])
+    expect(rowLabels(container as HTMLElement)).toEqual(['W', '01', '02'])
   })
 
   it('logging the first working set after the warmup writes set_number: 1, not 2', async () => {
