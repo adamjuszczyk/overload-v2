@@ -22,6 +22,7 @@ import { createFakeDeloadDb, fakePlan, fakeSet, type FakeExerciseSlot } from './
 afterEach(() => {
   queryClient.clear()
   failCoreReadOf = null
+  failInsertFor = null
   startedPlans = new Set()
 })
 
@@ -33,20 +34,29 @@ type Session = (typeof SESSIONS)[number]
 const planId = (s: Session) => `wp-${s}`
 
 let fake = createFakeDeloadDb({ plans: [], sets: [], exercises: [] })
-// Two things the stand-in does not do itself: a read that fails (a dropped connection), and a session that has been started.
+// Three things the stand-in does not do itself: a read that fails (a dropped connection), an insert of a session's sets that fails (the
+// connection lost after the old sets were deleted), and a session that has been started. Each failure fires once, then clears.
 let failCoreReadOf: string | null = null
+let failInsertFor: string | null = null
 let injected = 0
 let startedPlans = new Set<string>()
 
 function reachable(table: string) {
-  const chain = fake.client.from(table) as Record<string, unknown>
+  // (the stand-in's table reader is called as a value, as the other fake-database tests do: verify-rls-tables.test.mjs flags a dynamic table name in any src file)
+  const chain = (fake.client.from as (t: string) => Record<string, unknown>)(table)
   let eqValue: unknown
+  let insertFails = false
   const eq = chain.eq as (col: string, val: unknown) => unknown
+  const insert = chain.insert as (payload: unknown) => unknown
   const single = chain.single as () => Promise<unknown>
   const then = chain.then as (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise<unknown>
   chain.eq = (col: string, val: unknown) => {
     eqValue = val
     return eq(col, val)
+  }
+  chain.insert = (payload: unknown) => {
+    insertFails = table === 'v2_week_plan_sets' && failInsertFor !== null && (payload as { week_plan_id?: string }).week_plan_id === failInsertFor
+    return insert(payload)
   }
   if (!chain.in) chain.in = () => chain
   chain.single = () => {
@@ -55,6 +65,12 @@ function reachable(table: string) {
       failCoreReadOf = null
       injected += 1
       return Promise.resolve({ data: null, error: new Error('network dropped') })
+    }
+    // insertCalculatedPlanSets: the first calculated set of the session
+    if (insertFails) {
+      failInsertFor = null
+      injected += 1
+      return Promise.resolve({ data: null, error: new Error('connection lost') })
     }
     return single()
   }
@@ -192,6 +208,32 @@ describe('a half-marked week marked again — through useSetDeload and useSetWee
     for (const s of SESSIONS) {
       expect(content(s)).toEqual(ORIGINAL)
       expect(plan(s).is_deload).toBe(false)
+    }
+  })
+
+  it('a mark cut off AFTER the second session lost its old sets (the copy saved, the calculated sets not inserted): pressing MARK WEEK again keeps that copy, so UNMARK WEEK still restores every plan', async () => {
+    buildWorld()
+    const markWeek = weekHook()
+
+    failInsertFor = planId('pull') // the connection is lost as the second session's calculated sets go in
+    await expect(markWeek({ isDeload: true, rules: RULES })).rejects.toThrow('connection lost')
+    expect(injected).toBe(1) // the failure fired
+    // What a cut at this point leaves: Pull is flagged with its copy of the plan, its old sets gone; Legs was never reached.
+    expect(plan('pull').is_deload).toBe(true)
+    expect(copyOf('pull')).toHaveLength(4)
+    expect(plan('legs').is_deload).toBe(false)
+    const copyOfPull = clone(copyOf('pull'))
+
+    // Before this chunk the second press calculated Pull from its (empty) sets and saved THAT as its copy: the plan was gone for good.
+    await markWeek({ isDeload: true, rules: RULES })
+    expect(copyOf('pull')).toEqual(copyOfPull)
+    expect(content('legs')).toEqual(MARKED)
+
+    await markWeek({ isDeload: false, rules: RULES })
+    for (const s of SESSIONS) {
+      expect(content(s)).toEqual(ORIGINAL)
+      expect(plan(s).is_deload).toBe(false)
+      expect(copyOf(s)).toBeNull()
     }
   })
 
