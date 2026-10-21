@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
 import { USER, makeWorld, plan, planId, setId, type World } from './reviewWorld.testutil'
 
@@ -49,6 +49,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   queryClient.clear()
+  onlineManager.setOnline(true)
 })
 
 describe('the sheet (board 4)', () => {
@@ -234,8 +235,23 @@ describe('W: pending and error, per item', () => {
     expect(world.tables.v2_week_review_decisions).toEqual([])
     expect(world.tables.v2_week_plan_sets.find((s) => s.id === setId(3, 'pe-bench', 2))!.target_weight).toBe(80)
     expect((within(item(KEYS.bench2)).getByRole('button', { name: 'USE 82.5 × 7' }) as HTMLButtonElement).disabled).toBe(false)
+    const release = world.holdNext()
     press(KEYS.bench2, 'USE 82.5 × 7')
+    await waitFor(() => expect(within(item(KEYS.bench2)).getByRole('button', { name: 'USING…' })).toBeTruthy())
+    expect(within(item(KEYS.bench2)).queryByRole('alert')).toBeNull() // the old error is gone while it is sent again
+    release()
     await waitFor(() => expect(item(KEYS.bench2)).toBeNull())
+  })
+
+  it('a write goes out while the phone is offline too (networkMode always): it fails with the network’s own words instead of waiting for a connection that may not come', async () => {
+    openSheet()
+    await screen.findByText('MON · UPPER A')
+    onlineManager.setOnline(false)
+    world.refuseNext({ code: '', message: 'Failed to fetch' })
+    press(KEYS.bench3, 'IGNORE')
+    const alert = await within(item(KEYS.bench3)).findByRole('alert')
+    expect(alert.textContent).toContain('Failed to fetch')
+    expect(world.sent).toHaveLength(1)
   })
 
   it('a refused IGNORE has its own headline, and the other items show no error', async () => {

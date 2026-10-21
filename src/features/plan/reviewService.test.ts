@@ -155,6 +155,17 @@ describe('W: what each action sends, in one request with the decision row', () =
     expect(e.key).toBe(`num:s-ua:${setId(2, 'pe-bench', 2)}`)
   })
 
+  it('USE where this week has fewer sets becomes ADD THIS SET: the done numbers as a new set at the end (SPEC Actions)', async () => {
+    const shorter = (p: ReturnType<typeof plan>) => ({ ...p, sets: p.sets.filter((s) => s.id !== setId(3, 'pe-bench', 3)) })
+    world.tables.v2_week_plan_sets = world.tables.v2_week_plan_sets.filter((s) => s.id !== setId(3, 'pe-bench', 3))
+    const found = (await reviewItems({ weekNumber: 3, lastWeek: { sessions: await fetchReviewSessions(LAST), plan: [plan('ua', 2)] }, thisWeek: [shorter(plan('ua', 3))], decisions: [] })).flatMap((g) => g.items)
+    const e = found.find((x) => benchSet(3)(x.item))!
+    await decide(e, 'use', { weekPlan: shorter(plan('ua', 3)) })
+    expect(world.sent[0].map((o) => `${o.op}:${o.table}`)).toEqual(['insert:v2_week_plan_sets', 'insert:v2_week_review_decisions'])
+    const added = world.tables.v2_week_plan_sets.filter((s) => s.week_plan_id === planId('ua', 3) && s.program_exercise_id === 'pe-bench').map((s) => [s.set_number, s.target_weight, s.rep_min])
+    expect(added).toEqual([[1, 80, 6], [2, 80, 6], [3, 80, 9]])
+  })
+
   it('IGNORE sends the decision row alone (ignored) and no week set changes', async () => {
     const e = await entry(benchSet(3))
     const before = structuredClone(world.tables.v2_week_plan_sets)

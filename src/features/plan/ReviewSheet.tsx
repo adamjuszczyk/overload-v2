@@ -140,7 +140,7 @@ export default function ReviewSheet({ unit, fromWeek, program, onClose, ...args 
   return (
     <BottomSheet eyebrow={reviewEyebrow(read.count, unit)} title="What went differently" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <span style={{ marginTop: -6, fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)' }}>{reviewExplanation(unit)}</span>
+        <span style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text-secondary)' }}>{reviewExplanation(unit)}</span>
 
         {read.status === 'loading' && (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '28px 0' }}>

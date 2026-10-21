@@ -9,6 +9,8 @@ import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { pe, plan, wset } from './weekPlanning.testutil'
 import { openWeekTile } from './planMenus.testutil'
 import type { ReviewReadArgs, ReviewRead } from './useReview'
+import type { ReviewGroup } from './review'
+import { captureRender } from '../../testing/captureRender'
 
 // Chunk 56 (TASKS-1.2 "REVIEW": "The line appears on the current week and a week planned ahead; never on week 1; hidden while nothing is left
 // to decide"; SPEC Review (13): "one line appears in the week view under COPY / VOLUME / WEEK"): where Plan puts the line and what it hands the
@@ -170,6 +172,15 @@ describe('the line, under the action row', () => {
     expect(state.asked.map((a) => a.weekNumber).every((n) => n === 3)).toBe(true)
   })
 
+  it('is not on a past week that was planned (board 1c: read only, no action row), and nothing is asked for it', () => {
+    weekdayRun({ weeksAgo: 2, weeks: [1, 2, 3] })
+    render(ui())
+    expect(state.asked.map((a) => a.weekNumber)).toEqual([3])
+    openWeekTile('WEEK 2')
+    expect(reviewLine()).toBeNull()
+    expect(state.asked.map((a) => a.weekNumber).every((n) => n === 3)).toBe(true)
+  })
+
   it('is on a week planned ahead too, asking for that week against the week before it', () => {
     weekdayRun({ weeks: [1, 2, 3] })
     render(ui())
@@ -268,5 +279,62 @@ describe('what the line and the sheet are handed', () => {
     rerender(ui())
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(reviewLine()).toBeNull()
+  })
+})
+
+// ─── Board 4, and board 1's line over it ───────────────────────────────────────────
+
+// Board 4's own three things: Tuesday's Lat Pulldown set 02 (a number item with its RIR), Tuesday's added Face Pull set, Thursday's swap.
+const BOARD_GROUPS: ReviewGroup[] = [
+  {
+    sessionId: 's-tue', weekPlanId: 'wp-wd-pull1-2', workoutDayId: 'wd-pull1', workoutName: 'Pull 1', date: '2026-10-06', heading: 'TUE · PULL 1',
+    items: [
+      {
+        key: 'num:s-tue:ps-lat',
+        item: {
+          kind: 'number', sessionId: 's-tue', weekPlanId: 'wp-wd-pull1-2', plannedSetId: 'ps-lat', exerciseId: 'e-lat', exerciseName: 'Lat Pulldown', setNumber: 2, isWarmup: false, unit: 'kg',
+          target: { programExerciseId: 'pe-lat', setId: 'w2-lat-2' }, planned: { weight: 55, reps: { type: 'range', min: 8, max: 10 }, rir: 2, rirMax: null },
+          done: { weight: 57.5, reps: 11, rir: 1, type: { kind: 'normal' } }, weightDiffers: true, repsDiffer: true,
+        },
+      },
+      {
+        key: 'added-set:s-tue:e-face:3',
+        item: { kind: 'added_set', sessionId: 's-tue', weekPlanId: 'wp-wd-pull1-2', exerciseId: 'e-face', exerciseName: 'Face Pull', setNumber: 3, place: null, unit: 'kg', done: { weight: 15, reps: 18, rir: 1, type: { kind: 'normal' } }, target: { programExerciseId: 'pe-face' } },
+      },
+    ],
+  },
+  {
+    sessionId: 's-thu', weekPlanId: 'wp-wd-push1-2', workoutDayId: 'wd-push1', workoutName: 'Push 2', date: '2026-10-08', heading: 'THU · PUSH 2',
+    items: [
+      {
+        key: 'swap:s-thu:pe-dips',
+        item: { kind: 'swapped', sessionId: 's-thu', weekPlanId: 'wp-wd-push1-2', programExerciseId: 'pe-dips', originalExerciseId: 'e-dips', originalExerciseName: 'Dips', replacementExerciseId: 'e-mdips', replacementExerciseName: 'Machine Dips', doneSets: 3, plannedSets: 3, target: { programExerciseId: 'pe-dips' } },
+      },
+    ],
+  },
+]
+
+describe('board 4 and board 1’s line, as built', () => {
+  it('the line under the action row, then the sheet over the page, with the board’s three things in the board’s words', () => {
+    weekdayRun()
+    state.read = { status: 'ready', groups: BOARD_GROUPS, count: 3, error: null }
+    state.statuses = new Map([['wp-wd-push1-1', 'done'], ['wp-wd-pull1-1', 'done']])
+    render(ui())
+    captureRender('plan-1-review', document.body)
+    expect(reviewLine()!.textContent).toBe('LAST WEEK3 things went differentlyREVIEW →')
+    fireEvent.click(reviewLine()!)
+    captureRender('plan-4', document.body)
+    const dialog = screen.getByRole('dialog', { name: 'What went differently' })
+    const text = dialog.innerText ?? dialog.textContent ?? ''
+    for (const wanted of [
+      'LAST WEEK · 3 THINGS', 'What went differently', 'Where last week went differently from its plan. Take it over or leave it.',
+      'TUE · PULL 1', 'LAT PULLDOWN · SET 02', 'Did 57.5 kg × 11', 'planned 55 kg × 8–10 · RIR 2 → did RIR 1', 'USE 57.5 × 11',
+      'FACE PULL · ADDED A SET', 'Set 03 · 15 kg × 18', 'RIR 1', 'ADD THIS SET',
+      'THU · PUSH 2', 'SWAPPED AN EXERCISE', 'Dips → Machine Dips', 'for all 3 sets', 'Swapping changes the plan from week 2 on.', 'SWAP FROM WEEK 2',
+    ]) {
+      expect(text).toContain(wanted)
+    }
+    expect(dialog.querySelectorAll('button')).toHaveLength(7) // × and IGNORE + the action, three times
+    expect([...dialog.querySelectorAll('button')].filter((b) => b.textContent === 'IGNORE')).toHaveLength(3)
   })
 })

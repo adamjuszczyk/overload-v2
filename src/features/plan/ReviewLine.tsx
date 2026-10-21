@@ -37,7 +37,7 @@ const CAPTION: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600
 
 export default function ReviewLine({ unit, onOpen, ...args }: ReviewLineProps) {
   const read = useReview(args)
-  if (read.status !== 'ready' || read.count === 0) return null
+  if (read.count === 0) return null // a read still out or failed carries no items
   const text = reviewLineText(read.count, unit)
   return (
     <button type="button" data-review-line onClick={onOpen} style={LINE}>
