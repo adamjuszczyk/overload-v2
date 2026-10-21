@@ -228,6 +228,14 @@ describe('PlanPage — a session\'s state: on its chip and in its header', () =>
     expect(sessionMenuButton()).not.toBeNull()
   })
 
+  it('a session the sessions read says is finished has no ⋯ even before the done list has its plan (the two reads arrive apart)', () => {
+    mockState.sessions = [session(3, PUSH, 'monday', 'completed')]
+    mockState.done = new Set() // the done list hasn't caught up
+    renderPlan()
+    expect(headerStates()).toEqual(['DONE'])
+    expect(sessionMenuButton()).toBeNull()
+  })
+
   it('a session only in progress shows no state at all and keeps its ⋯ (board 10 draws none for it)', () => {
     mockState.sessions = [session(3, PUSH, 'monday', 'in_progress')]
     renderPlan()
@@ -355,6 +363,19 @@ describe('PlanPage — a stable week: THIS WEEK ONLY on an exercise that differs
     expect(screen.queryByText('THIS WEEK ONLY')).toBeNull() // a past week: nothing to change from there
   })
 
+  it('a deload session of a stable week says no THIS WEEK ONLY: its sets are calculated, so they would all differ from the default', () => {
+    arrange()
+    mockState.all = mockState.all.map((p) =>
+      p.id === 'wp-3-wd-legs' ? { ...p, isDeload: true, sets: p.sets.filter((x) => x.id !== 'lp3c' && x.id !== 'lp3s') } : p,
+    )
+    cleanup()
+    renderPlan()
+    fireEvent.click(chip('FRI'))
+    expect(document.querySelector('[data-session-deload]')).not.toBeNull()
+    expect(screen.queryByText('THIS WEEK ONLY')).toBeNull()
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull() // and no marks: a deload session compares with nothing
+  })
+
   it('a week-dependent week has no THIS WEEK ONLY at all, whatever it holds', () => {
     renderPlan()
     expect(screen.queryByText('THIS WEEK ONLY')).toBeNull()
@@ -417,6 +438,27 @@ describe('PlanPage — a sequence run: SLOT chips, CYCLE wording', () => {
     // Slot 3's session of THIS cycle is done; slot 1's done session belongs to cycle 2's plan row.
     expect(ticked(within(slots).getByText('SLOT 3').closest('button') as HTMLElement)).toBe(true)
     expect(ticked(within(slots).getByText('SLOT 1').closest('button') as HTMLElement)).toBe(false)
+  })
+
+  it('one workout in two slots: each chip says its own slot\'s session (a plan row is the workout\'s AND the slot\'s)', () => {
+    arrange()
+    mockState.sequenceItems = [
+      { id: 'si-0', userId: 'user-1', programId: 'prog-1', position: 0, workoutDayId: 'wd-push' },
+      { id: 'si-1', userId: 'user-1', programId: 'prog-1', position: 1, workoutDayId: null },
+      { id: 'si-2', userId: 'user-1', programId: 'prog-1', position: 2, workoutDayId: 'wd-push' },
+    ]
+    mockState.all = [1, 2, 3].flatMap((cycle) => [
+      planRow(cycle, PUSH, [PE_PUSH], [wset(`b${cycle}-0`, 'pe-bench', 1)], { sequencePosition: 0 }),
+      planRow(cycle, PUSH, [PE_PUSH], [wset(`b${cycle}-2`, 'pe-bench', 1)], { sequencePosition: 2 }),
+    ])
+    mockState.sessions = [{ id: 'q-3', weekPlanId: 'wp-3-wd-push-s2', workoutDayId: 'wd-push', date: on(3, 'monday'), movedToDate: null, status: 'completed' }]
+    mockState.done = new Set(['wp-3-wd-push-s2'])
+    renderPlan()
+    const slots = screen.getByRole('region', { name: 'Sequence slot switcher' })
+    expect(ticked(within(slots).getByText('SLOT 3').closest('button') as HTMLElement)).toBe(true)
+    expect(ticked(within(slots).getByText('SLOT 1').closest('button') as HTMLElement)).toBe(false)
+    expect(headerStates()).toEqual([]) // slot 1 is open, and its session is not done
+    expect(sessionMenuButton()).not.toBeNull()
   })
 
   it('the open slot\'s header says SLOT n; a done one says DONE and has no ⋯; an undone one\'s menu says "SLOT 1 · CYCLE 3" and has no MOVE', () => {
