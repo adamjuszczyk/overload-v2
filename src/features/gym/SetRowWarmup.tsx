@@ -80,7 +80,7 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
               <span className="absolute text-xs pointer-events-none" style={{ right: 6, bottom: 8, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>{editUnit}</span>
             </div>
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×</span>
-            <input type="number" inputMode="numeric" aria-label="Reps" value={editReps} onChange={(e) => setEditReps(e.target.value)} style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16, borderColor: 'var(--accent)' })} />
+            <input type="text" inputMode="numeric" aria-label="Reps" value={editReps} onChange={(e) => setEditReps(e.target.value)} style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16, borderColor: 'var(--accent)' })} />
           </div>
           {logError && <p className="text-xs" style={{ paddingLeft: 36, color: 'var(--error)', fontFamily: MONO }}>{logError}</p>}
           <div className="flex items-center gap-2" style={{ paddingLeft: 36 }}>
@@ -165,7 +165,7 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
           <span className="absolute text-xs pointer-events-none" style={{ right: 6, bottom: 8, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>{unit}</span>
         </div>
         <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×</span>
-        <input type="number" inputMode="numeric" aria-label="Reps" placeholder={defaults.repsHint} value={reps} onChange={(e) => setReps(e.target.value)} style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16 })} />
+        <input type="text" inputMode="numeric" aria-label="Reps" placeholder={defaults.repsHint} value={reps} onChange={(e) => setReps(e.target.value)} style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16 })} />
         <button type="button" onClick={handleLog} className="flex-shrink-0 rounded-lg font-black text-sm tracking-wider" style={{ height: 44, padding: '0 12px', minWidth: 112, backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: MONO }}>
           LOG
         </button>

@@ -83,7 +83,7 @@ export default function SetRowLogged({ row, log, resolvedUnit, onUpdate, onDelet
           </div>
           <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×</span>
           <input
-            type="number"
+            type="text"
             inputMode="numeric"
             aria-label="Reps"
             value={editReps}
@@ -91,7 +91,7 @@ export default function SetRowLogged({ row, log, resolvedUnit, onUpdate, onDelet
             style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16, borderColor: 'var(--accent)' })}
           />
           <input
-            type="number"
+            type="text"
             inputMode="numeric"
             aria-label="RIR"
             placeholder="RIR"

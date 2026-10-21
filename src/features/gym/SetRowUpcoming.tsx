@@ -10,7 +10,7 @@ import { rowLabelText, targetsText } from './workoutRowView'
 const MONO = 'var(--font-mono)'
 const dashed = { borderWidth: 1, borderStyle: 'dashed' as const, borderColor: 'var(--border)' }
 
-export function SetRowUpcoming({ row, planned, unit, lastLine }: { row: ResolvedRow; planned: WeekPlanSet | null; unit: WeightUnit; lastLine: string }) {
+export function SetRowUpcoming({ row, planned, unit, lastLine, lastLoading = false }: { row: ResolvedRow; planned: WeekPlanSet | null; unit: WeightUnit; lastLine: string; lastLoading?: boolean }) {
   const targets = targetsText(planned, unit)
   const hasCue = (planned?.tags?.length ?? 0) > 0
   return (
@@ -22,7 +22,7 @@ export function SetRowUpcoming({ row, planned, unit, lastLine }: { row: Resolved
         </span>
       </div>
       <CueLine tags={planned?.tags} compact={hasCue} />
-      <LastLine text={lastLine} />
+      <LastLine text={lastLine} loading={lastLoading} />
     </div>
   )
 }
@@ -33,10 +33,10 @@ export function SetRowLocked({ row, planned, unit, lock }: { row: ResolvedRow; p
   return (
     <div style={rowFrame({ ...dashed })} data-row-key={row.key} data-row-state="locked">
       <RowLabel text={rowLabelText(row)} />
-      <span className="flex-1 text-sm font-bold" style={{ color: 'var(--text-muted)', fontFamily: MONO }}>
+      <span className="flex-1 font-bold" style={{ minWidth: 0, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 13 }}>
         {targets === '' ? '—' : targets}
       </span>
-      <span className="flex items-center gap-1 text-xs font-bold" style={{ color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }}>
+      <span className="flex items-center gap-1 flex-shrink-0 font-bold whitespace-nowrap" style={{ color: 'var(--text-muted)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em' }}>
         <Lock size={11} />
         {lock}
       </span>

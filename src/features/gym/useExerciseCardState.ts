@@ -86,6 +86,7 @@ export function useExerciseCardState({
   workout,
   logs,
   lastLogs: allLastLogs,
+  lastLogsLoading,
   onLog,
   onUpdateSet,
   onDeleteSet,
@@ -376,6 +377,7 @@ export function useExerciseCardState({
 
   return {
     resolvedWeightUnit,
+    lastLogsLoading,
     logs,
     onUpdateSet,
     onDeleteSet,

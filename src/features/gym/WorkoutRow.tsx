@@ -79,20 +79,21 @@ export default function WorkoutRow({ state, row, current, supersetContext }: Wor
         planned={planned}
         resolvedUnit={unit}
         lastLine={lastLineText(state.lastFor(row), unit)}
+        lastLoading={row.kind === 'working' && state.lastLogsLoading}
         carryWeightKg={headLog && row.stageKind ? resolveStageCarryWeightKg(row.stageKind, { head: headLog, stages: stageLogs }) : null}
         restElapsed={state.currentRestElapsed}
         onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
       />
     )
   }
-  return <SetRowUpcoming key={row.key} row={row} planned={planned} unit={unit} lastLine={lastLineText(state.lastFor(row), unit)} />
+  return <SetRowUpcoming key={row.key} row={row} planned={planned} unit={unit} lastLine={lastLineText(state.lastFor(row), unit)} lastLoading={row.kind === 'working' && state.lastLogsLoading} />
 }
 
 const stageLogsOf = (logs: readonly SetLog[], head: SetLog): SetLog[] =>
   logs.filter((log) => log.parentSetId === head.id).sort((a, b) => a.stageIndex - b.stageIndex)
 
 /**
- * The card's rows in order, each through `WorkoutRow`, with a staged head's chip above its row (board W3: "DROPSET · 2 DROPS") and,
+ * The card's rows in order, each through `WorkoutRow`, with a staged head's chip above its row while stages are still to come (board W3: "DROPSET · 2 DROPS") and,
  * after the last row of a logged head's group, today's ADD STAGE / "mark as dropset" (chunk 62 removes them with the set type picker).
  */
 export function CardRows({
@@ -115,7 +116,10 @@ export function CardRows({
         const next = rows[i + 1]
         const endsGroup = row.kind !== 'warmup' && (next === undefined || next.kind !== 'stage' || next.headKey !== (row.kind === 'stage' ? row.headKey : row.key))
         const head = row.kind === 'stage' ? rows.find((r) => r.key === row.headKey) : row
-        const chip = row.kind === 'working' && row.type?.kind === 'staged' ? stageChipText(row.type.stageKind, row.type.stageCount) : null
+        // The chip says what is coming ("DROPSET · 2 DROPS"); once every stage under the head is logged or skipped the logged stage
+        // rows carry their own kind marker (boards W3: no chip above a finished group).
+        const stagesPending = row.kind === 'working' && rows.some((r) => r.kind === 'stage' && r.headKey === row.key && r.state === 'unlogged')
+        const chip = row.kind === 'working' && row.type?.kind === 'staged' && stagesPending ? stageChipText(row.type.stageKind, row.type.stageCount) : null
         const rowState = stateOf?.(row) ?? state
         return (
           <Fragment key={row.key}>

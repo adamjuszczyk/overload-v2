@@ -179,7 +179,7 @@ describe('GymSession — warmup sets are never counted in working-set numbering 
     const workingRow = logButtons[1].closest('div')!.parentElement!
     const [weightInput] = within(workingRow).getAllByRole('textbox') as HTMLInputElement[]
     fireEvent.change(weightInput, { target: { value: '100' } })
-    const repsField = within(workingRow).getAllByRole('spinbutton')[0]
+    const repsField = within(workingRow).getByLabelText('Reps')
     fireEvent.change(repsField, { target: { value: '8' } })
     fireEvent.click(logButtons[1])
 

@@ -215,6 +215,24 @@ describe('the logging-time unit override and MEASURE SET TIME (today\'s, kept in
     expect(calls[0]).toMatchObject({ setSeconds: 42, restSeconds: 75, weight: 50, reps: 8 })
   })
 
+  it('with MEASURE SET TIME on the row before START SET has no RIR box; tapping TIMING brings every box back with the clock kept, and LOG writes what was typed', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, measureSetTime: true })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-05T10:00:00Z'))
+    const { calls, onLog } = spy()
+    const { container } = renderCard({ plannedSets: [plannedSet(1, { targetWeight: 50, repMin: 8, repMax: 8 })], props: { onLog } })
+    expect(within(current(container)).queryByLabelText('RIR')).toBeNull()
+    fireEvent.click(within(current(container)).getByText('START SET'))
+    expect(within(current(container)).queryByLabelText('Reps')).toBeNull() // TIMING stands where the boxes were (board W2)
+    fireEvent.click(within(current(container)).getByText(/^TIMING/))
+    expect(within(current(container)).getByLabelText('RIR')).toBeTruthy()
+    expect(current(container).textContent).toMatch(/TIMING 0:\d\d/)
+    typeInto(current(container), 'Reps', '7')
+    typeInto(current(container), 'RIR', '2')
+    await pressLog(current(container))
+    expect(calls[0]).toMatchObject({ weight: 50, reps: 7, rir: 2 })
+  })
+
   it('⋮ keeps FORM and SKIP THIS SET reachable until chunk 61\'s sheet: SKIP writes a skipped set under the number the row shows', async () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'rest_pause' })], props: { onLog } })

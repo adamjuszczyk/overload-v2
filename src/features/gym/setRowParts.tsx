@@ -20,12 +20,12 @@ export const boxStyle = (extra: CSSProperties = {}): CSSProperties => ({
   ...extra,
 })
 
-/** The number cell: "03", "A2", "W", "↳". */
-export function RowLabel({ text, accent = false }: { text: string; accent?: boolean }) {
+/** The number cell: "03", "A2", "W", "↳". `width` is 28 px; the current row, which has the most to fit at 375 px, takes 22. */
+export function RowLabel({ text, accent = false, width = 28 }: { text: string; accent?: boolean; width?: number }) {
   return (
     <span
       className="text-xs font-bold text-center flex-shrink-0"
-      style={{ width: 28, color: accent ? 'var(--accent)' : 'var(--text-muted)', fontFamily: MONO }}
+      style={{ width, color: accent ? 'var(--accent)' : 'var(--text-muted)', fontFamily: MONO }}
     >
       {text}
     </span>
@@ -67,10 +67,17 @@ export function SyncMark({ logId }: { logId: string }) {
 }
 
 /** "LAST 52.5 × 10 @ 1" under an open row (board W1): last time's numbers, never a value in the boxes (DECISIONS 162). */
-export function LastLine({ text }: { text: string }) {
+export function LastLine({ text, loading = false }: { text: string; loading?: boolean }) {
+  if (loading) {
+    return (
+      <p className="text-xs" style={{ paddingLeft: 34, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }}>
+        LOADING LAST TIME…
+      </p>
+    )
+  }
   if (text === '') return null
   return (
-    <p className="text-xs" style={{ paddingLeft: 36, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>
+    <p className="text-xs" style={{ paddingLeft: 34, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>
       <span style={{ fontWeight: 700 }}>LAST</span> {text}
     </p>
   )
@@ -82,7 +89,7 @@ export function CueLine({ tags, compact = false }: { tags: readonly string[] | n
   return (
     <p
       className="flex items-center gap-1 flex-wrap font-bold"
-      style={{ paddingLeft: 36, color: 'var(--accent)', fontFamily: MONO, fontSize: 11, letterSpacing: '0.04em' }}
+      style={{ paddingLeft: 34, color: 'var(--accent)', fontFamily: MONO, fontSize: 11, letterSpacing: '0.04em' }}
     >
       <Tag size={12} />
       {compact ? 'CUE' : tags.map((tag) => tag.toUpperCase()).join(' · ')}
