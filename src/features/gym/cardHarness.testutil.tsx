@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ComponentProps } from 'react'
 import ExerciseCard from './ExerciseCard'
 import { useWorkoutRows } from './useWorkoutRows'
+import { groupSetLogs } from './setGroupLogic'
+import type { ReferenceSession } from './sessionService'
 import type { ProgramExercise, ProgramSet, SetLog, WeekPlanSet } from '../../types'
 
 export const exerciseOf = (over: Partial<ProgramExercise> = {}): ProgramExercise => ({
@@ -33,6 +35,13 @@ export const logOf = (over: Partial<SetLog> & { id: string }): SetLog => ({
 /** A planned head's log, as the screen writes it. */
 export const headLogOf = (n: number, over: Partial<SetLog> = {}): SetLog => logOf({ id: `log-${n}`, weekPlanSetId: `set-${n}`, setNumber: n, ...over })
 
+/** A reference session as the exercise's panel gets it (grouped, in set order): what the rows' LAST line reads. */
+export const referenceSessionOf = (sessionId: string, date: string, logs: SetLog[], over: Partial<ReferenceSession> = {}): ReferenceSession => ({
+  sessionId, date, completedAt: `${date}T11:00:00Z`, mesocycleId: 'meso-1',
+  logs: groupSetLogs([...logs].sort((a, b) => a.setNumber - b.setNumber)),
+  ...over,
+})
+
 type CardProps = Partial<ComponentProps<typeof ExerciseCard>>
 
 interface HarnessProps {
@@ -54,8 +63,6 @@ function Harness({ plannedSets, logs, programSets = [], props = {} }: HarnessPro
         programSets={programSets}
         workout={workout}
         logs={logs}
-        lastLogs={[]}
-        lastLogsLoading={false}
         referenceSessions={[]}
         referenceLoading={false}
         referenceMesocycleId={null}

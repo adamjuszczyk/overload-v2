@@ -167,7 +167,9 @@ vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({ mutateAsync: vi.fn() }),
-  useLastSessionLogs: () => ({ data: [], isLoading: false }),
+  // The latest completed session of the exercise, which the rows' LAST line read before 58a's review 1 (finding 2): a decoy now. Every
+  // card's LAST line must read the reference's own entry (the Map below), so a card that still read this would show 999.
+  useLastSessionLogs: () => ({ data: [{ ...extraLog, id: 'decoy', exercise: undefined, exerciseId: 'ex-a', sessionId: 'decoy-session', weight: 999, reps: 9, rir: 1 }], isLoading: false }),
   useUpdateSetLog: () => ({ mutate: vi.fn() }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
   useExerciseReferenceSessions: (workoutDayId: string, exerciseIds: string[], currentSessionId: string | null) =>
@@ -233,6 +235,15 @@ describe('GymSession — reference sessions resolve by each card\'s own exercise
     // a swapped slot is two cards since chunk 58a (the original, then the replacement): each shows its own entry, and two with no
     // earlier session both read FIRST TIME
     expect(screen.getAllByText('FIRST TIME').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('the rows\' LAST line reads the reference\'s entry for the card\'s own exercise (the same primary session as the panel), not the latest completed session', () => {
+    renderSession()
+    // ex-a's entry is 101 × 1 @ 2 and ex-b's 102 × 2 @ 2 (a superset: A1 is the current row, B1 an upcoming one); the decoy 999 is the
+    // latest completed session's, and no card has an entry for it
+    expect(screen.getAllByText('101 × 1 @ 2').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('102 × 2 @ 2').length).toBeGreaterThan(0)
+    expect(screen.queryAllByText(/999/)).toHaveLength(0)
   })
 
   it('the batched query is called once (not per card) with exactly this screen\'s exercise ids', () => {

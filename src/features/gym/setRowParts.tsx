@@ -66,8 +66,26 @@ export function SyncMark({ logId }: { logId: string }) {
   return <Check size={14} style={{ color: 'var(--accent)' }} />
 }
 
-/** "LAST 52.5 × 10 @ 1" under an open row (board W1): last time's numbers, never a value in the boxes (DECISIONS 162). */
-export function LastLine({ text, loading = false }: { text: string; loading?: boolean }) {
+/**
+ * "LAST 52.5 × 10 @ 1" under an open row (board W1): last time's numbers, never a value in the boxes (DECISIONS 162). The line follows
+ * the exercise's reference: "LOADING LAST TIME…" while it loads (board W3b), and when it could not be read "COULDN'T LOAD LAST WEEK"
+ * with a RETRY that asks the reference again (board W2).
+ */
+export function LastLine({ text, loading = false, failed = false, onRetry }: { text: string; loading?: boolean; failed?: boolean; onRetry?: () => void }) {
+  if (failed) {
+    return (
+      <div className="flex items-center justify-between" style={{ minHeight: 40, padding: '0 4px', fontFamily: MONO, fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}>
+        <span style={{ color: 'var(--error)' }}>COULDN'T LOAD LAST WEEK</span>
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{ height: 36, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border-strong)', backgroundColor: 'var(--surface)', color: 'var(--text-primary)', fontFamily: MONO, fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}
+        >
+          RETRY
+        </button>
+      </div>
+    )
+  }
   if (loading) {
     return (
       <p className="text-xs" style={{ paddingLeft: 34, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em' }}>

@@ -11,7 +11,6 @@ import type { SupersetChainInput } from './restChain'
 import type { ResolvedRow } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
 import { memberLetter } from './workoutRules'
-import { useLastSessionLogs } from './useSession'
 import { formatClock } from './workoutRowView'
 
 // Chunk 13 (SPEC "Supersets") and chunk 58a (board W1): a shared card for 2+ exercises sharing one `superset_block_id`, drawn as
@@ -62,7 +61,6 @@ export default function SupersetBlock({
   blockRest = null,
   workout,
   logs,
-  sessionId,
   referenceLoading,
   referenceMesocycleId,
   referenceScheduleType = 'weekday',
@@ -75,10 +73,9 @@ export default function SupersetBlock({
   onDeleteSet,
   onSwap,
 }: SupersetBlockProps) {
-  // One useLastSessionLogs + one useExerciseCardState call per member: a stable call COUNT is all React's rule needs, and
-  // GymSession's key on this component guarantees it.
-  const lastLogsQueries = members.map((m) => useLastSessionLogs(m.programExercise.exerciseId, sessionId))
-  const memberStates = members.map((m, i) =>
+  // One useExerciseCardState call per member: a stable call COUNT is all React's rule needs, and GymSession's key on this component
+  // guarantees it.
+  const memberStates = members.map((m) =>
     useExerciseCardState({
       cardKey: m.cardKey,
       programExercise: m.programExercise,
@@ -86,11 +83,10 @@ export default function SupersetBlock({
       programSets: m.programSets ?? [],
       workout,
       logs,
-      lastLogs: lastLogsQueries[i].data ?? [],
-      lastLogsLoading: lastLogsQueries[i].isLoading,
       referenceSessions: m.referenceSessions,
       referenceLoading,
       referenceMesocycleId,
+      referenceScheduleType,
       referenceIsError,
       referenceIsFromCache,
       onRetryReference,

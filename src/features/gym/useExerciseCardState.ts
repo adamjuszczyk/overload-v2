@@ -6,6 +6,7 @@ import { useRestTimerStore } from './restTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { groupSetLogs, cascadeDeleteOrder, headsOnly } from './setGroupLogic'
+import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
 import type { ResolvedRow } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
@@ -58,8 +59,7 @@ export interface ExerciseCardProps {
   workout: WorkoutRows
   /** The session's set logs. */
   logs: SetLog[]
-  lastLogs: SetLog[] // set logs from the previous session for this exercise — the LAST line only (DECISIONS 162)
-  lastLogsLoading: boolean
+  /** The exercise's reference sessions: the panel above the rows resolves them, and so does the rows' LAST line (`lastTimeSet.ts`). */
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
   referenceMesocycleId: string | null
@@ -85,8 +85,12 @@ export function useExerciseCardState({
   programSets = [],
   workout,
   logs,
-  lastLogs: allLastLogs,
-  lastLogsLoading,
+  referenceSessions,
+  referenceLoading,
+  referenceIsError,
+  referenceScheduleType = 'weekday',
+  onRetryReference,
+  today,
   onLog,
   onUpdateSet,
   onDeleteSet,
@@ -100,8 +104,9 @@ export function useExerciseCardState({
   const cardRows = workout.rows.filter((row) => row.exerciseKey === cardKey)
   const logById = new Map(logs.map((log) => [log.id, log]))
   const plannedById = new Map(allPlannedSets.map((set) => [set.id, set]))
-  // Warmups never take part in "last time" matching (SPEC "Warmup sets").
-  const lastLogGroups = groupSetLogs(allLastLogs.filter((log) => !log.isWarmup))
+  // The LAST line reads what the reference panel calls its primary session (finding 2 of 58a's review 1: not the latest completed
+  // session), once the reference has loaded; while it loads or has failed the line says so instead (boards W3b, W2).
+  const lastSession = referenceLoading || referenceIsError ? null : lastTimeSession(today, referenceScheduleType, referenceSessions)
 
   // Heads currently mid-cascade-delete — guards handleDeleteHead against a second concurrent invocation for the same head.
   const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
@@ -181,8 +186,8 @@ export function useExerciseCardState({
     return row.weekPlanSetId ? (plannedById.get(row.weekPlanSetId) ?? null) : null
   }
   const logOf = (row: ResolvedRow): SetLog | null => (row.logId ? (logById.get(row.logId) ?? null) : null)
-  /** Last time's set at the row's place — only a working head has one (the LAST line). */
-  const lastFor = (row: ResolvedRow): SetLog | null => (row.kind === 'working' ? (lastLogGroups[row.number - 1]?.head ?? null) : null)
+  /** Last time's set at the row's place, warmups out — only a working head has one (the LAST line). */
+  const lastFor = (row: ResolvedRow): SetLog | null => (row.kind === 'working' ? lastTimeSetAt(lastSession, row.number) : null)
 
   // ─── Writers ─────────────────────────────────────────────────────────────────────────────────────
   // LOG or SKIP of a head (a planned working set, or an added one): the number is the row's.
@@ -377,7 +382,9 @@ export function useExerciseCardState({
 
   return {
     resolvedWeightUnit,
-    lastLogsLoading,
+    lastLoading: referenceLoading,
+    lastFailed: referenceIsError,
+    retryLast: onRetryReference,
     logs,
     onUpdateSet,
     onDeleteSet,

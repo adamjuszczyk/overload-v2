@@ -79,14 +79,16 @@ export default function WorkoutRow({ state, row, current, supersetContext }: Wor
         planned={planned}
         resolvedUnit={unit}
         lastLine={lastLineText(state.lastFor(row), unit)}
-        lastLoading={row.kind === 'working' && state.lastLogsLoading}
+        lastLoading={row.kind === 'working' && state.lastLoading}
+        lastFailed={row.kind === 'working' && state.lastFailed}
+        onRetryLast={state.retryLast}
         carryWeightKg={headLog && row.stageKind ? resolveStageCarryWeightKg(row.stageKind, { head: headLog, stages: stageLogs }) : null}
         restElapsed={state.currentRestElapsed}
         onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
       />
     )
   }
-  return <SetRowUpcoming key={row.key} row={row} planned={planned} unit={unit} lastLine={lastLineText(state.lastFor(row), unit)} lastLoading={row.kind === 'working' && state.lastLogsLoading} />
+  return <SetRowUpcoming key={row.key} row={row} planned={planned} unit={unit} lastLine={lastLineText(state.lastFor(row), unit)} lastLoading={row.kind === 'working' && state.lastLoading} />
 }
 
 const stageLogsOf = (logs: readonly SetLog[], head: SetLog): SetLog[] =>

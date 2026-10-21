@@ -30,6 +30,9 @@ interface SetRowCurrentProps {
   lastLine: string
   /** Last time is still being read (board W3b "LOADING LAST TIME…"): the boxes don't wait for it, they hold the plan's targets. */
   lastLoading?: boolean
+  /** Last time could not be read (board W2: "COULDN'T LOAD LAST WEEK" with RETRY): drawn on the current row only. */
+  lastFailed?: boolean
+  onRetryLast?: () => void
   /** The weight (kg) a carrying kind's next stage starts from (stageCarryLogic.ts); null for a dropset and a head. */
   carryWeightKg?: number | null
   /** Seconds since the rest timer last started, read when LOG is pressed. */
@@ -39,7 +42,7 @@ interface SetRowCurrentProps {
 
 const MONO = 'var(--font-mono)'
 
-export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, lastLoading = false, carryWeightKg = null, restElapsed, onLog }: SetRowCurrentProps) {
+export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, lastLoading = false, lastFailed = false, onRetryLast, carryWeightKg = null, restElapsed, onLog }: SetRowCurrentProps) {
   const isStage = row.kind === 'stage'
   const measureSetTime = useSettingsStore((s) => s.measureSetTime)
   const setTimerStartedAt = useSetTimerStore((s) => s.startedAt)
@@ -309,7 +312,7 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
       )}
 
       <CueLine tags={tags} />
-      <LastLine text={lastLine} loading={lastLoading} />
+      <LastLine text={lastLine} loading={lastLoading} failed={lastFailed} onRetry={onRetryLast} />
     </div>
   )
 }

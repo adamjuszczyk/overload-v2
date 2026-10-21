@@ -3,7 +3,9 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, fireEvent, screen, within, act } from '@testing-library/react'
 import type { SetLog } from '../../types'
 import type { LogRequest } from './useExerciseCardState'
-import { headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates, exerciseOf } from './cardHarness.testutil'
+import { headLogOf, logOf, plannedDrop, plannedSet, referenceSessionOf, renderCard, rowLabels, rowStates, exerciseOf } from './cardHarness.testutil'
+import type { ReferenceSession } from './sessionService'
+import { parseISO, format } from 'date-fns'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
@@ -152,7 +154,7 @@ describe('LOG of an untouched row (DECISIONS 162 (a), Adam 2026-10-16)', () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({
       plannedSets: [plannedSet(1)],
-      props: { onLog, lastLogs: [logOf({ id: 'last-1', sessionId: 'prev', weight: 52.5, reps: 10, rir: 1 })] },
+      props: { onLog, today: '2026-01-05', referenceSessions: [referenceSessionOf('prev', '2025-12-31', [logOf({ id: 'last-1', sessionId: 'prev', weight: 52.5, reps: 10, rir: 1 })])] },
     })
     const row = current(container)
     expect((within(row).getByLabelText('Weight') as HTMLInputElement).value).toBe('')
@@ -519,5 +521,97 @@ describe('a swapped slot offers no second swap, and a plain card does', () => {
     plain.unmount()
     renderCard({ plannedSets: [plannedSet(1)], props: { slotSwapped: true, programExercise: exerciseOf() } })
     expect(screen.queryAllByLabelText('Swap exercise for this session')).toHaveLength(0)
+  })
+})
+
+// Review 1 of 58a, finding 2: the LAST line reads the session the exercise's reference panel calls its primary one (`lastTimeSet.ts`),
+// not the latest completed session. Today is Thursday 2026-01-08 (weeks run Monday to Sunday): "this week" is Mon 2026-01-05 on,
+// last week Mon 2025-12-29 to Sun 2026-01-04, and the dates below are checked against their weekdays (Checks that lied #21).
+describe('the LAST line reads the reference\'s primary session (58a review 1, finding 2)', () => {
+  const TODAY = '2026-01-08'
+  const DAY = { today: TODAY, thisWeekMon: '2026-01-05', lastWeekWed: '2025-12-31', twoWeeksWed: '2025-12-24' }
+  it('the fixture dates are the weekdays they are named for', () => {
+    expect(Object.values(DAY).map((d) => format(parseISO(d), 'EEE'))).toEqual(['Thu', 'Mon', 'Wed', 'Wed'])
+  })
+
+  const sets = (sessionId: string, weights: number[], over: Partial<SetLog> = {}) =>
+    weights.map((weight, i) => logOf({ id: `${sessionId}-${i + 1}`, sessionId, setNumber: i + 1, weight, reps: 10, rir: 1, ...over }))
+  const session = (sessionId: string, date: string, weights: number[], over: Partial<ReferenceSession> = {}) => referenceSessionOf(sessionId, date, sets(sessionId, weights), over)
+  const skippedSession = (sessionId: string, date: string) => referenceSessionOf(sessionId, date, sets(sessionId, [0, 0, 0], { isSkipped: true, weight: null, reps: null, rir: null }))
+  const card = (referenceSessions: ReferenceSession[], props: Record<string, unknown> = {}) =>
+    renderCard({ plannedSets: [1, 2, 3].map((n) => plannedSet(n)), props: { today: TODAY, referenceSessions, ...props } })
+  // The text of each row's LAST line, in the order the rows are drawn (null: the row draws none).
+  const lastLines = (container: Element) =>
+    Array.from(container.querySelectorAll('[data-row-key]')).map((row) => Array.from(row.querySelectorAll('p')).map((p) => p.textContent ?? '').find((t) => t.startsWith('LAST')) ?? null)
+
+  it('row 01 shows last week\'s first working set, 02 its second, 03 its third: never always the first', () => {
+    const { container } = card([session('lw', DAY.lastWeekWed, [60, 62.5, 65])])
+    expect(lastLines(container)).toEqual(['LAST 60 × 10 @ 1', 'LAST 62.5 × 10 @ 1', 'LAST 65 × 10 @ 1'])
+  })
+
+  it('warmups are left out: the place counts working sets only', () => {
+    const logs = [...sets('lw', [20, 40], { isWarmup: true }), ...sets('lw', [60, 62.5, 65]).map((l, i) => ({ ...l, id: `lw-w${i}`, setNumber: i + 3 }))]
+    const { container } = card([referenceSessionOf('lw', DAY.lastWeekWed, logs)])
+    expect(lastLines(container)).toEqual(['LAST 60 × 10 @ 1', 'LAST 62.5 × 10 @ 1', 'LAST 65 × 10 @ 1'])
+  })
+
+  it('a deload session last week never counts: the line reads the session before it (the latest completed session is the deload)', () => {
+    const { container } = card([session('deload', DAY.lastWeekWed, [30, 30, 30], { isDeload: true }), session('before', DAY.twoWeeksWed, [60, 62.5, 65])])
+    expect(lastLines(container)).toEqual(['LAST 60 × 10 @ 1', 'LAST 62.5 × 10 @ 1', 'LAST 65 × 10 @ 1'])
+  })
+
+  it('the exercise done earlier this week does not replace last week\'s numbers (the panel shows it apart, as EARLIER THIS WEEK)', () => {
+    const { container } = card([session('early', DAY.thisWeekMon, [70, 72.5, 75]), session('lw', DAY.lastWeekWed, [50, 52.5, 55])])
+    expect(lastLines(container)).toEqual(['LAST 50 × 10 @ 1', 'LAST 52.5 × 10 @ 1', 'LAST 55 × 10 @ 1'])
+  })
+
+  it('after a last session in which every set was skipped, the line reads the session the reference reaches back to', () => {
+    const { container } = card([skippedSession('lw', DAY.lastWeekWed), session('before', DAY.twoWeeksWed, [60, 62.5, 65])])
+    expect(lastLines(container)).toEqual(['LAST 60 × 10 @ 1', 'LAST 62.5 × 10 @ 1', 'LAST 65 × 10 @ 1'])
+  })
+
+  it('with nothing on record, or every session skipped, no row draws a LAST line (and none says it is loading or failed)', () => {
+    for (const sessions of [[], [skippedSession('lw', DAY.lastWeekWed)]]) {
+      const { container, unmount } = card(sessions)
+      expect(lastLines(container)).toEqual([null, null, null])
+      expect(container.textContent).not.toContain('LOADING LAST TIME')
+      expect(container.textContent).not.toContain('COULDN\'T LOAD')
+      unmount()
+    }
+  })
+
+  it('only a working set has a LAST line: the open drop under a logged head has none', () => {
+    const { container } = renderCard({
+      plannedSets: [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1)],
+      logs: [headLogOf(1, { stageKind: 'dropset' })],
+      props: { today: TODAY, referenceSessions: [session('lw', DAY.lastWeekWed, [60])] },
+    })
+    expect(rowStates(container)).toEqual(['logged', 'current'])
+    expect(lastLines(container)).toEqual([null, null])
+  })
+
+  it('on a sequence run it is the most recent session whatever its week; on a weekday run last week\'s', () => {
+    const sessions = [session('early', DAY.thisWeekMon, [70, 72.5, 75]), session('lw', DAY.lastWeekWed, [50, 52.5, 55])]
+    const sequence = card(sessions, { referenceScheduleType: 'sequence' })
+    expect(lastLines(sequence.container)[0]).toBe('LAST 70 × 10 @ 1')
+    sequence.unmount()
+    expect(lastLines(card(sessions).container)[0]).toBe('LAST 50 × 10 @ 1')
+  })
+
+  it('while the reference loads, the current row and the rows after it say LOADING LAST TIME… (board W3b) and show no numbers', () => {
+    const { container } = card([session('lw', DAY.lastWeekWed, [60, 62.5, 65])], { referenceLoading: true })
+    expect(lastLines(container)).toEqual([null, null, null])
+    const texts = Array.from(container.querySelectorAll('[data-row-key]')).map((row) => row.textContent ?? '')
+    expect(texts.map((t) => t.includes('LOADING LAST TIME…'))).toEqual([true, true, true])
+  })
+
+  it('when the reference could not be read, the current row says COULDN\'T LOAD LAST WEEK with a RETRY that asks again (board W2); no stale numbers, and no failed line on the rows after it', () => {
+    const onRetryReference = vi.fn()
+    const { container } = card([session('lw', DAY.lastWeekWed, [60, 62.5, 65])], { referenceIsError: true, onRetryReference })
+    expect(lastLines(container)).toEqual([null, null, null])
+    const failed = Array.from(container.querySelectorAll('[data-row-key]')).map((row) => (row.textContent ?? '').includes('COULDN\'T LOAD LAST WEEK'))
+    expect(failed).toEqual([true, false, false])
+    fireEvent.click(within(current(container)).getByText('RETRY'))
+    expect(onRetryReference).toHaveBeenCalledTimes(1)
   })
 })

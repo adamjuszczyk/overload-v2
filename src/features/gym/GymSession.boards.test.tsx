@@ -13,7 +13,7 @@ import { CardRows } from './WorkoutRow'
 import { useExerciseCardState } from './useExerciseCardState'
 import { useWorkoutRows } from './useWorkoutRows'
 import RestBar from './RestBar'
-import { exerciseOf, headLogOf, logOf, plannedDrop, plannedSet } from './cardHarness.testutil'
+import { exerciseOf, headLogOf, logOf, plannedDrop, plannedSet, referenceSessionOf } from './cardHarness.testutil'
 import { useOfflineStore } from '../offline/offlineStore'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
@@ -154,7 +154,9 @@ interface FrameProps {
   caption: string
   plannedSets: WeekPlanSet[]
   logs: SetLog[]
+  /** The logs of the exercise's last session: the reference's primary one, last week's (today is Monday 2026-01-05). */
   lastLogs?: SetLog[]
+  /** The exercise's reference is still being read (board W3b). */
   lastLogsLoading?: boolean
   addSet?: boolean
 }
@@ -162,7 +164,8 @@ function Frame({ caption, plannedSets, logs, lastLogs = [], lastLogsLoading = fa
   const programExercise = exerciseOf()
   const workout = useWorkoutRows({ cards: [{ key: programExercise.id, programExercise, plannedSets }], blocks: [], logs })
   const state = useExerciseCardState({
-    cardKey: programExercise.id, programExercise, plannedSets, workout, logs, lastLogs, lastLogsLoading, referenceSessions: [], referenceLoading: false,
+    cardKey: programExercise.id, programExercise, plannedSets, workout, logs,
+    referenceSessions: lastLogs.length > 0 ? [referenceSessionOf('prev', '2025-12-31', lastLogs)] : [], referenceLoading: lastLogsLoading,
     referenceMesocycleId: null, referenceIsError: false, referenceIsFromCache: false, onRetryReference: () => {}, today: '2026-01-05',
     onLog: () => Promise.resolve({} as SetLog), onUpdateSet: () => {}, onDeleteSet: async () => {}, onSwap: () => {},
   })
