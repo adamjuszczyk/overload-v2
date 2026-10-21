@@ -5,7 +5,10 @@ import { errorReason } from '../../components/exercisePickerLogic'
 // Chunk 52 (TASKS-1.2 "Plan's header" → WeekMenuSheet; SPEC Deload [1.2]: "week deload in WEEK ⋯ (C2)", "Plan shows [the rules], read-only, in
 // WEEK ⋯ ('Deload rules (from Settings)', board 1e)"; board 1e). "[PROGRAM] / Week N": MARK WEEK AS DELOAD (UNMARK THIS WEEK with the
 // DELOAD chip once marked; CYCLE on a sequence run), the Settings rules the mark applies, and "Already started — sets left as they are"
-// when a session of the week had started. MARKING… while the write is out. The old MARK WEEK AS DELOAD button above the panel is gone.
+// when a session of the week had started. MARKING… while a mark is out and UNMARKING… while an unmark is: the label follows the REQUEST in
+// flight (`pendingDeload`, the mutation's own `isDeload`), not whether the week reads as marked, because the mark is patched into the week
+// before it lands, so a week that is being marked already reads as marked (DECISIONS 187 (a); Adam, 2026-10-20). The old MARK WEEK AS
+// DELOAD button above the panel is gone.
 //
 // It writes nothing itself: the caller passes `onToggle`, which marks or unmarks through `useSetWeekDeload` (which no longer plans the
 // week: a week with a WEEK ⋯ is planned already). The sheet stays open after a mark so it shows the state it made (board 1e's second
@@ -21,8 +24,10 @@ export interface WeekMenuSheetProps {
   weekNumber: number
   /** Every session of the week is marked deload. */
   marked: boolean
-  /** A mark or unmark is in flight. */
+  /** A mark or unmark is in flight: the row is disabled until it has landed. */
   pending: boolean
+  /** What the request in flight asks for, from the request itself: true is a mark (MARKING…), false an unmark (UNMARKING…). Read only while `pending`. */
+  pendingDeload: boolean
   /** `Deload rules (from Settings): …`, or null when no rule is on (an unset feature shows nothing). */
   rulesLine: string | null
   /** "Already started — sets left as they are", after a mark a started session held back. */
@@ -54,10 +59,10 @@ const ROW: CSSProperties = {
   letterSpacing: '0.2em',
 }
 
-export default function WeekMenuSheet({ programName, unit, weekNumber, marked, pending, rulesLine, notice, error, onToggle, onClose }: WeekMenuSheetProps) {
+export default function WeekMenuSheet({ programName, unit, weekNumber, marked, pending, pendingDeload, rulesLine, notice, error, onToggle, onClose }: WeekMenuSheetProps) {
   const word = unit.toUpperCase()
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-  const label = pending ? (marked ? 'UNMARKING…' : 'MARKING…') : marked ? `UNMARK THIS ${word}` : `MARK ${word} AS DELOAD`
+  const label = pending ? (pendingDeload ? 'MARKING…' : 'UNMARKING…') : marked ? `UNMARK THIS ${word}` : `MARK ${word} AS DELOAD`
   return (
     <BottomSheet eyebrow={programName} title={`${unit === 'week' ? 'Week' : 'Cycle'} ${weekNumber}`} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

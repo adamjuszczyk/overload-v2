@@ -72,7 +72,6 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [state.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [state.program], isLoading: false }),
   useWorkoutDays: () => ({ data: [wdPush, wdPull], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -80,7 +79,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
@@ -88,7 +87,6 @@ vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<strin
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false, error: null }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 // Only the default's read is stood in for (it reads the program's tables, which this file has no rows for); the mutation is the real one.
 vi.mock('./usePlanForward', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./usePlanForward')>()),

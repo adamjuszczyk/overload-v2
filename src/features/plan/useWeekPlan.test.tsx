@@ -4,8 +4,8 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queryClient } from '../../lib/queryClient'
-import type { WeekPlan, ProgramExercise } from '../../types'
-import type { ChangeRecord } from './applyAhead'
+import type { WeekPlan } from '../../types'
+import type { SetTypeOp } from './planSetRows'
 
 // Chunk 8, review fix #1 ("Offline start regression") — usePlanWeek had no
 // networkMode, so it used TanStack's default 'online': offline, the
@@ -36,16 +36,15 @@ const markSessionDeloadMock = vi.fn()
 const unmarkSessionDeloadMock = vi.fn()
 const markWeekDeloadMock = vi.fn()
 const unmarkWeekDeloadMock = vi.fn()
-// Chunk 27 — useSwapWeekExercise / useReorderWeekExercises forward exactly
-// what the screen gives them (no "only this week" argument any more).
-const swapWeekExerciseMock = vi.fn()
-const reorderWeekExercisesMock = vi.fn()
 // Chunk 31 — useRemoveSet's executor.
 const removeSetMock = vi.fn()
+// Chunk 54a — "+ ADD SET" and a set type change: useAddSet's and useChangeSetType's executors.
+const addSetMock = vi.fn()
+const applySetTypeOpsMock = vi.fn()
 vi.mock('./weekPlanService', () => ({
   removeSet: (...args: unknown[]) => removeSetMock(...args),
-  swapWeekExercise: (...args: unknown[]) => swapWeekExerciseMock(...args),
-  reorderWeekExercises: (...args: unknown[]) => reorderWeekExercisesMock(...args),
+  addSet: (...args: unknown[]) => addSetMock(...args),
+  applySetTypeOps: (...args: unknown[]) => applySetTypeOpsMock(...args),
   planWeek: (...args: unknown[]) => planWeekMock(...args),
   updateSet: (...args: unknown[]) => updateSetMock(...args),
   markSessionDeload: (...args: unknown[]) => markSessionDeloadMock(...args),
@@ -58,7 +57,7 @@ vi.mock('./weekPlanService', () => ({
 // convention every other PlanPage-adjacent test file already uses.
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
-const { usePlanWeek, planWeekThenFindId, useUpdateSet, useRemoveSet, useSetDeload, useSetWeekDeload, useSwapWeekExercise, useReorderWeekExercises, useApplyAhead } = await import('./useWeekPlan')
+const { usePlanWeek, planWeekThenFindId, useUpdateSet, useRemoveSet, useAddSet, useChangeSetType, useSetDeload, useSetWeekDeload } = await import('./useWeekPlan')
 
 afterEach(() => {
   // onlineManager is a module-level singleton shared by every test in this
@@ -70,9 +69,9 @@ afterEach(() => {
   unmarkSessionDeloadMock.mockReset()
   markWeekDeloadMock.mockReset()
   unmarkWeekDeloadMock.mockReset()
-  swapWeekExerciseMock.mockReset()
-  reorderWeekExercisesMock.mockReset()
   removeSetMock.mockReset()
+  addSetMock.mockReset()
+  applySetTypeOpsMock.mockReset()
   // The imported queryClient is ALSO a module-level singleton (see the
   // cache-scope tests below) — clear it so no test's seeded cache data
   // leaks into the next.
@@ -236,6 +235,29 @@ describe('useUpdateSet / useRemoveSet — refresh the meso-wide list a later wee
     })
 
     await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(allKey('meso-7')))
+    expect(invalidatedKeys(spy)).not.toContainEqual(allKey('meso-1'))
+    spy.mockRestore()
+  })
+
+  // Chunk 54a: a type change adds and removes stage rows, so it changes what a later week is compared with like any other edit of the week's sets.
+  it('a set type change refreshes this week and the meso-wide list when a later week is planned, and only its own list when it is the latest week', async () => {
+    applySetTypeOpsMock.mockResolvedValue(undefined)
+    seedList()
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const earlier = renderHook(() => useChangeSetType('meso-1', 4), { wrapper })
+
+    act(() => {
+      earlier.result.current.mutate({ ops: [{ kind: 'removeStage', id: 'stage-1' }] })
+    })
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(allKey('meso-1')))
+    expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 4))
+
+    spy.mockClear()
+    const latest = renderHook(() => useChangeSetType('meso-1', 5), { wrapper })
+    act(() => {
+      latest.result.current.mutate({ ops: [{ kind: 'removeStage', id: 'stage-1' }] })
+    })
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 5)))
     expect(invalidatedKeys(spy)).not.toContainEqual(allKey('meso-1'))
     spy.mockRestore()
   })
@@ -512,76 +534,197 @@ describe('useSetDeload — marks/unmarks exactly the one session it was given (c
   })
 })
 
-// Chunk 27 (SPEC [P1.1] "'Only this week' is removed"): a swap or reorder is a
-// normal week edit. The hooks forward exactly what the screen gives them to
-// the service — nothing about "only this week" is added on the way. Checked
-// on the call's KEYS / argument count at the real hook layer.
-describe('useSwapWeekExercise / useReorderWeekExercises — no "only this week" argument (chunk 27)', () => {
-  it('useSwapWeekExercise calls swapWeekExercise with {userId, weekPlanId, programExerciseId, replacementExerciseId} and nothing else', async () => {
-    swapWeekExerciseMock.mockResolvedValue({ id: 'pe-new' })
-    const { result } = renderHook(() => useSwapWeekExercise('meso-1', 3), { wrapper })
+// Chunk 54a — "+ ADD SET": the week plan row is given (a week is planned before it is shown), and the write is what the screen named.
+describe('useAddSet — adds the set the screen described, to the plan row it was given (chunk 54a)', () => {
+  const defaults = { isWarmup: false, stageKind: null, repMin: 8, repMax: 10, isAmrap: false, targetWeight: null, targetRir: null, targetRirMax: null } as const
+
+  it('calls addSet(userId, weekPlanId, programExerciseId, setNumber, defaults) and makes no week plan of its own', async () => {
+    addSetMock.mockResolvedValue({ id: 'new' })
+    const { result } = renderHook(() => useAddSet('meso-1', 3), { wrapper })
     await act(async () => {
-      await result.current.mutateAsync({ weekPlanId: 'wp-1', programExerciseId: 'pe-1', replacementExerciseId: 'ex-2' })
+      await result.current.mutateAsync({ weekPlanId: 'wp-1', programExerciseId: 'pe-1', setNumber: 4, defaults })
     })
 
-    expect(swapWeekExerciseMock).toHaveBeenCalledTimes(1)
-    const arg = swapWeekExerciseMock.mock.calls[0][0] as Record<string, unknown>
-    expect(arg).toEqual({ userId: 'user-1', weekPlanId: 'wp-1', programExerciseId: 'pe-1', replacementExerciseId: 'ex-2' })
-    expect(Object.keys(arg).sort()).toEqual(['programExerciseId', 'replacementExerciseId', 'userId', 'weekPlanId'])
+    expect(addSetMock).toHaveBeenCalledTimes(1)
+    expect(addSetMock.mock.calls[0]).toEqual(['user-1', 'wp-1', 'pe-1', 4, defaults])
   })
 
-  it('useReorderWeekExercises calls reorderWeekExercises(weekPlanId, moves) — two arguments, no third', async () => {
-    reorderWeekExercisesMock.mockResolvedValue(undefined)
-    const moves = [
-      { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
-      { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
-    ]
-    const { result } = renderHook(() => useReorderWeekExercises('meso-1', 3), { wrapper })
+  it('refreshes this week and the meso-wide list once it has landed, and never pauses offline (networkMode always)', async () => {
+    addSetMock.mockResolvedValue({ id: 'new' })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useAddSet('meso-1', 3), { wrapper })
+    onlineManager.setOnline(false)
+    act(() => {
+      result.current.mutate({ weekPlanId: 'wp-1', programExerciseId: 'pe-1', setNumber: 4, defaults })
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toEqual([weekKey('meso-1', 3), ['v2_allWeekPlans', 'meso-1']])
+    invalidate.mockRestore()
+  })
+})
+
+// Chunk 54a — a set type change from the set type picker: the ordered writes of planSetRows.ts's plan, one mutation, read again at the end.
+describe('useChangeSetType — one change, in the order it was planned, the week read again however it ends (chunk 54a)', () => {
+  const ops: SetTypeOp[] = [
+    { kind: 'removeStage', id: 'stage-2' },
+    { kind: 'removeStage', id: 'stage-1' },
+    { kind: 'updateHead', id: 'head', changes: { isWarmup: true, stageKind: null } },
+  ]
+
+  it('hands the list to applySetTypeOps with the signed-in user, unchanged and in order', async () => {
+    applySetTypeOpsMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useChangeSetType('meso-1', 3), { wrapper })
     await act(async () => {
-      await result.current.mutateAsync({ weekPlanId: 'wp-1', moves })
+      await result.current.mutateAsync({ ops })
     })
 
-    expect(reorderWeekExercisesMock).toHaveBeenCalledTimes(1)
-    expect(reorderWeekExercisesMock.mock.calls[0]).toEqual(['wp-1', moves])
-    expect(reorderWeekExercisesMock.mock.calls[0]).toHaveLength(2)
+    expect(applySetTypeOpsMock).toHaveBeenCalledTimes(1)
+    expect(applySetTypeOpsMock.mock.calls[0]).toEqual(['user-1', ops])
   })
 
-  // The apply-ahead executor's own reorder case (runApplyAheadOp) — the line
-  // that used to pass `false` ("never only this week") as a third argument.
-  // The offer's reorder change goes through the REAL pure core
-  // (planApplyAheadBundle) and the real useApplyAhead executor; only the
-  // service is mocked. Break proof: pass [] (or a third argument) from that
-  // case in runApplyAheadOp.
-  it('useApplyAhead runs a reorder offer as reorderWeekExercises(laterWeekPlanId, moves) — two arguments', async () => {
-    reorderWeekExercisesMock.mockResolvedValue(undefined)
-    const row = (id: string, position: number): ProgramExercise => ({
-      id, workoutDayId: 'wd-1', userId: 'user-1', exerciseId: `ex-${id}`, position, weightUnit: null,
-    })
-    const laterWeek: WeekPlan = {
-      id: 'wp-later', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 4,
-      isDeload: false, notes: null, sets: [], exercises: [row('pe-1', 0), row('pe-2', 1)],
-      createdAt: '2026-01-01T00:00:00Z',
-    }
-    const change: ChangeRecord = {
-      editType: 'reorderExercise',
-      moves: [
-        { slotId: 'pe-1', oldPosition: 0, newPosition: 1 },
-        { slotId: 'pe-2', oldPosition: 1, newPosition: 0 },
-      ],
-    }
-    const { result } = renderHook(() => useApplyAhead('meso-1'), { wrapper })
+  it('reads this week again after it succeeds, and after it fails too (a part-done change leaves rows the screen must show as they are)', async () => {
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    applySetTypeOpsMock.mockResolvedValueOnce(undefined)
+    const ok = renderHook(() => useChangeSetType('meso-1', 3), { wrapper })
     await act(async () => {
-      await result.current.mutateAsync({ changes: [change], weeks: [laterWeek] })
+      await ok.result.current.mutateAsync({ ops })
     })
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(weekKey('meso-1', 3))
 
-    expect(reorderWeekExercisesMock).toHaveBeenCalledTimes(1)
-    expect(reorderWeekExercisesMock.mock.calls[0]).toEqual([
-      'wp-later',
-      [
-        { programExerciseId: 'pe-1', oldPosition: 0, newPosition: 1 },
-        { programExerciseId: 'pe-2', oldPosition: 1, newPosition: 0 },
-      ],
-    ])
-    expect(reorderWeekExercisesMock.mock.calls[0]).toHaveLength(2)
+    invalidate.mockClear()
+    applySetTypeOpsMock.mockRejectedValueOnce(new Error('refused'))
+    const failing = renderHook(() => useChangeSetType('meso-1', 3), { wrapper })
+    await act(async () => {
+      await failing.result.current.mutateAsync({ ops }).catch(() => undefined)
+    })
+    await waitFor(() => expect(failing.result.current.isError).toBe(true))
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(weekKey('meso-1', 3))
+    invalidate.mockRestore()
+  })
+
+  it('does not pause offline (networkMode always), and patches nothing into the cache first', async () => {
+    applySetTypeOpsMock.mockResolvedValue(undefined)
+    queryClient.setQueryData(weekKey('meso-1', 3), [fakePlan('wp-1', 3, false)])
+    const before = JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))
+    const { result } = renderHook(() => useChangeSetType('meso-1', 3), { wrapper })
+    onlineManager.setOnline(false)
+    act(() => {
+      result.current.mutate({ ops })
+    })
+    expect(JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))).toBe(before)
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+})
+
+// Chunk 54a — the RIR picker's range: the optimistic patch carries the high end with the low end.
+describe('useUpdateSet — a RIR range is patched into the cache with both ends (chunk 54a)', () => {
+  const planWithSet = (): WeekPlan => ({
+    ...fakePlan('wp-1', 3, false),
+    sets: [{
+      id: 'set-1', weekPlanId: 'wp-1', userId: 'user-1', programExerciseId: 'pe-1', setNumber: 1, targetRir: 3, targetRirMax: null,
+      isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false,
+    }],
+  })
+
+  it('writes { targetRir: 1, targetRirMax: 2 } and shows 1 and 2 in the week\'s cache while the write is out', async () => {
+    let release!: () => void
+    updateSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    queryClient.setQueryData(weekKey('meso-1', 3), [planWithSet()])
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetRir: 1, targetRirMax: 2 } })
+    })
+    await waitFor(() => expect(updateSetMock).toHaveBeenCalledWith('set-1', { targetRir: 1, targetRirMax: 2 }))
+    const set = (queryClient.getQueryData(weekKey('meso-1', 3)) as WeekPlan[])[0].sets[0]
+    expect([set.targetRir, set.targetRirMax]).toEqual([1, 2])
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('a change that names only the low end leaves a range\'s high end in the cache alone', async () => {
+    let release!: () => void
+    updateSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    const plan = planWithSet()
+    plan.sets[0] = { ...plan.sets[0], targetRir: 1, targetRirMax: 2 }
+    queryClient.setQueryData(weekKey('meso-1', 3), [plan])
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { targetWeight: 80 } })
+    })
+    await waitFor(() => expect(updateSetMock).toHaveBeenCalled())
+    const set = (queryClient.getQueryData(weekKey('meso-1', 3)) as WeekPlan[])[0].sets[0]
+    expect([set.targetRir, set.targetRirMax, set.targetWeight]).toEqual([1, 2, 80])
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+})
+
+// Chunk 54a — what the week's cache holds while a set write is out, and after a refused one: the optimistic patch carries every column a picker or
+// a cell writes, a removal takes the row out at once, and a refused write puts the cache back as it was.
+describe('useUpdateSet / useRemoveSet — the cache while a write is out, and after a refused one (chunk 54a)', () => {
+  const setRow = (id: string, setNumber: number) => ({
+    id, weekPlanId: 'wp-1', userId: 'user-1', programExerciseId: 'pe-1', setNumber, targetRir: 3, targetRirMax: null as number | null,
+    isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, targetWeight: 60 as number | null, repMin: 8, repMax: 12,
+    isAmrap: false, tags: null as string[] | null, stageKind: null as string | null,
+  })
+  const seed = () => queryClient.setQueryData(weekKey('meso-1', 3), [{ ...fakePlan('wp-1', 3, false), sets: [setRow('set-1', 1), setRow('set-2', 2)] }])
+  const setsNow = () => (queryClient.getQueryData(weekKey('meso-1', 3)) as WeekPlan[])[0].sets
+
+  it('an update patches every column it names into the set it names, and only that set, while the write is out', async () => {
+    let release!: () => void
+    updateSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    seed()
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    const changes = { targetRir: 1, targetRirMax: 2, stageKind: 'cluster' as const, isWarmup: true, targetWeight: 80, repMin: 4, repMax: 6, isAmrap: true, tags: ['push here'] }
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes })
+    })
+    await waitFor(() => expect(updateSetMock).toHaveBeenCalledWith('set-1', changes))
+
+    expect(setsNow()[0]).toMatchObject(changes)
+    expect(setsNow()[1]).toEqual(setRow('set-2', 2))
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('a refused update puts the cache back as it was', async () => {
+    updateSetMock.mockRejectedValue(new Error('refused'))
+    seed()
+    const before = JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { repMin: 4, repMax: 6 } })
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))).toBe(before)
+  })
+
+  it('a removal takes the set out of the week at once, while the write is out, and no other', async () => {
+    let release!: () => void
+    removeSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    seed()
+    const { result } = renderHook(() => useRemoveSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate('set-1')
+    })
+    await waitFor(() => expect(removeSetMock).toHaveBeenCalledWith('set-1'))
+
+    expect(setsNow().map((s) => s.id)).toEqual(['set-2'])
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('a refused removal puts the set back', async () => {
+    removeSetMock.mockRejectedValue(new Error('refused'))
+    seed()
+    const before = JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))
+    const { result } = renderHook(() => useRemoveSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate('set-1')
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))).toBe(before)
   })
 })

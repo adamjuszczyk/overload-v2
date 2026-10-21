@@ -48,12 +48,13 @@ const SHARED_COMPONENTS: Record<string, string[]> = {
   'components/ExercisePickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/CuesSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/TargetPickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
-  // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows, the STAGE KIND rows in Plan and in the planner's volume step
-  'features/gym/RatingChips.tsx': ['features/plan/PlanPage.tsx', 'features/planner/PlannerPage.tsx', 'features/gym/GymSession.tsx'],
+  // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows, the STAGE KIND rows in the planner's volume step (Plan's
+  // went with its STAGE KIND chips: a set's kind is the set type picker's since chunk 54a)
+  'features/gym/RatingChips.tsx': ['features/planner/PlannerPage.tsx', 'features/gym/GymSession.tsx'],
   // the planner's FOCUS / DON'T CARE marks, kept in Plan's folder
   'features/plan/MarkSelector.tsx': ['features/planner/PlannerPage.tsx'],
-  // the planner's field editors, which Plan's structure rows and CHANGE THE PROGRAM load too
-  'features/planner/designFieldEditors.tsx': ['features/plan/PlanPage.tsx', 'features/programs/ChangeProgramPage.tsx', 'features/planner/PlannerPage.tsx'],
+  // the planner's field editors, which CHANGE THE PROGRAM loads too (Plan's structure rows loaded them until chunk 54a)
+  'features/planner/designFieldEditors.tsx': ['features/programs/ChangeProgramPage.tsx', 'features/planner/PlannerPage.tsx'],
 }
 
 // The places on screens 1.2 doesn't rebuild, by file: how many accent backgrounds with text on them each file holds. They keep their

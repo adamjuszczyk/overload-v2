@@ -40,14 +40,13 @@ const state = vi.hoisted(() => ({
   all: null as unknown as Read<WeekPlan[]>,
   week: null as unknown as Read<WeekPlan[]>,
   done: new Set<string>(),
-  deloadHook: { isPending: false, isError: false, error: null as unknown },
+  deloadHook: { isPending: false, isError: false, error: null as unknown, variables: undefined as { isDeload: boolean; rules: null } | undefined },
   cycle: 3,
 }))
 const setWeekDeloadMutate = vi.hoisted(() => vi.fn())
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [state.meso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: state.programsLoading ? undefined : [state.program], isLoading: state.programsLoading }),
   useWorkoutDays: () => ({ data: state.days, isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
@@ -55,7 +54,7 @@ vi.mock('../programs/usePrograms', async () => ({
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done }))
@@ -63,7 +62,6 @@ vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<strin
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: state.cycle, failed: false, error: null }) }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
-vi.mock('./MakeWeekDefault', () => ({ default: () => null }))
 vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }) }))
 vi.mock('./usePlanForward', () => ({
   usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
@@ -72,19 +70,13 @@ vi.mock('./usePlanForward', () => ({
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: (_mesoId: string, weekNumber: number) => (state.week.data ? { ...state.week, data: state.week.data.filter((p) => p.weekNumber === weekNumber) } : state.week),
   useAllWeekPlans: () => state.all,
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: () => ({ mutate: setWeekDeloadMutate, ...state.deloadHook }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
@@ -116,7 +108,7 @@ function weekdayRun(opts: { planningType?: Program['planningType']; deload?: boo
   state.all = { data: [...forWeek(1), ...forWeek(2)], isLoading: false }
   state.week = { data: state.all.data, isLoading: false }
   state.done = new Set(['wp-wd-push1-2']) // Monday's Push 1 is done (board 2 locks it)
-  state.deloadHook = { isPending: false, isError: false, error: null }
+  state.deloadHook = { isPending: false, isError: false, error: null, variables: undefined }
 }
 
 const ITEMS = [['si-0', 'wd-upperA'], ['si-1', null], ['si-2', 'wd-lowerA'], ['si-3', 'wd-upperB']] as const
@@ -130,7 +122,7 @@ function sequenceRun(opts: { deload?: boolean } = {}) {
   state.all = { data: [...cycle(2), ...cycle(3)], isLoading: false }
   state.week = { data: state.all.data, isLoading: false }
   state.done = new Set()
-  state.deloadHook = { isPending: false, isError: false, error: null }
+  state.deloadHook = { isPending: false, isError: false, error: null, variables: undefined }
 }
 
 const ui = () => (
@@ -271,7 +263,7 @@ describe('board 1e: the week menu', () => {
   it('MARKING: MARKING… in the muted row, the rules under it', () => {
     weekdayRun()
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETS_AND_RIR })
-    state.deloadHook = { isPending: true, isError: false, error: null }
+    state.deloadHook = { isPending: true, isError: false, error: null, variables: { isDeload: true, rules: null } }
     render(ui())
     openWeekMenu()
     captureRender('plan-1e-marking', document.body)
