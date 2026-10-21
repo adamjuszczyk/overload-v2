@@ -85,6 +85,9 @@ export function useSessionSwaps(sessionId: string | null) {
   })
 }
 
+// Since chunk 58a's fix-forward (review 1, finding 2) no screen reads this: the rows' LAST line reads the exercise's reference sessions
+// (`lastTimeSet.ts`), the session the reference panel calls its primary one, where this is the latest completed session whatever its
+// week. Kept as it was, with its tests (useSession.addedPlace.test.tsx) and its Dexie write, for the reviewer to keep or remove.
 export function useLastSessionLogs(exerciseId: string, currentSessionId: string | null) {
   const { user } = useAuth()
   return useQuery({

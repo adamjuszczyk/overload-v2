@@ -160,11 +160,20 @@ const screen = () => (
   </QueryClientProvider>
 )
 const tick = (ms = 5) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) })
-/** Lets the screen react to everything that is on its way: reads answer, the queue's writes land, effects run, and then some. */
+/**
+ * Lets the screen react to everything that is on its way (reads answer, the queue's writes land, effects run) until requests, queue
+ * items, attempts and reads have not changed for 25 ticks. A loop never gets there: it runs out the 300 ticks, and the counts the
+ * test then reads are the loop's.
+ */
 async function quiet() {
-  for (let i = 0; i < 60; i += 1) await tick()
-  for (let i = 0; i < 200 && readsInFlight > 0; i += 1) await tick()
-  for (let i = 0; i < 20; i += 1) await tick()
+  let last = ''
+  let still = 0
+  for (let i = 0; i < 300 && still < 25; i += 1) {
+    await tick()
+    const now = `${patchRequests.length}|${JSON.stringify(queue.map((q) => [q.id, q.attempts, q.gaveUp]))}|${sessionReads}`
+    still = now === last && readsInFlight === 0 ? still + 1 : 0
+    last = now
+  }
 }
 const patchItems = () => queue.filter((q) => q.operation === 'patch')
 const pass = () => act(async () => { await flushSyncQueue() })
@@ -183,7 +192,8 @@ beforeEach(() => {
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
 })
 
-describe('a number correction whose PATCH keeps failing while the phone is online (review 1, finding 1)', () => {
+// A loop never settles (`quiet()` runs out its ticks), so under the break these tests must reach their assertions, not the 5 s default.
+describe('a number correction whose PATCH keeps failing while the phone is online (review 1, finding 1)', { timeout: 60_000 }, () => {
   it('leaves one queue item over any number of passes and refetches, goes out when the server answers, and the queue is empty and the server holds the number', async () => {
     patchesToFail = 3
     render(screen())
