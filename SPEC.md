@@ -634,6 +634,10 @@ optional:
   - Week-dependent: compared with last week's plan. Stable: set counts, kinds,
     stages and rep targets compared with the default; weight and RIR compared
     with last week's plan. Week 1 is compared with nothing.
+  - A stable run's past week and its finished sessions show no marks and no
+    legend; week-dependent ones keep theirs (DECISIONS 207 (b), Adam
+    2026-10-21: a display choice, built in his review pass after the release
+    checklist).
   - Exercises are matched by identity, so a swap shows the old exercise struck
     through above the new one; sets by position. Something removed shows as a
     dim struck-through line in its place. Moved items are highlighted.
