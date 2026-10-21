@@ -40,6 +40,8 @@ const RELATIONS: Record<string, Relation> = {
   'v2_sessions>v2_set_logs': { shape: 'many', parentKey: 'id', childKey: 'session_id' },
   'v2_sessions>v2_session_set_changes': { shape: 'many', parentKey: 'id', childKey: 'session_id' },
   'v2_set_logs>exercises': { shape: 'one', parentKey: 'exercise_id', childKey: 'id' },
+  // Chunk 56's REVIEW read: a session's swaps.
+  'v2_sessions>v2_session_exercise_swaps': { shape: 'many', parentKey: 'id', childKey: 'session_id' },
 }
 
 const SERVER_ROW_CAP = 1000

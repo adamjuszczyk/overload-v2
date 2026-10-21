@@ -96,6 +96,7 @@ vi.mock('./useWeekPlan', () => ({
 // job is unrelated to session-moving: MoveSessionControl.test.tsx proves
 // the real component.
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
 vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => mockState.sessions })) // the week view's session states (chunk 54b)
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => mockState.done }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
