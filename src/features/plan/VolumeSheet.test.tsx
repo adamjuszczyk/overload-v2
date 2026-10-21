@@ -35,7 +35,6 @@ afterEach(() => {
   h.asked = []
 })
 
-const WEEKDAY: WeeklySchedule = { monday: 'wd-w3-ua', tuesday: null, wednesday: 'wd-w3-la', thursday: null, friday: 'wd-w3-ub', saturday: null, sunday: null }
 const props = (over: Partial<VolumeSheetProps> = {}): VolumeSheetProps => ({
   unit: 'week',
   weekNumber: 3,
@@ -200,7 +199,7 @@ describe('what the sheet reads, and from where', () => {
     open()
     // bench 3 + the machine press's 3 working logs (its warmup out): chest 6. The mystery exercise's 3 are Other (nothing names it).
     expect(table().find((r) => r[0] === 'Chest')).toEqual(['Chest', '6', '3', '−3', 'YOU PLANNED 3 LAST WEEK · DID 6'])
-    expect(table().at(-1)).toEqual(['Other', '3', '0', '−3', 'YOU PLANNED 0 LAST WEEK · DID 3'])
+    expect(table()[table().length - 1]).toEqual(['Other', '3', '0', '−3', 'YOU PLANNED 0 LAST WEEK · DID 3'])
   })
 
   it('a muscle group comes from the exercise the read names: a pushdown filed under biceps leaves triceps', () => {
@@ -271,7 +270,7 @@ describe('P1.2-2 (D31): a week with nothing in it, last week', () => {
     expect(t.every((r) => r[1] === '—' && r[3] === '' && r[4] === '')).toBe(true)
     expect(t.map((r) => r[2])).toEqual(HALF.map((r) => r[2])) // this week's numbers, as before
     expect(screen.queryByRole('status')).toBeNull()
-    expect(h.asked.at(-1)).toEqual([]) // no plan row to read sessions by
+    expect(h.asked[h.asked.length - 1]).toEqual([]) // no plan row to read sessions by
   })
 
   it('a planned week nobody did anything in is not empty: numbers and notes, not dashes', () => {

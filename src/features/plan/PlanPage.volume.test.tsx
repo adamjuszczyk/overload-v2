@@ -91,8 +91,8 @@ const wd = (id: string, name: string, position: number): WorkoutDay => ({ id, pr
 const DAYS = [wd('wd-push1', 'Push 1', 0), wd('wd-pull1', 'Pull 1', 1), wd('wd-push2', 'Push 2', 2), wd('wd-pull2', 'Pull 2', 3), wd('wd-legs', 'Legs', 4)]
 const WEEKDAYS: WeeklySchedule = { ...EMPTY_SCHEDULE, monday: 'wd-push1', tuesday: 'wd-pull1', thursday: 'wd-push2', friday: 'wd-pull2', saturday: 'wd-legs' }
 
-// Every exercise of `pe` is a chest exercise, so a week's volume reads on the one Chest row: sets × sessions, which is what these tests count.
-const SETS_OF: Record<string, number> = { 'wd-push1': 3, 'wd-pull1': 6, 'wd-push2': 3, 'wd-pull2': 3, 'wd-legs': 3 } // pull 1 holds two exercises
+// Every exercise of `pe` is a chest exercise, so a week's volume reads on the one Chest row: sets × sessions, which is what these tests count
+// (Pull 1 holds two exercises: 6 sets; the other workouts one each: 3; a week is 18).
 const planRow = (workoutDayId: string, week: number, extraSets = 0, over: Partial<WeekPlan> = {}): WeekPlan => {
   const rows = workoutDayId === 'wd-pull1' ? ['a', 'b'] : ['a']
   const exercises = rows.map((r, i) => ({ ...pe(`pe-${workoutDayId}-${r}`, `ex-${workoutDayId}-${r}`, i, { workoutDayId }) }))
@@ -128,6 +128,7 @@ const ui = () => (
     <PlanPage />
   </MemoryRouter>
 )
+const lastAsked = () => state.asked[state.asked.length - 1]
 const volumeButton = () => screen.queryByRole('button', { name: 'VOLUME' })
 const openVolume = () => fireEvent.click(screen.getByRole('button', { name: 'VOLUME' }))
 const chest = () => {
@@ -205,11 +206,11 @@ describe('what the sheet is handed', () => {
     weekdayRun({ weeks: [1, 2, 3] })
     render(ui())
     openVolume()
-    expect(state.asked.at(-1)).toEqual(ids(1))
+    expect(lastAsked()).toEqual(ids(1))
     fireEvent.click(screen.getByLabelText('Close'))
     openWeekTile('WEEK 3')
     openVolume()
-    expect(state.asked.at(-1)).toEqual(ids(2))
+    expect(lastAsked()).toEqual(ids(2))
     expect(screen.getByText('WEEK 3 · SETS PER MUSCLE')).toBeTruthy()
   })
 
@@ -262,7 +263,7 @@ describe('what the sheet is handed', () => {
     openVolume()
     expect(screen.getByText('WEEK 3 · SETS PER MUSCLE')).toBeTruthy()
     expect(chest()).toEqual(['Chest', '—', '18', '', ''])
-    expect(state.asked.at(-1)).toEqual([])
+    expect(lastAsked()).toEqual([])
   })
 
   it('a sequence run: CYCLE 3 · SETS PER MUSCLE, every slot once', () => {
@@ -272,6 +273,6 @@ describe('what the sheet is handed', () => {
     openVolume()
     expect(screen.getByText('CYCLE 3 · SETS PER MUSCLE')).toBeTruthy()
     expect(chest()).toEqual(['Chest', '0', '6', '+6', 'YOU PLANNED 6 LAST WEEK · DID 0']) // Push 1 (3) and Legs (3), once each
-    expect(state.asked.at(-1)).toEqual(['wp-wd-push1-2', 'wp-wd-legs-2'])
+    expect(lastAsked()).toEqual(['wp-wd-push1-2', 'wp-wd-legs-2'])
   })
 })

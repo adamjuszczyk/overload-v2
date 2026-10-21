@@ -61,7 +61,7 @@ describe('volumeExercises: every exercise a planned set or a log can name', () =
 })
 
 describe('lastWeekIsEmpty (P1.2-2): nothing planned and nothing done', () => {
-  const planned = { sets: [wset('s-1', 'row-1', 1)] }
+  const planned = { sets: [wset('s-a', 'prog-ex-a', 1)] }
   const hollow = { sets: [] }
 
   it('no plan row and no session: empty (a week nobody planned, DECISIONS 131)', () => {

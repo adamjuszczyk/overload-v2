@@ -114,6 +114,7 @@ describe('Today and Plan read a program\'s schedule only through the resolver (c
       'features/gym/RestDayScreen.tsx', // the week's dots: the count of the weekdays in force this week
       'features/gym/useScheduler.ts', // the scheduler's resolver
       'features/plan/PlanPage.tsx', // the viewed week's chips and shared note
+      'features/plan/PlanPage.tsx', // last week's weekdays in force, for the VOLUME sheet's occurrences (chunk 55)
       'features/plan/PlanPage.tsx', // hasScheduledWorkout: whether the run has any workout (hasSchedule.ts, unchanged)
     ])
   })
