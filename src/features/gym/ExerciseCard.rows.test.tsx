@@ -282,6 +282,24 @@ describe('sets added in the session carry their place on LOG (DECISIONS 174, 177
     expect(calls[1]).toMatchObject({ addedPlace: 2, setNumber: 3 })
   })
 
+  // Owed since 58a's review (DECISIONS "Tests owed", X5): the tests above hold the card's list of added sets from the first tap. After
+  // a reload, a reopened session or on another phone the list is empty and only the logs say which places are taken.
+  it('after a reload (the card\'s list is empty) + ADD SET takes the place after the highest its logs hold: 2, not 1 (X5)', async () => {
+    const { calls, onLog } = spy()
+    const { container } = renderCard({
+      plannedSets: [plannedSet(1, { targetWeight: 50, repMin: 8, repMax: 8 })],
+      logs: [headLogOf(1), logOf({ id: 'added-before', setNumber: 2, addedPlace: 1 })],
+      props: { onLog },
+    })
+    expect(rowLabels(container)).toEqual(['01', '02'])
+    fireEvent.click(screen.getByText('ADD SET'))
+    expect(rowLabels(container)).toEqual(['01', '02', '03'])
+    typeInto(current(container), 'Weight', '50')
+    typeInto(current(container), 'Reps', '9')
+    await pressLog(current(container))
+    expect(calls[0]).toMatchObject({ weekPlanSetId: null, setNumber: 3, addedPlace: 2 })
+  })
+
   it('two taps of ADD SET in one instant give two places, 1 and 2', async () => {
     const { calls, onLog } = spy()
     const { container, setLogs } = renderCard({ plannedSets: [], props: { onLog } })

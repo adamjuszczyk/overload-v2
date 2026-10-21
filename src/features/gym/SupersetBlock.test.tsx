@@ -271,6 +271,47 @@ describe('SupersetBlock — + ADD ROUND (SPEC Defaults 9, board W1)', () => {
   })
 })
 
+// Tests owed since 58a's review (DECISIONS "Tests owed", X6): every test above holds the cards' lists of added sets from the first
+// ADD ROUND. After a reload, a reopened session or on another phone the lists are empty and only the logs say which places are taken.
+describe('SupersetBlock — + ADD ROUND after a reload takes the places the logs hold (X6)', () => {
+  it('with an added round already logged (place 1) and the cards\' lists empty, + ADD ROUND gives each member place 2, and LOG writes it', () => {
+    const calls: Record<string, unknown>[] = []
+    const logsNow: SetLog[] = []
+    const logged = [
+      ...Array.from({ length: 4 }, (_, i) => makeSetLog({ id: `a-${i + 1}`, exerciseId: 'ex-pe-a', weekPlanSetId: `pe-a-set-${i + 1}`, setNumber: i + 1, weight: 50, reps: 10 })),
+      ...Array.from({ length: 3 }, (_, i) => makeSetLog({ id: `b-${i + 1}`, exerciseId: 'ex-pe-b', weekPlanSetId: `pe-b-set-${i + 1}`, setNumber: i + 1, weight: 50, reps: 10 })),
+      makeSetLog({ id: 'b-added', exerciseId: 'ex-pe-b', weekPlanSetId: null, setNumber: 4, addedPlace: 1, weight: 50, reps: 10 }), // the earlier round's
+      makeSetLog({ id: 'a-added', exerciseId: 'ex-pe-a', weekPlanSetId: null, setNumber: 5, addedPlace: 1, weight: 50, reps: 10 }),
+    ]
+    logsNow.push(...logged)
+    const { container, setLogs } = renderBlock(
+      members(),
+      {
+        onLog: (params) => {
+          calls.push(params as unknown as Record<string, unknown>)
+          const log = makeSetLog({ id: (params.id as string | undefined) ?? 'planned', exerciseId: params.exerciseId, weekPlanSetId: params.weekPlanSetId, addedPlace: params.addedPlace ?? null, weight: params.weight, reps: params.reps, setNumber: params.setNumber })
+          logsNow.push(log)
+          return Promise.resolve(log)
+        },
+      },
+      logged,
+    )
+    expect(container.querySelector('[data-current-set]')).toBeNull() // nothing open: every set is logged
+    fireEvent.click(screen.getByText('ADD ROUND'))
+    for (let i = 0; i < 2; i++) {
+      const current = container.querySelector('[data-current-set]') as HTMLElement
+      fireEvent.change(within(current).getByLabelText('Weight'), { target: { value: '50' } })
+      fireEvent.change(within(current).getByLabelText('Reps'), { target: { value: '10' } })
+      fireEvent.click(within(current).getByText('LOG'))
+      setLogs([...logsNow])
+    }
+    expect(calls.map((c) => [c.exerciseId, c.addedPlace])).toEqual([
+      ['ex-pe-b', 2],
+      ['ex-pe-a', 2],
+    ])
+  })
+})
+
 describe('SupersetBlock — a staged set rides with its head inside a round (chunk 14)', () => {
   it('a planned rest-pause set (head + 2 stages) renders every row under its round, is locked until its head is logged, carries weight stage to stage, and writes stage_kind "as planned"', () => {
     const peA = makeExercise('pe-a', 'Bench Press')
