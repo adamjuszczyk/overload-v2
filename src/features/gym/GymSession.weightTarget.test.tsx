@@ -97,7 +97,9 @@ function planSet(id: string, programExerciseId: string, setNumber: number, overr
 }
 
 describe('GymSession — weight target unit, real session (plain card)', () => {
-  it('an LBS-resolved exercise shows its kg-stored weight target in lbs — SetRow\'s hint AND PlanTargetsPanel, never kg', () => {
+  // Chunk 58a (DECISIONS 162 (a)): the plan's target weight is the current row's weight box (the TARGET WEIGHT hint and the targets
+  // panel are gone), shown in the exercise's unit.
+  it('an LBS-resolved exercise shows its kg-stored weight target in lbs, in the current row\'s weight box — never kg', () => {
     const pe1 = makeExercise({ id: 'pe-1', exerciseId: 'ex-1', name: 'Bench Press', weightUnit: 'lbs' })
     const weekPlan: WeekPlan = {
       id: 'wp-1', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1,
@@ -108,13 +110,12 @@ describe('GymSession — weight target unit, real session (plain card)', () => {
     render(sessionJsx(workoutDay, weekPlan))
 
     expect(screen.getByText('Bench Press')).toBeTruthy()
-    // SetRow's own hint, in the not-yet-logged input row.
-    expect(screen.getByText('TARGET WEIGHT 225lbs')).toBeTruthy()
-    // PlanTargetsPanel, alongside RIR.
-    expect(screen.getByText('225lbs')).toBeTruthy()
+    const weight = screen.getByLabelText('Weight') as HTMLInputElement
+    expect(weight.value).toBe('225')
+    expect(screen.getByLabelText('Log this set in kg').textContent).toBe('lbs')
     // Never shown in kg anywhere on this screen for this exercise.
-    expect(screen.queryByText(/102\.06/)).toBeNull()
-    expect(screen.queryByText('100kg')).toBeNull()
+    expect(weight.value).not.toMatch(/102/)
+    expect(document.body.textContent).not.toMatch(/102\.06/)
   })
 
   it('a KG-resolved exercise (the default) still shows kg, proving this is a real resolution, not lbs hard-coded the other way', () => {
@@ -127,15 +128,15 @@ describe('GymSession — weight target unit, real session (plain card)', () => {
     }
     render(sessionJsx(workoutDay, weekPlan))
 
-    expect(screen.getByText('TARGET WEIGHT 100kg')).toBeTruthy()
-    expect(screen.getByText('100kg')).toBeTruthy() // PlanTargetsPanel
+    expect((screen.getByLabelText('Weight') as HTMLInputElement).value).toBe('100')
+    expect(screen.getByLabelText('Log this set in lbs').textContent).toBe('kg')
   })
 })
 
 describe('GymSession — weight target unit, real session (superset member)', () => {
   const ssWorkoutDay: WorkoutDay = { id: 'wd-ss', programId: 'prog-1', userId: 'user-1', name: 'Push Day', position: 0, exercises: [] }
 
-  it('an lbs-resolved member of a superset block shows its weight target in lbs too (SupersetBlock\'s own PlanTargetsPanel/SetRow)', () => {
+  it('an lbs-resolved member of a superset block shows its weight target in lbs too, in its current row', () => {
     const peA = makeExercise({ id: 'pe-a', exerciseId: 'ex-a', name: 'Bench Press', workoutDayId: 'wd-ss', position: 0, supersetBlockId: 'block-1', weightUnit: 'lbs' })
     const peB = makeExercise({ id: 'pe-b', exerciseId: 'ex-b', name: 'Barbell Row', workoutDayId: 'wd-ss', position: 1, supersetBlockId: 'block-1' })
     const weekPlan: WeekPlan = {
@@ -148,8 +149,9 @@ describe('GymSession — weight target unit, real session (superset member)', ()
 
     expect(screen.getByText('Bench Press')).toBeTruthy()
     expect(screen.getByText('Barbell Row')).toBeTruthy()
-    expect(screen.getByText('TARGET WEIGHT 225lbs')).toBeTruthy()
-    expect(screen.getByText('225lbs')).toBeTruthy() // A's own PlanTargetsPanel
-    expect(screen.queryByText(/102\.06/)).toBeNull()
+    // A1 is the current set: its weight box holds the plan's weight in lbs (B1 has no target and is not typable yet)
+    expect((screen.getByLabelText('Weight') as HTMLInputElement).value).toBe('225')
+    expect(screen.getByLabelText('Log this set in kg').textContent).toBe('lbs')
+    expect(document.body.textContent).not.toMatch(/102\.06/)
   })
 })

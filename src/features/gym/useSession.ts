@@ -953,6 +953,13 @@ export function useLogSet(sessionId: string) {
       // handleLogWarmup (useExerciseCardState.ts) is the one caller that
       // sets it to true.
       isWarmup?: boolean
+      // Chunk 58a (DECISIONS 174, 177): an added set's place, on its head log only; absent on every other write, so a
+      // planned set's payload, queue item and row are what they were.
+      addedPlace?: number | null
+      // Chunk 58a: the id of the log, made by the caller, when the screen must name the log before the request goes out (an
+      // added set's list entry names its log, so the set is never drawn twice while the log is on its way). Absent on a
+      // planned set's write, whose log is found by its planned set.
+      id?: string
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -965,7 +972,8 @@ export function useLogSet(sessionId: string) {
       // independent review. Fixing the id at onMutate time and using it for
       // the real write too (both branches) makes it correct from the first
       // render, not just eventually consistent.
-      const id = offlineTempIdRef.current ?? crypto.randomUUID()
+      const { id: givenId, ...write } = params
+      const id = givenId ?? offlineTempIdRef.current ?? crypto.randomUUID()
 
       if (!isOnline) {
         // Plain UUID — v2_set_logs.id is a Postgres uuid column, so no prefix.
@@ -997,6 +1005,7 @@ export function useLogSet(sessionId: string) {
           sessionStatus: 'in_progress',
           formRating: params.formRating,
           stageKind: params.stageKind,
+          ...(params.addedPlace != null ? { addedPlace: params.addedPlace } : {}),
         })
 
         await db.sync_queue.add({
@@ -1029,6 +1038,9 @@ export function useLogSet(sessionId: string) {
             // it too, or a warmup logged offline would flush to Supabase as
             // a plain working set the moment the queue replays it.
             is_warmup: params.isWarmup ?? false,
+            // Chunk 58a: the queue item carries an added set's place (the upsert writes only the columns it names, and the
+            // flush later sends this row as it is); a planned set's item leaves the key out.
+            ...(params.addedPlace != null ? { added_place: params.addedPlace } : {}),
           },
           createdAt: loggedAt,
         })
@@ -1057,10 +1069,11 @@ export function useLogSet(sessionId: string) {
           restSeconds: params.restSeconds,
           formRating: params.formRating,
           stageKind: params.stageKind,
+          addedPlace: params.addedPlace ?? null,
         } satisfies SetLog
       }
 
-      return logSet({ id, userId: user!.id, sessionId, ...params })
+      return logSet({ id, userId: user!.id, sessionId, ...write })
     },
 
     onMutate: async (params) => {
@@ -1069,7 +1082,7 @@ export function useLogSet(sessionId: string) {
       // multiple in-flight mutations could otherwise race on. Assigning it
       // synchronously, before yielding to cancelQueries, narrows that
       // window as far as this function can on its own.
-      const tempId = crypto.randomUUID()
+      const tempId = params.id ?? crypto.randomUUID()
       offlineTempIdRef.current = tempId
 
       await queryClient.cancelQueries({ queryKey: qk })
@@ -1097,6 +1110,7 @@ export function useLogSet(sessionId: string) {
         restSeconds: params.restSeconds,
         formRating: params.formRating,
         stageKind: params.stageKind,
+        addedPlace: params.addedPlace ?? null,
       }
 
       queryClient.setQueryData(qk, (old: Session | undefined) => {

@@ -73,6 +73,8 @@ const logSetMutateAsync = vi.fn((params: Record<string, unknown>) => {
     loggedAt: '2026-01-05T10:05:00Z',
     restSeconds: null,
     formRating: null,
+    // the real log carries the kind it was written with (the rows read a logged head's type from it)
+    stageKind: (params.stageKind as SetLog['stageKind'] | undefined) ?? null,
   }
   session = { ...session, setLogs: [...(session.setLogs ?? []), log] }
   return Promise.resolve(log)

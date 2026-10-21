@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// "Current set" = the first not-yet-logged, non-stage SetRow in the session,
-// in visual top-to-bottom order — SetRow.tsx marks that row's wrapper with
-// data-unlogged-set, which this hook queries for in DOM order (matches
-// visual order here: exercise cards and their set rows render as plain
-// top-to-bottom block flow, nothing reorders them with CSS). A button is
+// "Current set" = the first unlogged working set or drop of the session (SPEC [1.2] "Current set"; chunk 58a): SetRowCurrent.tsx marks
+// that one row's wrapper with data-current-set, which this hook finds (there is at most one on the screen: workoutRules' `currentSet`). A button is
 // shown only while that row is scrolled out of the app shell's scrollable
 // viewport (App.tsx's <main>, not window — this app never scrolls window
 // itself), so the button never appears while the current set is already on
@@ -73,7 +70,7 @@ export function useScrollToCurrentSet() {
     }
 
     function resync() {
-      targetRef.current = container!.querySelector('[data-unlogged-set]')
+      targetRef.current = container!.querySelector('[data-current-set]')
       checkVisibility()
     }
 

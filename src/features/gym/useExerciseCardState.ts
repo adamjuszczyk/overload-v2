@@ -1,316 +1,155 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession } from './sessionService'
-import type { LogParams } from './SetGroup'
 import { useRestTimerStore } from './restTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
-import { groupSetLogs, groupWeekPlanSets, headsOnly, cascadeDeleteOrder, type SetGroup as Group } from './setGroupLogic'
+import { groupSetLogs, cascadeDeleteOrder, headsOnly } from './setGroupLogic'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
+import type { ResolvedRow } from './workoutRules'
+import type { WorkoutRows } from './useWorkoutRows'
 
-// Review fix (chunk 13) — every per-exercise interactive behaviour
-// ExerciseCard.tsx has always offered (prefill, logging, dropset stages,
-// delete/renumber, skip-whole-exercise, swap, ADD SET) extracted into its
-// own hook so SupersetBlock.tsx can give each member of a block the exact
-// same behaviour instead of a thinned-down reimplementation. This file is a
-// MECHANICAL extraction: every computation and handler below is the same
-// logic ExerciseCard.tsx had inline, moved here unchanged and called from
-// there — ExerciseCard.tsx's own rendered output must stay byte-identical
-// (D30), so nothing about the VALUES this computes may differ from before;
-// only where the code lives changed.
+// Chunk 58a — the card's writers and what its rows need, over the session's rows (`useWorkoutRows`, chunk 46r's `resolveRows`).
+// The values every write computes are the ones this file always computed (chunk 13's extraction, chunk 16's rest chain): only where
+// the rows come from changed. A row names the number it shows (`row.number`), and LOG and every skip store it (DECISIONS 151,
+// 170: "LOG stores the number the row shows"), never "the logged heads + 1". ExerciseCard and SupersetBlock both call this once
+// per exercise.
+
+/** What a row hands the card when it is logged or skipped: the values the row knows. The card adds which set it is. */
+export interface LogParams {
+  weekPlanSetId: string | null
+  setNumber: number
+  weight: number | null
+  reps: number | null
+  rir: number | null
+  isDropset: boolean
+  isSkipped: boolean
+  restSeconds: number | null
+  setSeconds: number | null
+  // What unit the user actually typed the weight in (v3 §2.4) — null means "the resolved default for this program-exercise".
+  enteredUnit: WeightUnit | null
+  formRating: FormRating | null
+  stageKind: StageKind | null
+  isWarmup?: boolean
+}
+
+export interface LogRequest extends Omit<LogParams, 'setNumber' | 'weekPlanSetId'> {
+  exerciseId: string
+  weekPlanSetId: string | null
+  setNumber: number
+  parentSetId: string | null
+  stageIndex: number
+  /** An added set's place, on its head log only (DECISIONS 174, 177). Absent on every other write. */
+  addedPlace?: number | null
+  /** The id of an added set's log, named by the card's list before the request goes out. Absent on a planned set's write. */
+  id?: string
+}
 
 export interface ExerciseCardProps {
+  /** The card's identity in the session's rows (`OrderExercise.key`). */
+  cardKey: string
   programExercise: ProgramExercise
   plannedSets: WeekPlanSet[]
-  // Chunk 16 (SPEC "Rest") — this exercise's own v2_program_sets rows
-  // (heads and stages alike), pre-filtered to this exercise by the caller
-  // (GymSession.tsx — same convention plannedSets/currentLogs already
-  // follow), fetched once per screen. Looked up via each WeekPlanSet's own
-  // programSetId to find a set's rest override / a staged head's own stage
-  // rest (restChain.ts's "design fields read from the run copy when the
-  // session loads"). Optional only so every pre-chunk-16 test fixture that
-  // builds ExerciseCardProps by hand keeps compiling unchanged; defaults to
-  // [] (no design fields reachable — the chain falls through to the
-  // exercise/global levels, same as today).
+  // Chunk 16 (SPEC "Rest") — this exercise's own v2_program_sets rows (heads and stages), pre-filtered to this exercise by the
+  // caller; looked up via each WeekPlanSet's own programSetId (restChain.ts's "design fields read from the run copy").
   programSets?: ProgramSet[]
-  currentLogs: SetLog[]      // set logs already recorded in the current session
-  lastLogs: SetLog[]         // set logs from previous session for this exercise — prefill only
-  lastLogsLoading: boolean   // true until the previous-session query resolves
-  // This exercise's eligible sessions for the two-slot reference panel
-  // (v3 §2.3) — already fetched once per workout day, sliced per exercise
-  // by the caller (GymSession.tsx's ExerciseSection). occurrenceCount/
-  // workoutDayId are gone — the session-first query is already scoped to
-  // the right workout day, and per-exercise multiplicity now falls out of
-  // THIS WEEK being a list rather than needing a pre-computed count.
+  /** The session's rows and the writers of the card's own list (`useWorkoutRows`). */
+  workout: WorkoutRows
+  /** The session's set logs. */
+  logs: SetLog[]
+  lastLogs: SetLog[] // set logs from the previous session for this exercise — the LAST line only (DECISIONS 162)
+  lastLogsLoading: boolean
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
-  // See ExerciseReference.tsx's own prop docs — threaded straight through,
-  // not re-derived here.
   referenceMesocycleId: string | null
-  // Chunk 25 — see ExerciseReference.tsx's own prop docs; threaded
-  // straight through, not read here (same posture referenceMesocycleId
-  // above already takes — this hook never destructures it).
   referenceScheduleType?: import('./referenceByExercise').ScheduleType
   referenceIsError: boolean
   referenceIsFromCache: boolean
   onRetryReference: () => void
   today: string
-  onLog: (params: {
-    exerciseId: string
-    weekPlanSetId: string | null
-    setNumber: number
-    weight: number | null
-    reps: number | null
-    rir: number | null
-    isDropset: boolean
-    isSkipped: boolean
-    restSeconds: number | null
-    setSeconds: number | null
-    enteredUnit: WeightUnit | null
-    // Direct, not inferred (v3 §2.1 / Phase 3.1) — null for a head, the
-    // head's own id for a stage. The ADD STAGE tap that produces this
-    // already knows which head it belongs to.
-    parentSetId: string | null
-    stageIndex: number
-    formRating: FormRating | null
-    stageKind: StageKind | null
-    // Chunk 15 (SPEC "Warmup sets") — optional, same convention as
-    // stageKind above. handleLogWarmup (below) is the one caller that sets
-    // it to true; handleLogHead/handleLogStage never do, so every existing
-    // working-set write is unaffected.
-    isWarmup?: boolean
-  }) => Promise<SetLog>
+  onLog: (params: LogRequest) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — called once
-  // the swap is confirmed and the original exercise's remaining sets have
-  // already been skipped (see handleConfirmSwap below). Passes the
-  // original programExercise along too (2026-09-03 position/presentation
-  // fix) — GymSession.tsx needs its id to record the structural link
-  // (migration 025) and to know which slot to render the replacement in,
-  // in place of the original rather than appended after it.
   onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
-  // Position/presentation/prefill fix (2026-09-03) — present only when this
-  // card is rendering in place of a swapped-out slot (GymSession.tsx keys
-  // this off v2_session_exercise_swaps). Drives three things: the header's
-  // "SWAPPED FROM" line, seeding the extra-set slots below to the original
-  // plan's shape (same set count / dropset structure — weights/reps stay
-  // empty, see extraSlotCount below), and nothing else — the planned
-  // section above still renders plannedSets exactly as it always has
-  // (which, for a swapped slot, is the original's now-fully-resolved plan:
-  // real logs and SKIPPED marks, both real tracking data, not hidden).
+  // A card in a swapped slot (DECISIONS 198 (a)): the replacement's card says what it was swapped from. Neither card of a swapped
+  // slot offers a second swap (025's unique index refuses one).
   swappedFrom?: { exerciseName: string }
+  slotSwapped?: boolean
 }
 
 export function useExerciseCardState({
+  cardKey,
   programExercise,
   plannedSets: allPlannedSets,
   programSets = [],
-  currentLogs: allCurrentLogs,
+  workout,
+  logs,
   lastLogs: allLastLogs,
+  lastLogsLoading,
   onLog,
   onUpdateSet,
   onDeleteSet,
   onSwap,
-  swappedFrom,
 }: ExerciseCardProps) {
   const startedAt = useRestTimerStore((s) => s.startedAt)
-  // Chunk 16 (SPEC "Rest") — level 4, the global rest setting; always a
-  // real number (settingsStore's own default), never null.
+  // Chunk 16 (SPEC "Rest") — level 4, the global rest setting; always a real number (settingsStore's own default), never null.
   const globalRestSeconds = useSettingsStore((s) => s.targetRestSeconds)
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
-  // Chunk 15 (SPEC "Warmup sets" — "Never counted in volume, set counts, or
-  // 'last time' matching"). Every computation below this point predates
-  // warmups having any logging UI and must keep reading exactly what it
-  // always has — a plan/log list with warmups already filtered out — so
-  // nothing from here down needed to change at all: `plannedSets`/
-  // `currentLogs`/`lastLogs` are just renamed shadows of the real props,
-  // pre-filtered once, right here. The D30 fixture carries isWarmup: false
-  // on every row, so this filter is a no-op for it (same array contents,
-  // same order) — the rest of this function is byte-for-byte unchanged.
-  // The warmup rows THEMSELVES are rendered from allPlannedSets/
-  // allCurrentLogs directly — see warmupRows/handleLogWarmup at the bottom
-  // of this function.
-  const plannedSets = allPlannedSets.filter((s) => !s.isWarmup)
-  const currentLogs = allCurrentLogs.filter((l) => !l.isWarmup)
-  const lastLogs = allLastLogs.filter((l) => !l.isWarmup)
+  const cardRows = workout.rows.filter((row) => row.exerciseKey === cardKey)
+  const logById = new Map(logs.map((log) => [log.id, log]))
+  const plannedById = new Map(allPlannedSets.map((set) => [set.id, set]))
+  // Warmups never take part in "last time" matching (SPEC "Warmup sets").
+  const lastLogGroups = groupSetLogs(allLastLogs.filter((log) => !log.isWarmup))
 
-  // Heads currently mid-cascade-delete — gates ADD STAGE on that group (see
-  // SetGroup.tsx's isDeleting prop) and guards handleDeleteHead against a
-  // second concurrent invocation for the same head.
+  // Heads currently mid-cascade-delete — guards handleDeleteHead against a second concurrent invocation for the same head.
   const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
-
-  // "Skip whole exercise" (SPEC §4.3) — heads and, per explicit instruction,
-  // any already-planned stages under them, both.
   const [isSkippingExercise, setIsSkippingExercise] = useState(false)
   const [showSkipConfirm, setShowSkipConfirm] = useState(false)
-
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — reuses
-  // handleSkipExercise below unchanged (a swap IS "skip the rest of this
-  // exercise", plus registering a replacement), so it shares the same
-  // in-flight flag rather than introducing a second one.
   const [showSwapSheet, setShowSwapSheet] = useState(false)
 
-  // A head is a set with no parent — the stage-exclusion rule (TASKS.md
-  // §2.1 / CONTEXT.md "Key architectural rules"): a drop stage is never
-  // counted as an independent set. Every count below goes through this
-  // grouping instead of raw currentLogs.length (§2.7 item 1).
-  const logGroups = groupSetLogs(currentLogs)
-  const lastLogGroups = groupSetLogs(lastLogs)
-  const totalLoggedHeads = logGroups.length
+  // ─── Rest chain (chunk 16 — SPEC "Rest") ─────────────────────────────────────────────────────────
+  const programSetById = new Map(programSets.map((set) => [set.id, set]))
+  // "On an exercise's last set" (SPEC level 2) — the last PLANNED working head, by position. An added set is never "the exercise's
+  // last set" for this purpose (rest-after is a planning-time concept).
+  const plannedHeads = headsOnly(
+    allPlannedSets.filter((set) => !set.isWarmup),
+    (set) => set.parentWeekPlanSetId,
+  ).sort((a, b) => a.setNumber - b.setNumber)
+  const lastPlannedHeadId = plannedHeads[plannedHeads.length - 1]?.id ?? null
+  const isLastPlannedSet = (planned: WeekPlanSet | null): boolean => planned != null && planned.id === lastPlannedHeadId
 
-  // setNumber is "1-based, per exercise within this session" (types/index.ts
-  // SetLog's own doc comment) — every other consumer (positionMatch.ts,
-  // history) relies on that. A merged (swapped) card's currentLogs union two
-  // real exercise identities (linkedExerciseIds, GymSession.tsx) so the
-  // original's already-resolved head count must not leak into the
-  // replacement's own sequence. Only differs from totalLoggedHeads on a
-  // merged card — currentLogs is already single-identity everywhere else, so
-  // this is the same value as totalLoggedHeads there.
-  const ownLoggedHeadCount = swappedFrom
-    ? groupSetLogs(currentLogs.filter((l) => l.exerciseId === programExercise.exerciseId)).length
-    : totalLoggedHeads
-
-  // A logged set either targets a planned slot (weekPlanSetId set) or is an
-  // extra, on-demand set (weekPlanSetId null) — identity, not array
-  // position, decides which section it belongs to and whether that slot
-  // still needs an input row. Only heads are matched here; a group's stages
-  // travel with their head and are never matched independently.
-  const plannedLogGroups = logGroups.filter((g) => g.head.weekPlanSetId != null)
-  const extraLogGroups = logGroups
-    .filter((g) => g.head.weekPlanSetId == null)
-    .sort((a, b) => a.head.setNumber - b.head.setNumber)
-
-  // Planned heads only — a planned dropset's stage rows are never their own
-  // top-level slot (§2.7 item 7); they're pulled in per-head via
-  // plannedGroups below, for stage prefill/target-RIR when ADD STAGE is used.
-  const plannedHeads = headsOnly(plannedSets, (s) => s.parentWeekPlanSetId)
-  const plannedGroups = groupWeekPlanSets(plannedSets)
-  // Same emptiness PlanTargetsPanel would compute internally from the same
-  // plannedSets input — read here instead of duplicating groupWeekPlanSets
-  // a second time just to ask "would this panel render NO PLAN".
-  const showPlanTargets = plannedGroups.length > 0
-
-  // Number of extra-set input slots to show. Starts at (and never drops
-  // below) the number of extra sets already logged, so already-logged extra
-  // sets keep rendering after a remount/refresh. Otherwise it only grows
-  // when the user taps ADD SET — logging a set never adds another slot.
-  //
-  // Prefill fix (2026-09-03): when swappedFrom is set, plannedSets IS the
-  // original exercise's plan (already fully resolved — see the prop's own
-  // doc comment), so plannedGroups.length is that plan's head count. Seeded
-  // here rather than as a separately-computed prop, so the replacement's
-  // shape can never drift from what the planned section above is showing
-  // as the original's resolved history — same source, read twice.
-  const [extraSlotCount, setExtraSlotCount] = useState(
-    Math.max(extraLogGroups.length, swappedFrom ? plannedGroups.length : 0),
-  )
-  // swappedFrom is a fresh object literal from GymSession.tsx every render
-  // (its identity isn't meaningful, only whether it's present) — depend on
-  // !!swappedFrom rather than the object itself, so this doesn't re-run on
-  // every render for no reason; the effect body still reads the current
-  // swappedFrom from the closure either way.
-  useEffect(() => {
-    setExtraSlotCount((n) => Math.max(n, extraLogGroups.length, swappedFrom ? plannedGroups.length : 0))
-  }, [extraLogGroups.length, !!swappedFrom, plannedGroups.length])
-
-  // The plan side's head/stage structure isn't authoritative for what a log
-  // actually turned out to be — the log's OWN parentSetId is (a log-side
-  // head is always its own top-level set, never hidden, regardless of which
-  // plan slot its weekPlanSetId happens to reference). This matters for real
-  // data: a set logged against what the plan now calls a stage slot, but
-  // that was itself logged as a plain working set (parentSetId null — common
-  // in pre-3.1 history, where the log-side DROP toggle was independent of
-  // the plan's own structure), must still get its own row. So the set of
-  // "planned" slots to render is planned heads (for the empty/unlogged
-  // affordance) UNIONED with every weekPlanSetId that's actually a
-  // logged-side head, even if the plan considers that slot a stage.
-  const loggedHeadSlotIds = new Set(
-    plannedLogGroups.map((g) => g.head.weekPlanSetId).filter((id): id is string => id != null),
-  )
-  const plannedSlotIds = new Set([...plannedHeads.map((ps) => ps.id), ...loggedHeadSlotIds])
-  const plannedSetById = new Map(plannedSets.map((ps) => [ps.id, ps]))
-
-  // ─── Rest chain (chunk 16 — SPEC "Rest") ─────────────────────────────────
-  // programSets' own ids are v2_program_sets rows (heads and stages), looked
-  // up via a WeekPlanSet's own programSetId — "how the workout screen finds
-  // the set's design fields" (TASKS.md). plannedSets here already excludes
-  // warmups (this function's own top-of-file filter) but still includes
-  // every head AND stage, so a stage's own programSetId resolves correctly
-  // too (a stage can carry its own rest_seconds override, independent of its
-  // head's — no DB check restricts rest_seconds to heads only, unlike
-  // stage_kind/stage_rest_seconds).
-  const programSetById = new Map(programSets.map((ps) => [ps.id, ps]))
-
-  // "On an exercise's last set" (SPEC level 2) — the last PLANNED head, by
-  // position (setNumber). An extra (ADD SET) row is never "the exercise's
-  // last set" for this purpose (rest-after is a planning-time concept); an
-  // exercise with no planned heads at all has no last set either.
-  const sortedPlannedHeadsByPosition = [...plannedHeads].sort((a, b) => a.setNumber - b.setNumber)
-  const lastPlannedHeadId = sortedPlannedHeadsByPosition[sortedPlannedHeadsByPosition.length - 1]?.id ?? null
-  function isLastPlannedSet(plannedSet: WeekPlanSet | null): boolean {
-    return plannedSet != null && plannedSet.id === lastPlannedHeadId
+  const setOverrideFor = (planned: WeekPlanSet | null | undefined): number | null => {
+    const programSetId = planned?.programSetId
+    return programSetId ? (programSetById.get(programSetId)?.restSeconds ?? null) : null
   }
-
-  // This row's own v2_program_sets.rest_seconds, via its programSetId — null
-  // when unplanned (no programSetId) or the program set carries no override.
-  function setOverrideFor(plannedSet: WeekPlanSet | null | undefined): number | null {
-    const programSetId = plannedSet?.programSetId
-    if (!programSetId) return null
-    return programSetById.get(programSetId)?.restSeconds ?? null
+  const setOverrideForStageRest = (planned: WeekPlanSet | null | undefined): number | null => {
+    const programSetId = planned?.programSetId
+    return programSetId ? (programSetById.get(programSetId)?.stageRestSeconds ?? null) : null
   }
+  /** A planned head's drops, in order (the plan's: a stage is never its own top-level set). */
+  const plannedStagesOf = (headId: string): WeekPlanSet[] =>
+    allPlannedSets.filter((set) => set.parentWeekPlanSetId === headId).sort((a, b) => a.stageIndex - b.stageIndex)
 
-  // Staged-set context for a HEAD being logged (handleLogHead) — the head's
-  // own explicit stage_kind (SPEC-literal reading, restChain.ts's own header:
-  // a null/legacy kind is NOT promoted to 'dropset' here, unlike
-  // resolveStageKind's display-only use elsewhere — D30 safety) and whether
-  // it has any planned stages at all to rest before.
-  function stageContextForHead(plannedSet: WeekPlanSet | null): StageChainInput | null {
-    if (!plannedSet) return null
-    const kind = plannedSet.stageKind ?? null
+  // Staged-set context for a HEAD being logged — the head's own explicit stage_kind (restChain.ts's header: a null/legacy kind is NOT
+  // promoted to 'dropset' here, unlike resolveStageKind's display-only use elsewhere — D30 safety) and whether it has planned stages.
+  function stageContextForHead(planned: WeekPlanSet | null): StageChainInput | null {
+    if (!planned) return null
+    const kind = planned.stageKind ?? null
     if (kind == null) return null
-    const plannedStageCount = plannedGroups.find((g) => g.head.id === plannedSet.id)?.stages.length ?? 0
-    return {
-      kind,
-      hasNextStage: plannedStageCount > 0,
-      stageRestSecondsOverride: setOverrideForStageRest(plannedSet),
-    }
+    return { kind, hasNextStage: plannedStagesOf(planned.id).length > 0, stageRestSecondsOverride: setOverrideForStageRest(planned) }
+  }
+  // Staged-set context for a STAGE being logged — the kind lives on the head; hasNextStage is false once stageIndex (the one just
+  // about to be logged) reaches the planned stage count (the group's last configured stage falls through to the normal chain).
+  function stageContextForStage(headPlanned: WeekPlanSet | null, stageIndex: number): StageChainInput | null {
+    const kind = headPlanned?.stageKind ?? null
+    if (kind == null || headPlanned == null) return null
+    return { kind, hasNextStage: stageIndex < plannedStagesOf(headPlanned.id).length, stageRestSecondsOverride: setOverrideForStageRest(headPlanned) }
   }
 
-  // Staged-set context for a STAGE being logged (handleLogStage) — the
-  // KIND lives on the head (a stage's own stage_kind is always null, the
-  // DB's own check), found via the head's own weekPlanSetId; hasNextStage is
-  // false once stageIndex (the one just about to be logged) reaches the
-  // planned stage count — reading 2 in restChain.ts's header: the group's
-  // last configured stage falls through to the normal chain instead,
-  // resting before the NEXT SET, not between stages any more.
-  function stageContextForStage(headLog: SetLog, stageIndex: number): StageChainInput | null {
-    const headPlannedSet = headLog.weekPlanSetId ? plannedSetById.get(headLog.weekPlanSetId) ?? null : null
-    const kind = headPlannedSet?.stageKind ?? null
-    if (kind == null) return null
-    const plannedStageCount = headPlannedSet
-      ? plannedGroups.find((g) => g.head.id === headPlannedSet.id)?.stages.length ?? 0
-      : 0
-    return {
-      kind,
-      hasNextStage: stageIndex < plannedStageCount,
-      stageRestSecondsOverride: setOverrideForStageRest(headPlannedSet),
-    }
-  }
-
-  function setOverrideForStageRest(plannedSet: WeekPlanSet | null | undefined): number | null {
-    const programSetId = plannedSet?.programSetId
-    if (!programSetId) return null
-    return programSetById.get(programSetId)?.stageRestSeconds ?? null
-  }
-
-  // Resolves the chain (restChain.ts) and applies it to the shared store:
-  // a real target starts a fresh rest period at that value; null ("no
-  // timer") stops any period in progress instead of starting one. Called
-  // at the exact point startTimer() used to be, for every working-set,
-  // stage and warmup log alike.
+  // Resolves the chain (restChain.ts) and applies it to the shared store: a real target starts a fresh rest period at that value;
+  // null ("no timer") stops any period in progress instead of starting one.
   function applyRestChain(partial: {
     setOverrideSeconds: number | null
     isLastSetOfExercise: boolean
@@ -327,289 +166,190 @@ export function useExerciseCardState({
     else useRestTimerStore.getState().startRest(target)
   }
 
-  const plannedRows = [...plannedSlotIds]
-    .map((id) => plannedSetById.get(id))
-    .filter((ps): ps is WeekPlanSet => ps != null)
-    .sort((a, b) => a.setNumber - b.setNumber)
-    .map((ps) => ({
-      plannedSet: ps,
-      // Only meaningful when ps is itself a plan-side head — a plan-side
-      // stage has no stages of its own to prefill from.
-      plannedStages: plannedGroups.find((g) => g.head.id === ps.id)?.stages ?? [],
-      group: plannedLogGroups.find((g) => g.head.weekPlanSetId === ps.id) ?? null,
-    }))
-    // On a merged (swapped) card the planned section is the ORIGINAL
-    // exercise's already-resolved history, shown in place of a second card —
-    // never a live input for THIS card's identity, which is the
-    // replacement's. An unlogged planned row here would render a LOG input
-    // whose write would carry exerciseId=replacement with the ORIGINAL's
-    // weekPlanSetId: exactly the cross-identity plan link swappedFrom's own
-    // doc comment says the prefill design exists to avoid. Normally
-    // unreachable (handleConfirmSwap resolves every planned row before the
-    // swap is recorded), but deleting one of the original's real logged sets
-    // from this card reopens its slot — so drop such rows instead of
-    // re-offering them. A no-op on every non-merged card.
-    .filter((row) => !swappedFrom || row.group != null)
-
-  const extraRows = Array.from({ length: extraSlotCount }, (_, i) => ({
-    group: extraLogGroups[i] ?? null,
-  }))
-
   function currentRestElapsed() {
     return startedAt ? Math.floor((Date.now() - startedAt) / 1000) : null
   }
 
-  // setNumberOverride lets handleSkipExercise assign sequential numbers to
-  // several heads skipped in one batch — totalLoggedHeads is a render-time
-  // snapshot that never changes mid-loop, so relying on it there would give
-  // every skipped head in the batch the same (duplicate) setNumber.
-  async function handleLogHead(
-    plannedSet: WeekPlanSet | null,
-    params: LogParams,
-    setNumberOverride?: number,
-    // Chunk 16 — present only when this member is logged from inside a
-    // superset's round grid (SupersetBlock.tsx, which alone knows the round/
-    // zigzag structure); absent for a plain card (ExerciseCard.tsx never
-    // passes it) and for handleSkipExercise's own batch calls below (a skip
-    // isn't "inside a round" in any SPEC sense — see this chunk's report).
-    supersetContext?: SupersetChainInput,
-  ): Promise<SetLog> {
+  // ─── What a row stands for ───────────────────────────────────────────────────────────────────────
+  const headOf = (row: ResolvedRow): ResolvedRow | undefined => (row.kind === 'stage' ? cardRows.find((r) => r.key === row.headKey) : row)
+  /** The planned set behind a row: a head's own, a drop's planned stage; null for an added set and for a drop the plan doesn't have. */
+  function plannedOf(row: ResolvedRow): WeekPlanSet | null {
+    if (row.kind === 'stage') {
+      const head = headOf(row)
+      return head?.weekPlanSetId ? (plannedStagesOf(head.weekPlanSetId)[row.stageNumber! - 1] ?? null) : null
+    }
+    return row.weekPlanSetId ? (plannedById.get(row.weekPlanSetId) ?? null) : null
+  }
+  const logOf = (row: ResolvedRow): SetLog | null => (row.logId ? (logById.get(row.logId) ?? null) : null)
+  /** Last time's set at the row's place — only a working head has one (the LAST line). */
+  const lastFor = (row: ResolvedRow): SetLog | null => (row.kind === 'working' ? (lastLogGroups[row.number - 1]?.head ?? null) : null)
+
+  // ─── Writers ─────────────────────────────────────────────────────────────────────────────────────
+  // LOG or SKIP of a head (a planned working set, or an added one): the number is the row's.
+  async function logHead(row: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
+    const planned = plannedOf(row)
     const restElapsed = currentRestElapsed()
     applyRestChain({
-      setOverrideSeconds: setOverrideFor(plannedSet),
-      isLastSetOfExercise: isLastPlannedSet(plannedSet),
-      stage: stageContextForHead(plannedSet),
+      setOverrideSeconds: setOverrideFor(planned),
+      isLastSetOfExercise: isLastPlannedSet(planned),
+      stage: stageContextForHead(planned),
       superset: supersetContext ?? null,
     })
-    // plannedSet non-null means a planned-slot head. On a merged card that's
-    // now structurally unreachable — plannedRows drops unlogged rows there
-    // and hasUnfinishedPlannedWork is forced false, so neither a LOG input
-    // nor SKIP REST OF EXERCISE can reach here against the original's plan.
-    // handleSkipExercise is the one remaining caller, and it only ever runs
-    // on the pre-swap card (single-identity currentLogs) and supplies
-    // setNumberOverride itself — so totalLoggedHeads below is never read
-    // from a mixed-identity count. A null plannedSet means an extra
-    // (ADD SET) slot, which on a merged card belongs to the replacement's
-    // own identity — see ownLoggedHeadCount's comment above for why that
-    // must not include the original's already-resolved heads.
-    const fallbackBase = plannedSet ? totalLoggedHeads : ownLoggedHeadCount
+    // An added set names its log before the request goes out (DECISIONS 174: its list entry carries the log's id), and its log
+    // carries its place. A planned set's payload names neither, so it is what it was before this chunk.
+    const logId = row.added && row.localId !== null ? crypto.randomUUID() : null
+    if (logId !== null && row.localId !== null) workout.linkLog(cardKey, row.localId, logId)
+    const { weekPlanSetId: _plannedId, setNumber: _number, ...rest } = params
     return onLog({
-      ...params,
+      ...rest,
       exerciseId: programExercise.exerciseId,
-      weekPlanSetId: plannedSet?.id ?? null,
-      setNumber: setNumberOverride ?? fallbackBase + 1,
-      // A non-null setSeconds means SetRow's Start Set flow already froze
-      // the honest rest value at the moment Start Set was tapped — trust it
-      // rather than overwrite with a fresh read, which by then would only
-      // measure set-performance time, not rest. Otherwise (off, or skip)
-      // this is unconditionally restElapsed, exactly as before.
+      weekPlanSetId: planned?.id ?? null,
+      setNumber: row.number,
+      // A non-null setSeconds means the row's Start Set flow already froze the honest rest value at the moment Start Set was tapped.
       restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
       parentSetId: null,
       stageIndex: 0,
+      // "As planned" (TASKS.md "Logging"): the row's own planned set; an added set has none.
+      stageKind: planned?.stageKind ?? null,
+      ...(logId !== null ? { id: logId, addedPlace: row.addedPlace } : {}),
     })
   }
 
-  // weekPlanSetId is already correct in params — SetGroup's stage-input row
-  // resolves it internally (its own plannedSet prop) via the same identity
-  // matching SetRow has always used; only the group-level fields need adding.
-  async function handleLogStage(
+  // LOG or SKIP of a drop: it belongs to its head's log (parentSetId), carries no place (DECISIONS 177) and shows its head's number.
+  async function logStage(row: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
+    const head = headOf(row)
+    const headLog = head ? logOf(head) : null
+    if (head === undefined || headLog === null) throw new RangeError(`the drop ${row.key} has no logged head`)
+    const stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0) + 1
+    return writeStage(head, headLog, stageIndex, plannedOf(row), row.number, params, supersetContext)
+  }
+
+  // ADD STAGE / "mark as dropset" (stay until chunk 62): a drop nobody planned, under a logged head.
+  async function logAdHocStage(headRow: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
+    const headLog = logOf(headRow)
+    if (headLog === null) throw new RangeError(`the set ${headRow.key} is not logged`)
+    const stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0) + 1
+    return writeStage(headRow, headLog, stageIndex, null, headRow.number, params, supersetContext)
+  }
+
+  async function writeStage(
+    head: ResolvedRow,
     headLog: SetLog,
     stageIndex: number,
+    stagePlanned: WeekPlanSet | null,
+    number: number,
     params: LogParams,
-    // Chunk 16 — same convention as handleLogHead's own 4th parameter above;
-    // only matters once this stage is the group's last configured one
-    // (stageContextForStage's own hasNextStage), where the chain falls
-    // through past the stage level to the normal/superset one.
     supersetContext?: SupersetChainInput,
   ): Promise<SetLog> {
     const restElapsed = currentRestElapsed()
-    // weekPlanSetId is already correct in params (see this function's own
-    // header comment above) — the STAGE's own plannedSet, if it was
-    // pre-planned, which may carry its own rest override independent of the
-    // head's.
-    const stagePlannedSet = params.weekPlanSetId ? plannedSetById.get(params.weekPlanSetId) ?? null : null
-    const headPlannedSet = headLog.weekPlanSetId ? plannedSetById.get(headLog.weekPlanSetId) ?? null : null
+    const headPlanned = head.weekPlanSetId ? (plannedById.get(head.weekPlanSetId) ?? null) : null
     applyRestChain({
-      setOverrideSeconds: setOverrideFor(stagePlannedSet),
-      isLastSetOfExercise: isLastPlannedSet(headPlannedSet), // stages are never independent sets
-      stage: stageContextForStage(headLog, stageIndex),
+      setOverrideSeconds: setOverrideFor(stagePlanned),
+      isLastSetOfExercise: isLastPlannedSet(headPlanned), // stages are never independent sets
+      stage: stageContextForStage(headPlanned, stageIndex),
       superset: supersetContext ?? null,
     })
+    const { weekPlanSetId: _plannedId, setNumber: _number, ...rest } = params
     return onLog({
-      ...params,
+      ...rest,
       exerciseId: programExercise.exerciseId,
-      setNumber: headLog.setNumber,
+      weekPlanSetId: stagePlanned?.id ?? null,
+      setNumber: number,
       restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
       parentSetId: headLog.id,
       stageIndex,
+      stageKind: null, // a stage's own stage_kind is always null (the DB's own check)
     })
   }
 
-  // Client-side cascade guard (TASKS.md §2.1 "The guard — cascade
-  // client-side, stages first"): deletes stage rows first, in descending
-  // stage_index order, then the head last — deliberately the less obvious
-  // order. Head-first would leave orphaned stages permanently if this
-  // (non-transactional) mutation fails partway through; stages-first fails
-  // into a head with fewer stages, which is visible, harmless, and
-  // re-deletable. Renumbering (heads only — §2.7 item 3) only runs once the
-  // whole cascade has actually succeeded.
-  //
-  // Two races closed here, found via an independent adversarial review of
-  // this exact guard: (1) each delete is a real, separately-awaited network
-  // round trip (plus its mutation's own refetch), so the cascade can span
-  // several seconds — during that window the head is still live, and
-  // without deletingHeadIds gating SetGroup's ADD STAGE (see that prop),
-  // a stage logged mid-cascade would never be in `order` and, once the head
-  // goes, would be silently orphaned by the log-side FK's ON DELETE SET
-  // NULL until migration 010 (Phase 3.8) — exactly the corruption this
-  // guard exists to prevent, and it stays in place unchanged after 010
-  // lands: the FK stops the database from orphaning stages, this guard
-  // keeps TanStack Query's optimistic cache correct in the meantime, since
-  // a server-side cascade removes rows the client still holds until the
-  // next refetch. (2) the renumbering step
-  // below sends only `setNumber`, not the head's full captured weight/reps/
-  // rir/note — those were snapshotted before the (now genuinely multi-step)
-  // cascade and would silently clobber a concurrent edit to that set made
-  // while the cascade was in flight.
-  async function handleDeleteHead(group: Group<SetLog>) {
-    if (deletingHeadIds.has(group.head.id)) return // already in progress
-    const order = cascadeDeleteOrder(group, (l) => l.stageIndex)
-    setDeletingHeadIds((prev) => new Set(prev).add(group.head.id))
-    try {
-      for (const row of order) {
-        await onDeleteSet(row.id)
-      }
-    } catch (err) {
-      // Fails safe: whatever didn't get deleted stays put, and — because we
-      // stop here — no renumbering happens for a delete that didn't
-      // actually complete.
-      console.error('Failed to delete set group', err)
-      return
-    } finally {
-      setDeletingHeadIds((prev) => {
-        const next = new Set(prev)
-        next.delete(group.head.id)
-        return next
-      })
-    }
-
-    // Scoped to the deleted head's own exerciseId, not just logGroups at
-    // large — on a merged (swapped) card, logGroups spans two real exercise
-    // identities (linkedExerciseIds, GymSession.tsx), and setNumber is
-    // per-exercise (see ownLoggedHeadCount's comment above). Without this,
-    // deleting a head on one identity could renumber a higher-setNumber head
-    // that happens to belong to the *other* identity, corrupting its
-    // sequence. A no-op filter change for every non-merged card, where every
-    // head already shares one exerciseId.
-    logGroups
-      .filter(
-        (g) =>
-          g.head.id !== group.head.id &&
-          g.head.exerciseId === group.head.exerciseId &&
-          g.head.setNumber > group.head.setNumber,
-      )
-      .sort((a, b) => a.head.setNumber - b.head.setNumber)
-      .forEach((g, i) => {
-        onUpdateSet(g.head.id, { setNumber: group.head.setNumber + i })
-      })
+  // A warmup's LOG (SPEC "Warmup sets"): level 1 of the chain only (never "the exercise's last set", never staged, never in a round).
+  async function logWarmup(row: ResolvedRow, params: LogParams): Promise<SetLog> {
+    const planned = plannedOf(row)
+    applyRestChain({ setOverrideSeconds: setOverrideFor(planned), isLastSetOfExercise: false, stage: null, superset: null })
+    const { weekPlanSetId: _plannedId, setNumber: _number, ...rest } = params
+    return onLog({
+      ...rest,
+      exerciseId: programExercise.exerciseId,
+      weekPlanSetId: planned?.id ?? null,
+      setNumber: row.number,
+      parentSetId: null,
+      stageIndex: 0,
+      isWarmup: true,
+    })
   }
 
-  // A lone stage has no descendants — a plain delete is safe, no cascade,
-  // no renumbering (stages don't occupy their own slot in the head sequence).
-  function handleDeleteStage(stageId: string) {
-    onDeleteSet(stageId).catch((err) => console.error('Failed to delete stage', err))
+  // Client-side cascade guard (TASKS.md §2.1): deletes stage rows first, in descending stage_index order, then the head last — stages-first
+  // fails into a head with fewer stages, which is visible, harmless, and re-deletable. The renumber below sends only `setNumber`, not
+  // the head's captured weight/reps/rir/note, so it can't clobber a concurrent edit.
+  async function handleDeleteHead(headRow: ResolvedRow) {
+    const headLog = logOf(headRow)
+    if (headLog === null || deletingHeadIds.has(headLog.id)) return // nothing to delete, or already in progress
+    const group = { head: headLog, stages: logs.filter((log) => log.parentSetId === headLog.id) }
+    setDeletingHeadIds((prev) => new Set(prev).add(headLog.id))
+    // The screen's number corrections wait for the whole cascade, renumber included (`workout.track`).
+    await workout.track(
+      (async () => {
+        try {
+          for (const log of cascadeDeleteOrder(group, (l) => l.stageIndex)) await onDeleteSet(log.id)
+        } catch (err) {
+          // Fails safe: whatever didn't get deleted stays put, and no renumbering happens for a delete that didn't complete.
+          console.error('Failed to delete set group', err)
+          return
+        } finally {
+          setDeletingHeadIds((prev) => {
+            const next = new Set(prev)
+            next.delete(headLog.id)
+            return next
+          })
+        }
+        // Scoped to the deleted head's own exerciseId: setNumber is per-exercise.
+        groupSetLogs(logs.filter((log) => !log.isWarmup && log.exerciseId === headLog.exerciseId))
+          .filter((g) => g.head.id !== headLog.id && g.head.setNumber > headLog.setNumber)
+          .sort((a, b) => a.head.setNumber - b.head.setNumber)
+          .forEach((g, i) => onUpdateSet(g.head.id, { setNumber: headLog.setNumber + i }))
+      })(),
+    )
   }
 
-  // Skip whole exercise: every remaining unlogged PLANNED set — heads and
-  // any already-planned stages under them, both (SPEC §4.3 / TASKS.md §4
-  // item 15). Deliberately scoped to plannedRows only: "extra" (ADD SET)
-  // slots are user-elective on-demand rows, not part of the plan's
-  // remaining work, so they're left untouched.
-  //
-  // Sequential and awaited, same reasoning as handleDeleteHead's cascade:
-  // a stage being skipped may need its head's real id, and if that head is
-  // itself being skipped in the same pass, that id doesn't exist until its
-  // own mutation resolves. totalLoggedHeads is a render-time snapshot that
-  // never advances mid-loop, so skipped heads get an explicit, manually
-  // incremented setNumber instead (handleLogHead's setNumberOverride).
+  // A lone stage has no descendants — a plain delete is safe, no cascade, no renumbering.
+  function handleDeleteStage(stageRow: ResolvedRow) {
+    if (stageRow.logId === null) return
+    onDeleteSet(stageRow.logId).catch((err) => console.error('Failed to delete stage', err))
+  }
+
+  // Skip the rest of the exercise: every open PLANNED working set — heads and the drops under them (SPEC §4.3). Added sets and
+  // warmups are left (chunk 59 extends it, DECISIONS 163). Sequential and awaited: a drop needs its head's real id. Each skip stores
+  // the number its row shows.
+  const openPlanned = cardRows.filter((row) => row.state === 'unlogged' && row.kind !== 'warmup' && !row.added)
+  const skipParams = (planned: WeekPlanSet | null): LogParams => ({
+    weekPlanSetId: planned?.id ?? null,
+    setNumber: 0,
+    weight: null,
+    reps: null,
+    rir: null,
+    isDropset: false,
+    isSkipped: true,
+    restSeconds: null,
+    setSeconds: null,
+    enteredUnit: null,
+    formRating: null,
+    stageKind: planned?.stageKind ?? null,
+  })
   async function handleSkipExercise() {
-    let nextHeadNumber = totalLoggedHeads + 1
-    for (const row of plannedRows) {
-      let headLog = row.group?.head ?? null
-      if (!headLog) {
-        headLog = await handleLogHead(
-          row.plannedSet,
-          {
-            weekPlanSetId: row.plannedSet.id,
-            setNumber: 0,
-            weight: null,
-            reps: null,
-            rir: null,
-            isDropset: false,
-            isSkipped: true,
-            restSeconds: null,
-            setSeconds: null,
-            enteredUnit: null,
-            formRating: null,
-            // "As planned" (TASKS.md "Logging"), same as a real LOG tap —
-            // SetRow.tsx's handleSkip resolves this from plannedSet too.
-            stageKind: row.plannedSet.stageKind ?? null,
-          },
-          nextHeadNumber,
-        )
-        nextHeadNumber += 1
-      }
-
-      const loggedStages = row.group?.stages ?? []
-      const remainingCount = row.plannedStages.length - loggedStages.length
-      let nextStageIdx = loggedStages.reduce((max, s) => Math.max(max, s.stageIndex), 0) + 1
-      for (let i = 0; i < remainingCount; i++) {
-        await handleLogStage(headLog, nextStageIdx, {
-          weekPlanSetId: row.plannedStages[loggedStages.length + i]?.id ?? null,
-          setNumber: 0,
-          weight: null,
-          reps: null,
-          rir: null,
-          isDropset: true,
-          isSkipped: true,
-          restSeconds: null,
-          setSeconds: null,
-          enteredUnit: null,
-          formRating: null,
-          // A stage's own stage_kind is always null (the DB's own check).
-          stageKind: null,
-        })
-        nextStageIdx += 1
+    for (const head of cardRows.filter((row) => row.kind === 'working' && !row.added)) {
+      const headLog = head.state === 'unlogged' ? await logHead(head, skipParams(plannedOf(head))) : logOf(head)
+      if (headLog === null) continue
+      let stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0)
+      for (const drop of cardRows.filter((row) => row.kind === 'stage' && row.headKey === head.key && row.state === 'unlogged')) {
+        stageIndex += 1
+        // A drop of a planned head: its own planned stage, a stage_kind of null (the DB's own check), skipped.
+        await writeStage(head, headLog, stageIndex, plannedOf(drop), drop.number, { ...skipParams(plannedOf(drop)), isDropset: true, stageKind: null })
       }
     }
   }
 
-  // Whether there's anything left for "skip whole exercise" to actually do —
-  // hides/disables the affordance once every planned head and stage is
-  // already logged, avoiding a confusing no-op action.
-  // Never on a merged (swapped) card: everything this would write belongs to
-  // the original exercise's plan, but would be written under the
-  // replacement's exerciseId — see plannedRows' own filter above. The
-  // original's remaining work was already skipped at swap time, by this very
-  // function, back when the card still carried the original's identity.
-  const hasUnfinishedPlannedWork = !swappedFrom && plannedRows.some(
-    (row) => !row.group || row.group.stages.length < row.plannedStages.length,
-  )
-
-  // Same "anything left" question, as a count rather than a boolean — shown
-  // in SwapExerciseSheet's confirm step so swapping mid-exercise is honest
-  // about how many remaining sets are about to be marked skipped.
-  const remainingPlannedCount = plannedRows.reduce((sum, row) => {
-    const headRemaining = row.group ? 0 : 1
-    const stagesRemaining = Math.max(0, row.plannedStages.length - (row.group?.stages.length ?? 0))
-    return sum + headRemaining + stagesRemaining
-  }, 0)
-
-  // Swap: skip whatever's left of the original exercise (same function "skip
-  // rest of exercise" already uses — a swap that produced zero unfinished
-  // rows is a harmless no-op loop), then hand the chosen replacement up to
-  // GymSession.tsx. Sequential and awaited so a skip failure doesn't still
-  // register the swap as if it had gone through.
+  // Swap: skip whatever's left of the original exercise, then hand the chosen replacement up to GymSession. Sequential and awaited so
+  // a skip failure doesn't still register the swap as if it had gone through.
   async function handleConfirmSwap(newExercise: Exercise) {
     setShowSwapSheet(false)
     setIsSkippingExercise(true)
@@ -623,9 +363,6 @@ export function useExerciseCardState({
     }
   }
 
-  // The CONFIRM SKIP button's own handler (ExerciseCard.tsx's inline
-  // closure, moved here verbatim) — exposed as one function so callers
-  // never need the raw isSkippingExercise setter.
   async function handleConfirmSkip() {
     setShowSkipConfirm(false)
     setIsSkippingExercise(true)
@@ -638,109 +375,35 @@ export function useExerciseCardState({
     }
   }
 
-  // Display numbers run sequentially top-to-bottom (planned section first,
-  // then extra) purely for the row badge — the setNumber actually sent on a
-  // head log is computed fresh from handleLogHead's own fallbackBase at
-  // click time, from the same two counts used here, so an unlogged row's
-  // badge never jumps to a different number than what it actually gets
-  // written as the instant it's logged. extraDisplay uses ownLoggedHeadCount
-  // (not totalLoggedHeads) for the same reason handleLogHead's fallbackBase
-  // does — on a merged card, unloggedSeen alone would otherwise continue the
-  // original's already-resolved count into the replacement's own sequence.
-  let unloggedSeen = 0
-  const plannedDisplay = plannedRows.map((row) => {
-    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
-    const displayNumber = totalLoggedHeads + unloggedSeen + 1
-    unloggedSeen += 1
-    return { ...row, displayNumber }
-  })
-  const extraDisplay = extraRows.map((row) => {
-    if (row.group) return { ...row, displayNumber: row.group.head.setNumber }
-    const displayNumber = ownLoggedHeadCount + unloggedSeen + 1
-    unloggedSeen += 1
-    return { ...row, displayNumber }
-  })
-
-  // ─── Warmup sets (chunk 15 — SPEC "Warmup sets") ─────────────────────────
-  // Planned-only, in plan order — no "ADD WARMUP SET" affordance exists:
-  // SPEC's own words, "exercises that don't need warmups simply have
-  // none", and nothing names an ad-hoc extra warmup the way ADD SET does
-  // for working sets. A warmup is never staged (027's own checks,
-  // v2_program_sets_warmup_check / _stage_row_check), so every row here is
-  // always its own head — groupSetLogs still used (not a raw filter) so a
-  // warmup logged more than once for the same plan slot (shouldn't happen,
-  // but isn't assumed away) still resolves to one group per head correctly.
-  const warmupPlannedSets = allPlannedSets
-    .filter((s) => s.isWarmup)
-    .sort((a, b) => a.setNumber - b.setNumber)
-  const warmupLogGroups = groupSetLogs(allCurrentLogs.filter((l) => l.isWarmup))
-  const warmupRows = warmupPlannedSets
-    .map((plannedSet) => ({
-      plannedSet,
-      group: warmupLogGroups.find((g) => g.head.weekPlanSetId === plannedSet.id) ?? null,
-    }))
-    // Same merged-card rule plannedRows applies above (its own comment):
-    // on a swapped card the planned section is the ORIGINAL exercise's
-    // already-resolved history, never a live input under the
-    // REPLACEMENT's identity. An unlogged row here would do exactly that;
-    // a no-op filter on every non-merged card.
-    .filter((row) => !swappedFrom || row.group != null)
-
-  // SetRow.tsx's own isWarmup branch already resolves restSeconds/setSeconds
-  // (resolveTiming) and constructs the full LogParams itself (rir/isDropset/
-  // isSkipped/stageKind all fixed, isWarmup: true) — this only adds what
-  // SetRow can't know (which exercise/plan slot) and starts the shared rest
-  // timer, same as handleLogHead does for a working set.
-  async function handleLogWarmup(plannedSet: WeekPlanSet, params: LogParams): Promise<SetLog> {
-    // Chunk 16 — "warmup sets follow the same chain" (SPEC), level 1 only in
-    // practice: isLastSetOfExercise is always false for a warmup (reading 4,
-    // restChain.ts's own header — finishing a warmup is never "the
-    // exercise's last [working] set"), and a warmup is never staged nor
-    // rendered inside a superset's round grid (chunk 15), so stage/superset
-    // are always null here.
-    applyRestChain({
-      setOverrideSeconds: setOverrideFor(plannedSet),
-      isLastSetOfExercise: false,
-      stage: null,
-      superset: null,
-    })
-    return onLog({
-      ...params,
-      exerciseId: programExercise.exerciseId,
-      weekPlanSetId: plannedSet.id,
-      // Never a stage (a warmup is never staged) — same fixed values
-      // handleLogHead passes for a head.
-      parentSetId: null,
-      stageIndex: 0,
-    })
-  }
-
   return {
     resolvedWeightUnit,
+    lastLogsLoading,
+    logs,
+    onUpdateSet,
+    onDeleteSet,
+    cardRows,
     deletingHeadIds,
     isSkippingExercise,
     showSkipConfirm,
     setShowSkipConfirm,
     showSwapSheet,
     setShowSwapSheet,
-    lastLogGroups,
-    showPlanTargets,
-    plannedGroups,
-    plannedDisplay,
-    extraDisplay,
-    hasUnfinishedPlannedWork,
-    remainingPlannedCount,
+    plannedOf,
+    logOf,
+    lastFor,
+    hasUnfinishedPlannedWork: openPlanned.length > 0,
+    remainingPlannedCount: openPlanned.length,
     currentRestElapsed,
-    handleLogHead,
-    handleLogStage,
+    logHead,
+    logStage,
+    logAdHocStage,
+    logWarmup,
     handleDeleteHead,
     handleDeleteStage,
     handleSkipExercise,
     handleConfirmSkip,
     handleConfirmSwap,
-    handleAddSet: () => setExtraSlotCount((n) => n + 1),
-    warmupRows,
-    handleLogWarmup,
+    handleAddSet: () => workout.addSet(cardKey),
   }
 }
 
