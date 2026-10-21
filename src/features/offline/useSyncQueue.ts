@@ -342,10 +342,17 @@ export async function queueSetLogDelete(log: { id: string; sessionId: string; pa
 // since been deleted on another phone matches no row. A stage log names its head (`parentSetId`), as on a delete, so the head's
 // delete waits for it. The device's own copy of the log changes at once (the queue first, so a failure in between leaves a
 // stale copy, never a patch that was lost); the caller changes the number on the screen's cache.
+//
+// Queued once (58a's review 1, finding 1): a log whose last queued write is already this patch gets no second one. A pass that
+// fails while the phone reads as online ends with the session read again, with the number the server still holds, and the
+// workout screen lists the same correction again; each of those draws used to queue it again (681 items for one log in about 70 s
+// on staging). Only the log's LAST queued write counts: a patch to another number queued after it, or a whole-row save after it,
+// means this one is not what the server will end with. Returns whether an item was added.
 export async function queueSetLogPatch(
   log: { id: string; sessionId: string; parentSetId?: string | null },
   setNumber: number,
-): Promise<void> {
+): Promise<boolean> {
+  if (await lastQueuedWriteIsPatch(log.id, setNumber)) return false
   await db.sync_queue.add({
     table: 'v2_set_logs',
     operation: 'patch',
@@ -355,4 +362,13 @@ export async function queueSetLogPatch(
     ...(log.parentSetId ? { parentSetId: log.parentSetId } : {}),
   })
   await db.set_logs.update(log.id, { setNumber })
+  return true
+}
+
+async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {
+  const own = (await db.sync_queue.toArray())
+    .filter((item) => item.table === 'v2_set_logs' && payloadOf(item).id === logId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id! - b.id!)
+  const last = own[own.length - 1]
+  return last !== undefined && last.operation === 'patch' && (last.payload as { set_number?: unknown }).set_number === setNumber
 }

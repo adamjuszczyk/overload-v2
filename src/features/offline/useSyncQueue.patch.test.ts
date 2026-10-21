@@ -315,6 +315,56 @@ describe('queueSetLogPatch', () => {
     expect(deviceLogs.get('l1')).toEqual({ id: 'l1', setNumber: 4, weight: 80 })
   })
 
+  // Review 1 of 58a, finding 1: the session is read again after every pass, and a pass whose request failed while the phone reads as
+  // online brings the old number back, so the screen lists the same correction again. Each such draw used to queue it again.
+  it('queues a log\'s patch once: the same number again adds no item (and says so), however often it is asked for', async () => {
+    deviceLogs = new Map([['l1', { id: 'l1', setNumber: 5 }]])
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(true)
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(false)
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(false)
+    expect(queue.map((q) => q.payload)).toEqual([{ id: 'l1', set_number: 4 }])
+  })
+
+  it('counts a patch that is waiting, failing or has given up as queued (it is still the log\'s last write)', async () => {
+    server = new Map([['v2_set_logs:l1', { id: 'l1', set_number: 5 }]])
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(true)
+    failures.set('patch:l1', MAX_SYNC_ATTEMPTS)
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) {
+      await flushSyncQueue()
+      expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(false)
+    }
+    expect(queue).toHaveLength(1)
+    expect(queue[0]).toMatchObject({ attempts: MAX_SYNC_ATTEMPTS, gaveUp: true })
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(false)
+    expect(queue).toHaveLength(1)
+  })
+
+  it('only the log\'s LAST queued write counts: another number queued after it, or a whole-row save after it, means the same number is queued again', async () => {
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 5)).toBe(true)
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 6)).toBe(true)
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 5)).toBe(true) // the server would end on 6
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 5)).toBe(false)
+    expect(queue.map((q) => q.payload.set_number)).toEqual([5, 6, 5])
+
+    expect(await queueSetLogPatch({ id: 'l2', sessionId: 's1' }, 4)).toBe(true)
+    queue.push({ id: nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { id: 'l2', session_id: 's1', set_number: 9, tag: 'again' }, createdAt: new Date(Date.now() + 60_000).toISOString() })
+    expect(await queueSetLogPatch({ id: 'l2', sessionId: 's1' }, 4)).toBe(true) // the re-logged row would end on 9
+    expect(queue.filter((q) => q.payload.id === 'l2').map((q) => q.operation)).toEqual(['patch', 'upsert', 'patch'])
+
+    // "last" is the queue's own replay order (`createdAt`, then the id), not the order the items were added in
+    expect(await queueSetLogPatch({ id: 'l3', sessionId: 's1' }, 4)).toBe(true)
+    queue.push({ id: nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { id: 'l3', session_id: 's1', set_number: 9, tag: 'earlier' }, createdAt: '2000-01-01T00:00:00.000Z' })
+    expect(await queueSetLogPatch({ id: 'l3', sessionId: 's1' }, 4)).toBe(false) // the upsert replays first; the patch is the last write
+  })
+
+  it('is a log\'s own: the same number for another log, or another table\'s row with the log\'s id, is not a patch already queued', async () => {
+    expect(await queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).toBe(true)
+    expect(await queueSetLogPatch({ id: 'l2', sessionId: 's1' }, 4)).toBe(true)
+    queue = [{ id: nextId++, table: 'v2_sessions', operation: 'patch', payload: { id: 'l3', set_number: 4 }, createdAt: new Date().toISOString() }]
+    expect(await queueSetLogPatch({ id: 'l3', sessionId: 's1' }, 4)).toBe(true)
+    expect(queue).toHaveLength(2)
+  })
+
   it('queues first: a queue that can\'t take the item leaves the device\'s copy alone (never a number changed with its patch lost)', async () => {
     deviceLogs = new Map([['l1', { id: 'l1', setNumber: 5 }]])
     writesUntilFailure.set('queue.add', 0)

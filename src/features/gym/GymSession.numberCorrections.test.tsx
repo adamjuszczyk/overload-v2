@@ -60,6 +60,7 @@ vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }
 vi.mock('../offline/useSyncQueue', () => ({
   queueSetLogPatch: async (l: { id: string; sessionId: string; parentSetId?: string | null }, setNumber: number) => {
     queued.push({ log: l, setNumber })
+    return true // added (the queue says false for a patch it already holds: GymSession.numberCorrections.refetch.test.tsx runs the real one)
   },
   flushSyncQueue: () => {
     flushed()
