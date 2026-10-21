@@ -955,6 +955,20 @@ export async function markSessionDeload(
   }
 
   const current = await fetchDeloadWeekPlanCore(weekPlanId)
+
+  // Chunk 188f (Adam, 2026-10-20; DECISIONS 188 (a); SPEC Deload [1.2]: "Marking a session that already holds a saved copy of its plan
+  // leaves it as it is, with nothing recalculated or saved again"). A week mark is this function once per session, in turn, so one cut off
+  // part way leaves the week half marked, and pressing it again reaches the sessions it had already marked. Their planned sets are the
+  // deloaded ones: calculating again would shrink them once more, and saving a copy from them would write the deload over the plan, so
+  // UNMARK would bring the deload back instead of the plan. So the flag is set (idempotent) and nothing else is touched: the sets stay, and
+  // the copy stays exactly as the first mark saved it. "Holds a saved copy" is read as unmarkSessionDeload reads it: `deload_restore` is a
+  // list, an empty one included (a session marked with no sets). It comes after the started guard, so a started session still reports
+  // 'alreadyStarted' and its notice; 'flagOnly' (the outcome of rules off) is the outcome here too, and no caller tells them apart.
+  if (current.deloadRestore != null) {
+    await setDeload(weekPlanId, true)
+    return 'flagOnly'
+  }
+
   const history = await fetchDeloadOccurrenceHistory(current.mesocycleId, current.workoutDayId, current.sequencePosition, current.weekNumber)
 
   const historySetIds = history.flatMap((h) => h.sets.map((s) => s.id))
@@ -1049,7 +1063,10 @@ async function withoutGoneProgramSets(snapshot: DeloadRestoreEntry[]): Promise<D
 // this is literally markSessionDeload/unmarkSessionDeload run once per row
 // of the week, never a bulk statement once rules are on (each row can
 // resolve a different base occurrence). `rules` is the SAME effective
-// rules object for every row (one user's Settings rules).
+// rules object for every row (one user's Settings rules). A row that already
+// holds a saved copy (a week mark cut off part way, pressed again) is left as
+// it is by markSessionDeload (chunk 188f), so marking the week again only
+// finishes the mark.
 // Returns whether ANY row hit the started guard, so the week-level action
 // can show one combined notice the same way the per-session one does.
 export async function markWeekDeload(
