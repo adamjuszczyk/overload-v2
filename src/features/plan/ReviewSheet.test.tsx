@@ -154,6 +154,22 @@ describe('W: each button writes what the board says and the item is gone for goo
     expect(sets(planId('ua', 2), 'pe-lat').filter((s) => s.stage_kind !== null)).toHaveLength(0)
   })
 
+  it('W (195 (a)): two added sets of one exercise that share a number on two cards are two items, and deciding one leaves the other', async () => {
+    const third = world.tables.v2_set_logs.find((l) => l.id === 'lg-p3')!
+    third.added_place = 1
+    world.tables.v2_set_logs.push({ ...third, id: 'lg-p4', set_number: 3, added_place: 2, weight: 25, reps: 12, logged_at: '2026-10-05T18:40:00.000Z' })
+    openSheet()
+    await screen.findByText('MON · UPPER A')
+    const added = () => [...document.querySelectorAll('[data-review-item]')].map((n) => n.getAttribute('data-review-item')).filter((k) => k!.startsWith('added-set'))
+    expect(added()).toEqual(['added-set:s-ua:e-push:p1', 'added-set:s-ua:e-push:p2'])
+    expect(eyebrow()).toContain('LAST WEEK · 6 THINGS')
+    press('added-set:s-ua:e-push:p1', 'IGNORE')
+    await waitFor(() => expect(item('added-set:s-ua:e-push:p1')).toBeNull())
+    expect(added()).toEqual(['added-set:s-ua:e-push:p2'])
+    expect(world.tables.v2_week_review_decisions).toMatchObject([{ item_key: 'added-set:s-ua:e-push:p1' }])
+    expect(eyebrow()).toContain('LAST WEEK · 5 THINGS')
+  })
+
   it('"Skipped" REMOVE THIS SET removes this week’s set 3 of the row; its IGNORE keeps it', async () => {
     openSheet()
     await screen.findByText('MON · UPPER A')

@@ -94,6 +94,7 @@ const TABLES = [
 // api/ uses. The chunk whose code first calls `.from()` on one of them moves
 // its name into TABLES (the same test fails until it does) and deletes it here
 // (verify-rls-ahead.test.mjs fails until it does).
+// Empty since chunk 56: its REVIEW read and write moved `v2_week_review_decisions`, the last one, into TABLES.
 export const TABLES_AHEAD_OF_THE_APP = [];
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on
