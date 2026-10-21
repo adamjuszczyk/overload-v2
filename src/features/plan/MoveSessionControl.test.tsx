@@ -94,7 +94,7 @@ describe('MoveSessionControl — no existing row (not yet started)', () => {
 
     const button = screen.getByText('MOVE THIS SESSION').closest('button') as HTMLButtonElement
     expect(button.disabled).toBe(true)
-    expect(screen.getByText('REQUIRES A CONNECTION')).toBeTruthy()
+    expect(screen.getByText('Requires a connection')).toBeTruthy()
   })
 })
 
@@ -116,7 +116,7 @@ describe('MoveSessionControl — an already-moved (planned) row for this slot', 
 })
 
 describe('MoveSessionControl — a started session (in progress or completed) cannot be moved', () => {
-  it.each(['in_progress', 'completed'] as const)('%s: shows the "cannot be moved" note, no MOVE button', (status) => {
+  it.each(['in_progress', 'completed'] as const)('%s: the MOVE row is dimmed and disabled, with the "cannot be moved" note under it (board 10)', (status) => {
     sessionsData = [{
       id: 'session-1', userId: 'user-1', mesocycleId: 'meso-1', weekPlanId: 'wp-1',
       workoutDayId: 'wd-1', date: MON, status, note: null,
@@ -125,7 +125,7 @@ describe('MoveSessionControl — a started session (in progress or completed) ca
     }]
     renderControl()
 
-    expect(screen.getByText(/CAN'T BE MOVED/)).toBeTruthy()
-    expect(screen.queryByText('MOVE THIS SESSION')).toBeNull()
+    expect(screen.getByText("Already started — can't be moved")).toBeTruthy()
+    expect((screen.getByText('MOVE THIS SESSION').closest('button') as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -24,8 +24,8 @@ import {
 // week-diff gate: under the buttons of the header, the legend, the session chips and the open session.
 //
 //   legend   "CHANGED SINCE WEEK N" (CYCLE on a sequence run) once the open session is compared with something (weekPlanning's
-//            `changesSinceSource`: not week 1, not a deload session, not a past week), with the swatch of what a mark looks like, on stable
-//            weeks too (G48; "THIS WEEK ONLY" is the per-exercise line).
+//            `changesSinceSource`: not week 1, not a deload session), with the swatch of what a mark looks like, on stable weeks too (G48;
+//            "THIS WEEK ONLY" is the per-exercise line). A past week is compared as it is now (1.1's G22, kept) and says so the same way.
 //   chips    a weekday run's `MON ✓ PUSH 1` (the day, its state, the workout), a sequence run's `SLOT 1 ✓ UPPER A` and its rest slots
 //            (`SLOT 2 REST DAY`, which open nothing). The open one is the accent; a done or skipped one is greyed. A chip's state is the
 //            session's: ✓ when it is done, "· SKIPPED", "· MOVED" while it is moved (board 1c's "THU · SKIPPED").
@@ -33,12 +33,12 @@ import {
 //
 // Where a session is compared with a source (week-dependent: last week; stable: the default's set count, kinds, stages and rep targets, and
 // last week's weights and RIR) is weekPlanning's. A stable week reads the run copy's sets for it (RunCopyGate), and for "THIS WEEK ONLY"
-// on week 1 too (week 1 is compared with nothing, but it can differ from the default). A past week draws neither marks nor legend nor
-// THIS WEEK ONLY (board 1c: "show the plan").
+// on week 1 too (week 1 is compared with nothing, but it can differ from the default). A past week keeps 1.1's marks (a flat row's changed
+// value is the accent text), but no THIS WEEK ONLY line: its CHANGE EVERY WEEK → would lead to a screen that changes later weeks only.
 //
 // Display choices no board settles, provisional under D31: no state on the chip of a session that is only in progress; a session that is
 // done or skipped carries no ⋯; a stable week's legend is left out while it has no usable last week to name; THIS WEEK ONLY is not drawn on
-// a deload session (its sets are calculated, so they would all differ).
+// a deload session (its sets are calculated, so they would all differ) or in a past week.
 
 export interface WeekViewProps {
   isSequence: boolean
@@ -87,10 +87,10 @@ interface Chip {
 
 const MONO: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600 }
 
-function SessionChips({ chips, label }: { chips: Chip[]; label: string }) {
+function SessionChips({ chips, label, role }: { chips: Chip[]; label: string; role: 'group' | 'region' }) {
   if (chips.length === 0) return null
   return (
-    <div role="group" aria-label={label} className="hide-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, marginBottom: 18 }}>
+    <div role={role} aria-label={label} className="hide-scrollbar" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, marginBottom: 18 }}>
       {chips.map((chip) => {
         const finished = chip.state.finished !== null
         const dim = chip.rest || (finished && !chip.selected)
@@ -195,8 +195,8 @@ export default function WeekView(props: WeekViewProps) {
 
   const isSessionDone = !!openPlan && doneWeekPlanIds.has(openPlan.id)
   const slotWeeks = openPlan ? weeksOfSlot(allWeekPlans, openWorkout.id, openPlan.sequencePosition ?? null) : []
-  // Only a stable week reads the run copy, and a past week draws no marks and no THIS WEEK ONLY, so it needs nothing.
-  const needsRunCopy = planningType === 'stable' && !isPast && !!openPlan
+  // Only a stable week reads the run copy: what its shape is compared with, and what "THIS WEEK ONLY" is read against.
+  const needsRunCopy = planningType === 'stable' && !!openPlan
 
   const chips: Chip[] = isSequence
     ? sequenceSlots.map((slot) => {
@@ -228,22 +228,21 @@ export default function WeekView(props: WeekViewProps) {
   return (
     <RunCopyGate needed={needsRunCopy} runCopyExercises={runCopyExercises}>
       {(runCopy) => {
-        const changes =
-          !isPast && openPlan
-            ? changesSinceSource({
+        const changes = openPlan
+          ? changesSinceSource({
                 planningType,
                 weekNumber: viewWeek,
                 week: { isDeload: openPlan.isDeload, exercises: openPlan.exercises, sets: openPlan.sets },
                 slotWeeks,
                 runCopy,
               })
-            : null
+          : null
         const thisWeekOnly =
-          needsRunCopy && openPlan && !openPlan.isDeload ? thisWeekOnlyExercises(openPlan.exercises, openPlan.sets, runCopy) : NO_EXERCISES
+          needsRunCopy && !isPast && openPlan && !openPlan.isDeload ? thisWeekOnlyExercises(openPlan.exercises, openPlan.sets, runCopy) : NO_EXERCISES
         return (
           <>
             {changes?.sourceWeek != null && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <div data-legend="" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <span
                   aria-hidden="true"
                   style={{ flex: '0 0 auto', width: 14, height: 14, boxSizing: 'border-box', borderRadius: 4, borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--accent)', background: 'var(--accent-muted)' }}
@@ -252,7 +251,7 @@ export default function WeekView(props: WeekViewProps) {
               </div>
             )}
 
-            <SessionChips chips={chips} label={isSequence ? 'Sequence slots' : 'Workouts this week'} />
+            <SessionChips chips={chips} role={isSequence ? 'region' : 'group'} label={isSequence ? 'Sequence slot switcher' : 'Workouts this week'} />
 
             <SessionCard
               key={isSequence ? `${openWorkout.id}:${selectedSlot!.position}` : openWorkout.id}

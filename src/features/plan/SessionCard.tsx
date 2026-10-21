@@ -159,6 +159,7 @@ export default function SessionCard({
             </h2>
             {weekPlan?.isDeload && (
               <span
+                data-session-deload=""
                 style={{
                   ...MONO_CAPTION,
                   fontSize: 9,

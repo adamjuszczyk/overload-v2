@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
+import { dateForDow } from '../gym/moveSession'
+import type { PlanSession } from './weekViewLogic'
 
 // A session that is completed or skipped can't be edited in Plan: its week
 // rows are read-only, like a past week's. Plan reads which week plans have
@@ -57,7 +59,7 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
   }
 }
 
-const mockState: { plans: WeekPlan[]; done: Set<string> } = { plans: [], done: new Set() }
+const mockState: { plans: WeekPlan[]; done: Set<string>; sessions: PlanSession[] | undefined } = { plans: [], done: new Set(), sessions: undefined }
 const updateSetMutate = vi.fn()
 const removeSetMutate = vi.fn()
 
@@ -94,13 +96,14 @@ vi.mock('./useWeekPlan', () => ({
 // job is unrelated to session-moving: MoveSessionControl.test.tsx proves
 // the real component.
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => mockState.sessions })) // the week view's session states (chunk 54b)
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => mockState.done }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openSetMenu } = await import('./planMenus.testutil')
+const { openSetMenu, sessionMenuButton } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -120,6 +123,7 @@ function week() {
 beforeEach(() => {
   mockState.plans = [week()]
   mockState.done = new Set()
+  mockState.sessions = undefined
   updateSetMutate.mockClear()
   removeSetMutate.mockClear()
 })
@@ -130,7 +134,7 @@ describe('PlanPage — a completed or skipped session is read-only (current week
     expect(screen.getAllByLabelText(/^Options for set /)).toHaveLength(2)
     fireEvent.click(screen.getAllByText('8–12')[0])
     expect(screen.getByLabelText('Rep target')).toBeTruthy()
-    expect((screen.getByLabelText('Mark this session as deload') as HTMLButtonElement).disabled).toBe(false)
+    expect(sessionMenuButton()).not.toBeNull() // the session ⋯ (deload, move) is there to press
   })
 
   it('when the session on this week plan is completed or skipped, no set can be edited, deleted or tagged', () => {
@@ -141,16 +145,42 @@ describe('PlanPage — a completed or skipped session is read-only (current week
     fireEvent.click(screen.getAllByText('8–12')[0])
     expect(screen.queryByLabelText('Rep target')).toBeNull()
     expect(updateSetMutate).not.toHaveBeenCalled()
-    expect((screen.getByLabelText('Mark this session as deload') as HTMLButtonElement).disabled).toBe(true)
+    expect(sessionMenuButton()).toBeNull() // a locked session has no ⋯: nothing in it can change
   })
 
-  it('says why, once, only on the locked session', () => {
+  // Board 11 and board 10: a done session says "✓ DONE" on the right of its header, a skipped one "SKIPPED" (from the session's own row);
+  // a plan that is locked while this session is not itself finished (a shared plan, whose other day is done) says READ ONLY.
+  const header = () => screen.queryAllByText(/^(DONE|SKIPPED|READ ONLY)$/).map((el) => el.textContent)
+  const sessionOf = (status: PlanSession['status']): PlanSession[] => [
+    { id: 's-1', weekPlanId: 'wp-1', workoutDayId: 'wd-1', date: dateForDow(startDate, 1, 'monday'), movedToDate: null, status },
+  ]
+
+  it('says why, once, only on the locked session: DONE, SKIPPED, or READ ONLY where only its plan is locked', () => {
     renderPlanPage()
-    expect(screen.queryByText(/SESSION DONE — READ ONLY/)).toBeNull()
+    expect(header()).toEqual([])
     cleanup()
+
     mockState.done = new Set(['wp-1'])
+    renderPlanPage() // its plan is locked and its own session is not read (a shared plan's other day is the done one)
+    expect(header()).toEqual(['READ ONLY'])
+    cleanup()
+
+    mockState.sessions = sessionOf('completed')
     renderPlanPage()
-    expect(screen.getAllByText(/SESSION DONE — READ ONLY/)).toHaveLength(1)
+    expect(header()).toEqual(['DONE'])
+    expect(screen.queryByText(/SESSION DONE — READ ONLY/)).toBeNull() // 1.1's line is gone: board 11 draws "✓ DONE" only
+    cleanup()
+
+    mockState.sessions = sessionOf('skipped')
+    renderPlanPage()
+    expect(header()).toEqual(['SKIPPED'])
+  })
+
+  it('a session that is only in progress is not finished: no DONE, and its plan is not locked', () => {
+    mockState.sessions = sessionOf('in_progress')
+    renderPlanPage()
+    expect(header()).toEqual([])
+    expect(sessionMenuButton()).not.toBeNull()
   })
 
   it('only the locked session’s rows lock: another week plan id in the done set changes nothing here', () => {

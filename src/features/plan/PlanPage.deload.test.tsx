@@ -7,7 +7,7 @@ import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, Exercis
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import type { DeloadRules } from '../../lib/deloadRules'
-import { openWeekMenu, openWeekTile } from './planMenus.testutil'
+import { openWeekMenu, openWeekTile, sessionToggle } from './planMenus.testutil'
 
 // Chunk 21 (SPEC "Deload" / TASKS.md "Deload is a property of a session") —
 // the Plan screen's own marking UI (since chunk 52 the week-level action is in WEEK ⋯'s sheet, board 1e: every test below opens
@@ -122,6 +122,7 @@ vi.mock('../library/useExercises', () => ({
   useExercises: () => ({ data: [] }),
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
@@ -496,17 +497,18 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
     renderPlanPage()
 
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: null })
     expect(setWeekDeloadMutate).not.toHaveBeenCalled()
   })
 
-  it('reads "Unmark this session as deload" once that one session is marked', () => {
+  it('the session menu reads UNMARK THIS SESSION, with the DELOAD chip beside the name, once that one session is marked', () => {
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true, id: 'wp-session' })]
     renderPlanPage()
 
-    expect(screen.getByLabelText('Unmark this session as deload')).toBeTruthy()
-    fireEvent.click(screen.getByLabelText('Unmark this session as deload'))
+    expect(screen.getByText('DELOAD')).toBeTruthy() // the session's own chip, in its header
+    expect(sessionToggle().textContent).toContain('UNMARK THIS SESSION')
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: false, rules: null })
   })
 
@@ -524,11 +526,11 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     renderPlanPage()
 
     // Mounts on the first scheduled day (Monday / Push Day).
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate, 0)).toEqual({ weekPlanId: 'wp-push', isDeload: true, rules: null })
 
     fireEvent.click(screen.getByText('TUE'))
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate, 1)).toEqual({ weekPlanId: 'wp-pull', isDeload: true, rules: null })
   })
 
@@ -542,7 +544,7 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
     renderPlanPage()
 
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: settingsRules })
   })
 
@@ -551,7 +553,7 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false, id: 'wp-session' })]
     renderPlanPage()
 
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(firstArg(setDeloadMutate)).toEqual({ weekPlanId: 'wp-session', isDeload: true, rules: null })
   })
 
@@ -561,7 +563,7 @@ describe('PlanPage — the per-session toggle still marks only that session (chu
     renderPlanPage()
 
     expect(screen.queryByText('Already started — sets left as they are')).toBeNull()
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
     expect(screen.getByText('Already started — sets left as they are')).toBeTruthy()
   })
 })
@@ -579,7 +581,22 @@ describe('PlanPage — the shared-row note (chunk 21, G14)', () => {
     mockState.plans = [makePlan(1, 'wd-1', pe1)]
     renderPlanPage()
 
+    // Board 10: the session menu says the mark covers every day that shares the plan; under the name (SPEC: "Shared with Thu — changes
+    // apply to both"; P1.2-7: "Shared with Thu, Sat — changes apply to all" for three or more days) the OTHER days.
+    expect(screen.getByText('Shared with Tue, Wed, Thu, Fri — changes apply to all')).toBeTruthy()
+    sessionToggle()
     expect(screen.getByText('Marks Mon, Tue, Wed, Thu, Fri — they share one plan.')).toBeTruthy()
+  })
+
+  it('two days: "Shared with Thu — changes apply to both", the days named are the other ones, and the chip picks the day', () => {
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-1' })
+    mockState.plans = [makePlan(1, 'wd-1', pe1)]
+    renderPlanPage()
+
+    expect(screen.getByText('Shared with Thu — changes apply to both')).toBeTruthy()
+    fireEvent.click(screen.getByText('THU'))
+    expect(screen.getByText('Shared with Mon — changes apply to both')).toBeTruthy()
+    expect(screen.queryByText('Shared with Thu — changes apply to both')).toBeNull()
   })
 
   it('says nothing extra for a workout on only one weekday', () => {
@@ -587,6 +604,9 @@ describe('PlanPage — the shared-row note (chunk 21, G14)', () => {
     mockState.plans = [makePlan(1, 'wd-1', pe1)]
     renderPlanPage()
 
+    expect(screen.queryByText(/they share one plan/)).toBeNull()
+    expect(screen.queryByText(/^Shared with /)).toBeNull()
+    sessionToggle()
     expect(screen.queryByText(/they share one plan/)).toBeNull()
   })
 })
