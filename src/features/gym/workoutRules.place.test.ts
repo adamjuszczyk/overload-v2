@@ -174,7 +174,7 @@ describe('the added sets in their places, whichever record holds the place (DECI
       [5, 2],
       [6, 3],
     ])
-    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:4', 'added-set:s1:ex.bench:5', 'added-set:s1:ex.bench:6'])
+    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:p1', 'added-set:s1:ex.bench:p2', 'added-set:s1:ex.bench:p3']) // by place since chunk 56 (DECISIONS 195)
     // the control, the card that took A and B into its list first, gives the same
     const t = new Session([card('bench', 'n n n', { added: [addedLog('bench', 1, { number: 4, place: 1 }), addedLog('bench', 2, { number: 5, place: 2 })] })], [], [...threeLogged(), addedLog('bench', 1, { number: 4, place: 1 }), addedLog('bench', 2, { number: 5, place: 2 })])
     t.add('bench', 'N')

@@ -61,7 +61,7 @@ type DbSetLog = {
   added_place?: number | null
 }
 
-type DbSession = {
+export type DbSession = {
   id: string
   user_id: string
   mesocycle_id: string | null
@@ -135,7 +135,8 @@ function toSetLog(row: DbSetLog): SetLog {
   }
 }
 
-function toSession(row: DbSession): Session {
+// Exported for chunk 56 (REVIEW reads last week's sessions with their logs in one paged request and maps them as `fetchSession` does).
+export function toSession(row: DbSession): Session {
   return {
     id: row.id,
     userId: row.user_id,
