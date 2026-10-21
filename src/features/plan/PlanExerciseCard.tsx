@@ -11,8 +11,8 @@ import type { RirTargetPickerResult } from '../../components/pickers/RirTargetPi
 import type { CuesSheetResult } from '../../components/pickers/CuesSheet'
 import PlanSetRow, { type PlanSetRowMarks } from './PlanSetRow'
 import PlanSetTypeSheet from './PlanSetTypeSheet'
-import { RemovedSetRow } from './WeekDiffMarks'
-import type { ExerciseDiff } from './weekDiff'
+import { RemovedSetLine } from './changeMarks'
+import type { ExerciseChanges } from './weekPlanning'
 import { cuePatches, kindChipText, planRows, repTargetPatches, rirTargetPatches, setTypeOfRow, type PlanRow, type SetChanges, type SetPatch } from './planSetRows'
 
 // One exercise of Plan's week view (TASKS-1.2 chunk 54a; SPEC Screens → Plan screen: "Each exercise: name and muscle, no ⋯ (7b)"; boards 1, 1a
@@ -27,8 +27,10 @@ import { cuePatches, kindChipText, planRows, repTargetPatches, rirTargetPatches,
 //     then the head).
 // Every picker is opened on the set's own current value. A stage row's pickers are for that stage alone.
 //
-// Marks (`diff`): the old week-diff's marks on the set rows, unchanged until chunk 54b replaces them; its removed working sets are drawn
-// after the rows as they were.
+// Marks (`changes`, chunk 54b: weekPlanning's `changesSinceSource`): a set row's changed cells, new sets and changed kind; the exercise's own
+// accent edge and `· NEW` / `· MOVED` when it is new or moved; what the source has and the week doesn't, a dashed struck-through line
+// where it was (a set, a drop; an exercise is the page's). In a stable week "THIS WEEK ONLY" and "CHANGE EVERY WEEK →" close the card
+// once a set differs from the default (board 1a).
 
 type Sheet =
   | { kind: 'reps'; setId: string }
@@ -51,7 +53,12 @@ export interface PlanExerciseCardProps {
   planningType: PlanningType
   /** Every tag of the run's week sets: where the cues sheet's "YOURS" list comes from. */
   runCues: readonly string[]
-  diff?: ExerciseDiff
+  /** What differs from the week's source (chunk 54b); undefined where nothing is compared. */
+  changes?: ExerciseChanges
+  /** A stable week's exercise that differs from the default in set count, kind, stages or rep target (board 1a). */
+  thisWeekOnly?: boolean
+  /** "CHANGE EVERY WEEK →": opens CHANGE THE PROGRAM at this exercise. */
+  onChangeEveryWeek?: () => void
   /** An add or a removal of a set is out for this workout: its "+" waits (the rows it would count aren't read again yet). */
   addDisabled: boolean
   /** The "+" of this card is the one whose add is out. */
@@ -59,7 +66,6 @@ export interface PlanExerciseCardProps {
   onAddSet: (rows: PlanRow[]) => void
   onUpdate: (patches: SetPatch[]) => void
   onRemoveRow: (row: PlanRow) => void
-  isLast: boolean
 }
 
 export default function PlanExerciseCard({
@@ -73,13 +79,14 @@ export default function PlanExerciseCard({
   isCycle,
   planningType,
   runCues,
-  diff,
+  changes,
+  thisWeekOnly = false,
+  onChangeEveryWeek,
   addDisabled,
   adding,
   onAddSet,
   onUpdate,
   onRemoveRow,
-  isLast,
 }: PlanExerciseCardProps) {
   const [open, setSheet] = useState<Sheet | null>(null)
   const name = pe.exercise?.name ?? 'this exercise'
@@ -90,7 +97,10 @@ export default function PlanExerciseCard({
   // locks it (the state is set while rendering, not in an effect: no frame draws a picker on a locked card), and does not bring it back if it
   // is ever unlocked.
   if (locked && open !== null) setSheet(null)
-  const removedHeads = (diff?.removedHeads ?? []).filter((r) => !r.isWarmup)
+  const removedHeads = changes?.removedHeads ?? []
+  const workingCount = rows.filter((row) => !row.head.isWarmup).length
+  const removedWorking = removedHeads.filter((r) => !r.isWarmup)
+  const exerciseMark = changes?.added ? 'NEW' : changes?.moved ? 'MOVED' : null
 
   const rowOfHead = (headId: string) => rows.find((row) => row.head.id === headId) ?? null
   const rowOfSet = (setId: string): { row: PlanRow; set: WeekPlanSet } | null => {
@@ -102,22 +112,16 @@ export default function PlanExerciseCard({
   }
   const close = () => setSheet(null)
 
-  // The old marks (week-diff, chunk 31), unchanged until 54b: a working set that is new this week is marked in its number and its reps (and so are
-  // its stages' reps); weight and RIR follow the numbers' source, set by set. A warmup's or a stage's own newness was the STRUCTURE view's.
-  function headMarks(set: WeekPlanSet): PlanSetRowMarks | undefined {
-    const d = diff?.sets.get(set.id)
+  // What differs from the source, row by row (weekPlanning's `changesSinceSource`): a new row is marked in its number and its reps (its rep
+  // target is new) besides whichever of weight and RIR the numbers' source says differ; a changed kind is the chip's (or the number's).
+  function marksOf(set: WeekPlanSet): PlanSetRowMarks | undefined {
+    const d = changes?.sets.get(set.id)
     if (!d) return undefined
-    const added = !!d.added && !set.isWarmup
-    return { number: added, weight: !!d.weight, reps: added || !!d.reps, rir: !!d.rir }
-  }
-  function stageMarks(stage: WeekPlanSet, headIsNew: boolean): PlanSetRowMarks | undefined {
-    const d = diff?.sets.get(stage.id)
-    if (!d && !headIsNew) return undefined
-    return { weight: !!d?.weight, reps: headIsNew || !!d?.reps, rir: !!d?.rir }
+    return { number: d.added, weight: d.weight, reps: d.added || d.reps, rir: d.rir, kind: d.kind }
   }
 
-  function changeSet(id: string, changes: SetChanges) {
-    onUpdate([{ id, changes }])
+  function changeSet(id: string, patch: SetChanges) {
+    onUpdate([{ id, changes: patch }])
   }
 
   function submitReps(setId: string, result: RepTargetPickerResult) {
@@ -152,7 +156,11 @@ export default function PlanExerciseCard({
   const targetables = heads.map((h) => ({ id: h.id, isWarmup: h.isWarmup }))
 
   return (
-    <div data-exercise-card={pe.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: isLast ? 0 : 12 }}>
+    <div
+      data-exercise-card={pe.id}
+      data-diff={exerciseMark === 'NEW' ? 'added' : exerciseMark === 'MOVED' ? 'moved' : undefined}
+      style={{ background: 'var(--surface)', borderWidth: 1, borderStyle: 'solid', borderColor: exerciseMark ? 'var(--accent)' : 'var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, paddingBottom: 4 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 8px' }}>
@@ -163,7 +171,10 @@ export default function PlanExerciseCard({
               </span>
             )}
           </div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }}>{pe.exercise?.muscleGroup?.toUpperCase()}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }}>
+            {pe.exercise?.muscleGroup?.toUpperCase()}
+            {exerciseMark && <span style={{ color: 'var(--accent)' }}>{` · ${exerciseMark}`}</span>}
+          </span>
         </div>
         {!locked && (
           <button
@@ -195,7 +206,8 @@ export default function PlanExerciseCard({
         const optionsLabel = row.head.isWarmup ? `warmup set ${row.eyebrowNumber}` : `set ${row.eyebrowNumber}`
         const type = setTypeOfRow(row, null)
         const kindChip = type.kind === 'staged' ? kindChipText(type.stageKind, type.stageCount) : undefined
-        const marks = headMarks(row.head)
+        const marks = marksOf(row.head)
+        const removedStages = changes?.removedStages.get(row.head.id) ?? []
         return (
           <div key={row.head.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <PlanSetRow
@@ -220,19 +232,40 @@ export default function PlanExerciseCard({
                 isStage
                 weightUnit={pe.weightUnit}
                 readOnly={locked}
-                marks={stageMarks(stage, !!marks?.number)}
+                marks={marksOf(stage)}
                 onWeight={(kg) => changeSet(stage.id, { targetWeight: kg })}
                 onReps={() => setSheet({ kind: 'reps', setId: stage.id })}
                 onRir={() => setSheet({ kind: 'rir', setId: stage.id })}
               />
+            ))}
+            {removedStages.map((removed) => (
+              <RemovedSetLine key={`removed-stage:${removed.stageIndex}`} removed={removed} number="↳" weightUnit={pe.weightUnit} />
             ))}
           </div>
         )
       })}
 
       {removedHeads.map((removed) => (
-        <RemovedSetRow key={`removed:${removed.ordinal}`} removed={removed} weightUnit={pe.weightUnit} />
+        <RemovedSetLine
+          key={`removed:${removed.ordinal}`}
+          removed={removed}
+          number={removed.isWarmup ? 'W' : workingCount + removedWorking.indexOf(removed) + 1}
+          weightUnit={pe.weightUnit}
+        />
       ))}
+
+      {thisWeekOnly && (
+        <div style={{ marginTop: 6, paddingTop: 12, borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: 'var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 9, letterSpacing: '0.15em', color: 'var(--text-muted)' }}>THIS WEEK ONLY</span>
+          <button
+            type="button"
+            onClick={onChangeEveryWeek}
+            style={{ padding: '6px 0 6px 8px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 9, letterSpacing: '0.15em', color: 'var(--accent)' }}
+          >
+            CHANGE EVERY WEEK →
+          </button>
+        </div>
+      )}
 
       {/* The sheets are mounted to open them, outside the buttons that opened them (a portal's events still bubble to what rendered it). */}
       {open?.kind === 'reps' && picker && (

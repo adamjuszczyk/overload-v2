@@ -6,7 +6,7 @@ import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { columnsToRepTarget, formatRepTarget } from '../../lib/plannerVocabulary.js'
 import { cueLabel, rirTargetFromColumns, type RirTarget } from '../../components/pickers/pickerLogic'
-import { CHANGED_CELL } from './WeekDiffMarks'
+import { CHANGED_CELL, CHANGED_TEXT } from './changeMarks'
 
 // One set row of Plan's week view (TASKS-1.2 chunk 54a; SPEC Screens → Plan screen; boards 1, 1a and 9). A head or a stage row: its number (`01`,
 // `W` for a warmup, `↳` for a stage), the weight typed in the exercise's unit, `×`, the reps (opens the rep target picker), the RIR (opens
@@ -17,18 +17,22 @@ import { CHANGED_CELL } from './WeekDiffMarks'
 // row does itself is the weight: tap the box and type, blank clears it, "Enter a valid weight" for anything that isn't a number (nothing
 // is written then), and an unchanged value writes nothing (1.1's WeightTargetEditor, kept: kg stored, the exercise's unit shown).
 //
-// `readOnly` (a past week, a session that is done) draws the same numbers in cells that can't be pressed, with no ⋯. `marks` (the old
-// week-diff marks, chunk 31; 54b replaces them) turns a cell the accent through the same CHANGED_CELL style until then.
+// `readOnly` (a past week, a session that is done) draws the same numbers as flat text, board 1c's and board 11's rows: the same columns with
+// no cell edge or fill, cells that can't be pressed, and no ⋯. `marks` (chunk 54b: what differs from the week's source, from
+// `changesSinceSource`) turns a cell the accent (its edge and fill too on a row that can be edited, its text alone on a flat one).
 //
 // Layout: the board's cells at 44 px, which at 375 px are a few pixels wider than the card, so each cell gives up width (flex-shrink, a
 // least width of 0) before anything wraps or leaves the row. The weight box is an input at 16 px while it is typed in, so iOS doesn't
 // zoom the page (as the sheets' inputs are); the board draws 15 px.
 
 export interface PlanSetRowMarks {
+  /** The row is new (nothing at its place in the source): its number is the accent. */
   number?: boolean
   weight?: boolean
   reps?: boolean
   rir?: boolean
+  /** Its kind differs from its counterpart's (warmup, working, staged): the kind chip, or the number where there is no chip, is the accent. */
+  kind?: boolean
 }
 
 export interface PlanSetRowProps {
@@ -62,7 +66,9 @@ const CELL: CSSProperties = {
   minWidth: 0,
   padding: 0,
   borderRadius: 10,
-  border: '1px solid var(--border)',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
   background: 'var(--surface)',
   color: 'var(--text-primary)',
   display: 'flex',
@@ -77,12 +83,23 @@ const RIR_SLOT: CSSProperties = { flex: '0 1 80px', minWidth: 0 }
 
 const DASH: CSSProperties = { color: 'var(--text-dim)' }
 
-// A warmup row's cells are the quieter ones (board 1).
+// A warmup row's cells are the quieter ones (board 1). A read-only row is flat (boards 1c and 11): no edge, no fill.
 function cellStyle(slot: CSSProperties, warmup: boolean, changed: boolean, readOnly: boolean): CSSProperties {
+  if (readOnly) {
+    return {
+      ...CELL,
+      ...slot,
+      borderWidth: 0,
+      background: 'transparent',
+      cursor: 'default',
+      ...(warmup ? { color: 'var(--text-secondary)' } : {}),
+      ...(changed ? CHANGED_TEXT : {}),
+    }
+  }
   return {
     ...CELL,
     ...slot,
-    cursor: readOnly ? 'default' : 'pointer',
+    cursor: 'pointer',
     ...(warmup ? { background: 'var(--surface-raised)', color: 'var(--text-secondary)' } : {}),
     ...(changed ? CHANGED_CELL : {}),
   }
@@ -219,7 +236,7 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
   const cues = isStage ? [] : (set.tags ?? [])
 
   return (
-    <div data-diff={marks?.number ? 'added' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div data-diff={marks?.number ? 'added' : marks?.kind ? 'kind' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {kindChip && !isStage && onOptions && (
         <div style={{ paddingLeft: 31 }}>
           <button
@@ -232,9 +249,11 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
               letterSpacing: '0.15em',
               padding: '3px 6px',
               borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'var(--surface-raised)',
-              color: 'var(--text-secondary)',
+              borderWidth: 1,
+              borderStyle: 'solid',
+              borderColor: marks?.kind ? 'var(--accent)' : 'var(--border)',
+              background: marks?.kind ? 'var(--accent-muted)' : 'var(--surface-raised)',
+              color: marks?.kind ? 'var(--accent)' : 'var(--text-secondary)',
               cursor: readOnly ? 'default' : 'pointer',
             }}
           >
@@ -244,7 +263,7 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, paddingLeft: isStage ? 14 : 0 }}>
-        <span style={{ ...MONO, flex: '0 0 26px', width: 26, fontWeight: 700, fontSize: 13, color: marks?.number ? 'var(--accent)' : isStage || warmup ? 'var(--text-dim)' : 'var(--text-muted)' }}>{label}</span>
+        <span style={{ ...MONO, flex: '0 0 26px', width: 26, fontWeight: 700, fontSize: 13, color: marks?.number || (marks?.kind && !kindChip) ? 'var(--accent)' : isStage || warmup ? 'var(--text-dim)' : 'var(--text-muted)' }}>{label}</span>
 
         <WeightCell valueKg={set.targetWeight ?? null} unit={unit} warmup={warmup} readOnly={readOnly} changed={!!marks?.weight} error={weightError} onError={setWeightError} onChange={onWeight} />
 
@@ -273,7 +292,7 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
             data-diff={marks?.rir ? 'changed' : undefined}
             style={{
               ...cellStyle(RIR_SLOT, false, !!marks?.rir, readOnly),
-              background: marks?.rir ? 'var(--accent-muted)' : 'var(--surface-raised)',
+              ...(readOnly ? {} : { background: marks?.rir ? 'var(--accent-muted)' : 'var(--surface-raised)' }),
               gap: 4,
               fontSize: 13,
             }}
