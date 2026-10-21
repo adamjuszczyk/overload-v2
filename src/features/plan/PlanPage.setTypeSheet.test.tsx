@@ -159,6 +159,23 @@ describe('PlanPage — the set type picker\'s rest rows: a week-dependent run, a
     expect(updateRestMutate.mock.calls).toEqual([[{ id: 'ps-bench', restSeconds: 75 }]])
   })
 
+  it('an exercise with two program sets: the rest shown and written is the one the week set NAMES, not the first the read returned', () => {
+    mockState.programSets = [pset('ps-bench-1', 'pe-bench', { position: 0, restSeconds: 60 }), pset('ps-bench-2', 'pe-bench', { position: 1, restSeconds: 90 })]
+    arrange([setRow({ id: 'a', setNumber: 1, programSetId: 'ps-bench-1' }), setRow({ id: 'b', setNumber: 2, programSetId: 'ps-bench-2' })])
+
+    openSetMenu(2) // the second set names the second program set
+    expect(picker().getByText('1:30')).toBeTruthy()
+    fireEvent.click(picker().getByRole('button', { name: 'Rest after this set: more' }))
+    expect(updateRestMutate.mock.calls).toEqual([[{ id: 'ps-bench-2', restSeconds: 105 }]])
+    fireEvent.click(screen.getByLabelText('Close'))
+
+    updateRestMutate.mockClear()
+    openSetMenu(1)
+    expect(picker().getByText('1:00')).toBeTruthy()
+    fireEvent.click(picker().getByRole('button', { name: 'Rest after this set: less' }))
+    expect(updateRestMutate.mock.calls).toEqual([[{ id: 'ps-bench-1', restSeconds: 45 }]])
+  })
+
   it('does NOT draw it for a set whose program set belongs to another exercise row (the fixture: Bench Press\'s week set naming Row\'s program set)', () => {
     mockState.programSets = programSets()
     arrange([setRow({ id: 'a', setNumber: 1, programSetId: 'ps-row' })], [PE_BENCH])

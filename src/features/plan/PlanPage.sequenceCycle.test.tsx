@@ -643,6 +643,22 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expectEditable(1)
     })
 
+    it('the pickers name the cycle, not a week (SPEC: the cycle replaces the week everywhere it is used): CYCLE 1 on the rep, RIR and set type pickers', () => {
+      setUpSequenceRun(NINE_DAY)
+      renderPlan()
+
+      const rows = setRows()
+      fireEvent.click(controlsOf(rows.benchSet1).reps)
+      expect(inDialog().getByText('Bench Press · SET 01 · CYCLE 1')).toBeTruthy()
+      closeSheet()
+      fireEvent.click(controlsOf(rows.benchSet1).rir)
+      expect(inDialog().getByText('Bench Press · SET 01 · CYCLE 1')).toBeTruthy()
+      closeSheet()
+      fireEvent.click(controlsOf(rows.benchSet1).options!)
+      expect(inDialog().getByText('Bench Press · SET 01 · CYCLE 1')).toBeTruthy()
+      expect(screen.queryByText(/WEEK 1/)).toBeNull()
+    })
+
     it('cycle 1 carries no lock line (neither "PAST CYCLE · READ ONLY" nor "PAST WEEK · READ ONLY") however it is reached (the calendar week would flag it past)', () => {
       setUpSequenceRun(NINE_DAY)
       renderPlan()

@@ -83,8 +83,8 @@ function makeProgram(schedule: Program['schedule'] = { ...EMPTY_SCHEDULE, monday
   }
 }
 
-const mockState: { all: WeekPlan[]; program: Program; days: WorkoutDay[]; meso: Mesocycle } = {
-  all: [], program: makeProgram(), days: [workoutDay], meso: activeMeso,
+const mockState: { all: WeekPlan[]; program: Program; days: WorkoutDay[]; meso: Mesocycle; runCopy: Record<string, ProgramExercise[]> } = {
+  all: [], program: makeProgram(), days: [workoutDay], meso: activeMeso, runCopy: {},
 }
 const setDeloadMutate = vi.fn()
 const addSetMutate = vi.fn()
@@ -96,7 +96,7 @@ vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [mockState.mes
 vi.mock('../programs/usePrograms', () => ({
   usePrograms: () => ({ data: [mockState.program], isLoading: false }),
   useWorkoutDays: () => ({ data: mockState.days, isLoading: false }),
-  useProgramExercises: () => ({ data: [], isLoading: false }),
+  useProgramExercises: (workoutDayId: string) => ({ data: mockState.runCopy[workoutDayId] ?? [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
@@ -132,6 +132,7 @@ afterEach(() => {
   mockState.program = makeProgram()
   mockState.days = [workoutDay]
   mockState.meso = activeMeso
+  mockState.runCopy = {}
   for (const mock of [setDeloadMutate, addSetMutate, updateSetMutate, removeSetMutate, changeTypeMutate]) mock.mockClear()
 })
 
@@ -556,5 +557,25 @@ describe('PlanPage — an edit offers nothing to apply to the weeks planned ahea
     fireEvent.click(screen.getByLabelText('Add set to Squat'))
     expect(addSetMutate).toHaveBeenCalledTimes(1)
     nothingOffered()
+  })
+})
+
+// ─── A workout with no plan row this week ────────────────────────────────────
+
+describe('PlanPage — a workout that has no plan row this week draws its exercises and nothing to press', () => {
+  it('Thursday\'s Lunge comes from the run\'s copy: its card is there with no "+", and nothing is written for a week it has no row in', () => {
+    mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-2' })
+    mockState.days = [workoutDay, workoutDay2]
+    mockState.runCopy = { 'wd-2': [pe('pe-l', EX_LUNGE, 0, {}, 'wd-2')] }
+    mockState.all = [plan(2, SETS, [pe1, pe2])] // Monday's plan only: Thursday has none this week
+    renderPlanPage()
+
+    fireEvent.click(screen.getByText('THU'))
+
+    expect(screen.getByText('Lunge')).toBeTruthy()
+    expect(screen.queryByLabelText('Add set to Lunge')).toBeNull()
+    expect(screen.queryAllByLabelText(/^Options for /)).toHaveLength(0)
+    expect(screen.queryByLabelText('Mark this session as deload')).toBeNull() // the session toggle needs a row too
+    expect(addSetMutate).not.toHaveBeenCalled()
   })
 })

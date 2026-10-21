@@ -460,3 +460,24 @@ describe('PlanPage — "Use for all" stays inside its own exercise', () => {
     expect(written()[0].changes).toEqual({ tags: ['push here'] })
   })
 })
+
+// SPEC Tags: "preset list plus custom text"; the user's own cues have no storage of their own (TASKS 40): they are the run's existing tags, listed
+// once each as YOURS, and a preset is never listed as one.
+describe('PlanPage — the cues sheet lists the run\'s own cues (the tags on its week sets) as YOURS, once each', () => {
+  it('a custom cue on another set of the week is a row of this set\'s sheet, unticked; a repeat and a preset add no row', () => {
+    mockState.plans = [makePlan([
+      makeSet({ id: 'a', setNumber: 1 }),
+      makeSet({ id: 'b', setNumber: 2, tags: ['slow negatives', 'push here'] }),
+      makeSet({ id: 'c', setNumber: 3, tags: ['slow negatives'] }),
+    ])]
+    renderPlanPage()
+    const sheet = openCues(1)
+
+    const rows = sheet.getAllByRole('checkbox').map((row) => [row.textContent, row.getAttribute('aria-checked')])
+    expect(rows).toEqual([
+      ['Push here', 'false'], ['Maintain strength', 'false'], ['Focus on execution', 'false'], ['Push back', 'false'],
+      ['Slow negativesYOURS', 'false'],
+      ['Use for all 3 sets of Bench Press', 'false'],
+    ])
+  })
+})
