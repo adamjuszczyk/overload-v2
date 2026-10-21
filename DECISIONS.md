@@ -1,14 +1,21 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, chunk 55's review (merged).*
-- *Chunk 55 is merged (#192, `19d4841`): Plan's VOLUME button opens board 3's sheet, every muscle as last week → this week with the change and the "YOU PLANNED … DID …" notes, counted by your Settings rule (the sheet alone reads it, G51). Reviewed light under your cost rule: no click-through. Its Staging list goes to the release checklist (RC11), with its EACH DROP = 1 line corrected: five rows change on the seed, not two. Week 3's numbers on staging were read live, read-only, and equal an independent count. The smoke: 51/51 and one set logged. Display choices for your review pass: 209 (accepted as built). One reading to confirm: 210, which weeks show "—" (blocks nothing). No test owed.*
-- *What follows (day mode; the rest of the week's budget is 3.5M tokens): 56. After 56, or when the budget runs out, the build stops at a clean boundary for your go after Monday's 05:00 reset; 58a waits for you. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, chunk 56's review (merged).*
+- *Chunk 56 is merged (#194, `dbfa314`): from week 2, Plan shows "LAST WEEK · N things went differently · REVIEW →" under COPY / VOLUME / WEEK ⋯, and REVIEW's sheet (board 4) takes each of last week's differences over or leaves it: USE, ADD THIS SET, REMOVE THIS SET, a type change's USE, ADD EXERCISE and SWAP FROM WEEK N, each one request with its decision row. A decided item never comes back. An added set is keyed by its place (your 195). On staging, as the test account, TASKS 56's whole list passed on week 3: the seed's five differences, each action's write read back by API, and the line gone at the end. The smoke: 51/51 and one set logged. For your review pass: 211 (display choices and readings, accepted as built) and 212 (a workout whose session this week is already done gets no REVIEW items; recommended as built). Three tests owed (below).*
+- *The build has stopped for the week at this clean boundary (your rule of 2026-10-21: after 56, wait for your go after the Monday 05:00 reset). 58a is yours to start. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+
+What blocks, in order:
+1. **Your go**, after Monday's 05:00 reset: the build waits for it, and 58a is yours to start.
+2. **121** (a to-do, below): the release's migrations PR waits for it.
+Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk:
 - none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **212** — a workout whose session this week is already done (completed or skipped) gets no REVIEW items: Plan locks a done session, so its per-set actions have nowhere to write, and its differences come back a week on, from this week's session. Its ADD EXERCISE and SWAP FROM WEEK N could still be offered, since they change later weeks ((b)). Recommended: (a), as built. Blocks: nothing (a filter; nothing is written either way).
+- **211** — chunk 56's display choices and readings on REVIEW (D31), (a)–(m), including ADD EXERCISE on a stable run (h), each press reading the item's decision again first (k) and two sets added in one place sharing one item (m). Recommended: accept all, as built. Blocks: nothing.
 - **210** — VOLUME's "—" for an empty last week (P1.2-2) is drawn for a week with no planned set and no session (a missed week). A planned week with no session shows numbers instead: its plan while it runs, and 0 with "YOU PLANNED … DID 0" once it has ended, as SPEC 14 and your 133 say. P1.2-2's literal words ("no sessions at all") would show "—" there too. Recommended: (a), as built. Blocks: nothing (display; one line if (b)).
 - **209** — chunk 55's display choices and readings on the VOLUME sheet (D31), (a)–(k), including this week read from the open week's own query (i) and a read paused offline shown as failed (d). Recommended: accept all, as built. Blocks: nothing.
 - **208** — a session that an UNMARK cut off part way (after it put the plan back, before it cleared the saved copy) keeps its copy and its deload flag; marking the week then leaves it as it is, marked but not deloaded, until it is unmarked and marked again. Nothing is lost. Recommended: (a), as built (SPEC's "leaves it as it is"). Blocks: nothing.
@@ -55,6 +62,9 @@ To-dos:
 - **54a** (#186): Enter in Plan's weight box commits the typed weight without a blur first (`PlanSetRow.tsx`'s `onKeyDown`). The break it must catch is the review's R54-W3, the Enter handler removed, which passed all 521 writer tests. Same probe file.
 - **54a** (#186): a RIR range that differs from the set's only in its high end is written: a set at RIR 1–3 picked to 1–2 writes `{ targetRir: 1, targetRirMax: 2 }` (`rirTargetPatches` in `planSetRows.ts`). The break it must catch is the review's R54-I1, the "already holds the target" check comparing the low end only, which passed all 521 writer tests. Same probe file.
 - **54b** (#188): a stage the default dropped (`removed_at` on a stage program set) is not part of the default, for the marks and for THIS WEEK ONLY (`programHeads` in `src/features/plan/weekPlanning.ts`, chunk 42's, read by `changesSinceSource` and `thisWeekOnly`). 54b removed `weekDiff.test.ts`, whose "a removed stage, and the stages of a removed head, are not part of it either" pinned this for 1.1's module; 42's tests drop only a removed head. The break it must catch is the review's R11, the stages taken from every set instead of the live ones (`stages: sets` for `stages: live`), which passed all 206 tests of the week rules and the week view's files.
+- **56** (#194): an item in a group whose plan row isn't this week's first is written to its own plan row. The sheet takes the row by the group's `weekPlanId` (`decide` in `src/features/plan/ReviewSheet.tsx`). The break it must catch is the review's M1, `args.thisWeek[0]` for every item, which passed all 37 tests of `ReviewSheet.test.tsx` and `PlanPage.review.test.tsx`: every item they press is in the first row's group. Under the break the press fails on `applyReviewAction`'s plan-row check, so nothing lands on the wrong row, but no test pins the sheet's choice. The probe `<scratchpad>/build/r56/probe/zzReview56.probe.test.tsx` (P1: Friday's Upper B completed, so a second group) passes on the branch and fails under the break.
+- **56** (#194): an item decided on another phone since the list was read goes when it is pressed, and nothing is sent. The already-decided branch reads the decisions again (`refresh([])` in `decideReviewItem`, `src/features/plan/reviewService.ts`). The break it must catch is the review's M12, that refresh dropped: the item stays on the screen with its buttons back on. It passed all 42 tests of `reviewService.test.ts` and `ReviewSheet.test.tsx`, which assert `'already_decided'` and no write, never the screen. Same probe, P2.
+- **56** (#194): the same for a race past that read, a `23505` on `v2_week_review_decisions_item_uk`: the item goes, with no error. The break it must catch is the review's M13, the refresh after the conflict dropped, which passed the same 42 tests. Same probe, P3 (the request meets the race and the row lands).
 
 ## Format for all new entries
 
@@ -361,7 +371,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 195 For 56: REVIEW keys an added set by its exercise and number, and two added sets of one exercise can now share a number (two cards)
 - What: REVIEW keeps one item per key and keys an added set by session, exercise and number (`itemKey`, `review.ts`; 136). Since 183's follow-up ("each card is numbered on its own") and Q1's gaps, two added sets of one exercise can show one number on two cards, so REVIEW would show one item for two sets (recommended: (a), key an added set by its exercise and its place, `added_place` (174); a set logged before 044 keeps today's key by number).
-- Answer: (Adam, 2026-10-20) "195 agreed for chunk 56." Option (a), written into TASKS 56's Scope and Verification. Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-20) "195 agreed for chunk 56." Option (a), written into TASKS 56's Scope and Verification; built in chunk 56 (#194, `dbfa314`). Full text in HISTORY.md.
 - Date: 2026-10-20
 
 ### 196 Migration numbers after 045: 149's release data migration and chunk 59's swap column both had 046
@@ -499,6 +509,38 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (b) The literal words: "—" for every week with no session row. On a week planned ahead that hides the plan counts SPEC 14 asks for ("sessions not done yet count their plan"), and on a week that ended it hides the "YOU PLANNED 4 LAST WEEK · DID 0" notes your 133 asked for ("so the note shows what was missed").
 **Answer:**
 **Evidence:** the builder's report, reading 3. Both cases are tested and break-proven: "a planned week nobody did anything in is not empty" (`VolumeSheet.test.tsx`) fails under the literal reading (the review's break R1, `return sessionCount === 0`), and a missed week shows dashes with nothing read (break V13 and the page test). A week whose sessions were all skipped has session rows and counts 0 under either option. SPEC is silent on "—"; SPEC 14 and 133's words decide the numbers (TASKS' D31 table is "built as written unless Adam changes them", provisional by its own header), so this is listed for your review pass, not held as a gap.
+
+### 211 Chunk 56's display choices and readings on REVIEW (provisional, D31; accepted as built)
+**Ask:** chunk 56's choices where SPEC, TASKS and boards 1 and 4 give no single answer are accepted as built. They are listed here for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups). The one that changes which items are offered, a workout whose session this week is done, has its own entry: 212.
+**Recommendation:** accept all. (a)–(g) are display; (h)–(m) are readings the review held against SPEC's and TASKS' words, and none writes anything wrong.
+**Blocks:** nothing.
+**Options:** (a)–(m) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-56-builder-1.md`, section 3), held against SPEC Review [1.2] (13), Defaults 4 and 10, G52 and How a save lands, and boards 1 and 4, in the review (`<scratchpad>/build/chunk-56-review-1.md`).
+- (a) A read that failed, or that TanStack paused offline, draws no line; the sheet, if open, says "Couldn't load last week." with the real reason.
+- (b) The pressed button reads USING…, ADDING…, REMOVING…, SWAPPING… or IGNORING… while its request is out; every button is off meanwhile.
+- (c) With every item decided the sheet stays open, reading "Nothing left to decide." under "LAST WEEK · 0 THINGS", until it is closed; the line is gone.
+- (d) A sequence run says LAST CYCLE and "last cycle".
+- (e) A failed action keeps its item, with "Couldn't take this over." ("Couldn't ignore this." for IGNORE) over the real reason.
+- (f) The line is board 1's: raised background, strong border, the caption and text on the left, "REVIEW →" in the accent on the right.
+- (g) The board's negative margin on the explanation line is dropped (the sheet's first child clipped it).
+- (h) ADD EXERCISE on a stable run: the done sets become the default's new sets (kind, drops, the done reps as the rep target; no weight, which the default never holds), and this week's rows take the done weights. On a week-dependent run REVIEW inserts this week's rows itself; a week already planned gets the exercise with no sets (How a save lands: "Week-dependent: no sets"), and a week planned later copies it from the week before. A session started or done gets no row ("a session in progress is left exactly as it is").
+- (i) ADD EXERCISE goes after the exercise it followed in this week's plan, after the whole superset when that one is in one (191's rule), first when it followed nothing, and last when the run copy no longer holds the one it followed.
+- (j) SWAP FROM WEEK N's N, and "from week N on", is CHANGE THE PROGRAM's button's week (`changeStartWeek`, the first session not started); the change itself runs with Plan's current week, as 51a's SAVE does. The two differ only when the current week's sessions are all done.
+- (k) Each press reads the item's decision again first: one already there (another phone, or a reply lost after its transaction landed) sends nothing, and the item goes. A race past that read is the unique key's `23505` on `v2_week_review_decisions_item_uk`, read as decided; any other refusal shows as the item's error. One extra read per press.
+- (l) A per-set action uses this week's plan as Plan holds it when pressed, not a fresh read: after a set was added to the same exercise on another phone, ADD THIS SET's new set can take a number a set already holds. One phone can't do it (every button is off while a request is out). CHANGE THE PROGRAM's two actions read the run copy fresh.
+- (m) Two added sets in one place share one key, so they are one item, and deciding it decides both. A place repeats only when two phones add a set to one exercise at the same moment (46r's tie, 194); 195 (a) was asked about two cards, and keying by a log id instead is what 136 rules out.
+
+### 212 A workout whose session this week is already done gets no REVIEW items (chunk 56; SPEC is silent)
+**Ask:** when this week's session of a workout is done (completed or skipped) before last week's differences for it were decided, should REVIEW still offer them? As built it doesn't: Plan leaves a done session's plan row out of what REVIEW reads, so that workout's items go, and the line's count with them; they come back if the session is reopened.
+**Recommendation:** (a), as built. A done session is locked in Plan (SPEC: "Done sessions and finished weeks are locked in Plan"; Actions: "Each writes to the week shown"), so USE, ADD THIS SET, REMOVE THIS SET and a type item's USE have nowhere to write. The workout's differences come back one week on, from this week's done session, on next week's REVIEW (a week planned ahead shows them already).
+**Blocks:** nothing. Nothing is written for those items either way; (b) or (c) is the filter in `PlanPage.tsx`'s `reviewArgs` plus a per-item one in the sheet.
+**Options:**
+- (a) As built: no items for a workout whose session this week is done.
+- (b) Still offer its ADD EXERCISE and SWAP FROM WEEK N items, which are CHANGE THE PROGRAM changes and land from the next week for that workout (How a save lands leaves a done session as it is); drop its per-set items.
+- (c) Offer every item, the per-set ones with IGNORE only.
+**Answer:**
+**Evidence:** the builder's report, point 1. `reviewArgs.thisWeek` leaves out `doneWeekPlanIds`, and chunk 43's rule "no counterpart this week, nowhere to store a decision or write" then drops the items. Break G1 (done rows passed in) is caught by `PlanPage.review.test.tsx` (re-run in the review). A session in progress isn't locked, so its items stay: staging's week 3 Upper A is in progress, and TASKS 56's five items show there. SPEC's REVIEW section says which week "last week" is, not which of this week's sessions can take its decisions. The lock rule settles the per-set writes, not whether the items are listed, so this is listed for your review pass and not held.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
