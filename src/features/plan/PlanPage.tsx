@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronUp, ChevronDown, Plus, Trash2, Copy, ArrowLeftRight, Lock, Pencil } from 'lucide-react'
+import { Copy, Lock, Pencil } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
-import type { WeekPlan, WeekPlanSet, ProgramExercise, DayOfWeek, WorkoutDay, Exercise, WeightUnit, PlanningType, ProgramSet } from '../../types'
+import type { WeekPlan, ProgramExercise, DayOfWeek, WorkoutDay, PlanningType, ProgramSet } from '../../types'
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
 import { hasScheduledWorkout } from '../programs/hasSchedule'
@@ -15,46 +15,16 @@ import {
   useSetDeload,
   useSetWeekDeload,
   useAddSet,
-  useAddStage,
-  useAddWarmupSet,
   useUpdateSet,
   useRemoveSet,
   usePlanWeek,
-  useSwapWeekExercise,
-  useAddWeekExercise,
-  useRemoveWeekExercise,
-  useReorderWeekExercises,
 } from './useWeekPlan'
-import { groupWeekPlanSets, headsOnly, nextStageIndex, type SetGroup as Group } from '../gym/setGroupLogic'
-import { groupIntoUnits, moveUnit } from '../../lib/supersetGroups.js'
 import { detectSharedWeekdayWorkouts } from '../planner/usePlanner'
-import { slotIdOf, setPositionOf, laterPlannedWeeks, type ChangeRecord } from './applyAhead'
-import { useApplyAheadOffer, ApplyAheadBanner } from './ApplyAheadOffer'
-import {
-  columnsToRepTarget,
-  formatRepTarget,
-  parseRepTarget,
-  applyAmrapRirDefault,
-  type RepTarget,
-  type RepTargetColumns,
-  STAGE_KINDS,
-  STAGE_KIND_LABELS,
-  resolveStageKind,
-  type StageKind,
-  PRESET_TAGS,
-  addTag,
-  removeTag,
-  applyTagToAllHeads,
-} from '../../lib/plannerVocabulary.js'
-import { useWeightDisplay } from '../../hooks/useWeightDisplay'
-import { toDisplayWeight, toStorageWeight, resolveEditedWeightKg } from '../../lib/weightUnit'
 import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadRules'
 import { deloadRulesLine } from './deloadRulesLine'
 import { useSettingsStore } from '../settings/settingsStore'
-import RatingChips from '../gym/RatingChips.js'
 import WorkoutSwitcher from './WorkoutSwitcher'
 import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
-import WeekExercisePickerSheet from './WeekExercisePickerSheet'
 import MoveSessionControl from './MoveSessionControl'
 import { useDoneWeekPlanIds } from './useDoneWeekPlanIds'
 import PlanTabs, { type PlanTab } from './PlanTabs'
@@ -69,25 +39,10 @@ import ProgramsTab from '../programs/ProgramsTab'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { usePlanRowStatuses } from './usePlanRowStatuses'
 import { useRunSchedule } from './useRunSchedule'
-import MakeWeekDefault from './MakeWeekDefault'
-import { canMakeWeekDefault } from './makeWeekDefault'
-import { MenuButton, MenuAction, MENU_PANEL_STYLE, DiffDot } from './planMenu'
-import {
-  StructureFieldsProvider,
-  StructureRoutine,
-  ExerciseDesignMenu,
-  SetRestMenu,
-  ExerciseMarkers,
-  MarkerChip,
-  type StructureExerciseFields,
-  type StructureFieldsFor,
-  type StructureSetFields,
-} from './StructureFields'
-import { setRestMarkers, stageRestDefaultText } from './structureFields'
-import { SupersetLinkToggle, BlockRestEditor, EveryWeekLabel } from '../planner/designFieldEditors'
+import PlanExerciseCard from './PlanExerciseCard'
+import { newSetFor, removalOrder, supersetChips, type PlanRow, type SetPatch } from './planSetRows'
 import { WeekDiffGate } from './WeekDiffGate'
-import { CHANGED_BAND, CHANGED_CELL, CHANGED_EDGE, RemovedExerciseLine, RemovedSetRow, RemovedStructureRow } from './WeekDiffMarks'
-import { computeWeekDiff, weekDiffNeedsRunCopy, weeksOfSlot, type ExerciseDiff, type WeekDiff } from './weekDiff'
+import { computeWeekDiff, weekDiffNeedsRunCopy, weeksOfSlot, type WeekDiff } from './weekDiff'
 import { useSequenceCurrentCycle } from './useSequenceCurrentCycle'
 import { dateForDow } from '../gym/moveSession'
 import { useToday } from '../../hooks/useToday'
@@ -112,55 +67,18 @@ const DOW_SHORT_TITLE: Record<DayOfWeek, string> = {
 }
 
 // There is no program tab (chunk 33, SPEC Plan screen [P1.1]: "No program tab.
-// It's removed; what it did happens in the week or is fixed for the run"). The
-// WEEKS / PROGRAM bar and ProgramTab.tsx are gone; where each thing the tab
-// did lives now:
-//   - rest, rest after, tempo, superset grouping and rest, the warmup routine,
-//     a set's own rest and stage rest → STRUCTURE (chunk 30), labelled "every
-//     week", and an exercise's weight unit in its ⋯ there;
-//   - stable volume (sets, reps, set kinds, the exercise list) → edit the week,
-//     then "Make this week the new default" (chunk 32);
-//   - priorities → shown view-only (chunk 28), set in the planner;
-//   - fixed for the run (G30): the schedule (its type, a weekday per workout,
-//     the sequence order) and the workouts. No screen edits them; the planner
-//     refuses a run's copy (PlannerPage.tsx);
-//   - the planning type was already fixed (the tab never offered it);
-//   - the deload rules are the Settings rules (programs have no override since
-//     chunk 48) → one read-only line under the deload action.
-
-// Plan's week panel shows one week in two views (chunk 29, SPEC Plan screen
-// [P1.1], G16): SETS (how many sets, and each set's weight, reps and RIR, tags
-// included, stage rows' and warmup sets' numbers too) and STRUCTURE (the
-// shape: exercise order, swap, add and remove an exercise, set kinds with
-// warmup sets and stages added and removed). The switch is a SegmentBar
-// (below): the segmented bar chunk 6 built for the WEEKS / PROGRAM tabs, kept
-// for this switch so Plan adds no new visual language.
-type PlanView = 'sets' | 'structure'
-
-const PLAN_VIEWS: { id: PlanView; label: string }[] = [
-  { id: 'sets', label: 'SETS' },
-  { id: 'structure', label: 'STRUCTURE' },
-]
+// It's removed; what it did happens in the week or is fixed for the run"). Where each thing the tab
+// did lives now (chunk 54a, SPEC [1.2]):
+//   - rest, rest after, tempo, superset grouping and rest, the warmup routine, an exercise's weight
+//     unit, and the exercise list itself → CHANGE THE PROGRAM (chunks 51a and 51b); a set's own rest
+//     is the set type picker's "Rest after this set" in a week-dependent week;
+//   - stable volume (sets, reps, set kinds, the exercise list) → CHANGE THE PROGRAM;
+//   - priorities → the PROGRAMS tab (chunk 65);
+//   - the deload rules are the Settings rules (programs have no override since chunk 48) → one
+//     read-only line in WEEK ⋯.
 
 function computeWeekNumber(startDate: string): number {
   return differenceInCalendarWeeks(new Date(), parseISO(startDate), { weekStartsOn: 1 }) + 1
-}
-
-// Chunk 19 — the one shared shape every row-level editor on this page sends
-// through useUpdateSet (RIR, stage kind, warmup, weight target, rep target,
-// tags). A key's mere presence means "write this column"; its absence means
-// "leave it alone" — weekPlanService.ts's own updateSet() already applies
-// this key-by-key, so this type is just this file's one copy of the same
-// contract rather than four slightly-diverging inline object types.
-type SetChanges = {
-  targetRir?: number | null
-  stageKind?: StageKind | null
-  isWarmup?: boolean
-  targetWeight?: number | null
-  repMin?: number | null
-  repMax?: number | null
-  isAmrap?: boolean
-  tags?: string[] | null
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -171,8 +89,9 @@ type SetChanges = {
 // nothing. Plan plans one week by itself, the CURRENT one, when it has no rows; the week after the current one, once it is the first
 // unplanned, opens with PLAN FORWARD (`PlanForwardCard`), which plans exactly that week. A week nobody planned that has passed shows NOT
 // PLANNED, read-only and empty, and nothing is ever written for it (DECISIONS 131). Under the header: COPY (`CopySheet`, hidden on week 1,
-// P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week as it was before this chunk until 54a and
-// 54b rebuild it. The PROGRAMS tab is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
+// P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week: since chunk 54a one card per exercise with its set
+// rows (`PlanExerciseCard`), under the workout chips and the session toggle that chunk 54b redraws as the session chips and ⋯. The PROGRAMS tab
+// is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
 //
 // Chunk 35 (SPEC Scheduling → Sequence [P1.1], G40: "The current cycle is the
 // one containing the next due workout. Cycles before it are past.") — what
@@ -381,15 +300,6 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
   // always falls back to the first workout-bearing slot.
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
-  // Which of the week panel's two views is showing (chunk 29, SPEC Plan screen
-  // [P1.1]) — SETS or STRUCTURE. Display-only choices (D31), provisional: it
-  // opens on SETS (what's used on every visit), and it is page-local UI state,
-  // not a persisted setting (it resets on reload, like openedWeek here). It lives
-  // up here, not in the panel, so the view you chose stays when you step to
-  // another week or switch to another workout. COMPACT (the page-local view
-  // this replaces) is gone — "There's no compact view" (G17).
-  const [planView, setPlanView] = useState<PlanView>('sets')
-
   // The opening view is the current week (the current cycle on a sequence run), or the week START asked for.
   useEffect(() => {
     if (activeMeso) setOpenedWeek(initialWeek ?? tilesCurrent)
@@ -541,11 +451,9 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
   // Chunk 50: both are read from the viewed week's schedule (weekSchedule, below).
   const weekSchedule = program && !isSequence ? scheduleForWeek(scheduleRows ?? [], program.schedule, viewWeek) : undefined
   const sharedGroups = weekSchedule ? detectSharedWeekdayWorkouts(weekSchedule) : []
-  const sharedWorkoutDayIds = new Set(sharedGroups.map((g) => g.workoutDayId))
   // Chunk 21 (reviewer's note 2 — "the marking UI says so where the mark is
   // set, e.g. 'Marks Mon, Tue, Wed, Thu, Fri — they share one plan'") — the
-  // per-workout toggle needs the actual weekday list, not just the boolean
-  // sharedWorkoutDayIds already carries for the apply-ahead banner above.
+  // per-workout toggle needs the actual weekday list.
   const sharedWeekdaysByWorkoutDayId = new Map(sharedGroups.map((g) => [g.workoutDayId, g.weekdays]))
 
   const scheduledDays = weekSchedule
@@ -629,17 +537,9 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
     )
   }
 
-  // Chunk 32 — "Make this week the new default" (SPEC Weeks and copying [P1.1]; Plan
-  // screen actions): page-level, above both views, only where SPEC offers it:
-  //   - a STABLE run (a week-dependent run's next week copies this one anyway);
-  //   - the current week and later ones (G29) — on a sequence run `isPast` follows chunk
-  //     35's current cycle, the one with the next due workout, not the calendar week;
-  //   - a week with at least one session that can be a source: not deload, not empty
-  //     (canMakeWeekDefault: the function's own refusals). "It isn't offered on a week
-  //     that's all deload" (G27), nor on one whose sessions are all deload or empty, nor
-  //     on a week with nothing planned yet.
-  const showMakeDefault =
-    program?.planningType === 'stable' && !isPast && !plansLoading && !daysLoading && canMakeWeekDefault(weekPlans)
+  // Every tag of the run's week sets: the cues sheet's "YOURS" list (SPEC Tags: "plus custom text"; no storage of its own). The meso-wide list
+  // holds every week, the viewed week's own plans are the fresh ones (a cue just written is in them first), and a repeat is fine.
+  const runCues = [...allWeekPlans, ...weekPlans].flatMap((wp) => wp.sets.flatMap((s) => s.tags ?? []))
 
   // ── No active meso ────────────────────────────────────────────────────────
 
@@ -812,11 +712,6 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
               </div>
             )}
 
-            {/* Make this week the new default (chunk 32) — a stable run's page-level action,
-                next to the two above; confirm first, no undo. It changes the run's default and
-                nothing in the weeks already planned (no apply-ahead offer follows it). */}
-            {showMakeDefault && <MakeWeekDefault mesoId={activeMeso.id} weekNumber={viewWeek} isSequence={isSequence} />}
-
             {/* Workout switcher + the one selected workout's panel */}
             {!isSequence && scheduledDays.length > 0 && selected && (
               <>
@@ -845,9 +740,8 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
                   doneWeekPlanIds={doneWeekPlanIds}
                   mesoId={activeMeso.id}
                   weekNumber={viewWeek}
-                  view={planView}
-                  onViewChange={setPlanView}
-                  isShared={sharedWorkoutDayIds.has(selected.workoutDay.id)}
+                  isCycle={false}
+                  runCues={runCues}
                   sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
                   deloadRules={effectiveDeloadRules}
                   planningType={program?.planningType ?? 'week_dependent'}
@@ -880,9 +774,8 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
                   doneWeekPlanIds={doneWeekPlanIds}
                   mesoId={activeMeso.id}
                   weekNumber={viewWeek}
-                  view={planView}
-                  onViewChange={setPlanView}
-                  isShared={false}
+                  isCycle
+                  runCues={runCues}
                   sharedWeekdays={null}
                   deloadRules={effectiveDeloadRules}
                   planningType={program?.planningType ?? 'week_dependent'}
@@ -932,6 +825,7 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
           weekNumber={viewWeek}
           marked={weekIsFullyDeload}
           pending={setWeekDeload.isPending}
+          pendingDeload={setWeekDeload.variables?.isDeload === true}
           rulesLine={deloadRulesText}
           notice={weekDeloadNotice}
           error={setWeekDeload.isError ? setWeekDeload.error : null}
@@ -961,21 +855,16 @@ interface PanelProps {
   // skipped: the panel is read-only either way.
   isPast: boolean
   // Every week plan of the run with a completed or skipped session. The panel
-  // reads it to say why it is locked on a current week, and to keep
-  // apply-ahead off later rows whose session has happened.
+  // reads it to say why it is locked on a current week.
   doneWeekPlanIds: Set<string>
   mesoId: string
   weekNumber: number
-  // Chunk 29 — which of the panel's two views shows (SETS or STRUCTURE), and
-  // how the switch under the page-level actions changes it. PlanScreen owns
-  // the choice so it survives a week or workout switch; the panel renders it.
-  view: PlanView
-  onViewChange: (view: PlanView) => void
-  // Chunk 20 (reviewer's note 7) — this workout covers more than one
-  // weekday (G14); the offer banner says so when it applies.
-  isShared: boolean
-  // Chunk 21 (reviewer's note 2) — the actual weekday list behind isShared
-  // above (null when not shared), for the per-session DELOAD toggle's own
+  // A sequence run's weeks are cycles: the pickers' eyebrow says CYCLE n (SPEC: the cycle replaces the week everywhere).
+  isCycle: boolean
+  // Every tag of the run's week sets, for the cues sheet's list of the user's own cues.
+  runCues: readonly string[]
+  // Chunk 21 (reviewer's note 2) — the actual weekday list behind a shared
+  // workout (null when not shared), for the per-session DELOAD toggle's own
   // note ("Marks Mon, Tue, Wed, Thu, Fri — they share one plan").
   sharedWeekdays: DayOfWeek[] | null
   // Chunk 22 — the screen-resolved effective deload rules (the Settings
@@ -983,22 +872,23 @@ interface PanelProps {
   // computed once for the whole page).
   deloadRules: DeloadRules | null
   // Chunk 31 — the run's planning type, which decides what this week is compared
-  // with (weekDiff.ts's chooseDiffSources): undefined on the program reads as
+  // with (weekDiff.ts's chooseDiffSources) and which set type picker a set opens
+  // (SPEC Rest: a stable week's has no rest rows): undefined on the program reads as
   // week-dependent (the column default), resolved once by PlanScreen.
   planningType: PlanningType
 }
 
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPlanIds, mesoId, weekNumber, view, onViewChange, isShared, sharedWeekdays, deloadRules, planningType }: PanelProps) {
+// Chunk 54a (TASKS-1.2 "Plan's week view: exercise cards and set rows on the pickers"; SPEC Screens → Plan screen; boards 1, 1a, 9). One workout's
+// session: its header (name, day, the per-session DELOAD toggle: 54b redraws it as the session chip and ⋯), then one card per exercise
+// (PlanExerciseCard.tsx). The Sets / Structure views are gone, and with them every exercise-level action (swap, move, add, remove), ADD
+// WARMUP SETS, ADD STAGE, the warmup routine and the "apply this change to planned weeks ahead" banner: exercises change only in CHANGE THE
+// PROGRAM, a set's kind through the set type picker, and a change made in a week stays in that week (SPEC Weeks and copying).
+function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPlanIds, mesoId, weekNumber, isCycle, runCues, sharedWeekdays, deloadRules, planningType }: PanelProps) {
   // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
   // week's own v2_week_plan_exercises list when a week plan row exists for
-  // this workout (weekPlan.exercises, written alongside the plan row itself
-  // — weekPlanService.ts's createWeekPlan and v2_plan_week, kept in step
-  // with the program by programService.ts's add/reorder sync until chunk
-  // 9); the program's own exercises directly otherwise — no week plan has
-  // been planned for this workout/week yet, the same source this screen
-  // always read before this chunk. fallbackProgramExercises is still
-  // fetched unconditionally (same as before) so that "no week plan" case
-  // renders exactly as today.
+  // this workout (weekPlan.exercises); the program's own exercises directly
+  // otherwise (no week plan has been planned for this workout/week yet; the
+  // cards are then drawn with no sets and nothing can be written).
   // Chunk 31: this same read is the run's copy of the workout (its current list: not
   // week-only, not removed), which week 1 and a stable week are compared with, so its
   // not-yet-read state (undefined) is kept apart from an empty list.
@@ -1006,80 +896,26 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
   const fallbackProgramExercises = runCopyExercises ?? []
   const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
 
-  // Chunk 13 — contiguous same-block runs, in this week's own order. Move
-  // controls render only on a unit's first member (see the render below);
-  // a plain, ungrouped week (every unit size 1 — every week before this
-  // chunk) shows one pair per row, unchanged.
-  const exerciseUnits = groupIntoUnits(programExercises)
-  const unitIndexByProgramExerciseId = new Map<string, number>()
-  exerciseUnits.forEach((unit, unitIndex) =>
-    unit.forEach((pe) => unitIndexByProgramExerciseId.set(pe.id, unitIndex)),
-  )
-
   // This session has happened (completed or skipped): isPast above already
   // includes it, so this is only for the line that says why.
   const sessionDone = !!weekPlan && doneWeekPlanIds.has(weekPlan.id)
 
   const addSet = useAddSet(mesoId, weekNumber)
-  const addStage = useAddStage(mesoId, weekNumber)
-  const addWarmup = useAddWarmupSet(mesoId, weekNumber)
   const removeSet = useRemoveSet(mesoId, weekNumber)
   const updateSet = useUpdateSet(mesoId, weekNumber)
   const toggleDeload = useSetDeload(mesoId, weekNumber)
 
-  // Chunk 9 — swap/reorder/add/remove an exercise in THIS week.
-  const swapExercise = useSwapWeekExercise(mesoId, weekNumber)
-  const addExercise = useAddWeekExercise(mesoId, weekNumber)
-  const removeExercise = useRemoveWeekExercise(mesoId, weekNumber)
-  const reorderExercises = useReorderWeekExercises(mesoId, weekNumber)
-
-  // Chunk 20 ("Apply this change to planned weeks ahead") — allWeekPlans is
-  // the SAME meso-wide query PlanPage.tsx's own copy-history check already
-  // reads (useAllWeekPlans dedupes by query key, so this costs no extra
-  // round trip); laterPlannedWeeks filters it to this one workout's own
-  // rows after the viewed week, "planned" needing no extra check since a
-  // row's mere presence here already means one exists. The offer's own
-  // state is scoped to this one panel (one per workout day, like every
-  // other per-workout mutation above) and resets whenever the viewed
-  // week or workout changes, so it never survives into one it wasn't
-  // built for (reviewer's note 10).
-  const { data: allWeekPlansForApplyAhead = [] } = useAllWeekPlans(mesoId)
-  // Chunk 25 review fix — the reset key must also carry this slot's own
-  // position: two slots of a repeated workout (SPEC G8) in the same cycle
-  // would otherwise share one `${workoutDayId}:${weekNumber}` key and so
-  // share one offer/outcome state, exactly the staleness reviewer's note 10
-  // already guards against for a workout/week switch. Only appended when a
-  // real sequence_position exists (weekPlan?.sequencePosition, the same
-  // field laterWeeksForThisWorkout reads just below) — a weekday row's own
-  // key is never touched: `undefined`/`null` there leaves the key exactly
-  // `${workoutDayId}:${weekNumber}`, byte for byte as before this fix.
-  const applyAheadOffer = useApplyAheadOffer(
-    mesoId,
-    `${workoutDay.id}:${weekNumber}${weekPlan?.sequencePosition != null ? `:${weekPlan.sequencePosition}` : ''}`,
-  )
-  function laterWeeksForThisWorkout() {
-    // Chunk 25 (reviewer's note 3) — slot identity, not just workoutDayId:
-    // weekPlan is THIS workout's own row for the viewed week/cycle; its
-    // sequencePosition (null for a weekday run, or absent on a pre-chunk-25
-    // fixture) is the slot every later week must also match.
-    return laterPlannedWeeks(
-      allWeekPlansForApplyAhead.filter((wp) => !doneWeekPlanIds.has(wp.id)),
-      workoutDay.id,
-      weekNumber,
-      weekPlan?.sequencePosition ?? null,
-    )
-  }
-
   // Chunk 31 (SPEC Plan screen [P1.1]: "Anything different from the week's source is
   // highlighted") — what this week differs from its source by, weekDiff.ts's pure
-  // decision over data Plan already holds: every week of the run (the same meso-wide
-  // read as above), narrowed to THIS workout's slot (on a sequence run a repeated
-  // workout's two slots are two histories, each compared with its own), and the run's
-  // copy of the workout, read below only for a week that is compared with it. Nothing
-  // is stored, and a week is compared as it is now (G22): the sources are read live
-  // on every render. NEW WEEK STARTS is the store's, read live like deloadRules.
+  // decision over data Plan already holds: every week of the run (the meso-wide
+  // read the week tiles are drawn from), narrowed to THIS workout's slot (on a sequence
+  // run a repeated workout's two slots are two histories, each compared with its own), and
+  // the run's copy of the workout, read below only for a week that is compared with it. Nothing
+  // is stored, and a week is compared as it is now (G22): the sources are read live on every
+  // render. Until chunk 54b replaces it with `changesSinceSource`.
+  const { data: allWeekPlans = [] } = useAllWeekPlans(mesoId)
   const weekStart = useSettingsStore((s) => s.weekStart)
-  const slotWeeks = weeksOfSlot(allWeekPlansForApplyAhead, workoutDay.id, weekPlan?.sequencePosition ?? null)
+  const slotWeeks = weeksOfSlot(allWeekPlans, workoutDay.id, weekPlan?.sequencePosition ?? null)
   const diffNeedsRunCopy =
     !!weekPlan && weekDiffNeedsRunCopy({ planningType, weekStart, weekNumber, slotWeeks, isDeload: weekPlan.isDeload })
   function computeDiff(runCopy: { exercises: ProgramExercise[]; programSets: ProgramSet[] } | null): WeekDiff | null {
@@ -1087,352 +923,32 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
     return computeWeekDiff({ planningType, weekStart, weekNumber, week: weekPlan, slotWeeks, runCopy })
   }
 
-  // Which sheet (if any) is open: swapping a specific slot, or adding a new
-  // one. Exclusive — only one picker at a time, same as GymSession's own
-  // showAddExerciseSheet/swap state never overlapping.
-  const [swapTarget, setSwapTarget] = useState<ProgramExercise | null>(null)
-  const [showAddExerciseSheet, setShowAddExerciseSheet] = useState(false)
-  const [confirmRemoveExercise, setConfirmRemoveExercise] = useState<{ id: string; name: string } | null>(null)
   // Chunk 22 (reviewer's note 5) — same one-line notice as PlanPage's own
   // week-level action, scoped to this one session's own toggle.
   const [deloadNotice, setDeloadNotice] = useState<string | null>(null)
 
   const sets = weekPlan?.sets ?? []
+  const chips = supersetChips(programExercises)
 
-  function handleAddSet(pe: ProgramExercise) {
-    // Count heads only — a dropset's stage rows must not inflate the next
-    // set's number (§2.7 item 8).
-    const existingHeadsForEx = headsOnly(
-      sets.filter((s) => s.programExerciseId === pe.id),
-      (s) => s.parentWeekPlanSetId,
-    )
-    addSet.mutate({
-      workoutDayId: workoutDay.id,
-      weekPlanId: weekPlan?.id,
-      programExerciseId: pe.id,
-      setNumber: existingHeadsForEx.length + 1,
-    })
-    // Review fix item 3 — week-level ADD SET: SPEC names no exception for
-    // it ("offered when a week is edited and later weeks are already
-    // planned"). Same shape as the stable program-tab's own stepper (+) —
-    // both always append at the matched later week's own current end.
-    const change: ChangeRecord = { editType: 'addSet', slotId: slotIdOf(pe), exerciseId: pe.exerciseId }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-  }
-
-  // "Add warmup sets" (the exercise ⋯ menu): one warmup head above this
-  // exercise's first working set (weekPlanService.ts's addWarmupSet picks the
-  // number and shifts the rest down). Offered ahead like ADD SET is.
-  function handleAddWarmup(pe: ProgramExercise) {
-    addWarmup.mutate({
-      workoutDayId: workoutDay.id,
-      weekPlanId: weekPlan?.id,
-      programExerciseId: pe.id,
-    })
-    const change: ChangeRecord = { editType: 'addWarmupSet', slotId: slotIdOf(pe), exerciseId: pe.exerciseId }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-  }
-
-  function handleAddStage(pe: ProgramExercise, group: Group<WeekPlanSet>, groups: Group<WeekPlanSet>[]) {
+  // "+ ADD SET" (SPEC Defaults 8): a Normal set with the previous set's rep target and no weight or RIR, numbered one past the exercise's
+  // last head (planSetRows.ts). The week plan row is always there for a week that is shown (chunk 52); without one nothing is written.
+  function handleAddSet(pe: ProgramExercise, rows: PlanRow[]) {
     if (!weekPlan) return
-    const headOrdinal = groups.findIndex((g) => g.head.id === group.head.id) + 1
-    addStage.mutate({
-      weekPlanId: weekPlan.id,
-      programExerciseId: pe.id,
-      parentId: group.head.id,
-      setNumber: group.head.setNumber,
-      // max(existing) + 1, not length + 1 — those diverge once a non-last
-      // stage has been individually deleted (setGroupLogic.ts's
-      // nextStageIndex explains the collision this avoids).
-      stageIndex: nextStageIndex(group, (s) => s.stageIndex),
-    })
-    // Chunk 20 — "add/remove stage" (chunk 14), both planning types. Built
-    // right alongside the mutate call, same posture every week action in
-    // this file already takes (the swap/add/remove sheets below close
-    // immediately too, never gated on the mutation's own success) —
-    // useAddStage/useSwapWeekExercise/etc. carry no optimistic update of
-    // their own, so there is no "settled" moment to hook for these that
-    // isn't already a full query refetch away.
-    const change: ChangeRecord = { editType: 'addStage', slotId: slotIdOf(pe), exerciseId: pe.exerciseId, headOrdinal }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
+    const { setNumber, defaults } = newSetFor(rows)
+    addSet.mutate({ weekPlanId: weekPlan.id, programExerciseId: pe.id, setNumber, defaults })
   }
 
-  // Chunk 19 (SPEC "Tags" — "'Apply to all sets' fills one tag across an
-  // exercise's sets"). `groups` is this ONE exercise's own heads-plus-stages
-  // for this week (computed by the render loop below, one per exercise) —
-  // applyTagToAllHeads (plannerVocabulary.ts) does the heads-only/no-warmup/
-  // no-duplicate decision; this just fires one mutate per row it says
-  // actually needs writing (idempotent: a second tap writes nothing, since
-  // every head already carries the tag by then).
-  function handleApplyTagToAll(groups: Group<WeekPlanSet>[], tag: string) {
-    const heads = groups.map((g) => ({ id: g.head.id, tags: g.head.tags ?? null, isWarmup: g.head.isWarmup }))
-    for (const u of applyTagToAllHeads(heads, tag)) {
-      updateSet.mutate({ id: u.id, changes: { tags: u.tags } })
-    }
-    // Chunk 20 scope decision (kept on review): this writes several sets in
-    // one user action, which doesn't fit the one-row-per-ChangeRecord model
-    // — never offered. Documented in the report alongside its batch twin,
-    // StepVolume.tsx's "ALL SETS" (setRepTargetForAllSets); only the
-    // PER-SET editors are wired.
+  // Every number, target and cue a picker or a cell returns is a list of `useUpdateSet` writes, one per set (planSetRows.ts decides which
+  // sets and which columns), so a "Use for all" is one write per head and a row whose value is already the picked one is left alone.
+  function handleUpdate(patches: SetPatch[]) {
+    for (const patch of patches) updateSet.mutate(patch)
   }
 
-  // Chunk 9 — Week actions: swap, reorder, add, remove (weekEdits.ts's slot
-  // decisions, applied by weekPlanService.ts). Chunk 27: a swap or reorder is
-  // a normal week edit — there is no "only this week" tick, so each one
-  // always records the apply-ahead change.
-  //
-  // Review fix (bug 1): async + mutateAsync, not the fire-and-forget
-  // .mutate() every other handler in this file uses — applying this swap
-  // ahead must repoint each matched later week at the SAME resulting
-  // program-exercise row THIS swap creates (never a fresh row per week,
-  // or a follow-up edit on that row could never find them again — see
-  // applyAhead.ts's own header), so the change record needs that row's
-  // real id, which only exists once swapWeekExercise's own insert
-  // resolves. setSwapTarget(null) still runs first, synchronously, so the
-  // picker sheet closes at the exact same moment it always has.
-  async function handlePickReplacement(exercise: Exercise) {
-    if (!weekPlan || !swapTarget) return
-    const target = swapTarget
-    setSwapTarget(null)
-    const replacement = await swapExercise.mutateAsync({
-      weekPlanId: weekPlan.id,
-      programExerciseId: target.id,
-      replacementExerciseId: exercise.id,
-    })
-    // exerciseId: the PRE-swap real exercise (what later weeks still show),
-    // captured from `target` rather than re-read after the swap.
-    const change: ChangeRecord = {
-      editType: 'swapExercise',
-      slotId: slotIdOf(target),
-      exerciseId: target.exerciseId,
-      newExerciseId: exercise.id,
-      resultingProgramExerciseId: replacement.id,
-    }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-  }
-
-  function handlePickAdd(exercise: Exercise) {
-    if (!weekPlan) return
-    addExercise.mutate({
-      weekPlanId: weekPlan.id,
-      workoutDayId: workoutDay.id,
-      exerciseId: exercise.id,
-      position: programExercises.length,
-    })
-    // Chunk 20 — "Adding or removing an exercise in a week is allowed for
-    // both planning types" (SPEC), and apply-ahead covers it for both the
-    // same way (reviewer's note 4: "Both planning types").
-    const change: ChangeRecord = { editType: 'addExercise', workoutDayId: workoutDay.id, exerciseId: exercise.id }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-    setShowAddExerciseSheet(false)
-  }
-
-  function handleConfirmRemove() {
-    if (!weekPlan || !confirmRemoveExercise) return
-    const target = programExercises.find((p) => p.id === confirmRemoveExercise.id)
-    removeExercise.mutate({ weekPlanId: weekPlan.id, programExerciseId: confirmRemoveExercise.id })
-    if (target) {
-      const change: ChangeRecord = { editType: 'removeExercise', slotId: slotIdOf(target), exerciseId: target.exerciseId }
-      applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-    }
-    setConfirmRemoveExercise(null)
-  }
-
-  // Block-aware reorder (chunk 13 — SPEC.md "Supersets": "Every reorder
-  // (program, week plan, session) moves a superset as one block"). With no
-  // grouping at all (every unit size 1 — every week before this chunk),
-  // moveUnit degrades to exactly the old adjacent-swap behaviour, so this
-  // still sends exactly the two affected rows' own pre-move positions (in
-  // their ORIGINAL order) to reorderWeekExercises, byte-identical to before
-  // for that case. A block's every member gets its own move in the same
-  // call, each carrying its own true oldPosition.
-  function handleMoveExercise(index: number, direction: 'up' | 'down') {
-    if (!weekPlan) return
-    const ordered = [...programExercises].sort((a, b) => a.position - b.position)
-    const reordered = moveUnit(ordered, index, direction)
-    if (reordered === ordered) return
-    const newPositionById = new Map(reordered.map((pe, i) => [pe.id, i]))
-    const moves = ordered
-      .map((pe) => ({ programExerciseId: pe.id, oldPosition: pe.position, newPosition: newPositionById.get(pe.id)! }))
-      .filter((m) => m.oldPosition !== m.newPosition)
-    if (moves.length === 0) return
-    reorderExercises.mutate({ weekPlanId: weekPlan.id, moves })
-    // Each move's slotId is `ordered`'s own pre-move row (captured here,
-    // before the mutation changes any position), matching copying's own
-    // identity rule.
-    const change: ChangeRecord = {
-      editType: 'reorderExercise',
-      moves: moves.map((m) => {
-        const row = ordered.find((p) => p.id === m.programExerciseId)!
-        return { slotId: slotIdOf(row), oldPosition: m.oldPosition, newPosition: m.newPosition }
-      }),
-    }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-  }
-
-  // Chunk 20 — "remove stage" (chunk 14) and, since the first review (item
-  // 3), week-level REMOVE SET on a head too (a working set's ⋯ DELETE SET
-  // in the Sets view, a warmup set's in the Structure view; chunk 29 took
-  // compact mode's MINUS away with COMPACT) — SPEC names no exception for it
-  // either ("offered when a week is edited and later weeks are already
-  // planned").
-  // setPositionOf tells head from stage by itself (stageIndex null = head),
-  // so one function now covers both, each with its own editType:
-  // removeHeadSet matches by ordinal (removing THAT ordinal, never
-  // whichever is trailing — the distinguishing behaviour from the
-  // program-tab's own removeSet, which stays trailing-only); removeStage
-  // by ordinal + exact stage_index, as before. Position is read BEFORE
-  // calling mutate — useRemoveSet optimistically filters the cache
-  // synchronously (onMutate), but `groups` here is this render's own
-  // already-captured array, unaffected by that.
-  function handleRemoveSet(id: string, pe: ProgramExercise, groups: Group<WeekPlanSet>[]) {
-    const pos = setPositionOf(groups, id)
-    removeSet.mutate(id)
-    if (!pos) return
-    const change: ChangeRecord =
-      pos.stageIndex == null
-        ? { editType: 'removeHeadSet', slotId: slotIdOf(pe), exerciseId: pe.exerciseId, headOrdinal: pos.headOrdinal }
-        : { editType: 'removeStage', slotId: slotIdOf(pe), exerciseId: pe.exerciseId, setPosition: pos }
-    applyAheadOffer.setOffer([change], laterWeeksForThisWorkout(), isShared)
-  }
-
-  // Chunk 20 — the one shared path for weight target / rep target / RIR /
-  // tags / stage kind / warmup (chunk 19, chunk 14's stage-kind editor, and
-  // — since the first review (item 3) — chunk 15's WARMUP toggle, SPEC
-  // naming no exception for it either) all funnel through PlanPage.tsx's
-  // one onUpdateSet, keyed only by which field(s) `changes` actually
-  // carries (same convention weekPlanService.ts's own updateSet already
-  // uses). A compound write (e.g. an AMRAP rep target that also defaults
-  // RIR — plannerVocabulary.ts's applyAmrapRirDefault) becomes more than
-  // one record, offered and applied together as one bundle.
-  function handleUpdateSet(id: string, changes: SetChanges, pe: ProgramExercise, groups: Group<WeekPlanSet>[]) {
-    // Same "read before mutate" posture as handleRemoveSet above — current
-    // is this render's own pre-edit value, read before useUpdateSet's own
-    // optimistic onMutate touches the cache.
-    const current = sets.find((s) => s.id === id)
-    updateSet.mutate({ id, changes })
-    if (!current) return
-    const pos = setPositionOf(groups, id)
-    if (!pos) return
-    const slotId = slotIdOf(pe)
-    const exerciseId = pe.exerciseId
-    const records: ChangeRecord[] = []
-    if ('targetWeight' in changes) {
-      records.push({ editType: 'weightTarget', slotId, exerciseId, setPosition: pos, oldValue: current.targetWeight ?? null, newValue: changes.targetWeight ?? null })
-    }
-    if ('targetRir' in changes) {
-      records.push({ editType: 'rir', slotId, exerciseId, setPosition: pos, oldValue: current.targetRir, newValue: changes.targetRir ?? null })
-    }
-    if ('repMin' in changes || 'repMax' in changes || 'isAmrap' in changes) {
-      records.push({
-        editType: 'repTarget',
-        slotId,
-        exerciseId,
-        setPosition: pos,
-        oldValue: { repMin: current.repMin ?? null, repMax: current.repMax ?? null, isAmrap: current.isAmrap ?? false },
-        newValue: { repMin: changes.repMin ?? null, repMax: changes.repMax ?? null, isAmrap: changes.isAmrap ?? false },
-      })
-    }
-    // Tags/stage kind/warmup: heads only (reviewer's note 2) — PlanPage.tsx
-    // itself never offers any of the three editors on a stage row (SetRow's
-    // own gating), so pos.stageIndex is already always null whenever these
-    // keys appear; the check is a defensive belt, not a guess at new
-    // behaviour.
-    if ('tags' in changes && pos.stageIndex == null) {
-      records.push({ editType: 'tags', slotId, exerciseId, setPosition: pos, oldValue: current.tags ?? null, newValue: changes.tags ?? null })
-    }
-    if ('stageKind' in changes && pos.stageIndex == null) {
-      records.push({ editType: 'stageKind', slotId, exerciseId, setPosition: pos, oldValue: current.stageKind ?? null, newValue: changes.stageKind ?? null })
-    }
-    if ('isWarmup' in changes && pos.stageIndex == null) {
-      records.push({ editType: 'warmup', slotId, exerciseId, setPosition: pos, oldValue: current.isWarmup, newValue: changes.isWarmup ?? false })
-    }
-    if (records.length === 0) return
-    applyAheadOffer.setOffer(records, laterWeeksForThisWorkout(), isShared)
-  }
-
-  // The week's exercises, one section each — the same in both views. In the
-  // STRUCTURE view `fieldsFor` carries each exercise's run-wide fields (chunk 30:
-  // StructureFields.tsx); in SETS it is null and a section draws exactly what it
-  // did before.
-  //
-  // Chunk 31: `diff` is what this week differs from its source by (null: nothing is
-  // compared, and this draws exactly what it always did). The STRUCTURE view draws an
-  // exercise the source has and the week doesn't as a dim struck-through line right
-  // after the exercise it followed there — a swap: the old exercise directly above
-  // the new one — so the list below is the week's exercises with those lines among
-  // them, and "last" is the last of them.
-  function renderExercises(fieldsFor: StructureFieldsFor | null, diff: WeekDiff | null) {
-    const removedAfter = (anchor: string | null) =>
-      view === 'structure' && diff ? diff.removedExercises.filter((r) => r.after === anchor) : []
-    type Entry = { kind: 'exercise'; pe: ProgramExercise; idx: number } | { kind: 'removed'; key: string; name: string }
-    const entries: Entry[] = []
-    removedAfter(null).forEach((r, i) => entries.push({ kind: 'removed', key: `removed:top:${i}`, name: r.name }))
-    programExercises.forEach((pe, idx) => {
-      entries.push({ kind: 'exercise', pe, idx })
-      removedAfter(pe.id).forEach((r, i) => entries.push({ kind: 'removed', key: `removed:${pe.id}:${i}`, name: r.name }))
-    })
-
-    return entries.map((entry, entryIdx) => {
-      if (entry.kind === 'removed') {
-        return <RemovedExerciseLine key={entry.key} name={entry.name} isLast={entryIdx === entries.length - 1} />
-      }
-      const { pe, idx } = entry
-      const exerciseSets = sets.filter((s) => s.programExerciseId === pe.id)
-      const groups = groupWeekPlanSets(exerciseSets).sort(
-        (a, b) => a.head.setNumber - b.head.setNumber,
-      )
-      const unitIndex = unitIndexByProgramExerciseId.get(pe.id) ?? idx
-      const unit = exerciseUnits[unitIndex]
-      const isFirstInUnit = unit?.[0]?.id === pe.id
-
-      return (
-        <ExerciseSection
-          // The view is in the key: switching views remounts the
-          // section, so no ⋯ menu or half-typed cell from the other
-          // view is carried over into this one.
-          key={`${pe.id}:${view}`}
-          view={view}
-          pe={pe}
-          groups={groups}
-          isPast={isPast}
-          isLast={entryIdx === entries.length - 1}
-          diff={diff?.exercises.get(pe.id)}
-          // A marker on every member of a 2+ block (a plain week shows it on
-          // nobody). Linking and unlinking is the STRUCTURE view's toggle
-          // between two neighbours (`structure.link`), run-wide (SPEC Supersets
-          // [P1.1]).
-          inSuperset={(unit?.length ?? 0) > 1}
-          showMoveControls={isFirstInUnit}
-          structure={fieldsFor ? fieldsFor(pe, idx) : null}
-          // Disables ADD SET and ADD WARMUP SETS while either mutation
-          // (or a set removal) is in flight for this workout day (found
-          // by adversarial review): useAddSet has no optimistic update,
-          // so `groups` doesn't reflect a just-added set until the
-          // insert round-trips and the query refetches. addSet/removeSet
-          // are shared per workout day, not per exercise, so this
-          // briefly disables both buttons across every exercise in the
-          // day during any single add/remove — a deliberately
-          // conservative trade against the more invasive alternative
-          // of adding optimistic-update logic to useAddSet itself.
-          // (The compact view's minus, whose stale closure first
-          // needed this, went with COMPACT in chunk 29.)
-          addOrRemovePending={addSet.isPending || removeSet.isPending || addWarmup.isPending}
-          onAddSet={() => handleAddSet(pe)}
-          onAddWarmup={() => handleAddWarmup(pe)}
-          onAddStage={(group) => handleAddStage(pe, group, groups)}
-          onRemoveSet={(id) => handleRemoveSet(id, pe, groups)}
-          onUpdateSet={(id, changes) => handleUpdateSet(id, changes, pe, groups)}
-          onApplyTagToAll={(tag) => handleApplyTagToAll(groups, tag)}
-          onSwap={() => setSwapTarget(pe)}
-          onRemoveExercise={() => setConfirmRemoveExercise({ id: pe.id, name: pe.exercise?.name ?? 'this exercise' })}
-          canMoveUp={unitIndex > 0}
-          canMoveDown={unitIndex < exerciseUnits.length - 1}
-          onMoveUp={() => handleMoveExercise(idx, 'up')}
-          onMoveDown={() => handleMoveExercise(idx, 'down')}
-        />
-      )
-    })
+  // REMOVE THIS SET: the requests go out stages first, highest index first, then the head (setGroupLogic.ts's cascade order). The rows' foreign
+  // key would take the stages with the head, but each request also takes its row out of the screen's cache at once; a removal cut short
+  // leaves the head with fewer stages, never stages without a head.
+  function handleRemoveRow(row: PlanRow) {
+    for (const id of removalOrder(row)) removeSet.mutate(id)
   }
 
   return (
@@ -1482,8 +998,7 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
       {/* Shared-row note (chunk 21, reviewer's note 2 / G14) — this
           workout's plan row covers more than one weekday, so the DELOAD
           toggle above marks every one of them, as it already does for
-          every other edit on this row (same isShared condition the
-          apply-ahead banner below already uses). Shown next to the mark
+          every other edit on this row. Shown next to the mark
           itself, not just after it's tapped, so it's known beforehand. */}
       {weekPlan && sharedWeekdays && sharedWeekdays.length > 0 && (
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
@@ -1507,1246 +1022,46 @@ function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPl
         </div>
       )}
 
-      {/* Apply this change to planned weeks ahead (chunk 20) — dismissible,
-          never blocking (reviewer's note 4): ignoring it leaves every later
-          week untouched, exactly as if it had never appeared. Hidden on a
-          past (read-only) week for the same reason no new offer could ever
-          arise there — every edit action above is itself hidden then. */}
-      {!isPast && (
-        <ApplyAheadBanner
-          offer={applyAheadOffer.offer}
-          outcome={applyAheadOffer.outcome}
-          isPending={applyAheadOffer.isPending}
-          onApply={applyAheadOffer.apply}
-          onDismiss={applyAheadOffer.dismiss}
-        />
-      )}
-
-      {/* SETS / STRUCTURE (chunk 29) — the switch between the panel's two
-          views, directly under the page-level actions above (the DELOAD
-          toggle, the apply-ahead banner), which sit over both. A SegmentBar. */}
-      <SegmentBar segments={PLAN_VIEWS} active={view} onSelect={onViewChange} marginBottom={8} />
-
-      {/* The workout's warmup routine (chunk 30; SPEC Warmup routine [P1.1]) —
-          at the top of the STRUCTURE view, above the exercises, labelled
-          "every week": the routine belongs to the workout, not to a week. */}
-      {view === 'structure' && <StructureRoutine workoutDayId={workoutDay.id} isPast={isPast} />}
-
-      {/* Exercise card — the same exercises in either view (SETS: each
-          exercise's `+` ADD SET and its set rows' numbers; STRUCTURE: each
-          exercise's ⋯ and its set rows' kinds, and — chunk 30 — the run-wide
-          fields: rest, tempo, unit, grouping, a set's own rest). */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-        {programExercises.length === 0 ? (
-          <div style={{ padding: '20px 16px', textAlign: 'center' }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
-              NO EXERCISES IN THIS DAY
-            </p>
-          </div>
-        ) : (
-          // What differs from the week's source (chunk 31). The gate reads the run's
-          // copy's sets only for a week that is compared with it.
-          <WeekDiffGate needsRunCopy={diffNeedsRunCopy} runCopyExercises={runCopyExercises} compute={computeDiff}>
-            {(diff) =>
-              view === 'structure' ? (
-                // Every hook the run-wide fields add lives in this one component, so
-                // the SETS view calls none of them.
-                <StructureFieldsProvider workoutDayId={workoutDay.id} programExercises={programExercises} isPast={isPast}>
-                  {(fieldsFor) => renderExercises(fieldsFor, diff)}
-                </StructureFieldsProvider>
-              ) : (
-                renderExercises(null, diff)
-              )
-            }
-          </WeekDiffGate>
-        )}
-      </div>
-
-      {/* Add exercise to this week (SPEC "Weeks and copying" — "Adding or
-          removing an exercise in a week is allowed for both planning
-          types"). Hidden once a week plan is past (read-only, same as every
-          other edit on this screen) or missing (v2_plan_week always creates
-          one the moment the week is shown — chunk 8 — so this is only
-          absent during that first instant of loading). Chunk 29: adding and
-          removing exercises are Structure (SPEC Plan screen [P1.1]), so this
-          is only in the Structure view. */}
-      {view === 'structure' && !isPast && weekPlan && (
-        <button
-          onClick={() => setShowAddExerciseSheet(true)}
-          style={{ width: '100%', height: 44, marginTop: 8, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 10, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1.5px' }}
-        >
-          <Plus size={14} style={{ color: 'var(--accent)' }} />
-          ADD EXERCISE
-        </button>
-      )}
-
-      {/* Swap / add pickers — presentational only; the actual write is this
-          panel's own swapExercise/addExercise mutation (weekPlanService.ts). */}
-      {swapTarget && (
-        <WeekExercisePickerSheet
-          title={`SWAP ${swapTarget.exercise?.name ?? 'EXERCISE'}`}
-          excludeExerciseIds={programExercises.map((p) => p.exerciseId)}
-          onPick={handlePickReplacement}
-          onClose={() => setSwapTarget(null)}
-        />
-      )}
-      {showAddExerciseSheet && (
-        <WeekExercisePickerSheet
-          title="ADD EXERCISE"
-          excludeExerciseIds={programExercises.map((p) => p.exerciseId)}
-          onPick={handlePickAdd}
-          onClose={() => setShowAddExerciseSheet(false)}
-        />
-      )}
-
-      {/* Remove-from-this-week confirmation — same bottom-sheet pattern as
-          the planner's own delete-exercise sheet (WorkoutDayEditorPage.tsx). */}
-      {confirmRemoveExercise && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(6,6,7,0.88)', zIndex: 50, display: 'flex', alignItems: 'flex-end' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setConfirmRemoveExercise(null) }}
-        >
-          <div style={{ background: 'var(--surface-raised)', borderRadius: '20px 20px 0 0', width: '100%', padding: '24px 20px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', border: '1px solid var(--border)', borderBottom: 'none' }}>
-            <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
-              Remove "{confirmRemoveExercise.name}" from week {weekNumber}?
-            </p>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
-              This deletes its planned sets for this week only. This cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={() => setConfirmRemoveExercise(null)}
-                style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleConfirmRemove}
-                disabled={removeExercise.isPending}
-                style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: removeExercise.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
-              >
-                {removeExercise.isPending ? '…' : 'REMOVE'}
-              </button>
-            </div>
-          </div>
+      {/* One card per exercise (board 1); what differs from the week's source is marked on the rows as 1.1 marked it (chunk 31),
+          the gate reading the run's copy's sets only for a week that is compared with it. */}
+      {programExercises.length === 0 ? (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 16px', textAlign: 'center' }}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
+            NO EXERCISES IN THIS DAY
+          </p>
         </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Segment bar ──────────────────────────────────────────────────────────────
-// The bar chunk 6 built for the WEEKS / PROGRAM tabs (gone in chunk 33): a flex
-// row, rounded, with an overflow-hidden border; each segment a mono label filled
-// with the accent when active and with the surface otherwise. It stays as the
-// SETS / STRUCTURE switch (chunk 29), markup unchanged. An undefined margin is
-// left out of the style.
-function SegmentBar<T extends string>({
-  segments,
-  active,
-  onSelect,
-  marginBottom,
-}: {
-  segments: { id: T; label: string }[]
-  active: T
-  onSelect: (id: T) => void
-  marginBottom?: number
-}) {
-  return (
-    <div style={{ display: 'flex', borderRadius: 11, overflow: 'hidden', border: '1px solid var(--border)', marginBottom }}>
-      {segments.map((segment) => (
-        <button
-          key={segment.id}
-          onClick={() => onSelect(segment.id)}
-          style={{ flex: 1, padding: '10px 0', background: active === segment.id ? 'var(--accent)' : 'var(--surface)', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: active === segment.id ? 'var(--on-accent)' : 'var(--text-muted)' }}
-        >
-          {segment.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-// ─── Exercise Section ─────────────────────────────────────────────────────────
-
-interface ExerciseSectionProps {
-  pe: ProgramExercise
-  // Chunk 29 — which view the section is drawn for. SETS: the exercise's `+`
-  // ADD SET and each set row's numbers (weight, reps, RIR), tags, DELETE SET.
-  // STRUCTURE: the exercise's ⋯ (swap, move, add warmup sets, remove) and each
-  // set row's kind (a warmup's DELETE, a working set's ADD STAGE / STAGE KIND,
-  // a stage's DELETE STAGE). The exercise's name, muscle group and SUPERSET
-  // marker head both.
-  view: PlanView
-  groups: Group<WeekPlanSet>[]
-  isPast: boolean
-  isLast: boolean
-  addOrRemovePending: boolean
-  onAddSet: () => void
-  onAddStage: (group: Group<WeekPlanSet>) => void
-  onRemoveSet: (id: string) => void
-  onUpdateSet: (id: string, changes: SetChanges) => void
-  // Chunk 19 (SPEC "Tags") — one tag, broadcast to every working head set of
-  // THIS exercise in this week (plannerVocabulary.ts's applyTagToAllHeads
-  // does the heads-only/no-warmup decision; WorkoutDayPanel's
-  // handleApplyTagToAll does the actual writes).
-  onApplyTagToAll: (tag: string) => void
-  // Chunk 9 — Week actions: swap this exercise, reorder it, or remove it
-  // from this week (SPEC "Weeks and copying"). All of them live in the
-  // exercise's ⋯ menu (the STRUCTURE view's, since chunk 29), which is hidden
-  // whenever isPast is (a past week is read-only).
-  onSwap: () => void
-  onRemoveExercise: () => void
-  // "Add warmup sets" (⋯ menu) — one warmup above the first working set.
-  onAddWarmup: () => void
-  canMoveUp: boolean
-  canMoveDown: boolean
-  onMoveUp: () => void
-  onMoveDown: () => void
-  // Chunk 13 — inSuperset marks every member of a 2+ block (a plain week
-  // shows it on nobody, unchanged); showMoveControls hides Move up/down on
-  // every member but the block's first, since a reorder here moves the whole
-  // unit (PlanPage's own handleMoveExercise). Chunk 30: grouping is edited in
-  // the STRUCTURE view (`structure.link`), run-wide.
-  inSuperset: boolean
-  showMoveControls: boolean
-  // Chunk 30 — the run-wide fields (rest, tempo, unit, grouping, a set's own
-  // rest), STRUCTURE view only: null in SETS, where the section draws exactly
-  // what it did before (StructureFields.tsx).
-  structure: StructureExerciseFields | null
-  // Chunk 31 — what this exercise differs from its source by (weekDiff.ts). Undefined:
-  // nothing is compared, and the section draws exactly what it always did. SETS marks
-  // the numbers (weight, reps, RIR) and working sets added or removed; STRUCTURE the
-  // exercise (added, moved), warmup sets and stages added or removed, and a set's kind.
-  diff?: ExerciseDiff
-}
-
-function ExerciseSection({
-  pe,
-  view,
-  groups,
-  isPast,
-  isLast,
-  addOrRemovePending,
-  onAddSet,
-  onAddStage,
-  onRemoveSet,
-  onUpdateSet,
-  onApplyTagToAll,
-  onSwap,
-  onRemoveExercise,
-  onAddWarmup,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
-  inSuperset,
-  showMoveControls,
-  structure,
-  diff,
-}: ExerciseSectionProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const name = pe.exercise?.name ?? 'this exercise'
-  // An exercise that is new this week, or has moved: its header is highlighted, in the
-  // STRUCTURE view only (exercises and their order are that view's fields).
-  const mark = view === 'structure' && diff ? (diff.added ? 'added' : diff.moved ? 'moved' : null) : null
-  // The rows the source has and the week doesn't, drawn after the week's own: a working
-  // set in SETS, a warmup set in STRUCTURE (stages are drawn under their set).
-  const removedHeads = (diff?.removedHeads ?? []).filter((r) => (view === 'sets' ? !r.isWarmup : r.isWarmup))
-  // Every menu action closes the menu: it was opened for one action.
-  const act = (fn: () => void) => () => {
-    setMenuOpen(false)
-    fn()
-  }
-  return (
-    <div style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-subtle)' }}>
-      {/* Exercise header row */}
-      <div data-diff={mark ?? undefined} style={{ padding: '12px 16px 6px', display: 'flex', alignItems: 'center', gap: 10, ...(mark ? CHANGED_BAND : {}) }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: mark ? 'var(--accent)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {pe.exercise?.name ?? '—'}
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginTop: 2 }}>
-            {pe.exercise?.muscleGroup?.toUpperCase()}
-            {inSuperset && (
-              <span style={{ marginLeft: 8, color: 'var(--accent)' }}>· SUPERSET</span>
-            )}
-          </div>
-          {/* The run-wide fields that are set (chunk 30): STRUCTURE only, and
-              nothing at all on an exercise that has none. */}
-          {structure && <ExerciseMarkers markers={structure.markers} />}
-        </div>
-        {!isPast && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {/* SETS: the number of sets is this view's, so ADD SET's `+` is
-                here (a set is removed from its own row's ⋯). STRUCTURE: the
-                exercise's ⋯ (swap, order, warmups, remove) is that view's. */}
-            {view === 'sets' ? (
-              <button
-                onClick={onAddSet}
-                disabled={addOrRemovePending}
-                aria-label={`Add set to ${name}`}
-                style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-muted)', border: '1px solid var(--accent)', borderRadius: 7, cursor: addOrRemovePending ? 'not-allowed' : 'pointer', color: 'var(--accent)', flexShrink: 0, opacity: addOrRemovePending ? 0.5 : 1 }}
-              >
-                <Plus size={13} />
-              </button>
-            ) : (
-              <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`${name} options`} />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Exercise ⋯ menu (chunk 9's week actions, moved here by the UI rule,
-          and into the STRUCTURE view by chunk 29): swap, move up/down, add
-          warmup sets, remove from this week. Chunk 30 puts the exercise's
-          run-wide fields between the first four and the remove: REST, REST
-          AFTER and TEMPO under "EVERY WEEK", then the unit. */}
-      {view === 'structure' && !isPast && menuOpen && (
-        <div style={MENU_PANEL_STYLE}>
-          <MenuAction onClick={act(onSwap)} ariaLabel={`Swap ${name}`}>
-            <ArrowLeftRight size={13} />
-            SWAP EXERCISE
-          </MenuAction>
-          {showMoveControls && (
-            <>
-              <MenuAction onClick={act(onMoveUp)} disabled={!canMoveUp} ariaLabel="Move up">
-                <ChevronUp size={13} />
-                MOVE UP
-              </MenuAction>
-              <MenuAction onClick={act(onMoveDown)} disabled={!canMoveDown} ariaLabel="Move down">
-                <ChevronDown size={13} />
-                MOVE DOWN
-              </MenuAction>
-            </>
-          )}
-          <MenuAction onClick={act(onAddWarmup)} disabled={addOrRemovePending} ariaLabel="Add warmup sets">
-            <Plus size={13} />
-            ADD WARMUP SETS
-          </MenuAction>
-          {structure && <ExerciseDesignMenu pe={pe} fields={structure} />}
-          <MenuAction onClick={act(onRemoveExercise)} danger ariaLabel={`Remove ${name} from this week`}>
-            <Trash2 size={13} />
-            REMOVE FROM THIS WEEK
-          </MenuAction>
-        </div>
-      )}
-
-      {/* Set groups — one row per head, its stages nested beneath it. The
-          SETS view's rows carry the numbers; the STRUCTURE view's carry the
-          kind (and the ⋯ that changes it). Both number the heads the same
-          way, so "set 2" is the same set in either. */}
-      {(groups.length > 0 || removedHeads.length > 0) && (
-        <div style={{ paddingBottom: 10 }}>
-          {groups.map((group, idx) =>
-            view === 'sets' ? (
-              <PlanSetGroup
-                key={group.head.id}
-                group={group}
-                displayNumber={idx + 1}
-                isPast={isPast}
-                weightUnit={pe.weightUnit}
-                diff={diff}
-                onRemoveHead={() => onRemoveSet(group.head.id)}
-                onUpdate={(id, changes) => onUpdateSet(id, changes)}
-                onApplyTagToAll={onApplyTagToAll}
+      ) : (
+        <WeekDiffGate needsRunCopy={diffNeedsRunCopy} runCopyExercises={runCopyExercises} compute={computeDiff}>
+          {(diff) =>
+            programExercises.map((pe, index) => (
+              <PlanExerciseCard
+                key={pe.id}
+                pe={pe}
+                sets={sets.filter((s) => s.programExerciseId === pe.id)}
+                superset={chips.get(pe.id) ?? null}
+                readOnly={isPast}
+                canWrite={!!weekPlan}
+                mesoId={mesoId}
+                weekNumber={weekNumber}
+                isCycle={isCycle}
+                planningType={planningType}
+                runCues={runCues}
+                diff={diff?.exercises.get(pe.id)}
+                // Disables "+" while an add (or a removal) is in flight for this workout (found by adversarial review): useAddSet has no
+                // optimistic update, so the rows don't show a just-added set until the insert round-trips and the week is read again, and a
+                // second tap would number the next set from rows that are one short. addSet and removeSet are shared by the day's cards, so
+                // every card waits; the card whose add it is says so.
+                addDisabled={addSet.isPending || removeSet.isPending}
+                adding={addSet.isPending && addSet.variables?.programExerciseId === pe.id}
+                onAddSet={(rows) => handleAddSet(pe, rows)}
+                onUpdate={handleUpdate}
+                onRemoveRow={handleRemoveRow}
+                isLast={index === programExercises.length - 1}
               />
-            ) : (
-              <StructureSetGroup
-                key={group.head.id}
-                group={group}
-                displayNumber={idx + 1}
-                exerciseName={name}
-                isPast={isPast}
-                setFields={structure?.setFields}
-                diff={diff}
-                onRemoveHead={() => onRemoveSet(group.head.id)}
-                onRemoveStage={(id) => onRemoveSet(id)}
-                onUpdate={(id, changes) => onUpdateSet(id, changes)}
-                onAddStage={() => onAddStage(group)}
-              />
-            ),
-          )}
-          {removedHeads.map((removed) =>
-            view === 'sets' ? (
-              <RemovedSetRow key={`removed:${removed.ordinal}`} removed={removed} weightUnit={pe.weightUnit} />
-            ) : (
-              <RemovedStructureRow key={`removed:${removed.ordinal}`} removed={removed} />
-            ),
-          )}
-        </div>
+            ))
+          }
+        </WeekDiffGate>
       )}
-
-      {/* Superset grouping, run-wide (chunk 30; SPEC Supersets [P1.1]): a linked
-          unit's round rests after its last member, and the toggle between this
-          exercise and the next — any two neighbours in THIS week's order. Both
-          are run-wide controls (the ones the program tab used to hold), labelled
-          "every week"; neither is on a past week. */}
-      {structure?.blockRest && (
-        <div style={{ padding: '0 16px 6px' }}>
-          <BlockRestEditor
-            blockId={structure.blockRest.blockId}
-            rest={structure.blockRest.rest}
-            onChange={structure.blockRest.onChange}
-            everyWeek
-          />
-        </div>
-      )}
-      {structure?.link && (
-        <div style={{ padding: '0 16px 10px' }}>
-          <SupersetLinkToggle
-            linked={structure.link.linked}
-            disabled={structure.link.disabled}
-            onToggle={structure.link.onToggle}
-            suffix={<EveryWeekLabel />}
-          />
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Set Group (SETS view) ────────────────────────────────────────────────────
-// One planned set: a head row and its ordered stages nested beneath it
-// (TASKS.md §4 item 10). The SETS view's rows carry the numbers: weight, reps
-// and RIR, on a head and on each stage (a warmup's have no RIR). What else
-// there is to do to a working set — its tags, DELETE SET — is in the set's own
-// ⋯ menu (SetRow renders it); a stage row has nothing behind a ⋯ here, since
-// its only action (DELETE STAGE) is the STRUCTURE view's. Set kinds — ADD
-// STAGE, STAGE KIND, a warmup's DELETE — are StructureSetGroup's, below.
-
-// The nest a head's stages sit in, in either view.
-const STAGE_NEST_STYLE: React.CSSProperties = { paddingLeft: 22, borderLeft: '1px dashed var(--border-strong)', marginLeft: 11 }
-
-function PlanSetGroup({
-  group,
-  displayNumber,
-  isPast,
-  weightUnit,
-  diff,
-  onRemoveHead,
-  onUpdate,
-  onApplyTagToAll,
-}: {
-  group: Group<WeekPlanSet>
-  displayNumber: number
-  isPast: boolean
-  // Chunk 19 — this exercise's resolved weight unit (ProgramExercise.
-  // weightUnit — null means "inherit the global Settings unit", resolved by
-  // SetRow's own useWeightDisplay call, same pattern as the gym screen's
-  // SetRow.tsx).
-  weightUnit: WeightUnit | null | undefined
-  // Chunk 31 — what this exercise differs from its source by; the SETS view marks the
-  // numbers (weight, reps, RIR) that differ, and a working set that has no counterpart
-  // in the shape source (new this week) by its number and its reps, with the rows of its
-  // stages' reps. Its weight and RIR are not "new": like every set's they are the numbers
-  // source's to say (weekDiff.ts), so they are marked only where last week's set at that
-  // position differs or isn't there, and never on week 1. A warmup set's or a stage's own
-  // newness is the STRUCTURE view's to mark.
-  diff?: ExerciseDiff
-  onRemoveHead: () => void
-  onUpdate: (id: string, changes: SetChanges) => void
-  onApplyTagToAll: (tag: string) => void
-}) {
-  const { head, stages } = group
-  // Chunk 14 — resolved once per group, same rule the workout screen's own
-  // SetGroup.tsx uses (a legacy/null kind reads as a dropset): the head's
-  // kind marker.
-  const stageKind = resolveStageKind(head.stageKind ?? null)
-  const headDiff = diff?.sets.get(head.id)
-  // A working set the shape source has no set for: new, so its number and its reps (and
-  // its stages' reps) are marked. Its weight and RIR are NOT marked for being new: they
-  // follow headDiff.weight / .rir (the numbers source's), like every other set's.
-  const newSet = !!headDiff?.added && !head.isWarmup
-  return (
-    <div>
-      <SetRow
-        displayNumber={displayNumber}
-        marks={{ number: newSet, weight: !!headDiff?.weight, reps: newSet || !!headDiff?.reps, rir: !!headDiff?.rir }}
-        targetRir={head.targetRir}
-        repTarget={columnsToRepTarget({ repMin: head.repMin ?? null, repMax: head.repMax ?? null, isAmrap: head.isAmrap ?? false })}
-        targetWeight={head.targetWeight ?? null}
-        weightUnit={weightUnit}
-        // Heads only (SPEC "Tags" — reviewer's note) — a stage's own SetRow
-        // call below never receives this prop at all, which is what SetRow
-        // reads to decide "is this a head" for the tags marker and menu
-        // (`tags !== undefined`), rather than a second isStage-shaped boolean.
-        tags={head.tags ?? null}
-        isPast={isPast}
-        isWarmup={head.isWarmup}
-        // Kind marker: only on a set that HAS a kind — a warmup, or a head
-        // with stages (resolved kind). A plain working set shows nothing.
-        kindLabel={head.isWarmup ? 'WARMUP' : stages.length > 0 ? STAGE_KIND_LABELS[stageKind] : undefined}
-        onUpdate={(changes) => onUpdate(head.id, changes)}
-        menu={(close) => (
-          <>
-            <TagsEditor
-              tags={head.tags ?? null}
-              disabled={isPast}
-              onChange={(next) => onUpdate(head.id, { tags: next })}
-              onApplyToAll={onApplyTagToAll}
-            />
-            {/* A warmup set is deleted in the STRUCTURE view (it is a set kind,
-                and warmups are added there too); DELETE SET here is a working
-                set's. */}
-            {!head.isWarmup && (
-              <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
-                <Trash2 size={13} />
-                DELETE SET
-              </MenuAction>
-            )}
-          </>
-        )}
-      />
-
-      {stages.length > 0 && (
-        <div style={STAGE_NEST_STYLE}>
-          {stages.map((stage) => {
-            const stageDiff = diff?.sets.get(stage.id)
-            return (
-              <SetRow
-                key={stage.id}
-                isStage
-                marks={{ weight: !!stageDiff?.weight, reps: newSet || !!stageDiff?.reps, rir: !!stageDiff?.rir }}
-                targetRir={stage.targetRir}
-                repTarget={columnsToRepTarget({ repMin: stage.repMin ?? null, repMax: stage.repMax ?? null, isAmrap: stage.isAmrap ?? false })}
-                targetWeight={stage.targetWeight ?? null}
-                weightUnit={weightUnit}
-                isPast={isPast}
-                onUpdate={(changes) => onUpdate(stage.id, changes)}
-              />
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Set Group (STRUCTURE view) ───────────────────────────────────────────────
-// The same set, drawn for its kind rather than its numbers (chunk 29, SPEC Plan
-// screen [P1.1]: "set kinds (warmup, staged sets and their stages), including
-// adding and removing warmup sets and stages"). A row is the set's number, its
-// kind marker where it has a kind, and a ⋯ holding the kind controls:
-//   - a working head: ADD STAGE and, once it has stages, the STAGE KIND chips
-//     (a staged set; chunk 14, SPEC "Staged sets": dropset, rest-pause,
-//     myo-reps, cluster). ADD STAGE just adds a stage row, leaving the head's
-//     own stage_kind null (reads as a dropset) until a different chip is
-//     tapped;
-//   - a warmup head: DELETE SET (a warmup is never staged —
-//     v2_program_sets_warmup_check's rule — so it gets no stage controls;
-//     warmups are added from the exercise's own ⋯ menu, not per row);
-//   - a stage row: DELETE STAGE.
-// No numbers here: weight, reps, RIR and tags are the SETS view's.
-
-function StructureSetGroup({
-  group,
-  displayNumber,
-  exerciseName,
-  isPast,
-  setFields,
-  diff,
-  onRemoveHead,
-  onRemoveStage,
-  onUpdate,
-  onAddStage,
-}: {
-  group: Group<WeekPlanSet>
-  displayNumber: number
-  exerciseName: string
-  isPast: boolean
-  // Chunk 30 — the run-wide fields of a set (its own REST, a staged head's STAGE
-  // REST): present in the STRUCTURE view, where WorkoutDayPanel's provider hands
-  // them over. A set that names no program set of its own exercise row gets none
-  // (G45), whatever this is.
-  setFields?: (set: WeekPlanSet) => StructureSetFields
-  // Chunk 31 — what this exercise differs from its source by; the STRUCTURE view marks
-  // a warmup set or a stage that is new this week, a warmup or stage the source has and
-  // the week doesn't (a dim struck-through row in its place), and — on the set's ⋯ — a
-  // set whose kind differs (warmup, staged, and the stage kind). A working set's own
-  // newness is the SETS view's.
-  diff?: ExerciseDiff
-  onRemoveHead: () => void
-  onRemoveStage: (id: string) => void
-  onUpdate: (id: string, changes: SetChanges) => void
-  onAddStage: () => void
-}) {
-  const { head, stages } = group
-  const stageKind = resolveStageKind(head.stageKind ?? null)
-  const headFields = setFields ? setFields(head) : null
-  const isStaged = stages.length > 0
-  const headOf = `set ${displayNumber} for ${exerciseName}`
-  const headDiff = diff?.sets.get(head.id)
-  // The stages the source's counterpart has and this set hasn't, among this set's own
-  // in stage order.
-  const removedStages = diff?.removedStages.get(head.id) ?? []
-  const stageRows = [
-    ...stages.map((stage, stageIdx) => ({ stageIndex: stage.stageIndex, stage, stageIdx, removed: undefined })),
-    ...removedStages.map((removed) => ({ stageIndex: removed.stageIndex ?? 0, stage: undefined, stageIdx: -1, removed })),
-  ].sort((a, b) => a.stageIndex - b.stageIndex)
-  return (
-    <div>
-      <StructureSetRow
-        displayNumber={displayNumber}
-        isPast={isPast}
-        added={head.isWarmup && !!headDiff?.added}
-        kindChanged={!!headDiff?.kind}
-        kindLabel={head.isWarmup ? 'WARMUP' : isStaged ? STAGE_KIND_LABELS[stageKind] : undefined}
-        restMarkers={setRestMarkers(headFields?.programSet ?? null, isStaged)}
-        menu={(close) =>
-          head.isWarmup ? (
-            <>
-              {headFields && <SetRestMenu fields={headFields} of={headOf} />}
-              <MenuAction onClick={() => { close(); onRemoveHead() }} danger ariaLabel="Delete set">
-                <Trash2 size={13} />
-                DELETE SET
-              </MenuAction>
-            </>
-          ) : (
-            <>
-              {/* The set's own REST, and on a staged head its STAGE REST: run-wide
-                  steppers on the set's program set (chunk 30). */}
-              {headFields && (
-                <SetRestMenu fields={headFields} of={headOf} stageRestDefaultText={isStaged ? stageRestDefaultText(stageKind) : undefined} />
-              )}
-              <div>
-                {isStaged && (
-                  <div style={{ paddingBottom: 4 }}>
-                    <RatingChips
-                      scale={{ values: STAGE_KINDS, labels: STAGE_KIND_LABELS }}
-                      value={stageKind}
-                      onChange={(kind) => onUpdate(head.id, { stageKind: kind })}
-                      label="STAGE KIND"
-                    />
-                  </div>
-                )}
-                <MenuAction onClick={onAddStage} ariaLabel="Add stage">
-                  <Plus size={13} />
-                  ADD STAGE
-                </MenuAction>
-              </div>
-            </>
-          )
-        }
-      />
-
-      {stageRows.length > 0 && (
-        <div style={STAGE_NEST_STYLE}>
-          {stageRows.map(({ stage, stageIdx, removed }) => {
-            if (!stage) return <RemovedStructureRow key={`removed:${removed!.stageIndex}`} removed={removed!} />
-            const stageFieldsOf = setFields ? setFields(stage) : null
-            return (
-              <StructureSetRow
-                key={stage.id}
-                isStage
-                isPast={isPast}
-                added={!!diff?.sets.get(stage.id)?.added}
-                restMarkers={setRestMarkers(stageFieldsOf?.programSet ?? null, false)}
-                menu={(close) => (
-                  <>
-                    {stageFieldsOf && <SetRestMenu fields={stageFieldsOf} of={`stage ${stageIdx + 1} of ${headOf}`} />}
-                    <MenuAction onClick={() => { close(); onRemoveStage(stage.id) }} danger ariaLabel="Delete stage">
-                      <Trash2 size={13} />
-                      DELETE STAGE
-                    </MenuAction>
-                  </>
-                )}
-              />
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// A set's row in the STRUCTURE view: the number (↳ on a stage), then the markers
-// under it where the set has any — its kind, and (chunk 30) its own REST or its
-// STAGE REST where set — and the ⋯. A past week has no ⋯ (read-only, like the SETS
-// view's rows); the spacer keeps the columns where they are.
-function StructureSetRow({
-  displayNumber,
-  isStage = false,
-  kindLabel,
-  restMarkers,
-  isPast,
-  added = false,
-  kindChanged = false,
-  menu,
-}: {
-  displayNumber?: number
-  isStage?: boolean
-  kindLabel?: string
-  restMarkers?: string[]
-  isPast: boolean
-  // Chunk 31 — a warmup set or a stage that is new this week: its row is the accent
-  // (its number, on the muted band an added exercise's header has).
-  added?: boolean
-  // Chunk 31 — the set's kind differs from the source's: a dot on the ⋯ (the kind
-  // controls are inside it), or, on a past week with no ⋯, on the spacer in its place.
-  kindChanged?: boolean
-  menu: (close: () => void) => React.ReactNode
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
-  return (
-    <div data-diff={added ? 'added' : undefined}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6, ...(added ? CHANGED_BAND : {}) }}>
-        {/* Set number */}
-        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: added ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}>
-          {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
-        </span>
-        <div style={{ flex: 1, minWidth: 0 }} />
-        {isPast ? (
-          <div style={{ width: 28, flexShrink: 0, ...(kindChanged ? { position: 'relative' as const } : {}) }}>{kindChanged && <DiffDot />}</div>
-        ) : (
-          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} dot={kindChanged} />
-        )}
-      </div>
-
-      <SetMarkers kindLabel={kindLabel} tags={null} extra={restMarkers} />
-
-      {!isPast && menuOpen && (
-        <div style={MENU_PANEL_STYLE}>
-          {menu(() => setMenuOpen(false))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// The small marker line under a set's row: its kind, and its tags, only where
-// it has them (standing UI rule: an unset feature shows nothing). Both views
-// draw it the same way. `extra` (chunk 30) is the STRUCTURE view's run-wide
-// fields where set, as the same compact chips the tags are.
-function SetMarkers({ kindLabel, tags, extra }: { kindLabel?: string; tags: string[] | null; extra?: string[] }) {
-  if (!kindLabel && tags === null && !(extra && extra.length > 0)) return null
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '0 16px 4px', paddingLeft: 44 }}>
-      {kindLabel && (
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--accent)' }}>
-          {kindLabel}
-        </span>
-      )}
-      {tags?.map((tag) => (
-        <MarkerChip key={tag}>{tag}</MarkerChip>
-      ))}
-      {extra?.map((marker) => (
-        <MarkerChip key={marker}>{marker}</MarkerChip>
-      ))}
-    </div>
-  )
-}
-
-// ─── Set Row (SETS view) ──────────────────────────────────────────────────────
-// A single row: either a head (numbered) or a stage (↳ marker, no number of
-// its own — it shares its head's set_number by convention, TASKS.md §2.1).
-// By default it shows set number, weight, reps and RIR — nothing else
-// (Adam's standing UI rule). A set that has a kind or tags shows them as a
-// small marker line under the row; a set without them shows nothing extra.
-// The ⋯ opens `menu`, which holds everything else for this set; a row with no
-// `menu` (a stage row, in the SETS view) has no ⋯ — a spacer holds its place.
-
-function SetRow({
-  displayNumber,
-  isStage = false,
-  kindLabel,
-  targetRir,
-  repTarget,
-  targetWeight,
-  weightUnit,
-  tags,
-  isPast,
-  isWarmup = false,
-  marks,
-  menu,
-  onUpdate,
-}: {
-  displayNumber?: number
-  isStage?: boolean
-  // Kind marker text (WARMUP, DROPSET, REST-PAUSE, …), resolved by
-  // PlanSetGroup; undefined for a plain working set and for stage rows.
-  kindLabel?: string
-  targetRir: number | null
-  // Chunk 11 (SPEC.md "Removals"; chunk 19 — SPEC.md "Targets": "The week
-  // plan can override a set's rep target for that week"). Editable here via
-  // RepTargetEditor below, on every row, in its own cell beside the weight.
-  repTarget: RepTarget
-  // Chunk 19 (SPEC "Targets" — "Weight targets: per set, in the week plan
-  // only"). Kg; displayed/entered in `weightUnit`'s resolved unit via
-  // WeightTargetEditor below. Heads and stages both.
-  targetWeight: number | null
-  weightUnit: WeightUnit | null | undefined
-  // Chunk 19 (SPEC "Tags") — heads only: PlanSetGroup never passes this (or
-  // the tags menu) on a stage row's own SetRow call, so `undefined`
-  // here means "this is a stage, no tags marker" — not "a head with zero
-  // tags" (that reads as `[]`/`null`).
-  tags?: string[] | null
-  isPast: boolean
-  // A warmup head (PlanSetGroup never passes this on a stage row). Swaps the
-  // RIR stepper out: "Mandatory fields never apply to warmup sets" [P2], and
-  // RIR is never logged on one in the first place.
-  isWarmup?: boolean
-  // Chunk 31 — which of the row's values differ from the week's source (weekDiff.ts):
-  // the number (a working set new this week), weight, reps, RIR. Each marked one is
-  // drawn in the accent; a row with none is what it always was.
-  marks?: { number?: boolean; weight?: boolean; reps?: boolean; rir?: boolean }
-  // The ⋯ menu's contents; `close` collapses the panel. Omitted on a row with
-  // nothing to put behind a ⋯ (an empty ⋯ would be a placeholder), and ignored
-  // on a past (read-only) week, which gets no ⋯ at all.
-  menu?: (close: () => void) => React.ReactNode
-  onUpdate: (changes: SetChanges) => void
-}) {
-  // Chunk 19 — this exercise's resolved unit (its own override, else the
-  // global Settings default), same resolution WeightTargetEditor's gym-
-  // screen counterpart (SetRow.tsx) already uses.
-  const { unit: resolvedUnit } = useWeightDisplay(weightUnit)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const activeTags = tags != null && tags.length > 0 ? tags : null
-  const rowLabel = isStage ? 'stage' : `set ${displayNumber}`
-
-  return (
-    <div data-diff={marks?.number ? 'added' : undefined}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '3px 16px', gap: 6 }}>
-        {/* Set number */}
-        <span style={{ width: 22, fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 12, color: marks?.number ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}>
-          {isStage ? '↳' : String(displayNumber).padStart(2, '0')}
-        </span>
-
-        {/* Weight target — entered/shown in the exercise's resolved unit,
-            stored kg (chunk 19, SPEC "Targets"). */}
-        <WeightTargetEditor
-          valueKg={targetWeight}
-          unit={resolvedUnit}
-          disabled={isPast}
-          changed={!!marks?.weight}
-          onChange={(kg) => onUpdate({ targetWeight: kg })}
-        />
-
-        <span style={{ color: 'var(--text-dim)', fontSize: 11, flexShrink: 0 }}>×</span>
-
-        {/* Rep target — this week's own override (chunk 19), parsed only by
-            parseRepTarget. */}
-        <RepTargetEditor
-          value={repTarget}
-          currentTargetRir={targetRir}
-          disabled={isPast}
-          changed={!!marks?.reps}
-          onChange={(columns) => onUpdate(columns)}
-        />
-
-        {/* RIR stepper — not for a warmup (SPEC "Warmup sets": nothing but
-            weight/reps/rest is ever logged on one, so a target RIR here would
-            promise something that can never be fulfilled). */}
-        {!isWarmup && (
-          <RirStepper
-            value={targetRir}
-            disabled={isPast}
-            changed={!!marks?.rir}
-            onChange={(v) => onUpdate({ targetRir: v })}
-          />
-        )}
-
-        {/* A warmup has no RIR stepper, so a spacer keeps its ⋯ at the right
-            edge; on every other row the weight and reps cells take the room. */}
-        {isWarmup && <div style={{ flex: 1, minWidth: 0 }} />}
-
-        {isPast || !menu ? (
-          <div style={{ width: 28, flexShrink: 0 }} />
-        ) : (
-          <MenuButton open={menuOpen} onClick={() => setMenuOpen((v) => !v)} ariaLabel={`Options for ${rowLabel}`} />
-        )}
-      </div>
-
-      {/* Markers — only on a set that has a kind or tags. */}
-      <SetMarkers kindLabel={kindLabel} tags={activeTags} />
-
-      {/* ⋯ menu panel */}
-      {!isPast && menu && menuOpen && (
-        <div style={MENU_PANEL_STYLE}>
-          {menu(() => setMenuOpen(false))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Rep Target Editor ────────────────────────────────────────────────────────
-// Chunk 19 (SPEC "Targets" — "The week plan can override a set's rep target
-// for that week"). Same tap-to-edit/commit-on-blur-or-Enter pattern as
-// StepExercises.tsx's own TempoEditor (chunk 17): parsed only by
-// parseRepTarget, refused inline with nothing written on invalid input, a
-// no-op commit (same value) writes nothing. UI rule (2026-10-10): reps is
-// one of the three numbers every set row shows, so it is a visible cell
-// like the weight's — not bare text — and a set with no target shows a
-// dash in that cell, the one way to type a first target (nothing else in
-// the app sets a WEEK's own rep-target override).
-// The look shared by the weight and reps cells of a set row (the RIR
-// stepper beside them is the same height). They share the row's free width
-// equally and shrink before anything wraps, so three numbers always fit one
-// line at 375px.
-const NUMBER_CELL_STYLE: React.CSSProperties = {
-  flex: '1 1 0',
-  minWidth: 0,
-  maxWidth: 84,
-  height: 28,
-  padding: '0 6px',
-  background: 'var(--surface)',
-  border: '1px solid var(--border-strong)',
-  borderRadius: 6,
-  fontWeight: 800,
-  whiteSpace: 'nowrap',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-}
-
-function RepTargetEditor({
-  value,
-  currentTargetRir,
-  disabled,
-  changed = false,
-  onChange,
-}: {
-  value: RepTarget
-  currentTargetRir: number | null
-  disabled: boolean
-  // Chunk 31 — the target differs from the week's source: the cell is the accent.
-  changed?: boolean
-  onChange: (columns: RepTargetColumns & { targetRir?: number }) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
-  const [error, setError] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
-
-  function startEditing() {
-    if (disabled) return
-    setText(value.type === 'none' ? '' : formatRepTarget(value))
-    setError('')
-    setEditing(true)
-  }
-
-  function commit() {
-    const trimmed = text.trim()
-    if (trimmed === '') {
-      setEditing(false)
-      setError('')
-      if (value.type !== 'none') onChange({ repMin: null, repMax: null, isAmrap: false })
-      return
-    }
-    const parsed = parseRepTarget(trimmed)
-    if (parsed === null) {
-      // Refused — stays in edit mode with the raw input still showing, the
-      // message right below it; nothing is written (reviewer's note).
-      setError('Enter a number, a range like 8-12, or AMRAP')
-      return
-    }
-    setEditing(false)
-    setError('')
-    if (formatRepTarget(parsed) === formatRepTarget(value)) return // unchanged — nothing to write
-    onChange(applyAmrapRirDefault(parsed, currentTargetRir))
-  }
-
-  if (editing) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 0', minWidth: 0, maxWidth: 96 }}>
-        <input
-          ref={inputRef}
-          value={text}
-          onChange={(e) => { setText(e.target.value); if (error) setError('') }}
-          onBlur={commit}
-          onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
-          placeholder="8, 8-12, AMRAP"
-          aria-label="Rep target"
-          style={{ width: '100%', height: 28, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 6px', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
-        />
-        {error && (
-          <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--error)', letterSpacing: '0.5px' }}>
-            {error}
-          </span>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={startEditing}
-      disabled={disabled}
-      aria-label={value.type === 'none' ? 'Set rep target' : undefined}
-      data-diff={changed ? 'changed' : undefined}
-      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 11, color: value.type === 'none' ? 'var(--text-dim)' : 'var(--text-primary)', ...(changed ? CHANGED_CELL : {}) }}
-    >
-      {value.type === 'none' ? '—' : formatRepTarget(value)}
-    </button>
-  )
-}
-
-// ─── Weight Target Editor ─────────────────────────────────────────────────────
-// Chunk 19 (SPEC "Targets" — "Weight targets: per set, in the week plan
-// only... entered and shown in the exercise's resolved unit, stored kg").
-// Same tap-to-edit pattern as RepTargetEditor/TempoEditor above. The
-// round-trip drift guard (resolveEditedWeightKg) only applies once there's
-// an existing kg value to compare the re-displayed figure against; a brand
-// new value goes straight through toStorageWeight — same split gym
-// SetRow.tsx's own saveEdit already makes for a logged set's weight.
-function WeightTargetEditor({
-  valueKg,
-  unit,
-  disabled,
-  changed = false,
-  onChange,
-}: {
-  valueKg: number | null
-  unit: WeightUnit
-  disabled: boolean
-  // Chunk 31 — the target differs from the week's source: the cell is the accent.
-  changed?: boolean
-  onChange: (kg: number | null) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
-  const [error, setError] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
-
-  function startEditing() {
-    if (disabled) return
-    setText(valueKg != null ? String(toDisplayWeight(valueKg, unit)) : '')
-    setError('')
-    setEditing(true)
-  }
-
-  function commit() {
-    const trimmed = text.trim()
-    if (trimmed === '') {
-      setEditing(false)
-      setError('')
-      if (valueKg !== null) onChange(null)
-      return
-    }
-    const parsed = parseFloat(trimmed.replace(',', '.'))
-    if (Number.isNaN(parsed) || parsed < 0) {
-      // Same message/behaviour as gym SetRow.tsx's own saveEdit guard —
-      // refused inline, nothing written.
-      setError('Enter a valid weight')
-      return
-    }
-    setEditing(false)
-    setError('')
-    const kg = valueKg === null ? toStorageWeight(parsed, unit) : resolveEditedWeightKg(valueKg, unit, parsed)
-    if (kg !== valueKg) onChange(kg)
-  }
-
-  if (editing) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 0', minWidth: 0, maxWidth: 96 }}>
-        <div style={{ position: 'relative' }}>
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="decimal"
-            value={text}
-            onChange={(e) => { setText(e.target.value); if (error) setError('') }}
-            onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
-            placeholder="0"
-            aria-label="Weight target"
-            style={{ width: '100%', height: 28, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 26px 0 6px', fontSize: 12, fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
-          />
-          <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
-            {unit}
-          </span>
-        </div>
-        {error && (
-          <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--error)', letterSpacing: '0.5px' }}>
-            {error}
-          </span>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={startEditing}
-      disabled={disabled}
-      data-diff={changed ? 'changed' : undefined}
-      style={{ ...NUMBER_CELL_STYLE, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontSize: 12, color: valueKg === null ? 'var(--text-dim)' : 'var(--text-primary)', ...(changed ? CHANGED_CELL : {}) }}
-    >
-      {valueKg != null ? `${toDisplayWeight(valueKg, unit)}${unit}` : '—'}
-    </button>
-  )
-}
-
-// ─── Tags Editor ───────────────────────────────────────────────────────────────
-// Chunk 19 (SPEC "Tags" — preset list plus custom text, several allowed,
-// each removable, "Apply to all sets fills one tag across an exercise's
-// sets"). The preset/already-applied-custom chips reuse this app's existing
-// toggle-chip look (RatingChips/STAGE KIND, SettingsPage's chipRow) —
-// tapping an active chip clears it, same "there is always a way back"
-// interaction RatingChips documents, just allowing several actives at once
-// instead of one. The custom-text entry reuses TempoEditor's own tap-to-
-// edit text pattern. Each active (currently-applied) chip also gets a small
-// "apply to all sets" affordance next to it (reusing the Copy icon this
-// file still imports for COPY's button) — SPEC names the
-// feature as filling ONE tag across the exercise, and this is the one place
-// in the UI where a single, unambiguous tag is already in hand to broadcast
-// (no separate picker needed to say which).
-function TagsEditor({
-  tags,
-  disabled,
-  onChange,
-  onApplyToAll,
-}: {
-  tags: string[] | null
-  disabled: boolean
-  onChange: (next: string[] | null) => void
-  onApplyToAll: (tag: string) => void
-}) {
-  const [adding, setAdding] = useState(false)
-  const [text, setText] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const current = tags ?? []
-  // Every preset, in SPEC's own order, plus any custom tag already on this
-  // set (in storage order) that isn't itself a preset string — nothing is
-  // ever listed twice.
-  const custom = current.filter((t) => !(PRESET_TAGS as readonly string[]).includes(t))
-  const chips: string[] = [...PRESET_TAGS, ...custom]
-
-  useEffect(() => {
-    if (adding) inputRef.current?.focus()
-  }, [adding])
-
-  function toggle(tag: string) {
-    if (disabled) return
-    if (current.includes(tag)) {
-      onChange(removeTag(current, tag))
-      return
-    }
-    const next = addTag(current, tag)
-    if (next !== null) onChange(next)
-  }
-
-  function commitCustom() {
-    const next = addTag(current, text)
-    setText('')
-    setAdding(false)
-    if (next !== null) onChange(next)
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)' }}>
-        TAGS
-      </span>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-        {chips.map((tag) => {
-          const active = current.includes(tag)
-          return (
-            <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-              <button
-                type="button"
-                onClick={() => toggle(tag)}
-                disabled={disabled}
-                style={{ height: 24, padding: '0 8px', background: active ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.3px', color: active ? 'var(--accent)' : 'var(--text-dim)', whiteSpace: 'nowrap' }}
-              >
-                {tag}
-              </button>
-              {active && (
-                <button
-                  type="button"
-                  onClick={() => onApplyToAll(tag)}
-                  disabled={disabled}
-                  aria-label={`Apply "${tag}" to all sets`}
-                  title="Apply to all sets"
-                  style={{ width: 20, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer', color: 'var(--text-dim)', flexShrink: 0 }}
-                >
-                  <Copy size={10} />
-                </button>
-              )}
-            </span>
-          )
-        })}
-        {adding ? (
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={commitCustom}
-            onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
-            placeholder="custom tag"
-            aria-label="Custom tag"
-            style={{ height: 24, width: 100, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 6, padding: '0 6px', fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => !disabled && setAdding(true)}
-            disabled={disabled}
-            style={{ height: 24, padding: '0 8px', background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: 'var(--text-dim)' }}
-          >
-            + CUSTOM
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── RIR Stepper ──────────────────────────────────────────────────────────────
-
-function RirStepper({
-  value,
-  disabled,
-  changed = false,
-  onChange,
-}: {
-  value: number | null
-  disabled: boolean
-  // Chunk 31 — the RIR differs from the week's source: the stepper is the accent.
-  changed?: boolean
-  onChange: (v: number | null) => void
-}) {
-  return (
-    <div data-diff={changed ? 'changed' : undefined} style={{ display: 'inline-flex', alignItems: 'center', height: 28, background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0, ...(changed ? CHANGED_EDGE : {}) }}>
-      <button
-        disabled={disabled || value === null}
-        onClick={() => {
-          if (value === null) return
-          onChange(value === 0 ? null : value - 1)
-        }}
-        style={{ width: 22, height: 28, background: 'transparent', border: 'none', color: (disabled || value === null) ? 'var(--text-dim)' : 'var(--text-muted)', cursor: (disabled || value === null) ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        −
-      </button>
-      <div style={{ minWidth: 46, textAlign: 'center', whiteSpace: 'nowrap' }}>
-        {value === null ? (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: changed ? 'var(--accent)' : 'var(--text-dim)' }}>
-            NO RIR
-          </span>
-        ) : (
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 12, color: changed ? 'var(--accent)' : 'var(--text-primary)' }}>
-            RIR {value}
-          </span>
-        )}
-      </div>
-      <button
-        disabled={disabled}
-        onClick={() => onChange(value === null ? 3 : Math.min(value + 1, 9))}
-        style={{ width: 22, height: 28, background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-      >
-        +
-      </button>
     </div>
   )
 }

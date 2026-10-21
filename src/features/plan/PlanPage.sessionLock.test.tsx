@@ -59,7 +59,6 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
 
 const mockState: { plans: WeekPlan[]; done: Set<string> } = { plans: [], done: new Set() }
 const updateSetMutate = vi.fn()
-const addWarmupMutate = vi.fn()
 const removeSetMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
@@ -70,23 +69,22 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+// The set type picker (a set's ⋯) reads the exercise's program sets for its rest row; this file gives it none.
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
+}))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: removeSetMutate, isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -124,7 +122,6 @@ beforeEach(() => {
   mockState.done = new Set()
   updateSetMutate.mockClear()
   removeSetMutate.mockClear()
-  addWarmupMutate.mockClear()
 })
 
 describe('PlanPage — a completed or skipped session is read-only (current week)', () => {
@@ -161,6 +158,6 @@ describe('PlanPage — a completed or skipped session is read-only (current week
     renderPlanPage()
     expect(screen.getAllByLabelText(/^Options for set /)).toHaveLength(2)
     openSetMenu(1)
-    expect(screen.getByLabelText('Delete set')).toBeTruthy()
+    expect(screen.getByText('REMOVE THIS SET')).toBeTruthy()
   })
 })

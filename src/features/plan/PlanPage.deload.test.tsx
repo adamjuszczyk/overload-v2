@@ -22,10 +22,8 @@ import { openWeekMenu, openWeekTile } from './planMenus.testutil'
 // anything a client-side mock could meaningfully stand in for — see the
 // chunk's report for the scratch-Postgres proof of that.
 //
-// A SEPARATE file, PlanPage.deload.applyAhead.test.tsx, proves chunk 20
-// reads a session marked here (the same is_deload) through the REAL
-// useApplyAhead/applyAhead.ts pipeline — this file mocks `./useWeekPlan`
-// entirely, which that one specifically does not.
+// (The separate file that proved the apply-ahead offer read a session marked here, PlanPage.deload.applyAhead.test.tsx, went with the
+// offer in chunk 54a. The real hook's label while a mark is out is PlanPage.weekMenu.pendingLabel.test.tsx's.)
 //
 // Chunk 22 extends every mutate-arg assertion below for the new `rules`
 // field (the screen-resolved effective rules — "Lessons": a screen-layer
@@ -104,8 +102,11 @@ const setDeloadMutate = vi.fn()
 // it in a spy closes that gap — see the "created with the viewed week's
 // own (mesoId, weekNumber)" test below.
 // Chunk 52 (board 1e): what the sheet draws while a mark is out (MARKING…, UNMARKING…) and when it failed ("Couldn't mark the week."
-// and the real reason) is the hook's own state, so the stand-in carries it and a test sets it.
-const weekDeloadHook: { isPending: boolean; isError: boolean; error: unknown } = { isPending: false, isError: false, error: null }
+// and the real reason) is the hook's own state, so the stand-in carries it and a test sets it. Chunk 54a (DECISIONS 187 (a)): the label's
+// direction is the request's own, `variables.isDeload`, which the stand-in carries beside `isPending` as the real mutation does.
+const weekDeloadHook: { isPending: boolean; isError: boolean; error: unknown; variables: { isDeload: boolean; rules: null } | undefined } = {
+  isPending: false, isError: false, error: null, variables: undefined,
+}
 const useSetWeekDeloadSpy = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: setWeekDeloadMutate, ...weekDeloadHook }))
 
 vi.mock('../programs/useMesos', () => ({
@@ -128,20 +129,14 @@ vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: setDeloadMutate }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: (mesoId: string, weekNumber: number) => useSetWeekDeloadSpy(mesoId, weekNumber),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -174,7 +169,7 @@ afterEach(() => {
   setWeekDeloadMutate.mockReset()
   setDeloadMutate.mockReset()
   useSetWeekDeloadSpy.mockClear()
-  Object.assign(weekDeloadHook, { isPending: false, isError: false, error: null })
+  Object.assign(weekDeloadHook, { isPending: false, isError: false, error: null, variables: undefined })
   mockState.program = makeProgram()
   mockState.workoutDays = [workoutDay1]
   mockState.meso = activeMeso
@@ -372,6 +367,7 @@ describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 5
 
   it('while the mark is out the row says MARKING… and is disabled: a press calls nothing more', () => {
     weekDeloadHook.isPending = true
+    weekDeloadHook.variables = { isDeload: true, rules: null }
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })]
     renderPlanPage()
     openWeekMenu()
@@ -385,12 +381,35 @@ describe('PlanPage — WEEK ⋯ while a mark is out, and when it failed (chunk 5
 
   it('while the unmark is out it says UNMARKING… (a marked week), without the chip', () => {
     weekDeloadHook.isPending = true
+    weekDeloadHook.variables = { isDeload: false, rules: null }
     mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })]
     renderPlanPage()
     openWeekMenu()
     expect(within(wordsOf()).getByText('UNMARKING…')).toBeTruthy()
     expect((within(wordsOf()).getByText('UNMARKING…').closest('button') as HTMLButtonElement).style.color).toBe('var(--text-muted)')
     expect(within(wordsOf()).queryByText('DELOAD')).toBeNull()
+  })
+
+  // DECISIONS 187 (a): the mark is patched into the week before it lands, so while a mark is out the week already reads as marked. The label
+  // is the request's, never the week's; the real hook over the fake week-plan db is PlanPage.weekMenu.pendingLabel.test.tsx.
+  it('the label follows the request in flight, not whether the week reads as marked: a mark out on a week that already reads marked says MARKING…', () => {
+    weekDeloadHook.isPending = true
+    weekDeloadHook.variables = { isDeload: true, rules: null }
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: true })] // patched marked, mark still out
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText('MARKING…')).toBeTruthy()
+    expect(within(wordsOf()).queryByText('UNMARKING…')).toBeNull()
+  })
+
+  it('... and an unmark out on a week that already reads unmarked says UNMARKING…', () => {
+    weekDeloadHook.isPending = true
+    weekDeloadHook.variables = { isDeload: false, rules: null }
+    mockState.plans = [makePlan(1, 'wd-1', pe1, { isDeload: false })] // patched unmarked, unmark still out
+    renderPlanPage()
+    openWeekMenu()
+    expect(within(wordsOf()).getByText('UNMARKING…')).toBeTruthy()
+    expect(within(wordsOf()).queryByText('MARKING…')).toBeNull()
   })
 
   it('a failed mark: "Couldn\'t mark the week." and the real reason (a server message, verbatim), the row still MARK so it can be tried again', () => {

@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 
-// Chunk 15 (SPEC "Warmup sets" — "the week plan offer[s] warmup sets"):
-// PlanSetGroup's WARMUP chip, head-only and mutually exclusive with
-// staging (same posture as StepVolume.tsx's own, one layer up — the
-// program's own sets). Same mocking recipe as PlanPage.stageKind.test.tsx.
+// Adam's standing UI rule (2026-10-10): a plain week shows each set as number, weight, reps, RIR and one ⋯, and nothing else; whatever else
+// a set can be (a kind, a warmup, stages, cues, removal) is behind its ⋯. Chunk 54a moved the rows to PlanSetRow and the ⋯ to the set type
+// picker (SPEC Screens → Plan screen), and this file with them. Same mocking recipe as PlanPage.stageKind.test.tsx.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -59,7 +58,6 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
 
 const mockState: { plans: WeekPlan[] } = { plans: [] }
 const updateSetMutate = vi.fn()
-const addWarmupMutate = vi.fn()
 const removeSetMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
@@ -70,6 +68,11 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+// The set type picker (a set's ⋯) reads the exercise's program sets for its rest row; this file gives it none.
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
+}))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
@@ -78,20 +81,14 @@ vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: addWarmupMutate, isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: removeSetMutate, isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -130,16 +127,16 @@ describe('PlanPage — a plain week shows only set rows with three numbers each 
     expect(menuButtons).toHaveLength(3)
     menuButtons.forEach((menuBtn, i) => {
       const row = menuBtn.parentElement as HTMLElement
-      // Buttons in a row: weight, reps, RIR minus, RIR plus, ⋯.
-      expect(row.querySelectorAll('button')).toHaveLength(5)
+      // Buttons in a row: weight, reps, RIR (one cell: it opens the RIR picker), ⋯.
+      expect(row.querySelectorAll('button')).toHaveLength(4)
       expect(row.querySelector('input')).toBeNull()
       // The row's whole text: number, weight, ×, reps, RIR value — and no
       // label, chip, placeholder or marker.
       const text = (row.textContent ?? '').replace(/\s+/g, ' ').trim()
       const expected = [
-        '01100kg × 8–12 − RIR 2 +'.replace(/\s/g, ''),
-        '02100kg × 8–12 − RIR 2 +'.replace(/\s/g, ''),
-        '03— × — − RIR 1 +'.replace(/\s/g, ''),
+        '01100kg × 8–12 RIR 2'.replace(/\s/g, ''),
+        '02100kg × 8–12 RIR 2'.replace(/\s/g, ''),
+        '03— × — RIR 1'.replace(/\s/g, ''),
       ][i]
       expect(text.replace(/\s/g, '')).toBe(expected)
     })
@@ -158,34 +155,41 @@ describe('PlanPage — a plain week shows only set rows with three numbers each 
     expect(document.body.querySelectorAll('svg.lucide-trash2')).toHaveLength(0)
   })
 
-  it('reps are editable per set, right on the row', () => {
+  // Chunk 54a: the reps cell opens the rep target picker (the inline field it was is gone); with "Use for all" unticked it writes this set only.
+  it('reps are editable per set, from the row: the cell opens the rep target picker', () => {
     updateSetMutate.mockClear()
     mockState.plans = [plainWeek()]
     renderPlanPage()
 
     fireEvent.click(screen.getAllByText('8–12')[0])
-    const input = screen.getByLabelText('Rep target')
-    fireEvent.change(input, { target: { value: '6-8' } })
-    fireEvent.blur(input)
+    const picker = within(screen.getByRole('dialog', { name: 'Rep target' }))
+    fireEvent.change(picker.getByRole('textbox', { name: 'From' }), { target: { value: '6' } })
+    fireEvent.change(picker.getByRole('textbox', { name: 'To' }), { target: { value: '8' } })
+    fireEvent.click(picker.getByRole('checkbox', { name: 'Use for all 3 sets of Bench Press' })) // it starts ticked: this set alone
+    fireEvent.click(picker.getByRole('button', { name: 'SET 6–8 REPS' }))
 
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
     expect(updateSetMutate).toHaveBeenCalledWith({ id: 's1', changes: { repMin: 6, repMax: 8, isAmrap: false } })
   })
 
-  // Chunk 29: set kind (ADD STAGE) left this ⋯ for the STRUCTURE view's (the
-  // presence assertion that stood here is now an absence, and its twin is in
-  // PlanPage.views.test.tsx); tags and delete stayed.
-  it('a working set\'s ⋯ holds tags and delete, not set kind (add stage) — and delete removes that set', () => {
+  // Chunk 54a: a set's ⋯ opens the set type picker (SPEC Screens → Plan screen: "the set's ⋯ opens the set type picker with ... Cues and
+  // REMOVE THIS SET"). It holds the set's kind, its cues and its removal; ADD STAGE is gone (the picker's stepper does it).
+  it('a working set\'s ⋯ holds its type, its cues and REMOVE THIS SET — no ADD STAGE — and REMOVE THIS SET removes that set', () => {
     removeSetMutate.mockClear()
     mockState.plans = [plainWeek()]
     renderPlanPage()
 
     openSetMenu(2)
+    const picker = within(screen.getByRole('dialog', { name: 'What is this set?' }))
     expect(screen.queryByLabelText('Add stage')).toBeNull()
-    expect(screen.getByText('TAGS')).toBeTruthy()
-    fireEvent.click(screen.getByLabelText('Delete set'))
+    expect(picker.queryByText(/ADD STAGE/)).toBeNull()
+    expect(picker.getByText('Cues')).toBeTruthy()
+    expect(picker.getByRole('button', { name: /^Normal/ }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(picker.getByText('REMOVE THIS SET'))
 
+    expect(removeSetMutate).toHaveBeenCalledTimes(1)
     expect(removeSetMutate).toHaveBeenCalledWith('s2')
     // Closed again after the action.
-    expect(screen.queryByText('TAGS')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
@@ -104,6 +104,11 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+// The set type picker (a set's ⋯) reads the exercise's program sets for its rest row; this file gives it none.
+vi.mock('../planner/usePlanner', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../planner/usePlanner')>()),
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
+}))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
@@ -112,20 +117,14 @@ vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -152,8 +151,9 @@ describe('PlanPage — chunk 19 is additive: an existing RIR + rep target render
     mockState.plans = [makePlan([makeHistoricalSet()])]
     renderPlanPage()
 
-    // The two pre-chunk-19 values — same text master always showed.
-    expect(screen.getByText('RIR 2')).toBeTruthy()
+    // The two pre-chunk-19 values — same text master always showed (chunk 54a: the RIR is a cell whose label and number are two elements,
+    // so it is found by its name, "RIR 2", which reads as the same text).
+    expect(screen.getByRole('button', { name: 'RIR 2' })).toBeTruthy()
     expect(screen.getByText('8–12')).toBeTruthy()
   })
 
@@ -168,11 +168,13 @@ describe('PlanPage — chunk 19 is additive: an existing RIR + rep target render
     expect(screen.queryByText(/^\d+(\.\d+)?(kg|lbs)$/)).toBeNull()
   })
 
-  it('that same set shows no tag as applied — no "apply to all" control exists for any preset (that control only ever renders on an ACTIVE tag)', () => {
+  it('that same set shows no cue as applied — no cue chip on the row, and nothing on the page that applies a cue to all sets (chunk 54a: that is the cues sheet\'s "Use for all", behind the ⋯)', () => {
     mockState.plans = [makePlan([makeHistoricalSet()])]
     renderPlanPage()
 
+    expect(document.querySelectorAll('svg.lucide-tag')).toHaveLength(0)
     expect(screen.queryAllByLabelText(/Apply ".*" to all sets/)).toHaveLength(0)
+    expect(screen.queryByText(/Use for all/)).toBeNull()
   })
 
   it('adding a weight target and a tag changes ONLY those two things — RIR and rep-target text are still the exact same strings', () => {
@@ -180,15 +182,16 @@ describe('PlanPage — chunk 19 is additive: an existing RIR + rep target render
     renderPlanPage()
 
     // Still there, still the same text — chunk 19 disturbs neither.
-    expect(screen.getByText('RIR 2')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'RIR 2' })).toBeTruthy()
     expect(screen.getByText('8–12')).toBeTruthy()
 
     // And now the two new fields genuinely show something.
     expect(screen.getByRole('button', { name: '102.06kg' })).toBeTruthy()
-    // The tag shows as a compact marker on the set; its "apply to all"
-    // control is in the set's ⋯ menu.
-    expect(screen.getByText('push here')).toBeTruthy()
+    // The tag shows as a compact chip on the set, as the cue's label ("Push here"); the set's ⋯ opens the set type picker, whose Cues row
+    // says the same, and opens the cues sheet with it ticked.
+    expect(screen.getByText('Push here')).toBeTruthy()
     openSetMenu(1)
-    expect(screen.getByLabelText('Apply "push here" to all sets')).toBeTruthy()
+    fireEvent.click(screen.getByText('Cues'))
+    expect(screen.getByRole('checkbox', { name: 'Push here' }).getAttribute('aria-checked')).toBe('true')
   })
 })

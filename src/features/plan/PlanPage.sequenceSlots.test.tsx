@@ -5,22 +5,22 @@ import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, Exercise, SequenceItem, WeekPlanSet } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
-import type { ChangeRecord } from './applyAhead'
 
 // Chunk 25 review fix (first review — "a sequence run can't be planned in
 // Plan, so the chunk's done-when isn't met") — Plan's own weeks view for a
 // sequence run: the slot switcher, the panel matched by (workout_day_id,
-// sequence_position), "Cycle n" labelling, "Mark this cycle as deload", and
-// apply-ahead's own per-slot matching, all driven through the REAL PlanPage/
-// WorkoutDayPanel/ExerciseSection tree (same seam every other PlanPage test
-// file already uses: only the data hooks are mocked). Fixture: A, B, A, rest
-// (SPEC G8, reviewer's own named shape) — cycle 1 is the viewed week,
-// cycle 2's own two A occurrences already planned (its own two week_plan
-// rows), so "the second A reaches the second A, not the first" and
-// "apply-ahead reaches cycle 2's own A·1, not its A·3" are both provable
-// against a REAL, already-ambiguous-by-workoutDayId-alone fixture, not a
-// hypothetical one. Checked at 375px (this file's own beforeEach, same
-// convention as every other PlanPage test file).
+// sequence_position), "Cycle n" labelling and "Mark this cycle as deload",
+// all driven through the REAL PlanPage/WorkoutDayPanel/PlanExerciseCard tree
+// (same seam every other PlanPage test file already uses: only the data
+// hooks are mocked). Fixture: A, B, A, rest (SPEC G8, reviewer's own named
+// shape) — cycle 1 is the viewed week, cycle 2's own two A occurrences
+// already planned (its own two week_plan rows), so "the second A reaches the
+// second A, not the first" is provable against a REAL,
+// already-ambiguous-by-workoutDayId-alone fixture, not a hypothetical one.
+// (Chunk 54a: the apply-ahead offer and its per-slot matching are gone with
+// the offer; the two tests that proved it became absence tests, below.)
+// Checked at 375px (this file's own beforeEach, same convention as every
+// other PlanPage test file).
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -115,10 +115,6 @@ const allPlans: WeekPlan[] = [wpCycle1SlotA0, wpCycle1SlotB1, wpCycle1SlotA2, wp
 const updateSetMutate = vi.fn()
 const setWeekDeloadMutate = vi.fn()
 const useSetWeekDeloadSpy = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: setWeekDeloadMutate, isPending: false }))
-let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
-const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }) => {
-  applyAheadLastCall = vars
-})
 // Chunk 52 — COPY's sheet writes through useCopyNumbers (one `v2_apply_ops` request); the spy is what the sheet hands it. The
 // tests that open the sheet give the run the history below (`plansOverride`) so the copy has numbers to take.
 const copyMutateAsync = vi.fn()
@@ -154,19 +150,13 @@ vi.mock('./useWeekPlan', () => ({
   // three cycle-1 rows that constant used to be).
   useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: (plansOverride ?? allPlans).filter((w) => w.weekNumber === weekNumber), isLoading: false }),
   useAllWeekPlans: () => ({ data: plansOverride ?? allPlans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: applyAheadMutate, isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: (mesoId: string, weekNumber: number) => useSetWeekDeloadSpy(mesoId, weekNumber),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: copyMutateAsync, isPending: false, isError: false }) }))
@@ -192,8 +182,6 @@ afterEach(() => {
   updateSetMutate.mockClear()
   setWeekDeloadMutate.mockClear()
   useSetWeekDeloadSpy.mockClear()
-  applyAheadMutate.mockClear()
-  applyAheadLastCall = null
   copyMutateAsync.mockReset()
   plansOverride = null
 })
@@ -211,12 +199,13 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
   it('the current cycle of a week-dependent sequence run shows no ONLY THIS WEEK control, in any case (chunk 27)', () => {
     const { container } = renderPlanPage()
 
-    // A sequence panel really is showing (slot switcher + the SETS / STRUCTURE
-    // switch; COMPACT is gone, chunk 29) ...
+    // A sequence panel really is showing (slot switcher + the slot's cards; COMPACT
+    // is gone, chunk 29, and so is the SETS / STRUCTURE switch, chunk 54a) ...
     expect(screen.getByRole('region', { name: 'Sequence slot switcher' })).toBeTruthy()
+    expect(screen.getByLabelText('Add set to Bench Press')).toBeTruthy()
     expect(screen.queryByText('COMPACT')).toBeNull()
-    expect(screen.getByText('SETS')).toBeTruthy()
-    expect(screen.getByText('STRUCTURE')).toBeTruthy()
+    expect(screen.queryByText('SETS')).toBeNull()
+    expect(screen.queryByText('STRUCTURE')).toBeNull()
     // ... and the tick is nowhere on it.
     expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
     expect(screen.queryByText(/only this week/i)).toBeNull()
@@ -276,27 +265,30 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
     expect(call.isDeload).toBe(true)
   })
 
-  it('apply-ahead from cycle 1\'s A·1 (slot 0) reaches cycle 2\'s own A·1 (slot 0) ONLY — never cycle 2\'s A·3 (slot 2)', () => {
+  // Chunk 54a — absence (Checks that lied #32): these two were the apply-ahead offer's per-slot reach (a change in cycle 1's A·1 or A·3 offered
+  // cycle 2's own A·1 or A·3, never the other). The offer is gone: an edit in either slot writes its own set, once, and offers nothing.
+  // Break proof: render the offer again → both fail.
+  it('an edit in cycle 1\'s A·1 (slot 0) offers nothing to apply to the planned cycle 2 — no banner, no APPLY — and writes A·1\'s own set only', () => {
     renderPlanPage()
 
     editWeightTarget() // slot 0 (the default-selected first A) is edited
 
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-    fireEvent.click(screen.getByText('APPLY'))
-    expect(applyAheadLastCall).not.toBeNull()
-    expect(applyAheadLastCall!.weeks.map((w) => w.id)).toEqual(['wp-2-a0'])
+    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
+    expect(screen.queryByText('APPLY')).toBeNull()
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect((updateSetMutate.mock.calls[0][0] as { id: string }).id).toBe('set-a0')
   })
 
-  it('apply-ahead from cycle 1\'s A·3 (slot 2) reaches cycle 2\'s own A·3 (slot 2) ONLY — never cycle 2\'s A·1 (slot 0)', () => {
+  it('an edit in cycle 1\'s A·3 (slot 2) offers nothing either, and writes A·3\'s own set only', () => {
     renderPlanPage()
 
     fireEvent.click(screen.getByText('SLOT 3'))
     editWeightTarget()
 
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-    fireEvent.click(screen.getByText('APPLY'))
-    expect(applyAheadLastCall).not.toBeNull()
-    expect(applyAheadLastCall!.weeks.map((w) => w.id)).toEqual(['wp-2-a2'])
+    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
+    expect(screen.queryByText('APPLY')).toBeNull()
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect((updateSetMutate.mock.calls[0][0] as { id: string }).id).toBe('set-a2')
   })
 
   // Chunk 25 review fix 2 (DECISIONS 73 option a — the second named gap:
@@ -372,22 +364,6 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
       expect(rowOf(sheet, 'SLOT 3').getAttribute('aria-checked')).toBe('false')
       expect(within(rowOf(sheet, 'SLOT 3')).getByText('NO EARLIER CYCLE')).toBeTruthy()
     })
-  })
-
-  // Chunk 25 review fix 2 — the apply-ahead offer's own reset key (this
-  // file's existing two apply-ahead tests above prove it reaches the RIGHT
-  // candidate weeks per slot; this proves the OFFER STATE ITSELF doesn't
-  // leak from one slot's pending offer into a different slot never
-  // involved in that edit).
-  it('an apply-ahead offer pending on slot A·1 is cleared when switching to slot A·3 — the two slots never share one offer/outcome state', () => {
-    renderPlanPage()
-
-    editWeightTarget() // slot 0 (A·1) — produces a pending offer
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-
-    fireEvent.click(screen.getByText('SLOT 3')) // switch to A·3, no edit made there
-
-    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
   })
 
   // Chunk 25 review fix 2 — "mark-cycle": proves by construction that NO
