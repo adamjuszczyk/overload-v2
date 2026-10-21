@@ -277,6 +277,16 @@ describe('the line (board 1)', () => {
     expect(lineText()).toBeNull()
   })
 
+  it('is read again whenever the done list is (a finish, a skip, a reopen, a move of a session), since it sits under that key', async () => {
+    line()
+    await waitFor(() => expect(lineText()).toContain('5 things'))
+    const asked = world.fake.to('v2_sessions').length
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['v2_doneWeekPlanIds'] })
+    })
+    expect(world.fake.to('v2_sessions').length).toBeGreaterThan(asked)
+  })
+
   it('a sequence run says LAST CYCLE', async () => {
     line({ unit: 'cycle' })
     await waitFor(() => expect(lineText()).toBe('LAST CYCLE5 things went differentlyREVIEW →'))

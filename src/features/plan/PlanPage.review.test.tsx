@@ -236,24 +236,27 @@ describe('what the line and the sheet are handed', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('"SWAP FROM WEEK N" names CHANGE THE PROGRAM’s week: the first session not started, here week 2 (week 1 is done)', () => {
-    weekdayRun()
-    state.statuses = new Map([['wp-wd-push1-1', 'done'], ['wp-wd-pull1-1', 'done']])
+  it('"SWAP FROM WEEK N" names CHANGE THE PROGRAM’s week (the first session not started), not the week the page is on or the current one', () => {
+    // Week 2 is current and both its sessions are done, so a change would start in week 3, the week open here.
+    weekdayRun({ weeks: [1, 2, 3] })
+    state.statuses = new Map([['wp-wd-push1-1', 'done'], ['wp-wd-pull1-1', 'done'], ['wp-wd-push1-2', 'done'], ['wp-wd-pull1-2', 'done']])
     state.read = {
       status: 'ready',
       count: 1,
       error: null,
       groups: [
         {
-          sessionId: 's1', weekPlanId: 'wp-wd-push1-2', workoutDayId: 'wd-push1', workoutName: 'Push 1', date: '2026-10-12', heading: 'MON · PUSH 1',
-          items: [{ key: 'swap:s1:pe-a', item: { kind: 'swapped', sessionId: 's1', weekPlanId: 'wp-wd-push1-2', programExerciseId: 'pe-a', originalExerciseId: 'ex-a', originalExerciseName: 'Dips', replacementExerciseId: 'ex-b', replacementExerciseName: 'Machine Dips', doneSets: 3, plannedSets: 3, target: { programExerciseId: 'pe-a' } } }],
+          sessionId: 's1', weekPlanId: 'wp-wd-push1-3', workoutDayId: 'wd-push1', workoutName: 'Push 1', date: '2026-10-12', heading: 'MON · PUSH 1',
+          items: [{ key: 'swap:s1:pe-a', item: { kind: 'swapped', sessionId: 's1', weekPlanId: 'wp-wd-push1-3', programExerciseId: 'pe-a', originalExerciseId: 'ex-a', originalExerciseName: 'Dips', replacementExerciseId: 'ex-b', replacementExerciseName: 'Machine Dips', doneSets: 3, plannedSets: 3, target: { programExerciseId: 'pe-a' } } }],
         },
       ],
     }
     render(ui())
+    openWeekTile('WEEK 3')
     fireEvent.click(reviewLine()!)
-    expect(screen.getByRole('button', { name: 'SWAP FROM WEEK 2' })).toBeTruthy()
-    expect(screen.getByText('Swapping changes the plan from week 2 on.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'SWAP FROM WEEK 3' })).toBeTruthy()
+    expect(screen.getByText('Swapping changes the plan from week 3 on.')).toBeTruthy()
+    expect(state.programs[state.programs.length - 1]).toMatchObject({ currentWeek: 2 })
   })
 
   it('the sheet is gone with the week it opened on, as COPY’s and VOLUME’s are', () => {
