@@ -12,12 +12,16 @@ let online = true
 let queueGate: Promise<void> = Promise.resolve()
 const queued: Array<{ log: { id: string; sessionId: string; parentSetId?: string | null }; setNumber: number }> = []
 const flushed = vi.fn()
+// The log ids whose patch the queue already holds: it adds nothing and says so (`queueSetLogPatch` returns whether it added an item).
+let alreadyQueued = new Set<string>()
 
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => online }))
 vi.mock('../offline/useSyncQueue', () => ({
   queueSetLogPatch: async (log: { id: string; sessionId: string; parentSetId?: string | null }, setNumber: number) => {
     await queueGate
+    if (alreadyQueued.has(log.id)) return false
     queued.push({ log, setNumber })
+    return true
   },
   flushSyncQueue: () => {
     flushed()
@@ -40,6 +44,7 @@ const props = { sessionId: 's1', enabled: true, corrections: [{ id: 'a', setNumb
 beforeEach(() => {
   online = true
   queueGate = Promise.resolve()
+  alreadyQueued = new Set()
   queued.length = 0
   flushed.mockClear()
   queryClient.clear()
@@ -88,6 +93,22 @@ describe('patchSetNumbers', () => {
   it('the queue is sent after the last patch is queued, and only when the phone is online (flush)', async () => {
     await patchSetNumbers({ sessionId: 's1', patches: [{ id: 'a', setNumber: 1 }, { id: 'b', setNumber: 2 }], logs: [], flush: true })
     expect(queued.map((q) => q.log.id)).toEqual(['a', 'b'])
+    expect(flushed).toHaveBeenCalledTimes(1)
+  })
+
+  it('a patch the queue already holds adds no item and the queue is not sent again for it (the session is read again after every pass: sending again would never end), though the screen\'s copy still holds the number', async () => {
+    queryClient.setQueryData(['v2_session', 's1'], { id: 's1', setLogs: [{ id: 'a', setNumber: 5 }] } as unknown as Session)
+    alreadyQueued = new Set(['a'])
+    await patchSetNumbers({ sessionId: 's1', patches: [{ id: 'a', setNumber: 4 }], logs: [], flush: true })
+    expect(queued).toEqual([])
+    expect(flushed).not.toHaveBeenCalled()
+    expect(queryClient.getQueryData<Session>(['v2_session', 's1'])?.setLogs?.map((l) => l.setNumber)).toEqual([4])
+  })
+
+  it('with one patch already held and one new, the new one is queued and the queue is sent once', async () => {
+    alreadyQueued = new Set(['a'])
+    await patchSetNumbers({ sessionId: 's1', patches: [{ id: 'a', setNumber: 1 }, { id: 'b', setNumber: 2 }], logs: [], flush: true })
+    expect(queued.map((q) => q.log.id)).toEqual(['b'])
     expect(flushed).toHaveBeenCalledTimes(1)
   })
 })

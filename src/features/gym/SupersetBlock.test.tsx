@@ -4,6 +4,7 @@ import { render, cleanup, within, fireEvent, screen } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import SupersetBlock, { type SupersetMember } from './SupersetBlock'
 import { useWorkoutRows } from './useWorkoutRows'
+import { referenceSessionOf } from './cardHarness.testutil'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import type { ProgramExercise, WeekPlanSet, SetLog, Exercise } from '../../types'
@@ -16,14 +17,7 @@ afterEach(() => {
   cleanup()
   useRestTimerStore.getState().stop()
   useSetTimerStore.getState().stop()
-  lastLogsByExerciseId = {}
 })
-
-let lastLogsByExerciseId: Record<string, SetLog[]> = {}
-
-vi.mock('./useSession', () => ({
-  useLastSessionLogs: (exerciseId: string) => ({ data: lastLogsByExerciseId[exerciseId] ?? [], isLoading: false }),
-}))
 
 const REPLACEMENT: Exercise = {
   id: 'ex-replacement', userId: 'u1', name: 'Incline Press', muscleGroup: 'chest', isArchived: false,
@@ -165,16 +159,35 @@ describe('SupersetBlock — rounds (SPEC "Supersets", board W1)', () => {
 })
 
 describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13 review fix)', () => {
-  it('last time shows on the member\'s LAST line, not in its boxes (DECISIONS 162 (a))', () => {
-    lastLogsByExerciseId = {
-      'ex-pe-a': [makeSetLog({ id: 'last-a1', sessionId: 'prev', weight: 62.5, reps: 9, rir: 2, loggedAt: '2026-01-01T00:00:00Z' })],
-    }
-    const { container } = renderBlock(members())
+  // Today is Monday 2026-01-05: last week is Mon 2025-12-29 to Sun 2026-01-04, so Wed 2025-12-31 is last week's and Wed 2025-12-24 the
+  // week before (the reference's LAST WEEK and LAST TIME); a sequence run has no weeks and reads the most recent one.
+  const lastSet = (sessionId: string, weight: number) => makeSetLog({ id: `${sessionId}-1`, sessionId, weight, reps: 9, rir: 2 })
+  const withReference = (...sessions: ReturnType<typeof referenceSessionOf>[]): SupersetMember[] => {
+    const [a, b] = members()
+    return [{ ...a, referenceSessions: sessions }, b]
+  }
+
+  it('last time shows on the member\'s LAST line, from its own reference session, not in its boxes (DECISIONS 162 (a))', () => {
+    const { container } = renderBlock(withReference(referenceSessionOf('prev', '2025-12-31', [lastSet('prev', 62.5)])))
     const current = container.querySelector('[data-current-set]') as HTMLElement
     expect((within(current).getByLabelText('Weight') as HTMLInputElement).value).toBe('')
     expect((within(current).getByLabelText('Reps') as HTMLInputElement).value).toBe('')
     expect(current.textContent).toContain('LAST')
     expect(current.textContent).toContain('62.5 × 9 @ 2')
+  })
+
+  it('the member\'s LAST line is the reference\'s primary session: a deload last week does not count, and the run\'s schedule type is read', () => {
+    // Today is Wednesday 2026-01-07: last week's session is Friday 2026-01-02's, this week's Monday 2026-01-05's.
+    const deload = referenceSessionOf('deload', '2025-12-31', [lastSet('deload', 30)], { isDeload: true })
+    const lastWeek = referenceSessionOf('lastWeek', '2026-01-02', [lastSet('lastWeek', 70)])
+    const thisWeek = referenceSessionOf('thisWeek', '2026-01-05', [lastSet('thisWeek', 80)])
+    const lastOf = (c: HTMLElement) => (c.querySelector('[data-current-set]') as HTMLElement).textContent ?? ''
+    const weekday = renderBlock(withReference(deload, lastWeek, thisWeek), { today: '2026-01-07' }).container
+    expect(lastOf(weekday)).toContain('70 × 9 @ 2') // last week's non-deload session; this week's is the panel's EARLIER THIS WEEK
+    cleanup()
+    const sequence = renderBlock(withReference(deload, lastWeek, thisWeek), { today: '2026-01-07', referenceScheduleType: 'sequence' }).container
+    expect(lastOf(sequence)).toContain('80 × 9 @ 2') // a sequence run has no weeks: the most recent past non-deload session
+    expect(lastOf(sequence)).not.toContain('30 ×')
   })
 
   it('swap: tapping SWAP on a member opens its own sheet; confirming calls onSwap with that member\'s programExercise', async () => {
@@ -255,6 +268,47 @@ describe('SupersetBlock — + ADD ROUND (SPEC Defaults 9, board W1)', () => {
       ['ex-pe-a', 2],
     ])
     expect(added.every((c) => typeof c.id === 'string')).toBe(true)
+  })
+})
+
+// Tests owed since 58a's review (DECISIONS "Tests owed", X6): every test above holds the cards' lists of added sets from the first
+// ADD ROUND. After a reload, a reopened session or on another phone the lists are empty and only the logs say which places are taken.
+describe('SupersetBlock — + ADD ROUND after a reload takes the places the logs hold (X6)', () => {
+  it('with an added round already logged (place 1) and the cards\' lists empty, + ADD ROUND gives each member place 2, and LOG writes it', () => {
+    const calls: Record<string, unknown>[] = []
+    const logsNow: SetLog[] = []
+    const logged = [
+      ...Array.from({ length: 4 }, (_, i) => makeSetLog({ id: `a-${i + 1}`, exerciseId: 'ex-pe-a', weekPlanSetId: `pe-a-set-${i + 1}`, setNumber: i + 1, weight: 50, reps: 10 })),
+      ...Array.from({ length: 3 }, (_, i) => makeSetLog({ id: `b-${i + 1}`, exerciseId: 'ex-pe-b', weekPlanSetId: `pe-b-set-${i + 1}`, setNumber: i + 1, weight: 50, reps: 10 })),
+      makeSetLog({ id: 'b-added', exerciseId: 'ex-pe-b', weekPlanSetId: null, setNumber: 4, addedPlace: 1, weight: 50, reps: 10 }), // the earlier round's
+      makeSetLog({ id: 'a-added', exerciseId: 'ex-pe-a', weekPlanSetId: null, setNumber: 5, addedPlace: 1, weight: 50, reps: 10 }),
+    ]
+    logsNow.push(...logged)
+    const { container, setLogs } = renderBlock(
+      members(),
+      {
+        onLog: (params) => {
+          calls.push(params as unknown as Record<string, unknown>)
+          const log = makeSetLog({ id: (params.id as string | undefined) ?? 'planned', exerciseId: params.exerciseId, weekPlanSetId: params.weekPlanSetId, addedPlace: params.addedPlace ?? null, weight: params.weight, reps: params.reps, setNumber: params.setNumber })
+          logsNow.push(log)
+          return Promise.resolve(log)
+        },
+      },
+      logged,
+    )
+    expect(container.querySelector('[data-current-set]')).toBeNull() // nothing open: every set is logged
+    fireEvent.click(screen.getByText('ADD ROUND'))
+    for (let i = 0; i < 2; i++) {
+      const current = container.querySelector('[data-current-set]') as HTMLElement
+      fireEvent.change(within(current).getByLabelText('Weight'), { target: { value: '50' } })
+      fireEvent.change(within(current).getByLabelText('Reps'), { target: { value: '10' } })
+      fireEvent.click(within(current).getByText('LOG'))
+      setLogs([...logsNow])
+    }
+    expect(calls.map((c) => [c.exerciseId, c.addedPlace])).toEqual([
+      ['ex-pe-b', 2],
+      ['ex-pe-a', 2],
+    ])
   })
 })
 

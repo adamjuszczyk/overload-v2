@@ -6,7 +6,6 @@ import type { ScheduleType } from './referenceByExercise'
 import {
   useActiveSession,
   useLogSet,
-  useLastSessionLogs,
   useUpdateSetLog,
   useDeleteSetLog,
   useExerciseReferenceSessions,
@@ -53,8 +52,8 @@ interface GymSessionProps {
   scheduleType?: ScheduleType
 }
 
-// Wrapper that loads per-exercise history and renders ExerciseCard. Must be its own component so useLastSessionLogs can be called
-// unconditionally.
+// Renders one exercise's card. The rows' LAST line reads the exercise's reference sessions (`referenceSessions`, resolved as the panel
+// above the rows resolves them: `lastTimeSet.ts`), not a query of its own.
 function ExerciseSection({
   card,
   programSets,
@@ -62,7 +61,6 @@ function ExerciseSection({
   logs,
   swappedFrom,
   slotSwapped,
-  sessionId,
   referenceSessions,
   referenceLoading,
   referenceMesocycleId,
@@ -97,7 +95,6 @@ function ExerciseSection({
   onDeleteSet: (id: string) => Promise<void>
   onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
 }) {
-  const { data: lastLogs = [], isLoading: lastLogsLoading } = useLastSessionLogs(card.programExercise.exerciseId, sessionId)
   return (
     <ExerciseCard
       cardKey={card.key}
@@ -106,8 +103,6 @@ function ExerciseSection({
       programSets={programSets}
       workout={workout}
       logs={logs}
-      lastLogs={lastLogs}
-      lastLogsLoading={lastLogsLoading}
       referenceSessions={referenceSessions}
       referenceLoading={referenceLoading}
       referenceMesocycleId={referenceMesocycleId}

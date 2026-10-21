@@ -18,7 +18,10 @@ import type { NumberPatch } from './workoutRules'
 /**
  * Writes number patches for logs of one session: each is queued (behind the earlier writes to its log) and, once every one is queued,
  * the queue is sent when `flush` says the phone is online. The screen's own copy of each log changes after its patch is queued, so
- * the next draw lists nothing for it. Chunks 61 (a delete's renumber) and 62 (a Warmup switch's) call this too.
+ * the next draw lists nothing for it. A patch the queue already holds (`queueSetLogPatch` says so) adds no item, and when none was
+ * added the queue is not sent either: the session is read again after every pass, so a draw that lists a correction whose request
+ * keeps failing would otherwise send, fail and read again without end (58a's review 1, finding 1). Chunks 61 (a delete's renumber)
+ * and 62 (a Warmup switch's) call this too.
  */
 export async function patchSetNumbers({
   sessionId,
@@ -32,13 +35,14 @@ export async function patchSetNumbers({
   flush: boolean
 }): Promise<void> {
   const byId = new Map(logs.map((log) => [log.id, log]))
+  let added = 0
   for (const patch of patches) {
-    await queueSetLogPatch({ id: patch.id, sessionId, parentSetId: byId.get(patch.id)?.parentSetId ?? null }, patch.setNumber)
+    if (await queueSetLogPatch({ id: patch.id, sessionId, parentSetId: byId.get(patch.id)?.parentSetId ?? null }, patch.setNumber)) added += 1
     queryClient.setQueryData(['v2_session', sessionId], (old: Session | undefined) =>
       old ? { ...old, setLogs: old.setLogs?.map((log) => (log.id === patch.id ? { ...log, setNumber: patch.setNumber } : log)) } : old,
     )
   }
-  if (flush && patches.length > 0) await flushSyncQueue()
+  if (flush && added > 0) await flushSyncQueue()
 }
 
 export function useSetNumberCorrections({
