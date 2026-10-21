@@ -27947,3 +27947,77 @@ To-dos:
 - **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
+
+## 2026-10-21 chunk 54b review — merged (#188, `c711fc8`); new 206 (D31, accepted as built) and 207 (past weeks' marks); one test owed; four rules; moved out of CONTEXT.md, DECISIONS.md and TASKS-1.2.md (replaced by newer lines there), word for word
+
+**The review, long form.** Night mode, one agent, light under the 1.2 cost rule (high effort; no per-chunk staging click-through; break proofs on the writers; every script; the smoke once after the merge).
+- The branch: the builder's `build/chunk-54b`, off staging `b182f92`; head `dc14bd6`, an empty commit over `44a8549`'s tree. Staging hadn't moved, so there was no rebase. PR #188's own `pull_request` run of `migration-replay` passed; `Supabase Preview` was skipped (no migration). Squash-merged as `c711fc8`.
+- Scripts on the head, all green:
+  - typecheck 0;
+  - vitest 5544 of 5544 in 281 files;
+  - build ok, stylesheet `index-ra14cXRp.css`, byte-identical (`cmp`) to staging's deployed one;
+  - script tests 354 of 354;
+  - check-frozen-code, check-program-exercise-reads (14 reads in 8 files), check-context-size (68.6 KB), check-warmup-consumers and check-migration-order (47 files) all ok.
+  - Nothing under `scripts/`, `supabase/` or `.github/` changed, and nor did `package.json`, the lockfile or `vite.config.ts`.
+- Breaks, the reviewer's own (`<scratchpad>/build/r54b/breaks.mjs`: one exact replacement that must match once, the vitest binary in its own process group, md5-checked restore from a `cp` backup, the verdict from the exit code with the failing tests named; results in `r54b/breaks-out/results.txt` and `r54b/breaks-out2/results.txt`).
+  - Control K0 (comment only): survived.
+  - Session deload: R1, no Settings rules, caught (3 tests); R2, always `isDeload: true`, caught (2).
+  - MOVE: R3, a pick of the session's own day moves it instead of clearing the move, caught (1). R4, the clear naming the target date, survived: it is an equivalent mutant, because `resolveMove` says "clear" only when the target is the session's own date.
+  - Set writers in `SessionCard`:
+    - R5, only the last patch written, caught (10);
+    - R6, + ADD SET to the last exercise, caught (4);
+    - R7, the removal's cascade reversed, caught (3);
+    - R8, the add hook keyed to week 1, caught (2).
+  - Settings: R9, `week_start` back in the payload through a spread (which passes typecheck), caught (1); R10, the read mapping `weekStart` back, caught (2).
+  - The builder's sweep (`<scratchpad>/build/c54b/breaks/out*/results.txt`), read: 60 breaks plus 8 in round 2, every survivor answered with a test, and W9b's crash catch replaced by W9c.
+- The 69 removed `weekDiff.test.ts` tests, held against chunk 42's (`weekPlanning.changes.test.ts`, `weekPlanning.thisWeekOnly.test.ts`, `weekPlanning.autoCopy.test.ts`), describe by describe.
+  - These map one for one: identity matching, set positions, added sets' sources, kinds, what is never compared, the choice of sources (`chooseChangeSources`, 1.2's week 1 compared with nothing) and `weeksOfSlot` / `plannedWeekRecords`.
+  - Gone on purpose, 1.1 only: "week 1 against the run copy" and the "started empty" setting.
+  - Sampled by break. R12, the default's heads not sorted by position: caught by `weekPlanning.thisWeekOnly.test.ts`. R11, a stage the default dropped still counted (`programHeads`): passed all 206 tests of the week rules and week view files. Only `runCopyToDiffExercises`' "a removed stage, and the stages of a removed head" had pinned it, so a test is owed (DECISIONS "Tests owed"). The behaviour as merged is right (`stages: live`).
+- The builder's section 3, held against SPEC, TASKS and the boards (text dumps of `design/1.2/source/*.dc.html` beside `design/1.2/built/*.txt` for boards 1, 1a, 1c, 1d, 9, 10, 11; no PNG needed). The elements, order and wording match; the fixtures' names and numbers differ by design. The items:
+  - 1: no mark on an in-progress session. SPEC and the boards win; TASKS' staging line is fixed.
+  - 2: "✓ DONE" replaces SESSION DONE. TASKS' verification is fixed.
+  - 3: the eyebrow; boards 1c and 10 disagree.
+  - 4: a new stage's weight, built as 42's module.
+  - 5: "DELOAD SESSION · NO CHANGE MARKS" is board 9's frame caption, in the same style as the board's other captions and board 10's.
+  - 6: past weeks' marks, entry 207 (board 11 draws the legend on a done session; board 1c is week 1).
+  - 7, 8 and 9: display.
+  - All of these are in entry 206, except 6.
+- Checks that lied #29, the panel's removed behaviour read line by line:
+  - The session DELOAD toggle (disabled when the week was past or the session done) is now the ⋯'s row, which is hidden in the same cases.
+  - The shared-plan note and the "Already started" notice are in the menu.
+  - MOVE THIS SESSION keeps its current-week, started and offline guards.
+  - 1.1's "SESSION DONE — READ ONLY" line became the header's ✓ DONE (board 11).
+  - Nothing a session could do before is lost.
+- Staging, after the merge:
+  - The deploy: BUILD `c711fc8`, entry `index-CsuEHePx.js` (holds the sha, "CHANGE EVERY WEEK", "MARK THIS SESSION AS DELOAD" and "changes apply to"; no "SESSION DONE" or "NO EXERCISES IN THIS DAY"), stylesheet `index-ra14cXRp.css`.
+  - `staging-smoke.mjs` 51/51 (set logs 205 before the UI smoke).
+  - The screen smoke as the test account (`r54b/smoke.sh`, r52c's tool): every tab opened with no error. Plan read week 3 THIS WEEK with "CHANGED SINCE …" over the chips. One LOG on Today's in-progress Upper A: the first open row, 19.8 lbs × 15 as prefilled, one POST `v2_set_logs`, and the LOG buttons went 7 → 6. The page's one console line was the service worker's fallback registration, which is seen at every smoke.
+  - TASKS 54b's Staging list was not run (the cost rule); it goes to the release checklist. Note for it: the test account's current week is week 3 on 2026-10-21 (the run started 2026-10-05).
+
+**Moved from CONTEXT.md, "What exists" and "Where the build is" (replaced in their lines), word for word:**
+- "; Plan's highlighting (`PlanPage` → `weekDiff.ts`, through a private alias of the old type) reads it until 54b."
+- "A past week, a done session and a workout with no plan row draw read-only cards. 1.1's set-level change marks stay on the rows until 54b (205 (f))."
+- "- Plan (54b rebuilds the sessions, their states and the marks; the header is chunk 52's and the exercise cards 54a's, above): `PlanPage`'s week panel around the cards is 1.1's (the workout or slot chips, the session's DELOAD toggle, MOVE THIS SESSION above the panel, the change marks of `weekDiff.ts`; since 51a its foot opens CHANGE THE PROGRAM, since 52 on an open planned week only; since d31b its week N is the rule box's, read through the screen's own statuses, done or in progress (`usePlanRowStatuses.ts`, a key under the done list's prefix; 172 (j)));"
+- "and the test account has 205 set logs (54a's smoke logged Seated Cable Row set 01, 60 × 12; Today then showed 7 LOG buttons)."
+
+**Moved from TASKS-1.2.md, "Chunk 54b" (wording fixed in this review), word for word:**
+- "a done session's rows are read-only (`SESSION DONE`);"
+- "week 3's chips read MON ✓ UPPER A (in progress), WED LOWER A, FRI UPPER B;"
+
+**Moved from DECISIONS.md (rewritten), word for word:**
+
+## Waiting on Adam
+*Rewritten at every boundary. Last: 2026-10-21, chunk 54a's review (merged).*
+- *Chunk 54a is merged (#186, `449b5ca`): Plan's week view draws each exercise as a card with its set rows, and every set edit goes through the pickers (reps, RIR, set type, cues, + ADD SET, REMOVE THIS SET); the Sets / Structure views, the exercise-level actions, MAKE DEFAULT, apply-ahead, ADD WARMUP SETS and ADD STAGE are gone. WEEK ⋯'s pending label follows the request (your 187 (a)). On staging, as the test account on week 3's Lower A: a RIR range on one set, reps 4–6 with "Use for all" (the warmups change too, as SPEC Targets says: TASKS' staging line said they kept 8 and 5 and is fixed), a dropset with two drops and a cue, + ADD SET, a staged added set removed whole; every write read back by API, then Lower A put back exactly as it was. The smoke: 51/51 and one set logged. Three tests are owed ("Tests owed"); the seed-version line (#185) is recorded (RULES, CONTEXT, TASKS "Seed").*
+- *What follows (night mode): 54b, 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+
+Decisions that block a chunk:
+- none.
+
+Decisions (none blocks; for Adam's review pass after the release checklist):
+- **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
+- **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
+- **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
+- **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
+- **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
