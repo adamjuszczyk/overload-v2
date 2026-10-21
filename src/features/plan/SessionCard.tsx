@@ -182,14 +182,14 @@ export default function SessionCard({
 
         <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           {state.finished !== null ? (
-            <span style={{ ...MONO_CAPTION, display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+            <span data-session-state="" style={{ ...MONO_CAPTION, display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
               {state.finished === 'done' && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
               {state.finished === 'done' ? 'DONE' : 'SKIPPED'}
             </span>
           ) : (
             <>
-              {state.movedTo !== null && <span style={{ ...MONO_CAPTION, color: 'var(--text-secondary)' }}>{`MOVED → ${dayShort(state.movedTo)}`}</span>}
-              {weekPlan && readOnly && !pastWeek && <span style={{ ...MONO_CAPTION, color: 'var(--text-secondary)' }}>READ ONLY</span>}
+              {state.movedTo !== null && <span data-session-state="" style={{ ...MONO_CAPTION, color: 'var(--text-secondary)' }}>{`MOVED → ${dayShort(state.movedTo)}`}</span>}
+              {weekPlan && readOnly && !pastWeek && <span data-session-state="" style={{ ...MONO_CAPTION, color: 'var(--text-secondary)' }}>READ ONLY</span>}
               {showMenu && (
                 <button
                   type="button"

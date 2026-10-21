@@ -150,7 +150,7 @@ describe('PlanPage — a completed or skipped session is read-only (current week
 
   // Board 11 and board 10: a done session says "✓ DONE" on the right of its header, a skipped one "SKIPPED" (from the session's own row);
   // a plan that is locked while this session is not itself finished (a shared plan, whose other day is done) says READ ONLY.
-  const header = () => screen.queryAllByText(/^(DONE|SKIPPED|READ ONLY)$/).map((el) => el.textContent)
+  const header = () => Array.from(document.querySelectorAll('[data-session-state]')).map((el) => el.textContent)
   const sessionOf = (status: PlanSession['status']): PlanSession[] => [
     { id: 's-1', weekPlanId: 'wp-1', workoutDayId: 'wd-1', date: dateForDow(startDate, 1, 'monday'), movedToDate: null, status },
   ]
