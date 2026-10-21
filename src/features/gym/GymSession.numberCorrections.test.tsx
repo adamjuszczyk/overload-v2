@@ -5,7 +5,7 @@
 // online. `useSyncQueue` is the spy here; the queue's own rules (order, retries, the shape of the request) are
 // `useSyncQueue.patch.test.ts`.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, cleanup, fireEvent, act, screen } from '@testing-library/react'
+import { render, cleanup, fireEvent, act, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ExerciseSwap } from './sessionService'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog } from '../../types'
@@ -32,8 +32,9 @@ let sessionSwaps: ExerciseSwap[] = []
 let online = true
 const queued: Array<{ log: { id: string; sessionId: string; parentSetId?: string | null }; setNumber: number }> = []
 const flushed = vi.fn()
+const logCalls: Array<Record<string, unknown>> = [] // what LOG asked the server to write
 
-const log = (over: Partial<SetLog> & { id: string }): SetLog => ({
+const log =(over: Partial<SetLog> & { id: string }): SetLog => ({
   userId: 'user-1', sessionId: 'session-1', exerciseId: 'ex-1', weekPlanSetId: null, setNumber: 1, weight: 60, reps: 8, rir: null, note: null,
   isDropset: false, parentSetId: null, stageIndex: 0, isWarmup: false, setSeconds: null, enteredUnit: null, isSkipped: false,
   loggedAt: '2026-01-05T10:05:00Z', restSeconds: null, formRating: null, stageKind: null, addedPlace: null, ...over,
@@ -67,7 +68,12 @@ vi.mock('../offline/useSyncQueue', () => ({
 }))
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
-  useLogSet: () => ({ mutateAsync: vi.fn() }),
+  useLogSet: () => ({
+    mutateAsync: (params: Record<string, unknown>) => {
+      logCalls.push(params)
+      return Promise.resolve(log({ id: 'unused' }))
+    },
+  }),
   useLastSessionLogs: () => ({ data: [], isLoading: false }),
   useUpdateSetLog: () => ({ mutate: vi.fn() }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
@@ -96,6 +102,7 @@ beforeEach(() => {
   sessionSwaps = []
   online = true
   queued.length = 0
+  logCalls.length = 0
   flushed.mockClear()
 })
 
@@ -192,6 +199,61 @@ describe('GymSession — two phones (DECISIONS 185 (c), Adam 2026-10-20)', () =>
     await settle()
     expect(labels(container)).toEqual(['01', '02', '03'])
     expect(queued).toEqual([{ log: { id: 'b-log', sessionId: 'session-1', parentSetId: null }, setNumber: 3 }])
+  })
+})
+
+describe('GymSession — two phones over one database (DECISIONS 185 (c): across refetches a stored number changes once)', () => {
+  // Two screens read one set of logs; the queue's writes go to that database and the next refetch brings them back, as on staging.
+  it('an open added set on phone 1 and a log in its place from phone 2: nobody writes; once phone 1 logs its set, one number moves once and every number is its own', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('a-open-set-0000-0000-0000-000000000000')
+    let db: SetLog[] = [head(1), head(2), log({ id: 'b-log', setNumber: 3, addedPlace: 1 })] // B: phone 2's own added set, logged as 3
+    const held: Record<string, number[]> = {} // every number a log has held, in order: the fake database counts the changes
+    const refetch = () => {
+      for (const l of db) {
+        const numbers = (held[l.id] ??= [])
+        if (numbers[numbers.length - 1] !== l.setNumber) numbers.push(l.setNumber)
+      }
+      session = { ...session, setLogs: db.map((l) => ({ ...l })) }
+    }
+    const databaseTakesTheQueue = () => {
+      for (const w of queued.splice(0)) db = db.map((l) => (l.id === w.log.id ? { ...l, setNumber: w.setNumber } : l))
+    }
+
+    session = { ...session, setLogs: [head(1), head(2)] }
+    const phone1 = render(jsx(weekPlan(2)))
+    fireEvent.click(within(phone1.container).getByText('ADD SET')) // phone 1: the open set, place 1
+    refetch()
+    phone1.rerender(jsx(weekPlan(2)))
+    const phone2 = render(jsx(weekPlan(2))) // phone 2 holds no open set
+    await settle()
+    expect(queued).toEqual([]) // phone 1 leaves B alone (an open added set comes first), and phone 2 shows B as stored
+
+    // phone 1 logs its set: the row shows 03, so 03 is what the log stores
+    fireEvent.change(within(phone1.container).getByLabelText('Weight'), { target: { value: '60' } })
+    fireEvent.change(within(phone1.container).getByLabelText('Reps'), { target: { value: '8' } })
+    fireEvent.click(within(phone1.container).getByText('LOG'))
+    await settle()
+    expect(logCalls).toHaveLength(1)
+    expect(logCalls[0]).toMatchObject({ setNumber: 3, addedPlace: 1 })
+    db = [...db, log({ id: logCalls[0].id as string, setNumber: 3, addedPlace: 1 })]
+    for (let round = 0; round < 3; round += 1) {
+      refetch()
+      phone1.rerender(jsx(weekPlan(2)))
+      phone2.rerender(jsx(weekPlan(2)))
+      await settle()
+      databaseTakesTheQueue()
+    }
+    refetch()
+
+    // the two logs that share place 1 end on 3 and 4, and no log's number changed more than once on the way
+    for (const [id, numbers] of Object.entries(held)) expect(numbers.length, id).toBeLessThanOrEqual(2)
+    expect(db.map((l) => l.setNumber).sort()).toEqual([1, 2, 3, 4])
+    // both phones agree now: another draw writes nothing
+    phone1.rerender(jsx(weekPlan(2)))
+    phone2.rerender(jsx(weekPlan(2)))
+    await settle()
+    expect(queued).toEqual([])
+    vi.restoreAllMocks()
   })
 })
 

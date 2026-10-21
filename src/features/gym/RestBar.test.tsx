@@ -123,8 +123,10 @@ describe('the bar\'s states (board W4)', () => {
     expect(screen.getByLabelText('Hide rest timer')).toBeTruthy()
   })
 
-  it('the current set on screen and no rest: nothing is drawn', () => {
-    const { container } = render(<RestBar jump={noJump} />)
+  it('the current set on screen and no rest: nothing is drawn, whatever the set is called', () => {
+    const { container, rerender } = render(<RestBar jump={noJump} />)
+    expect(container.innerHTML).toBe('')
+    rerender(<RestBar jump={{ direction: null, label: 'SET 03', onJump: () => {} }} />) // a name but no direction: the set is in view
     expect(container.innerHTML).toBe('')
   })
 })

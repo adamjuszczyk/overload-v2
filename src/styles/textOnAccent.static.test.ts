@@ -66,6 +66,7 @@ const NOT_REBUILT: Record<string, number> = {
   'features/auth/LoginPage.tsx': 1, // sign-in: Sign in
   'features/gym/CompletedTodayScreen.tsx': 3, // Today, after a session is finished (SPEC: finished session unchanged)
   'features/gym/MissedSessionPrompt.tsx': 1, // Today
+  'features/gym/PlanTargetsPanel.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58a: the targets are in the rows)
   'features/gym/PreviewExerciseCard.tsx': 1, // Today's session preview
   'features/gym/SequenceTodayPage.tsx': 1, // Today, a sequence run
   'features/gym/SessionPreview.tsx': 1, // Today's session preview
@@ -89,8 +90,8 @@ const NOT_REBUILT: Record<string, number> = {
 const NOTHING_TO_READ: Record<string, number> = {
   'components/ExercisePickerSheet.tsx': 1, // the picked row's radio dot
   'components/pickers/SetTypePicker.tsx': 1, // the picked row's radio dot
+  'features/gym/RestBar.tsx': 1, // the bar (over time it turns to the accent)
   'features/gym/RestDayScreen.tsx': 1, // the week's dots
-  'features/gym/RestTimer.tsx': 1, // the bar (over time it turns to the accent)
   'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
   'features/programs/FinishedProgramPage.tsx': 2, // a week tile's dot (a changed week) and the legend's dot

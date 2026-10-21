@@ -282,7 +282,7 @@ describe('sets added in the session carry their place on LOG (DECISIONS 174, 177
 
   it('two taps of ADD SET in one instant give two places, 1 and 2', async () => {
     const { calls, onLog } = spy()
-    const { container } = renderCard({ plannedSets: [], props: { onLog } })
+    const { container, setLogs } = renderCard({ plannedSets: [], props: { onLog } })
     act(() => {
       fireEvent.click(screen.getByText('ADD SET'))
       fireEvent.click(screen.getByText('ADD SET'))
@@ -292,6 +292,11 @@ describe('sets added in the session carry their place on LOG (DECISIONS 174, 177
     typeInto(current(container), 'Reps', '9')
     await pressLog(current(container))
     expect(calls[0]).toMatchObject({ addedPlace: 1, setNumber: 1 })
+    setLogs([logOf({ id: calls[0].id as string, setNumber: 1, addedPlace: 1 })]) // the first is logged now: the second is the current row
+    typeInto(current(container), 'Weight', '50')
+    typeInto(current(container), 'Reps', '9')
+    await pressLog(current(container))
+    expect(calls[1]).toMatchObject({ addedPlace: 2, setNumber: 2 }) // the second tap saw the first (a stale list would give it place 1 again)
   })
 
   it('a planned set\'s payload has no added_place key and no log id of its own (absence)', async () => {
@@ -416,14 +421,15 @@ describe('SKIP REST OF EXERCISE (planned working sets; each skip stores the numb
 
   it('a planned dropset: its head, then each drop under the head\'s real log id, in order', async () => {
     const { calls, onLog } = spy()
-    renderCard({ plannedSets: [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1), plannedDrop(1, 2)], props: { onLog } })
+    // the dropset is set 2 (set 1 is logged): a drop that took any number but its head's shows
+    renderCard({ plannedSets: [plannedSet(1), plannedSet(2, { stageKind: 'dropset' }), plannedDrop(2, 1), plannedDrop(2, 2)], logs: [headLogOf(1)], props: { onLog } })
     fireEvent.click(screen.getByText('SKIP REST OF EXERCISE'))
     fireEvent.click(screen.getByText('CONFIRM SKIP'))
     await vi.waitFor(() => expect(calls).toHaveLength(3))
-    expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-1', setNumber: 1, isSkipped: true, stageKind: 'dropset', parentSetId: null })
+    expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-2', setNumber: 2, isSkipped: true, stageKind: 'dropset', parentSetId: null })
     expect(calls.slice(1).map((c) => [c.weekPlanSetId, c.parentSetId, c.stageIndex, c.isDropset, c.setNumber])).toEqual([
-      ['set-1-drop-1', 'new-1', 1, true, 1],
-      ['set-1-drop-2', 'new-1', 2, true, 1],
+      ['set-2-drop-1', 'new-1', 1, true, 2],
+      ['set-2-drop-2', 'new-1', 2, true, 2],
     ])
   })
 
