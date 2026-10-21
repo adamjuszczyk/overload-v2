@@ -1,15 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, the pre-read of chunks 67–69 (docs).*
-- *58a started on 2026-10-21 by your go (DATA, the full treatment, with break proofs on the offline path per 197), beside this pre-read. Its hard stop: 1.8M tokens, or the weekly limit close, at a clean point, with the branch left as it is. If it merges with budget to spare, 58b still waits for your go after the Monday 05:00 reset.*
-- *The pre-read of 67, 68 and 69 (against SPEC, DECISIONS and staging `30a7c42`) found three gaps: 213 (blocks 67), 214 (blocks 68) and 215 (blocks nothing; 69 builds on its recommendation). Your answers of 2026-10-21 are recorded: 212, 210 and 208 kept as built, still on your review-pass list. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, chunk 58a's review (merged).*
+- *Chunk 58a is merged (#197, `3081f46`): the workout's rows and pinned rest bar on 46r's rules, LOG storing the number its row shows and an added set's place, and the screen's number corrections through a new `patch` item on the sync queue (197: a whole-row save would bring back a log another phone deleted). Its staging steps after the merge found two behaviour problems (`<scratchpad>/build/chunk-58a-review-1.md`): a number patch that keeps failing while the phone reads as online is queued again on every refresh (681 copies of one patch in about 70 s on staging, and nothing more sent until RETRY), and each row's LAST line reads the latest finished session (deloads and this week's sessions included) where TASKS says last time's reference. Neither writes wrong data; both go to one fix-forward builder run before 58b.*
+- *The build stops after 58a (your rule of 2026-10-21): no 58b until your go after the Monday 05:00 reset. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
 
 What blocks, in order:
-1. **Your go**, after Monday's 05:00 reset: 58b waits for it (58a is under way).
-2. **213** (below): chunk 67 waits for it.
-3. **214** (below): chunk 68 waits for it.
-4. **121** (a to-do, below): the release's migrations PR waits for it.
+1. **58a's fix** (findings 1 and 2 above): a builder run on a branch off staging, then its review; 58b waits for it. It runs inside 58a's budget if it fits, otherwise after the reset.
+2. **Your go**, after Monday's 05:00 reset: 58b waits for it.
+3. **213** (below): chunk 67 waits for it.
+4. **214** (below): chunk 68 waits for it.
+5. **121** (a to-do, below): the release's migrations PR waits for it.
 Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk:
@@ -17,6 +18,7 @@ Decisions that block a chunk:
 - **214** — the planner's START: at once, as board PP5b draws, or through the start sheet (PR8), as TASKS 68's staging line says. Today it starts at once and says nothing when another program is running, where SPEC says starting then finishes it "and says so (PR9)". Recommended: (a), START opens PR8 with this program picked. Blocks: 68.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **216** — chunk 58a's display choices (D31), (a)–(j), including upcoming rows with targets only until 60 (a), auto-finish's notice kept as today's toast where board W4 draws a pill (g), and an untouched planned weight on an lbs exercise stored as the shown lbs converted (j). Recommended: accept all, as built. Blocks: nothing.
 - **215** — the Library's EDIT TAGS and UNTAGGED name an exercise's muscle tags, not a set's cues: chunk 69's wording test allowlists them. Recommended: (a), keep them. Blocks: nothing.
 - **212** — answered on 2026-10-21: keep as built. A workout whose session this week is already done gets no REVIEW items. On your review-pass list.
 - **211** — chunk 56's display choices and readings on REVIEW (D31), (a)–(m), including ADD EXERCISE on a stable run (h), each press reading the item's decision again first (k) and two sets added in one place sharing one item (m). Recommended: accept all, as built. Blocks: nothing.
@@ -69,6 +71,8 @@ To-dos:
 - **56** (#194): an item in a group whose plan row isn't this week's first is written to its own plan row. The sheet takes the row by the group's `weekPlanId` (`decide` in `src/features/plan/ReviewSheet.tsx`). The break it must catch is the review's M1, `args.thisWeek[0]` for every item, which passed all 37 tests of `ReviewSheet.test.tsx` and `PlanPage.review.test.tsx`: every item they press is in the first row's group. Under the break the press fails on `applyReviewAction`'s plan-row check, so nothing lands on the wrong row, but no test pins the sheet's choice. The probe `<scratchpad>/build/r56/probe/zzReview56.probe.test.tsx` (P1: Friday's Upper B completed, so a second group) passes on the branch and fails under the break.
 - **56** (#194): an item decided on another phone since the list was read goes when it is pressed, and nothing is sent. The already-decided branch reads the decisions again (`refresh([])` in `decideReviewItem`, `src/features/plan/reviewService.ts`). The break it must catch is the review's M12, that refresh dropped: the item stays on the screen with its buttons back on. It passed all 42 tests of `reviewService.test.ts` and `ReviewSheet.test.tsx`, which assert `'already_decided'` and no write, never the screen. Same probe, P2.
 - **56** (#194): the same for a race past that read, a `23505` on `v2_week_review_decisions_item_uk`: the item goes, with no error. The break it must catch is the review's M13, the refresh after the conflict dropped, which passed the same 42 tests. Same probe, P3 (the request meets the race and the row lands).
+- **58a** (#197): + ADD SET on a card whose list of added sets is empty (a reload, a reopened session, another phone) gives the new set the place after the highest the exercise's logs hold (`addSet` in `src/features/gym/useWorkoutRows.ts` passes the logs to `nextAddedPlace`). The break it must catch is the review's X5, the logs left out (`nextAddedPlace(…, [])`), which passed all 69 tests of `ExerciseCard.rows`, the two `SupersetBlock` files, `GymSession.superset` and `GymSession.numberCorrections`: every test held the card's list from the first add. The behaviour is right: on staging a fresh page's + ADD SET on the bench took place 2 after a logged place 1.
+- **58a** (#197): the same for + ADD ROUND (`addRoundTo` passes the logs to 46r's `addRound`). The break it must catch is the review's X6, `addRound(…, [])`, which passed the same 69 tests.
 
 ## Format for all new entries
 
@@ -558,6 +562,24 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (c) Use "cues" there too (EDIT CUES, NO CUES).
 **Answer:**
 **Evidence:** the sweep's own list (TASKS 69 Scope) names "tag" only in Plan, the workout and the planner, while its test greps every `.tsx` and `.ts` file under `src/` except Coach's. A grep on staging `30a7c42` finds these two and no other user-visible "tag" outside Coach. `STAGE` (`SetRow.tsx`) contains the letters but isn't the word, so the test matches whole words (TASKS 69, amended).
+
+### 216 Chunk 58a's display choices on the workout's rows and rest bar (provisional, D31; accepted as built)
+**Ask:** chunk 58a's choices where SPEC, TASKS and boards W1–W4 give no single answer, or where a board and SPEC differ, are accepted as built. They are listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups). The two things 58a's review found (a number patch that keeps failing is queued again on every refresh; the LAST line's source) are not choices: they go to a fix-forward builder run (`<scratchpad>/build/chunk-58a-review-1.md`).
+**Recommendation:** accept all. (a)–(i) are display; (j) is the app's unit convention applied to the plan's weight.
+**Blocks:** nothing.
+**Options:** (a)–(j) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (section 3) and the review's staging steps on `3081f46`, held against SPEC Logging mechanics [1.2] (Row states, C3, C5, C8), Supersets [1.2] and boards W1–W4.
+- (a) An upcoming row shows its targets only ("32.5 kg × 10–12 @ RIR 2"), as SPEC's Row states say, where W1, W2 and W3b draw open boxes in every unlogged row; only the current set has LOG until chunk 60 makes every row typable (18a). On staging Today draws one LOG button.
+- (b) W3b's "···" boxes while last time loads aren't drawn: the LAST line reads "LOADING LAST TIME…", and the boxes hold the plan's targets (empty on an added set), as 162 (a) says.
+- (c) MEASURE SET TIME (W2): the ⋮ stays on every current row; before START SET the RIR box is left out (RIR comes after the set, and the row then fits 375 px); tapping the TIMING box brings every box back with the clock running; W2's dim "0"s in an empty LOG row aren't drawn.
+- (d) A staged head's chip ("DROPSET · 2 DROPS") shows only while stages are still to come; logged drops carry their own kind word (DROP, REST-PAUSE, MYO-REPS, CLUSTER), as W3's last frame.
+- (e) Kept as today until 59, 61 and 62, though not on the boards: "mark as dropset" and ADD STAGE, SKIP REST OF EXERCISE per card, a superset member's ADD SET and SKIP beside + ADD ROUND, the pen's inline edit with DELETE inside, FORM and SKIP THIS SET under ⋮, the unit label that flips one set's unit, and a warmup row's ✕.
+- (f) The reps and RIR boxes are text boxes with a number keypad (`inputMode="numeric"`), not number inputs, whose spin buttons clipped "8–10" in desktop Chromium; the reps box is 56 px for five-character hints ("10–12", "AMRAP"), else 52.
+- (g) Auto-finish's notice stays today's toast ("Session completed automatically", above the nav for 3 s) where W4's "FINISHED AUTOMATICALLY" frame draws a pill with a tick, "SESSION COMPLETED AUTOMATICALLY", in the rest bar's place: when auto-finish fires the session is finished and the workout is gone, and the toast is the app's one notice. Changing it would give the toast that look for this one message.
+- (h) The LAST line shows last time's set in the unit it was logged in, with no unit word (W1 draws none): on staging the lateral raise, an lbs exercise, reads "LAST 9 × 15 @ 2" beside its 25.4 lbs box, because week 2's set was logged in kg.
+- (i) The bar with no rest running and the current set out of view draws only the jump button (W4's "CURRENT SET BELOW · REST TIMER OFF"), and the button names a superset member by its label ("↓ B3") and any other set as "SET 03".
+- (j) An untouched planned weight on an lbs exercise is stored as the shown lbs converted: on staging the lateral raise's 03, planned 11.5 kg and shown 25.4 lbs, was stored as 11.52 kg. That is the convention for any weight typed in lbs (RULES, chunk 43), and REVIEW compares as shown, so no item comes of it. The alternative stores the plan's kg while the box still shows it (`resolveEditedWeightKg`).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
