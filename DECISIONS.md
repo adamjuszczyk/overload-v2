@@ -1,15 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, chunk 54b's review (merged).*
-- *Chunk 54b is merged (#188, `c711fc8`): Plan's week view now draws each session as boards 1, 1a, 1c, 1d, 10 and 11 do. That means the session chips with their states (✓, SKIPPED, MOVED), the session ⋯ (deload and MOVE THIS SESSION), "Shared with Thu — changes apply to both", a stable week's THIS WEEK ONLY / CHANGE EVERY WEEK →, the "CHANGED SINCE WEEK N" legend and marks from chunk 42's rules, and done sessions and past weeks read-only. The "new week starts" setting's last readers are gone (the column stays). It was a light review under your cost rule: every script, breaks on the writers, the smoke (51/51 and one set logged); TASKS 54b's Staging list goes to the release checklist. Two entries for your review pass (206, 207, neither blocks) and one test owed.*
-- *What follows (night mode): 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, chunk 188f's review (merged).*
+- *Chunk 188f is merged (#190, `e33ea04`): marking a week as deload again, after a mark that stopped part way, now only finishes the mark. A session that already holds its saved plan is left as it is, so UNMARK still brings back the plan (your 188 (a)). It fixes a bug live in production since phase 1 and ships with the release ("For the release" has its update note). On staging, as the test account on week 4: Upper B marked from its ⋯, then the week from WEEK ⋯ (Upper B untouched: one request, its flag; the same saved plan and set ids), then the week unmarked (every session back to what PLAN FORWARD wrote, read by API). The smoke: 51/51 and one set logged. One reading for your review pass (208, blocks nothing); no test owed. Your answers of today are recorded: 207 (b), to build in your review pass, and 121 (the command you have; open until you paste its output).*
+- *What follows (day mode; the rest of the week's budget is 3.5M tokens): 55, then 56. After 56, or when the budget runs out, the build stops at a clean boundary for your go after Monday's 05:00 reset; 58a waits for you. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
 
 Decisions that block a chunk:
 - none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
-- **207** — past weeks keep their change marks, compared as they are now; on a stable run a default changed later can mark a done week (a "removed" set it never had). Recommended: (b), no marks on a stable run's past week or finished session; week-dependent ones keep theirs (one condition). Blocks: nothing (display).
+- **208** — a session that an UNMARK cut off part way (after it put the plan back, before it cleared the saved copy) keeps its copy and its deload flag; marking the week then leaves it as it is, marked but not deloaded, until it is unmarked and marked again. Nothing is lost. Recommended: (a), as built (SPEC's "leaves it as it is"). Blocks: nothing.
+- **207** — answered (b) on 2026-10-21: a stable run's past week and its finished sessions show no change marks and no legend; week-dependent ones keep theirs. A display choice, built in your review pass (one condition in `WeekView.tsx`), not now.
 - **206** — chunk 54b's display choices and readings on Plan's week view (D31), (a)–(m), including no mark on a session in progress (a) and board 9's "DELOAD SESSION · NO CHANGE MARKS" read as the frame's caption, not drawn text (e). Recommended: accept all, as built. Blocks: nothing.
 - **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
 - **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
@@ -18,7 +19,7 @@ Decisions (none blocks; for Adam's review pass after the release checklist):
 - **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
 
 To-dos:
-- **121** — Before the release: prove production's migration history with one read-only command (entry 121). When: any time before the release. Blocks: the release's migrations PR.
+- **121** — Before the release: prove production's migration history. The command (given to you on 2026-10-21): in your `overload-v2-switch` worktree, on an up-to-date master, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked`. Expected: `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only. Paste the output; 121 stays open until then. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
 
@@ -41,7 +42,8 @@ To-dos:
 - **047** — chunk 59, not built yet: the swap's record of which sets moved, one nullable `jsonb` column on `v2_session_exercise_swaps` with no default and no backfill (Adam's answer to 46r's Q5, DECISIONS 183; numbered 047 by Adam, 2026-10-20, DECISIONS 196). Add-only; it goes in the migrations-first PR; a `check-migration` flag is recorded here at 59's merge.
 - Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
 - Update notes: on a sequence run, a repeated workout whose slots were edited differently in 1.1's week view plans the earlier slot's next cycle from the program, which matches the later slot's week; nothing stored is lost (DECISIONS 203, Adam 2026-10-20).
-- **188f** — chunk 188f (TASKS-1.2), Adam 2026-10-20 (DECISIONS 188 (a)): `markSessionDeload` leaves a session that already holds a saved copy as it is. It fixes a bug that is live in production since phase 1 (a week mark cut off part way and pressed again loses a session's saved plan), so it ships with the release; no migration, no stored row changes.
+- **188f** — chunk 188f (#190, `e33ea04`), Adam 2026-10-20 (DECISIONS 188 (a)): `markSessionDeload` leaves a session that already holds a saved copy as it is. It fixes a bug that is live in production since phase 1 (a week mark cut off part way and pressed again loses a session's saved plan), so it ships with the release; no migration, no stored row changes.
+- Update notes: fixed, a bug live since phase 1: a week marked as deload again after a mark that stopped part way (a dropped connection, the app closed) saved a marked session's deloaded sets over its plan, so UNMARK brought back the deload and not the plan (chunk 188f; DECISIONS 188 (a)).
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
@@ -254,7 +256,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 188 A week deload mark that stops part way leaves the week half marked, and marking it again loses a session's saved plan (older than 1.2; found in chunk 52's review)
 - What: a week deload mark that stops part way leaves the week half marked, and marking it again saves a marked session's deloaded sets over its plan (older than 1.2; in production since phase 1).
-- Answer: (Adam, 2026-10-20) "(a). markSessionDeload leaves a session that already holds a saved copy as it is. Its own small chunk before the release, with a test for the interrupted-then-repeated mark; not inside 54a." Option (a), as the entry words it: "the guard in `markSessionDeload`, as recommended", the recommendation being: "`markSessionDeload` leaves a session that already holds a saved pre-deload copy as it is (its flag set, nothing recalculated or saved again), so marking a half-marked week again only finishes the mark. A small behaviour fix with a test of the sequence below … it changes no stored row." Queued as chunk 188f (TASKS-1.2). Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-20) "(a). markSessionDeload leaves a session that already holds a saved copy as it is. Its own small chunk before the release, with a test for the interrupted-then-repeated mark; not inside 54a." Option (a), as the entry words it: "the guard in `markSessionDeload`, as recommended", the recommendation being: "`markSessionDeload` leaves a session that already holds a saved pre-deload copy as it is (its flag set, nothing recalculated or saved again), so marking a half-marked week again only finishes the mark. A small behaviour fix with a test of the sequence below … it changes no stored row." Queued as chunk 188f (TASKS-1.2); built there (#190, `e33ea04`, 2026-10-21). A session that an UNMARK cut off part way: 208. Full text in HISTORY.md.
 - Date: 2026-10-20
 
 ### 189 Chunk 65's display choices on the PROGRAMS tab (provisional, D31; accepted as built)
@@ -449,18 +451,23 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (m) `MoveSessionControl` still reads its own day's session (`useSessionsInRange`) beside `usePlanSessions`: two reads of overlapping data, left so the move row's behaviour and tests stay put.
 
 ### 207 Past weeks keep their change marks, compared as they are now: a stable run's done week can be marked against a default changed later (chunk 54b)
-**Ask:** should a stable run's past week, or a session that is done, still show change marks compared with the default as it is today?
-**Recommendation:** (b). A week-dependent past week is compared with the week before it, and both are locked, so its marks stay true. A stable run's done week is compared with today's default. Its marks can say the week lost or gained what only the default changed, which contradicts "show what was planned".
-**Blocks:** nothing (display only; nothing is written either way).
+- What: whether a stable run's past week, or a finished session, still shows change marks compared with the default as it is today.
+- Answer: (Adam, 2026-10-21) "207: (b) accepted (no change marks on a stable run's past week or a finished session); record it as a display choice for my review pass." Option (b): "A stable run's past week and its finished sessions show no marks and no legend. Week-dependent ones keep theirs. This is one condition in `WeekView.tsx`." Built in his review pass after the release checklist, not now; SPEC's line is under "Changes since the source". Full text in HISTORY.md.
+- Date: 2026-10-21
+
+### 208 A session an UNMARK cut off part way keeps its saved copy and its flag; marking the week again leaves it marked but not deloaded (chunk 188f)
+**Ask:** when a session holds a saved copy but its sets are its plan again (an UNMARK cut off after it put the plan back and before it cleared the copy), should a MARK deload it, or leave it as it is?
+**Recommendation:** (a), as built. SPEC's words cover the case ("Marking a session that already holds a saved copy of its plan … leaves it as it is"), and nothing is lost or written wrong: the mark writes only the flag, and UNMARK still restores the plan from the copy. The case needs two things to go wrong in a row: an UNMARK cut off between two of its requests, then MARK pressed rather than UNMARK.
+**Blocks:** nothing (no data lost or written wrong either way).
 **Options:**
-- (a) Keep as built (1.1's G22, SPEC's "anything in a week that differs from its source"): every open plan is compared as it is now, past weeks and done sessions included.
-- (b) A stable run's past week and its finished sessions show no marks and no legend. Week-dependent ones keep theirs. This is one condition in `WeekView.tsx`.
-- (c) No marks on any past week or finished session.
+- (a) As built: a session that holds a saved copy is left as it is, whatever its sets are. It reads DELOAD with its plan's sets (or with none, when the cut came before the plan went back in) until it is unmarked; UNMARK, then MARK, deloads it.
+- (b) A mark first finishes an UNMARK it finds cut off: a session whose sets equal its saved copy, or that holds none, is put back from the copy and then marked as an unmarked session is. One more comparison in `markSessionDeload`, in a production fix's code path.
 **Answer:**
-**Evidence:** chunk 51b's second review saw this on staging. After a real CHANGE THE PROGRAM save that gave EZ-Bar Curl's default a third set, the stable account's done week 1 Saturday drew a removed-set row "03 | 10–12" that the week never had (its rows and logs were unchanged). Since 54b, week 1 is compared with nothing, so that row no longer appears. The same thing can still happen from week 2 on.
-- SPEC: "Done sessions and finished weeks are locked in Plan and show what was planned"; "Stable: set counts, kinds, stages and rep targets compared with the default". SPEC doesn't say whether the default is the one as it was then or as it is now.
-- Boards: 11 draws the legend on a done session of a week-dependent week; 1c is week 1, where nothing is compared.
-- Builder's report, section 3, item 6: the fix for (b) is `changes = null` when the week is past or the session finished and the run is stable.
+**Evidence:** 188's question held a week mark cut off part way (chunk 52's review, probe B), so its answer doesn't settle this case (RULES: "An answer covers the cases its question held"); SPEC's words read literally do.
+- UNMARK is three requests (`applyDeloadRestore`): delete the sets, put the copy's sets back, then clear the copy and the flag in one write. Cut after the second, the session holds its flag, its copy and the plan's sets. A week reads marked only when every session is (`weekIsFullyDeload`, `PlanPage.tsx`), so after an UNMARK WEEK cut off there, WEEK ⋯ offers MARK WEEK AS DELOAD.
+- The builder executed it (report §3.3, a scratch probe, not committed): after MARK WEEK that session was unchanged (flag on, copy of 4 entries, the plan's 4 × 100 at RIR 2), the other session was deloaded, and UNMARK WEEK put both back.
+- Before 188f, the same press deloaded that session correctly. But cut before the second request (no sets), it saved an empty copy over the plan, and every session the UNMARK hadn't reached had its deloaded sets saved over its plan (188). The builder's hook test (3) builds the no-sets state from a cut-off MARK; under the guard's removal (G1) its copy read `[]`.
+- Settled, not asked: an empty copy (`[]`, a session marked with no sets of its own) counts as a copy, as `unmarkSessionDeload` reads it. Reading it as none would bring 188 back for such a session, whose calculated sets come from the base week (break G3 fails 2 tests).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
@@ -633,9 +640,10 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-14
 
 ### 121 Before the release: prove production's migration history
-**Ask:** run, from your worktree `overload-v2-switch` on an up-to-date `master`: `npx --yes supabase@2.119.0 migration list --linked` and paste the output here. Expected: every version `000`–`041` in both the Local and Remote columns, nothing local-only.
+**Ask:** in your worktree `overload-v2-switch`, on an up-to-date `master`, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked` (a Windows cmd line, read-only) and paste the output here. Expected: versions `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only.
 **Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
 **Blocks:** the release's migrations-first PR to master.
+**Answer:** (Adam, 2026-10-21) "121: give me the exact read-only command to prove production's migration history, as a Windows cmd line, and what output to expect. I'll run it myself." The coordinator gave him the command above on 2026-10-21; 121 stays open until he pastes its output.
 **Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
 
 ### 120 Models for the 1.2 reviewer and builders
