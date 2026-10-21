@@ -36,6 +36,10 @@ const RELATIONS: Record<string, Relation> = {
   'v2_program_exercises>exercises': { shape: 'one', parentKey: 'exercise_id', childKey: 'id' },
   'v2_week_plans>v2_week_plan_sets': { shape: 'many', parentKey: 'id', childKey: 'week_plan_id' },
   'v2_week_plans>v2_week_plan_exercises': { shape: 'many', parentKey: 'id', childKey: 'week_plan_id' },
+  // Chunk 55's VOLUME read: a session's logs and set changes, and a log's exercise (the embed `fetchSession` makes too).
+  'v2_sessions>v2_set_logs': { shape: 'many', parentKey: 'id', childKey: 'session_id' },
+  'v2_sessions>v2_session_set_changes': { shape: 'many', parentKey: 'id', childKey: 'session_id' },
+  'v2_set_logs>exercises': { shape: 'one', parentKey: 'exercise_id', childKey: 'id' },
 }
 
 const SERVER_ROW_CAP = 1000
