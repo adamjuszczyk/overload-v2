@@ -36,7 +36,7 @@ export interface SessionCardProps {
   weekPlan: WeekPlan | undefined
   /** Every control is read-only: a past week, a finished session, or a shared plan locked by a finished one. */
   readOnly: boolean
-  /** The open week is a past one: no ⋯ and no THIS WEEK ONLY lines. */
+  /** The open week is a past one: its lock line says it is read only, so the header doesn't (READ ONLY is for a plan locked by another day's session). */
   pastWeek: boolean
   state: SessionState
   /** The weekday this card is on, and every weekday its plan covers (more than one: shared); null on a sequence run. */
@@ -102,7 +102,7 @@ export default function SessionCard({
 
   const sets = weekPlan?.sets ?? []
   const chips = supersetChips(programExercises)
-  const showMenu = !!weekPlan && !readOnly && !pastWeek && state.finished === null
+  const showMenu = !!weekPlan && !readOnly && state.finished === null
 
   // "+ ADD SET" (SPEC Defaults 8): a Normal set with the previous set's rep target and no weight or RIR, numbered one past the exercise's
   // last head (planSetRows.ts). The week plan row is always there for a week that is shown (chunk 52); without one nothing is written.

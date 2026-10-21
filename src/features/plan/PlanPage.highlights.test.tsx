@@ -286,6 +286,16 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
     expect(removedLines()).toHaveLength(0)
   })
 
+  it('a removed working set is numbered as the rows are: warmups apart (source W 01 02 03, week W 01 02: the line is 03, not its position 4)', () => {
+    const rows = (prefix: string, working: number) => [
+      wset(`${prefix}w`, 'pe-bench', 1, { isWarmup: true, targetRir: null, targetWeight: 40, repMin: 10, repMax: 10 }),
+      ...workSets('pe-bench', prefix, working).map((x) => ({ ...x, setNumber: x.setNumber + 1 })),
+    ]
+    mockState.all = [plan(4, [BENCH], rows('b4-', 3)), plan(5, [BENCH], rows('b5-', 2))]
+    renderPlan(5)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['03 · 110 kg × 8 · RIR 2'])
+  })
+
   it('a staged working set added in week 5 is marked with its stages', () => {
     const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
     mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'b4-', 1)), plan(5, [BENCH], [...workSets('pe-bench', 'b5-', 1), ...staged])]

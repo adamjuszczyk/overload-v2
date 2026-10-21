@@ -230,12 +230,12 @@ export default function WeekView(props: WeekViewProps) {
       {(runCopy) => {
         const changes = openPlan
           ? changesSinceSource({
-                planningType,
-                weekNumber: viewWeek,
-                week: { isDeload: openPlan.isDeload, exercises: openPlan.exercises, sets: openPlan.sets },
-                slotWeeks,
-                runCopy,
-              })
+              planningType,
+              weekNumber: viewWeek,
+              week: { isDeload: openPlan.isDeload, exercises: openPlan.exercises, sets: openPlan.sets },
+              slotWeeks,
+              runCopy,
+            })
           : null
         const thisWeekOnly =
           needsRunCopy && !isPast && openPlan && !openPlan.isDeload ? thisWeekOnlyExercises(openPlan.exercises, openPlan.sets, runCopy) : NO_EXERCISES

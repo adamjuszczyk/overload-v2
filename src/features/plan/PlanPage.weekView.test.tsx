@@ -87,6 +87,7 @@ const mockState = vi.hoisted(() => ({
   programSets: [] as ProgramSet[],
   today: '',
   online: true,
+  askedSessions: [] as Array<string | undefined>,
 }))
 const setDeloadMutate = vi.fn()
 const planWeekMutate = vi.fn()
@@ -106,7 +107,12 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   useProgramSets: (ids: string[]) => ({ data: mockState.programSets.filter((ps) => ids.includes(ps.programExerciseId)) }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
-vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => mockState.sessions }))
+vi.mock('./usePlanSessions', () => ({
+  usePlanSessions: (mesoId: string | undefined) => {
+    mockState.askedSessions.push(mesoId)
+    return mockState.sessions
+  },
+}))
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => mockState.done }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
@@ -147,21 +153,23 @@ beforeEach(() => {
   mockState.programSets = []
   mockState.today = on(3, 'monday')
   mockState.online = true
+  mockState.askedSessions = []
   for (const fn of [setDeloadMutate, planWeekMutate, moveMutate, clearMutate]) fn.mockClear()
 })
 
 function Where() {
   return <span data-testid="where">{useLocation().pathname + useLocation().hash}</span>
 }
+const ui = () => (
+  <MemoryRouter initialEntries={['/plan']}>
+    <Routes>
+      <Route path="/plan" element={<PlanPage />} />
+      <Route path="/plan/change" element={<Where />} />
+    </Routes>
+  </MemoryRouter>
+)
 function renderPlan() {
-  return render(
-    <MemoryRouter initialEntries={['/plan']}>
-      <Routes>
-        <Route path="/plan" element={<PlanPage />} />
-        <Route path="/plan/change" element={<Where />} />
-      </Routes>
-    </MemoryRouter>,
-  )
+  return render(ui())
 }
 
 const session = (week: number, workoutDay: WorkoutDay, day: (typeof DOW)[number], status: PlanSession['status'], movedTo: string | null = null): PlanSession => ({
@@ -182,6 +190,12 @@ const headerStates = () => Array.from(document.querySelectorAll('[data-session-s
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('PlanPage — a session\'s state: on its chip and in its header', () => {
+  it('reads the sessions of the active run', () => {
+    renderPlan()
+    expect(mockState.askedSessions).toContain('meso-1')
+    expect(mockState.askedSessions).not.toContain(undefined)
+  })
+
   // Week 3: Monday's Push is done, Tuesday's Pull skipped, Friday's Legs moved to Sunday; Thursday's Push has no session of its own
   // (it shares Monday's plan row, which is therefore locked).
   const states = () => [
@@ -233,6 +247,26 @@ describe('PlanPage — a session\'s state: on its chip and in its header', () =>
     mockState.done = new Set() // the done list hasn't caught up
     renderPlan()
     expect(headerStates()).toEqual(['DONE'])
+    expect(sessionMenuButton()).toBeNull()
+  })
+
+  it('the menu closes when its session finishes under it (another phone, the done list not caught up)', () => {
+    mockState.sessions = [session(3, PUSH, 'monday', 'in_progress')]
+    const view = renderPlan()
+    openSessionMenu()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    mockState.sessions = [session(3, PUSH, 'monday', 'completed')]
+    view.rerender(ui())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(headerStates()).toEqual(['DONE'])
+  })
+
+  it('a past week\'s session that was never started says nothing in its header (the lock line says it) and has no ⋯', () => {
+    renderPlan()
+    openWeekTile('WEEK 2')
+    fireEvent.click(chip('TUE'))
+    expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    expect(headerStates()).toEqual([])
     expect(sessionMenuButton()).toBeNull()
   })
 
@@ -332,7 +366,8 @@ describe('PlanPage — a stable week: THIS WEEK ONLY on an exercise that differs
         wset(`c${week}a`, 'pe-curl', 1, { targetWeight: curlWeight }), wset(`c${week}b`, 'pe-curl', 2, { targetWeight: curlWeight }),
       ])
     mockState.all = [
-      ...[1, 2].flatMap((w) => [planRow(w, PUSH, [PE_PUSH], [wset(`b${w}`, 'pe-bench', 1)]), planRow(w, PULL, [PE_PULL], [wset(`r${w}`, 'pe-row', 1)]), legsWeek(w, false, 40)]),
+      // Week 1 differs from the default too (a drop): a past week must still say nothing of THIS WEEK ONLY.
+      ...[1, 2].flatMap((w) => [planRow(w, PUSH, [PE_PUSH], [wset(`b${w}`, 'pe-bench', 1)]), planRow(w, PULL, [PE_PULL], [wset(`r${w}`, 'pe-row', 1)]), legsWeek(w, w === 1, 40)]),
       planRow(3, PUSH, [PE_PUSH], [wset('b3', 'pe-bench', 1)]), planRow(3, PULL, [PE_PULL], [wset('r3', 'pe-row', 1)]),
       legsWeek(3, true, 45),
     ]

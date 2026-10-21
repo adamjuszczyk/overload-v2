@@ -458,3 +458,30 @@ describe('board 1d: a sequence run in cycle 3', () => {
     expect(screen.queryByText('MOVE THIS SESSION')).toBeNull()
   })
 })
+
+// ─── 375 px: names that never break (RULES: a name the person typed wraps, and is checked in Chromium with an 80-letter one) ─────────────────
+
+describe('names with no break opportunity: the workout in its chip, its header, the menu and the shared line; an exercise in a removed card', () => {
+  it('draws them (the 375 px check runs on the capture: CAPTURE_RENDER=1, then `npm run shot -- … --width 375`)', () => {
+    const long = 'W'.repeat(80)
+    const original = DAYS[0]
+    DAYS[0] = { ...original, name: long }
+    try {
+      weekdayRun('week_dependent', { schedule: { ...WEEKDAYS, thursday: 'wd-push1' } })
+      state.sessions = []
+      state.done = new Set()
+      const CSR = named('pe-csr', 'X'.repeat(80), 'back', 0, 'wd-push1')
+      state.all = state.all.map((p) => (p.id === planId('wd-push1', 1) ? { ...p, exercises: [CSR, ...p.exercises] } : p))
+      render(ui())
+      captureRender('plan-worst-week', document.body)
+      expect(screen.getByRole('heading', { name: long })).toBeTruthy()
+      expect(chip('MON').textContent).toContain(long)
+      expect(document.querySelector('[data-diff="removed"] del')?.textContent).toBe('X'.repeat(80))
+      openSessionMenu()
+      captureRender('plan-worst-menu', document.body)
+      expect(within(screen.getByRole('dialog')).getByText(long)).toBeTruthy()
+    } finally {
+      DAYS[0] = original
+    }
+  })
+})
