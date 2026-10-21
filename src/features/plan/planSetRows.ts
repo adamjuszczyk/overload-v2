@@ -83,12 +83,12 @@ export interface PlanRow {
 const pad = (n: number) => String(n).padStart(2, '0')
 
 /**
- * An exercise's rows in set order: its heads by `set_number` (a tie keeps the order the rows came in), each with its stages. Working
- * sets are numbered from 1 over the working sets alone and a warmup is `W` (board 1 draws W, 01, 02), so a warmup never takes a
- * working set's number.
+ * An exercise's rows in set order: its heads by `set_number` (two heads with one number, which older writes could leave, order by id, so
+ * every phone numbers them the same whatever order its read came back in), each with its stages. Working sets are numbered from 1 over
+ * the working sets alone and a warmup is `W` (board 1 draws W, 01, 02), so a warmup never takes a working set's number.
  */
 export function planRows(sets: readonly WeekPlanSet[]): PlanRow[] {
-  const groups = groupWeekPlanSets([...sets]).sort((a, b) => a.head.setNumber - b.head.setNumber)
+  const groups = groupWeekPlanSets([...sets]).sort((a, b) => a.head.setNumber - b.head.setNumber || (a.head.id < b.head.id ? -1 : a.head.id > b.head.id ? 1 : 0))
   let working = 0
   let warmups = 0
   return groups.map((group) => {

@@ -250,7 +250,14 @@ export default function PlanSetRow({ set, label, isStage, weightUnit, readOnly, 
           ×
         </span>
 
-        <button type="button" onClick={onReps} disabled={readOnly} data-diff={marks?.reps ? 'changed' : undefined} style={{ ...cellStyle(REPS_SLOT, warmup, !!marks?.reps, readOnly), fontSize: 14 }}>
+        <button
+          type="button"
+          onClick={onReps}
+          disabled={readOnly}
+          aria-label={reps.type === 'none' ? 'Set rep target' : undefined}
+          data-diff={marks?.reps ? 'changed' : undefined}
+          style={{ ...cellStyle(REPS_SLOT, warmup, !!marks?.reps, readOnly), fontSize: 14 }}
+        >
           {reps.type === 'none' ? <span style={DASH}>—</span> : formatRepTarget(reps)}
         </button>
 

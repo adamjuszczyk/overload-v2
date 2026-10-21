@@ -77,7 +77,7 @@ describe('a running program\'s schedule and workouts are fixed for the run (chun
 
   it('Plan\'s screen, its week panel and the PROGRAMS tab (chunk 65: the tab and its card and sheets) call none of them', () => {
     const programsTab = ['ProgramsTab', 'CurrentProgramCard', 'StartProgramSheet', 'NewProgramSheet'].map((name) => `features/programs/${name}.tsx`)
-    for (const path of ['features/plan/PlanPage.tsx', 'features/plan/StructureFields.tsx', ...programsTab, 'features/plan/PrioritiesEditor.tsx']) {
+    for (const path of ['features/plan/PlanPage.tsx', 'features/plan/PlanExerciseCard.tsx', 'features/plan/PlanSetRow.tsx', 'features/plan/PlanSetTypeSheet.tsx', ...programsTab, 'features/plan/PrioritiesEditor.tsx']) {
       const file = FILES.find((f) => f.path === path)
       expect(file, path).toBeTruthy()
       for (const writer of WRITERS) expect(new RegExp(`\\b${writer}\\b`).test(file!.text), `${path} mentions ${writer}`).toBe(false)

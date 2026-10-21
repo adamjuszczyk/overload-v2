@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { PlanningType, ProgramExercise, WeekPlanSet } from '../../types'
 import { columnsToRepTarget } from '../../lib/plannerVocabulary.js'
@@ -86,6 +86,12 @@ export default function PlanExerciseCard({
   const rows = planRows(sets)
   const heads = rows.map((row) => row.head)
   const locked = readOnly || !canWrite
+  // A card that becomes locked (the cycle moved on, the session was done) draws no picker and no sheet, whichever it had open, and does
+  // not bring it back if it is ever unlocked.
+  useEffect(() => {
+    if (locked) setSheet(null)
+  }, [locked])
+  const open = locked ? null : sheet
   const removedHeads = (diff?.removedHeads ?? []).filter((r) => !r.isWarmup)
 
   const rowOfHead = (headId: string) => rows.find((row) => row.head.id === headId) ?? null
@@ -132,7 +138,7 @@ export default function PlanExerciseCard({
 
   function submitCues(headId: string, result: CuesSheetResult) {
     const row = rowOfHead(headId)
-    setSheet((open) => (open?.kind === 'type' ? { ...open, cues: false } : open))
+    setSheet((current) => (current?.kind === 'type' ? { ...current, cues: false } : current))
     if (!row) return
     onUpdate(cuePatches({ set: row.head, heads, cues: result.cues, applyToAll: result.applyToAll }))
   }
@@ -143,12 +149,12 @@ export default function PlanExerciseCard({
     if (row) onRemoveRow(row)
   }
 
-  const picker = sheet?.kind === 'reps' || sheet?.kind === 'rir' ? rowOfSet(sheet.setId) : null
-  const typeRow = sheet?.kind === 'type' ? rowOfHead(sheet.headId) : null
+  const picker = open?.kind === 'reps' || open?.kind === 'rir' ? rowOfSet(open.setId) : null
+  const typeRow = open?.kind === 'type' ? rowOfHead(open.headId) : null
   const targetables = heads.map((h) => ({ id: h.id, isWarmup: h.isWarmup }))
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: isLast ? 0 : 12 }}>
+    <div data-exercise-card={pe.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, display: 'flex', flexDirection: 'column', gap: 6, marginBottom: isLast ? 0 : 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, paddingBottom: 4 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px 8px' }}>
@@ -188,7 +194,7 @@ export default function PlanExerciseCard({
       </div>
 
       {rows.map((row) => {
-        const optionsLabel = row.head.isWarmup ? `warmup set ${row.eyebrowNumber}` : `set ${row.label}`
+        const optionsLabel = row.head.isWarmup ? `warmup set ${row.eyebrowNumber}` : `set ${row.eyebrowNumber}`
         const type = setTypeOfRow(row, null)
         const kindChip = type.kind === 'staged' ? kindChipText(type.stageKind, type.stageCount) : undefined
         const marks = headMarks(row.head)
@@ -231,7 +237,7 @@ export default function PlanExerciseCard({
       ))}
 
       {/* The sheets are mounted to open them, outside the buttons that opened them (a portal's events still bubble to what rendered it). */}
-      {sheet?.kind === 'reps' && picker && (
+      {open?.kind === 'reps' && picker && (
         <RepTargetPicker
           exerciseName={name}
           setNumber={picker.row.eyebrowNumber}
@@ -239,11 +245,11 @@ export default function PlanExerciseCard({
           isCycle={isCycle}
           value={columnsToRepTarget({ repMin: picker.set.repMin ?? null, repMax: picker.set.repMax ?? null, isAmrap: picker.set.isAmrap ?? false })}
           sets={picker.set.parentWeekPlanSetId == null ? targetables : []}
-          onSubmit={(result) => submitReps(sheet.setId, result)}
+          onSubmit={(result) => submitReps(open.setId, result)}
           onClose={close}
         />
       )}
-      {sheet?.kind === 'rir' && picker && (
+      {open?.kind === 'rir' && picker && (
         <RirTargetPicker
           exerciseName={name}
           setNumber={picker.row.eyebrowNumber}
@@ -251,11 +257,11 @@ export default function PlanExerciseCard({
           isCycle={isCycle}
           value={rirTargetFromColumns(picker.set.targetRir, picker.set.targetRirMax)}
           sets={picker.set.parentWeekPlanSetId == null ? targetables : []}
-          onSubmit={(result) => submitRir(sheet.setId, result)}
+          onSubmit={(result) => submitRir(open.setId, result)}
           onClose={close}
         />
       )}
-      {sheet?.kind === 'type' && typeRow && (
+      {open?.kind === 'type' && typeRow && (
         <PlanSetTypeSheet
           row={typeRow}
           pe={pe}
@@ -264,12 +270,12 @@ export default function PlanExerciseCard({
           weekNumber={weekNumber}
           isCycle={isCycle}
           planningType={planningType}
-          onCues={() => setSheet({ ...sheet, cues: true })}
-          onRemove={() => removeRow(sheet.headId)}
+          onCues={() => setSheet({ ...open, cues: true })}
+          onRemove={() => removeRow(open.headId)}
           onClose={close}
         />
       )}
-      {sheet?.kind === 'type' && sheet.cues && typeRow && (
+      {open?.kind === 'type' && open.cues && typeRow && (
         <CuesSheet
           exerciseName={name}
           setNumber={typeRow.eyebrowNumber}
@@ -278,8 +284,8 @@ export default function PlanExerciseCard({
           value={typeRow.head.tags}
           runCues={runCues}
           sets={targetables}
-          onDone={(result) => submitCues(sheet.headId, result)}
-          onClose={() => setSheet({ ...sheet, cues: false })}
+          onDone={(result) => submitCues(open.headId, result)}
+          onClose={() => setSheet({ ...open, cues: false })}
         />
       )}
     </div>

@@ -77,19 +77,13 @@ vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: weekPlans, isLoading: false }),
   useAllWeekPlans: () => ({ data: weekPlans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: setDeloadMutate }),
   useSetWeekDeload: () => ({ mutate: setWeekDeloadMutate, isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 // The PROGRAMS tab is chunk 65's: this file proves that the shell draws it, under the tabs, not what it says (ProgramsTab.test.tsx does).
@@ -185,15 +179,17 @@ describe('PlanPage — there is no program tab (chunk 33)', () => {
     expect(screen.queryByPlaceholderText('e.g. Push Day')).toBeNull()
   }
 
-  it('a weekday run: the page is there (week switcher, deload action, SETS / STRUCTURE), the tab and its editors are not', () => {
+  it('a weekday run: the page is there (week switcher, deload action, the week panel), the tab and its editors are not', () => {
     program = makeProgram({ planningType: 'stable' })
     renderPlan()
 
-    // The page rendered (the absences below are not vacuous).
+    // The page rendered (the absences below are not vacuous). The panel's mark: its session's DELOAD toggle (the SETS / STRUCTURE switch
+    // that was its mark is gone, chunk 54a).
     expect(screen.getByText('WEEK 1')).toBeTruthy()
     expect(screen.getByLabelText('Week 1 options')).toBeTruthy()
-    expect(screen.getByText('SETS')).toBeTruthy()
-    expect(screen.getByText('STRUCTURE')).toBeTruthy()
+    expect(screen.getByLabelText('Mark this session as deload')).toBeTruthy()
+    expect(screen.queryByText('SETS')).toBeNull()
+    expect(screen.queryByText('STRUCTURE')).toBeNull()
     expectNoProgramTab()
   })
 
@@ -216,12 +212,11 @@ describe('PlanPage — there is no program tab (chunk 33)', () => {
     expectNoProgramTab()
   })
 
-  it('opening the STRUCTURE view does not bring a tab, or a schedule or workout editor, back either', () => {
+  it('there is no STRUCTURE view to open (chunk 54a), so nothing behind it brings a tab, or a schedule or workout editor, back either', () => {
     renderPlan()
 
-    fireEvent.click(screen.getByText('STRUCTURE'))
-
-    expect(screen.getByText('STRUCTURE').style.background).toBe('var(--accent)')
+    expect(screen.queryByText('STRUCTURE')).toBeNull()
+    expect(screen.queryByText('SETS')).toBeNull()
     expectNoProgramTab()
   })
 
@@ -258,8 +253,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
     expect(screen.getByText(LINK)).toBeTruthy()
     for (const text of OLD_TEXT) expect(screen.queryByText(text)).toBeNull()
     // Nothing of a scheduled run's week: no workout to switch to, no panel, no week actions.
-    expect(screen.queryByText('SETS')).toBeNull()
-    expect(screen.queryByText('STRUCTURE')).toBeNull()
+    expect(screen.queryByLabelText('Mark this session as deload')).toBeNull()
     expect(screen.queryByLabelText(/^(Week|Cycle) \d+ options$/)).toBeNull()
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
@@ -269,7 +263,8 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
     expect(screen.queryByText(LINE)).toBeNull()
     expect(screen.queryByText(LINK)).toBeNull()
     for (const text of OLD_TEXT) expect(screen.queryByText(text)).toBeNull()
-    expect(screen.getByText('SETS')).toBeTruthy()
+    // The week is there: its actions (a sequence run may open on a rest slot, which has no session to mark).
+    expect(screen.getByLabelText(/^(Week|Cycle) \d+ options$/)).toBeTruthy()
   }
 
   describe('a weekday run', () => {
