@@ -1,0 +1,46 @@
+WEEK 3 · SETS PER MUSCLE
+Volume
+MUSCLE
+WEEK 2
+WEEK 3
+Chest
+3
+→
+3
+Back
+2
+→
+7
++5
+YOU PLANNED 7 LAST WEEK · DID 2
+Shoulders
+3½
+→
+6
++2½
+YOU PLANNED 6 LAST WEEK · DID 3½
+Biceps
+0
+→
+2
++2
+YOU PLANNED 2 LAST WEEK · DID 0
+Triceps
+4
+→
+3
+−1
+YOU PLANNED 3 LAST WEEK · DID 4
+Quads
+3
+→
+3
+Hamstrings
+5½
+→
+5½
+Calves
+2½
+→
+2½
+Week 2 counts the sets you actually did. Warmups don't count. A drop counts as ½ set — you can change that in Settings.
