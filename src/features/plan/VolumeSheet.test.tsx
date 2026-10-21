@@ -14,7 +14,7 @@ import { UPPER_A, readOf, seededRead, seededWeek, sessionRead, UPPER_A_LOGS } fr
 // (`useVolumeSessions`) is mocked here, its shape the real one (`VolumeSessionsRead`), and proven on its own (`useVolumeSessions.test.ts`): the
 // mock records the plan rows it is asked about, because a mock that returns fixed data hides which argument the sheet passed.
 
-interface Read { data: VolumeSessionsRead | undefined; isError: boolean; error?: unknown; refetch: () => Promise<unknown> }
+interface Read { data: VolumeSessionsRead | undefined; isError: boolean; error?: unknown; fetchStatus?: 'idle' | 'fetching' | 'paused'; refetch: () => Promise<unknown> }
 const h = vi.hoisted(() => ({
   read: { data: undefined, isError: false, refetch: () => Promise.resolve() } as Read,
   asked: [] as string[][],
@@ -328,6 +328,19 @@ describe('the read\'s states', () => {
     expect(table()).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'TRY AGAIN' }))
     expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('a read waiting for the network (offline: TanStack pauses it) is not a spinner that never ends: it says it couldn\'t load, and that the phone may be offline', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    try {
+      h.read = { data: undefined, isError: false, fetchStatus: 'paused', refetch: () => Promise.resolve() }
+      open()
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(screen.getByRole('alert').textContent).toContain("Couldn't load last week.")
+      expect(screen.getByRole('alert').textContent).toContain('You may be offline.')
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    }
   })
 
   it('a failed read that has an earlier answer keeps drawing it', () => {

@@ -110,8 +110,11 @@ export default function VolumeSheet({ unit, weekNumber, ended, thisWeek, lastWee
   // With no plan row last week there is nothing to read: the sessions are none, at once.
   const noPlanRows = lastWeek.length === 0
   const sessions = read.data?.sessions
-  const loading = !noPlanRows && sessions === undefined && !read.isError
-  const failed = !noPlanRows && sessions === undefined && read.isError
+  // A read that can't start because the phone is offline is paused, not failed (TanStack waits for the network): a spinner that never ends
+  // says nothing, so it reads as a failed one, whose reason is then that the phone is offline (SPEC Errors (15)).
+  const paused = read.fetchStatus === 'paused'
+  const loading = !noPlanRows && sessions === undefined && !read.isError && !paused
+  const failed = !noPlanRows && sessions === undefined && (read.isError || paused)
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false
 
   const UNIT = unit === 'week' ? 'WEEK' : 'CYCLE'
