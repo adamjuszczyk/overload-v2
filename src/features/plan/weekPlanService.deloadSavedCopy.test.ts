@@ -17,6 +17,7 @@ const calls: Call[] = []
 let startedSessions: Array<{ id: string }> = []
 let logCount = 0
 let core: Record<string, unknown> = {}
+let writeError: Error | null = null // what every update and delete answers (a write that fails)
 
 function makeChain(table: string) {
   const chain: Record<string, unknown> = {}
@@ -37,7 +38,7 @@ function makeChain(table: string) {
   chain.delete = record('delete', 'delete')
   chain.insert = record('insert', 'insert')
   const answer = () => {
-    if (op === 'update' || op === 'delete') return { data: null, error: null }
+    if (op === 'update' || op === 'delete') return { data: null, error: writeError }
     if (table === 'v2_sessions') return { data: startedSessions, error: null }
     if (table === 'v2_set_logs') return { data: null, error: null, count: logCount }
     return { data: [], error: null } // the earlier weeks of this slot: none
@@ -91,6 +92,7 @@ beforeEach(() => {
   startedSessions = []
   logCount = 0
   core = {}
+  writeError = null
 })
 
 describe('markSessionDeload — a session that already holds a saved copy is left as it is (DECISIONS 188 (a))', () => {
@@ -114,6 +116,25 @@ describe('markSessionDeload — a session that already holds a saved copy is lef
     const outcome = await markSessionDeload('user-1', 'wp-1', RULES)
 
     expect(outcome).toBe('flagOnly')
+    expect(writes()).toEqual([{ table: 'v2_week_plans', method: 'update', args: [{ is_deload: true }] }])
+  })
+
+  it.each([
+    ['six sets in a session whose copy holds four (sets added by hand since the mark)', COPY, 6],
+    ['three sets in a session whose copy is empty (sets added by hand since the mark)', [] as DeloadRestoreEntry[], 3],
+  ])('what decides is the copy, not the sets: %s', async (_name, copy, setCount) => {
+    wireCore(copy, Array.from({ length: setCount }, (_, i) => setRow(i + 1, 4)))
+    const outcome = await markSessionDeload('user-1', 'wp-1', RULES)
+
+    expect(outcome).toBe('flagOnly')
+    expect(writes()).toEqual([{ table: 'v2_week_plans', method: 'update', args: [{ is_deload: true }] }])
+  })
+
+  it('the flag write is awaited: when it fails, the mark fails with it (the week mark stops and the hook shows the error), and nothing else was tried', async () => {
+    wireCore(COPY)
+    writeError = new Error('write failed')
+
+    await expect(markSessionDeload('user-1', 'wp-1', RULES)).rejects.toThrow('write failed')
     expect(writes()).toEqual([{ table: 'v2_week_plans', method: 'update', args: [{ is_deload: true }] }])
   })
 
