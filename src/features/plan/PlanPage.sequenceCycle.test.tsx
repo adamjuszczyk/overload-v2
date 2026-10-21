@@ -113,6 +113,7 @@ vi.mock('../gym/useSession', () => ({
   useLastDoneOrSkippedSession: (mesoId: string) => lastEventHook(mesoId),
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
@@ -133,7 +134,7 @@ vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }) }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openWeekTile, openWeekMenu, closeSheet } = await import('./planMenus.testutil')
+const { openWeekTile, openWeekMenu, closeSheet, sessionMenuButton, sessionToggle } = await import('./planMenus.testutil')
 
 afterEach(() => {
   readOverrides = {}
@@ -424,14 +425,14 @@ function expectEditable(cycle: number, slot = 0) {
   expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
   closeSheet()
 
-  // — the session's own DELOAD toggle (above the cards)
-  const sessionDeload = asButton(labelled('Mark this session as deload'))
-  expect(sessionDeload.disabled).toBe(false)
+  // — the session's own deload row, in the slot's ⋯ menu (above the cards): live
+  expect(sessionMenuButton()).not.toBeNull()
   setDeloadMutate.mockClear()
-  fireEvent.click(sessionDeload)
+  fireEvent.click(sessionToggle())
   expect(setDeloadMutate).toHaveBeenCalledTimes(1)
   expect((setDeloadMutate.mock.calls[0][0] as { weekPlanId: string }).weekPlanId).toBe(planId(cycle, slot))
   setDeloadMutate.mockClear()
+  closeSheet() // the slot's menu stays open after a mark, as WEEK ⋯'s does
 
   // — each exercise: "+" is live; the exercise has no ⋯ (an exercise is changed in CHANGE THE PROGRAM) and the page no ADD EXERCISE
   for (const name of [EX1, EX2]) {
@@ -507,11 +508,9 @@ function expectReadOnly() {
   expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
   expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
 
-  // — the session's own DELOAD toggle stays on screen but dead
-  const sessionDeload = asButton(labelled('Mark this session as deload'))
-  expect(sessionDeload.disabled).toBe(true)
+  // — the session has no ⋯ (board 1c: nothing in a past cycle's session can change), so no deload row and nothing reaches the hook
+  expect(sessionMenuButton()).toBeNull()
   setDeloadMutate.mockClear()
-  fireEvent.click(sessionDeload)
   expect(setDeloadMutate).not.toHaveBeenCalled()
 
   // — no ADD EXERCISE, no exercise header controls, no "+", no ⋯ buttons or menus anywhere
@@ -566,7 +565,7 @@ function expectReadOnly() {
 function expectEmptyCycleEditable(cycle: number) {
   expect(banner()).toBeNull()
   expect(weekMenuButton()).not.toBeNull()
-  expect(asButton(labelled('Mark this session as deload')).disabled).toBe(false)
+  expect(sessionMenuButton()).not.toBeNull()
   expect(screen.queryByText('ADD EXERCISE')).toBeNull()
   expect(screen.getByText('COPY')).toBeTruthy()
   fireEvent.click(screen.getByText('COPY'))
@@ -580,7 +579,7 @@ function expectEmptyCycleEditable(cycle: number) {
 // An EMPTY past cycle: nothing to copy into — no COPY — and nothing else to change it with either.
 function expectEmptyCycleReadOnly() {
   expectCycleLockLine()
-  expect(asButton(labelled('Mark this session as deload')).disabled).toBe(true)
+  expect(sessionMenuButton()).toBeNull()
   expect(screen.queryByText('COPY')).toBeNull()
   expect(weekMenuButton()).toBeNull()
   expect(screen.queryByText('ADD EXERCISE')).toBeNull()
@@ -1120,7 +1119,7 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(isOpen('CYCLE 1')).toBe(true) // nothing is planned for it (there is no workout), so its tile says NOT PLANNED
       expect(banner()).toBeNull()
       // Chunk 33: one line for a run with no schedule, whichever type it is.
-      expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
+      expect(screen.getByText('No workouts scheduled')).toBeTruthy()
       expect(screen.queryByText('NO SLOTS SCHEDULED')).toBeNull()
     })
   })

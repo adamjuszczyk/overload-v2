@@ -681,18 +681,6 @@ export interface UserSettings {
   weightUnit: WeightUnit
   autoFinishMinutes: number | null  // null = auto-finish disabled
   measureSetTime: boolean    // global Start Set toggle (v3 §2.2 / SPEC §4.2)
-  // v2_user_settings.week_start (migration 027, chunk 8 — SPEC.md "Weeks
-  // and copying": "'copy last week' is the default; a setting lets weeks
-  // start empty instead"). Governs only the AUTOMATIC fill of a
-  // week-dependent run's week beyond week 1 (weekSources.ts); the manual
-  // "Copy last week"/"Copy this workout" actions always try to copy,
-  // regardless of this setting.
-  // Chunk 49 (SPEC [1.2]: "The 'new week starts: copy / empty' setting is
-  // removed"): READ ONLY. Settings no longer shows it and upsertSettings no
-  // longer writes it, so the stored value stays. It is still read — by Plan's
-  // highlighting (weekDiff.ts, through the settings store) and by v2_plan_week
-  // (041) — until chunks 54b and 53 replace those; after that nothing reads it.
-  weekStart: 'copy' | 'empty'
   // v2_user_settings.warmup_display (migration 027, chunk 15 — SPEC.md
   // "Warmup sets": "Display setting: rows (default; numbers optional) or
   // tick (tick-off only)"). Governs every warmup row on the workout screen

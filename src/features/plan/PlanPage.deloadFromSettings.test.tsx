@@ -10,7 +10,7 @@ import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { createFakeDeloadDb, fakePlan, fakeSet, type FakeSetRow } from './fakeDeloadDb.testutil'
-import { openWeekMenu } from './planMenus.testutil'
+import { findSessionToggle, openWeekMenu, sessionToggle } from './planMenus.testutil'
 
 // Chunk 48 (TASKS-1.2: "Deload rules are read from Settings and nowhere else"; SPEC Deload [1.2]: "Settings
 // only; programs have no override"; "RIR rule: a range shifts both ends, floor 0"). The call-site proof:
@@ -76,6 +76,7 @@ vi.mock('../programs/usePrograms', () => ({
   useSequenceItems: () => ({ data: [] }),
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
@@ -118,8 +119,8 @@ describe('PlanPage — a session marked as deload follows the Settings rules (ch
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETTINGS_RULES })
     renderPlanPage()
 
-    fireEvent.click(await screen.findByLabelText('Mark this session as deload', {}, FOUND))
-    await screen.findByLabelText('Unmark this session as deload', {}, FOUND) // the page refetched the marked session
+    fireEvent.click(await findSessionToggle('MARK THIS SESSION AS DELOAD'))
+    await findSessionToggle('UNMARK THIS SESSION') // the page refetched the marked session
 
     const inserted = insertedSets()
     expect(inserted).toHaveLength(2)
@@ -135,13 +136,13 @@ describe('PlanPage — a session marked as deload follows the Settings rules (ch
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, deloadRules: SETTINGS_RULES })
     renderPlanPage()
 
-    fireEvent.click(await screen.findByLabelText('Mark this session as deload', {}, FOUND))
-    await screen.findByLabelText('Unmark this session as deload', {}, FOUND)
+    fireEvent.click(await findSessionToggle('MARK THIS SESSION AS DELOAD'))
+    await findSessionToggle('UNMARK THIS SESSION')
     const saved = fake.state.plans[0].deload_restore as { setNumber: number; targetRir: number; targetRirMax: number | null }[]
     expect(saved.map((e) => [e.setNumber, e.targetRir, e.targetRirMax])).toEqual(ORIGINAL)
 
-    fireEvent.click(screen.getByLabelText('Unmark this session as deload'))
-    await screen.findByLabelText('Mark this session as deload', {}, FOUND)
+    fireEvent.click(sessionToggle())
+    await findSessionToggle('MARK THIS SESSION AS DELOAD')
 
     expect(setsNow()).toEqual(ORIGINAL)
     expect(fake.state.sets.every((s) => s.target_weight === 100 && s.rep_min === 8 && s.rep_max === 12)).toBe(true)
@@ -152,8 +153,8 @@ describe('PlanPage — a session marked as deload follows the Settings rules (ch
     buildWorld()
     renderPlanPage()
 
-    fireEvent.click(await screen.findByLabelText('Mark this session as deload', {}, FOUND))
-    await screen.findByLabelText('Unmark this session as deload', {}, FOUND)
+    fireEvent.click(await findSessionToggle('MARK THIS SESSION AS DELOAD'))
+    await findSessionToggle('UNMARK THIS SESSION')
 
     expect(fake.state.plans[0]).toMatchObject({ is_deload: true, deload_restore: null })
     expect(setsNow()).toEqual(ORIGINAL) // not one set changed

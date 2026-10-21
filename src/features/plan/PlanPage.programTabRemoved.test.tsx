@@ -7,7 +7,7 @@ import type { Mesocycle, Program, WorkoutDay, SequenceItem, WeekPlan } from '../
 import type { DeloadRules } from '../../lib/deloadRules'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
-import { openWeekMenu, openWeekTile, closeSheet } from './planMenus.testutil'
+import { closeSheet, openWeekMenu, openWeekTile, sessionMenuButton, sessionToggle } from './planMenus.testutil'
 
 // Chunk 33 (TASKS-1.1 "The program tab is removed"; SPEC Plan screen [P1.1]:
 // "No program tab. It's removed; what it did happens in the week or is fixed for
@@ -70,6 +70,7 @@ vi.mock('./useSequenceCurrentCycle', () => ({
   useSequenceCurrentCycle: () => ({ cycle: 1, failed: false }),
 }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
@@ -187,7 +188,7 @@ describe('PlanPage — there is no program tab (chunk 33)', () => {
     // that was its mark is gone, chunk 54a).
     expect(screen.getByText('WEEK 1')).toBeTruthy()
     expect(screen.getByLabelText('Week 1 options')).toBeTruthy()
-    expect(screen.getByLabelText('Mark this session as deload')).toBeTruthy()
+    expect(sessionMenuButton()).not.toBeNull() // the session's ⋯, where its deload toggle now is
     expect(screen.queryByText('SETS')).toBeNull()
     expect(screen.queryByText('STRUCTURE')).toBeNull()
     expectNoProgramTab()
@@ -243,17 +244,17 @@ describe('PlanPage — there is no program tab (chunk 33)', () => {
 // ─── A run with no schedule ──────────────────────────────────────────────────
 
 describe('PlanPage — a run with no schedule shows one line linking to the Programs page (chunk 33)', () => {
-  const LINE = 'NO WORKOUTS SCHEDULED'
-  const LINK = 'Programs →'
+  const LINE = 'No workouts scheduled' // board 10's wording
+  const LINK = 'PROGRAMS'
   // The two states this line replaces, and their links into the tab. Its link is the PROGRAMS tab (chunk 52).
   const OLD_TEXT = ['NO DAYS SCHEDULED', 'Set up weekly schedule →', 'NO SLOTS SCHEDULED', 'Set up the sequence →']
 
   function expectTheLine() {
     expect(screen.getByText(LINE)).toBeTruthy()
-    expect(screen.getByText(LINK)).toBeTruthy()
+    expect(screen.getByRole('button', { name: LINK })).toBeTruthy()
     for (const text of OLD_TEXT) expect(screen.queryByText(text)).toBeNull()
     // Nothing of a scheduled run's week: no workout to switch to, no panel, no week actions.
-    expect(screen.queryByLabelText('Mark this session as deload')).toBeNull()
+    expect(sessionMenuButton()).toBeNull()
     expect(screen.queryByLabelText(/^(Week|Cycle) \d+ options$/)).toBeNull()
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(screen.queryByText('MARK CYCLE AS DELOAD')).toBeNull()
@@ -261,7 +262,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
 
   function expectScheduled() {
     expect(screen.queryByText(LINE)).toBeNull()
-    expect(screen.queryByText(LINK)).toBeNull()
+    expect(screen.queryByRole('button', { name: LINK })).toBeNull()
     for (const text of OLD_TEXT) expect(screen.queryByText(text)).toBeNull()
     // The week is there: its actions (a sequence run may open on a rest slot, which has no session to mark).
     expect(screen.getByLabelText(/^(Week|Cycle) \d+ options$/)).toBeTruthy()
@@ -279,7 +280,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
       program = makeProgram({ schedule: EMPTY_SCHEDULE })
       renderPlan()
 
-      fireEvent.click(screen.getByText(LINK))
+      fireEvent.click(screen.getByRole('button', { name: LINK }))
 
       expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     })
@@ -312,7 +313,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
       renderPlan()
 
       expect(screen.queryByText(LINE)).toBeNull()
-      expect(screen.queryByText(LINK)).toBeNull()
+      expect(screen.queryByRole('button', { name: LINK })).toBeNull()
     })
   })
 
@@ -337,7 +338,7 @@ describe('PlanPage — a run with no schedule shows one line linking to the Prog
       program = sequenceProgram()
       renderPlan()
 
-      fireEvent.click(screen.getByText(LINK))
+      fireEvent.click(screen.getByRole('button', { name: LINK }))
 
       expect(screen.getByText('PROGRAMS TAB')).toBeTruthy()
     })
@@ -477,7 +478,7 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
     useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
 
     expect(setDeloadMutate).toHaveBeenCalledTimes(1)
     expect(setDeloadMutate.mock.calls[0][0]).toEqual({ weekPlanId: 'wp-slot', isDeload: true, rules: SETTINGS_RULES })
@@ -516,7 +517,7 @@ describe('PlanPage — the deload rules in effect show read-only under the deloa
     useSettingsStore.setState({ deloadRules: SETTINGS_RULES })
     renderPlan()
 
-    expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
+    expect(screen.getByText('No workouts scheduled')).toBeTruthy()
     expect(screen.queryByLabelText(/^(Week|Cycle) \d+ options$/)).toBeNull()
     expect(anyRulesLine()).toBeNull()
   })
@@ -539,7 +540,7 @@ describe('PlanPage — 375px (chunk 33)', () => {
   it('the no-schedule line and the deload rules line add no fixed width wider than 375px', () => {
     program = makeProgram({ schedule: EMPTY_SCHEDULE })
     const first = renderPlan()
-    expect(screen.getByText('NO WORKOUTS SCHEDULED')).toBeTruthy()
+    expect(screen.getByText('No workouts scheduled')).toBeTruthy()
     expect(fixedWidthOffenders(first.container)).toEqual([])
     first.unmount()
 

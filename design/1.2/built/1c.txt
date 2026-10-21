@@ -9,63 +9,95 @@ WEEK 3
 NOT PLANNED
 PAST WEEK · READ ONLY
 MON
-Push 1
+PUSH 1
 TUE
-Pull 1
+PULL 1
 THU
-Push 2
+· SKIPPED
+PUSH 2
 FRI
-Pull 2
+PULL 2
 SAT
-Legs
-TUESDAY
-Pull 1
-DELOAD
-SETS
-STRUCTURE
+LEGS
+TUESDAY · WEEK 1
+PULL 1
+DONE
 Lat Pulldown
-CHEST
+BACK
 01
-57.5kg
+55
+kg
 ×
 8–10
-−
-RIR 2
-+
+RIR
+2
+Push back
 02
-57.5kg
+55
+kg
 ×
 8–10
-−
-RIR 2
-+
+RIR
+2
 03
-57.5kg
+50
+kg
 ×
 8–10
-−
-RIR 2
-+
+RIR
+2
 Seated Cable Row
-CHEST
+SUPERSET A · 1
+BACK
 01
-57.5kg
+60
+kg
 ×
-8–10
-−
-RIR 2
-+
+10–12
+RIR
+1–2
 02
-57.5kg
+60
+kg
 ×
-8–10
-−
-RIR 2
-+
-03
-57.5kg
+10–12
+RIR
+1–2
+Face Pull
+SUPERSET A · 2
+SHOULDERS
+01
+15
+kg
 ×
-8–10
-−
-RIR 2
-+
+15–20
+RIR
+1
+02
+15
+kg
+×
+15–20
+RIR
+1
+EZ Bar Curl
+BICEPS
+W
+20
+kg
+×
+12
+01
+30
+kg
+×
+8
+RIR
+1
+02
+30
+kg
+×
+8
+RIR
+0

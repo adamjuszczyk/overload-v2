@@ -65,10 +65,11 @@ const plan = (weekNumber: number, workoutDayId: string, sequencePosition?: numbe
 // Weeks 1 to 3 are planned (the run is in its week 3): a week with no plan is a tile that draws no weekdays at all (chunk 52).
 const PLANS = [1, 2, 3].flatMap((week) => [plan(week, 'wd-push'), plan(week, 'wd-leg')])
 
-const mockState: { rows: RunSchedule[] | undefined; program: Program; askedMeso: Array<string | undefined> } = {
+const mockState: { rows: RunSchedule[] | undefined; program: Program; askedMeso: Array<string | undefined>; plans: WeekPlan[] } = {
   rows: ROWS,
   program: runCopy,
   askedMeso: [],
+  plans: PLANS,
 }
 type ControlProps = { date: string; isCurrentWeek: boolean; workoutDay: WorkoutDay }
 const controlProps: ControlProps[] = []
@@ -86,6 +87,7 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 vi.mock('./useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: 3, failed: false }) }))
@@ -96,8 +98,8 @@ vi.mock('./useRunSchedule', () => ({
   },
 }))
 vi.mock('./useWeekPlan', () => ({
-  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: PLANS.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
-  useAllWeekPlans: () => ({ data: PLANS, isLoading: false }),
+  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: mockState.plans.filter((p) => p.weekNumber === weekNumber), isLoading: false }),
+  useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
@@ -120,12 +122,13 @@ vi.mock('./MoveSessionControl', () => ({
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openWeekTile } = await import('./planMenus.testutil')
+const { openWeekTile, openSessionMenu, sessionMenuButton } = await import('./planMenus.testutil')
 
 beforeEach(() => {
   mockState.rows = ROWS
   mockState.program = runCopy
   mockState.askedMeso = []
+  mockState.plans = PLANS
   controlProps.length = 0
 })
 
@@ -141,7 +144,7 @@ const SHORT = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 /** The weekday chips on screen, in the order drawn. */
 const chips = () => SHORT.filter((d) => screen.queryByText(d))
 const chip = (d: string) => screen.getByText(d).closest('button') as HTMLElement
-const SHARED_NOTE = /they share one plan/
+const SHARED_NOTE = /^Shared with /
 
 describe('Plan draws the weekdays in force for the viewed week (chunk 50)', () => {
   it('reads the rows of the active run', () => {
@@ -192,7 +195,10 @@ describe('the shared-plan note follows the viewed week\'s days (G14)', () => {
     renderPlan()
     openWeekTile('WEEK 2')
     expect(chip('MON').textContent).toContain('Push Day')
-    expect(screen.getByText('Marks Mon, Thu — they share one plan.')).toBeTruthy()
+    // Under the name (SPEC: "Shared with Thu — changes apply to both"): the other day, so Thursday's chip names Monday.
+    expect(screen.getByText('Shared with Thu — changes apply to both')).toBeTruthy()
+    fireEvent.click(chip('THU'))
+    expect(screen.getByText('Shared with Mon — changes apply to both')).toBeTruthy()
   })
 
   it('week 2: Leg Day is on one day, so no note', () => {
@@ -216,28 +222,39 @@ describe('the shared-plan note follows the viewed week\'s days (G14)', () => {
 })
 
 describe('MOVE THIS SESSION is given the date of the weekday the viewed week puts the workout on', () => {
+  // The row is in the session ⋯'s menu (chunk 54b), so each session's menu is opened to mount it.
   it('week 3: Push Day\'s Tuesday of week 3, then Leg Day\'s Friday of week 3', () => {
     renderPlan()
+    openSessionMenu()
     expect(lastControl()).toMatchObject({ date: on(3, 'tuesday'), isCurrentWeek: true })
     expect(lastControl().workoutDay.name).toBe('Push Day')
     fireEvent.click(chip('FRI'))
+    openSessionMenu()
     expect(lastControl()).toMatchObject({ date: on(3, 'friday'), isCurrentWeek: true })
     expect(lastControl().workoutDay.name).toBe('Leg Day')
   })
 
-  it('week 2: Monday, Wednesday and Thursday of week 2 (the run copy has no such days: Tuesday and Friday)', () => {
+  it('week 4, planned ahead: Tuesday and Friday of week 4, from the schedule in force there, and not the current week', () => {
+    mockState.plans = [...PLANS, plan(4, 'wd-push'), plan(4, 'wd-leg')]
     renderPlan()
+    openWeekTile('WEEK 4')
+    openSessionMenu()
+    expect(lastControl()).toMatchObject({ date: on(4, 'tuesday'), isCurrentWeek: false })
+    expect(lastControl().workoutDay.name).toBe('Push Day')
     fireEvent.click(chip('FRI'))
-    openWeekTile('WEEK 2')
-    // Friday is not a day of week 2, so the first day is selected.
-    expect(lastControl()).toMatchObject({ date: on(2, 'monday'), isCurrentWeek: false })
-    expect(lastControl().workoutDay.name).toBe('Push Day')
-    fireEvent.click(chip('WED'))
-    expect(lastControl()).toMatchObject({ date: on(2, 'wednesday') })
+    openSessionMenu()
+    expect(lastControl()).toMatchObject({ date: on(4, 'friday'), isCurrentWeek: false })
     expect(lastControl().workoutDay.name).toBe('Leg Day')
+  })
+
+  it('week 2 (past): no ⋯, so no menu and no date asked for — whichever weekday is open', () => {
+    renderPlan()
+    openWeekTile('WEEK 2')
+    expect(sessionMenuButton()).toBeNull()
+    fireEvent.click(chip('WED'))
     fireEvent.click(chip('THU'))
-    expect(lastControl()).toMatchObject({ date: on(2, 'thursday') })
-    expect(lastControl().workoutDay.name).toBe('Push Day')
+    expect(sessionMenuButton()).toBeNull()
+    expect(controlProps).toEqual([])
   })
 })
 

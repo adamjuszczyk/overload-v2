@@ -86,18 +86,21 @@ describe('fetchSettings — the two 042 columns', () => {
   })
 })
 
-describe('fetchSettings — week_start is read-only since chunk 49', () => {
-  // Plan's highlighting (weekDiff.ts, through the settings store) and v2_plan_week
-  // (041) still act on the stored value until chunks 54b and 53 replace them, so
-  // dropping the read here would change what an account that stored 'empty' sees.
-  it('a stored week_start still maps (the setting is gone from Settings, not from the row)', async () => {
-    fromMock.mockReturnValue(selectChain(baseRow({ week_start: 'empty' })))
-    expect((await fetchSettings('u1'))?.weekStart).toBe('empty')
+describe('fetchSettings — week_start is read by nothing since chunk 54b', () => {
+  // Plan's highlighting was the last reader (through the settings store, weekDiff.ts); v2_plan_week stopped reading it in 045. The column stays
+  // in the database, unread and unwritten, so a row that holds it maps to settings that have no such field.
+  it('a stored week_start maps to nothing: the settings hold no weekStart, whatever the row says', async () => {
+    for (const stored of ['empty', 'copy']) {
+      fromMock.mockReturnValue(selectChain(baseRow({ week_start: stored })))
+      const settings = await fetchSettings('u1')
+      expect(settings).not.toBeNull()
+      expect(settings).not.toHaveProperty('weekStart')
+    }
   })
 
-  it('a row without the key maps to the column default', async () => {
+  it('a row without the key maps just the same', async () => {
     fromMock.mockReturnValue(selectChain(baseRow()))
-    expect((await fetchSettings('u1'))?.weekStart).toBe('copy')
+    expect(await fetchSettings('u1')).not.toHaveProperty('weekStart')
   })
 })
 
@@ -120,7 +123,6 @@ describe('upsertSettings — the full row (chunk 49)', () => {
     weightUnit: 'lbs',
     autoFinishMinutes: 20,
     measureSetTime: true,
-    weekStart: 'empty',
     warmupDisplay: 'tick',
     deloadRules: { reps: { delta: -2 } },
     stageVolumeRule: 'whole',
@@ -179,7 +181,8 @@ describe('upsertSettings — the full row (chunk 49)', () => {
 
   it('the payload has no week_start key, whatever the settings hold (absence: the stored value stays)', async () => {
     for (const weekStart of ['empty', 'copy'] as const) {
-      const { payload } = await payloadFor({ ...settings, weekStart })
+      // A stray field (a stale settings object from before 54b) must not reach the row either: the writer names its columns.
+      const { payload } = await payloadFor({ ...settings, weekStart } as unknown as UserSettings)
       expect(payload).not.toHaveProperty('week_start')
       expect(Object.keys(payload)).not.toContain('week_start')
     }
