@@ -9,7 +9,7 @@ import { queryClient } from '../../lib/queryClient'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { createFakeDeloadDb, fakePlan, fakeSet } from './fakeDeloadDb.testutil'
-import { openWeekMenu } from './planMenus.testutil'
+import { findSessionMenuButton, openWeekMenu, sessionDeloadChip } from './planMenus.testutil'
 
 // Chunk 54a, WEEK ⋯'s pending label (Adam, 2026-10-20; DECISIONS 187 (a), found in chunk 52's review, probe A): the row read "UNMARKING…"
 // while a MARK was out, and "MARKING…" while an UNMARK was, because the label took its direction from whether the week READS as marked, and
@@ -77,6 +77,7 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
@@ -125,15 +126,15 @@ describe('WEEK ⋯ — the pending label follows the request in flight, not whet
   it('while a MARK is out the row reads MARKING… — although the week already reads as marked by then — and is disabled', async () => {
     buildWorld()
     renderPlanPage()
-    await screen.findByLabelText('Mark this session as deload', {}, FOUND) // the page has the week
+    await findSessionMenuButton() // the page has the week
     openWeekMenu()
     expect(sheet().getByText('MARK WEEK AS DELOAD')).toBeTruthy()
 
     hold()
     fireEvent.click(rowButton('MARK WEEK AS DELOAD'))
 
-    // The hook's optimistic patch has marked the week (the session toggle says so) while the write is still out ...
-    await screen.findByLabelText('Unmark this session as deload', {}, FOUND)
+    // The hook's optimistic patch has marked the week (the session's DELOAD chip says so) while the write is still out ...
+    await waitFor(() => expect(sessionDeloadChip()).not.toBeNull(), FOUND)
     expect(fake.state.plans[0].is_deload).toBe(false) // ... and the database has not been touched
     // ... and the row says what is happening: a mark.
     expect(sheet().getByText('MARKING…')).toBeTruthy()
@@ -149,7 +150,7 @@ describe('WEEK ⋯ — the pending label follows the request in flight, not whet
   it('while an UNMARK is out the row reads UNMARKING… — although the week already reads as unmarked by then — and is disabled', async () => {
     buildWorld()
     renderPlanPage()
-    await screen.findByLabelText('Mark this session as deload', {}, FOUND)
+    await findSessionMenuButton()
     openWeekMenu()
     fireEvent.click(rowButton('MARK WEEK AS DELOAD')) // marked first, with the gate open
     await waitFor(() => expect(sheet().getByText('UNMARK THIS WEEK')).toBeTruthy(), FOUND)
@@ -158,7 +159,7 @@ describe('WEEK ⋯ — the pending label follows the request in flight, not whet
     hold()
     fireEvent.click(rowButton('UNMARK THIS WEEK'))
 
-    await screen.findByLabelText('Mark this session as deload', {}, FOUND) // patched unmarked, the write still out
+    await waitFor(() => expect(sessionDeloadChip()).toBeNull(), FOUND) // patched unmarked, the write still out
     expect(fake.state.plans[0].is_deload).toBe(true) // the database still holds the mark
     expect(sheet().getByText('UNMARKING…')).toBeTruthy()
     expect(sheet().queryByText('MARKING…')).toBeNull()
@@ -173,12 +174,12 @@ describe('WEEK ⋯ — the pending label follows the request in flight, not whet
   it('a press on the disabled row while the write is out asks for nothing more', async () => {
     buildWorld()
     renderPlanPage()
-    await screen.findByLabelText('Mark this session as deload', {}, FOUND)
+    await findSessionMenuButton()
     openWeekMenu()
 
     hold()
     fireEvent.click(rowButton('MARK WEEK AS DELOAD'))
-    await screen.findByLabelText('Unmark this session as deload', {}, FOUND)
+    await waitFor(() => expect(sessionDeloadChip()).not.toBeNull(), FOUND)
     fireEvent.click(rowButton('MARKING…'))
     fireEvent.click(rowButton('MARKING…'))
     release()

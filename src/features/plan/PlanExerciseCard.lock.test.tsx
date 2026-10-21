@@ -51,7 +51,6 @@ function card(over: Partial<CardProps> = {}) {
       onAddSet={() => {}}
       onUpdate={() => {}}
       onRemoveRow={() => {}}
-      isLast
       {...over}
     />
   )
@@ -93,7 +92,7 @@ describe('PlanExerciseCard — a card that turns read-only closes what it had op
     const view = render(card())
     openers['the rep target picker']()
 
-    view.rerender(card({ isLast: false }))
+    view.rerender(card({ adding: true }))
 
     expect(dialog()).toBeTruthy()
   })

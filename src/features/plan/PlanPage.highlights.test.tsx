@@ -21,10 +21,12 @@ import { useSettingsStore } from '../settings/settingsStore'
 // A mark is read through `data-diff` ("changed" | "added" | "moved" | "removed" | "kind") AND through the token it
 // draws with (`--accent`; removed: `--text-dim` and line-through), so a mark that is there but not drawn fails too.
 //
-// Chunk 54a: Plan has one view now (the exercise cards and their set rows), so what was the STRUCTURE view's is gone with it: an
-// added, moved, swapped or removed exercise, a warmup or a stage as a structure row, a set's kind (the dot on its ⋯). The set rows keep
-// the old marks, drawn through the same CHANGED_CELL class, until chunk 54b draws changes since the source anew; the STRUCTURE
-// tests became absence tests ("STRUCTURE's marks are gone"), and a warmup's row is `W` and the working sets count from 01.
+// Chunk 54a: Plan has one view now (the exercise cards and their set rows), so what was the STRUCTURE view's went with it for one chunk.
+// Chunk 54b draws the changes since the source anew from weekPlanning's `changesSinceSource` (its rules: weekPlanning.changes.test.ts), and
+// this file proves they reach the screen: an added, moved or swapped exercise is marked on its card and a removed one is a dashed card
+// where it was; a set's kind is the accent chip; a warmup or a stage added is a marked row, one removed a dashed line; the legend names
+// the week; week 1, a deload session and a week with no usable last week are compared with nothing. The 1.1 tests of the STRUCTURE
+// view's absence became these presence tests, and the "week starts empty" setting (1.2 removes it) went with its tests.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -124,6 +126,7 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
 // Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
@@ -142,7 +145,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openWeekTile } = await import('./planMenus.testutil')
+const { openWeekTile, sessionDeloadChip } = await import('./planMenus.testutil')
 
 afterEach(() => {
   mockState.meso = mesoStarting(5)
@@ -153,7 +156,6 @@ afterEach(() => {
   mockState.programSets = []
   mockState.sequenceItems = []
   programSetReads.length = 0
-  useSettingsStore.setState({ weekStart: 'copy' })
 })
 
 function renderPlan(currentWeek: number) {
@@ -240,8 +242,8 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
     const removed = removedLines()
     expect(removed).toHaveLength(1)
     // Set 3 as it was: its number and its numbers, dim and struck through.
-    expect(removed[0].textContent).toBe('03110kg × 8  RIR 2')
-    expect(struck(removed[0])).toEqual({ text: '110kg × 8  RIR 2', line: 'line-through', color: 'var(--text-dim)' })
+    expect(removed[0].textContent).toBe('03 · 110 kg × 8 · RIR 2')
+    expect(struck(removed[0])).toEqual({ text: '03 · 110 kg × 8 · RIR 2', line: 'line-through', color: 'var(--text-dim)' })
     // In its place: below Bench Press's second set, above Squat.
     const second = rowOf('02')
     expect(second.compareDocumentPosition(removed[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -260,7 +262,7 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
       plan(5, [lbs], [wset('b1', 'pe-bench', 1)]),
     ]
     renderPlan(5)
-    expect(removedLines().map((r) => r.textContent)).toEqual(['02220.5lbs × 6  RIR 3'])
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02 · 220.5 lbs × 6 · RIR 3'])
     cleanup()
 
     // A removed set that held only a rep target shows that and nothing else (no empty placeholders).
@@ -269,7 +271,7 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
       plan(5, [BENCH], [wset('b1', 'pe-bench', 1)]),
     ]
     renderPlan(5)
-    expect(removedLines().map((r) => r.textContent)).toEqual(['0210–12'])
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02 · 10–12'])
   })
 
   it('a working set added in week 5 is marked: its number, its reps, and its weight and RIR too, since last week has no fourth set for them to equal', () => {
@@ -284,6 +286,16 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
     expect(removedLines()).toHaveLength(0)
   })
 
+  it('a removed working set is numbered as the rows are: warmups apart (source W 01 02 03, week W 01 02: the line is 03, not its position 4)', () => {
+    const rows = (prefix: string, working: number) => [
+      wset(`${prefix}w`, 'pe-bench', 1, { isWarmup: true, targetRir: null, targetWeight: 40, repMin: 10, repMax: 10 }),
+      ...workSets('pe-bench', prefix, working).map((x) => ({ ...x, setNumber: x.setNumber + 1 })),
+    ]
+    mockState.all = [plan(4, [BENCH], rows('b4-', 3)), plan(5, [BENCH], rows('b5-', 2))]
+    renderPlan(5)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['03 · 110 kg × 8 · RIR 2'])
+  })
+
   it('a staged working set added in week 5 is marked with its stages', () => {
     const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
     mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'b4-', 1)), plan(5, [BENCH], [...workSets('pe-bench', 'b5-', 1), ...staged])]
@@ -291,13 +303,13 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
 
     expect(mark(wholeRow('02'))).toBe('added')
     expect(markedCells('02')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' }) // last week has no second set
-    // Its two stage rows: every number on them too (last week has no stages there), though a stage's newness is not a mark of its own.
+    // Its two stage rows: every number on them too (last week has no stages there), and each stage row is new in its own right.
     const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
     expect(stageRows).toHaveLength(2)
     for (const row of stageRows) {
       const c = cellsOf(row)
       expect([mark(c.weight), mark(c.reps), mark(c.rir)]).toEqual(['changed', 'changed', 'changed'])
-      expect(mark(row.parentElement)).toBeNull() // no row-level mark on a stage
+      expect(mark(row.parentElement)).toBe('added')
     }
     expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
   })
@@ -306,7 +318,7 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
     const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
     mockState.all = [plan(4, [BENCH], [...workSets('pe-bench', 'b4-', 1), ...staged]), plan(5, [BENCH], workSets('pe-bench', 'b5-', 1))]
     renderPlan(5)
-    expect(removedLines().map((r) => r.textContent)).toEqual(['02100kg × 8  RIR 2'])
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02 · 100 kg × 8 · RIR 2'])
     expect(allRemoved()).toHaveLength(1) // not a row of the stages' own
     expect(allMarks().filter((m) => m.getAttribute('data-diff') !== 'removed')).toHaveLength(0)
   })
@@ -354,15 +366,22 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
     expect(allMarks()).toHaveLength(1)
   })
 
-  it('a warmup new this week is not a row mark of its own (it is a set kind); the working sets\' added/removed are', () => {
+  it('a warmup new this week is a new row: its number (W) and its reps are marked; its weight and RIR are not (a warmup holds no RIR, and its weight is not a number to compare)', () => {
     const warm = wset('w', 'pe-bench', 3, { isWarmup: true, targetRir: null })
     mockState.all = [plan(4, [BENCH], workSets('pe-bench', 'b4-', 2)), plan(5, [BENCH], [...workSets('pe-bench', 'b5-', 2), warm])]
     renderPlan(5)
-    expect(allMarks()).toHaveLength(0)
+    expect(mark(wholeRow('W'))).toBe('added')
+    expect(inAccent(screen.getByText('W'))).toBe(true)
+    const cells = buttonsOf(rowOf('W'))
+    expect([mark(cells[0]), mark(cells[1])]).toEqual([null, 'changed'])
+    expect(allMarks().filter((m) => m.getAttribute('data-diff') === 'added')).toHaveLength(1)
     expect(allRemoved()).toHaveLength(0)
   })
 
-  it('no exercise is marked: an added, moved, swapped or removed exercise leaves no mark and no line (those were STRUCTURE\'s, which went with the view in chunk 54a)', () => {
+  const cardMark = (name: string) => (screen.getByText(name).closest('[data-exercise-card]') as HTMLElement).getAttribute('data-diff')
+  const removedCards = () => allMarks().filter((m) => m.getAttribute('data-diff') === 'removed' && m.querySelector('del') && m.textContent?.includes('REMOVED SINCE')) as HTMLElement[]
+
+  it('an exercise added, one moved and one removed: the new card says NEW, the moved ones MOVED, the removed one is a dashed card where it was', () => {
     const lunge = pe('pe-lunge', EX_LUNGE, 2)
     mockState.all = [
       plan(4, [BENCH, ROW, SQUAT], [...workSets('pe-bench', 'b4-', 1), wset('r4', 'pe-row', 1), wset('q4', 'pe-squat', 1)]),
@@ -370,42 +389,64 @@ describe('PlanPage rows — the numbers that differ from last week (a week-depen
       plan(5, [withPosition(SQUAT, 0), withPosition(BENCH, 1), lunge], [...workSets('pe-bench', 'b5-', 1), wset('q5', 'pe-squat', 1), wset('l5', 'pe-lunge', 1)]),
     ]
     renderPlan(5)
-    expect(allMarks()).toHaveLength(0)
-    expect(allRemoved()).toHaveLength(0)
-    expect(screen.queryByText('Row')).toBeNull()
-    cleanup()
 
-    // A swap (Row for Incline Press, the same place): the old exercise is no struck-through line above the new one, and the new one is no accent.
+    expect(cardMark('Lunge')).toBe('added')
+    expect(cardMark('Squat')).toBe('moved')
+    expect(cardMark('Bench Press')).toBe('moved') // two that traded places are both moved (provisional 82)
+    expect(screen.getByText('· NEW')).toBeTruthy()
+    expect(screen.getAllByText('· MOVED')).toHaveLength(2)
+    // Row: a dashed card with its name struck through, after the exercise it followed in last week's list (Bench Press) and before Lunge.
+    const removed = removedCards()
+    expect(removed).toHaveLength(1)
+    expect(struck(removed[0]).text).toBe('Row')
+    expect(removed[0].textContent).toContain('REMOVED SINCE WEEK 4')
+    expect(removed[0].querySelectorAll('button')).toHaveLength(0)
+    const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows(screen.getByText('Bench Press'), removed[0])).toBe(true)
+    expect(follows(removed[0], screen.getByText('Lunge'))).toBe(true)
+    // The new exercise's card is the accent, the others are not.
+    expect((screen.getByText('Lunge').closest('[data-exercise-card]') as HTMLElement).getAttribute('style')).toContain('border-color: var(--accent)')
+    expect((screen.getByText('Bench Press').closest('[data-exercise-card]') as HTMLElement).getAttribute('style')).toContain('border-color: var(--accent)') // moved: the accent too
+  })
+
+  it('a swap (Row for Incline Press, the same place): the old exercise is a struck-through card directly above the new one, which is NEW', () => {
     const incline = pe('pe-incline', EX_INCLINE, 1)
     mockState.all = [
       plan(4, [BENCH, ROW, SQUAT], [wset('b4', 'pe-bench', 1), wset('r4', 'pe-row', 1), wset('q4', 'pe-squat', 1)]),
       plan(5, [BENCH, incline, withPosition(SQUAT, 2)], [wset('b5', 'pe-bench', 1), wset('i5', 'pe-incline', 1), wset('q5', 'pe-squat', 1)]),
     ]
     renderPlan(5)
-    expect(screen.getByText('Incline Press')).toBeTruthy()
-    expect(screen.queryByText('Row')).toBeNull()
-    expect(allMarks()).toHaveLength(0)
-    expect(allRemoved()).toHaveLength(0)
-    expect(inAccent(screen.getByText('Incline Press'))).toBe(false)
+    const removed = removedCards()
+    expect(removed).toHaveLength(1)
+    expect(struck(removed[0]).text).toBe('Row')
+    const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows(screen.getByText('Bench Press'), removed[0])).toBe(true)
+    expect(follows(removed[0], screen.getByText('Incline Press'))).toBe(true)
+    expect(follows(screen.getByText('Incline Press'), screen.getByText('Squat'))).toBe(true)
+    expect(cardMark('Incline Press')).toBe('added')
+    expect(cardMark('Bench Press')).toBeNull()
+    expect(cardMark('Squat')).toBeNull()
   })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// What was STRUCTURE's is gone (chunk 54a; Checks that lied #32: test what must be absent)
+// What was STRUCTURE's, drawn on the one view (chunk 54b)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('PlanPage — the STRUCTURE view\'s marks went with the view: a set\'s kind, a warmup or a stage, an exercise\'s place', () => {
-  it('a changed stage kind puts no dot anywhere (it shows in the kind chip, unmarked), and a null kind on a staged set is a dropset as before', () => {
+describe('PlanPage — a set\'s kind, a warmup or a stage, and an exercise\'s place are marked on the rows they are on', () => {
+  it('a changed stage kind is the kind chip in the accent (and the row says so); a null kind on a staged set is a dropset as before', () => {
     const staged = (kind: WeekPlanSet['stageKind']) => [
       wset('h1', 'pe-bench', 1), wset('h2', 'pe-bench', 2, { stageKind: kind }), stageOf('h2s', 'h2', 'pe-bench', 1), wset('h3', 'pe-bench', 3),
     ]
     mockState.all = [plan(4, [BENCH], staged('dropset')), plan(5, [BENCH], staged('rest_pause'))]
     renderPlan(5)
 
-    expect(screen.getByText('REST-PAUSE · 1 PAUSE')).toBeTruthy() // the new kind, as the chip says it
-    expect(document.querySelectorAll('[data-diff="kind"]')).toHaveLength(0)
-    expect(screen.queryByLabelText('Options for set 2')?.querySelector('[data-diff]') ?? null).toBeNull()
-    expect(allMarks()).toHaveLength(0)
+    const chip = screen.getByText('REST-PAUSE · 1 PAUSE') // the new kind, as the chip says it
+    expect(inAccent(chip)).toBe(true)
+    expect(document.querySelectorAll('[data-diff="kind"]')).toHaveLength(1)
+    expect(mark(wholeRow('02'))).toBe('kind')
+    expect(markedCells('02')).toEqual({ weight: null, reps: null, rir: null }) // its numbers are the same
+    expect(mark(wholeRow('01'))).toBeNull()
     cleanup()
 
     const one = (kind: WeekPlanSet['stageKind']) => [wset('h2', 'pe-bench', 1, { stageKind: kind }), stageOf('h2s', 'h2', 'pe-bench', 1)]
@@ -415,7 +456,7 @@ describe('PlanPage — the STRUCTURE view\'s marks went with the view: a set\'s 
     expect(allMarks()).toHaveLength(0)
   })
 
-  it('a warmup removed, or a stage removed, leaves no struck-through row (the working sets\' removals do)', () => {
+  it('a warmup removed, and a stage removed, are dashed lines in place: the stage under its head, the warmup after the rows (`W`, no RIR)', () => {
     mockState.all = [
       plan(4, [BENCH], [
         wset('a1', 'pe-bench', 1), wset('a2', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('a2s1', 'a2', 'pe-bench', 1), stageOf('a2s2', 'a2', 'pe-bench', 2),
@@ -425,13 +466,14 @@ describe('PlanPage — the STRUCTURE view\'s marks went with the view: a set\'s 
     ]
     renderPlan(5)
 
-    expect(removedLines().map((r) => r.textContent)).toEqual([]) // no 'WARMUP' row, no 'STAGE' row
-    expect(allRemoved()).toHaveLength(0)
+    expect(removedLines().map((r) => r.textContent)).toEqual(['↳ · 80 kg × 6 · RIR 0', 'W · 100 kg × 8'])
+    expect(allRemoved()).toHaveLength(2)
+    const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows(screen.getByText('↳'), removedLines()[0])).toBe(true) // under the head's kept stage
+    expect(follows(removedLines()[0], removedLines()[1])).toBe(true)
   })
 
-  it('a stage or a warmup added, and two exercises that traded places, leave no mark at all: only a number that differs from its counterpart\'s is marked', () => {
-    // Week 5 adds a warmup (after the working set, as the old marks pair sets by their number) and a second stage, and swaps the two exercises'
-    // places; the numbers of what both weeks have are equal.
+  it('a stage added and a warmup added are marked rows, and two exercises that traded places are both MOVED', () => {
     mockState.all = [
       plan(4, [BENCH, ROW], [wset('a1', 'pe-bench', 1, { stageKind: 'dropset' }), stageOf('a1s1', 'a1', 'pe-bench', 1), wset('r4', 'pe-row', 1)]),
       plan(5, [withPosition(ROW, 0), withPosition(BENCH, 1)], [
@@ -441,10 +483,14 @@ describe('PlanPage — the STRUCTURE view\'s marks went with the view: a set\'s 
     ]
     renderPlan(5)
 
-    // The second stage and the warmup are new, which was STRUCTURE's mark ('added' on the row): no 'added' row, no 'moved' exercise, and the
-    // new stage has no counterpart whose numbers it could differ from.
     expect(screen.getAllByText('↳')).toHaveLength(2)
-    expect(allMarks()).toHaveLength(0)
+    // The second stage (new under a head both weeks have) and the warmup: one marked row each.
+    const added = allMarks().filter((m) => m.getAttribute('data-diff') === 'added' && !m.hasAttribute('data-exercise-card'))
+    expect(added).toHaveLength(2)
+    expect(mark(screen.getAllByText('↳')[1].parentElement?.parentElement)).toBe('added')
+    expect(mark(screen.getAllByText('↳')[0].parentElement?.parentElement)).toBeNull()
+    expect(mark(wholeRow('W'))).toBe('added')
+    expect(allMarks().filter((m) => m.getAttribute('data-diff') === 'moved')).toHaveLength(2)
     expect(removedLines()).toHaveLength(0)
   })
 })
@@ -485,7 +531,7 @@ describe('PlanPage — a stable run: sets, structure and reps against the run\'s
     expect(markedCells('03')).toEqual({ weight: 'changed', reps: null, rir: 'changed' })
   })
 
-  it('sets are the default\'s: a set more than the default is added (and the exercises the default has or lacks leave no mark: STRUCTURE\'s, gone)', () => {
+  it('sets are the default\'s: a set more than the default is added; the exercises the default has or lacks are marked too (Lunge is NEW, Row a dashed card)', () => {
     stable()
     mockState.runCopy = { 'wd-1': [BENCH, ROW] }
     mockState.programSets = [...DEFAULT_SETS, pset('p-r1', 'pe-row', 1)]
@@ -499,11 +545,11 @@ describe('PlanPage — a stable run: sets, structure and reps against the run\'s
     expect(mark(wholeRow('03'))).toBeNull()
     // Last week (three sets) had no fourth set either: its weight and RIR differ from it as well as its reps from the default's.
     expect(markedCells('04')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
-    // The exercises are the default's too, but their marks were STRUCTURE's (chunk 54a): Lunge, which the default lacks, is no accent
-    // and Row, which it has and the week lacks, is no struck-through line. The one added mark is the fourth set's.
-    expect(allMarks().filter((m) => m.getAttribute('data-diff') === 'added')).toHaveLength(1)
-    expect(removedLines()).toHaveLength(0)
-    expect(screen.queryByText('Row')).toBeNull()
+    // Lunge, which the default lacks, is NEW; Row, which it has and the week lacks, is a struck-through card ("since week 4": the legend's week).
+    expect(allMarks().filter((m) => m.getAttribute('data-diff') === 'added' && !m.hasAttribute('data-exercise-card'))).toHaveLength(1) // the fourth set; nothing inside a new exercise is compared
+    expect((screen.getByText('Lunge').closest('[data-exercise-card]') as HTMLElement).getAttribute('data-diff')).toBe('added')
+    expect(removedLines()).toHaveLength(1)
+    expect(removedLines()[0].textContent).toContain('Row')
   })
 
   it('a set beyond the default that equals last week\'s set at that position: its number and reps are marked, its weight and RIR are not', () => {
@@ -665,72 +711,45 @@ describe('PlanPage — a week-dependent run: reps against last week, like weight
   })
 })
 
-describe('PlanPage — week 1 is compared with the run\'s copy as it is now', () => {
+describe('PlanPage — week 1 is compared with nothing (SPEC: "Week 1 is compared with nothing"; 1.1 compared its reps with the run\'s copy, G37)', () => {
   const copy = () => {
     mockState.runCopy = { 'wd-1': [BENCH, ROW] }
     mockState.programSets = [pset('p1', 'pe-bench', 1, { repMin: 8, repMax: 8 }), pset('p-r1', 'pe-row', 1)]
   }
 
-  it('a rep target that differs from the copy\'s is highlighted; an exercise the copy has and week 1 doesn\'t leaves no line (STRUCTURE\'s, gone)', () => {
+  it('a rep target that differs from the copy\'s, a set the copy lacks and an exercise it has: nothing marked, no legend, and the copy is not read', () => {
     copy()
-    // Week 1: Bench Press only (Row dropped), 5 reps where the run's copy says 8.
-    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1, { repMin: 5, repMax: 5 })])]
+    // Week 1: Bench Press only (Row dropped), 5 reps where the run's copy says 8, and a second set the copy doesn't have.
+    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1, { repMin: 5, repMax: 5, targetWeight: 999, targetRir: 0 }), wset('b2', 'pe-bench', 2, { targetWeight: 1, targetRir: null })])]
     renderPlan(1)
 
-    expect(markedCells('01')).toEqual({ weight: null, reps: 'changed', rir: null })
-    expect(removedLines()).toHaveLength(0)
-    expect(screen.queryByText('Row')).toBeNull()
+    expect(allMarks()).toHaveLength(0)
+    expect(allRemoved()).toHaveLength(0)
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull()
+    expect(programSetReads).toHaveLength(0) // a week-dependent week 1 reads nothing to compare with
   })
 
-  it('week 1\'s weights and RIR are never marked, whatever they are — on a set the copy lacks just as on one it has', () => {
-    copy()
-    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1, { repMin: 8, repMax: 8, targetWeight: 999, targetRir: 0 }), wset('b2', 'pe-bench', 2, { targetWeight: 1, targetRir: null })])]
-    renderPlan(1)
-    // Set 1 matches the copy's, and its 999 kg / RIR 0 are not marked.
-    expect(markedCells('01')).toEqual({ weight: null, reps: null, rir: null })
-    // Set 2 is a set the copy doesn't have: its number and its reps are marked (new against the copy) — its weight and RIR are NOT.
-    expect(mark(wholeRow('02'))).toBe('added')
-    expect(inAccent(screen.getByText('02'))).toBe(true)
-    expect(markedCells('02')).toEqual({ weight: null, reps: 'changed', rir: null })
-    expect(inAccent(cellsOf(rowOf('02')).reps)).toBe(true)
-    expect(inAccent(cellsOf(rowOf('02')).weight)).toBe(false)
-    expect(inAccent(cellsOf(rowOf('02')).rir)).toBe(false)
-  })
-
-  it('week 1: the stages of a set the copy lacks carry that set\'s reps mark, and no weight or RIR mark', () => {
-    copy()
-    const staged = [wset('h', 'pe-bench', 2, { stageKind: 'dropset' }), stageOf('hs1', 'h', 'pe-bench', 1), stageOf('hs2', 'h', 'pe-bench', 2)]
-    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1), ...staged])]
-    renderPlan(1)
-    expect(markedCells('02')).toEqual({ weight: null, reps: 'changed', rir: null })
-    const stageRows = screen.getAllByText('↳').map((arrow) => arrow.parentElement as HTMLElement)
-    expect(stageRows).toHaveLength(2)
-    for (const row of stageRows) {
-      const c = cellsOf(row)
-      expect([mark(c.weight), mark(c.reps), mark(c.rir)]).toEqual([null, 'changed', null])
-    }
-  })
-
-  it('week 1 of a stable run too; and the copy\'s sets that the default dropped (removed_at) are not part of it', () => {
+  it('a stable run\'s week 1 reads the run\'s copy for THIS WEEK ONLY alone: a set the default dropped (removed_at) is no part of it, a third set it no longer has is the week\'s', () => {
     mockState.program = makeProgram({ planningType: 'stable' })
     mockState.runCopy = { 'wd-1': [BENCH] }
-    // Three program sets, the second dropped from the default (removed_at set): the copy is sets 1 and 3.
+    // Three program sets, the second dropped from the default (removed_at set): the default is sets 1 and 3.
     mockState.programSets = [pset('p1', 'pe-bench', 1), pset('p2', 'pe-bench', 2, { removedAt: '2026-10-01T00:00:00Z' }), pset('p3', 'pe-bench', 3)]
     mockState.all = [plan(1, [BENCH], workSets('pe-bench', 'b1-', 2))]
     renderPlan(1)
-    // Two sets against two: nothing is added, nothing removed. (If the dropped set still counted: a struck-through row 03.)
+    // Two sets against two: the week is the default's. Nothing is marked, whatever week 1's numbers are, and no legend.
+    expect(screen.queryByText('THIS WEEK ONLY')).toBeNull()
     expect(allMarks()).toHaveLength(0)
-    expect(allRemoved()).toHaveLength(0)
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull()
     cleanup()
 
-    // And a week with the third set the default no longer has: it is the one that is added.
+    // And a week with the third set the default no longer has: THIS WEEK ONLY (week 1 is still compared with nothing, so no row is marked).
     mockState.all = [plan(1, [BENCH], workSets('pe-bench', 'b1-', 3))]
     renderPlan(1)
-    expect(mark(wholeRow('03'))).toBe('added')
-    expect(mark(wholeRow('02'))).toBeNull()
+    expect(screen.getByText('THIS WEEK ONLY')).toBeTruthy()
+    expect(allMarks()).toHaveLength(0)
   })
 
-  it('an empty run copy: week 1 has nothing to be compared with, so it marks nothing (the exercise being new was STRUCTURE\'s mark, gone in chunk 54a)', () => {
+  it('an empty run copy: nothing to be compared with, nothing marked', () => {
     mockState.runCopy = { 'wd-1': [] }
     mockState.all = [plan(1, [BENCH], workSets('pe-bench', 'b1-', 1))]
     renderPlan(1)
@@ -740,43 +759,29 @@ describe('PlanPage — week 1 is compared with the run\'s copy as it is now', ()
   })
 })
 
-describe('PlanPage — a week that started empty is compared with nothing (provisional 84)', () => {
+describe('PlanPage — a week-dependent week is compared with last week, and no setting says otherwise (1.2 removes "new week starts")', () => {
   const weeks = () => [
     plan(2, [BENCH], workSets('pe-bench', 'w2-', 3)),
     // Week 3, filled by hand: different in every number, with two sets fewer.
     plan(3, [BENCH], [wset('b3', 'pe-bench', 1, { targetWeight: 50, repMin: 15, repMax: 15, targetRir: 4 })]),
   ]
 
-  it('NEW WEEK STARTS = empty: week 3 of a week-dependent run shows no highlighting', () => {
-    useSettingsStore.setState({ weekStart: 'empty' })
-    mockState.all = weeks()
-    renderPlan(3)
-    expect(screen.getByText('Bench Press')).toBeTruthy()
-    expect(allMarks()).toHaveLength(0)
-    expect(allRemoved()).toHaveLength(0)
-  })
-
-  it('control: the same weeks with NEW WEEK STARTS = copy are compared with week 2', () => {
+  it('week 3 is compared with week 2: its numbers are marked and the two sets it lacks are dashed lines — whatever the store once held for week_start', () => {
     mockState.all = weeks()
     renderPlan(3)
     expect(markedCells('01')).toEqual({ weight: 'changed', reps: 'changed', rir: 'changed' })
-    expect(removedLines().map((r) => r.textContent)).toEqual(['02105kg × 8  RIR 2', '03110kg × 8  RIR 2'])
+    expect(removedLines().map((r) => r.textContent)).toEqual(['02 · 105 kg × 8 · RIR 2', '03 · 110 kg × 8 · RIR 2'])
+    expect(screen.getByText('CHANGED SINCE WEEK 2')).toBeTruthy()
+    // The 1.1 setting has no reader left: the store holds no `weekStart` at all.
+    expect('weekStart' in useSettingsStore.getState()).toBe(false)
   })
 
-  it('the setting does not touch week 1, which is built from the run\'s copy either way', () => {
-    useSettingsStore.setState({ weekStart: 'empty' })
-    mockState.runCopy = { 'wd-1': [BENCH] }
-    mockState.programSets = [pset('p1', 'pe-bench', 1)]
-    mockState.all = [plan(1, [BENCH], [wset('b1', 'pe-bench', 1, { repMin: 5, repMax: 5 })])]
-    renderPlan(1)
-    expect(markedCells('01').reps).toBe('changed')
-  })
-
-  it('a week with no last week (nothing planned before it) shows none either', () => {
+  it('a week with no last week (nothing planned before it) shows none either: no marks, no legend', () => {
     mockState.all = [plan(3, [SQUAT], [wset('q3', 'pe-squat', 1)])]
     renderPlan(3)
     expect(allMarks()).toHaveLength(0)
     expect(allRemoved()).toHaveLength(0)
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull()
   })
 })
 
@@ -791,7 +796,8 @@ describe('PlanPage — what is never highlighted', () => {
       plan(5, [SQUAT, BENCH].map((p, i) => withPosition(p, i)), workSets('pe-bench', 'b5-', 1, () => ({ targetWeight: 60, repMin: 12, repMax: 12 })).concat(wset('q5', 'pe-squat', 1)), { isDeload: true }),
     ]
     renderPlan(5)
-    expect(screen.getByLabelText('Unmark this session as deload')).toBeTruthy() // the session is the deload one
+    expect(sessionDeloadChip()).not.toBeNull() // the session is the deload one
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull() // and compares with nothing: no legend
     expect(allMarks()).toHaveLength(0)
     expect(allRemoved()).toHaveLength(0)
     cleanup()
@@ -831,15 +837,17 @@ describe('PlanPage — what is never highlighted', () => {
     renderPlan(5)
 
     // Push is a normal session: its change is marked, against week 4's Push (a normal session, although Pull is a deload one that week).
-    expect(screen.queryByLabelText('Unmark this session as deload')).toBeNull()
+    expect(sessionDeloadChip()).toBeNull()
     expect(markedCells('01')).toEqual({ weight: 'changed', reps: null, rir: null })
     expect(allMarks()).toHaveLength(1)
+    expect(screen.getByText('CHANGED SINCE WEEK 4')).toBeTruthy()
     // Pull is the deload session: it shows nothing.
     fireEvent.click(screen.getByText('THU'))
-    expect(screen.getByLabelText('Unmark this session as deload')).toBeTruthy()
+    expect(sessionDeloadChip()).not.toBeNull()
     expect(screen.getByText('Row')).toBeTruthy()
     expect(allMarks()).toHaveLength(0)
     expect(allRemoved()).toHaveLength(0)
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull()
   })
 
   it('a tag added this week is not highlighted — it is shown as a tag, as always', () => {
@@ -940,26 +948,29 @@ describe('PlanPage — a sequence run compares each slot with its own source slo
     expect(markedCells('01').weight).toBeNull()
   })
 
-  it('cycle 1 is compared with the run\'s copy of each slot\'s OWN workout: the two A slots with A\'s copy, B with B\'s', () => {
+  it('cycle 1 is compared with nothing, in every slot (1.1 compared it with the run\'s copy of each slot\'s own workout, G37), and the copy is not read', () => {
     mockState.program = makeProgram({ scheduleType: 'sequence', schedule: EMPTY_SCHEDULE })
     mockState.days = [workoutDay, workoutDayB]
     mockState.sequenceItems = items
-    // A's copy says 8 reps; B's says 12.
     mockState.runCopy = { 'wd-1': [A_ROW], 'wd-b': [B_ROW] }
     mockState.programSets = [pset('pa', 'pe-a', 1, { repMin: 8, repMax: 8 }), pset('pb', 'pe-b', 1, { repMin: 12, repMax: 12 })]
-    // Slot 1 (A): 5 reps. Slot 2 (B): 12 reps (as its copy). Slot 3 (A): 8 reps (as its copy).
+    // Slot 1 (A): 5 reps against A's copy's 8. Slot 2 (B): 12 reps (as its copy). Slot 3 (A): 8 reps (as its copy).
     mockState.all = [slotPlan(1, 0, 100, 5), slotPlan(1, 1, 80, 12), slotPlan(1, 2, 120, 8)]
     renderPlan(1)
 
     expect(screen.getByText('CYCLE 1')).toBeTruthy()
-    expect(markedCells('01').reps).toBe('changed') // slot 1: 5 against A's 8
-    fireEvent.click(screen.getByText('SLOT 2'))
-    expect(markedCells('01').reps).toBeNull() // slot 2 (B): 12 against B's 12 (A's 8 would differ)
+    for (const slot of ['SLOT 1', 'SLOT 2', 'SLOT 3']) {
+      fireEvent.click(screen.getAllByText(slot)[0]) // the chip (the open slot's header says it too, after the chips)
+      expect(allMarks(), slot).toHaveLength(0)
+    }
+    expect(screen.queryByText(/^CHANGED SINCE/)).toBeNull()
+    expect(programSetReads).toHaveLength(0)
+  })
+
+  it('cycle 2 says CYCLE in its legend, naming the cycle the slot is compared with', () => {
+    arrangeSequence({ a0: 100, a2: 125 })
     fireEvent.click(screen.getByText('SLOT 3'))
-    expect(markedCells('01').reps).toBeNull() // slot 3 (A): 8 against A's 8
-    // Each workout's own copy was read, for its own rows.
-    expect(programSetReads).toContainEqual(['pe-a'])
-    expect(programSetReads).toContainEqual(['pe-b'])
+    expect(screen.getByText('CHANGED SINCE CYCLE 1')).toBeTruthy()
   })
 
   it('a different workout in between does not interfere (slot 2 is workout B, compared with B\'s own slot)', () => {
@@ -971,7 +982,7 @@ describe('PlanPage — a sequence run compares each slot with its own source slo
 })
 
 describe('PlanPage — past weeks highlight too, compared as they are now', () => {
-  it('a past week read-only: its differences from the week before it are marked (cells disabled); a kind change leaves no dot (STRUCTURE\'s, gone)', () => {
+  it('a past week read-only: its differences from the week before it are marked (cells disabled, flat), and the legend says since when', () => {
     const staged = (kind: WeekPlanSet['stageKind']) => [wset('h', 'pe-bench', 1, { stageKind: kind }), stageOf('hs', 'h', 'pe-bench', 1)]
     mockState.all = [
       plan(2, [BENCH], staged('dropset')),
@@ -982,13 +993,15 @@ describe('PlanPage — past weeks highlight too, compared as they are now', () =
     openWeekTile('WEEK 3')
     expect(screen.getByText('WEEK 3')).toBeTruthy()
     expect(screen.getByText('PAST WEEK · READ ONLY')).toBeTruthy()
+    expect(screen.getByText('CHANGED SINCE WEEK 2')).toBeTruthy()
 
     const cells = cellsOf(rowOf('01'))
     expect(mark(cells.weight)).toBe('changed')
     expect((cells.weight as HTMLButtonElement).disabled).toBe(true)
     expect(screen.queryByLabelText('Options for set 1')).toBeNull() // read-only: no ⋯ ...
-    expect(document.querySelectorAll('[data-diff="kind"]')).toHaveLength(0) // ... and no dot where it would be
-    expect(screen.getByText('REST-PAUSE · 1 PAUSE')).toBeTruthy() // the kind is there, unmarked
+    expect(document.querySelectorAll('[data-diff="kind"]')).toHaveLength(1) // ... the kind chip is the accent, as on any week
+    expect(inAccent(screen.getByText('REST-PAUSE · 1 PAUSE'))).toBe(true)
+    expect((screen.getByText('REST-PAUSE · 1 PAUSE') as HTMLButtonElement).disabled).toBe(true) // and, in a read-only week, dead
   })
 
   it('a past week is compared with the weeks before it, never the ones after it', () => {
@@ -1011,7 +1024,7 @@ describe('PlanPage — past weeks highlight too, compared as they are now', () =
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('PlanPage — a week with nothing to flag renders exactly what it did before the highlighting', () => {
-  it('a week identical to its source is the very same markup as a week compared with nothing (no attribute, no style, no element is added)', () => {
+  it('a week identical to its source is the very same markup as a week compared with nothing (no attribute, no style, no element is added but the legend)', () => {
     // The week: warmup, a staged set with a stage, a tagged set, on two exercises, in a unit that isn't the
     // Settings one, with run-wide fields set. Week 4 is its source and equal to it; the other render has no
     // week 4, so it is compared with nothing at all.
@@ -1025,9 +1038,13 @@ describe('PlanPage — a week with nothing to flag renders exactly what it did b
     const rows = [pe('pe-bench', EX_BENCH, 0, { restSeconds: 120, tempo: '3-1-1-0', weightUnit: 'lbs' }), pe('pe-row', EX_ROW, 1, { supersetBlockId: 'blk' })]
     // The tile strip is taken out of both: which weeks have a plan decides its tiles (week 4 is DONE in one render and NOT PLANNED in
     // the other, by construction), and it is the header's, not the week panel's whose markup this compares.
+    // The legend ("CHANGED SINCE WEEK 4") is the one thing a week compared with a source adds besides marks.
     const htmlOf = (container: HTMLElement) => {
-      const strip = container.querySelector('[aria-label="Weeks of this program"]')
-      return strip ? container.innerHTML.replace(strip.outerHTML, '') : container.innerHTML
+      let html = container.innerHTML
+      for (const part of [container.querySelector('[aria-label="Weeks of this program"]'), container.querySelector('[data-legend]')]) {
+        if (part) html = html.replace(part.outerHTML, '')
+      }
+      return html
     }
     const markup = (withSource: boolean) => {
       mockState.all = withSource ? [plan(4, rows, sets('4')), plan(5, rows, sets('5'))] : [plan(5, rows, sets('5'))]
@@ -1043,6 +1060,7 @@ describe('PlanPage — a week with nothing to flag renders exactly what it did b
     expect(compared).toContain('REST-PAUSE · 1 PAUSE')
     expect(compared).not.toContain('data-diff')
     expect(compared).not.toContain('<del')
+    expect(markup(true)).toBe(compared) // and rendering it again changes nothing
 
     // The control: against a source that differs, the same week's markup does change (so the equality above means something).
     mockState.all = [plan(4, rows, sets('4').map((s) => (s.id === 'h4' ? { ...s, targetWeight: 90 } : s))), plan(5, rows, sets('5'))]

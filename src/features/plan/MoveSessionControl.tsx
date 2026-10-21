@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { MENU_NOTE, MENU_ROW } from './SessionMenuSheet'
 import { useSessionsInRange, useMoveSession, useClearMovedSession } from '../gym/useSession'
 import { resolveMove } from '../gym/moveSession'
 import MoveSessionSheet from '../gym/MoveSessionSheet'
@@ -10,10 +12,14 @@ import type { WorkoutDay, WeekPlan } from '../../types'
 // so PlanPage.tsx itself needs no new hook of its own (its existing render-
 // parity/fixture tests, none of which know about sessions at all, stay
 // untouched by stubbing this one component — see this chunk's report).
-// Scoped to the CURRENTLY SELECTED (one day, one week) slot only, same as
-// WorkoutDayPanel itself; "moving onto a day that already has one" (G14)
+// Scoped to the CURRENTLY SELECTED (one day, one week) slot only;
+// "moving onto a day that already has one" (G14)
 // is a Today-only list concern — Plan's job here is just "move THIS slot's
 // own session elsewhere", never rendering an aggregate due-list of its own.
+//
+// Chunk 54b (board 10): it is the MOVE THIS SESSION row of the session ⋯'s menu (SessionMenuSheet), mounted only while that menu is open:
+// the row with its arrow; dimmed, with "Already started — can't be moved", once the session has started; dimmed, with "Requires a
+// connection", offline. Only a weekday run's current week has one (`isCurrentWeek`); a later week and a sequence slot are given none.
 
 interface MoveSessionControlProps {
   workoutDay: WorkoutDay
@@ -50,17 +56,6 @@ export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date,
   const effectiveDate = existing?.movedToDate ?? date
   const isMovePending = moveSession.isPending || clearMovedSession.isPending
 
-  if (hasStarted) {
-    return (
-      <p
-        className="mb-3 text-xs"
-        style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}
-      >
-        ALREADY STARTED — CAN'T BE MOVED
-      </p>
-    )
-  }
-
   function handlePick(targetDate: string) {
     const decision = resolveMove(date, targetDate, today)
     if (decision.kind === 'invalid_cross_week' || decision.kind === 'invalid_past') return
@@ -78,36 +73,21 @@ export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date,
     setShowSheet(false)
   }
 
+  // Dimmed, with its reason under it, when the session can't be moved.
+  const blocked = hasStarted ? "Already started — can't be moved" : !isOnline ? 'Requires a connection' : null
+
   return (
-    <div className="mb-3">
+    <>
       <button
+        type="button"
         onClick={() => setShowSheet(true)}
-        disabled={!isOnline || isMovePending}
-        style={{
-          height: 26,
-          padding: '0 10px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 5,
-          background: 'var(--surface-overlay)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: 6,
-          cursor: 'pointer',
-          color: 'var(--text-dim)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: '1px',
-          opacity: !isOnline || isMovePending ? 0.5 : 1,
-        }}
+        disabled={blocked !== null || isMovePending}
+        style={{ ...MENU_ROW, color: blocked !== null ? 'var(--text-muted)' : 'var(--text-primary)', opacity: isMovePending ? 0.5 : 1, cursor: blocked !== null ? 'default' : 'pointer' }}
       >
-        MOVE THIS SESSION
+        <span>MOVE THIS SESSION</span>
+        {blocked === null && <ArrowRight size={16} aria-hidden="true" />}
       </button>
-      {!isOnline && (
-        <p className="mt-1 text-xs" style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
-          REQUIRES A CONNECTION
-        </p>
-      )}
+      {blocked !== null && <p style={MENU_NOTE}>{blocked}</p>}
       {showSheet && (
         <MoveSessionSheet
           workoutDayName={workoutDay.name}
@@ -119,6 +99,6 @@ export default function MoveSessionControl({ workoutDay, weekPlan, mesoId, date,
           onClose={() => setShowSheet(false)}
         />
       )}
-    </div>
+    </>
   )
 }

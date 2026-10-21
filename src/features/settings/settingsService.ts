@@ -12,19 +12,16 @@ type DbSettings = {
   weight_unit: string
   auto_finish_minutes: number | null
   measure_set_time?: boolean  // absent until migration 005 has been applied
-  week_start?: string  // absent until migration 027 has been applied; READ ONLY since chunk 49 (see DbSettingsWrite)
   warmup_display?: string  // absent until migration 027 has been applied
   deload_rules?: unknown  // absent until migration 027 has been applied; jsonb, validated on read
   stage_volume_rule?: string  // absent until migration 042 has been applied; written since chunk 49
   log_in_order?: boolean  // absent until migration 042 has been applied; written since chunk 49
 }
 
-// What upsertSettings writes: every column but week_start. SPEC [1.2] removes
-// the "new week starts" setting (Screens → Settings), and from chunk 49 the
-// full-row upsert omits the key, so a stored value stays exactly as it is (the
-// upsert only updates the columns its payload names). Typing the row without
-// the column makes naming it a compile error, not just a failing test.
-type DbSettingsWrite = Omit<DbSettings, 'week_start'>
+// SPEC [1.2] removes the "new week starts" setting (Screens → Settings). `v2_user_settings.week_start` stays in the database, unread and
+// unwritten: since chunk 49 the full-row upsert omits the key, so a stored value stays exactly as it is (the upsert only updates the
+// columns its payload names), and since chunk 54b nothing reads it either (it was Plan's highlighting, through the store). `DbSettings`
+// doesn't name the column, so naming it in the row below is a compile error, not just a failing test.
 
 function toUserSettings(row: DbSettings): UserSettings {
   return {
@@ -39,12 +36,6 @@ function toUserSettings(row: DbSettings): UserSettings {
     // rather than null, since the column doesn't exist yet.
     autoFinishMinutes: row.auto_finish_minutes === undefined ? 5 : row.auto_finish_minutes,
     measureSetTime: row.measure_set_time ?? false,
-    // Falls back to the column default ('copy' — SPEC G4) until migration
-    // 027 has been run, same "key missing" convention as the others above.
-    // Read only since chunk 49 (the setting is gone from Settings and from the
-    // upsert): Plan's highlighting and v2_plan_week (041) still read the stored
-    // value until chunks 53 and 54b.
-    weekStart: (row.week_start as UserSettings['weekStart'] | undefined) ?? 'copy',
     // Falls back to the column default ('rows' — SPEC "Warmup sets") until
     // migration 027 has been run, same "key missing" convention as the
     // others above.
@@ -88,7 +79,7 @@ export async function upsertSettings(
   userId: string,
   settings: UserSettings,
 ): Promise<void> {
-  const row: DbSettingsWrite = {
+  const row: DbSettings = {
     user_id: userId,
     theme: settings.theme,
     accent_colour: settings.accentColour,

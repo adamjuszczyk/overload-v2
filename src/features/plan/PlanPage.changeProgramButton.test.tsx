@@ -77,6 +77,7 @@ vi.mock('./usePlanForward', () => ({
   usePlanForward: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false }),
   useDefaultHasSets: () => ({ data: undefined }),
 }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => state.done }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => state.statuses }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))

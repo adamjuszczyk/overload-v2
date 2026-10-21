@@ -103,6 +103,7 @@ vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
   ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
 vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() }))
 vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
@@ -126,7 +127,7 @@ vi.mock('./MoveSessionControl', () => ({
 }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openWeekTile } = await import('./planMenus.testutil')
+const { openWeekTile, openSessionMenu, sessionMenuButton, sessionToggle } = await import('./planMenus.testutil')
 
 afterEach(() => {
   mockState.program = makeProgram()
@@ -189,7 +190,7 @@ describe('PlanPage — an exercise\'s card (board 1)', () => {
   it('a workout with no exercises says so', () => {
     mockState.all = [plan(2, [], [])]
     renderPlanPage()
-    expect(screen.getByText('NO EXERCISES IN THIS DAY')).toBeTruthy()
+    expect(screen.getByText('No exercises in this day')).toBeTruthy() // board 10's wording
     expect(document.querySelectorAll('[data-exercise-card]')).toHaveLength(0)
   })
 
@@ -438,21 +439,19 @@ describe('PlanPage — a past week\'s rows are drawn but dead', () => {
 
 // ─── Where a workout's row is, and what it is handed ──────────────────────────
 
-describe('PlanPage — MOVE THIS SESSION sits above the panel (G17)', () => {
-  it('is after the workout chips and before the panel\'s header and its cards', () => {
+describe('PlanPage — MOVE THIS SESSION is a row of the session ⋯\'s menu (chunk 54b, board 10)', () => {
+  it('is not on the page until the menu is open; then it is given the workout, its plan row, the run and the week', () => {
     arrange()
+    expect(screen.queryByTestId('move-session-stub')).toBeNull() // the button above the panel is gone
+    openSessionMenu()
     const stub = screen.getByTestId('move-session-stub')
     expect(stub.getAttribute('data-workout')).toBe('wd-1')
     expect(stub.getAttribute('data-plan')).toBe('wp-2')
     expect(stub.getAttribute('data-meso')).toBe('meso-1')
     expect(stub.getAttribute('data-current')).toBe('true')
-    const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(follows(screen.getByText('MON'), stub)).toBe(true)
-    expect(follows(stub, screen.getByLabelText('Mark this session as deload'))).toBe(true)
-    expect(follows(screen.getByLabelText('Mark this session as deload'), cardOf('Bench Press'))).toBe(true)
   })
 
-  it('and the chips switch the workout whose cards are drawn', () => {
+  it('and the chips switch the workout whose cards are drawn, and whose menu opens', () => {
     mockState.program = makeProgram({ ...EMPTY_SCHEDULE, monday: 'wd-1', thursday: 'wd-2' })
     mockState.days = [workoutDay, workoutDay2]
     const lunge = pe('pe-l', EX_LUNGE, 0, {}, 'wd-2')
@@ -466,6 +465,7 @@ describe('PlanPage — MOVE THIS SESSION sits above the panel (G17)', () => {
     fireEvent.click(screen.getByText('THU'))
     expect(screen.getByText('Lunge')).toBeTruthy()
     expect(screen.queryByText('Bench Press')).toBeNull()
+    openSessionMenu()
     expect(screen.getByTestId('move-session-stub').getAttribute('data-plan')).toBe('wp-2-wd-2')
   })
 })
@@ -475,26 +475,27 @@ describe('PlanPage — MOVE THIS SESSION sits above the panel (G17)', () => {
 const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
 
 describe('PlanPage — the page\'s actions sit above the cards, as the exercise cards replaced the two views (G17)', () => {
-  it('COPY and WEEK ⋯ are above the panel\'s session toggle, and the toggle is above the first card', () => {
+  it('COPY and WEEK ⋯ are above the workout chips, and the session ⋯ is above the first card', () => {
     mockState.all = [plan(1, SETS, [pe1, pe2]), plan(2, SETS, [pe1, pe2]), plan(3, [], [])]
     renderPlanPage()
 
     const copy = screen.getByText('COPY')
     const weekMenu = screen.getByLabelText('Week 2 options')
-    const sessionDeload = screen.getByLabelText('Mark this session as deload')
+    const sessionMenu = sessionMenuButton() as HTMLElement
 
-    expect(follows(copy, sessionDeload)).toBe(true)
-    expect(follows(weekMenu, sessionDeload)).toBe(true)
-    expect(follows(sessionDeload, cardOf('Bench Press'))).toBe(true)
+    expect(follows(copy, screen.getByText('MON'))).toBe(true)
+    expect(follows(weekMenu, screen.getByText('MON'))).toBe(true)
+    expect(follows(screen.getByText('MON'), sessionMenu)).toBe(true)
+    expect(follows(sessionMenu, cardOf('Bench Press'))).toBe(true)
     // The page-level buttons the header replaced are gone.
     for (const gone of ['COPY WEEK', 'COPY THIS WORKOUT', 'MARK WEEK AS DELOAD']) expect(screen.queryByText(gone)).toBeNull()
   })
 
-  it('the session toggle marks the viewed workout\'s own plan row', () => {
+  it('the session menu\'s deload row marks the viewed workout\'s own plan row', () => {
     mockState.all = [plan(1, SETS, [pe1, pe2]), plan(2, SETS, [pe1, pe2]), plan(3, [], [])]
     renderPlanPage()
 
-    fireEvent.click(screen.getByLabelText('Mark this session as deload'))
+    fireEvent.click(sessionToggle())
 
     expect(setDeloadMutate).toHaveBeenCalledTimes(1)
     expect((setDeloadMutate.mock.calls[0][0] as { weekPlanId: string }).weekPlanId).toBe('wp-2')
@@ -575,7 +576,7 @@ describe('PlanPage — a workout that has no plan row this week draws its exerci
     expect(screen.getByText('Lunge')).toBeTruthy()
     expect(screen.queryByLabelText('Add set to Lunge')).toBeNull()
     expect(screen.queryAllByLabelText(/^Options for /)).toHaveLength(0)
-    expect(screen.queryByLabelText('Mark this session as deload')).toBeNull() // the session toggle needs a row too
+    expect(sessionMenuButton()).toBeNull() // the session toggle needs a row too
     expect(addSetMutate).not.toHaveBeenCalled()
   })
 })

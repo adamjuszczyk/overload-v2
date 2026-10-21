@@ -1,31 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Copy, Lock, Pencil } from 'lucide-react'
+import { ChevronRight, Copy, Lock, Pencil } from 'lucide-react'
 import { differenceInCalendarWeeks, parseISO } from 'date-fns'
-import type { WeekPlan, ProgramExercise, DayOfWeek, WorkoutDay, PlanningType, ProgramSet } from '../../types'
+import type { WeekPlan, DayOfWeek, WorkoutDay } from '../../types'
 import { useMesos } from '../programs/useMesos'
-import { usePrograms, useWorkoutDays, useProgramExercises, useSequenceItems } from '../programs/usePrograms'
+import { usePrograms, useWorkoutDays, useSequenceItems } from '../programs/usePrograms'
 import { hasScheduledWorkout } from '../programs/hasSchedule'
 import { scheduleForWeek } from '../programs/runSchedule'
 import { changeStartWeek } from '../programs/programChange'
-import {
-  useWeekPlans,
-  useAllWeekPlans,
-  useSetDeload,
-  useSetWeekDeload,
-  useAddSet,
-  useUpdateSet,
-  useRemoveSet,
-  usePlanWeek,
-} from './useWeekPlan'
+import { useWeekPlans, useAllWeekPlans, useSetWeekDeload, usePlanWeek } from './useWeekPlan'
 import { detectSharedWeekdayWorkouts } from '../planner/usePlanner'
-import { resolveEffectiveDeloadRules, type DeloadRules } from '../../lib/deloadRules'
+import { resolveEffectiveDeloadRules } from '../../lib/deloadRules'
 import { deloadRulesLine } from './deloadRulesLine'
 import { useSettingsStore } from '../settings/settingsStore'
-import WorkoutSwitcher from './WorkoutSwitcher'
-import SequenceSlotSwitcher, { type SwitcherSlot } from './SequenceSlotSwitcher'
-import MoveSessionControl from './MoveSessionControl'
+import WeekView from './WeekView'
+import { usePlanSessions } from './usePlanSessions'
+import { DAYS_ORDER, DOW_LABEL } from './weekViewLogic'
 import { useDoneWeekPlanIds } from './useDoneWeekPlanIds'
 import PlanTabs, { type PlanTab } from './PlanTabs'
 import WeekTiles from './WeekTiles'
@@ -39,32 +30,10 @@ import ProgramsTab from '../programs/ProgramsTab'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { usePlanRowStatuses } from './usePlanRowStatuses'
 import { useRunSchedule } from './useRunSchedule'
-import PlanExerciseCard from './PlanExerciseCard'
-import { newSetFor, removalOrder, supersetChips, type PlanRow, type SetPatch } from './planSetRows'
-import { WeekDiffGate } from './WeekDiffGate'
-import { computeWeekDiff, weekDiffNeedsRunCopy, weeksOfSlot, type WeekDiff } from './weekDiff'
 import { useSequenceCurrentCycle } from './useSequenceCurrentCycle'
-import { dateForDow } from '../gym/moveSession'
 import { useToday } from '../../hooks/useToday'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const DAYS_ORDER: DayOfWeek[] = [
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-]
-
-const DOW_LABEL: Record<DayOfWeek, string> = {
-  monday: 'MONDAY', tuesday: 'TUESDAY', wednesday: 'WEDNESDAY',
-  thursday: 'THURSDAY', friday: 'FRIDAY', saturday: 'SATURDAY', sunday: 'SUNDAY',
-}
-
-// Chunk 21 — the shared-row note's own weekday list ("Marks Mon, Tue, Wed,
-// Thu, Fri — they share one plan"), sentence-case to match ApplyAheadBanner's
-// own G14 note (chunk 20) rather than WorkoutSwitcher.tsx's all-caps
-// DOW_SHORT (a different label context — a tab, not a sentence).
-const DOW_SHORT_TITLE: Record<DayOfWeek, string> = {
-  monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun',
-}
 
 // There is no program tab (chunk 33, SPEC Plan screen [P1.1]: "No program tab.
 // It's removed; what it did happens in the week or is fixed for the run"). Where each thing the tab
@@ -90,8 +59,9 @@ function computeWeekNumber(startDate: string): number {
 // unplanned, opens with PLAN FORWARD (`PlanForwardCard`), which plans exactly that week. A week nobody planned that has passed shows NOT
 // PLANNED, read-only and empty, and nothing is ever written for it (DECISIONS 131). Under the header: COPY (`CopySheet`, hidden on week 1,
 // P1.2-1) and WEEK ⋯ (`WeekMenuSheet`: the week's deload and the Settings rules), then the week: since chunk 54a one card per exercise with its set
-// rows (`PlanExerciseCard`), under the workout chips and the session toggle that chunk 54b redraws as the session chips and ⋯. The PROGRAMS tab
-// is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
+// rows (`PlanExerciseCard`), under the session chips, the legend and the session header and ⋯ that chunk 54b drew (`WeekView`: boards 1, 1a,
+// 1c, 1d, 10, 11; a stable week's THIS WEEK ONLY, the marks of what differs from the week's source, done sessions and past weeks read-only).
+// The PROGRAMS tab is chunk 65's `ProgramsTab` (it drew today's Programs page until then, P1.2-12).
 //
 // Chunk 35 (SPEC Scheduling → Sequence [P1.1], G40: "The current cycle is the
 // one containing the next due workout. Cycles before it are past.") — what
@@ -311,7 +281,8 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
 
   // Week plans with a completed or skipped session: read-only like a past week.
   const doneWeekPlanIds = useDoneWeekPlanIds(activeMeso?.id)
-  const isSessionDone = (wp: WeekPlan | undefined) => !!wp && doneWeekPlanIds.has(wp.id)
+  // The run's sessions with a plan row: which are done, skipped, started or moved (the chips' and headers' states, chunk 54b).
+  const planSessions = usePlanSessions(activeMeso?.id)
 
   const { data: programs = [] } = usePrograms()
   const program = programs.find((p) => p.id === activeMeso?.programId)
@@ -465,8 +436,6 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
         .filter((x): x is { dow: DayOfWeek; workoutDay: WorkoutDay } => !!x.workoutDay)
     : []
 
-  const selected = scheduledDays.find((x) => x.dow === selectedDow) ?? scheduledDays[0]
-
   // Chunk 25 review fix — the sequence equivalent of scheduledDays/selected
   // above. Fetched only for a sequence program (isSequence gates it; an
   // empty programId — the hook's own `enabled` check — means a weekday
@@ -483,12 +452,6 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
       position: item.position,
       workoutDay: item.workoutDayId ? workoutDays.find((d) => d.id === item.workoutDayId) ?? null : null,
     }))
-  // Never defaults to a rest slot (review: "rest days shown as
-  // non-selectable") — the first WORKOUT-bearing slot, same "fall back to
-  // the first one" rule scheduledDays/selected already follow.
-  const selectedSlot = sequenceSlots.find((s) => s.id === selectedSlotId && s.workoutDay)
-    ?? sequenceSlots.find((s) => s.workoutDay)
-    ?? null
   // Chunk 33 (SPEC Plan screen [P1.1] empty states): whether this run has any
   // scheduled workout at all, by the same check every START uses
   // (programs/hasSchedule.ts), read from what this page already loads: a
@@ -500,16 +463,6 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
     workoutDays,
     sequenceItems: sequenceItemsRaw,
   })
-  // This slot's own week-plan row for the viewed cycle — matched by BOTH
-  // workout_day_id and sequence_position (review: "never by workout
-  // alone"), so the two slots of a repeated workout (SPEC G8) open
-  // different rows.
-  const selectedSlotWeekPlan = selectedSlot?.workoutDay
-    ? weekPlans.find(
-        (wp) => wp.workoutDayId === selectedSlot.workoutDay!.id && (wp.sequencePosition ?? null) === selectedSlot.position,
-      )
-    : undefined
-
   // Chunk 21 — "Mark this week as deload" / "Unmark this week" (SPEC
   // "Deload" / "Plan screen" — "mark session or week as deload" is one of
   // this screen's own Weeks actions). weekIsFullyDeload reads off weekPlans as
@@ -622,15 +575,15 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
             during a run any more — its schedule is fixed for the run — so there is
             nothing per type left to say. The check is the one every START uses. */}
         {!contentLoading && !hasSchedule && (
-          <div style={{ textAlign: 'center', paddingTop: 60 }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)', marginBottom: 12 }}>
-              NO WORKOUTS SCHEDULED
-            </p>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '24px 16px', borderRadius: 12, background: 'var(--surface)', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--border)' }}>
+            <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>No workouts scheduled</span>
             <button
+              type="button"
               onClick={() => onTab('programs')}
-              style={{ background: 'transparent', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)' }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 8px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--accent)' }}
             >
-              Programs →
+              PROGRAMS
+              <ChevronRight size={14} aria-hidden="true" />
             </button>
           </div>
         )}
@@ -712,76 +665,31 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
               </div>
             )}
 
-            {/* Workout switcher + the one selected workout's panel */}
-            {!isSequence && scheduledDays.length > 0 && selected && (
-              <>
-                <WorkoutSwitcher days={scheduledDays} selectedDow={selected.dow} onSelect={setSelectedDow} />
-
-                {/* Chunk 24 (SPEC "Weekday" — "'Move this session' on Today and
-                    in Plan") — scoped to the week containing real "today" only
-                    (reviewer's own scope decision, this chunk's report): a past
-                    week's days are already resolved one way or another, and
-                    SPEC says nothing about pre-moving a future week. */}
-                <MoveSessionControl
-                  workoutDay={selected.workoutDay}
-                  weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
-                  mesoId={activeMeso.id}
-                  date={dateForDow(activeMeso.startDate, viewWeek, selected.dow)}
-                  today={today}
-                  isCurrentWeek={viewWeek === currentWeek}
-                />
-
-                <WorkoutDayPanel
-                  key={selected.workoutDay.id}
-                  headerLabel={DOW_LABEL[selected.dow]}
-                  workoutDay={selected.workoutDay}
-                  weekPlan={weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id)}
-                  isPast={isPast || isSessionDone(weekPlans.find((wp) => wp.workoutDayId === selected.workoutDay.id))}
-                  doneWeekPlanIds={doneWeekPlanIds}
-                  mesoId={activeMeso.id}
-                  weekNumber={viewWeek}
-                  isCycle={false}
-                  runCues={runCues}
-                  sharedWeekdays={sharedWeekdaysByWorkoutDayId.get(selected.workoutDay.id) ?? null}
-                  deloadRules={effectiveDeloadRules}
-                  planningType={program?.planningType ?? 'week_dependent'}
-                />
-              </>
-            )}
-
-            {/* Chunk 25 review fix — the sequence equivalent of the block above:
-                the slot switcher (ordered by position, SPEC G8's repeated-
-                workout slots each their own chip) + the SAME WorkoutDayPanel,
-                matched to this slot's own week-plan row by (workout_day_id,
-                sequence_position) — never by workout alone, so the two slots of
-                a repeated workout open different rows. No MoveSessionControl
-                here (chunk 24's own scope decision: weekday-only, keyed by a
-                calendar date a sequence slot doesn't have). */}
-            {isSequence && selectedSlot && (
-              <>
-                <SequenceSlotSwitcher
-                  slots={sequenceSlots.map((s): SwitcherSlot => ({ id: s.id, position: s.position, workoutDayName: s.workoutDay?.name ?? null }))}
-                  selectedId={selectedSlot.id}
-                  onSelect={setSelectedSlotId}
-                />
-
-                <WorkoutDayPanel
-                  key={`${selectedSlot.workoutDay!.id}:${selectedSlot.position}`}
-                  headerLabel={`SLOT ${selectedSlot.position + 1}`}
-                  workoutDay={selectedSlot.workoutDay!}
-                  weekPlan={selectedSlotWeekPlan}
-                  isPast={isPast || isSessionDone(selectedSlotWeekPlan)}
-                  doneWeekPlanIds={doneWeekPlanIds}
-                  mesoId={activeMeso.id}
-                  weekNumber={viewWeek}
-                  isCycle
-                  runCues={runCues}
-                  sharedWeekdays={null}
-                  deloadRules={effectiveDeloadRules}
-                  planningType={program?.planningType ?? 'week_dependent'}
-                />
-              </>
-            )}
+            {/* The legend, the session chips and the open session (chunk 54b; boards 1, 1a, 1c, 1d, 10, 11) */}
+            <WeekView
+              isSequence={isSequence}
+              mesoId={activeMeso.id}
+              startDate={activeMeso.startDate}
+              viewWeek={viewWeek}
+              currentWeek={currentWeek}
+              unit={unit}
+              weekPlans={weekPlans}
+              allWeekPlans={allWeekPlans}
+              scheduledDays={scheduledDays}
+              sequenceSlots={sequenceSlots}
+              selectedDow={selectedDow}
+              onSelectDow={setSelectedDow}
+              selectedSlotId={selectedSlotId}
+              onSelectSlot={setSelectedSlotId}
+              sharedWeekdaysByWorkoutDayId={sharedWeekdaysByWorkoutDayId}
+              sessions={planSessions}
+              doneWeekPlanIds={doneWeekPlanIds}
+              isPast={isPast}
+              today={today}
+              runCues={runCues}
+              deloadRules={effectiveDeloadRules}
+              planningType={program?.planningType ?? 'week_dependent'}
+            />
 
             {/* Chunk 51a (SPEC Plan screen [1.2] → Bottom; board 1): the one way into CHANGE THE PROGRAM from Plan. "FROM WEEK N" is the
                 week the changes start in (the week of the next session that isn't done), the number the screen's rule box gives; a past
@@ -838,230 +746,3 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
 }
 
 const capitalWord = (word: string) => word.charAt(0).toUpperCase() + word.slice(1)
-
-// ─── Workout Day Panel ────────────────────────────────────────────────────────
-
-interface PanelProps {
-  // Chunk 25 review fix — generalised from `dow: DayOfWeek` (a weekday
-  // run's own panel header's small top line): a sequence slot has no day of
-  // week, so the PARENT now computes whatever this line should read
-  // (DOW_LABEL[dow] for a weekday call — byte-identical to before this
-  // fix — or `SLOT n` for a sequence one) and hands it down as plain text.
-  // The only call site this value was ever used for (see below).
-  headerLabel: string
-  workoutDay: WorkoutDay
-  weekPlan: WeekPlan | undefined
-  // True for a past week and for a week plan whose session is completed or
-  // skipped: the panel is read-only either way.
-  isPast: boolean
-  // Every week plan of the run with a completed or skipped session. The panel
-  // reads it to say why it is locked on a current week.
-  doneWeekPlanIds: Set<string>
-  mesoId: string
-  weekNumber: number
-  // A sequence run's weeks are cycles: the pickers' eyebrow says CYCLE n (SPEC: the cycle replaces the week everywhere).
-  isCycle: boolean
-  // Every tag of the run's week sets, for the cues sheet's list of the user's own cues.
-  runCues: readonly string[]
-  // Chunk 21 (reviewer's note 2) — the actual weekday list behind a shared
-  // workout (null when not shared), for the per-session DELOAD toggle's own
-  // note ("Marks Mon, Tue, Wed, Thu, Fri — they share one plan").
-  sharedWeekdays: DayOfWeek[] | null
-  // Chunk 22 — the screen-resolved effective deload rules (the Settings
-  // rules, else none — PlanPage.tsx's own resolveEffectiveDeloadRules call,
-  // computed once for the whole page).
-  deloadRules: DeloadRules | null
-  // Chunk 31 — the run's planning type, which decides what this week is compared
-  // with (weekDiff.ts's chooseDiffSources) and which set type picker a set opens
-  // (SPEC Rest: a stable week's has no rest rows): undefined on the program reads as
-  // week-dependent (the column default), resolved once by PlanScreen.
-  planningType: PlanningType
-}
-
-// Chunk 54a (TASKS-1.2 "Plan's week view: exercise cards and set rows on the pickers"; SPEC Screens → Plan screen; boards 1, 1a, 9). One workout's
-// session: its header (name, day, the per-session DELOAD toggle: 54b redraws it as the session chip and ⋯), then one card per exercise
-// (PlanExerciseCard.tsx). The Sets / Structure views are gone, and with them every exercise-level action (swap, move, add, remove), ADD
-// WARMUP SETS, ADD STAGE, the warmup routine and the "apply this change to planned weeks ahead" banner: exercises change only in CHANGE THE
-// PROGRAM, a set's kind through the set type picker, and a change made in a week stays in that week (SPEC Weeks and copying).
-function WorkoutDayPanel({ headerLabel, workoutDay, weekPlan, isPast, doneWeekPlanIds, mesoId, weekNumber, isCycle, runCues, sharedWeekdays, deloadRules, planningType }: PanelProps) {
-  // Chunk 7 (TASKS.md "Each planned session owns its exercise list") — the
-  // week's own v2_week_plan_exercises list when a week plan row exists for
-  // this workout (weekPlan.exercises); the program's own exercises directly
-  // otherwise (no week plan has been planned for this workout/week yet; the
-  // cards are then drawn with no sets and nothing can be written).
-  // Chunk 31: this same read is the run's copy of the workout (its current list: not
-  // week-only, not removed), which week 1 and a stable week are compared with, so its
-  // not-yet-read state (undefined) is kept apart from an empty list.
-  const { data: runCopyExercises } = useProgramExercises(workoutDay.id)
-  const fallbackProgramExercises = runCopyExercises ?? []
-  const programExercises = weekPlan?.exercises ?? fallbackProgramExercises
-
-  // This session has happened (completed or skipped): isPast above already
-  // includes it, so this is only for the line that says why.
-  const sessionDone = !!weekPlan && doneWeekPlanIds.has(weekPlan.id)
-
-  const addSet = useAddSet(mesoId, weekNumber)
-  const removeSet = useRemoveSet(mesoId, weekNumber)
-  const updateSet = useUpdateSet(mesoId, weekNumber)
-  const toggleDeload = useSetDeload(mesoId, weekNumber)
-
-  // Chunk 31 (SPEC Plan screen [P1.1]: "Anything different from the week's source is
-  // highlighted") — what this week differs from its source by, weekDiff.ts's pure
-  // decision over data Plan already holds: every week of the run (the meso-wide
-  // read the week tiles are drawn from), narrowed to THIS workout's slot (on a sequence
-  // run a repeated workout's two slots are two histories, each compared with its own), and
-  // the run's copy of the workout, read below only for a week that is compared with it. Nothing
-  // is stored, and a week is compared as it is now (G22): the sources are read live on every
-  // render. Until chunk 54b replaces it with `changesSinceSource`.
-  const { data: allWeekPlans = [] } = useAllWeekPlans(mesoId)
-  const weekStart = useSettingsStore((s) => s.weekStart)
-  const slotWeeks = weeksOfSlot(allWeekPlans, workoutDay.id, weekPlan?.sequencePosition ?? null)
-  const diffNeedsRunCopy =
-    !!weekPlan && weekDiffNeedsRunCopy({ planningType, weekStart, weekNumber, slotWeeks, isDeload: weekPlan.isDeload })
-  function computeDiff(runCopy: { exercises: ProgramExercise[]; programSets: ProgramSet[] } | null): WeekDiff | null {
-    if (!weekPlan) return null
-    return computeWeekDiff({ planningType, weekStart, weekNumber, week: weekPlan, slotWeeks, runCopy })
-  }
-
-  // Chunk 22 (reviewer's note 5) — same one-line notice as PlanPage's own
-  // week-level action, scoped to this one session's own toggle.
-  const [deloadNotice, setDeloadNotice] = useState<string | null>(null)
-
-  const sets = weekPlan?.sets ?? []
-  const chips = supersetChips(programExercises)
-
-  // "+ ADD SET" (SPEC Defaults 8): a Normal set with the previous set's rep target and no weight or RIR, numbered one past the exercise's
-  // last head (planSetRows.ts). The week plan row is always there for a week that is shown (chunk 52); without one nothing is written.
-  function handleAddSet(pe: ProgramExercise, rows: PlanRow[]) {
-    if (!weekPlan) return
-    const { setNumber, defaults } = newSetFor(rows)
-    addSet.mutate({ weekPlanId: weekPlan.id, programExerciseId: pe.id, setNumber, defaults })
-  }
-
-  // Every number, target and cue a picker or a cell returns is a list of `useUpdateSet` writes, one per set (planSetRows.ts decides which
-  // sets and which columns), so a "Use for all" is one write per head and a row whose value is already the picked one is left alone.
-  function handleUpdate(patches: SetPatch[]) {
-    for (const patch of patches) updateSet.mutate(patch)
-  }
-
-  // REMOVE THIS SET: the requests go out stages first, highest index first, then the head (setGroupLogic.ts's cascade order). The rows' foreign
-  // key would take the stages with the head, but each request also takes its row out of the screen's cache at once; a removal cut short
-  // leaves the head with fewer stages, never stages without a head.
-  function handleRemoveRow(row: PlanRow) {
-    for (const id of removalOrder(row)) removeSet.mutate(id)
-  }
-
-  return (
-    <div style={{ marginBottom: 16 }}>
-      {/* Panel header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-muted)' }}>
-            {headerLabel}
-          </span>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', lineHeight: 1.1 }}>
-            {workoutDay.name}
-          </div>
-        </div>
-
-        {/* Deload toggle — only renders if a weekPlan row exists. Chunk 21:
-            this marks THAT ONE SESSION (this workout's own plan row for
-            this week) — unchanged mechanics (still keyed by weekPlanId
-            alone), now with an aria-label saying so explicitly, alongside
-            the new week-level action above. Chunk 22: hands the
-            screen-resolved `deloadRules` prop through on every call. */}
-        {weekPlan && (
-          <button
-            onClick={() => {
-              if (isPast) return
-              setDeloadNotice(null)
-              toggleDeload.mutate(
-                { weekPlanId: weekPlan.id, isDeload: !weekPlan.isDeload, rules: deloadRules },
-                {
-                  onSuccess: (outcome) => {
-                    if (outcome === 'alreadyStarted') {
-                      setDeloadNotice('Already started — sets left as they are')
-                    }
-                  },
-                },
-              )
-            }}
-            disabled={isPast}
-            aria-label={weekPlan.isDeload ? 'Unmark this session as deload' : 'Mark this session as deload'}
-            style={{ height: 26, padding: '0 10px', background: weekPlan.isDeload ? 'var(--accent-muted)' : 'var(--surface-overlay)', border: `1px solid ${weekPlan.isDeload ? 'var(--accent)' : 'var(--border-strong)'}`, borderRadius: 6, cursor: isPast ? 'default' : 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: weekPlan.isDeload ? 'var(--accent)' : 'var(--text-dim)', flexShrink: 0 }}
-          >
-            DELOAD
-          </button>
-        )}
-      </div>
-
-      {/* Shared-row note (chunk 21, reviewer's note 2 / G14) — this
-          workout's plan row covers more than one weekday, so the DELOAD
-          toggle above marks every one of them, as it already does for
-          every other edit on this row. Shown next to the mark
-          itself, not just after it's tapped, so it's known beforehand. */}
-      {weekPlan && sharedWeekdays && sharedWeekdays.length > 0 && (
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
-          {`Marks ${sharedWeekdays.map((d) => DOW_SHORT_TITLE[d]).join(', ')} — they share one plan.`}
-        </p>
-      )}
-
-      {/* Chunk 22 (reviewer's note 5) — "say what you did": shown right
-          after a mark/unmark the started guard caught. */}
-      {deloadNotice && (
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: 'var(--text-dim)', marginTop: -2, marginBottom: 8, lineHeight: 1.5 }}>
-          {deloadNotice}
-        </p>
-      )}
-
-      {sessionDone && (
-        <div style={{ marginBottom: 8 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-dim)' }}>
-            SESSION DONE — READ ONLY
-          </span>
-        </div>
-      )}
-
-      {/* One card per exercise (board 1); what differs from the week's source is marked on the rows as 1.1 marked it (chunk 31),
-          the gate reading the run's copy's sets only for a week that is compared with it. */}
-      {programExercises.length === 0 ? (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '20px 16px', textAlign: 'center' }}>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: 'var(--text-dim)' }}>
-            NO EXERCISES IN THIS DAY
-          </p>
-        </div>
-      ) : (
-        <WeekDiffGate needsRunCopy={diffNeedsRunCopy} runCopyExercises={runCopyExercises} compute={computeDiff}>
-          {(diff) =>
-            programExercises.map((pe, index) => (
-              <PlanExerciseCard
-                key={pe.id}
-                pe={pe}
-                sets={sets.filter((s) => s.programExerciseId === pe.id)}
-                superset={chips.get(pe.id) ?? null}
-                readOnly={isPast}
-                canWrite={!!weekPlan}
-                mesoId={mesoId}
-                weekNumber={weekNumber}
-                isCycle={isCycle}
-                planningType={planningType}
-                runCues={runCues}
-                diff={diff?.exercises.get(pe.id)}
-                // Disables "+" while an add (or a removal) is in flight for this workout (found by adversarial review): useAddSet has no
-                // optimistic update, so the rows don't show a just-added set until the insert round-trips and the week is read again, and a
-                // second tap would number the next set from rows that are one short. addSet and removeSet are shared by the day's cards, so
-                // every card waits; the card whose add it is says so.
-                addDisabled={addSet.isPending || removeSet.isPending}
-                adding={addSet.isPending && addSet.variables?.programExerciseId === pe.id}
-                onAddSet={(rows) => handleAddSet(pe, rows)}
-                onUpdate={handleUpdate}
-                onRemoveRow={handleRemoveRow}
-                isLast={index === programExercises.length - 1}
-              />
-            ))
-          }
-        </WeekDiffGate>
-      )}
-    </div>
-  )
-}
