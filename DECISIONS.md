@@ -1,24 +1,28 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, chunk 56's review (merged).*
-- *Chunk 56 is merged (#194, `dbfa314`): from week 2, Plan shows "LAST WEEK · N things went differently · REVIEW →" under COPY / VOLUME / WEEK ⋯, and REVIEW's sheet (board 4) takes each of last week's differences over or leaves it: USE, ADD THIS SET, REMOVE THIS SET, a type change's USE, ADD EXERCISE and SWAP FROM WEEK N, each one request with its decision row. A decided item never comes back. An added set is keyed by its place (your 195). On staging, as the test account, TASKS 56's whole list passed on week 3: the seed's five differences, each action's write read back by API, and the line gone at the end. The smoke: 51/51 and one set logged. For your review pass: 211 (display choices and readings, accepted as built) and 212 (a workout whose session this week is already done gets no REVIEW items; recommended as built). Three tests owed (below).*
-- *The build has stopped for the week at this clean boundary (your rule of 2026-10-21: after 56, wait for your go after the Monday 05:00 reset). 58a is yours to start. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, the pre-read of chunks 67–69 (docs).*
+- *58a started on 2026-10-21 by your go (DATA, the full treatment, with break proofs on the offline path per 197), beside this pre-read. Its hard stop: 1.8M tokens, or the weekly limit close, at a clean point, with the branch left as it is. If it merges with budget to spare, 58b still waits for your go after the Monday 05:00 reset.*
+- *The pre-read of 67, 68 and 69 (against SPEC, DECISIONS and staging `30a7c42`) found three gaps: 213 (blocks 67), 214 (blocks 68) and 215 (blocks nothing; 69 builds on its recommendation). Your answers of 2026-10-21 are recorded: 212, 210 and 208 kept as built, still on your review-pass list. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
 
 What blocks, in order:
-1. **Your go**, after Monday's 05:00 reset: the build waits for it, and 58a is yours to start.
-2. **121** (a to-do, below): the release's migrations PR waits for it.
+1. **Your go**, after Monday's 05:00 reset: 58b waits for it (58a is under way).
+2. **213** (below): chunk 67 waits for it.
+3. **214** (below): chunk 68 waits for it.
+4. **121** (a to-do, below): the release's migrations PR waits for it.
 Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk:
-- none.
+- **213** — step 3's REMOVE THIS SET on a set that isn't the exercise's last leaves its position empty, and the SETS stepper's + then adds a set at a position another set holds (`setExerciseSetCount` appends from the count + 1; no unique key refuses it; START copies the position into the run and week 1's set numbers). Recommended: (a), + adds after the highest position, as CHANGE THE PROGRAM's set rows do (one line). Blocks: 67.
+- **214** — the planner's START: at once, as board PP5b draws, or through the start sheet (PR8), as TASKS 68's staging line says. Today it starts at once and says nothing when another program is running, where SPEC says starting then finishes it "and says so (PR9)". Recommended: (a), START opens PR8 with this program picked. Blocks: 68.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
-- **212** — a workout whose session this week is already done (completed or skipped) gets no REVIEW items: Plan locks a done session, so its per-set actions have nowhere to write, and its differences come back a week on, from this week's session. Its ADD EXERCISE and SWAP FROM WEEK N could still be offered, since they change later weeks ((b)). Recommended: (a), as built. Blocks: nothing (a filter; nothing is written either way).
+- **215** — the Library's EDIT TAGS and UNTAGGED name an exercise's muscle tags, not a set's cues: chunk 69's wording test allowlists them. Recommended: (a), keep them. Blocks: nothing.
+- **212** — answered on 2026-10-21: keep as built. A workout whose session this week is already done gets no REVIEW items. On your review-pass list.
 - **211** — chunk 56's display choices and readings on REVIEW (D31), (a)–(m), including ADD EXERCISE on a stable run (h), each press reading the item's decision again first (k) and two sets added in one place sharing one item (m). Recommended: accept all, as built. Blocks: nothing.
-- **210** — VOLUME's "—" for an empty last week (P1.2-2) is drawn for a week with no planned set and no session (a missed week). A planned week with no session shows numbers instead: its plan while it runs, and 0 with "YOU PLANNED … DID 0" once it has ended, as SPEC 14 and your 133 say. P1.2-2's literal words ("no sessions at all") would show "—" there too. Recommended: (a), as built. Blocks: nothing (display; one line if (b)).
+- **210** — answered on 2026-10-21: keep as built. VOLUME's "—" is drawn only for a week with no planned set and no session. On your review-pass list.
 - **209** — chunk 55's display choices and readings on the VOLUME sheet (D31), (a)–(k), including this week read from the open week's own query (i) and a read paused offline shown as failed (d). Recommended: accept all, as built. Blocks: nothing.
-- **208** — a session that an UNMARK cut off part way (after it put the plan back, before it cleared the saved copy) keeps its copy and its deload flag; marking the week then leaves it as it is, marked but not deloaded, until it is unmarked and marked again. Nothing is lost. Recommended: (a), as built (SPEC's "leaves it as it is"). Blocks: nothing.
+- **208** — answered on 2026-10-21: keep as built. A MARK leaves a session that an UNMARK cut off part way as it is (it keeps its saved copy and its flag). On your review-pass list.
 - **207** — answered (b) on 2026-10-21: a stable run's past week and its finished sessions show no change marks and no legend; week-dependent ones keep theirs. A display choice, built in your review pass (one condition in `WeekView.tsx`), not now.
 - **206** — chunk 54b's display choices and readings on Plan's week view (D31), (a)–(m), including no mark on a session in progress (a) and board 9's "DELOAD SESSION · NO CHANGE MARKS" read as the frame's caption, not drawn text (e). Recommended: accept all, as built. Blocks: nothing.
 - **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
@@ -468,18 +472,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-21
 
 ### 208 A session an UNMARK cut off part way keeps its saved copy and its flag; marking the week again leaves it marked but not deloaded (chunk 188f)
-**Ask:** when a session holds a saved copy but its sets are its plan again (an UNMARK cut off after it put the plan back and before it cleared the copy), should a MARK deload it, or leave it as it is?
-**Recommendation:** (a), as built. SPEC's words cover the case ("Marking a session that already holds a saved copy of its plan … leaves it as it is"), and nothing is lost or written wrong: the mark writes only the flag, and UNMARK still restores the plan from the copy. The case needs two things to go wrong in a row: an UNMARK cut off between two of its requests, then MARK pressed rather than UNMARK.
-**Blocks:** nothing (no data lost or written wrong either way).
-**Options:**
-- (a) As built: a session that holds a saved copy is left as it is, whatever its sets are. It reads DELOAD with its plan's sets (or with none, when the cut came before the plan went back in) until it is unmarked; UNMARK, then MARK, deloads it.
-- (b) A mark first finishes an UNMARK it finds cut off: a session whose sets equal its saved copy, or that holds none, is put back from the copy and then marked as an unmarked session is. One more comparison in `markSessionDeload`, in a production fix's code path.
-**Answer:**
-**Evidence:** 188's question held a week mark cut off part way (chunk 52's review, probe B), so its answer doesn't settle this case (RULES: "An answer covers the cases its question held"); SPEC's words read literally do.
-- UNMARK is three requests (`applyDeloadRestore`): delete the sets, put the copy's sets back, then clear the copy and the flag in one write. Cut after the second, the session holds its flag, its copy and the plan's sets. A week reads marked only when every session is (`weekIsFullyDeload`, `PlanPage.tsx`), so after an UNMARK WEEK cut off there, WEEK ⋯ offers MARK WEEK AS DELOAD.
-- The builder executed it (report §3.3, a scratch probe, not committed): after MARK WEEK that session was unchanged (flag on, copy of 4 entries, the plan's 4 × 100 at RIR 2), the other session was deloaded, and UNMARK WEEK put both back.
-- Before 188f, the same press deloaded that session correctly. But cut before the second request (no sets), it saved an empty copy over the plan, and every session the UNMARK hadn't reached had its deloaded sets saved over its plan (188). The builder's hook test (3) builds the no-sets state from a cut-off MARK; under the guard's removal (G1) its copy read `[]`.
-- Settled, not asked: an empty copy (`[]`, a session marked with no sets of its own) counts as a copy, as `unmarkSessionDeload` reads it. Reading it as none would bring 188 back for such a session, whose calculated sets come from the base week (break G3 fails 2 tests).
+- What: whether a MARK on a session that an UNMARK cut off part way (it holds its saved copy and its deload flag) deloads it or leaves it as it is.
+- Answer: (Adam, 2026-10-21) "212, 210, 208: keep as built; listed for my review pass." Option (a), as built: a session that holds a saved copy is left as it is (SPEC's "leaves it as it is"); UNMARK, then MARK, deloads it. Still on his review-pass list. Full text in HISTORY.md.
+- Date: 2026-10-21
 
 ### 209 Chunk 55's display choices and readings on the VOLUME sheet (provisional, D31; accepted as built)
 **Ask:** chunk 55's choices where SPEC, TASKS and board 3 give no single answer are accepted as built. They are listed here for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups). The one that touches what a column shows, P1.2-2's empty last week, has its own entry: 210.
@@ -501,14 +496,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (k) A session with no plan row (an offline start "without a plan") belongs to no week Plan draws and isn't read: the read is by last week's plan rows, as TASKS says.
 
 ### 210 VOLUME's empty last week (P1.2-2): a week with no plan sets and no session, not every week with no session (chunk 55)
-**Ask:** P1.2-2 says last week's column shows "—" "when last week has no sessions at all (planned forward from an empty week)". Chunk 55 reads "empty" as 131's week with nothing in it: no plan row of it holds a set and no session of it exists. Should a week that was planned but has no session also show "—"?
-**Recommendation:** (a), as built. SPEC 14 and your 133 say what such a week counts (its plan while it runs, 0 once it has ended, with the "YOU PLANNED … DID …" notes), and P1.2-2 is a provisional display choice (TASKS' D31 table), not a SPEC rule; its own parenthetical names the case it was written for, a week planned forward from an empty one.
-**Blocks:** nothing (display: nothing is written either way; one line in `lastWeekIsEmpty`, `volumeSheetLogic.ts`, if (b)).
-**Options:**
-- (a) As built: "—" only for a week with no planned set and no session (a missed week, 131, or one planned with no sets). A planned week with no session shows numbers: its plan on a week planned ahead (Monday morning, nothing started yet), 0 with the notes once it has ended.
-- (b) The literal words: "—" for every week with no session row. On a week planned ahead that hides the plan counts SPEC 14 asks for ("sessions not done yet count their plan"), and on a week that ended it hides the "YOU PLANNED 4 LAST WEEK · DID 0" notes your 133 asked for ("so the note shows what was missed").
-**Answer:**
-**Evidence:** the builder's report, reading 3. Both cases are tested and break-proven: "a planned week nobody did anything in is not empty" (`VolumeSheet.test.tsx`) fails under the literal reading (the review's break R1, `return sessionCount === 0`), and a missed week shows dashes with nothing read (break V13 and the page test). A week whose sessions were all skipped has session rows and counts 0 under either option. SPEC is silent on "—"; SPEC 14 and 133's words decide the numbers (TASKS' D31 table is "built as written unless Adam changes them", provisional by its own header), so this is listed for your review pass, not held as a gap.
+- What: which weeks VOLUME's "—" for an empty last week (P1.2-2) is drawn for.
+- Answer: (Adam, 2026-10-21) "212, 210, 208: keep as built; listed for my review pass." Option (a), as built: "—" only for a week with no planned set and no session; a planned week with no session shows its plan while it runs, and 0 with the "YOU PLANNED … DID 0" notes once it has ended (SPEC 14, 133). Still on his review-pass list. Full text in HISTORY.md.
+- Date: 2026-10-21
 
 ### 211 Chunk 56's display choices and readings on REVIEW (provisional, D31; accepted as built)
 **Ask:** chunk 56's choices where SPEC, TASKS and boards 1 and 4 give no single answer are accepted as built. They are listed here for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups). The one that changes which items are offered, a workout whose session this week is done, has its own entry: 212.
@@ -532,15 +522,42 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (m) Two added sets in one place share one key, so they are one item, and deciding it decides both. A place repeats only when two phones add a set to one exercise at the same moment (46r's tie, 194); 195 (a) was asked about two cards, and keying by a log id instead is what 136 rules out.
 
 ### 212 A workout whose session this week is already done gets no REVIEW items (chunk 56; SPEC is silent)
-**Ask:** when this week's session of a workout is done (completed or skipped) before last week's differences for it were decided, should REVIEW still offer them? As built it doesn't: Plan leaves a done session's plan row out of what REVIEW reads, so that workout's items go, and the line's count with them; they come back if the session is reopened.
-**Recommendation:** (a), as built. A done session is locked in Plan (SPEC: "Done sessions and finished weeks are locked in Plan"; Actions: "Each writes to the week shown"), so USE, ADD THIS SET, REMOVE THIS SET and a type item's USE have nowhere to write. The workout's differences come back one week on, from this week's done session, on next week's REVIEW (a week planned ahead shows them already).
-**Blocks:** nothing. Nothing is written for those items either way; (b) or (c) is the filter in `PlanPage.tsx`'s `reviewArgs` plus a per-item one in the sheet.
+- What: whether REVIEW still offers last week's differences for a workout whose session this week is already done (completed or skipped).
+- Answer: (Adam, 2026-10-21) "212, 210, 208: keep as built; listed for my review pass." Option (a), as built: no items for such a workout (Plan locks a done session); its differences come back a week on. Still on his review-pass list. Full text in HISTORY.md.
+- Date: 2026-10-21
+
+### 213 REMOVE THIS SET in the stepped planner on a set that isn't the last, then + on SETS: two sets share one position (pre-read, chunk 67)
+**Ask:** step 3's set type picker gets REMOVE THIS SET (`removeProgramSet`, TASKS 67). Removing a set that isn't the exercise's last leaves its position empty. The SETS stepper's + then inserts its new set at "number of sets + 1", a position a set already holds. What should the planner write?
+**Recommendation:** (a). It is one line in `setExerciseSetCount`: new sets go after the highest position, the rule CHANGE THE PROGRAM's set rows already follow (`placeInOrder` in `programChange.ts`: kept rows keep their positions, new rows go after the last). Nothing else is written, and a gap is what a remove on CHANGE THE PROGRAM already leaves.
+**Blocks:** chunk 67 (what REMOVE THIS SET and the SETS stepper write to a saved program; START copies it into the run and its week 1).
 **Options:**
-- (a) As built: no items for a workout whose session this week is done.
-- (b) Still offer its ADD EXERCISE and SWAP FROM WEEK N items, which are CHANGE THE PROGRAM changes and land from the next week for that workout (How a save lands leaves a done session as it is); drop its per-set items.
-- (c) Offer every item, the per-set ones with IGNORE only.
+- (a) Keep the gap. + adds after the highest position (`setExerciseSetCount`, one line).
+- (b) Close the gap. REMOVE THIS SET also moves every later set of the exercise, with its stages, down one position. That is one update per later row, in a new `plannerService` function, where TASKS 67 says the writes stay the existing functions.
+- (c) Offer REMOVE THIS SET only on the exercise's last set (the picker's `onRemove` passed for that set alone). The stepper stays the way to remove sets.
 **Answer:**
-**Evidence:** the builder's report, point 1. `reviewArgs.thisWeek` leaves out `doneWeekPlanIds`, and chunk 43's rule "no counterpart this week, nowhere to store a decision or write" then drops the items. Break G1 (done rows passed in) is caught by `PlanPage.review.test.tsx` (re-run in the review). A session in progress isn't locked, so its items stay: staging's week 3 Upper A is in progress, and TASKS 56's five items show there. SPEC's REVIEW section says which week "last week" is, not which of this week's sessions can take its decisions. The lock rule settles the per-set writes, not whether the items are listed, so this is listed for your review pass and not held.
+**Evidence:** `setExerciseSetCount` (`plannerService.ts`) sorts the heads and appends from `sorted.length + 1`. Until now it has only met unbroken positions, because the planner's only one-row delete was a stage's, and a stage shares its head's position. With bench sets 1, 2 and 3, REMOVE THIS SET on set 2 leaves 1 and 3, and + then inserts a second set 3. `v2_program_sets` has no unique key on `(program_exercise_id, position)` (027 made a plain index), so nothing refuses it. Downstream a position works as the set's identity. `v2_copy_program` (028) keeps it. `v2_plan_week` (031, 045) writes it as the week set's `set_number`. The stable weight pairing (031, 039) and a week set's rest (G45) match sets by their order of position, and two equal positions leave that order to chance. Settled, not asked: the SETS stepper's − still removes the highest positions first, under any option.
+
+### 214 The planner's START: start at once, as board PP5b draws, or open the start sheet (PR8), as TASKS 68's staging line says (pre-read, chunk 68)
+**Ask:** START in the stepped planner starts the run at once today (`v2_start_run`) and goes to Plan, week 1. It has no name field, and it says nothing when another program is running. SPEC's rules for starting ("The start sheet's optional name field defaults to the program's name. Starting while a program runs finishes the running one first and says so (PR9)") are built in chunk 65's start sheet. What should the planner's START do in 1.2?
+**Recommendation:** (a). It keeps one start path: the name field, PR9's line about the running program and PR10's failure come with the sheet as built and accepted (189). TASKS 68's staging line already expects it ("START → PR8 → Plan week 1").
+**Blocks:** chunk 68 (its footer, its error line and its tests), because TASKS 68's Scope and Staging lines disagree.
+**Options:**
+- (a) START opens PR8 (`StartProgramSheet`) with this program picked. The sheet starts the run and goes to Plan, week 1. A failure shows PR10's banner ("Couldn't start [name]." and the reason). The footer keeps PP5b's disabled START with "Schedule at least one workout to start". PP5b's STARTING… and "Couldn't start this program." states aren't drawn.
+- (b) START starts at once, as PP5b draws: STARTING… on the button, and "Couldn't start this program." with the reason under the footer. When a program is running it asks first, in PR9's words, because starting this one finishes the running one (a new confirm). There is no name field, so the run takes the program's name.
+- (c) As today: START starts at once and says nothing about a running program. That leaves SPEC's "says so" unmet from the planner.
+**Answer:**
+**Evidence:** `PlannerPage.tsx`'s `handleStart` calls `useStartRun` with the program's name and goes to `PLAN_WEEK_ONE_PATH`. START is off only while starting or when there is no schedule. `v2_start_run` ends a running program in the same transaction, so a START in the planner ends one without a word. TASKS 68's Scope says "START → Plan week 1 (65's rule)" and lists "Couldn't start this program." + reason (PP5b), while its Staging line says "START → PR8 → Plan week 1". 189 settled the sheet's own display, not which screens open it.
+
+### 215 The Library's "EDIT TAGS" and "UNTAGGED" name muscle tags, not cues: allowlisted or reworded? (pre-read, chunk 69)
+**Ask:** chunk 69's `check-wording.test.mjs` fails on any user-visible "tag" outside Coach. The Library shows two: the EDIT TAGS view switch (`LibraryPage.tsx`) and UNTAGGED (`ExerciseTagList.tsx`). Both are about an exercise's muscle tags (SPEC Library: "muscle tags"), not the set tags that SPEC renames to cues. Should they stay, or be reworded?
+**Recommendation:** (a). SPEC's "Tags are 'cues'" is about a set's tags, and calling muscle tags cues would be wrong. Apart from that sweep, the Library's look and wording are outside 1.2.
+**Blocks:** nothing. 69 builds on (a), which is one allowlist entry documented in the script. (b) changes two strings.
+**Options:**
+- (a) Keep both, and name them in the script's allowlist as the Library's muscle tags.
+- (b) Reword both without "tag" (for example EDIT MUSCLES and NO MUSCLE), and keep the script strict.
+- (c) Use "cues" there too (EDIT CUES, NO CUES).
+**Answer:**
+**Evidence:** the sweep's own list (TASKS 69 Scope) names "tag" only in Plan, the workout and the planner, while its test greps every `.tsx` and `.ts` file under `src/` except Coach's. A grep on staging `30a7c42` finds these two and no other user-visible "tag" outside Coach. `STAGE` (`SetRow.tsx`) contains the letters but isn't the word, so the test matches whole words (TASKS 69, amended).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
