@@ -1,14 +1,15 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-20, chunk 53's review 2 (merged).*
-- *Chunk 53 is merged (#183, `48b1563`): 045 (`v2_plan_week` with the 1.2 copy rules) and 046 (149's release data migration) are live on staging. Your re-seed from build/chunk-53's seed.sql (204 (a)) gave 046 its 1.1-shaped run: before the merge `rehearse-046.mjs --staging` read 7 changes on 6 rows on staging-sequence and 0 on the test and stable accounts, and after the deploy staging showed exactly those, with a second run changing nothing. R2: PLAN FORWARD planned the test account's week 4 and the stable account's week 3 with structure and no numbers (the default's rep targets on the stable week), and COPY then filled weights. Staging-sequence's cycle 3 shows the case you accepted in 203 (Rotation A slot 1: Leg Press with no sets). The smoke: 51/51 and one set logged.*
-- *What follows (night mode): the seed-version line you asked for (one line at the end of `supabase/seed.sql` that prints a seed version; a tiny chunk before 54a), then 54a, 54b, 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, chunk 54a's review (merged).*
+- *Chunk 54a is merged (#186, `449b5ca`): Plan's week view draws each exercise as a card with its set rows, and every set edit goes through the pickers (reps, RIR, set type, cues, + ADD SET, REMOVE THIS SET); the Sets / Structure views, the exercise-level actions, MAKE DEFAULT, apply-ahead, ADD WARMUP SETS and ADD STAGE are gone. WEEK ⋯'s pending label follows the request (your 187 (a)). On staging, as the test account on week 3's Lower A: a RIR range on one set, reps 4–6 with "Use for all" (the warmups change too, as SPEC Targets says: TASKS' staging line said they kept 8 and 5 and is fixed), a dropset with two drops and a cue, + ADD SET, a staged added set removed whole; every write read back by API, then Lower A put back exactly as it was. The smoke: 51/51 and one set logged. Three tests are owed ("Tests owed"); the seed-version line (#185) is recorded (RULES, CONTEXT, TASKS "Seed").*
+- *What follows (night mode): 54b, 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
 
 Decisions that block a chunk:
 - none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
 - **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
 - **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
 - **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
@@ -44,6 +45,9 @@ To-dos:
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
 
 - **46r** (#177): a card a swap made that is drawn *before* the card it replaced (a layout W5 doesn't draw) keeps its own numbering, so the replaced card's logged sets keep theirs. The test pins `numberedHeads`' rule that a swap's card continues its slot only when it is drawn after the card it replaced (`src/features/gym/workoutRules.ts`). The break it must catch is the review's R4, that condition dropped. Executed (probe P7): Lat Pulldown 01✓ 02✓ then read 02✓ 03✓ under the swap card's 01, and the module's 478 tests all pass.
+- **54a** (#186): Plan's weight box on an lbs exercise keeps the stored kg when the shown value is typed again (`resolveEditedWeightKg` in `PlanSetRow.tsx`): 9 kg shows as 19.8 lbs, and 19.8 typed again must write nothing, while 20 writes 9.07 kg. The break it must catch is the review's R54-W1, `const kg = toStorageWeight(parsed, unit)` for every edit, which passed all 521 writer tests. The probe in `<scratchpad>/build/r54a/probe/zzReview54a.probe.test.tsx` passes on the branch and fails under the break.
+- **54a** (#186): Enter in Plan's weight box commits the typed weight without a blur first (`PlanSetRow.tsx`'s `onKeyDown`). The break it must catch is the review's R54-W3, the Enter handler removed, which passed all 521 writer tests. Same probe file.
+- **54a** (#186): a RIR range that differs from the set's only in its high end is written: a set at RIR 1–3 picked to 1–2 writes `{ targetRir: 1, targetRirMax: 2 }` (`rirTargetPatches` in `planSetRows.ts`). The break it must catch is the review's R54-I1, the "already holds the target" check comparing the low end only, which passed all 521 writer tests. Same probe file.
 
 ## Format for all new entries
 
@@ -242,7 +246,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 187 WEEK ⋯'s row names the other direction while a mark or unmark is out (chunk 52; display)
 - What: WEEK ⋯'s row reads UNMARKING… while a mark is out and MARKING… while an unmark is (display; recommended: fix in 54a).
-- Answer: (Adam, 2026-10-20) "(a), fixed in 54a with a test through the real hook." Option (a), as the entry words it: "in 54a, as recommended", the recommendation being: "the row's pending label takes its direction from the request itself (the mutation's own `isDeload`), not from whether the week reads as marked, with a test through the real `useSetWeekDeload` that holds the request in flight (the review's probe A is one). Display only: nothing written differs, and the row is disabled while the write is out." Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-20) "(a), fixed in 54a with a test through the real hook." Option (a), as the entry words it: "in 54a, as recommended", the recommendation being: "the row's pending label takes its direction from the request itself (the mutation's own `isDeload`), not from whether the week reads as marked, with a test through the real `useSetWeekDeload` that holds the request in flight (the review's probe A is one). Display only: nothing written differs, and the row is disabled while the write is out." Full text in HISTORY.md. Built in chunk 54a (#186, `449b5ca`): `WeekMenuSheet` takes `pendingDeload`, the request's own `isDeload`; `PlanPage.weekMenu.pendingLabel.test.tsx` holds the request in flight through the real `useSetWeekDeload`.
 - Date: 2026-10-20
 
 ### 188 A week deload mark that stops part way leaves the week half marked, and marking it again loses a session's saved plan (older than 1.2; found in chunk 52's review)
@@ -397,6 +401,28 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - What: Adam's re-seed of 2026-10-20 (about 20:35 UTC) ran staging's own seed.sql, so `rehearse-046.mjs --staging` read 0 changes on staging-sequence where 046's rule says 7 on 6, and 53's merge was held (recommended: (a), a re-seed from build/chunk-53's `supabase/seed.sql`).
 - Answer: (Adam, 2026-10-20) "204: re-seeded from build/chunk-53's seed.sql (option a)." Done about 21:53 UTC; the rehearsal then read 7 changes on 6 rows, 53 merged (#183) and staging showed exactly those after the deploy. Full text in HISTORY.md.
 - Date: 2026-10-20
+
+### 205 Chunk 54a's display choices and readings on Plan's week view (provisional, D31; accepted as built)
+**Ask:** chunk 54a's choices where SPEC, TASKS and boards 1, 1a and 9 give no single answer are accepted as built. They are listed here for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. (a)–(i) and (n) are display; (j)–(m) are readings the review held against SPEC's and the boards' words, and none writes anything wrong or loses data.
+**Blocks:** nothing.
+**Options:** (a)–(n) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-54a-builder-1.md`, section 3), held against SPEC Screens → Plan screen, Targets, Set types and Warmup sets [1.2] and the boards in the review.
+- (a) A warmup's picker eyebrow names its place among the exercise's warmups (`SET 01` for the first); a working set's names its place among the working sets.
+- (b) The weight box is 16 px while it is typed in (the board draws 15 px; below 16 px iOS zooms the page).
+- (c) The kind chip over a staged head (`DROPSET · 1 DROP`) is a button that opens the same picker as the row's ⋯.
+- (d) A workout with no plan row this week draws its exercises from the run's copy, with no "+" and nothing pressable.
+- (e) The old dim line for a removed working set (`RemovedSetRow`) keeps its 1.1 layout until 54b; it isn't aligned to the new row grid.
+- (f) P1.2-11 as built: until 54b the old set-level marks stay on the new rows (the weight, reps and RIR cells, an added working set's number, a removed working set's dim line), as TASKS 54a's Scope says ("the old marks render on the new rows through the same `CHANGED_CELL` class until then"). The exercise-level and STRUCTURE marks went with that view. P1.2-11 itself reads "no change marks for one chunk".
+- (g) A past week's rows keep their boxed cells, disabled, with no ⋯ and no "+": board 1c's flat rows are 54b's (read-only weeks).
+- (h) Rows are numbered by their place among the working sets (board 1's W, 01, 02), so board 9's NOTHING SET, a lone set, reads 01 where the board draws 04.
+- (i) The 1a picture (`design/1.2/built/1a.png`) is byte-identical to 1's: a stable week's cards and rows draw as a week-dependent week's do until 54b adds THIS WEEK ONLY and the legend.
+- (j) Switching a set to Warmup leaves its stored RIR target: the row draws no RIR (G49), and the value shows again if the set is made Normal. 1.1's warmup toggle wrote the same (`is_warmup` alone).
+- (k) A set type change is several writes, each sent after the one before is answered; the first refusal stops the rest, and the week is read again however it ends. Stages come off before a head becomes Normal or Warmup, and a head's kind is written before its stages are added. REMOVE THIS SET sends one delete per row, the stages (highest index) first, then the head, without waiting between them; the stages' foreign key cascades from the head either way. "+" waits while an add or a removal is out. A change cut short is proven on the stateful stand-in (`db.refuse`) to leave no warmup with stages, no stages under the wrong kind and no stages without a head.
+- (l) Boards 1 and 1c draw RIR on a warmup row: built as SPEC's known gap says (G49: no RIR cell on a warmup row).
+- (m) A weight is digits with at most one `.` or `,`: "5o", "12abc", "1e3" and a minus get "Enter a valid weight" and write nothing. That is board 9's own NOT A NUMBER example ("5o"); 1.1's editor (`parseFloat`) wrote 5, 12 and 1000. TASKS' "`WeightTargetEditor`'s behaviour kept" names kg stored, blank clears and "Enter a valid weight", which all stand.
+- (n) The set type picker's rest rows ("Rest after this set", REST BETWEEN) appear once the sheet has read the exercise's program sets: on staging 0.5 to 3 s after a sheet first opens, and at once afterwards (the read is kept). The rest of the sheet draws at once.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
