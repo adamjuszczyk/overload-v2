@@ -1,14 +1,16 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, chunk 54a's review (merged).*
-- *Chunk 54a is merged (#186, `449b5ca`): Plan's week view draws each exercise as a card with its set rows, and every set edit goes through the pickers (reps, RIR, set type, cues, + ADD SET, REMOVE THIS SET); the Sets / Structure views, the exercise-level actions, MAKE DEFAULT, apply-ahead, ADD WARMUP SETS and ADD STAGE are gone. WEEK ⋯'s pending label follows the request (your 187 (a)). On staging, as the test account on week 3's Lower A: a RIR range on one set, reps 4–6 with "Use for all" (the warmups change too, as SPEC Targets says: TASKS' staging line said they kept 8 and 5 and is fixed), a dropset with two drops and a cue, + ADD SET, a staged added set removed whole; every write read back by API, then Lower A put back exactly as it was. The smoke: 51/51 and one set logged. Three tests are owed ("Tests owed"); the seed-version line (#185) is recorded (RULES, CONTEXT, TASKS "Seed").*
-- *What follows (night mode): 54b, 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-21, chunk 54b's review (merged).*
+- *Chunk 54b is merged (#188, `c711fc8`): Plan's week view now draws each session as boards 1, 1a, 1c, 1d, 10 and 11 do. That means the session chips with their states (✓, SKIPPED, MOVED), the session ⋯ (deload and MOVE THIS SESSION), "Shared with Thu — changes apply to both", a stable week's THIS WEEK ONLY / CHANGE EVERY WEEK →, the "CHANGED SINCE WEEK N" legend and marks from chunk 42's rules, and done sessions and past weeks read-only. The "new week starts" setting's last readers are gone (the column stays). It was a light review under your cost rule: every script, breaks on the writers, the smoke (51/51 and one set logged); TASKS 54b's Staging list goes to the release checklist. Two entries for your review pass (206, 207, neither blocks) and one test owed.*
+- *What follows (night mode): 188f, 55 and 56; the night stops before 58a. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
 
 Decisions that block a chunk:
 - none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **207** — past weeks keep their change marks, compared as they are now; on a stable run a default changed later can mark a done week (a "removed" set it never had). Recommended: (b), no marks on a stable run's past week or finished session; week-dependent ones keep theirs (one condition). Blocks: nothing (display).
+- **206** — chunk 54b's display choices and readings on Plan's week view (D31), (a)–(m), including no mark on a session in progress (a) and board 9's "DELOAD SESSION · NO CHANGE MARKS" read as the frame's caption, not drawn text (e). Recommended: accept all, as built. Blocks: nothing.
 - **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
 - **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
 - **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
@@ -48,6 +50,7 @@ To-dos:
 - **54a** (#186): Plan's weight box on an lbs exercise keeps the stored kg when the shown value is typed again (`resolveEditedWeightKg` in `PlanSetRow.tsx`): 9 kg shows as 19.8 lbs, and 19.8 typed again must write nothing, while 20 writes 9.07 kg. The break it must catch is the review's R54-W1, `const kg = toStorageWeight(parsed, unit)` for every edit, which passed all 521 writer tests. The probe in `<scratchpad>/build/r54a/probe/zzReview54a.probe.test.tsx` passes on the branch and fails under the break.
 - **54a** (#186): Enter in Plan's weight box commits the typed weight without a blur first (`PlanSetRow.tsx`'s `onKeyDown`). The break it must catch is the review's R54-W3, the Enter handler removed, which passed all 521 writer tests. Same probe file.
 - **54a** (#186): a RIR range that differs from the set's only in its high end is written: a set at RIR 1–3 picked to 1–2 writes `{ targetRir: 1, targetRirMax: 2 }` (`rirTargetPatches` in `planSetRows.ts`). The break it must catch is the review's R54-I1, the "already holds the target" check comparing the low end only, which passed all 521 writer tests. Same probe file.
+- **54b** (#188): a stage the default dropped (`removed_at` on a stage program set) is not part of the default, for the marks and for THIS WEEK ONLY (`programHeads` in `src/features/plan/weekPlanning.ts`, chunk 42's, read by `changesSinceSource` and `thisWeekOnly`). 54b removed `weekDiff.test.ts`, whose "a removed stage, and the stages of a removed head, are not part of it either" pinned this for 1.1's module; 42's tests drop only a removed head. The break it must catch is the review's R11, the stages taken from every set instead of the live ones (`stages: sets` for `stages: live`), which passed all 206 tests of the week rules and the week view's files.
 
 ## Format for all new entries
 
@@ -423,6 +426,41 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (l) Boards 1 and 1c draw RIR on a warmup row: built as SPEC's known gap says (G49: no RIR cell on a warmup row).
 - (m) A weight is digits with at most one `.` or `,`: "5o", "12abc", "1e3" and a minus get "Enter a valid weight" and write nothing. That is board 9's own NOT A NUMBER example ("5o"); 1.1's editor (`parseFloat`) wrote 5, 12 and 1000. TASKS' "`WeightTargetEditor`'s behaviour kept" names kg stored, blank clears and "Enter a valid weight", which all stand.
 - (n) The set type picker's rest rows ("Rest after this set", REST BETWEEN) appear once the sheet has read the exercise's program sets: on staging 0.5 to 3 s after a sheet first opens, and at once afterwards (the read is kept). The rest of the sheet draws at once.
+
+### 206 Chunk 54b's display choices and readings on Plan's week view (provisional, D31; accepted as built)
+**Ask:** chunk 54b's choices where SPEC, TASKS and boards 1, 1a, 1c, 1d, 9, 10 and 11 give no single answer are accepted as built. They are listed here for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. (a)–(i) are display; (j)–(m) are readings the review held against SPEC's and the boards' words, and none writes anything.
+**Blocks:** nothing.
+**Options:** (a)–(m) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-54b-builder-1.md`, section 3), held against SPEC Screens → Plan screen, Weeks and copying [1.2] and the boards in the review.
+- (a) A session that is only in progress has no mark on its chip or in its header; ✓ is a done session's (boards 1, 1d, 10; SPEC: "done (read-only, board 11)"). TASKS 54b's staging line read "MON ✓ UPPER A (in progress)"; its wording is fixed.
+- (b) The header's eyebrow names the week or cycle only when the open one isn't the current one ("THURSDAY · WEEK 1", board 10). Board 1c draws "TUESDAY" alone on a past week, so the two boards disagree; the menu's eyebrow always names it ("SLOT 3 · CYCLE 3").
+- (c) A shared plan locked by another day's done session says READ ONLY in that day's header, with no ⋯. DONE is shown only on the day whose own session is done. A past week's session that was never started says nothing in its header; the week's lock line says it.
+- (d) The legend is left out on a stable week with no usable last week (nothing to name). VOLUME and REVIEW are 55's and 56's.
+- (e) Board 9's "DELOAD SESSION · NO CHANGE MARKS" (SPEC, Changes since the source; TASKS 54b's Scope) is read as the frame's caption, not as text the screen draws. On the board it is the 10 px mono caption above the sample block, styled like the board's other frame captions ("CHANGES SINCE WEEK 1", "ADDING A SET", "EXERCISE IN LBS"), as are board 10's ("ONE PLAN ON TWO WEEKDAYS", "OFFLINE"). A deload session draws no marks and no THIS WEEK ONLY; that is tested and break-proven. Drawing the line is one line in `SessionCard.tsx`.
+- (f) The shared line sits under the session's name in its header (SPEC), not on the chip.
+- (g) A removed exercise is a dashed card where it was, captioned "REMOVED SINCE WEEK N" (CYCLE on a sequence run). Where only the default is the source, the caption is "REMOVED THIS WEEK".
+- (h) A rest slot is dimmed and opens nothing. The ⋯ is absent on a finished session, in a past week and on a locked plan.
+- (i) A read-only row (a past week, a done session) is flat text, as boards 1c and 11 draw it, and a changed value on it is the accent text alone.
+- (j) Board 1 marks the weight of a stage added with its set. Chunk 42's `changesSinceSource` doesn't: a stage new under a set that last week also had is the structure's to mark, so its number and reps are marked and its numbers are not. Built as the module does.
+- (k) Board 11 draws "✓ DONE" only, so 1.1's "SESSION DONE — READ ONLY" line is gone. TASKS 54b's verification named `SESSION DONE`; its wording is fixed. DECISIONS 113 (a), a production check on 1.1's app, still names the old line.
+- (l) THIS WEEK ONLY is not drawn in a past week, where CHANGE EVERY WEEK → would lead to a screen that changes later weeks only, or on a deload session, whose sets are calculated and would all differ from the default.
+- (m) `MoveSessionControl` still reads its own day's session (`useSessionsInRange`) beside `usePlanSessions`: two reads of overlapping data, left so the move row's behaviour and tests stay put.
+
+### 207 Past weeks keep their change marks, compared as they are now: a stable run's done week can be marked against a default changed later (chunk 54b)
+**Ask:** should a stable run's past week, or a session that is done, still show change marks compared with the default as it is today?
+**Recommendation:** (b). A week-dependent past week is compared with the week before it, and both are locked, so its marks stay true. A stable run's done week is compared with today's default. Its marks can say the week lost or gained what only the default changed, which contradicts "show what was planned".
+**Blocks:** nothing (display only; nothing is written either way).
+**Options:**
+- (a) Keep as built (1.1's G22, SPEC's "anything in a week that differs from its source"): every open plan is compared as it is now, past weeks and done sessions included.
+- (b) A stable run's past week and its finished sessions show no marks and no legend. Week-dependent ones keep theirs. This is one condition in `WeekView.tsx`.
+- (c) No marks on any past week or finished session.
+**Answer:**
+**Evidence:** chunk 51b's second review saw this on staging. After a real CHANGE THE PROGRAM save that gave EZ-Bar Curl's default a third set, the stable account's done week 1 Saturday drew a removed-set row "03 | 10–12" that the week never had (its rows and logs were unchanged). Since 54b, week 1 is compared with nothing, so that row no longer appears. The same thing can still happen from week 2 on.
+- SPEC: "Done sessions and finished weeks are locked in Plan and show what was planned"; "Stable: set counts, kinds, stages and rep targets compared with the default". SPEC doesn't say whether the default is the one as it was then or as it is now.
+- Boards: 11 draws the legend on a done session of a week-dependent week; 1c is week 1, where nothing is compared.
+- Builder's report, section 3, item 6: the fix for (b) is `changes = null` when the week is past or the session finished and the run is stable.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
