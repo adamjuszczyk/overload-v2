@@ -247,6 +247,23 @@ describe('PlanPage — warmup sets (chunk 15; made with the set type picker sinc
     expect(marker.compareDocumentPosition(rows[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText('01').compareDocumentPosition(marker) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
   })
+
+  // Independent-review break D25 (chunk 54a sweep): a warmup's picker naming its stored set number (here 2 and 5) passed every test. A warmup is
+  // named by its place among the exercise's warmups (provisional, D31: no board draws a warmup picker's eyebrow).
+  it('two warmups are named by their place among the warmups in the picker\'s eyebrow, whatever their stored numbers are', () => {
+    mockState.plans = [makePlan([
+      makeSet({ id: 'work', setNumber: 1 }),
+      makeSet({ id: 'warm-a', setNumber: 2, isWarmup: true }),
+      makeSet({ id: 'warm-b', setNumber: 5, isWarmup: true }),
+    ])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByLabelText('Options for warmup set 1'))
+    expect(picker().getByText(/^Bench Press · SET 01 · WEEK /)).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Close'))
+    fireEvent.click(screen.getByLabelText('Options for warmup set 2'))
+    expect(picker().getByText(/^Bench Press · SET 02 · WEEK /)).toBeTruthy()
+  })
 })
 
 // G45 (c): "Rest after this set" is the run copy's program set's rest, and only a set that names a program set OF ITS OWN exercise row has

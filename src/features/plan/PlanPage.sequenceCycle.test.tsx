@@ -659,6 +659,20 @@ describe('PlanPage — a sequence run\'s current cycle (chunk 35)', () => {
       expect(screen.queryByText(/WEEK 1/)).toBeNull()
     })
 
+    // Independent-review break Q9 (chunk 54a sweep): the sequence run's own call of the panel handing its sheets none of the run's cues passed every
+    // test, because the only fixture with a custom cue was a weekday run's.
+    it('the cues sheet lists the run\'s own cues as YOURS on a sequence run too', () => {
+      setUpSequenceRun(NINE_DAY)
+      allPlans = allPlans.map((wp) => ({ ...wp, sets: wp.sets.map((s) => (s.id.startsWith('set2-c1-') ? { ...s, tags: ['slow negatives'] } : s)) }))
+      renderPlan()
+
+      fireEvent.click(controlsOf(setRows().benchSet1).options!)
+      fireEvent.click(inDialog().getByText('Cues'))
+
+      const sheet = within(screen.getByRole('dialog', { name: 'Cues for this set' }))
+      expect(sheet.getAllByRole('checkbox').map((row) => row.textContent)).toContain('Slow negativesYOURS')
+    })
+
     it('cycle 1 carries no lock line (neither "PAST CYCLE · READ ONLY" nor "PAST WEEK · READ ONLY") however it is reached (the calendar week would flag it past)', () => {
       setUpSequenceRun(NINE_DAY)
       renderPlan()

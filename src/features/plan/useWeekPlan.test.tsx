@@ -238,6 +238,29 @@ describe('useUpdateSet / useRemoveSet — refresh the meso-wide list a later wee
     expect(invalidatedKeys(spy)).not.toContainEqual(allKey('meso-1'))
     spy.mockRestore()
   })
+
+  // Chunk 54a: a type change adds and removes stage rows, so it changes what a later week is compared with like any other edit of the week's sets.
+  it('a set type change refreshes this week and the meso-wide list when a later week is planned, and only its own list when it is the latest week', async () => {
+    applySetTypeOpsMock.mockResolvedValue(undefined)
+    seedList()
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const earlier = renderHook(() => useChangeSetType('meso-1', 4), { wrapper })
+
+    act(() => {
+      earlier.result.current.mutate({ ops: [{ kind: 'removeStage', id: 'stage-1' }] })
+    })
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(allKey('meso-1')))
+    expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 4))
+
+    spy.mockClear()
+    const latest = renderHook(() => useChangeSetType('meso-1', 5), { wrapper })
+    act(() => {
+      latest.result.current.mutate({ ops: [{ kind: 'removeStage', id: 'stage-1' }] })
+    })
+    await waitFor(() => expect(invalidatedKeys(spy)).toContainEqual(weekKey('meso-1', 5)))
+    expect(invalidatedKeys(spy)).not.toContainEqual(allKey('meso-1'))
+    spy.mockRestore()
+  })
 })
 
 describe('planWeekThenFindId — best-effort: never blocks or fails the start', () => {
@@ -633,5 +656,75 @@ describe('useUpdateSet — a RIR range is patched into the cache with both ends 
     expect([set.targetRir, set.targetRirMax, set.targetWeight]).toEqual([1, 2, 80])
     release()
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+})
+
+// Chunk 54a — what the week's cache holds while a set write is out, and after a refused one: the optimistic patch carries every column a picker or
+// a cell writes, a removal takes the row out at once, and a refused write puts the cache back as it was.
+describe('useUpdateSet / useRemoveSet — the cache while a write is out, and after a refused one (chunk 54a)', () => {
+  const setRow = (id: string, setNumber: number) => ({
+    id, weekPlanId: 'wp-1', userId: 'user-1', programExerciseId: 'pe-1', setNumber, targetRir: 3, targetRirMax: null as number | null,
+    isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, targetWeight: 60 as number | null, repMin: 8, repMax: 12,
+    isAmrap: false, tags: null as string[] | null, stageKind: null as string | null,
+  })
+  const seed = () => queryClient.setQueryData(weekKey('meso-1', 3), [{ ...fakePlan('wp-1', 3, false), sets: [setRow('set-1', 1), setRow('set-2', 2)] }])
+  const setsNow = () => (queryClient.getQueryData(weekKey('meso-1', 3)) as WeekPlan[])[0].sets
+
+  it('an update patches every column it names into the set it names, and only that set, while the write is out', async () => {
+    let release!: () => void
+    updateSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    seed()
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    const changes = { targetRir: 1, targetRirMax: 2, stageKind: 'cluster' as const, isWarmup: true, targetWeight: 80, repMin: 4, repMax: 6, isAmrap: true, tags: ['push here'] }
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes })
+    })
+    await waitFor(() => expect(updateSetMock).toHaveBeenCalledWith('set-1', changes))
+
+    expect(setsNow()[0]).toMatchObject(changes)
+    expect(setsNow()[1]).toEqual(setRow('set-2', 2))
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('a refused update puts the cache back as it was', async () => {
+    updateSetMock.mockRejectedValue(new Error('refused'))
+    seed()
+    const before = JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))
+    const { result } = renderHook(() => useUpdateSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate({ id: 'set-1', changes: { repMin: 4, repMax: 6 } })
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))).toBe(before)
+  })
+
+  it('a removal takes the set out of the week at once, while the write is out, and no other', async () => {
+    let release!: () => void
+    removeSetMock.mockImplementation(() => new Promise<void>((r) => (release = r)))
+    seed()
+    const { result } = renderHook(() => useRemoveSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate('set-1')
+    })
+    await waitFor(() => expect(removeSetMock).toHaveBeenCalledWith('set-1'))
+
+    expect(setsNow().map((s) => s.id)).toEqual(['set-2'])
+    release()
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  })
+
+  it('a refused removal puts the set back', async () => {
+    removeSetMock.mockRejectedValue(new Error('refused'))
+    seed()
+    const before = JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))
+    const { result } = renderHook(() => useRemoveSet('meso-1', 3), { wrapper })
+    act(() => {
+      result.current.mutate('set-1')
+    })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect(JSON.stringify(queryClient.getQueryData(weekKey('meso-1', 3)))).toBe(before)
   })
 })
