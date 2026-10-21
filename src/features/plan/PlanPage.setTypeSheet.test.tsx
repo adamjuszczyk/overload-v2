@@ -214,6 +214,20 @@ describe('PlanPage — the set type picker\'s rest rows: a week-dependent run, a
     expect(updateRestMutate).not.toHaveBeenCalled()
   })
 
+  it('an exercise with two program sets: REST BETWEEN is written to the one the staged week set NAMES, not the first the read returned', () => {
+    mockState.programSets = [pset('ps-bench-1', 'pe-bench', { position: 0, restSeconds: 60 }), pset('ps-bench-2', 'pe-bench', { position: 1, restSeconds: 90, stageKind: 'dropset' })]
+    arrange([
+      setRow({ id: 'a', setNumber: 1, programSetId: 'ps-bench-1' }),
+      setRow({ id: 'h', setNumber: 2, stageKind: 'dropset', programSetId: 'ps-bench-2' }),
+      setRow({ id: 'h1', setNumber: 2, isDropset: true, parentWeekPlanSetId: 'h', stageIndex: 1 }),
+    ])
+
+    openSetMenu(2) // the staged set
+    fireEvent.click(picker().getByRole('button', { name: 'Rest between: more' }))
+
+    expect(updateStageRestMutate.mock.calls).toEqual([[{ id: 'ps-bench-2', stageRestSeconds: 15 }]])
+  })
+
   it('a staged set without a program set of its own has no REST BETWEEN either (nowhere to write it)', () => {
     mockState.programSets = programSets()
     arrange([

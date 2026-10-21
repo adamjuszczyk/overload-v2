@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { PlanningType, ProgramExercise, WeekPlanSet } from '../../types'
 import { columnsToRepTarget } from '../../lib/plannerVocabulary.js'
@@ -81,17 +81,15 @@ export default function PlanExerciseCard({
   onRemoveRow,
   isLast,
 }: PlanExerciseCardProps) {
-  const [sheet, setSheet] = useState<Sheet | null>(null)
+  const [open, setSheet] = useState<Sheet | null>(null)
   const name = pe.exercise?.name ?? 'this exercise'
   const rows = planRows(sets)
   const heads = rows.map((row) => row.head)
   const locked = readOnly || !canWrite
-  // A card that becomes locked (the cycle moved on, the session was done) draws no picker and no sheet, whichever it had open, and does
-  // not bring it back if it is ever unlocked.
-  useEffect(() => {
-    if (locked) setSheet(null)
-  }, [locked])
-  const open = locked ? null : sheet
+  // A card that becomes locked (the cycle moved on, the session was done) closes whatever picker or sheet it had open, in the very render that
+  // locks it (the state is set while rendering, not in an effect: no frame draws a picker on a locked card), and does not bring it back if it
+  // is ever unlocked.
+  if (locked && open !== null) setSheet(null)
   const removedHeads = (diff?.removedHeads ?? []).filter((r) => !r.isWarmup)
 
   const rowOfHead = (headId: string) => rows.find((row) => row.head.id === headId) ?? null

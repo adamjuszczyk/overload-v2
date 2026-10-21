@@ -246,4 +246,29 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     expect(screen.getByRole('button', { name: '—' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '135lbs' })).toBeTruthy()
   })
+
+  // Independent-review break W5 (chunk 54a sweep): the stage's box wired to its head's id passed every test, because the stage's weight was only
+  // ever drawn here, never typed.
+  it('typing on a stage row writes THAT stage row (not its head), a blank clears it, and the head keeps its own', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([
+      makeSet({ id: 'head', setNumber: 1, targetWeight: 45.36 }),
+      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1, targetWeight: 61.23 }),
+    ])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '135lbs' })) // the stage's box; the head's reads 100lbs
+    const typed = screen.getByLabelText('Weight target')
+    fireEvent.change(typed, { target: { value: '120' } })
+    fireEvent.blur(typed)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'stage', changes: { targetWeight: lbsToKg(120) } }]])
+
+    updateSetMutate.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '135lbs' }))
+    const cleared = screen.getByLabelText('Weight target')
+    fireEvent.change(cleared, { target: { value: '' } })
+    fireEvent.blur(cleared)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'stage', changes: { targetWeight: null } }]])
+    expect(screen.getByRole('button', { name: '100lbs' })).toBeTruthy() // the head was not touched (the mock writes nothing; its box is as it was)
+  })
 })

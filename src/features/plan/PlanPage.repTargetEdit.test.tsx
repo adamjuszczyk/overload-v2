@@ -226,6 +226,26 @@ describe('PlanPage — rep target picker (chunk 19; the picker since chunk 54a)'
     expect(updateSetMutate).toHaveBeenCalledWith({ id: 'stage', changes: { repMin: 6, repMax: 6, isAmrap: false } })
   })
 
+  // Independent-review break R9 (chunk 54a sweep): handing a stage row's picker the heads passed every test, because the one fixture that
+  // opened a stage's picker had a single head, and the picker draws "Use for all" only where there are two sets to use it for.
+  it('a stage row\'s picker offers no "Use for all" even where the exercise has other sets, and writes that stage alone', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([
+      makeSet({ id: 'head', setNumber: 1, repMin: 8, repMax: 12 }),
+      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
+      makeSet({ id: 'other', setNumber: 2, repMin: 8, repMax: 12 }),
+    ])]
+    renderPlanPage()
+
+    fireEvent.click(noRepTarget(0)) // the stage's cell: the only one with no target
+    expect(useForAll()).toBeNull()
+    fireEvent.click(segment('NUMBER'))
+    typeInto('REPS', '6')
+    submit('SET 6 REPS')
+
+    expect(updateSetMutate.mock.calls.map(([v]) => v)).toEqual([{ id: 'stage', changes: { repMin: 6, repMax: 6, isAmrap: false } }])
+  })
+
   it('"Use for all" starts ticked and writes every head of the exercise — a warmup too, never a stage; a head that already has the target is not written', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([

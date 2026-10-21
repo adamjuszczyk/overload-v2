@@ -481,3 +481,22 @@ describe('PlanPage — the cues sheet lists the run\'s own cues (the tags on its
     ])
   })
 })
+
+// Independent-review break D15 (chunk 54a sweep): the cues sheet's eyebrow naming the stored set number passed every test, because every fixture
+// numbered its sets 1, 2, 3 in order. A set is named by its place on the page (DECISIONS 170), here with a warmup first and a gap after.
+describe('PlanPage — the cues sheet names the set by its number on the page', () => {
+  it('the second working set reads SET 02 whatever its stored number is, the same as its picker', () => {
+    mockState.plans = [makePlan([
+      makeSet({ id: 'w', setNumber: 1, isWarmup: true }),
+      makeSet({ id: 'a', setNumber: 2 }),
+      makeSet({ id: 'b', setNumber: 5 }),
+    ])]
+    renderPlanPage()
+
+    openSetMenu(2)
+    expect(within(screen.getByRole('dialog', { name: 'What is this set?' })).getByText('Bench Press · SET 02 · WEEK 1')).toBeTruthy()
+    fireEvent.click(screen.getByText('Cues'))
+
+    expect(within(screen.getByRole('dialog', { name: 'Cues for this set' })).getByText('Bench Press · SET 02 · WEEK 1')).toBeTruthy()
+  })
+})
