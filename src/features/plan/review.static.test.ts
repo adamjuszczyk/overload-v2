@@ -55,6 +55,7 @@ describe('one matcher, one key function', () => {
 
   it('every decision key is built by itemKey: no other template in the module starts a key', () => {
     const prefixes = [...code.matchAll(/`(num|skipped|type|added-set|added-ex|swap):/g)].map((m) => m[1])
-    expect(prefixes.sort()).toEqual(['added-ex', 'added-set', 'num', 'skipped', 'swap', 'type'])
+    // An added set has two templates since chunk 56: its place, and its number for a set logged before 044 (DECISIONS 195 (a)); both are `itemKey`'s.
+    expect(prefixes.sort()).toEqual(['added-ex', 'added-set', 'added-set', 'num', 'skipped', 'swap', 'type'])
   })
 })

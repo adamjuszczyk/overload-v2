@@ -60,8 +60,8 @@ describe('a warmup\'s log holds the number its row shows, through every switch a
     s.retype('added:bench:B', WARMUP)
     expect(read(s)).toEqual(['W1✓=A', 'W2✓=B', '01✓=P1', '02✓=P2', '03✓=P3'])
     expect(stored(s)).toEqual(['A:w1', 'B:w2', 'P1:1', 'P2:2', 'P3:3'])
-    // REVIEW keys an added set by its stored number: two warmups, two items (the fifth attempt's logs held 4 and 4: one item)
-    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:w1', 'added-set:s1:ex.bench:w2'])
+    // REVIEW keys an added set by its place (chunk 56, DECISIONS 195): two warmups, two items (keyed by number, the fifth attempt's logs held 4 and 4: one item)
+    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:p1', 'added-set:s1:ex.bench:p2'])
   })
 
   it('unlog then log of a set made a Warmup stores the number it shows (W1 → 1): an exact undo', () => {

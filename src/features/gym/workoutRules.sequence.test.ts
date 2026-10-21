@@ -174,14 +174,14 @@ describe('the other fixed cases: unlog moves nothing, and 161\'s', () => {
     s.retype('added:bench:A', WARMUP)
     s.retype('added:bench:B', WARMUP)
     expect(stored(s, 'bench')).toEqual(['A:w1', 'B:w2', 'P1:1', 'P2:2', 'P3:3'])
-    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:w1', 'added-set:s1:ex.bench:w2'])
+    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:p1', 'added-set:s1:ex.bench:p2']) // by place since chunk 56 (DECISIONS 195)
     s.add('bench', 'C')
     s.log('added:bench:C')
     expect(s.reopen()).toEqual([])
     s.add('bench', 'N')
     expect(read(s, 'bench').slice(-2)).toEqual([`04✓=${s.rows().find((r) => r.addedPlace === 3)!.localId}`, '05·=N'])
     expect(s.log('added:bench:N').setNumber).toBe(5)
-    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:w1', 'added-set:s1:ex.bench:w2', 'added-set:s1:ex.bench:4', 'added-set:s1:ex.bench:5'])
+    expect(s.reviewAddedSetKeys()).toEqual(['added-set:s1:ex.bench:p1', 'added-set:s1:ex.bench:p2', 'added-set:s1:ex.bench:p3', 'added-set:s1:ex.bench:p4'])
   })
 })
 
@@ -424,13 +424,15 @@ function check(s: Session, label: string, stale: ReadonlySet<string>): void {
   // 178 and 185 (c): the screen drawing the session now writes nothing
   expect(numberCorrections(s.order(), s.server.logs, s.server.held()), `${label}: a draw now writes nothing`).toEqual([])
   // REVIEW (the one other reader of a log's number) sees each logged added set as an item of its own: two added Warmups are two.
-  // It keys an item by exercise and number and keeps one item per key, so two cards of one exercise, each numbered on its own
-  // (183's follow-up), can hold two sets it reads as one: compared as sets of keys (the slots' "no two logs share a number" above
-  // is what holds within a card)
+  // Since chunk 56 it keys an added set by exercise and place (DECISIONS 195 (a)), so two cards of one exercise, each numbered on
+  // its own (183's follow-up), are two items; a log with no place (none here) would be keyed by its number. Compared as sets of keys.
   if (stale.size === 0) {
     const want = rows
       .filter((r) => r.added && r.kind !== 'stage' && r.state === 'logged')
-      .map((r) => `added-set:s1:${r.exerciseId}:${r.kind === 'warmup' ? 'w' : ''}${r.number}`)
+      .map((r) => {
+        const place = s.server.logs.find((l) => l.id === r.logId)!.addedPlace ?? null
+        return place !== null ? `added-set:s1:${r.exerciseId}:p${place}` : `added-set:s1:${r.exerciseId}:${r.kind === 'warmup' ? 'w' : ''}${r.number}`
+      })
     expect([...new Set(s.reviewAddedSetKeys())].sort(), `${label}: REVIEW's items for the added sets`).toEqual([...new Set(want)].sort())
   }
   // a deleted set stays deleted

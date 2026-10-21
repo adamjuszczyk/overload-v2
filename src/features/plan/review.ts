@@ -146,6 +146,8 @@ export interface ReviewLog
     'id' | 'exerciseId' | 'weekPlanSetId' | 'setNumber' | 'weight' | 'reps' | 'rir' | 'parentSetId' | 'isWarmup' | 'isSkipped' | 'loggedAt'
   > {
   stageKind?: StageKind | null
+  /** An added set's place (`v2_set_logs.added_place`, 044; DECISIONS 174): absent or null on a log made before 044 and on every planned set's log. */
+  addedPlace?: number | null
   exercise?: { name: string }
 }
 
@@ -256,8 +258,10 @@ export interface ReviewAddedSetItem extends ItemBase {
   kind: 'added_set'
   exerciseId: string
   exerciseName: string
-  /** The added set's number in the session (warmups numbered apart). */
+  /** The added set's number in the session (warmups numbered apart). Two added sets of one exercise can share it, on two cards (DECISIONS 195). */
   setNumber: number
+  /** Its place (`added_place`): what its decision is keyed by. Null on a set logged before 044, which is keyed by its number. */
+  place: number | null
   unit: WeightUnit
   done: DoneSet
   target: { programExerciseId: string | null }
@@ -323,7 +327,8 @@ export interface ReviewGroup {
  *   number          num:<session>:<planned set>
  *   skipped         skipped:<session>:<planned set>
  *   retyped         type:<session>:<planned set>
- *   added set       added-set:<session>:<exercise>:<position>   (position: the set number; `w` before a warmup's)
+ *   added set       added-set:<session>:<exercise>:p<place>     (DECISIONS 195 (a): its place, `added_place`)
+ *                   added-set:<session>:<exercise>:<number>     (a set logged before 044 has no place: its number, `w` before a warmup's)
  *   added exercise  added-ex:<session>:<exercise>
  *   swapped         swap:<session>:<program exercise (last week's slot)>
  */
@@ -336,7 +341,9 @@ export function itemKey(item: ReviewItem): string {
     case 'retyped':
       return `type:${item.sessionId}:${item.plannedSetId}`
     case 'added_set':
-      return `added-set:${item.sessionId}:${item.exerciseId}:${item.done.type.kind === 'warmup' ? 'w' : ''}${item.setNumber}`
+      return item.place !== null
+        ? `added-set:${item.sessionId}:${item.exerciseId}:p${item.place}`
+        : `added-set:${item.sessionId}:${item.exerciseId}:${item.done.type.kind === 'warmup' ? 'w' : ''}${item.setNumber}`
     case 'added_exercise':
       return `added-ex:${item.sessionId}:${item.exerciseId}`
     case 'swapped':
@@ -668,6 +675,7 @@ function sessionItems(session: ReviewSession, lastPlan: ReviewPlan, thisPlan: Re
         exerciseId: row.exerciseId,
         exerciseName,
         setNumber: log.setNumber,
+        place: log.addedPlace ?? null,
         unit,
         done: addedDoneSet(log),
         target: { programExerciseId: thisRowId },
@@ -1094,6 +1102,11 @@ function addSetWrites(programExerciseId: string | null, plan: ReviewPlan, done: 
   if (programExerciseId === null || !plan.exercises.some((e) => e.id === programExerciseId)) return []
   const heads = plan.sets.filter((s) => s.programExerciseId === programExerciseId && s.parentWeekPlanSetId == null)
   const setNumber = heads.reduce((most, s) => Math.max(most, s.setNumber), 0) + 1
+  return newSetWrites(plan.id, programExerciseId, setNumber, done, newId)
+}
+
+// One set as a head row (and its stage rows when it was staged), numbered `setNumber`.
+function newSetWrites(weekPlanId: string, programExerciseId: string, setNumber: number, done: DoneSet, newId: () => string): ReviewWrite[] {
   const doneReps = targetRepsOf(done.reps)
   const reps = repTargetToColumns(doneReps !== null ? { type: 'number', value: doneReps } : { type: 'none' })
   const headId = newId()
@@ -1102,7 +1115,7 @@ function addSetWrites(programExerciseId: string | null, plan: ReviewPlan, done: 
       kind: 'insert_set',
       set: {
         id: headId,
-        weekPlanId: plan.id,
+        weekPlanId,
         programExerciseId,
         setNumber,
         parentWeekPlanSetId: null,
@@ -1123,10 +1136,19 @@ function addSetWrites(programExerciseId: string | null, plan: ReviewPlan, done: 
   ]
   if (done.type.kind === 'staged') {
     for (let stageIndex = 1; stageIndex <= done.type.stageCount; stageIndex++) {
-      writes.push(stageWrite(plan.id, programExerciseId, headId, setNumber, stageIndex, newId))
+      writes.push(stageWrite(weekPlanId, programExerciseId, headId, setNumber, stageIndex, newId))
     }
   }
   return writes
+}
+
+/**
+ * ADD EXERCISE's rows for THIS week's session (SPEC 13d: "This week gets as many sets as were done, with the done numbers as
+ * targets"): the sets of the exercise `programExerciseId` the CHANGE THE PROGRAM change has just given the session, numbered from 1 in
+ * the order done (warmups first). Chunk 56 sends them in the request that holds the change.
+ */
+export function addedExerciseSetWrites(weekPlanId: string, programExerciseId: string, sets: readonly DoneSet[], newId: () => string): ReviewWrite[] {
+  return sets.flatMap((done, i) => newSetWrites(weekPlanId, programExerciseId, i + 1, done, newId))
 }
 
 function stageWrite(weekPlanId: string, programExerciseId: string, headId: string, setNumber: number, stageIndex: number, newId: () => string): ReviewWrite {

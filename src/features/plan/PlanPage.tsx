@@ -24,6 +24,8 @@ import PlanForwardCard from './PlanForwardCard'
 import CopySheet from './CopySheet'
 import WeekMenuSheet from './WeekMenuSheet'
 import VolumeSheet from './VolumeSheet'
+import ReviewLine from './ReviewLine'
+import ReviewSheet from './ReviewSheet'
 import { copyRows } from './copySheetLogic'
 import { forwardNote, forwardSource } from './planForwardLogic'
 import { weekTiles } from './weekPlanning'
@@ -279,6 +281,7 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
   // Which sheet is open, if any: COPY (board 2), VOLUME (board 3) or WEEK ⋯ (board 1e).
   const [showCopy, setShowCopy] = useState(false)
   const [showVolume, setShowVolume] = useState(false)
+  const [showReview, setShowReview] = useState(false)
   const [showWeekMenu, setShowWeekMenu] = useState(false)
 
   // Week plans with a completed or skipped session: read-only like a past week.
@@ -528,6 +531,15 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
   }
   const orderedWeekPlans = [...weekPlans].sort((a, b) => planOrder(a) - planOrder(b))
 
+  // What REVIEW reads (chunk 56): the open week's own plan rows, those whose session isn't done (a done session is locked in Plan, so nothing is
+  // written into its plan), and last week's rows out of the run's every-week list (a week nobody planned has none, DECISIONS 131).
+  const reviewArgs = {
+    weekNumber: viewWeek,
+    thisWeek: weekPlans.filter((wp) => !doneWeekPlanIds.has(wp.id)),
+    lastWeek: allWeekPlans.filter((wp) => wp.weekNumber === viewWeek - 1),
+    workouts: workoutDays.map((d) => ({ id: d.id, name: d.name })),
+  }
+
   // What PLAN FORWARD's card says: the workouts the week will have, by the schedule in force for that week (chunk 50: `weekSchedule` is
   // the open week's), and what it takes from where.
   const forwardWillHave = isSequence
@@ -676,6 +688,9 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
               </div>
             )}
 
+            {/* REVIEW (chunk 56; SPEC Review (13), board 1): one line under the action row when last week differed from its plan; never on week 1. */}
+            {actionsShown && viewWeek > 1 && <ReviewLine unit={unit} onOpen={() => setShowReview(true)} {...reviewArgs} />}
+
             {/* The legend, the session chips and the open session (chunk 54b; boards 1, 1a, 1c, 1d, 10, 11) */}
             <WeekView
               isSequence={isSequence}
@@ -750,6 +765,21 @@ function PlanScreen({ sequenceCycle = null, onTab, initialWeek }: { sequenceCycl
           thisWeekSchedule={weekSchedule ?? null}
           lastWeekSchedule={program && !isSequence ? scheduleForWeek(scheduleRows ?? [], program.schedule, viewWeek - 1) : null}
           onClose={() => setShowVolume(false)}
+        />
+      )}
+      {showReview && actionsShown && viewWeek > 1 && (
+        <ReviewSheet
+          unit={unit}
+          fromWeek={changeFromWeek}
+          program={{
+            mesoId: activeMeso.id,
+            programId: activeMeso.programId,
+            planningType: program?.planningType ?? 'week_dependent',
+            scheduleType: program?.scheduleType ?? 'weekday',
+            currentWeek: tilesCurrent,
+          }}
+          onClose={() => setShowReview(false)}
+          {...reviewArgs}
         />
       )}
       {showWeekMenu && actionsShown && (
