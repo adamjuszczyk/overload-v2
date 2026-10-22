@@ -35,11 +35,13 @@ import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
 import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkoutRows'
 import { useSetNumberCorrections } from './useSetNumberCorrections'
-import { jumpLabelText } from './workoutRowView'
+import { formatClock, jumpLabelText } from './workoutRowView'
+import WorkoutHeader, { OfflineStrip } from './WorkoutHeader'
+import { headerEyebrow, setsLabel, setsProgress } from './workoutHeaderLogic'
+import { effectiveDate } from './effectiveDate'
 import type { LogRequest } from './useExerciseCardState'
 import type { OrderSuperset } from './workoutRules'
 import SyncFailedNotice from '../offline/SyncFailedNotice'
-import { formatRestTime } from '../../lib/formatRestTime'
 
 interface GymSessionProps {
   sessionId: string
@@ -367,37 +369,35 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
   return (
     <div className="pb-6">
-      {/* A write for this session that can't sync (renders nothing otherwise). */}
-      <SyncFailedNotice sessionId={sessionId} className="px-4 pt-4" />
-      {/* Session header */}
-      <div className="px-4 pt-8 pb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-bold tracking-widest mb-1" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {weekPlan?.isDeload ? 'DELOAD · ' : ''}
-            {scheduleType === 'sequence' ? 'CYCLE' : 'WEEK'} {weekNumber}
-          </p>
-          <h1 className="text-3xl font-black tracking-tight" style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
-            {workoutDay.name}
-          </h1>
-          <p className="mt-1 text-xs font-bold tracking-widest" style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)' }}>
-            IN PROGRESS
-          </p>
-          <p className="mt-1 text-xs font-bold tracking-widest" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-            {formatRestTime(duration)}
-          </p>
-        </div>
-
-        {/* "Notes for the coach" has no meaning without a coach — the one new coachGate.ts call site this initiative adds. */}
-        {isCoachUser(user?.id) && (
-          <button
-            onClick={() => setShowSidebarSheet(true)}
-            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold tracking-widest"
-            style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
-          >
-            COACH
-          </button>
-        )}
-      </div>
+      {/* The header (chunk 58b, boards W1, W4): the week and weekday (DELOAD first on a deload session) or the cycle and slot, the workout's
+          name, the clock and "N OF M SETS"; under it the offline strip (W6) while the phone has no network, and the strip for the writes
+          that couldn't sync (W4). "Notes for the coach" has no meaning without a coach: the one new coachGate.ts call site this initiative adds. */}
+      <WorkoutHeader
+        eyebrow={headerEyebrow({
+          scheduleType,
+          weekNumber,
+          isDeload: weekPlan?.isDeload === true,
+          date: session ? effectiveDate(session) : null,
+          slot: weekPlan ? (weekPlan.sequencePosition ?? 0) + 1 : null,
+        })}
+        name={workoutDay.name}
+        clock={formatClock(duration)}
+        progress={setsLabel(setsProgress(workout.rows))}
+        action={
+          isCoachUser(user?.id) ? (
+            <button
+              onClick={() => setShowSidebarSheet(true)}
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold tracking-widest"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+            >
+              COACH
+            </button>
+          ) : undefined
+        }
+      />
+      {!isOnline && <OfflineStrip />}
+      <SyncFailedNotice sessionId={sessionId} variant="strip" />
+      <div style={{ height: 14 }} />
 
       {/* Warmup routine checklist (chunk 18 — SPEC.md "Warmup routine") — above the first card or superset block. */}
       <WarmupRoutineChecklist sessionId={sessionId} workoutDayId={workoutDay.id} />

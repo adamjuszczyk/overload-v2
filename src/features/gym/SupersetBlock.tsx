@@ -2,8 +2,7 @@ import { Plus, Link2 } from 'lucide-react'
 import type { ProgramExercise, WeekPlanSet, SetLog, ProgramSet, ProgramSupersetBlock } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import type { ScheduleType } from './referenceByExercise'
-import ExerciseReference from './ExerciseReference'
-import ExerciseHeader from './ExerciseHeader'
+import WorkoutExerciseHeader from './WorkoutExerciseHeader'
 import SwapExerciseSheet from './SwapExerciseSheet'
 import { CardRows } from './WorkoutRow'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
@@ -145,20 +144,18 @@ export default function SupersetBlock({
                 {memberLetter(i)}
               </span>
             </div>
-            <ExerciseHeader programExercise={member.programExercise} onSwapClick={() => state.setShowSwapSheet(true)} />
-            <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-              <ExerciseReference
-                today={today}
-                sessions={member.referenceSessions}
-                isLoading={referenceLoading}
-                mesocycleId={referenceMesocycleId}
-                scheduleType={referenceScheduleType}
-                isError={referenceIsError}
-                isFromCache={referenceIsFromCache}
-                onRetry={onRetryReference}
-                weightUnit={state.resolvedWeightUnit}
-              />
-            </div>
+            <WorkoutExerciseHeader
+              programExercise={member.programExercise}
+              onSwapClick={() => state.setShowSwapSheet(true)}
+              today={today}
+              scheduleType={referenceScheduleType ?? 'weekday'}
+              sessions={member.referenceSessions}
+              isLoading={referenceLoading}
+              isError={referenceIsError}
+              isFromCache={referenceIsFromCache}
+              onRetry={onRetryReference}
+              unit={state.resolvedWeightUnit}
+            />
             {warmups.length > 0 && (
               <div className="px-3 pt-3 space-y-1.5">
                 <CardRows state={state} rows={warmups} current={workout.current} />
