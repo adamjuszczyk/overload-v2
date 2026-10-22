@@ -156,9 +156,9 @@ export default function SetRowLogged({ row, log, resolvedUnit, onUpdate, onDelet
 
   const text = loggedText(log, resolvedUnit)
   return (
-    <div style={rowFrame({ backgroundColor: syncFailed ? FAILED_ROW_BACKGROUND : 'var(--surface)' })} data-row-key={row.key} data-row-state="logged">
+    <div style={rowFrame({ backgroundColor: syncFailed ? FAILED_ROW_BACKGROUND : 'var(--surface)', ...(syncFailed ? { flexWrap: 'wrap', rowGap: 0, paddingTop: 2, paddingBottom: 2 } : {}) })} data-row-key={row.key} data-row-state="logged">
       <RowLabel text={rowLabelText(row)} />
-      <span className="flex-1 text-sm font-bold" style={{ color: 'var(--text-primary)', fontFamily: MONO }}>
+      <span className="flex-1 text-sm font-bold" style={{ color: 'var(--text-primary)', fontFamily: MONO, ...(syncFailed ? { whiteSpace: 'nowrap', flex: '1 1 auto' } : {}) }}>
         {text.weight}
         <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11 }}> {text.unit} </span>× {text.reps}
         {text.rir !== '' && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 12 }}> {text.rir}</span>}

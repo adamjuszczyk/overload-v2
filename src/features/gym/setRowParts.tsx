@@ -57,7 +57,7 @@ export function SyncMark({ logId }: { logId: string }) {
           retrySyncFailures().catch((err) => console.error('[sync] retry failed', err))
         }}
         className="font-bold"
-        style={{ color: 'var(--error)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.15em', textAlign: 'right', minHeight: 28, padding: '0 2px', lineHeight: 1.3 }}
+        style={{ color: 'var(--error)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.15em', textAlign: 'right', minHeight: 28, padding: '0 2px', marginLeft: 'auto', whiteSpace: 'nowrap' }}
       >
         ONLY ON THIS PHONE · RETRY
       </button>

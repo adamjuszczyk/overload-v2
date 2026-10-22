@@ -37,6 +37,50 @@ function Panel({ title, when, rows }: { title: string; when: string; rows: LastT
   )
 }
 
+/** The sheet's states without its frame (board W17 draws them as cards): loading, failed, first time, the panels with their note. */
+export function LastTimeStates({ view, onRetry }: { view: LastTimeView; onRetry: () => void }) {
+  const { body } = view
+  return (
+    <>
+      {body.kind === 'loading' && <Panel title="LAST WEEK" when="···" rows={[{ n: '', text: '···', rir: '', badge: '', stage: false }]} />}
+      {body.kind === 'failed' && (
+        <div
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 40, padding: '0 4px', fontFamily: MONO, fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}
+        >
+          <span style={{ color: 'var(--error)' }}>COULDN'T LOAD LAST TIME</span>
+          <button
+            type="button"
+            onClick={onRetry}
+            style={{
+              height: 36,
+              padding: '0 10px',
+              borderRadius: 8,
+              borderWidth: 1,
+              borderStyle: 'solid',
+              borderColor: 'var(--border-strong)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text-primary)',
+              fontFamily: MONO,
+              fontWeight: 600,
+              fontSize: 10,
+              letterSpacing: '0.15em',
+            }}
+          >
+            RETRY
+          </button>
+        </div>
+      )}
+      {body.kind === 'first_time' && <Panel title="FIRST TIME" when="" rows={[]} />}
+      {body.kind === 'panels' && body.panels.map((panel: LastTimePanel, i) => <Panel key={`${panel.title}-${i}`} title={panel.title} when={panel.when} rows={panel.rows} />)}
+      {body.kind === 'panels' && body.note !== null && (
+        <span data-last-note style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)' }}>
+          {body.note}
+        </span>
+      )}
+    </>
+  )
+}
+
 export default function LastTimeSheet({
   exerciseId,
   exerciseName,
@@ -51,45 +95,10 @@ export default function LastTimeSheet({
   onRetry: () => void
   onClose: () => void
 }) {
-  const { body } = view
   return (
     <BottomSheet eyebrow={exerciseName.toUpperCase()} title="Last time" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {body.kind === 'loading' && <Panel title="LAST WEEK" when="···" rows={[{ n: '', text: '···', rir: '', badge: '', stage: false }]} />}
-        {body.kind === 'failed' && (
-          <div
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 40, padding: '0 4px', fontFamily: MONO, fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}
-          >
-            <span style={{ color: 'var(--error)' }}>COULDN'T LOAD LAST TIME</span>
-            <button
-              type="button"
-              onClick={onRetry}
-              style={{
-                height: 36,
-                padding: '0 10px',
-                borderRadius: 8,
-                borderWidth: 1,
-                borderStyle: 'solid',
-                borderColor: 'var(--border-strong)',
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text-primary)',
-                fontFamily: MONO,
-                fontWeight: 600,
-                fontSize: 10,
-                letterSpacing: '0.15em',
-              }}
-            >
-              RETRY
-            </button>
-          </div>
-        )}
-        {body.kind === 'first_time' && <Panel title="FIRST TIME" when="" rows={[]} />}
-        {body.kind === 'panels' && body.panels.map((panel: LastTimePanel, i) => <Panel key={`${panel.title}-${i}`} title={panel.title} when={panel.when} rows={panel.rows} />)}
-        {body.kind === 'panels' && body.note !== null && (
-          <span data-last-note style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)' }}>
-            {body.note}
-          </span>
-        )}
+        <LastTimeStates view={view} onRetry={onRetry} />
         <span style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)' }}>Deload sessions are left out.</span>
         <Link
           to={`/exercise/${exerciseId}`}
