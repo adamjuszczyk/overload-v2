@@ -40,6 +40,8 @@ export type LastTimeBody =
 export interface LastTimeView {
   /** The card's line, without its chevron. */
   line: string
+  /** The session the line names, which is the one the rows' LAST line reads (`lastTimeSession`); null with none. */
+  source: string | null
   body: LastTimeBody
 }
 
@@ -88,11 +90,11 @@ export function lastTimeView(input: {
   unit: WeightUnit
 }): LastTimeView {
   const { today, scheduleType, sessions, isLoading, isError, isFromCache, unit } = input
-  if (isLoading) return { line: 'LAST = ···', body: { kind: 'loading' } }
-  if (isError) return { line: "COULDN'T LOAD LAST TIME", body: { kind: 'failed' } }
+  if (isLoading) return { line: 'LAST = ···', source: null, body: { kind: 'loading' } }
+  if (isError) return { line: "COULDN'T LOAD LAST TIME", source: null, body: { kind: 'failed' } }
 
   const { primary, thisWeek } = resolveExerciseReferenceAcrossRuns(today, scheduleType, sessions)
-  if (primary.type === 'first_time') return { line: 'FIRST TIME', body: { kind: 'first_time' } }
+  if (primary.type === 'first_time') return { line: 'FIRST TIME', source: null, body: { kind: 'first_time' } }
 
   const panels: LastTimePanel[] = []
   const primarySession = primary.session
@@ -105,14 +107,17 @@ export function lastTimeView(input: {
 
   let note: string | null = null
   let line: string
+  let source: string | null = null
   if (primaryIsReal) {
     line = primary.type === 'last_week' ? `LAST = LAST WEEK, ${dayShort(primarySession.date)}` : `LAST = ${elapsed(today, primarySession.date)}`
+    source = primarySession.sessionId
   } else {
     // The matched session was all skipped: the panel reaches back to the last session that was really done (the rows' LAST line reads it).
     const reachedBack = resolveReachBackAcrossRuns(today, sessions)
     if (reachedBack.type === 'found') {
       panels.push({ title: 'LAST TRAINED', when: elapsed(today, reachedBack.session.date), rows: rowsOf(reachedBack.session.logs, unit) })
       line = `LAST = ${elapsed(today, reachedBack.session.date)}`
+      source = reachedBack.session.sessionId
     } else if (reachedBack.type === 'none_found') {
       note = 'Nothing on record to compare against.'
       line = 'LAST = NOTHING ON RECORD'
@@ -128,5 +133,5 @@ export function lastTimeView(input: {
   }
   if (thisWeek.length > 0) line += ` · ALSO ${thisWeek.map(({ session }) => dayShort(session.date)).join(', ')}`
 
-  return { line, body: { kind: 'panels', panels, note } }
+  return { line, source, body: { kind: 'panels', panels, note } }
 }

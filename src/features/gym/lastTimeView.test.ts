@@ -133,7 +133,7 @@ describe('all skipped: the reach-back, and nothing to compare against', () => {
 
 describe('the loading, offline and failed states', () => {
   it('while the reference loads the line and the sheet say so', () => {
-    expect(view([lastWeek], { isLoading: true })).toEqual({ line: 'LAST = ···', body: { kind: 'loading' } })
+    expect(view([lastWeek], { isLoading: true })).toEqual({ line: 'LAST = ···', source: null, body: { kind: 'loading' } })
   })
 
   it('a failed read is its own state, not FIRST TIME (the old bug: a failed fetch read as no history)', () => {
@@ -147,6 +147,29 @@ describe('the loading, offline and failed states', () => {
     expect(cached[0].when).toBe('OFFLINE · CACHED')
     expect(cached[0].title).toBe('LAST WEEK')
     expect(rowTexts(cached[0])[0]).toBe('01|52.5 × 10|@ 2|')
+  })
+})
+
+describe('the card\'s line and the rows\' LAST line read one session (executed comparison, not by hand)', () => {
+  const skippedWeek = referenceSessionOf('sk', LAST_WEEK_TUE, [skipped('sk', 1), skipped('sk', 2)])
+  const cases: Array<[string, ReferenceSession[], 'weekday' | 'sequence']> = [
+    ['last week and earlier this week', [lastWeek, earlier], 'weekday'],
+    ['the same two, the other way round', [earlier, lastWeek], 'weekday'],
+    ['last week a deload session, a normal one three weeks ago', [{ ...lastWeek, isDeload: true }, threeWeeks], 'weekday'],
+    ['last week all skipped, an older one really done', [skippedWeek, threeWeeks], 'weekday'],
+    ['all skipped every time', [skippedWeek], 'weekday'],
+    ['only a month ago', [monthAgo], 'weekday'],
+    ['a sequence run with two sessions', [lastWeek, earlier], 'sequence'],
+    ['a session moved into last week', [{ ...monthAgo, movedToDate: LAST_WEEK_TUE }], 'weekday'],
+    ['never done', [], 'weekday'],
+  ]
+  it.each(cases)('%s', (_name, sessions, scheduleType) => {
+    expect(view(sessions, { scheduleType }).source).toBe(lastTimeSession(TODAY, scheduleType, sessions)?.sessionId ?? null)
+  })
+  it('the cases tell the sources apart (a vacuous comparison would pass them all with one answer)', () => {
+    const answers = cases.map(([, sessions, scheduleType]) => view(sessions, { scheduleType }).source)
+    expect(new Set(answers).size).toBeGreaterThanOrEqual(4)
+    expect(answers).toContain(null)
   })
 })
 
