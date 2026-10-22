@@ -1,24 +1,25 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-21, chunk 58a's fix-forward review (merged).*
-- *Chunk 58a and its fix-forward are merged (#197, `3081f46`; #199, `457acf1`): the workout's rows and pinned rest bar on 46r's rules, LOG storing the number its row shows and an added set's place, the number corrections through the queue's `patch` item. The fix-forward closed the two problems 58a's staging steps found: a failing number patch is now queued once (on staging: 1 item where there were 681, sent on reconnect), and each row's LAST line reads what the last-time panel above it shows. Two new display choices, 216 (k) and (l); nothing for you to decide now.*
-- *The build stops after 58a (your rule of 2026-10-21): no 58b until your go after the Monday 05:00 reset. 046 reaches production only through Release step 5, after the backup, RC44's count and your yes ("For the release").*
+*Rewritten at every boundary. Last: 2026-10-22, chunk 58b's review (merged).*
+- *Chunk 58b is merged (#201, `9e26b7d`): the workout's header (WEEK 2 · TUESDAY, DELOAD, CYCLE · SLOT, the clock, N OF M SETS), the offline strip, the rows' SYNC and ONLY ON THIS PHONE · RETRY, the couldn't-sync strip, each card's LAST = … line and the last-time sheet (W16, W17). Its display choices are 217; the W1 row caption it didn't build is 218.*
+- *Your answers of 2026-10-22 are recorded: 213 (a) and 214 (a), each with a SPEC line and its TASKS chunk amended (67, 68); 215 and 216 are on your review-pass list. The re-seed of 2026-10-22 (version line confirmed, 046 pasted) is in CONTEXT.*
+- *The build stops after 58b (your rule of 2026-10-22): nothing more until your go after the Monday 05:00 reset.*
 
 What blocks, in order:
-1. **Your go**, after Monday's 05:00 reset: 58b waits for it.
-2. **213** (below): chunk 67 waits for it.
-3. **214** (below): chunk 68 waits for it.
-4. **121** (a to-do, below): the release's migrations PR waits for it.
+1. **Your go**, after Monday's 05:00 reset: the build (59 next) waits for it.
+2. **219** (below): the re-seed of 2026-10-22 left the test account's weeks 2 and 3 with no planned numbers; 59's staging step, then 60–64's and the release checklist's rows on week 2's numbers, wait for a seed fix and your re-seed.
+3. **121** (a to-do, below): the release's migrations PR waits for it.
 Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk:
-- **213** — step 3's REMOVE THIS SET on a set that isn't the exercise's last leaves its position empty, and the SETS stepper's + then adds a set at a position another set holds (`setExerciseSetCount` appends from the count + 1; no unique key refuses it; START copies the position into the run and week 1's set numbers). Recommended: (a), + adds after the highest position, as CHANGE THE PROGRAM's set rows do (one line). Blocks: 67.
-- **214** — the planner's START: at once, as board PP5b draws, or through the start sheet (PR8), as TASKS 68's staging line says. Today it starts at once and says nothing when another program is running, where SPEC says starting then finishes it "and says so (PR9)". Recommended: (a), START opens PR8 with this program picked. Blocks: 68.
+- **219** — every planned set of the test account's weeks 2 and 3 has no weight since the re-seed of 2026-10-22, the first with 045 live (68 of 68 in each), so the seed's week-2 logs read 50 kg (bench 50 × 5 where the smoke expects 80 × 5: the smoke is 50/51). Recommended: (a), a small seed-fix chunk before 59 (why the seed's week 2–3 copy lands nothing under 045; the version line bumped; proven on a replay with 045 and by the smoke), then your re-seed and 046 pasted. Blocks: 59's staging step (59 itself can be built).
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
-- **216** — chunk 58a's display choices (D31), (a)–(l), including upcoming rows with targets only until 60 (a), auto-finish's notice kept as today's toast where board W4 draws a pill (g), and an untouched planned weight on an lbs exercise stored as the shown lbs converted (j). (k) and (l) are the fix-forward's: the LAST line's failed state on the current row only, in W2's words, and the line reaching back after an all-skipped last session, as the panel does. Recommended: accept all, as built. Blocks: nothing.
-- **215** — the Library's EDIT TAGS and UNTAGGED name an exercise's muscle tags, not a set's cues: chunk 69's wording test allowlists them. Recommended: (a), keep them. Blocks: nothing.
+- **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
+- **217** — chunk 58b's display choices (D31), (a)–(m), including N OF M SETS counted over the rows the screen draws (a), the weekday of a moved session's new day (b), the failed row keeping its pen (e) and the history icon opening the sheet, with FULL HISTORY one tap further (h). Recommended: accept all, as built. Blocks: nothing.
+- **216** — answered on 2026-10-22: for your review pass. Chunk 58a's display choices (D31), (a)–(l). Recommended: accept all, as built.
+- **215** — answered on 2026-10-22: for your review pass. The Library's EDIT TAGS and UNTAGGED name muscle tags; chunk 69's wording test allowlists them. Recommended: (a), keep them.
 - **212** — answered on 2026-10-21: keep as built. A workout whose session this week is already done gets no REVIEW items. On your review-pass list.
 - **211** — chunk 56's display choices and readings on REVIEW (D31), (a)–(m), including ADD EXERCISE on a stable run (h), each press reading the item's decision again first (k) and two sets added in one place sharing one item (m). Recommended: accept all, as built. Blocks: nothing.
 - **210** — answered on 2026-10-21: keep as built. VOLUME's "—" is drawn only for a week with no planned set and no session. On your review-pass list.
@@ -70,7 +71,7 @@ To-dos:
 - **56** (#194): an item in a group whose plan row isn't this week's first is written to its own plan row. The sheet takes the row by the group's `weekPlanId` (`decide` in `src/features/plan/ReviewSheet.tsx`). The break it must catch is the review's M1, `args.thisWeek[0]` for every item, which passed all 37 tests of `ReviewSheet.test.tsx` and `PlanPage.review.test.tsx`: every item they press is in the first row's group. Under the break the press fails on `applyReviewAction`'s plan-row check, so nothing lands on the wrong row, but no test pins the sheet's choice. The probe `<scratchpad>/build/r56/probe/zzReview56.probe.test.tsx` (P1: Friday's Upper B completed, so a second group) passes on the branch and fails under the break.
 - **56** (#194): an item decided on another phone since the list was read goes when it is pressed, and nothing is sent. The already-decided branch reads the decisions again (`refresh([])` in `decideReviewItem`, `src/features/plan/reviewService.ts`). The break it must catch is the review's M12, that refresh dropped: the item stays on the screen with its buttons back on. It passed all 42 tests of `reviewService.test.ts` and `ReviewSheet.test.tsx`, which assert `'already_decided'` and no write, never the screen. Same probe, P2.
 - **56** (#194): the same for a race past that read, a `23505` on `v2_week_review_decisions_item_uk`: the item goes, with no error. The break it must catch is the review's M13, the refresh after the conflict dropped, which passed the same 42 tests. Same probe, P3 (the request meets the race and the row lands).
-- **58a** (#199): board W1's fixture draws its LAST lines from the exercise's reference sessions. `GymSession.boards.test.tsx`'s W1 test still feeds them through a mock of `useLastSessionLogs`, which no screen reads since the fix-forward, and gives `useExerciseReferenceSessions` an empty map: re-captured on `1ba4b94`, `w1.html` lost all six LAST lines ("LAST 52.5 × 10 @ 1" …) with every test passing (the committed fixture and `design/1.2/built/W1.png`, from before, still show them; the reviewer did not commit the re-capture). The test must feed the reference mock and assert W1's LAST lines; the break it must catch is the W1 frame drawn with no LAST line (e.g. `lastFor` returning null on the full screen). Behaviour verified right on staging `457acf1`: the pushdown's rows read LAST 30 × 12 @ 2, 30 × 12 @ 2, 20 × 15 @ 2 under a LAST WEEK panel of the same three sets.
+- 58a's W1 fixture test (#199) is done in 58b (#201): `GymSession.boards.test.tsx` feeds `useExerciseReferenceSessions` and asserts W1's LAST lines; the review's break O1 (the rows draw no LAST line) fails 5 tests. 58b owes none.
 
 ## Format for all new entries
 
@@ -529,26 +530,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-21
 
 ### 213 REMOVE THIS SET in the stepped planner on a set that isn't the last, then + on SETS: two sets share one position (pre-read, chunk 67)
-**Ask:** step 3's set type picker gets REMOVE THIS SET (`removeProgramSet`, TASKS 67). Removing a set that isn't the exercise's last leaves its position empty. The SETS stepper's + then inserts its new set at "number of sets + 1", a position a set already holds. What should the planner write?
-**Recommendation:** (a). It is one line in `setExerciseSetCount`: new sets go after the highest position, the rule CHANGE THE PROGRAM's set rows already follow (`placeInOrder` in `programChange.ts`: kept rows keep their positions, new rows go after the last). Nothing else is written, and a gap is what a remove on CHANGE THE PROGRAM already leaves.
-**Blocks:** chunk 67 (what REMOVE THIS SET and the SETS stepper write to a saved program; START copies it into the run and its week 1).
-**Options:**
-- (a) Keep the gap. + adds after the highest position (`setExerciseSetCount`, one line).
-- (b) Close the gap. REMOVE THIS SET also moves every later set of the exercise, with its stages, down one position. That is one update per later row, in a new `plannerService` function, where TASKS 67 says the writes stay the existing functions.
-- (c) Offer REMOVE THIS SET only on the exercise's last set (the picker's `onRemove` passed for that set alone). The stepper stays the way to remove sets.
-**Answer:**
-**Evidence:** `setExerciseSetCount` (`plannerService.ts`) sorts the heads and appends from `sorted.length + 1`. Until now it has only met unbroken positions, because the planner's only one-row delete was a stage's, and a stage shares its head's position. With bench sets 1, 2 and 3, REMOVE THIS SET on set 2 leaves 1 and 3, and + then inserts a second set 3. `v2_program_sets` has no unique key on `(program_exercise_id, position)` (027 made a plain index), so nothing refuses it. Downstream a position works as the set's identity. `v2_copy_program` (028) keeps it. `v2_plan_week` (031, 045) writes it as the week set's `set_number`. The stable weight pairing (031, 039) and a week set's rest (G45) match sets by their order of position, and two equal positions leave that order to chance. Settled, not asked: the SETS stepper's − still removes the highest positions first, under any option.
+- What: step 3's REMOVE THIS SET on a set that isn't the exercise's last leaves its position empty, and the SETS stepper's + then added a set at a position another set holds (`setExerciseSetCount` appends from the count + 1; no unique key refuses it).
+- Answer: (Adam, 2026-10-22) "213: agreed: + always adds after the highest position. Add to SPEC." Option (a): the gap stays, and + adds after the highest position (one line in `setExerciseSetCount`, built in chunk 67). SPEC: Stepped program planner, step 3; TASKS 67 amended. Full text in HISTORY.md.
+- Date: 2026-10-22
 
 ### 214 The planner's START: start at once, as board PP5b draws, or open the start sheet (PR8), as TASKS 68's staging line says (pre-read, chunk 68)
-**Ask:** START in the stepped planner starts the run at once today (`v2_start_run`) and goes to Plan, week 1. It has no name field, and it says nothing when another program is running. SPEC's rules for starting ("The start sheet's optional name field defaults to the program's name. Starting while a program runs finishes the running one first and says so (PR9)") are built in chunk 65's start sheet. What should the planner's START do in 1.2?
-**Recommendation:** (a). It keeps one start path: the name field, PR9's line about the running program and PR10's failure come with the sheet as built and accepted (189). TASKS 68's staging line already expects it ("START → PR8 → Plan week 1").
-**Blocks:** chunk 68 (its footer, its error line and its tests), because TASKS 68's Scope and Staging lines disagree.
-**Options:**
-- (a) START opens PR8 (`StartProgramSheet`) with this program picked. The sheet starts the run and goes to Plan, week 1. A failure shows PR10's banner ("Couldn't start [name]." and the reason). The footer keeps PP5b's disabled START with "Schedule at least one workout to start". PP5b's STARTING… and "Couldn't start this program." states aren't drawn.
-- (b) START starts at once, as PP5b draws: STARTING… on the button, and "Couldn't start this program." with the reason under the footer. When a program is running it asks first, in PR9's words, because starting this one finishes the running one (a new confirm). There is no name field, so the run takes the program's name.
-- (c) As today: START starts at once and says nothing about a running program. That leaves SPEC's "says so" unmet from the planner.
-**Answer:**
-**Evidence:** `PlannerPage.tsx`'s `handleStart` calls `useStartRun` with the program's name and goes to `PLAN_WEEK_ONE_PATH`. START is off only while starting or when there is no schedule. `v2_start_run` ends a running program in the same transaction, so a START in the planner ends one without a word. TASKS 68's Scope says "START → Plan week 1 (65's rule)" and lists "Couldn't start this program." + reason (PP5b), while its Staging line says "START → PR8 → Plan week 1". 189 settled the sheet's own display, not which screens open it.
+- What: whether the stepped planner's START starts the run at once (today, saying nothing when another program is running) or opens the start sheet (PR8).
+- Answer: (Adam, 2026-10-22) "214: agreed: the planner's START opens the start sheet; it never ends a running program silently. Add to SPEC." Option (a): START opens PR8 (`StartProgramSheet`) with this program picked; PR9's line and PR10's failure come with the sheet; PP5b's STARTING… and "Couldn't start this program." aren't drawn. SPEC: Programs and runs, Starting; TASKS 68 amended (its Scope and Staging lines agree). Full text in HISTORY.md.
+- Date: 2026-10-22
 
 ### 215 The Library's "EDIT TAGS" and "UNTAGGED" name muscle tags, not cues: allowlisted or reworded? (pre-read, chunk 69)
 **Ask:** chunk 69's `check-wording.test.mjs` fails on any user-visible "tag" outside Coach. The Library shows two: the EDIT TAGS view switch (`LibraryPage.tsx`) and UNTAGGED (`ExerciseTagList.tsx`). Both are about an exercise's muscle tags (SPEC Library: "muscle tags"), not the set tags that SPEC renames to cues. Should they stay, or be reworded?
@@ -558,7 +547,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (a) Keep both, and name them in the script's allowlist as the Library's muscle tags.
 - (b) Reword both without "tag" (for example EDIT MUSCLES and NO MUSCLE), and keep the script strict.
 - (c) Use "cues" there too (EDIT CUES, NO CUES).
-**Answer:**
+**Answer:** (Adam, 2026-10-22) "215, 216: for my review pass." Kept as recommended until then: (a).
 **Evidence:** the sweep's own list (TASKS 69 Scope) names "tag" only in Plan, the workout and the planner, while its test greps every `.tsx` and `.ts` file under `src/` except Coach's. A grep on staging `30a7c42` finds these two and no other user-visible "tag" outside Coach. `STAGE` (`SetRow.tsx`) contains the letters but isn't the word, so the test matches whole words (TASKS 69, amended).
 
 ### 216 Chunk 58a's display choices on the workout's rows and rest bar (provisional, D31; accepted as built)
@@ -566,7 +555,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. (a)–(i) are display; (j) is the app's unit convention applied to the plan's weight.
 **Blocks:** nothing.
 **Options:** (a)–(j) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-22) "215, 216: for my review pass." Accepted as built until then.
 **Evidence:** from the builder's report (section 3) and the review's staging steps on `3081f46`, held against SPEC Logging mechanics [1.2] (Row states, C3, C5, C8), Supersets [1.2] and boards W1–W4.
 - (a) An upcoming row shows its targets only ("32.5 kg × 10–12 @ RIR 2"), as SPEC's Row states say, where W1, W2 and W3b draw open boxes in every unlogged row; only the current set has LOG until chunk 60 makes every row typable (18a). On staging Today draws one LOG button.
 - (b) W3b's "···" boxes while last time loads aren't drawn: the LAST line reads "LOADING LAST TIME…", and the boxes hold the plan's targets (empty on an added set), as 162 (a) says.
@@ -580,6 +569,48 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (j) An untouched planned weight on an lbs exercise is stored as the shown lbs converted: on staging the lateral raise's 03, planned 11.5 kg and shown 25.4 lbs, was stored as 11.52 kg. That is the convention for any weight typed in lbs (RULES, chunk 43), and REVIEW compares as shown, so no item comes of it. The alternative stores the plan's kg while the box still shows it (`resolveEditedWeightKg`).
 - (k) (the fix-forward, #199) The LAST line's failed state (the reference could not be read) is drawn on the current row only, as board W2 draws it under the open row, so a card does not stack one per upcoming row; it says W2's "COULDN'T LOAD LAST WEEK" with RETRY even when the line would have read a LAST TIME session, and its RETRY asks the reference again, as the panel's own RETRY does (both show while it is failed). Loading ("LOADING LAST TIME…", W3b) stays on the current and upcoming rows.
 - (l) (the fix-forward, #199) After a last session in which every set was skipped, the LAST line reads the session the panel reaches back to ("LAST ACTUALLY TRAINED"), by the panel's own rule (`ExerciseReference.tsx`: the reach-back when the primary session holds no really-done set, `resolveReachBackAcrossRuns`, crossing runs, deloads out). The reviewer's reading: SPEC's "Last time" reference makes the reach-back part of the reference ("shown when the matched session's sets were all skipped"), and TASKS 58a says the line reads "today's `ExerciseReference` data", so the line and the panel agree; with nothing really done on record the line is empty.
+
+### 217 Chunk 58b's display choices on the workout's header, "last time" and the offline states (provisional, D31; accepted as built)
+**Ask:** chunk 58b's choices where SPEC, TASKS and boards W1, W4, W6, W16 and W17 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each is display, or the reading of a board where it draws no state; none changes what is counted or written.
+**Blocks:** nothing.
+**Options:** (a)–(m) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-58b-builder-1.md`, section 3) and the review's reading of the dumps against the boards, on `61c8e50`, merged as #201.
+- (a) N OF M SETS counts the rows the screen draws (`resolveRows`): M is every working head and drop, planned and added, warmups out; a skipped set stays in M and isn't in N. TASKS names `countCompletedSets`, which counts logs by the same warmup rule; N equals it on every fixture, and counting rows keeps N at most M and the header in step with the current set and the finish warning. On staging: "2 OF 13 SETS" with two working sets and a warmup logged.
+- (b) The eyebrow's weekday is the session's effective date's (a moved session reads the day it was moved to, as Plan and "last time" do); no weekday while the session loads; a sequence slot counts from 1, as Plan's SLOT n does, and is left out when the plan row is missing.
+- (c) The COACH button (Adam only) stays at the header's right, above the clock.
+- (d) The couldn't-sync strip is the workout's own; Coach, History's session detail and the finished screen keep the notice's button (screens 1.2 doesn't rebuild keep their code).
+- (e) A failed row keeps its pen, where W6 draws none (SPEC 18d: "A logged row shows a pen next to its tick"; the row's edit and delete would be unreachable otherwise); its status wraps under the numbers at 375 px.
+- (f) The card line where no board draws the state: "FIRST TIME"; "LAST = ···" while loading; "COULDN'T LOAD LAST TIME" + RETRY; "LAST = SKIPPED EVERY TIME"; after a reach-back the line names the session the rows read ("LAST = 21 DAYS AGO"), not the skipped one; several days earlier this week: "· ALSO MON, TUE".
+- (g) In the sheet, "Deload sessions are left out." and FULL HISTORY show in every state; OFFLINE · CACHED takes the first panel's day line (the board's offline frame).
+- (h) The history icon opens the sheet (TASKS); `/exercise/:id` is FULL HISTORY, one tap further. Today's preview keeps the icon that goes there.
+- (i) The panels' day line is the weekday and date only ("TUE 30 DEC"), where W17 draws the workout too ("PULL 1 · TUE 6 OCT"): the reference sessions don't carry the workout's name, and adding it is a read change (its embed and the offline cache).
+- (j) W17's "ALL SKIPPED · NOTHING EARLIER" ("Nothing on record to compare against.") is mapped but can't be reached: an all-skipped session is itself one on record, so the reach-back returns `none_found` only when there is no earlier session at all. The board's other frame, "Skipped every time on record.", is built and captured.
+- (k) The clock is m:ss with minutes past 59 ("48:12"; on staging's seeded session, started three days before, "3755:28"); the boards draw only times under an hour.
+- (l) TASKS 58b's words that no longer fit: `exercisereference-lastweek-parity.html` and its test stay, because Today's session preview still draws `ExerciseReference` (now in `NOT_REBUILT`, its DROP badge back on `--base`, 154); the sheet's states are asserted in `lastTimeView.test.ts` and `LastTimeSheet.test.tsx`. And N comes from the rows, (a).
+- (m) Not 58b's, seen in its pictures: the card header prints a muscle group's stored name ("REAR_DELTS"), where the boards say "REAR DELTS"; `ExerciseHeader.tsx` also serves Today's preview, so it is left for chunk 59's cards.
+
+### 218 Board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is not built (chunk 58b)
+**Ask:** board W1 draws, on a row whose exercise was already done earlier this week, that set beside last week's: "LAST 15 × 17 @ 1" and "MON 17.5 × 15 @ 1". Neither 58a nor 58b built it. Should the row show it?
+**Recommendation:** (a), in your review pass: one more span in the row's LAST line, from the earlier-this-week sessions `lastTimeView` already reads, at the row's place, warmups out; no new read, and a test with a break per pattern.
+**Blocks:** nothing (display). SPEC's rule is met without it: the sheet's EARLIER THIS WEEK panel and the card line's "· ALSO MON" carry those numbers.
+**Options:**
+- (a) Add it to the row's LAST line.
+- (b) Leave it out: the card line and the sheet carry it.
+**Answer:**
+**Evidence:** SPEC Logging mechanics [1.2], What a row shows (C4): "Each exercise shows last week's numbers and, when the exercise was already done earlier this week, those too (W16, W17)": it names the sheet's boards, not W1, and 162's "Last time's numbers show only on the row's LAST line" doesn't say which. TASKS 58a's Scope gives W1 its rows, and its fix-forward (#199) made the LAST line read the reference's primary session only; TASKS 58b's Scope lists the header, the strips, the line, W16 and W17, not W1's rows. Board W1 (`design/1.2/source/Workout.dc.html`, row B2: `also: '17.5 × 15 @ 1', alsoDay: 'MON'`) draws the caption. So it is a board element inside neither chunk's scope, and not a behaviour gap.
+
+### 219 The re-seed of 2026-10-22 left the test account's weeks 2 and 3 without planned numbers (chunk 58b's review)
+**Ask:** after your re-seed of 2026-10-22 (the first since 045 went live on staging), every planned set of the test account's weeks 2 and 3 has no weight, so the seed's logs in those weeks fell back to 50 kg. `staging-smoke.mjs` fails one check, "week 2 Upper A: bench set 3 logged 80 kg x 5 (reps below the range)" (50/51). What happens before the next staging check that reads the seed's numbers?
+**Recommendation:** (a). The seed is meant to give those weeks numbers (its own comment: "each planned set takes the numbers of the same planned set a week earlier"), and the checks of 56 to 64 and the release checklist are written against them.
+**Blocks:** 59's staging step on week 3's Upper A, then 60–64's and the release checklist's rows that read week 2's or week 3's numbers (REVIEW's items from the bench's 82.5 × 7 and 80 × 5, the rows' targets). Not 58b, whose Staging list is the release checklist's. 59 itself can be built.
+**Options:**
+- (a) A small seed-fix chunk before 59's review: find why the seed's week 2–3 copy (`supabase/seed.sql`, the `for wk in 2..3` update) lands nothing under 045, fix it, bump the version line, prove it on a replay with 045 applied before the seed and by the smoke; then your re-seed, with 046 pasted after it.
+- (b) Keep the seed and change the expectations (the smoke's check and TASKS' Staging lines) to the numbers it now writes.
+- (c) Leave it: each reviewer notes the difference and checks what it can.
+**Answer:**
+**Evidence:** read as `staging-test@example.com` on 2026-10-22 after #201's deploy (`<scratchpad>/build/rv58b-bench.mjs`, read only): week 1 has numbers where the seed sets them; weeks 2 and 3 have 68 planned sets each, none with a weight (56 with no `rep_min`), every one with its `program_set_id`. The seed logs `coalesce(head.target_weight, 50)`, so bench week 2 reads 50 × 8, 82.5 × 7 (set 2's numbers are the seed's own), 50 × 5, week 3's in-progress Upper A 50 × 8 throughout, and the workout's upcoming rows read "—". The smoke was 51/51 on the re-seed of 2026-10-20 (about 21:53 UTC, before #183's deploy made 045 live) through 58a's fix-forward review. Chunk 53's rule (the seed copies its own numbers, its canonical dump equal on 044 and on 045 + 046) was proven on a replay; on staging the copy didn't land. The cause isn't settled here (a light review, and no SQL access to staging): the copy's join (`sequence_position is not distinct from`, the program-set match) and the order in which the seed plans and copies under 045 are where to look.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
