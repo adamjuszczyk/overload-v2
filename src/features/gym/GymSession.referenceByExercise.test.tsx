@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, cleanup, screen, within } from '@testing-library/react'
+import { render, cleanup, screen, within, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog, Exercise } from '../../types'
 import type { ReferenceSession } from './sessionService'
@@ -188,53 +188,60 @@ function renderSession() {
   )
 }
 
+// Chunk 58b: a card says what its exercise's reference is in one line ("LAST = LAST WEEK, TUE ›"), and the sheet its history icon opens lists
+// the numbers. The sheet is a dialog in the page's body, so a card's sheet is opened from the card's own scope and read as the one dialog.
+function openSheetOf(exerciseName: string) {
+  fireEvent.click(within(cardScopeFor(exerciseName)).getByRole('button', { name: 'Exercise history' }))
+  return within(screen.getByRole('dialog'))
+}
+
 describe('GymSession — reference sessions resolve by each card\'s own exercise_id (swap/extra/superset alike)', () => {
   it('a superset member (A) shows its own Map entry, scoped to its own member subtree — not its block partner\'s (B)', () => {
     renderSession()
-    const scope = within(cardScopeFor('Bench Press'))
-    expect(scope.getByText('LAST WEEK')).toBeTruthy()
-    expect(scope.getByText('101×1')).toBeTruthy() // ex-a's own number
-    expect(scope.queryByText('102×2')).toBeNull() // not B's, inside A's own scope
+    expect(within(cardScopeFor('Bench Press')).getByText('LAST = LAST WEEK, TUE')).toBeTruthy()
+    const sheet = openSheetOf('Bench Press')
+    expect(sheet.getByText('LAST WEEK')).toBeTruthy()
+    expect(sheet.getByText('101 × 1')).toBeTruthy() // ex-a's own number
+    expect(sheet.queryByText('102 × 2')).toBeNull() // not B's
   })
 
   it('the OTHER superset member (B) shows its own Map entry, scoped to its own member subtree — not A\'s', () => {
     renderSession()
-    const scope = within(cardScopeFor('Barbell Row'))
-    expect(scope.getByText('LAST TIME')).toBeTruthy()
-    expect(scope.getByText('102×2')).toBeTruthy()
-    expect(scope.queryByText('101×1')).toBeNull() // not A's, inside B's own scope
+    expect(within(cardScopeFor('Barbell Row')).getByText('LAST = ABOUT 1 MONTH AGO')).toBeTruthy()
+    const sheet = openSheetOf('Barbell Row')
+    expect(sheet.getByText('LAST TIME')).toBeTruthy()
+    expect(sheet.getByText('102 × 2')).toBeTruthy()
+    expect(sheet.queryByText('101 × 1')).toBeNull() // not A's
   })
 
   it('a swapped-in replacement exercise shows ITS OWN Map entry (keyed by the replacement\'s exercise_id, not the original\'s), and none of the other three', () => {
     renderSession()
-    // ex-replacement's own Map entry is [] -> FIRST TIME, not ex-c's
-    // (never queried at all — ex-c isn't in referenceMap) and not any of
-    // the other three exercises' numbers.
-    const scope = within(cardScopeFor('Incline Press'))
-    expect(scope.getByText('FIRST TIME')).toBeTruthy()
-    expect(scope.queryByText('101×1')).toBeNull()
-    expect(scope.queryByText('102×2')).toBeNull()
-    expect(scope.queryByText('104×4')).toBeNull()
+    // ex-replacement's own Map entry is [] -> FIRST TIME, not ex-c's (never queried at all — ex-c isn't in referenceMap) and not any of the
+    // other three exercises' numbers.
+    expect(within(cardScopeFor('Incline Press')).getByText('FIRST TIME')).toBeTruthy()
+    const sheet = openSheetOf('Incline Press')
+    expect(sheet.getByText('FIRST TIME')).toBeTruthy()
+    for (const numbers of ['101 × 1', '102 × 2', '104 × 4']) expect(sheet.queryByText(numbers)).toBeNull()
   })
 
   it('an extra/unplanned exercise (surfaced via its own log) shows its own Map entry, and none of the other three', () => {
     renderSession()
-    const scope = within(cardScopeFor('Cable Fly'))
-    expect(scope.getByText('LAST TIME')).toBeTruthy()
-    expect(scope.getByText('104×4')).toBeTruthy()
-    expect(scope.queryByText('101×1')).toBeNull()
-    expect(scope.queryByText('102×2')).toBeNull()
-    expect(scope.queryByText('FIRST TIME')).toBeNull()
+    expect(within(cardScopeFor('Cable Fly')).getByText('LAST = ABOUT 1 MONTH AGO')).toBeTruthy()
+    const sheet = openSheetOf('Cable Fly')
+    expect(sheet.getByText('LAST TIME')).toBeTruthy()
+    expect(sheet.getByText('104 × 4')).toBeTruthy()
+    for (const numbers of ['101 × 1', '102 × 2']) expect(sheet.queryByText(numbers)).toBeNull()
+    expect(sheet.queryByText('FIRST TIME')).toBeNull()
   })
 
-  it('all four numbers render simultaneously on the page, one per card, with no collisions', () => {
+  it('every card says its own line on the page at once, with no collisions', () => {
     renderSession()
-    expect(screen.getByText('101×1')).toBeTruthy()
-    expect(screen.getByText('102×2')).toBeTruthy()
-    expect(screen.getByText('104×4')).toBeTruthy()
-    // a swapped slot is two cards since chunk 58a (the original, then the replacement): each shows its own entry, and two with no
-    // earlier session both read FIRST TIME
-    expect(screen.getAllByText('FIRST TIME').length).toBeGreaterThanOrEqual(1)
+    const lines = Array.from(document.querySelectorAll('[data-last-line]')).map((el) => el.textContent)
+    // a swapped slot is two cards since chunk 58a (the original, then the replacement): the original's own entry is none (ex-c), so two cards
+    // with no earlier session read FIRST TIME
+    expect(lines.filter((line) => line === 'LAST = LAST WEEK, TUE')).toHaveLength(1)
+    expect(lines.filter((line) => line === 'LAST = ABOUT 1 MONTH AGO')).toHaveLength(2)
+    expect(lines.filter((line) => line === 'FIRST TIME').length).toBeGreaterThanOrEqual(1)
   })
 
   it('the rows\' LAST line reads the reference\'s entry for the card\'s own exercise (the same primary session as the panel), not the latest completed session', () => {

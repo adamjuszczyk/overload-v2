@@ -100,10 +100,13 @@ vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
   useLogSet: () => ({ mutateAsync: vi.fn() }),
-  useLastSessionLogs: (exerciseId: string) => ({ data: lastByExercise[exerciseId] ?? [], isLoading: false }),
   useUpdateSetLog: () => ({ mutate: vi.fn() }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
-  useExerciseReferenceSessions: () => ({ data: new Map(), isLoading: false, isError: false, isFromCache: false, retry: vi.fn() }),
+  // The exercises' last sessions (last week's Tuesday), as the batched read hands them: the line on each card and the LAST line under each row read these.
+  useExerciseReferenceSessions: () => ({
+    data: new Map(Object.entries(lastByExercise).map(([exerciseId, logs]) => [exerciseId, [referenceSessionOf('prev', '2025-12-30', logs)]])),
+    isLoading: false, isError: false, isFromCache: false, retry: vi.fn(),
+  }),
   useSessionSwaps: () => ({ data: [] }),
   useRecordExerciseSwap: () => ({ mutate: vi.fn() }),
 }))
@@ -115,17 +118,17 @@ const workoutDay: WorkoutDay = { id: 'wd-1', programId: 'p1', userId: 'u1', name
 describe('W1 — the workout in progress', () => {
   it('the rows, a superset as rounds, a warmup row, the pinned rest bar with its jump button', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-01-05T10:00:00Z'))
+    vi.setSystemTime(new Date('2026-01-06T10:00:00Z'))
     session = {
       id: 'session-1', userId: 'u1', mesocycleId: 'm1', weekPlanId: 'wp-1', weekPlan: undefined, workoutDayId: 'wd-1', workoutDay: undefined,
-      date: '2026-01-05', status: 'in_progress', note: null, startedAt: '2026-01-05T09:10:00Z', completedAt: null, createdAt: '2026-01-05T09:10:00Z',
+      date: '2026-01-06', status: 'in_progress', note: null, startedAt: '2026-01-06T09:10:00Z', completedAt: null, createdAt: '2026-01-06T09:10:00Z',
       setLogs: w1Logs, energyRating: null, pumpRating: null,
     }
     useOfflineStore.setState({ pendingIds: new Set(['l-lat-2']) }) // the second set is still on this phone only: SYNC
     useRestTimerStore.setState({ startedAt: Date.now() - 72_000, isVisible: true, anchorId: null, targetSeconds: 120 })
     const { container } = render(
       <MemoryRouter>
-        <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={w1Plan} weekNumber={2} today="2026-01-05" />
+        <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={w1Plan} weekNumber={2} today="2026-01-06" />
       </MemoryRouter>,
     )
     const text = container.textContent ?? ''
@@ -135,6 +138,14 @@ describe('W1 — the workout in progress', () => {
     expect(text).toContain('PUSH HERE')
     expect(text).toContain('AFTER SET 03')
     expect(text).toContain('SYNC')
+    // the header (board W4): the week and weekday, the workout, the clock, and the logged sets against the working sets planned (warmup out)
+    for (const word of ['WEEK 2 · TUESDAY', 'PULL 1', 'IN PROGRESS', '48:12', '4 OF 11 SETS']) expect(text).toContain(word)
+    // each card's line, and the LAST line under the open rows, read last week's session (tests owed, 58a: this fixture lost its LAST lines)
+    expect(Array.from(container.querySelectorAll('[data-last-line]')).map((el) => el.textContent)).toEqual(Array(4).fill('LAST = LAST WEEK, TUE'))
+    expect((container.querySelector('[data-current-set]') as HTMLElement).textContent).toContain('LAST 52.5 × 10 @ 1')
+    expect(text).toContain('LAST 60 × 11 @ 2')
+    expect(text).toContain('LAST 15 × 17 @ 1')
+    expect(text).toContain('LAST 30 × 8 @ 1')
     // the superset: round headers, A1 and B1 logged, A2 typable next, "+ ADD ROUND"
     expect(text).toContain('SUPERSET A · REST 1:30 AFTER EACH ROUND')
     for (const round of ['ROUND 1', 'ROUND 2', 'ROUND 3']) expect(text).toContain(round)

@@ -1,6 +1,5 @@
 import { Plus } from 'lucide-react'
-import ExerciseReference from './ExerciseReference'
-import ExerciseHeader from './ExerciseHeader'
+import WorkoutExerciseHeader from './WorkoutExerciseHeader'
 import SwapExerciseSheet from './SwapExerciseSheet'
 import { CardRows } from './WorkoutRow'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
@@ -14,7 +13,6 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     workout,
     referenceSessions,
     referenceLoading,
-    referenceMesocycleId,
     referenceScheduleType,
     referenceIsError,
     referenceIsFromCache,
@@ -27,26 +25,21 @@ export default function ExerciseCard(props: ExerciseCardProps) {
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-      <ExerciseHeader
+      {/* The name, the "LAST = …" line and the history icon; the line and the icon open the last-time sheet (chunk 58b). The plan's targets are
+          in the rows (PlanTargetsPanel is gone). */}
+      <WorkoutExerciseHeader
         programExercise={programExercise}
         onSwapClick={swappedFrom || slotSwapped ? undefined : () => state.setShowSwapSheet(true)}
         swappedFromName={swappedFrom?.exerciseName}
+        today={today}
+        scheduleType={referenceScheduleType ?? 'weekday'}
+        sessions={referenceSessions}
+        isLoading={referenceLoading}
+        isError={referenceIsError}
+        isFromCache={referenceIsFromCache}
+        onRetry={onRetryReference}
+        unit={state.resolvedWeightUnit}
       />
-
-      {/* "Last time" per the rules, as today (chunk 58b restyles it). The plan's targets are in the rows now (PlanTargetsPanel is gone). */}
-      <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-        <ExerciseReference
-          today={today}
-          sessions={referenceSessions}
-          isLoading={referenceLoading}
-          mesocycleId={referenceMesocycleId}
-          scheduleType={referenceScheduleType}
-          isError={referenceIsError}
-          isFromCache={referenceIsFromCache}
-          onRetry={onRetryReference}
-          weightUnit={state.resolvedWeightUnit}
-        />
-      </div>
 
       <div className="px-3 py-3 space-y-1.5">
         <CardRows state={state} rows={state.cardRows} current={workout.current} />

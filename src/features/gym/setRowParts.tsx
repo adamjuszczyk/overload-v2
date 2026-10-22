@@ -2,6 +2,7 @@
 import type { CSSProperties } from 'react'
 import { Check, Tag } from 'lucide-react'
 import { useOfflineStore } from '../offline/offlineStore'
+import { retrySyncFailures } from '../offline/useSyncQueue'
 
 const MONO = 'var(--font-mono)'
 
@@ -32,33 +33,39 @@ export function RowLabel({ text, accent = false, width = 28 }: { text: string; a
   )
 }
 
-/** Where a logged row stands with the server: the tick, SYNC (queued on this phone) or SYNC FAILED (stopped retrying). */
+/** Whether a logged row's write stopped retrying (board W6: the row is tinted and says it is only on this phone). */
+export function useRowSyncFailed(logId: string): boolean {
+  return useOfflineStore((s) => s.failedIds.has(logId))
+}
+
+/** The tint of a row whose write couldn't sync (board W6). */
+export const FAILED_ROW_BACKGROUND = 'color-mix(in srgb, var(--error) 15%, transparent)'
+
+/**
+ * Where a logged row stands with the server (boards W1, W6): the tick; SYNC while its write is queued on this phone; "ONLY ON THIS
+ * PHONE · RETRY" when the write stopped retrying. The last is a button: it sends the failed writes again, as the notice's RETRY
+ * does (`retrySyncFailures`), and the row's own text can't be read as a status alone.
+ */
 export function SyncMark({ logId }: { logId: string }) {
   const isPending = useOfflineStore((s) => s.pendingIds.has(logId))
-  const isFailed = useOfflineStore((s) => s.failedIds.has(logId))
+  const isFailed = useRowSyncFailed(logId)
   if (isFailed) {
     return (
-      <span
-        className="text-xs font-bold px-1.5 py-0.5 rounded"
-        style={{
-          backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)',
-          color: 'var(--error)',
-          fontFamily: MONO,
-          fontSize: 9,
-          letterSpacing: '0.06em',
+      <button
+        type="button"
+        onClick={() => {
+          retrySyncFailures().catch((err) => console.error('[sync] retry failed', err))
         }}
-        title="Couldn't sync — still queued on this device; tap the notice at the top to retry"
+        className="font-bold"
+        style={{ color: 'var(--error)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.15em', textAlign: 'right', minHeight: 28, padding: '0 2px', marginLeft: 'auto', whiteSpace: 'nowrap' }}
       >
-        SYNC FAILED
-      </span>
+        ONLY ON THIS PHONE · RETRY
+      </button>
     )
   }
   if (isPending) {
     return (
-      <span
-        className="text-xs font-bold px-1.5 py-0.5 rounded"
-        style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em' }}
-      >
+      <span className="font-bold" style={{ color: 'var(--accent)', fontFamily: MONO, fontSize: 9, letterSpacing: '0.15em' }}>
         SYNC
       </span>
     )

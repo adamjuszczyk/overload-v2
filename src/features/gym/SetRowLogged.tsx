@@ -9,7 +9,7 @@ import type { ResolvedRow } from './workoutRules'
 import { resolveEditedWeightKg, toDisplayWeight } from '../../lib/weightUnit'
 import { FORM_SCALE } from './ratingScales'
 import RatingChips from './RatingChips'
-import { RowLabel, SyncMark, boxStyle, rowFrame } from './setRowParts'
+import { FAILED_ROW_BACKGROUND, RowLabel, SyncMark, boxStyle, rowFrame, useRowSyncFailed } from './setRowParts'
 import { loggedText, rowLabelText, stageKindWord } from './workoutRowView'
 
 interface SetRowLoggedProps {
@@ -30,6 +30,8 @@ export default function SetRowLogged({ row, log, resolvedUnit, onUpdate, onDelet
   const [editForm, setEditForm] = useState<FormRating | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [logError, setLogError] = useState('')
+  // Board W6: a row whose write stopped retrying is tinted (and says ONLY ON THIS PHONE · RETRY).
+  const syncFailed = useRowSyncFailed(log.id)
 
   // Display and edit in the unit this set was logged in (v3 §2.4); a log from before that column reads today's resolved default.
   const unit = log.enteredUnit ?? resolvedUnit
@@ -154,9 +156,9 @@ export default function SetRowLogged({ row, log, resolvedUnit, onUpdate, onDelet
 
   const text = loggedText(log, resolvedUnit)
   return (
-    <div style={rowFrame({ backgroundColor: 'var(--surface)' })} data-row-key={row.key} data-row-state="logged">
+    <div style={rowFrame({ backgroundColor: syncFailed ? FAILED_ROW_BACKGROUND : 'var(--surface)', ...(syncFailed ? { flexWrap: 'wrap', rowGap: 0, paddingTop: 2, paddingBottom: 2 } : {}) })} data-row-key={row.key} data-row-state="logged">
       <RowLabel text={rowLabelText(row)} />
-      <span className="flex-1 text-sm font-bold" style={{ color: 'var(--text-primary)', fontFamily: MONO }}>
+      <span className="flex-1 text-sm font-bold" style={{ color: 'var(--text-primary)', fontFamily: MONO, ...(syncFailed ? { whiteSpace: 'nowrap', flex: '1 1 auto' } : {}) }}>
         {text.weight}
         <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11 }}> {text.unit} </span>× {text.reps}
         {text.rir !== '' && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 12 }}> {text.rir}</span>}

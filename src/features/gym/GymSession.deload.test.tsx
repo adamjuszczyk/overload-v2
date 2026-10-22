@@ -93,15 +93,15 @@ function makeWeekPlan(isDeload: boolean): WeekPlan {
 }
 
 describe('GymSession — the session header labels DELOAD per session, never DELOAD WEEK (chunk 21)', () => {
-  it('a deload session\'s own plan row shows "DELOAD · WEEK 3", not "DELOAD WEEK"', () => {
+  it('a deload session\'s own plan row shows "DELOAD · WEEK 3 · MONDAY" (board W4), not "DELOAD WEEK"', () => {
     render(sessionJsx(workoutDay, makeWeekPlan(true)))
-    expect(screen.getByText('DELOAD · WEEK 3')).toBeTruthy()
+    expect(screen.getByText('DELOAD · WEEK 3 · MONDAY')).toBeTruthy()
     expect(screen.queryByText(/DELOAD WEEK/)).toBeNull()
   })
 
-  it('a non-deload session shows plain "WEEK 3", no DELOAD text anywhere', () => {
+  it('a non-deload session shows plain "WEEK 3 · MONDAY", no DELOAD text anywhere', () => {
     render(sessionJsx(workoutDay, makeWeekPlan(false)))
-    expect(screen.getByText('WEEK 3')).toBeTruthy()
+    expect(screen.getByText('WEEK 3 · MONDAY')).toBeTruthy()
     expect(screen.queryByText(/DELOAD/)).toBeNull()
   })
 })
