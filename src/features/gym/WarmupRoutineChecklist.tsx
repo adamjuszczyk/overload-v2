@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Square, CheckSquare } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { useWarmupRoutineItems } from '../programs/usePrograms'
 import { useWarmupRoutineStore } from './warmupRoutineStore'
 
@@ -53,52 +53,72 @@ export default function WarmupRoutineChecklist({
 
   if (items.length === 0) return null
 
+  // Board W1 (chunk 58b): the card with its "1 OF 2" count; a ticked item is struck through and filled, an unticked one an empty box.
+  const doneCount = items.filter((item) => ticked[item.id]).length
   return (
     <div className="px-4 mb-4">
-      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-        <div className="px-4 pt-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
-          <span
-            className="text-xs font-bold tracking-widest"
-            style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
+      <div
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderWidth: 1,
+          borderStyle: 'solid',
+          borderColor: 'var(--border)',
+          borderRadius: 12,
+          padding: '4px 14px',
+        }}
+      >
+        <div className="flex items-center justify-between" style={{ minHeight: 40 }}>
+          <span className="text-xs font-bold tracking-widest" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
             WARMUP ROUTINE
           </span>
+          <span data-warmup-count style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}>
+            {doneCount} OF {items.length}
+          </span>
         </div>
-        <div className="px-4 py-1">
-          {items.map((item, index) => {
-            const isTicked = !!ticked[item.id]
-            return (
-              <button
-                key={item.id}
-                onClick={() => toggle(sessionId, item.id)}
-                className="w-full flex items-center gap-3"
+        {items.map((item) => {
+          const isTicked = !!ticked[item.id]
+          return (
+            <button
+              key={item.id}
+              role="checkbox"
+              aria-checked={isTicked}
+              onClick={() => toggle(sessionId, item.id)}
+              className="w-full flex items-center gap-3"
+              style={{
+                minHeight: 44,
+                background: 'transparent',
+                borderWidth: 0,
+                borderTopWidth: 1,
+                borderTopStyle: 'solid',
+                borderTopColor: 'var(--border-subtle)',
+                textAlign: 'left',
+                padding: 0,
+              }}
+            >
+              {isTicked ? (
+                <span className="flex-shrink-0 flex items-center justify-center" style={{ width: 20, height: 20, borderRadius: 5, backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>
+                  <Check size={12} strokeWidth={3.5} aria-hidden="true" />
+                </span>
+              ) : (
+                <span
+                  className="flex-shrink-0"
+                  style={{ width: 20, height: 20, boxSizing: 'border-box', borderRadius: 5, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-strong)' }}
+                />
+              )}
+              <span
+                className="flex-1"
                 style={{
-                  minHeight: 44,
-                  background: 'transparent',
-                  border: 'none',
-                  borderTop: index === 0 ? 'none' : '1px solid var(--border-subtle)',
-                  textAlign: 'left',
-                  padding: '10px 0',
+                  fontSize: 15,
+                  color: isTicked ? 'var(--text-muted)' : 'var(--text-primary)',
+                  textDecoration: isTicked ? 'line-through' : 'none',
+                  overflowWrap: 'anywhere',
                 }}
               >
-                {isTicked ? (
-                  <CheckSquare size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                ) : (
-                  <Square size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                )}
-                <span
-                  className="flex-1 text-sm"
-                  style={{
-                    color: isTicked ? 'var(--text-muted)' : 'var(--text-primary)',
-                    textDecoration: isTicked ? 'line-through' : 'none',
-                  }}
-                >
-                  {item.body}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+                {item.body}
+              </span>
+            </button>
+          )
+        })}
       </div>
     </div>
   )

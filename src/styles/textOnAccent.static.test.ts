@@ -65,6 +65,7 @@ const NOT_REBUILT: Record<string, number> = {
   'components/Nav.tsx': 1, // INSTALL, the bottom bar's install strip: app chrome, in no 1.2 screen and on no board
   'features/auth/LoginPage.tsx': 1, // sign-in: Sign in
   'features/gym/CompletedTodayScreen.tsx': 3, // Today, after a session is finished (SPEC: finished session unchanged)
+  'features/gym/ExerciseReference.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58b: the last-time sheet replaces its panel)
   'features/gym/MissedSessionPrompt.tsx': 1, // Today
   'features/gym/PlanTargetsPanel.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58a: the targets are in the rows)
   'features/gym/PreviewExerciseCard.tsx': 1, // Today's session preview

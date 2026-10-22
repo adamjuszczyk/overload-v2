@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { History, Repeat2 } from 'lucide-react'
 import type { ProgramExercise } from '../../types'
@@ -6,6 +7,8 @@ export default function ExerciseHeader({
   programExercise,
   onSwapClick,
   swappedFromName,
+  lastLine,
+  onHistoryClick,
 }: {
   programExercise: ProgramExercise
   // Exercise-level, not per-set (SPEC v1.1 "Part C") — this header is the
@@ -22,6 +25,11 @@ export default function ExerciseHeader({
   // otherwise-normal card — the goal is "this exercise, instead of that
   // one, right here," not a second card for the original.
   swappedFromName?: string
+  // Chunk 58b (boards W1, W6) — the workout's cards put the "LAST = LAST WEEK, TUE ›" line under the muscle group and let the history icon
+  // open the last-time sheet (`WorkoutExerciseHeader.tsx`). Left out, the header is today's: Today's session preview, which 1.2 doesn't
+  // rebuild, passes neither, and its icon still goes to the exercise's history.
+  lastLine?: ReactNode
+  onHistoryClick?: () => void
 }) {
   const ex = programExercise.exercise
   const navigate = useNavigate()
@@ -63,6 +71,7 @@ export default function ExerciseHeader({
         >
           {ex?.muscleGroup?.toUpperCase()}
         </span>
+        {lastLine}
         {swappedFromName && (
           <div className="flex items-center gap-1 mt-0.5">
             <Repeat2 size={10} style={{ color: 'var(--text-muted)' }} />
@@ -87,8 +96,8 @@ export default function ExerciseHeader({
           </button>
         )}
         <button
-          onClick={() => navigate(`/exercise/${programExercise.exerciseId}`)}
-          aria-label="View exercise history"
+          onClick={onHistoryClick ?? (() => navigate(`/exercise/${programExercise.exerciseId}`))}
+          aria-label={onHistoryClick ? 'Exercise history' : 'View exercise history'}
           className="flex items-center justify-center"
           style={{ width: 28, height: 28, color: 'var(--text-muted)' }}
         >

@@ -9,7 +9,7 @@
 // SAME underlying data, under the two scheduleType values GymSession can
 // now be given.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, cleanup, screen } from '@testing-library/react'
+import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session } from '../../types'
 import type { ReferenceSession } from './sessionService'
@@ -112,37 +112,51 @@ function renderSession(scheduleType?: 'weekday' | 'sequence') {
   )
 }
 
-describe('GymSession — ExerciseReference scheduleType wiring (chunk 25, reviewer\'s note 5)', () => {
-  it('scheduleType omitted (every pre-chunk-25 caller) defaults to weekday — shows LAST WEEK for this fixture, exactly as before', () => {
+// Chunk 58b: the card's "LAST = …" line and the sheet it opens (boards W6, W16) say what the inline panel said; the header's eyebrow names
+// the cycle and slot of a sequence run (board W4).
+const openSheet = () => fireEvent.click(screen.getByRole('button', { name: 'Exercise history' }))
+const panelTitles = () => Array.from(document.querySelectorAll('[data-last-panel]')).map((el) => (el as HTMLElement).dataset.lastPanel)
+
+describe("GymSession — the last-time line and sheet, and the header, under the two scheduleType values (chunk 25, reviewer's note 5; chunk 58b)", () => {
+  it('scheduleType omitted (every pre-chunk-25 caller) defaults to weekday — LAST WEEK for this fixture, exactly as before', () => {
     renderSession(undefined)
-    expect(screen.getByText('LAST WEEK')).toBeTruthy()
-    expect(screen.queryByText('LAST TIME')).toBeNull()
+    expect(screen.getByText('LAST = LAST WEEK, TUE')).toBeTruthy()
+    openSheet()
+    expect(panelTitles()).toEqual(['LAST WEEK'])
   })
 
   it('scheduleType="weekday" explicitly behaves identically', () => {
     renderSession('weekday')
-    expect(screen.getByText('LAST WEEK')).toBeTruthy()
+    expect(screen.getByText('LAST = LAST WEEK, TUE')).toBeTruthy()
   })
 
-  it('scheduleType="sequence" shows LAST TIME instead of LAST WEEK for the exact same underlying data (SPEC: "Sequence: always LAST TIME")', () => {
+  it('scheduleType="sequence" shows LAST TIME with its elapsed time instead of LAST WEEK for the exact same underlying data (SPEC: "Sequence: always LAST TIME")', () => {
     renderSession('sequence')
-    expect(screen.getByText('LAST TIME')).toBeTruthy()
-    expect(screen.queryByText('LAST WEEK')).toBeNull()
+    expect(screen.getByText('LAST = 6 DAYS AGO')).toBeTruthy()
+    expect(screen.queryByText(/LAST WEEK/)).toBeNull()
+    openSheet()
+    expect(panelTitles()).toEqual(['LAST TIME'])
   })
 
   it('scheduleType="sequence" never shows EARLIER THIS WEEK (SPEC: "EARLIER THIS WEEK is hidden")', () => {
     renderSession('sequence')
+    openSheet()
     expect(screen.queryByText('EARLIER THIS WEEK')).toBeNull()
   })
 
-  it('the header reads CYCLE, not WEEK, for a sequence run', () => {
+  it('the header reads CYCLE and SLOT, not WEEK and a weekday, for a sequence run (the slot counted from 1 as Plan counts it)', () => {
     renderSession('sequence')
-    expect(screen.getByText('CYCLE 1')).toBeTruthy()
-    expect(screen.queryByText('WEEK 1')).toBeNull()
+    expect(screen.getByText('CYCLE 1 · SLOT 1')).toBeTruthy()
+    expect(screen.queryByText(/WEEK 1/)).toBeNull()
+    cleanup()
+    weekPlan.sequencePosition = 3
+    renderSession('sequence')
+    expect(screen.getByText('CYCLE 1 · SLOT 4')).toBeTruthy()
+    delete weekPlan.sequencePosition
   })
 
-  it('the header still reads WEEK for a weekday run (default)', () => {
+  it('the header still reads WEEK and the weekday for a weekday run (default)', () => {
     renderSession(undefined)
-    expect(screen.getByText('WEEK 1')).toBeTruthy()
+    expect(screen.getByText('WEEK 1 · MONDAY')).toBeTruthy()
   })
 })
