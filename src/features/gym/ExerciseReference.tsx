@@ -90,7 +90,7 @@ function SetLine({ log, isStage, weightUnit }: { log: SetLog; isStage?: boolean;
       {isStage && (
         <span
           className="text-xs px-1 rounded"
-          style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
+          style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)', fontSize: 9 }}
         >
           DROP
         </span>

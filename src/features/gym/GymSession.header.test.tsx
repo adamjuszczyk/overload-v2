@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, cleanup, screen, fireEvent, act, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { format, parseISO } from 'date-fns'
 import type { ProgramExercise, Session, SetLog, WeekPlan, WeekPlanSet, WorkoutDay } from '../../types'
 import type { ReferenceSession } from './sessionService'
 import { exerciseOf, logOf, plannedDrop, plannedSet, referenceSessionOf } from './cardHarness.testutil'
@@ -105,6 +106,18 @@ describe('the header (boards W1, W4)', () => {
     expect(document.querySelector('[data-workout-clock]')!.textContent).toBe('48:12')
     // planned: set 1, set 2, set 3 and its drop = 4 (the warmup is not one); done: set 1 (set 2 is skipped, the warmup is logged and not counted)
     expect(document.querySelector('[data-workout-progress]')!.textContent).toBe('1 OF 4 SETS')
+  })
+
+  it('the weekday is the session\'s own day, not today\'s: a Tuesday session opened on a Thursday reads TUESDAY, one moved to Saturday reads SATURDAY', () => {
+    // the dates and their weekdays, printed (RULES, Checks that lied #21)
+    expect(['2026-01-06', '2026-01-08', '2026-01-10'].map((d) => format(parseISO(d), 'EEEE'))).toEqual(['Tuesday', 'Thursday', 'Saturday'])
+    session = { ...session, date: '2026-01-06' }
+    renderScreen()
+    expect(screen.getByText('WEEK 2 · TUESDAY')).toBeTruthy()
+    cleanup()
+    session = { ...session, date: '2026-01-06', movedToDate: '2026-01-10' }
+    renderScreen()
+    expect(screen.getByText('WEEK 2 · SATURDAY')).toBeTruthy()
   })
 
   it('a set added in the session joins the total, and logging it raises the done count', () => {
