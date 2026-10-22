@@ -1,4 +1,16 @@
 # Overload — Rules
+
+**Index** (read this, then the sections marked ALWAYS, then only the sections the reviewer brief names; sections are in file order)
+- Checks that lied: checks that passed while wrong; re-seed checks.
+- Rules discovered during this build: three groups, below.
+  - Data and architecture: Query/Zustand, colours, Coach, flagged-migration merges.
+  - Database / migrations: migration rules, fixtures, replay stack, staging config.
+  - **ALWAYS** Verification and process: proofs, reviews, worktrees, PR/merge/docs mechanics.
+- **ALWAYS** — The 1.2 usage rules (2026-10-16): quiet test output, who reads what.
+- **ALWAYS** — Usage rules from 58b's breakdown (2026-10-22): narrow reads, affected tests, index, cost.
+- **ALWAYS** — The 1.2 cost rule (2026-10-20): which chunks get full review.
+- **ALWAYS** — The 1.2 tests-owed rule (2026-10-20): missing tests logged, not bounced.
+
 *Read this file right after CONTEXT.md. "Checks that lied" and "Rules discovered during this build" were moved here from CONTEXT.md unchanged on 2026-10-15 (Adam: "yes, split it"). Rules are never pruned from this file; a rule discovered during the build is added to it.*
 
 ## Checks that lied
@@ -344,10 +356,18 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 
 ## The 1.2 usage rules (Adam, 2026-10-16) — cut tokens per chunk without changing what is checked
 - Test output: run vitest with a quiet reporter that prints failures only (e.g. `--reporter=dot`), and pipe long script output through a filter that keeps failures and summary lines. Never paste a full passing test log into context.
-- Builders: run the chunk's own tests while working; the full suite and every script once, at the end, before the report. The reviewer runs them all again anyway.
-- Reviewers: read RULES.md in full, but from CONTEXT.md only the sections the chunk touches plus "Where the build is".
+- Builders: run the chunk's own tests while working; the full suite and every script once, at the end, before the report. The reviewer runs them all again anyway. **Tightened 2026-10-22: while working, only the affected test files; break proofs against the specific test file (see "Usage rules from 58b's breakdown", point 2, below).**
+- Reviewers: read RULES.md in full, but from CONTEXT.md only the sections the chunk touches plus "Where the build is". **Superseded for RULES.md 2026-10-22: a reviewer reads the index and the sections marked ALWAYS in it, plus only the sections the reviewer brief names (see "Usage rules from 58b's breakdown", point 4, below); CONTEXT.md as here.**
 - Screenshots: compare boards from the text dumps first; open a PNG only where the text dump can't settle it.
 - Never resume a long-running agent; start a fresh one with a short summary file instead (a resumed agent carries its whole earlier run).
+
+### Usage rules from 58b's breakdown, 2026-10-22
+Adam, 2026-10-22, from chunk 58b's breakdown, for the rest of 1.2:
+1. Builders read code narrowly: grep and line ranges, not whole files, and only files the chunk touches. Batch independent tool calls in one turn.
+2. Builders run only the affected test files while building; the full suite runs once at the end (as now). Break proofs run against the specific test file, never the full suite.
+3. Keep every command under 5 minutes where possible, so the cache doesn't expire mid-wait. Split long runs.
+4. RULES.md gets a short index at the top. Each reviewer brief names the sections that chunk needs; reviewers read only those.
+5. Chunk reports add a cost-weighted total next to the context figure (re-reads 0.1, writes 2, output 5), and Adam will note the weekly % before and after each chunk so we can calibrate.
 
 ## The 1.2 cost rule (Adam, 2026-10-20)
 Usage is the constraint now. From the next chunk on:
