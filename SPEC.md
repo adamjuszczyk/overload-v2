@@ -486,6 +486,9 @@ optional:
 - [1.2] **Starting** lands on Plan, week 1. The start sheet's optional name
   field defaults to the program's name. Starting while a program runs finishes
   the running one first and says so (PR9).
+  - [1.2] The stepped planner's START opens the start sheet (PR8) with that
+    program picked; it never ends a running program silently (Adam,
+    2026-10-22, DECISIONS 214 (a)).
 - [1.2] **Finishing** (8c): FINISH on the current program's card asks "Finish
   [name]? The program stays saved, so you can start it again. Every week stays
   in History." It replaces END RUN.
@@ -528,6 +531,9 @@ optional:
      week 1.
    - The only required value is the number of sets per exercise. Rep targets,
      set kinds, rest and tempo are optional.
+   - [1.2] REMOVE THIS SET leaves its position empty, and the set count
+     stepper's + always adds after the highest position (Adam, 2026-10-22,
+     DECISIONS 213 (a)).
    - Entering sets stays quick for the plain case: fill all sets of an exercise
      at once (the set count stepper and ALL), then adjust individual sets.
    - [1.2] A set's number opens the set type picker, a rep target (or ALL) opens
