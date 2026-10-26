@@ -354,7 +354,7 @@ describe('LOG of a set added in the session and given a staged type: its `pendin
     expect(queue()).toEqual([])
   })
 
-  it('the log\'s upsert failing in the first pass: the row is refused (no log yet: 23503), both stay queued, and the next pass lands both, log first', async () => {
+  it('the log\'s upsert failing in the first pass: the row waits behind it (held, not sent: with no log yet the server could only answer 23503; DECISIONS 227), both stay queued, and the next pass lands both, log first', async () => {
     await logAddedDropset('added-1', false)
     world.failing.set('upsert v2_set_logs:added-1', 1)
     world.online = true
@@ -362,6 +362,7 @@ describe('LOG of a set added in the session and given a staged type: its `pendin
     expect(world.server.has('v2_set_logs:added-1')).toBe(false)
     expect(changeRows()).toEqual([])
     expect(queue()).toHaveLength(2)
+    expect(queue().map((q) => q.attempts ?? 0)).toEqual([1, 0]) // the log failed once; the row was held, never tried
     await flushSyncQueue()
     expect(requests()).toEqual(['upsert v2_set_logs:added-1', 'upsert v2_session_set_changes:<id>'])
     expect(queue()).toEqual([])

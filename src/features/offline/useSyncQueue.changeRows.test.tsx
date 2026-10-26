@@ -33,6 +33,8 @@ const world = vi.hoisted(() => ({
   requests: [] as string[],
   refused: [] as string[],
   failing: new Map<string, number>(),
+  // The device's own database refusing the next removals from the queue (a full disk, a locked store).
+  queueDeleteFails: 0,
 }))
 const queue = () => world.queue as QueueItem[]
 
@@ -45,7 +47,13 @@ vi.mock('../../lib/db', () => ({
       orderBy: () => ({ toArray: async () => structuredClone([...queue()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id)) }),
       toArray: async () => structuredClone([...queue()]),
       add: async (item: Omit<QueueItem, 'id'>) => void queue().push({ ...item, id: world.nextId++ }),
-      delete: async (id: number) => void (world.queue = queue().filter((q) => q.id !== id)),
+      delete: async (id: number) => {
+        if (world.queueDeleteFails > 0) {
+          world.queueDeleteFails--
+          throw new Error('UnknownError')
+        }
+        world.queue = queue().filter((q) => q.id !== id)
+      },
       update: async (id: number, patch: Partial<QueueItem>) => void (world.queue = queue().map((q) => (q.id === id ? { ...q, ...patch } : q))),
       bulkUpdate: async () => {},
     },
@@ -160,6 +168,7 @@ const changeRows = () => [...world.server].filter(([key]) => key.startsWith('v2_
 const serverLogs = () => [...world.server.keys()].filter((k) => k.startsWith('v2_set_logs:')).map((k) => k.slice('v2_set_logs:'.length)).sort()
 const stuck = () => queue().filter((q) => q.table === 'v2_session_set_changes' && q.payload.kind === 'pending_stages')
 
+let errorLog: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   world.online = false
   world.queue = []
@@ -168,9 +177,10 @@ beforeEach(() => {
   world.requests = []
   world.refused = []
   world.failing = new Map()
+  world.queueDeleteFails = 0
   queryClient.clear()
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
-  vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
 })
 
 /** What the screen does for one DELETE: `deleteEffects` over the view, then `runDelete` through the real producers. */
@@ -408,6 +418,20 @@ describe('227 (iii): DELETE online of a log whose change row is still queued', (
     await flushSyncQueue()
     expect(changeRows().map((r) => r.set_log_id)).toEqual(['log.bench.added1', 'log.bench.added2'])
     expect(world.refused).toEqual([])
+  })
+
+  it('a cleanup the device’s database refuses is logged and does not fail the delete that has been done: the log stays gone from the screen', async () => {
+    await twoRowsQueued()
+    queryClient.setQueryData(['v2_session', 's1'], { id: 's1', setLogs: [headLog('bench', 1), addedHead(1), addedHead(2)], setChanges: [] } as unknown as Session)
+    world.queueDeleteFails = 1
+
+    await deleteOnline('log.bench.added1') // resolves: the request went through
+
+    expect(serverLogs()).toEqual(['log.bench.1', 'log.bench.added2'])
+    const cached = queryClient.getQueryData(['v2_session', 's1']) as Session
+    expect(cached.setLogs?.map((l) => l.id)).toEqual(['log.bench.1', 'log.bench.added2']) // not put back by a failed mutation
+    expect(errorLog).toHaveBeenCalledWith('[sync] could not drop the queued rows of a deleted log', expect.any(Error))
+    expect(stuck().map((q) => q.payload.set_log_id)).toEqual(['log.bench.added1', 'log.bench.added2']) // nothing was dropped: today’s behaviour, no worse
   })
 
   it('offline, a delete queues its item and drops nothing: the rows are the queue’s to cancel or send, in the pass', async () => {
