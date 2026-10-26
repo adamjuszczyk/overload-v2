@@ -110,8 +110,12 @@
 -- come with COPY in the app). The seed copies them itself where a later week
 -- needs them (STG Upper/Lower's weeks 2 and 3, STG Rotation's cycle 2), set by
 -- set from the week before (the same planned set's weight, RIR, rep targets and
--- AMRAP), so the world is the same whichever version of v2_plan_week the
--- database has.
+-- AMRAP; the same planned set is the same exercise row, set number, stage and
+-- warmup flag), so the world is the same whichever version of v2_plan_week the
+-- database has. Each copy is checked right after it (DECISIONS 219: on staging a
+-- copy that landed on no row went unseen and the logs took their 50 kg
+-- fallback): a planned set that found no source set, or differs from it, stops
+-- the seed with an error that names the counts, and nothing is seeded.
 
 -- ── Privileges a new branch lacks ───────────────────────────────────────────
 -- Supabase creates a branch "without default privileges on the public
@@ -180,6 +184,8 @@ declare
   qe_squat uuid; qe_bench uuid; qe_farmer uuid;
   qe_leg_press uuid; qe_row uuid; qe_curl uuid;   -- the 1.1-shaped cycle 2's swapped-in and added exercises
   qp_rot uuid; qw_ra uuid; qw_rb uuid; qw_rc uuid; m_q uuid;
+  -- the check after each numbers copy (weeks 2-3 of STG Upper/Lower, cycle 2 of STG Rotation)
+  cp_total int; cp_found int; cp_differ int; cp_weights int; cp_reps int; cp_by_pset int;
 begin
   -- ── Guard ────────────────────────────────────────────────────────────────
   if exists (select 1 from auth.users where id = c_prod_marker) then
@@ -473,6 +479,8 @@ begin
   -- migration 045 no number), so each planned set takes the numbers of the same planned
   -- set a week earlier, week 2 from week 1 and then week 3 from week 2. With
   -- 041's v2_plan_week these columns are already equal and the update changes nothing.
+  -- "The same planned set" is the same exercise row, set number, stage and warmup flag:
+  -- structure only, so the copy does not depend on how a planning function links its rows.
   for wk in 2..3 loop
     update v2_week_plan_sets ws set
       target_weight = src.target_weight, target_rir = src.target_rir,
@@ -483,7 +491,37 @@ begin
                           and swp.week_number = wp.week_number - 1
     join v2_week_plan_sets src on src.week_plan_id = swp.id
     where wp.mesocycle_id = m_ul and wp.week_number = wk
-      and ws.week_plan_id = wp.id and ws.program_set_id = src.program_set_id;
+      and ws.week_plan_id = wp.id
+      and ws.program_exercise_id = src.program_exercise_id and ws.set_number = src.set_number
+      and ws.stage_index = src.stage_index and ws.is_warmup = src.is_warmup;
+  end loop;
+  -- The copy is checked, in a loop of its own so that it cannot share a mistake with the copy
+  -- (DECISIONS 219: on staging a copy that landed on no row went unseen, and the logs below took
+  -- their 50 kg fallback). Every planned set of weeks 2 and 3 must have found its source set a
+  -- week earlier and equal it in the five columns, and the source week must hold weights (else
+  -- "equal" could mean "both empty"). If not, the seed stops and rolls everything back.
+  for wk in 2..3 loop
+    select count(*), count(src.id),
+           count(*) filter (where src.id is not null and (ws.target_weight is distinct from src.target_weight
+             or ws.target_rir is distinct from src.target_rir or ws.rep_min is distinct from src.rep_min
+             or ws.rep_max is distinct from src.rep_max or ws.is_amrap is distinct from src.is_amrap)),
+           count(src.target_weight), count(src.rep_min),
+           count(*) filter (where exists (select 1 from v2_week_plan_sets s1
+                                           where s1.week_plan_id = swp.id and s1.program_set_id = ws.program_set_id))
+      into cp_total, cp_found, cp_differ, cp_weights, cp_reps, cp_by_pset
+      from v2_week_plan_sets ws
+      join v2_week_plans wp on wp.id = ws.week_plan_id
+      left join v2_week_plans swp on swp.mesocycle_id = wp.mesocycle_id and swp.workout_day_id = wp.workout_day_id
+                                 and swp.sequence_position is not distinct from wp.sequence_position
+                                 and swp.week_number = wp.week_number - 1
+      left join v2_week_plan_sets src on src.week_plan_id = swp.id
+                                     and src.program_exercise_id = ws.program_exercise_id and src.set_number = ws.set_number
+                                     and src.stage_index = ws.stage_index and src.is_warmup = ws.is_warmup
+     where wp.mesocycle_id = m_ul and wp.week_number = wk;
+    if cp_found <> cp_total or cp_differ <> 0 or cp_weights = 0 or cp_reps = 0 then
+      raise exception 'seed.sql stopped and rolled everything back: week % of STG Upper/Lower run did not take its numbers from week %. % planned sets, % found their source set (% by program_set_id), % differ from it, the source week holds % weights and % rep targets.',
+        wk, wk - 1, cp_total, cp_found, cp_by_pset, cp_differ, cp_weights, cp_reps;
+    end if;
   end loop;
   -- Week 2's Lower A is a deload session.
   update v2_week_plans set is_deload = true
@@ -574,7 +612,8 @@ begin
   perform v2_plan_week(m_q, 1);
   perform v2_plan_week(m_q, 2);
   -- Cycle 2 copies cycle 1 (see "Numbers in later weeks" in the header): each planned set
-  -- takes the numbers of the same planned set of the same slot a cycle earlier.
+  -- takes the numbers of the same planned set of the same slot a cycle earlier (the same
+  -- exercise row, set number, stage and warmup flag), and the copy is checked as above.
   update v2_week_plan_sets ws set
     target_weight = src.target_weight, target_rir = src.target_rir,
     rep_min = src.rep_min, rep_max = src.rep_max, is_amrap = src.is_amrap
@@ -584,7 +623,31 @@ begin
                         and swp.week_number = wp.week_number - 1
   join v2_week_plan_sets src on src.week_plan_id = swp.id
   where wp.mesocycle_id = m_q and wp.week_number = 2
-    and ws.week_plan_id = wp.id and ws.program_set_id = src.program_set_id;
+    and ws.week_plan_id = wp.id
+    and ws.program_exercise_id = src.program_exercise_id and ws.set_number = src.set_number
+    and ws.stage_index = src.stage_index and ws.is_warmup = src.is_warmup;
+  select count(*), count(src.id),
+         count(*) filter (where src.id is not null and (ws.target_weight is distinct from src.target_weight
+           or ws.target_rir is distinct from src.target_rir or ws.rep_min is distinct from src.rep_min
+           or ws.rep_max is distinct from src.rep_max or ws.is_amrap is distinct from src.is_amrap)),
+         count(src.target_weight), count(src.rep_min),
+         count(*) filter (where exists (select 1 from v2_week_plan_sets s1
+                                         where s1.week_plan_id = swp.id and s1.program_set_id = ws.program_set_id))
+    into cp_total, cp_found, cp_differ, cp_weights, cp_reps, cp_by_pset
+    from v2_week_plan_sets ws
+    join v2_week_plans wp on wp.id = ws.week_plan_id
+    left join v2_week_plans swp on swp.mesocycle_id = wp.mesocycle_id and swp.workout_day_id = wp.workout_day_id
+                               and swp.sequence_position is not distinct from wp.sequence_position
+                               and swp.week_number = wp.week_number - 1
+    left join v2_week_plan_sets src on src.week_plan_id = swp.id
+                                   and src.program_exercise_id = ws.program_exercise_id and src.set_number = ws.set_number
+                                   and src.stage_index = ws.stage_index and src.is_warmup = ws.is_warmup
+   where wp.mesocycle_id = m_q and wp.week_number = 2;
+  -- (STG Rotation's cycle 1 has rep targets and an AMRAP, and no weight.)
+  if cp_found <> cp_total or cp_differ <> 0 or cp_reps = 0 then
+    raise exception 'seed.sql stopped and rolled everything back: cycle 2 of STG Rotation run did not take its numbers from cycle 1. % planned sets, % found their source set (% by program_set_id), % differ from it, the source cycle holds % rep targets.',
+      cp_total, cp_found, cp_by_pset, cp_differ, cp_reps;
+  end if;
 
   -- ── STG Rotation run, cycle 2: the edits 1.1 let a user make (the 1.1-shaped run) ─────
   -- TASKS-1.2 chunk 53; DECISIONS 149 (c) and 196. Migration 046 is the release's data
@@ -872,4 +935,4 @@ $seed$;
 notify pgrst, 'reload schema';
 
 -- Whoever changes this seed changes the version below, so a wrong seed shows in the result pane the moment it runs.
-select 'overload seed 2026-10-20 chunk 53' as seed_version;
+select 'overload seed 2026-10-26 seed-fix 219' as seed_version;
