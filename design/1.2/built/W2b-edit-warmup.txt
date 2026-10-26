@@ -1,0 +1,18 @@
+Bench Press
+CHEST
+FIRST TIME
+W
+kg
+×
+SET TYPE
+Warmup
+UNLOG
+DELETE
+CANCEL
+SAVE
+01
+kg
+×
+RIR
+LOG
+ADD SET

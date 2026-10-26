@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addRound, finishWarning, resolveRows, sessionOrder } from './workoutRules'
-import { addedLog, addSet, brief, card, deepFreeze, deleted, dropLog, headLog, orderOf, retyped, staged } from './workoutRules.testutil'
+import { addRound, finishWarning, holdsAutoFinish, resolveRows, sessionOrder } from './workoutRules'
+import { addedLog, addSet, brief, card, deepFreeze, deleted, dropLog, headLog, held, orderOf, pending, retyped, staged } from './workoutRules.testutil'
 
 // Chunk 46: finishing (SPEC [1.2] "Finishing (11, C6)": "When planned sets aren't logged it says which")
 // and ADD ROUND (Supersets, Defaults 9).
@@ -156,5 +156,64 @@ describe('addRound: one set for every member of the superset (Defaults 9)', () =
     // a plain card is not a block
     const plain = sessionOrder([card('bench', 'n')])
     expect(() => addRound(plain, resolveRows(plain, [], []), 'bench', [])).toThrow(RangeError)
+  })
+})
+
+// Chunk 61's review 1, F2. DECISIONS 166 (a), the option Adam took: "Auto-finish waits until no row of `resolveRows` is open. That covers working sets, drops and
+// planned warmups, with deleted sets out and retyped drops in. A set added in the session and never logged doesn't hold it, as today." `finishWarning` (above) lists
+// the planned working sets only, so `holdsAutoFinish` is what it leaves out: the screen asks both (`useWorkoutRows.nothingLeft`).
+describe('holdsAutoFinish: the open rows besides the planned working sets that keep auto-finish waiting (DECISIONS 166 (a); 61\'s review 1, F2)', () => {
+  const holding = (cards: ReturnType<typeof card>[], logs: ReturnType<typeof headLog>[], changes: Parameters<typeof resolveRows>[2] = []) =>
+    resolveRows(orderOf(cards), logs, changes).filter(holdsAutoFinish).map(brief)
+  const BENCH = card('bench', 'n d2 n', { name: 'Bench Press' })
+  const dropsetHead = () => headLog('bench', 2, { stageKind: 'dropset' })
+  const heads = () => [headLog('bench', 1), dropsetHead(), headLog('bench', 3)]
+
+  it('an open drop of a planned dropset holds it, one row per drop (the warning, which lists working sets, is empty)', () => {
+    expect(finishWarning(orderOf([BENCH]), heads(), [])).toBeNull()
+    expect(holding([BENCH], heads())).toEqual(['bench 02.1·', 'bench 02.2·'])
+  })
+
+  it('a logged or skipped drop is settled: only the drop still open holds it', () => {
+    expect(holding([BENCH], [...heads(), dropLog(dropsetHead(), 1)])).toEqual(['bench 02.2·'])
+    expect(holding([BENCH], [...heads(), dropLog(dropsetHead(), 1), dropLog(dropsetHead(), 2, { skipped: true })])).toEqual([])
+  })
+
+  it('a planned dropset not logged yet has open drops too (its head is the warning\'s)', () => {
+    expect(holding([BENCH], [headLog('bench', 1), headLog('bench', 3)])).toEqual(['bench 02.1·', 'bench 02.2·'])
+  })
+
+  it('a skipped head\'s drops are dead (the rows leave them out), and a deleted set\'s drops go with it: neither holds it', () => {
+    expect(holding([BENCH], [headLog('bench', 1), headLog('bench', 2, { skipped: true }), headLog('bench', 3)])).toEqual([])
+    expect(holding([BENCH], [headLog('bench', 1), headLog('bench', 3)], [deleted('bench', 2)])).toEqual([])
+  })
+
+  it('a planned set retyped to a dropset has its new drops in, open ones hold it; one retyped away from a dropset has none', () => {
+    const plain = card('bench', 'n n n', { name: 'Bench Press' })
+    expect(holding([plain], heads(), [retyped('bench', 2, staged('dropset', 2))])).toEqual(['bench 02.1·', 'bench 02.2·'])
+    expect(holding([BENCH], [headLog('bench', 1), headLog('bench', 3)], [retyped('bench', 2, { kind: 'normal' })])).toEqual([]) // not logged yet: Normal, so no drops
+  })
+
+  it('an open planned warmup holds it; a logged or skipped one does not', () => {
+    const ez = card('ez', 'w w n', { name: 'EZ Bar Curl' })
+    expect(holding([ez], [headLog('ez', 3, { number: 1 })])).toEqual(['ez W1·', 'ez W2·'])
+    expect(holding([ez], [headLog('ez', 1, { warmup: true, number: 1 }), headLog('ez', 2, { warmup: true, skipped: true, number: 2 }), headLog('ez', 3, { number: 1 })])).toEqual([])
+  })
+
+  it('a planned set switched to a warmup is a planned warmup, and holds it while it is open', () => {
+    expect(holding([card('bench', 'n n', { name: 'Bench Press' })], [headLog('bench', 2, { number: 1 })], [retyped('bench', 1, { kind: 'warmup' })])).toEqual(['bench W1·'])
+  })
+
+  it('a set added in the session never holds it, nor do its drops or its warmup, logged or not (166 (a): "as today")', () => {
+    expect(holding([card('bench', 'n', { added: 1 })], [headLog('bench', 1)])).toEqual([])
+    const added = addedLog('bench', 1, { stageKind: 'dropset', number: 2 })
+    expect(holding([card('bench', 'n', { added: [added] })], [headLog('bench', 1), added], [held(pending(added, 'dropset', 2), 'c1')])).toEqual([])
+    expect(holding([card('bench', 'n', { added: [{ kind: 'warmup' }] })], [headLog('bench', 1)])).toEqual([])
+  })
+
+  it('a planned working set is the warning\'s, not this one\'s (so the screen asks both)', () => {
+    const open = card('bench', 'n n', { name: 'Bench Press' })
+    expect(holding([open], [])).toEqual([])
+    expect(finishWarning(orderOf([open]), [], [])).not.toBeNull()
   })
 })

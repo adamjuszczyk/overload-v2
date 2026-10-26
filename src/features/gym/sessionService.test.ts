@@ -102,6 +102,19 @@ describe('updateSetLog — the edit path never writes `note` (chunk 4)', () => {
     expect(payload).toEqual({ set_number: 3 })
     expect('note' in payload).toBe(false)
   })
+
+  // Chunk 61 (DECISIONS 147 (a)): deleting a logged set's last drop makes it a normal set, so its log loses its stage kind. The patch is that column
+  // and nothing else (the table's own checks refuse a stage kind with a warmup flag, and a whole-row save would write this phone's numbers over another's).
+  it('a head losing its stage kind patches `stage_kind` to null and only that, on the log it names', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSetLog('log-1', { stageKind: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ stage_kind: null })
+    expect(chain.eq).toHaveBeenCalledWith('id', 'log-1')
+  })
 })
 
 // D30 (Adam's standing rule, chunk 9) — chunk 9 changes how the workout

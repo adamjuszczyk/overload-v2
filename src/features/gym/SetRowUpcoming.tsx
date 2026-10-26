@@ -1,10 +1,15 @@
 // Chunk 58a — the rows that can't be typed into (boards W3, W3b): a drop waits locked until the row before it is logged (board W3: "AFTER SET
 // 03"), and a skipped set is a dashed "SKIPPED" line. The upcoming row that used to be here, targets only, went in chunk 60: "every row can
 // be typed into" (SPEC [1.2] "Log lock (18a)"; board W1), so every other open row is `SetRowCurrent`'s too.
-import { Lock } from 'lucide-react'
+// Chunk 61: a skipped row has a ⋯ with DELETE SET (SPEC 18b: "Logged and unlogged sets"; closing F4's "can't delete a skipped set"): the set was
+// settled, so there is nothing else in it to choose.
+import { useState } from 'react'
+import { Lock, MoreVertical } from 'lucide-react'
 import type { WeekPlanSet, WeightUnit } from '../../types'
 import type { ResolvedRow } from './workoutRules'
+import SetOptionsSheet from './SetOptionsSheet'
 import { RowLabel, rowFrame } from './setRowParts'
+import { optionsEyebrow } from './setOptionsView'
 import { rowLabelText, targetsText } from './workoutRowView'
 
 const MONO = 'var(--font-mono)'
@@ -27,13 +32,40 @@ export function SetRowLocked({ row, planned, unit, lock }: { row: ResolvedRow; p
   )
 }
 
-export function SetRowSkipped({ row }: { row: ResolvedRow }) {
+export function SetRowSkipped({ row, onDelete }: { row: ResolvedRow; onDelete: () => void }) {
+  const [showMore, setShowMore] = useState(false)
   return (
     <div style={rowFrame({ ...dashed })} data-row-key={row.key} data-row-state="skipped">
       <RowLabel text={rowLabelText(row)} />
-      <span className="text-xs font-bold tracking-widest" style={{ color: 'var(--text-muted)', fontFamily: MONO }}>
+      <span className="flex-1 text-xs font-bold tracking-widest" style={{ color: 'var(--text-muted)', fontFamily: MONO }}>
         SKIPPED
       </span>
+      <button
+        type="button"
+        onClick={() => setShowMore(true)}
+        className="flex-shrink-0 flex items-center justify-center"
+        style={{ width: 28, height: 44, color: 'var(--text-muted)' }}
+        aria-label="Set options"
+        aria-expanded={showMore}
+      >
+        <MoreVertical size={16} />
+      </button>
+      {showMore && (
+        <SetOptionsSheet
+          eyebrow={optionsEyebrow(row)}
+          typeText={null}
+          cuesText={null}
+          onCues={() => {}}
+          form={null}
+          unit={null}
+          onSkip={null}
+          onDelete={() => {
+            setShowMore(false)
+            onDelete()
+          }}
+          onClose={() => setShowMore(false)}
+        />
+      )}
     </div>
   )
 }

@@ -20,10 +20,21 @@ import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
-import { FORM_SCALE } from './ratingScales'
-import RatingChips from './RatingChips'
+import SetOptionsSheet from './SetOptionsSheet'
 import { CueLine, LastLine, RowLabel, boxStyle } from './setRowParts'
+import { optionsEyebrow, typeRowText } from './setOptionsView'
 import { formatClock, rowDefaults, rowLabelText } from './workoutRowView'
+
+/**
+ * What the row's ⋯ reaches that the row doesn't own (chunk 61): the CUES row and its sheet, and W9's confirm, both mounted by `WorkoutRow`.
+ * `cuesText` is the set's cues as the CUES row says them ("" for none), null where the set has none to edit: a set with no planned set
+ * (DECISIONS 165 (a)).
+ */
+export interface RowMenu {
+  cuesText: string | null
+  openCues: () => void
+  askDelete: () => void
+}
 
 interface SetRowCurrentProps {
   row: ResolvedRow
@@ -44,6 +55,8 @@ interface SetRowCurrentProps {
   onLog: (params: LogParams) => void
   /** Whether this is the session's current set (`currentSet()`), the one row with the accent frame, the filled LOG and `data-current-set`. */
   isCurrent?: boolean
+  /** The ⋯ sheet's reach (chunk 61). Left out, the sheet offers no CUES and its DELETE does nothing (a row nobody can delete: ADD STAGE's own synthetic row). */
+  menu?: RowMenu
   /**
    * The log lock (chunk 60): called when LOG is pressed and the boxes are good, with what LOG would do. The caller logs at once or asks first and
    * calls `proceed` when the answer is yes; until then nothing was logged and nothing in the row was reset (a running set timer included).
@@ -66,6 +79,7 @@ export default function SetRowCurrent({
   restElapsed,
   onLog,
   isCurrent = true,
+  menu,
   beforeLog,
 }: SetRowCurrentProps) {
   const isStage = row.kind === 'stage'
@@ -330,21 +344,34 @@ export default function SetRowCurrent({
         </p>
       )}
 
-      {/* Chunk 61 replaces this with the set ⋯ sheet (W7): FORM and SKIP THIS SET are today's actions, kept reachable until then. */}
+      {/* The set ⋯ sheet (chunk 61; boards W7, W8): FORM and SKIP THIS SET are today's actions, now in the sheet with SET TYPE, CUES, the lbs row and
+          DELETE SET. A drop's sheet has FORM, the lbs row and DELETE SET only. */}
       {showMore && (
-        <div className="space-y-2" style={{ paddingLeft: 34 }}>
-          <RatingChips scale={FORM_SCALE} value={formRating} onChange={setFormRating} label="FORM" />
-          {!isStage && (
-            <button
-              type="button"
-              onClick={handleSkip}
-              className="flex items-center justify-center text-xs px-3 rounded"
-              style={{ minHeight: 44, color: 'var(--text-muted)', border: '1px solid var(--border)', fontFamily: MONO }}
-            >
-              SKIP THIS SET
-            </button>
-          )}
-        </div>
+        <SetOptionsSheet
+          eyebrow={optionsEyebrow(row)}
+          typeText={isStage ? null : typeRowText(row.type)}
+          cuesText={isStage || menu === undefined ? null : menu.cuesText}
+          onCues={() => menu?.openCues()}
+          form={{ value: formRating, onChange: setFormRating }}
+          unit={{ resolved: resolvedUnit, active: activeUnit, onChange: setUnitOverride }}
+          onSkip={
+            isStage
+              ? null
+              : () => {
+                  setShowMore(false)
+                  handleSkip()
+                }
+          }
+          onDelete={
+            menu === undefined
+              ? null
+              : () => {
+                  setShowMore(false)
+                  menu.askDelete()
+                }
+          }
+          onClose={() => setShowMore(false)}
+        />
       )}
 
       <CueLine tags={tags} compact={!isCurrent} />

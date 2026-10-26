@@ -52,3 +52,17 @@ describe('the number correction is the workout screen\'s alone (DECISIONS 178)',
     for (const path of readOnly) expect(text.get(path)).not.toMatch(/useSetNumberCorrections|patchSetNumbers|queueSetLogPatch/)
   })
 })
+
+describe('the stage-kind patch is the workout screen\'s delete alone (61\'s review 1, F1; DECISIONS 197)', () => {
+  it('the item is queued from the delete\'s writer and nowhere else', () => {
+    const queuing = sourceFiles.filter((path) => /queueSetLogStageKindClear\s*\(/.test(text.get(path)!) && !path.endsWith('useSyncQueue.ts'))
+    expect(rel(queuing)).toEqual([join('features', 'gym', 'clearStageKind.ts')])
+  })
+
+  it('the writer is called from GymSession.tsx alone, and History, Plan and the finished-session screens never import it', () => {
+    const calling = sourceFiles.filter((path) => /(?<![.\w])clearStageKind\s*\(/.test(text.get(path)!) && !path.endsWith('clearStageKind.ts'))
+    expect(rel(calling)).toEqual([join('features', 'gym', 'GymSession.tsx')])
+    const readOnly = sourceFiles.filter((path) => /features\/(history|plan|programs|progress)\//.test(path.split('\\').join('/')))
+    for (const path of readOnly) expect(text.get(path)).not.toMatch(/clearStageKind|queueSetLogStageKindClear/)
+  })
+})

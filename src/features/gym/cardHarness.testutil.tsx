@@ -5,10 +5,11 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ComponentProps } from 'react'
 import ExerciseCard from './ExerciseCard'
 import { useWorkoutRows } from './useWorkoutRows'
-import type { AddedSet } from './workoutRules'
+import type { AddedSet, HeldChange } from './workoutRules'
 import { groupSetLogs } from './setGroupLogic'
 import type { ReferenceSession } from './sessionService'
 import type { ProgramExercise, ProgramSet, SetLog, WeekPlanSet } from '../../types'
+import { spyWriters } from './setWriters.testutil'
 
 export const exerciseOf = (over: Partial<ProgramExercise> = {}): ProgramExercise => ({
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'u1', exerciseId: 'ex-1', position: 0, weightUnit: null,
@@ -48,18 +49,21 @@ type CardProps = Partial<ComponentProps<typeof ExerciseCard>>
 interface HarnessProps {
   plannedSets: WeekPlanSet[]
   logs: SetLog[]
+  /** The session's stored change rows, as the session holds them (chunk 61). */
+  changes?: HeldChange[]
   programSets?: ProgramSet[]
   props?: CardProps
   /** The card's list of the sets added in the session as it stands when the screen mounts (chunk 59's tests: sets of a type the screen can't make yet). */
   initialAdded?: readonly AddedSet[]
 }
 
-function Harness({ plannedSets, logs, programSets = [], props = {}, initialAdded }: HarnessProps) {
+function Harness({ plannedSets, logs, changes, programSets = [], props = {}, initialAdded }: HarnessProps) {
   const programExercise = props.programExercise ?? exerciseOf()
   const workout = useWorkoutRows({
     cards: [{ key: programExercise.id, programExercise, plannedSets }],
     blocks: [],
     logs,
+    ...(changes === undefined ? {} : { changes }),
     ...(initialAdded === undefined ? {} : { initialAdded: { [programExercise.id]: initialAdded } }),
   })
   return (
@@ -81,6 +85,7 @@ function Harness({ plannedSets, logs, programSets = [], props = {}, initialAdded
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
+        writers={spyWriters()}
         onSwap={async () => {}}
         {...props}
       />
@@ -88,10 +93,22 @@ function Harness({ plannedSets, logs, programSets = [], props = {}, initialAdded
   )
 }
 
-export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; programSets?: ProgramSet[]; props?: CardProps; initialAdded?: readonly AddedSet[] }) {
+export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; changes?: HeldChange[]; programSets?: ProgramSet[]; props?: CardProps; initialAdded?: readonly AddedSet[] }) {
   const base = { plannedSets: input.plannedSets, programSets: input.programSets, props: input.props, initialAdded: input.initialAdded }
-  const view = render(<Harness {...base} logs={input.logs ?? []} />)
-  return { ...view, setLogs: (logs: SetLog[]) => view.rerender(<Harness {...base} logs={logs} />) }
+  const view = render(<Harness {...base} logs={input.logs ?? []} changes={input.changes} />)
+  let latest = { logs: input.logs ?? [], changes: input.changes }
+  return {
+    ...view,
+    // The server's answer, played back: the session's logs, and (chunk 61) its change rows.
+    setLogs: (logs: SetLog[]) => {
+      latest = { ...latest, logs }
+      view.rerender(<Harness {...base} logs={latest.logs} changes={latest.changes} />)
+    },
+    setChanges: (changes: HeldChange[]) => {
+      latest = { ...latest, changes }
+      view.rerender(<Harness {...base} logs={latest.logs} changes={latest.changes} />)
+    },
+  }
 }
 
 /** The number cell of every row of a card, in the order they are drawn. */

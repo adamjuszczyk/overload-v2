@@ -284,21 +284,39 @@ describe('the logging-time unit override and MEASURE SET TIME (today\'s, kept in
     expect(useSetTimerStore.getState().startedAt).toBeNull() // nothing started the screen's set timer
   })
 
-  it('⋮ keeps FORM and SKIP THIS SET reachable until chunk 61\'s sheet: SKIP writes a skipped set under the number the row shows', async () => {
+  it('SKIP THIS SET, in the ⋯ sheet (chunk 61, board W7), writes a skipped set under the number the row shows and closes the sheet', async () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'rest_pause' })], props: { onLog } })
     fireEvent.click(within(current(container)).getByLabelText('Set options'))
-    fireEvent.click(within(current(container)).getByText('SKIP THIS SET'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('SKIP THIS SET'))
     expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-1', setNumber: 1, isSkipped: true, weight: null, reps: null, stageKind: 'rest_pause' })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('FORM picked in ⋮ goes into the LOG payload', async () => {
+  it('FORM picked in the ⋯ sheet goes into the LOG payload', async () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({ plannedSets: [plannedSet(1, { targetWeight: 50, repMin: 8, repMax: 8 })], props: { onLog } })
     fireEvent.click(within(current(container)).getByLabelText('Set options'))
-    fireEvent.click(within(current(container)).getByText('CONTROLLED'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('CONTROLLED'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByLabelText('Close'))
     await pressLog(current(container))
     expect(calls[0].formRating).toBe('controlled')
+  })
+
+  it('the sheet\'s "Log this set in lbs" switch is the same override as the unit label: the weight is converted and entered_unit says lbs', async () => {
+    const { calls, onLog } = spy()
+    const { container } = renderCard({ plannedSets: [plannedSet(1, { repMin: 5, repMax: 5 })], props: { onLog } })
+    fireEvent.click(within(current(container)).getByLabelText('Set options'))
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByText('This exercise is in kg.')).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('switch', { name: 'Log this set in lbs' }))
+    expect(within(sheet).getByRole('switch', { name: 'Log this set in lbs' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(sheet).getByLabelText('Close'))
+    expect(within(current(container)).getByText('lbs')).toBeTruthy() // the row's own unit label follows
+    typeInto(current(container), 'Weight', '100')
+    await pressLog(current(container))
+    expect(calls[0].enteredUnit).toBe('lbs')
+    expect(calls[0].weight).toBe(toStorageWeight(100, 'lbs'))
   })
 })
 
@@ -522,7 +540,8 @@ describe('skip the rest of this exercise (planned working sets; each skip stores
   })
 })
 
-describe('editing and deleting a logged set (today\'s writes, kept until chunk 61\'s edit panel)', () => {
+// Chunk 61: the pen opens the edit panel (board W2b), whose writes are today's; DELETE is in `ExerciseCard.delete.test.tsx`.
+describe('editing a logged set (the edit panel\'s SAVE sends what the inline edit sent)', () => {
   it('the pen opens the logged numbers; SAVE sends weight, reps, RIR and FORM — and no note', () => {
     const onUpdateSet = vi.fn()
     const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [headLogOf(1, { weight: 80, reps: 8, rir: 2 })], props: { onUpdateSet } })
@@ -559,33 +578,6 @@ describe('editing and deleting a logged set (today\'s writes, kept until chunk 6
     fireEvent.click(within(row).getByText('SAVE'))
     expect(onUpdateSet).not.toHaveBeenCalled()
     expect(row.textContent).toContain('Enter a valid weight')
-  })
-
-  it('DELETE asks first, then removes the drop before the head and renumbers the sets after it (heads only, as today)', async () => {
-    const deleted: string[] = []
-    const onUpdateSet = vi.fn()
-    const logs = [
-      headLogOf(1, { stageKind: 'dropset' }),
-      logOf({ id: 'd1', parentSetId: 'log-1', stageIndex: 1, setNumber: 1, isDropset: true, weekPlanSetId: 'set-1-drop-1' }),
-      headLogOf(2),
-      headLogOf(3),
-    ]
-    const { container } = renderCard({
-      plannedSets: [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1), plannedSet(2), plannedSet(3)],
-      logs,
-      props: { onUpdateSet, onDeleteSet: async (id) => void deleted.push(id) },
-    })
-    fireEvent.click(within(rowOf(container, 'set:set-1')).getByLabelText('Edit set'))
-    fireEvent.click(within(rowOf(container, 'set:set-1')).getByText('DELETE'))
-    expect(deleted).toEqual([]) // asks first
-    await act(async () => {
-      fireEvent.click(within(rowOf(container, 'set:set-1')).getByText('CONFIRM DELETE'))
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(deleted).toEqual(['d1', 'log-1']) // the drop first, the head last
-    expect(onUpdateSet.mock.calls).toEqual([['log-2', { setNumber: 1 }], ['log-3', { setNumber: 2 }]])
   })
 })
 

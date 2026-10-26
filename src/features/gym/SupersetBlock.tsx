@@ -4,7 +4,7 @@ import type { ReferenceSession } from './sessionService'
 import type { ScheduleType } from './referenceByExercise'
 import WorkoutExerciseHeader from './WorkoutExerciseHeader'
 import { cardOptions, SwapPickerSheet } from './cardOptions'
-import { CardRows } from './WorkoutRow'
+import { CardDeleteConfirm, CardRows } from './WorkoutRow'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import type { SupersetChainInput } from './restChain'
 import type { ResolvedRow } from './workoutRules'
@@ -50,6 +50,7 @@ interface SupersetBlockProps {
   onLog: ExerciseCardProps['onLog']
   onUpdateSet: ExerciseCardProps['onUpdateSet']
   onDeleteSet: ExerciseCardProps['onDeleteSet']
+  writers: ExerciseCardProps['writers']
   onSwap: ExerciseCardProps['onSwap']
   /** Every exercise already in the workout, for the swap picker. */
   excludeExerciseIds?: readonly string[]
@@ -74,6 +75,7 @@ export default function SupersetBlock({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  writers,
   onSwap,
   excludeExerciseIds = [],
 }: SupersetBlockProps) {
@@ -98,6 +100,7 @@ export default function SupersetBlock({
       onLog,
       onUpdateSet,
       onDeleteSet,
+      writers,
       onSwap,
       excludeExerciseIds,
     }),
@@ -196,6 +199,10 @@ export default function SupersetBlock({
           ADD ROUND
         </button>
       </div>
+
+      {members.map((member, i) => (
+        <CardDeleteConfirm key={`delete-${member.cardKey}`} state={memberStates[i]} />
+      ))}
 
       {members.map((member, i) => {
         const state = memberStates[i]
