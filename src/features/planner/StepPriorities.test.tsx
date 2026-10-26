@@ -157,7 +157,15 @@ describe('StepPriorities — PP1\'s rows', () => {
 
     fireEvent.click(screen.getByLabelText('Expand CHEST'))
     expect(screen.getAllByText('INHERITED: FOCUS')).toHaveLength(2) // Upper chest and Mid chest
+    expect(screen.queryByText("INHERITED: DON'T CARE")).toBeNull() // Lower chest has a mark of its own: it inherits nothing
     expect(marks('Priority for Lower chest').getByText("DON'T CARE").getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('a marked group none of whose subgroups differs has no summary line (the plain name says it all)', () => {
+    read.rows = [row('muscle_group', 'chest', 'focus')]
+    render(<StepPriorities programId="prog-1" />)
+    expect(screen.getAllByText(/^chest$/i)).toHaveLength(1) // the name, and no "chest" under it
+    expect(screen.queryByText(/without/i)).toBeNull()
   })
 
   it('a group with no mark has no summary; the chevron names what it will do and says whether the group is unfolded', () => {
