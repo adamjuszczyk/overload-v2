@@ -16,7 +16,7 @@ const logged = (over: Partial<SetLog> = {}): SetLog =>
   ({ id: 'log-w1', weight: 20, reps: 12, enteredUnit: null, isWarmup: true, ...over }) as SetLog
 
 function mount(over: Partial<React.ComponentProps<typeof SetRowWarmup>> = {}) {
-  const props = { onLog: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn() }
+  const props = { onLog: vi.fn(), onUpdate: vi.fn(), onDelete: vi.fn(), onAskDelete: vi.fn() }
   const view = render(<SetRowWarmup row={row} planned={planned} log={null} unit="kg" display="rows" restElapsed={() => 41} {...props} {...over} />)
   return { ...view, ...props }
 }

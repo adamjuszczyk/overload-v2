@@ -3,9 +3,11 @@
 // Chunk 60 (SPEC [1.2] "Log lock (18a)", G54; board W1): every open row has its boxes and LOG, and `currentSet()` only says which of them is
 // styled as the current one. LOG on any row goes through the log lock (`useExerciseCardState`'s `lockFor`, 46r's `lockDecision`): it logs at once,
 // or the row's `LogOrderPrompt` asks first, and confirming runs the row's own LOG (the unchanged write path).
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { SetLog } from '../../types'
+import { cuesSummary } from '../../components/pickers/pickerLogic'
+import { errorReason } from '../../components/exercisePickerLogic'
 import { resolveStageKind } from '../../lib/plannerVocabulary.js'
 import { useSettingsStore } from '../settings/settingsStore'
 import type { SupersetChainInput } from './restChain'
@@ -14,7 +16,10 @@ import type { ResolvedRow } from './workoutRules'
 import { canAddStageTo } from './setGroupLogic'
 import { resolveStageCarryWeightKg } from './stageCarryLogic'
 import LogOrderPrompt, { type LogOrderQuestion } from './LogOrderPrompt'
-import SetRowCurrent from './SetRowCurrent'
+import DeleteSetConfirm from './DeleteSetConfirm'
+import SetCuesSheet from './SetCuesSheet'
+import { deleteConfirm, loggedNumbersText, plannedNumbersText, typeRowText } from './setOptionsView'
+import SetRowCurrent, { type RowMenu } from './SetRowCurrent'
 import SetRowLogged from './SetRowLogged'
 import SetRowWarmup from './SetRowWarmup'
 import { SetRowLocked, SetRowSkipped } from './SetRowUpcoming'
@@ -42,9 +47,19 @@ export default function WorkoutRow(props: WorkoutRowProps) {
     if (decision === 'log') log()
     else setAsking({ question: decision, log })
   }
+  // Chunk 61: the set's ⋯ (CUES, DELETE) and its edit panel (DELETE) reach two sheets of this row's own: the cues sheet and W9's confirm. They are
+  // mounted here, outside the row's own frames, so a sheet's events never bubble through a row.
+  const [confirming, setConfirming] = useState(false)
+  const [cuesOpen, setCuesOpen] = useState(false)
+  const cues = state.cuesOf(row)
+  const menu: RowMenu = {
+    cuesText: cues === null ? null : cuesSummary(cues.planned.tags ?? []),
+    openCues: () => setCuesOpen(true),
+    askDelete: () => setConfirming(true),
+  }
   return (
     <>
-      <RowBody {...props} guard={guard} />
+      <RowBody {...props} guard={guard} menu={menu} />
       {asking !== null && (
         <LogOrderPrompt
           exerciseName={row.exerciseName}
@@ -56,11 +71,55 @@ export default function WorkoutRow(props: WorkoutRowProps) {
           onCancel={() => setAsking(null)}
         />
       )}
+      {confirming && <RowDeleteConfirm state={state} row={row} onClose={() => setConfirming(false)} />}
+      {cuesOpen && cues !== null && (
+        <SetCuesSheet
+          exerciseName={row.exerciseName}
+          setNumber={row.number}
+          planned={cues.planned}
+          heads={cues.heads}
+          mesocycleId={state.writers.mesocycleId}
+          weekNumber={state.writers.weekNumber}
+          isCycle={state.writers.isCycle}
+          onClose={() => setCuesOpen(false)}
+        />
+      )}
     </>
   )
 }
 
-function RowBody({ state, row, current, supersetContext, guard }: WorkoutRowProps & { guard: (log: () => void) => void }) {
+/** W9 over a row: the numbers it would delete, and the delete itself, which says why when it didn't happen. */
+function RowDeleteConfirm({ state, row, onClose }: { state: ExerciseCardState; row: ResolvedRow; onClose: () => void }) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<{ headline: string; reason: string } | null>(null)
+  // A second press while the delete is out is ignored: a ref, because two presses in one instant both read the state before React draws.
+  const inFlight = useRef(false)
+  const log = state.logOf(row)
+  const unit = state.resolvedWeightUnit
+  const numbers = log !== null ? loggedNumbersText(log, unit) : plannedNumbersText(state.targetsOf(row), unit)
+  const text = deleteConfirm(row, numbers)
+
+  async function confirm() {
+    if (inFlight.current) return
+    inFlight.current = true
+    setPending(true)
+    setError(null)
+    try {
+      await state.handleDeleteRow(row)
+      onClose()
+    } catch (err) {
+      console.error('[workout] delete failed', err)
+      setError({ headline: "Couldn't delete the set.", reason: errorReason(err, typeof navigator !== 'undefined' && navigator.onLine === false) })
+    } finally {
+      inFlight.current = false
+      setPending(false)
+    }
+  }
+
+  return <DeleteSetConfirm {...text} pending={pending} error={error} onConfirm={() => void confirm()} onCancel={onClose} />
+}
+
+function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutRowProps & { guard: (log: () => void) => void; menu: RowMenu }) {
   const warmupDisplay = useSettingsStore((s) => s.warmupDisplay)
   const unit = state.resolvedWeightUnit
   // What the row shows is the targets of its plan's set: a set a swap moved here shows the ones it had on the card it left (chunk 59).
@@ -83,10 +142,11 @@ function RowBody({ state, row, current, supersetContext, guard }: WorkoutRowProp
         onDelete={() => {
           if (log) state.onDeleteSet(log.id).catch((err) => console.error('Failed to delete warmup', err))
         }}
+        onAskDelete={menu.askDelete}
       />
     )
   }
-  if (row.state === 'skipped') return <SetRowSkipped key={row.key} row={row} />
+  if (row.state === 'skipped') return <SetRowSkipped key={row.key} row={row} onDelete={menu.askDelete} />
   if (row.state === 'logged') {
     if (log === null) return null
     return (
@@ -95,8 +155,9 @@ function RowBody({ state, row, current, supersetContext, guard }: WorkoutRowProp
         row={row}
         log={log}
         resolvedUnit={unit}
+        typeText={isStage ? null : typeRowText(row.type)}
         onUpdate={(changes) => state.onUpdateSet(log.id, changes)}
-        onDelete={() => (isStage ? state.handleDeleteStage(row) : void state.handleDeleteHead(row))}
+        onDelete={menu.askDelete}
       />
     )
   }
@@ -121,6 +182,7 @@ function RowBody({ state, row, current, supersetContext, guard }: WorkoutRowProp
       carryWeightKg={headLog && row.stageKind ? resolveStageCarryWeightKg(row.stageKind, { head: headLog, stages: stageLogs }) : null}
       restElapsed={state.currentRestElapsed}
       isCurrent={isCurrent}
+      menu={menu}
       beforeLog={guard}
       onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
     />

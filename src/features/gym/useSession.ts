@@ -6,7 +6,7 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
-import { flushSyncQueue, hasQueuedWritesFor } from '../offline/useSyncQueue'
+import { flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
@@ -1129,6 +1129,8 @@ type SetLogChanges = {
   rir?: number | null
   setNumber?: number
   formRating?: FormRating | null
+  // Chunk 61: a logged head whose last drop was deleted loses its stage kind (`deleteEffects`' `headPatch`); `SetLog.stageKind` is the cache's copy.
+  stageKind?: StageKind | null
 }
 
 export function useUpdateSetLog(sessionId: string) {
@@ -1154,11 +1156,16 @@ export function useUpdateSetLog(sessionId: string) {
   })
 }
 
+// Delete one set log (the workout's DELETE, chunk 61; a warmup's untick until 63). Online it is the request it always was; offline (G47,
+// chunk 57's `delete` item) it is queued, a stage log naming its head: the queue replays in the order of the calls and a head's delete
+// waits for its stages', so the caller deletes stages first and the head last (`deleteEffects`' order). The screen's own copy of the log
+// goes at once either way; offline the session is not read again (the read could not be answered), as after a LOG.
 export function useDeleteSetLog(sessionId: string) {
   const qk = ['v2_session', sessionId] as const
+  const isOnline = useOnlineStatus()
 
   return useMutation({
-    // The cascade guard (ExerciseCard.tsx's handleDeleteHead) sequentially
+    // The cascade guard (the card's delete) sequentially
     // awaits mutateAsync per row and relies on a stalled delete rejecting
     // (its catch block is how a partial cascade fails safe). Under the
     // default networkMode 'online', TanStack Query pauses an offline
@@ -1167,8 +1174,9 @@ export function useDeleteSetLog(sessionId: string) {
     // 'always' makes it attempt the request regardless of connectivity, so
     // a real offline attempt fails fast with a normal network error instead.
     networkMode: 'always',
-    mutationFn: (id: string) => deleteSetLog(id),
-    onMutate: async (id) => {
+    mutationFn: ({ id, parentSetId = null }: { id: string; parentSetId?: string | null }) =>
+      isOnline ? deleteSetLog(id) : queueSetLogDelete({ id, sessionId, parentSetId }),
+    onMutate: async ({ id }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
       queryClient.setQueryData(qk, (old: Session | undefined) => {
@@ -1178,6 +1186,8 @@ export function useDeleteSetLog(sessionId: string) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      if (isOnline) queryClient.invalidateQueries({ queryKey: qk })
+    },
   })
 }

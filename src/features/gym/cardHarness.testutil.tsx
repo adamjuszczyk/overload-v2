@@ -9,6 +9,7 @@ import type { AddedSet } from './workoutRules'
 import { groupSetLogs } from './setGroupLogic'
 import type { ReferenceSession } from './sessionService'
 import type { ProgramExercise, ProgramSet, SetLog, WeekPlanSet } from '../../types'
+import { spyWriters } from './setWriters.testutil'
 
 export const exerciseOf = (over: Partial<ProgramExercise> = {}): ProgramExercise => ({
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'u1', exerciseId: 'ex-1', position: 0, weightUnit: null,
@@ -81,6 +82,7 @@ function Harness({ plannedSets, logs, programSets = [], props = {}, initialAdded
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
+        writers={spyWriters()}
         onSwap={async () => {}}
         {...props}
       />

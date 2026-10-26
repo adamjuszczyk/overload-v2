@@ -9,6 +9,7 @@ import { referenceSessionOf } from './cardHarness.testutil'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import type { ProgramExercise, WeekPlanSet, SetLog, Exercise } from '../../types'
+import { spyWriters } from './setWriters.testutil'
 
 // Chunk 58a: the block draws the rounds the session's rules form (`resolveRows`), through `useWorkoutRows`, which the harness below
 // stands in for (GymSession calls it once for the whole session). The rows are found by what they say: `data-row-key` names a row and
@@ -95,6 +96,7 @@ function Harness({ ms, logs, overrides }: { ms: SupersetMember[]; logs: SetLog[]
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
+        writers={spyWriters()}
         onSwap={async () => {}}
         {...overrides}
       />

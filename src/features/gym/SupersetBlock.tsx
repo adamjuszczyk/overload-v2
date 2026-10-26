@@ -50,6 +50,7 @@ interface SupersetBlockProps {
   onLog: ExerciseCardProps['onLog']
   onUpdateSet: ExerciseCardProps['onUpdateSet']
   onDeleteSet: ExerciseCardProps['onDeleteSet']
+  writers: ExerciseCardProps['writers']
   onSwap: ExerciseCardProps['onSwap']
   /** Every exercise already in the workout, for the swap picker. */
   excludeExerciseIds?: readonly string[]
@@ -74,6 +75,7 @@ export default function SupersetBlock({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  writers,
   onSwap,
   excludeExerciseIds = [],
 }: SupersetBlockProps) {
@@ -98,6 +100,7 @@ export default function SupersetBlock({
       onLog,
       onUpdateSet,
       onDeleteSet,
+      writers,
       onSwap,
       excludeExerciseIds,
     }),

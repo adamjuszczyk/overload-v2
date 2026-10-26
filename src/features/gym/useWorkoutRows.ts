@@ -5,16 +5,19 @@
 // session, because the rules number a set over its slot, and the current set is the first unlogged one over every card.
 // Nothing here writes to the server: `useSetNumberCorrections.ts` writes the corrected numbers, the cards write the logs.
 import { useRef, useState } from 'react'
-import type { ProgramExercise, SessionSetChange, SetLog, WeekPlanSet } from '../../types'
+import type { ProgramExercise, SessionSetChange, SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   addRound,
   currentSet,
+  finishWarning,
   nextAddedPlace,
   numberCorrections,
   resolveRows,
   sessionOrder,
   type AddedSet,
+  type FinishWarning,
+  type HeldChange,
   type NumberPatch,
   type OrderExercise,
   type OrderSuperset,
@@ -37,6 +40,11 @@ export interface WorkoutRows {
   order: SessionOrder
   rows: ResolvedRow[]
   current: ResolvedRow | null
+  /**
+   * What the rows say is left (46r's `finishWarning`: the planned working sets still unlogged, a deleted one not among them), or null when nothing
+   * is. The finish screen's warning (chunk 64) and the auto-finish (chunk 61, DECISIONS 166 (a)) read the same view.
+   */
+  finish: FinishWarning | null
   /** The number patches the rows call for (DECISIONS 178, 185 (c)): logged sets whose stored number is not the row's. */
   corrections: NumberPatch[]
   /** + ADD SET: a new open set on the card, with its place (DECISIONS 174); its entry. */
@@ -46,6 +54,22 @@ export interface WorkoutRows {
   /** Writes in flight that the screen's own corrections wait for (a delete's cascade and its renumber), and the way to name one. */
   busy: number
   track: <T>(write: Promise<T>) => Promise<T>
+  /**
+   * The session's stored change rows, with their ids (chunk 61): what `deleteEffects` reads to say which row a write replaces. The rows the
+   * rules draw also hold the phone's own: a delete in progress (`holdChanges`) and a moved dropset's drops (`holdStages`).
+   */
+  changes: readonly HeldChange[]
+  /**
+   * A delete's change rows, drawn from now on, before they are written (chunk 61): the planned set is out of the order and its drops with
+   * it, whatever a read of the session says while the writes are on their way (the log is deleted first, so a read between the two writes
+   * has the set's log gone and its change row not there yet, which draws an open row). Returns the way to let them go, once the rows are in
+   * the session's cache (or the write failed).
+   */
+  holdChanges: (changes: readonly SessionSetChange[]) => () => void
+  /** A set added in the session is deleted (DECISIONS 170: "DELETE: the entry goes"): its entry leaves the card's list, logged or not. */
+  removeAdded: (cardKey: string, localId: string) => void
+  /** A set added in the session has another type (a drop deleted on its own, 62's SET TYPE): the card's own state for it (DECISIONS 161). */
+  setAddedType: (cardKey: string, localId: string, type: SessionSetChangeType) => void
   /** An added set's log is `logId` from now on (LOG and SKIP): the card's list names it, so the log is never drawn a second time. */
   linkLog: (cardKey: string, localId: string, logId: string) => void
   /**
@@ -64,16 +88,20 @@ export interface WorkoutRows {
 }
 
 const NORMAL = Object.freeze({ kind: 'normal' as const })
+const NO_CHANGES: readonly HeldChange[] = Object.freeze([])
 
 export function useWorkoutRows({
   cards,
   blocks,
   logs,
+  changes = NO_CHANGES,
   initialAdded = {},
 }: {
   cards: readonly WorkoutCard[]
   blocks: readonly OrderSuperset[]
   logs: readonly SetLog[]
+  /** The session's stored change rows (`v2_session_set_changes`, read with the session: chunk 61); none when it has none. */
+  changes?: readonly HeldChange[]
   /** The card lists as they stand when the screen mounts (none on the workout screen today: the list starts empty; chunk 63 restores it from Dexie). */
   initialAdded?: Record<string, readonly AddedSet[]>
 }): WorkoutRows {
@@ -82,6 +110,8 @@ export function useWorkoutRows({
   const [added, setAdded] = useState<Record<string, readonly AddedSet[]>>(initialAdded)
   const addedRef = useRef(added)
   const [held, setHeld] = useState<readonly SessionSetChange[]>([])
+  // A delete's change rows while its writes are on their way (chunk 61).
+  const [inFlight, setInFlight] = useState<readonly SessionSetChange[]>([])
   const [busy, setBusy] = useState(0)
   const track = <T,>(write: Promise<T>): Promise<T> => {
     setBusy((n) => n + 1)
@@ -103,9 +133,13 @@ export function useWorkoutRows({
       blocks,
     )
 
+  // What the rules read as the session's changes, later over earlier where two say something about one set: a moved dropset's drops the phone
+  // holds (59), then the session's stored rows (a row written since replaces them), then a delete in progress, which is the newest word.
+  const allChanges = [...held, ...changes, ...inFlight]
+
   const order = build(added)
-  const rows = resolveRows(order, logs, held)
-  const current = currentSet(order, logs, held)
+  const rows = resolveRows(order, logs, allChanges)
+  const current = currentSet(order, logs, allChanges)
 
   function commit(next: Record<string, readonly AddedSet[]>) {
     addedRef.current = next
@@ -153,5 +187,40 @@ export function useWorkoutRows({
     setHeld((list) => [...list.filter((change) => change.kind !== 'pending_stages' || change.setLogId !== logId), { kind: 'pending_stages', setLogId: logId, stageKind, stageCount }])
   }
 
-  return { order, rows, current, corrections: numberCorrections(order, logs, held), busy, track, addSet, addRoundTo, linkLog, addEntries, removeEntries, holdStages }
+  function holdChanges(list: readonly SessionSetChange[]): () => void {
+    setInFlight((prev) => [...prev, ...list])
+    return () => setInFlight((prev) => prev.filter((change) => !list.includes(change)))
+  }
+
+  function removeAdded(cardKey: string, localId: string) {
+    const list = addedRef.current[cardKey]
+    if (list === undefined || !list.some((entry) => entry.localId === localId)) return
+    commit({ ...addedRef.current, [cardKey]: list.filter((entry) => entry.localId !== localId) })
+  }
+
+  function setAddedType(cardKey: string, localId: string, type: SessionSetChangeType) {
+    const list = addedRef.current[cardKey]
+    if (list === undefined || !list.some((entry) => entry.localId === localId)) return
+    commit({ ...addedRef.current, [cardKey]: list.map((entry) => (entry.localId === localId ? { ...entry, type } : entry)) })
+  }
+
+  return {
+    order,
+    rows,
+    current,
+    finish: finishWarning(order, logs, allChanges),
+    corrections: numberCorrections(order, logs, allChanges),
+    busy,
+    track,
+    changes,
+    holdChanges,
+    addSet,
+    addRoundTo,
+    linkLog,
+    addEntries,
+    removeEntries,
+    removeAdded,
+    setAddedType,
+    holdStages,
+  }
 }
