@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, queue-fix 227's review (merged, #219).*
-- *Queue-fix 227 (the 23503 that never clears) is merged with 1.1's shape of it (#219, `84c8000`): 227 is answered and done, and recorded for the release like 188f (a bug live since phase 1, fixed in this release). New: 230 (blocks the release: online deletes that still don't look at the queue, in 1.1 and 1.2: a set deleted online whose first send had failed comes back, and the same never-clearing 23503 through a session deleted in History or a planned set removed on Plan, where the logged set never reaches the server). Tests owed: none.*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 63's review (merged, #221).*
+- *Chunk 63 (Unlog) is merged (#221, `f5637df`): UNLOG keeps a set's numbers as a draft on the phone (Dexie version 3; the upgrade proven on real IndexedDB and end to end on staging), and logging it again is an exact undo. New: 231 (D31, accepted as built), 232 (UNLOG's disabled note: TASKS' "Log its drops first" reads backwards against SPEC 18c), 233 (a logged warmup's ✕ and the tick list's untick delete the log with no draft; SPEC doesn't require an unlog), 234 (sign-out leaves the two draft tables). Tests owed: three (63). 230 still blocks the release.*
 
 What blocks, in order:
 1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk after 64 and before the release checklist; 63 and 64 don't wait.
@@ -12,6 +12,10 @@ Nothing else blocks a chunk or the release.
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **232** — UNLOG's disabled note says TASKS 63's "Log its drops first", where SPEC 18c's way on is to unlog the drops ("can't be unlogged until they are"). Recommended: (a), "Unlog its drops first" (one constant, `UNLOG_BLOCKED_NOTE`). Blocks: nothing (display).
+- **233** — a logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft, as since 58a; SPEC's unlog is the edit panel's UNLOG, which a logged warmup has since 63. Recommended: (a), drop the ✕ (board W2b draws none) and make the untick an unlog (no confirm, SPEC 18c). Blocks: nothing (nothing a user expects to keep is lost).
+- **234** — sign-out wipes the six older Dexie tables but not 63's two, so a signed-out account's drafts and added-set lists stay on the phone (no other account draws them). Recommended: (a), wipe them too (two lines), with 230's fix chunk. Blocks: nothing.
+- **231** — chunk 63's display choices (D31), (a)–(e), and its readings, (f)–(n). Recommended: accept all, as built. Blocks: nothing.
 - **228** — an open warmup row in the workout has no ⋯ (boards W1 and W2b draw none), so it can't be retyped or deleted before it is logged, where SPEC 19 and 18b put SET TYPE and DELETE in the set's ⋯. Recommended: (a), the ⋯ on an open warmup row in rows mode (SPEC wins over a board). Blocks: nothing.
 - **229** — chunk 62's display choices (D31), (a)–(h), and two readings, (i) a weight typed where a log had none now stored in kg and (j) TASKS' `stage_index` not patched and a Normal log's old `pending_stages` row left unread. Recommended: accept all, as built. Blocks: nothing.
 - **225** — answered on 2026-10-26: for your review pass. Chunk 61's display choices (D31), (a)–(h), and one reading (i). Recommended: accept all, as built.
@@ -88,6 +92,9 @@ To-dos:
 - **61** (#215): none. Review 2 re-ran the builder's 44 breaks and 8 of its own (the head's kind patch after the change rows, the notice leaving a held kind patch out, a hold by one drop only, a patch counted as never sent, a payload naming the session, the flush sending the whole payload, the online clear writing a second column): all caught.
 - **62** (#217): none. The review re-ran the builder's 38 breaks, one per place that writes, and one of its own where none touched the place (R1: the type sheet's answer to 19c asking again without `confirmed`): all caught, each by named failing tests.
 - **queue-fix 227** (#219): none. The review re-ran the builder's 15 breaks on `316a9fc` and on the merged code (B9 and B11 on the new filter), its 3 extension breaks and E6, and 3 of its own (R1: every row of the cancelled log's session cancelled with the pair; R2: the writes queued after a cancelled row held to the next pass; R3: a session's write held behind the queued change rows): all caught, each by named failing tests.
+- **63** (#221): a drop logged again after its UNLOG leaves no draft on the phone (`logStage`'s `withDraft` in `src/features/gym/useExerciseCardState.ts`). The break it must catch is the review's R2, `logStage` writing without `withDraft`, which passed all 53 tests of `ExerciseCard.unlog.test.tsx`, `sessionDrafts.test.tsx`, `GymSession.reload.test.tsx` and `SetEditPanel.test.tsx`. Behaviour verified right: the review's probe `<scratchpad>/build/r63/probe/zzReview63.probe.test.tsx` (R2) passes on the branch and fails under the break, and on staging bench 04's drop, unlogged and logged again, left no draft in IndexedDB.
+- **63** (#221): the re-LOG of an unlogged set on an lbs exercise sends the draft's exact kg when the weight is left as shown (`resolveEditedWeightKg` in `SetRowCurrent.tsx`'s LOG): 9 kg shows as 19.8 lbs and must go back as 9, not 8.98 (RULES, 54a's round-trip rule). The break it must catch is the review's R3, `toStorageWeight` for every LOG, which passed the same 53 tests (every unlog test is in kg). Same probe (R3).
+- **63** (#221): the same for an unlogged warmup's re-LOG (`SetRowWarmup.tsx`'s `handleLog`). The break it must catch is the review's R4, which passed the same 53 tests. Same probe (R4).
 
 ## Format for all new entries
 
@@ -770,6 +777,53 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - On the merged tree M4 and M5 are unchanged and 1.1's head shape (M1) clears.
 - Same family, by reading (not executed): Plan's other planned-set deletes of an in-progress session's week (the week view's exercise removal); 1.1's Library delete of an exercise with no history on the server (`deleteExercise` counts the server's logs only, so a queued log naming the exercise is refused `23503` on `exercise_id`); and 1.2's change rows, which name planned sets and sessions too (042: cascade), so a queued `retyped` or `deleted` row naming a planned set removed online is refused the same way (moot: the cascade would have removed it).
 - Likelihood is low for each (a first send that fails, then the delete before the next pass), as for 227's.
+- Since 63 (by reading, chunk 63's review): an online UNLOG goes through `useDeleteSetLog`, so (i)'s shape reaches it too: a set unlogged online while its log's own first send is still queued comes back logged at the next pass, its draft hidden under the log.
+
+### 231 Chunk 63's display choices on UNLOG and the draft, and its readings (provisional, D31; accepted as built)
+**Ask:** chunk 63's choices where SPEC, TASKS and board W2b give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. (a)–(e) are display; (f)–(n) are readings of TASKS 63 that keep every write inside SPEC 18c, G46 and RULES, and none loses or wrongly writes data. The note's words are 232.
+**Blocks:** nothing.
+**Options:** (a)–(n) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** the builder's report (`<scratchpad>/build/chunk-63-builder-1.md`, section 3), the review's notes (`<scratchpad>/build/chunk-63-review-1.md`) and its staging steps (#221).
+- (a) A draft's numbers are drawn in `--text-muted` (`data-draft` on the box) until that box is typed in (SPEC [P2] pre-fill: "visibly different from typed values"); LOG takes them as they are.
+- (b) The unit the set was logged in comes back with the draft (the row's unit override), so a set logged with the lbs override shows lbs again.
+- (c) A refused unlog is a toast, "Couldn't unlog the set." with the reason (as a type change's); the set stays logged and its draft goes.
+- (d) UNLOG closes the panel at once; the row comes back open with the draft.
+- (e) The disabled UNLOG's note sits right-aligned under the buttons, as "Requires a connection" does (its words: 232).
+- (f) The `retyped` row goes before the deletes (RULES: the write the table can refuse goes first); a delete refused after it leaves a row that says the type the log has. On staging an existing row is sent again unchanged (`200`).
+- (g) A refused delete lets the draft go again (the set is still logged); a LOG that fails puts the draft back (its numbers are not lost).
+- (h) A deleted drop's later drops' drafts move down one with their drops.
+- (i) The card's list is not written for a session that isn't in progress; the session's end (COMPLETE, online or queued, and auto-finish, which goes through it) clears the drafts and the list together.
+- (j) A stored row 46r's rules would refuse (an added set's draft or list entry with no type or place) is left out with a console warning, so a damaged row can't stop the screen.
+- (k) The screen draws before IndexedDB answers; what the phone held is merged in when it does, and the number corrections (58a) wait for it (`hydrated`).
+- (l) A swap's card list replaces, not extends, a list left on the phone by a swap that was never saved (one swap per card, so nothing else can be there).
+- (m) A failed LOG of a row is now a logged console error instead of an unhandled rejection (the mutation's own rollback is unchanged).
+- (n) Re-LOG writes `entered_unit` as every LOG does: null when the row's unit is the exercise's own. A log that stored the exercise's own unit by name (the seed's bench 02 said `kg`) comes back null; the weight in kg and what every screen shows are the same.
+
+### 232 UNLOG's disabled note says "Log its drops first" (TASKS 63's words), where SPEC 18c's way on is to unlog the drops (chunk 63's builder, Q1)
+**Ask:** keep TASKS 63's words under a disabled UNLOG, or say what SPEC 18c means?
+**Recommendation:** (a). SPEC says a set with logged drops "can't be unlogged until they are" (UNLOG "is disabled and says so"): the drops are already logged, and the way on is to unlog (or delete) them, so "Log its drops first" asks for what is already done. One constant, `UNLOG_BLOCKED_NOTE` in `src/features/gym/setOptionsView.ts`, and the tests that pin it; with your review pass.
+**Blocks:** nothing (display: SPEC names no words, so it is D31, not a behaviour fix).
+**Options:** (a) "Unlog its drops first"; (b) keep "Log its drops first"; (c) other words, such as "Unlog or delete its drops first".
+**Answer:**
+**Evidence:** built verbatim from TASKS 63's Scope ("disabled with 'Log its drops first'"). On staging, bench 04's panel (an added dropset with its drop logged) shows UNLOG disabled with the note; the drop's own UNLOG works, and once the drop is unlogged the head's UNLOG is enabled. A drop with a later drop logged shows the same sentence.
+
+### 233 A logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft (since 58a; chunk 63's builder, Q2)
+**Ask:** should the ✕ on a logged warmup row and the tick list's untick unlog the warmup (keep a draft, no confirm), as the edit panel's UNLOG now does?
+**Recommendation:** (a). SPEC doesn't require it: its unlog is the edit panel's UNLOG (18c, 18d), which a logged warmup in rows mode has since 63, with its draft. And nothing a user expects to keep is lost today: both ask first and say DELETE; a tick-list log holds the plan's numbers (tick-off only), which the next tick logs again; the ✕ is an explicit DELETE. But neither is SPEC 18b's delete either (W9, the set out of the session): a planned warmup comes back as an open row. Board W2b draws a logged warmup row with the pen and the tick only. So: drop the ✕ (the pen's panel has UNLOG and DELETE), and make the untick an unlog (SPEC 18c: "No confirm; logging again undoes it"). One handler each in `SetRowWarmup.tsx`; with your review pass, or with 228's ⋯.
+**Blocks:** nothing.
+**Options:** (a) as recommended; (b) keep both as built; (c) the untick an unlog, the ✕ kept.
+**Answer:**
+**Evidence:** `SetRowWarmup.tsx` since 58a (61's header: "the ✕ and the tick's untick are today's removal of the log, kept until chunk 63's UNLOG"); TASKS 63's Scope names only the edit panel's UNLOG, so the builder left them (Escalation 13). Both call `onDeleteSet` (`useDeleteSetLog`) after an inline CANCEL / DELETE.
+
+### 234 Sign-out doesn't wipe chunk 63's two Dexie tables (found in 63's review)
+**Ask:** should sign-out also clear `session_set_drafts` and `session_added_sets`?
+**Recommendation:** (a). `wipeOfflineCache` (`src/features/auth/useAuth.tsx`) clears the six older tables so that "cached data never leaks across accounts"; the two new ones keep a signed-out account's unlogged numbers and added-set lists until that session ends on this phone. Two lines, with 230's fix chunk.
+**Blocks:** nothing: no other account draws them (each row is keyed by its session), nothing is sent, and the same account signing in again sees its drafts as before.
+**Options:** (a) wipe them at sign-out; (b) keep them (the drafts are "on that phone", G46, and outlive a sign-out).
+**Answer:**
+**Evidence:** read in the review: `wipeOfflineCache` names `exercises`, `workout_days`, `week_plans`, `sessions`, `set_logs` and `sync_queue`.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
