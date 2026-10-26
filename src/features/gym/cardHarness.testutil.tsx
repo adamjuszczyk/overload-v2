@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import type { ComponentProps } from 'react'
 import ExerciseCard from './ExerciseCard'
 import { useWorkoutRows } from './useWorkoutRows'
+import type { AddedSet } from './workoutRules'
 import { groupSetLogs } from './setGroupLogic'
 import type { ReferenceSession } from './sessionService'
 import type { ProgramExercise, ProgramSet, SetLog, WeekPlanSet } from '../../types'
@@ -49,11 +50,18 @@ interface HarnessProps {
   logs: SetLog[]
   programSets?: ProgramSet[]
   props?: CardProps
+  /** The card's list of the sets added in the session as it stands when the screen mounts (chunk 59's tests: sets of a type the screen can't make yet). */
+  initialAdded?: readonly AddedSet[]
 }
 
-function Harness({ plannedSets, logs, programSets = [], props = {} }: HarnessProps) {
+function Harness({ plannedSets, logs, programSets = [], props = {}, initialAdded }: HarnessProps) {
   const programExercise = props.programExercise ?? exerciseOf()
-  const workout = useWorkoutRows({ cards: [{ key: programExercise.id, programExercise, plannedSets }], blocks: [], logs })
+  const workout = useWorkoutRows({
+    cards: [{ key: programExercise.id, programExercise, plannedSets }],
+    blocks: [],
+    logs,
+    ...(initialAdded === undefined ? {} : { initialAdded: { [programExercise.id]: initialAdded } }),
+  })
   return (
     <MemoryRouter>
       <ExerciseCard
@@ -80,8 +88,8 @@ function Harness({ plannedSets, logs, programSets = [], props = {} }: HarnessPro
   )
 }
 
-export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; programSets?: ProgramSet[]; props?: CardProps }) {
-  const base = { plannedSets: input.plannedSets, programSets: input.programSets, props: input.props }
+export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; programSets?: ProgramSet[]; props?: CardProps; initialAdded?: readonly AddedSet[] }) {
+  const base = { plannedSets: input.plannedSets, programSets: input.programSets, props: input.props, initialAdded: input.initialAdded }
   const view = render(<Harness {...base} logs={input.logs ?? []} />)
   return { ...view, setLogs: (logs: SetLog[]) => view.rerender(<Harness {...base} logs={logs} />) }
 }

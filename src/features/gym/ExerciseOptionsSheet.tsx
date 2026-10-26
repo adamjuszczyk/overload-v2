@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { History, Plus, Repeat2, SkipForward } from 'lucide-react'
 import BottomSheet from '../../components/BottomSheet'
 
@@ -85,13 +85,17 @@ const BUTTON: CSSProperties = {
 export default function ExerciseOptionsSheet({ exerciseName, eyebrow, onSwap, skip, onAddSet, onHistory, onClose }: ExerciseOptionsSheetProps) {
   const [confirming, setConfirming] = useState(false)
   const [skipping, setSkipping] = useState(false)
+  // A press while the skips are out is ignored: a ref, because two presses in one instant both read the state before React draws.
+  const inFlight = useRef(false)
 
   async function confirmSkip() {
-    if (skip === null || skipping) return
+    if (skip === null || inFlight.current) return
+    inFlight.current = true
     setSkipping(true)
     try {
       await skip.onConfirm()
     } finally {
+      inFlight.current = false
       setSkipping(false)
     }
     onClose()

@@ -379,7 +379,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // that adds one more card to extraExercises above. A failure shows its real reason in W14's confirm ("Couldn't add the exercise.").
   function handleAddExercise(exercise: Exercise) {
     try {
-      setAddedExercises((prev) => (prev.some((ex) => ex.id === exercise.id) ? prev : [...prev, exercise]))
+      const id = exercise.id
+      setAddedExercises((prev) => (prev.some((ex) => ex.id === id) ? prev : [...prev, exercise]))
       setAddExerciseError(null)
       setShowAddExerciseSheet(false)
     } catch (err) {
