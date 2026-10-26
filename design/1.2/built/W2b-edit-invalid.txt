@@ -17,8 +17,6 @@ UNLOG
 DELETE
 CANCEL
 SAVE
-mark as dropset
 02
 60 kg × 8
-mark as dropset
 ADD SET

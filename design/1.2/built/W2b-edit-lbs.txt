@@ -3,7 +3,6 @@ CHEST
 FIRST TIME
 01
 60 kg × 8
-mark as dropset
 02
 lbs
 ×
@@ -19,5 +18,4 @@ UNLOG
 DELETE
 CANCEL
 SAVE
-mark as dropset
 ADD SET

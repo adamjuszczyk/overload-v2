@@ -66,3 +66,35 @@ describe('the stage-kind patch is the workout screen\'s delete alone (61\'s revi
     for (const path of readOnly) expect(text.get(path)).not.toMatch(/clearStageKind|queueSetLogStageKindClear/)
   })
 })
+
+// the code of a file as the screen runs it, without the comments that say where something went
+const codeOf = (path: string) => text.get(path)!.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+describe('ADD STAGE and "mark as dropset" are gone from the workout, and so is the phone-held stage hold (chunk 62; SPEC [1.2] Logging mechanics: "ADD STAGE, \"Mark as dropset\" and \"+ DROP OR STAGE\" are removed")', () => {
+  const workoutFiles = sourceFiles.filter((path) => /features[\\/]gym[\\/]/.test(path) && !/(Today|Rest|Sequence|Preview|Completed|Missed|Move|Preview)/.test(path.split(/[\\/]/).pop()!))
+  it('no file of the workout draws or builds them', () => {
+    expect(rel(workoutFiles).length).toBeGreaterThanOrEqual(30) // the scan finds the screen's files (a pattern that matched nothing proves nothing)
+    for (const path of workoutFiles) {
+      expect(codeOf(path), rel([path])[0]).not.toMatch(/ADD STAGE|mark as dropset|logAdHocStage|holdStages|AddStage\b|DROP OR STAGE/)
+    }
+  })
+
+  it('the workout screen does not call setGroupLogic\'s `canAddStageTo` any more (the frozen export stays, unused)', () => {
+    const calling = sourceFiles.filter((path) => /\bcanAddStageTo\s*\(/.test(codeOf(path)) && !path.endsWith('setGroupLogic.ts'))
+    expect(rel(calling)).toEqual([])
+  })
+})
+
+describe('a logged set\'s type is one awaited request and a staged added set\'s row is a queued one (chunk 62)', () => {
+  it('`patchLog` and `queueChanges` are given to the cards by GymSession.tsx alone, and History, Plan and the finished-session screens never import their producers', () => {
+    const giving = sourceFiles.filter((path) => /\b(patchLog|queueChanges)\s*:/.test(codeOf(path)) && /features[\\/]gym[\\/]/.test(path) && !/\.d\.ts$/.test(path))
+    expect(rel(giving).sort()).toEqual([join('features', 'gym', 'GymSession.tsx'), join('features', 'gym', 'setDelete.ts')].sort())
+    const readOnly = sourceFiles.filter((path) => /features\/(history|plan|programs|progress)\//.test(path.split('\\').join('/')))
+    for (const path of readOnly) expect(text.get(path)).not.toMatch(/queueSetChanges|runTypeChange|changeSetType/)
+  })
+
+  it('the type picker of the workout is mounted by the row alone (`WorkoutRow.tsx`): no other file of the workout renders `WorkoutSetTypeSheet`', () => {
+    const mounting = sourceFiles.filter((path) => /<WorkoutSetTypeSheet\b/.test(codeOf(path)))
+    expect(rel(mounting)).toEqual([join('features', 'gym', 'WorkoutRow.tsx')])
+  })
+})

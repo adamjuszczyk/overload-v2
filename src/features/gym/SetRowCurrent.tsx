@@ -13,8 +13,8 @@
 // reps; the RIR box is not there yet (RIR is entered after the set, so it comes back with the other boxes when the TIMING box is tapped).
 import { useEffect, useRef, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
-import type { FormRating, WeekPlanSet, WeightUnit } from '../../types'
-import type { ResolvedRow } from './workoutRules'
+import type { FormRating, SessionSetChangeType, WeekPlanSet, WeightUnit } from '../../types'
+import type { ResolvedRow, TypedNumbers } from './workoutRules'
 import type { LogParams } from './useExerciseCardState'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
@@ -34,6 +34,17 @@ export interface RowMenu {
   cuesText: string | null
   openCues: () => void
   askDelete: () => void
+  /**
+   * SET TYPE (chunk 62): the ⋯'s row and the edit panel's open the type picker, which the row's `WorkoutRow` mounts and writes through the card.
+   */
+  openSetType: () => void
+  /**
+   * A warmup logged with no weight or reps that is being made a working set (DECISIONS 152 (a)): the picked type waits here, shown on the panel's SET TYPE
+   * row, until SAVE writes it with the weight and reps in one request (`saveHeldType`, which rejects with the reason after telling the user). Null otherwise.
+   */
+  heldType: SessionSetChangeType | null
+  clearHeldType: () => void
+  saveHeldType: (numbers: TypedNumbers) => Promise<void>
 }
 
 interface SetRowCurrentProps {
@@ -55,7 +66,7 @@ interface SetRowCurrentProps {
   onLog: (params: LogParams) => void
   /** Whether this is the session's current set (`currentSet()`), the one row with the accent frame, the filled LOG and `data-current-set`. */
   isCurrent?: boolean
-  /** The ⋯ sheet's reach (chunk 61). Left out, the sheet offers no CUES and its DELETE does nothing (a row nobody can delete: ADD STAGE's own synthetic row). */
+  /** The ⋯ sheet's reach (chunk 61). Left out, the sheet offers no CUES, its SET TYPE row does nothing and its DELETE is not offered. */
   menu?: RowMenu
   /**
    * The log lock (chunk 60): called when LOG is pressed and the boxes are good, with what LOG would do. The caller logs at once or asks first and
@@ -350,6 +361,14 @@ export default function SetRowCurrent({
         <SetOptionsSheet
           eyebrow={optionsEyebrow(row)}
           typeText={isStage ? null : typeRowText(row.type)}
+          onSetType={
+            isStage || menu === undefined
+              ? undefined
+              : () => {
+                  setShowMore(false)
+                  menu.openSetType()
+                }
+          }
           cuesText={isStage || menu === undefined ? null : menu.cuesText}
           onCues={() => menu?.openCues()}
           form={{ value: formRating, onChange: setFormRating }}

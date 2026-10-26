@@ -2,10 +2,8 @@ PLANNED DROPSET · HEAD IS NEXT
 
 01
 60 kg × 8
-mark as dropset
 02
 60 kg × 8
-mark as dropset
 DROPSET · 2 DROPS
 03
 kg
@@ -26,10 +24,8 @@ HEAD LOGGED · THE NEXT DROP OPENS
 
 01
 60 kg × 8
-mark as dropset
 02
 60 kg × 8
-mark as dropset
 DROPSET · 2 DROPS
 03
 52.5 kg × 10 @ RIR 1
@@ -64,7 +60,6 @@ LOGGED STAGES · MARKED BY KIND
 40 kg × 8DROP
 ↳
 30 kg × 7DROP
-ADD STAGE
 
 LOGGED STAGES · REST-PAUSE, MYO-REPS AND CLUSTER
 
@@ -72,14 +67,11 @@ LOGGED STAGES · REST-PAUSE, MYO-REPS AND CLUSTER
 35 kg × 10 @ RIR 1
 ↳
 35 kg × 4REST-PAUSE
-ADD STAGE
 02
 10 kg × 15 @ RIR 1
 ↳
 10 kg × 5MYO-REPS
-ADD STAGE
 03
 25 kg × 4 @ RIR 2
 ↳
 25 kg × 4CLUSTER
-ADD STAGE

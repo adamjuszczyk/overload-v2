@@ -190,13 +190,61 @@ describe('offline (G47: "the edit panel\'s SAVE ... stay online-only")', () => {
   })
 })
 
-describe('SET TYPE and UNLOG are drawn as the board draws them and wait for chunks 62 and 63', () => {
+describe('SET TYPE (chunk 62) and UNLOG (chunk 63) are drawn as the board draws them; UNLOG waits for 63', () => {
   const props = { label: '02', log: { weight: 80, reps: 8, rir: 2, formRating: null, enteredUnit: null }, resolvedUnit: 'kg' as const, isWarmup: false, typeText: 'Normal', onSave: vi.fn(), onCancel: vi.fn(), onDelete: vi.fn() }
 
   it('with no handler each is a disabled button that does nothing', () => {
     render(<SetEditPanel {...props} />)
     expect((screen.getByText('UNLOG') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByText('SET TYPE').closest('button') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('the SET TYPE row is off with no connection, like SAVE (G47: a type change on a logged set needs one), and the panel says so once', () => {
+    online.value = false
+    const onSetType = vi.fn()
+    render(<SetEditPanel {...props} onSetType={onSetType} />)
+    const row = screen.getByText('SET TYPE').closest('button') as HTMLButtonElement
+    expect(row.disabled).toBe(true)
+    fireEvent.click(row)
+    expect(onSetType).not.toHaveBeenCalled()
+    expect(screen.getAllByText('Requires a connection')).toHaveLength(1)
+    online.value = true
+    cleanup()
+    render(<SetEditPanel {...props} onSetType={onSetType} />)
+    fireEvent.click(screen.getByText('SET TYPE').closest('button') as HTMLButtonElement)
+    expect(onSetType).toHaveBeenCalledTimes(1)
+  })
+
+  it('a warmup that is about to become a working set (152) keeps its warmup boxes but needs both numbers: "Enter weight and reps." and nothing sent until both are typed', () => {
+    const onSave = vi.fn()
+    const warmup = { weight: null, reps: null, rir: null, formRating: null, enteredUnit: null }
+    render(<SetEditPanel {...props} log={warmup} isWarmup typeText="Normal" numbersRequired onSave={onSave} />)
+    expect(screen.queryByLabelText('RIR')).toBeNull() // still the warmup's layout
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(screen.getByRole('alert').textContent).toBe('Enter weight and reps.')
+    fireEvent.change(screen.getByLabelText('Weight'), { target: { value: '40' } })
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(screen.getByRole('alert').textContent).toBe('Enter weight and reps.')
+    fireEvent.change(screen.getByLabelText('Reps'), { target: { value: '6' } })
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave).toHaveBeenCalledWith({ weight: 40, reps: 6 })
+  })
+
+  it('without that (a warmup that stays one) both boxes empty is still sent as nulls', () => {
+    const onSave = vi.fn()
+    render(<SetEditPanel {...props} log={{ weight: null, reps: null, rir: null, formRating: null, enteredUnit: null }} isWarmup typeText="Warmup" onSave={onSave} />)
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(onSave).toHaveBeenCalledWith({ weight: null, reps: null })
+  })
+
+  it('a weight typed where the log had none is in the set\'s unit and is stored in kg (lbs here); where it had one, an unchanged shown value keeps the stored kg', () => {
+    const onSave = vi.fn()
+    render(<SetEditPanel {...props} log={{ weight: null, reps: null, rir: null, formRating: null, enteredUnit: 'lbs' }} resolvedUnit="lbs" isWarmup typeText="Normal" numbersRequired onSave={onSave} />)
+    fireEvent.change(screen.getByLabelText('Weight'), { target: { value: '45' } })
+    fireEvent.change(screen.getByLabelText('Reps'), { target: { value: '6' } })
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(onSave).toHaveBeenCalledWith({ weight: toStorageWeight(45, 'lbs'), reps: 6 })
   })
 
   it('given its handler each is live and calls it', () => {

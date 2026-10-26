@@ -92,6 +92,24 @@ describe('updateSetLog — the edit path never writes `note` (chunk 4)', () => {
     expect('note' in payload).toBe(false)
   })
 
+  it('a set type change on a log (chunk 62) is its two type columns in ONE request, and a numberless warmup made a working set adds weight and reps to the same one (DECISIONS 152; 035\'s check refuses the type alone)', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSetLog('log-1', { isWarmup: false, stageKind: 'dropset' })
+    await updateSetLog('log-1', { isWarmup: true, stageKind: null })
+    await updateSetLog('log-1', { isWarmup: false, stageKind: null, weight: 40, reps: 6 })
+
+    const payloads = (chain.update as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0])
+    expect(payloads).toEqual([
+      { is_warmup: false, stage_kind: 'dropset' },
+      { is_warmup: true, stage_kind: null },
+      { is_warmup: false, stage_kind: null, weight: 40, reps: 6 },
+    ])
+    expect(chain.update).toHaveBeenCalledTimes(3) // one request each, never a second one for the numbers
+    expect(payloads.every((p) => !('note' in p) && !('stage_index' in p) && !('set_number' in p))).toBe(true)
+  })
+
   it('setNumber-only renumbering (ExerciseCard.tsx\'s handleDeleteHead shape) touches only set_number, never note', async () => {
     const chain = makeChain()
     fromMock.mockReturnValue(chain)

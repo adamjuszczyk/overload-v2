@@ -11,6 +11,8 @@ import { hairline } from '../../components/pickers/pickerControls'
 // and Escape ask `onCancel`, none of them while the delete is out (a dialog closed then would hide a failure). Focus goes to CANCEL when it
 // opens, the safe answer, and back to what had it when it closes.
 //
+// Chunk 62 asks 19c's question with it too ("Delete the 2 logged drops?" when a set's new type deletes drops that are logged), with its own button label.
+//
 // Display choices no board settles, provisional under D31: the pending and failed states, the focus rule.
 
 export interface DeleteSetConfirmProps {
@@ -22,6 +24,8 @@ export interface DeleteSetConfirmProps {
   body: string
   /** The delete is on its way. */
   pending?: boolean
+  /** The confirming button's words (chunk 62 asks 19c's question with it: `DELETE 2 DROPS`); `DELETE SET` by default. */
+  confirmLabel?: string
   /** A delete that didn't happen: its headline and the real reason, drawn under the text. */
   error?: { headline: string; reason: string } | null
   onConfirm: () => void
@@ -66,7 +70,7 @@ const BUTTON_BASE: CSSProperties = {
   letterSpacing: '0.2em',
 }
 
-export default function DeleteSetConfirm({ eyebrow, title, body, pending = false, error = null, onConfirm, onCancel }: DeleteSetConfirmProps) {
+export default function DeleteSetConfirm({ eyebrow, title, body, pending = false, confirmLabel = 'DELETE SET', error = null, onConfirm, onCancel }: DeleteSetConfirmProps) {
   const titleId = useId()
   const cancelRef = useRef<HTMLButtonElement>(null)
 
@@ -123,7 +127,7 @@ export default function DeleteSetConfirm({ eyebrow, title, body, pending = false
             onClick={onConfirm}
             style={{ ...BUTTON_BASE, borderWidth: 0, background: 'color-mix(in srgb, var(--error) 15%, transparent)', color: 'var(--error)', fontWeight: 700, opacity: pending ? 0.6 : 1, cursor: 'pointer' }}
           >
-            {pending ? 'DELETING…' : 'DELETE SET'}
+            {pending ? 'DELETING…' : confirmLabel}
           </button>
         </div>
       </div>

@@ -36,7 +36,7 @@ import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
 import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkoutRows'
 import { patchSetNumbers, useSetNumberCorrections } from './useSetNumberCorrections'
-import { changesOf, writeSetChanges } from './useSessionSetChanges'
+import { changesOf, queueSetChanges, writeSetChanges } from './useSessionSetChanges'
 import type { SessionWriters } from './setDelete'
 import { clearStageKind } from './clearStageKind'
 import { formatClock, jumpLabelText } from './workoutRowView'
@@ -370,7 +370,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   function handleDeleteSet(id: string) {
     return deleteSetLog.mutateAsync({ id, parentSetId: allCurrentLogs.find((log) => log.id === id)?.parentSetId ?? null })
   }
-  // What a delete writes besides the logs (chunk 61), and the run and week CUES writes to.
+  // What a delete or a type change writes besides the logs (chunks 61 and 62), and the run and week CUES writes to.
   const writers: SessionWriters = {
     mesocycleId: session?.mesocycleId ?? null,
     weekNumber,
@@ -380,6 +380,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     patchNumbers: (patches) => patchSetNumbers({ sessionId, patches, logs: allCurrentLogs, flush: isOnline }),
     clearStageKind: (logId) =>
       clearStageKind({ sessionId, logId, online: isOnline, update: (id) => updateSetLog.mutateAsync({ id, changes: { stageKind: null } }) }),
+    // Chunk 62: a logged set's type is one awaited request on its log, online only (G47: the card refuses it offline, `runTypeChange`); the rows LOG
+    // writes for a staged added set go through the queue and are sent at once when the phone is online (`queueSetChanges`).
+    patchLog: (id, changes) => updateSetLog.mutateAsync({ id, changes }),
+    queueChanges: (writes) => queueSetChanges({ sessionId, userId: user!.id, writes, flush: isOnline }),
   }
   // Swap exercise for this session only (SPEC v1.1 "Part C"), chunk 59: the swap's row is saved FIRST, with the record of which sets moved
   // (migration 047; DECISIONS 200 (a): "the swap row is saved before any set is skipped"), and it fails with the real reason when it can't

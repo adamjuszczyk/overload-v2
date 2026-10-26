@@ -10,6 +10,8 @@ import type { ResolvedRow } from './workoutRules'
 import type { LogParams } from './useExerciseCardState'
 import { toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
 import SetEditPanel from './SetEditPanel'
+import type { RowMenu } from './SetRowCurrent'
+import { typeRowText } from './setOptionsView'
 import { RowLabel, SyncMark, boxStyle, rowFrame } from './setRowParts'
 import { rowDefaults } from './workoutRowView'
 
@@ -25,11 +27,14 @@ interface SetRowWarmupProps {
   onDelete: () => void
   /** DELETE in the edit panel (board W2b): the row asks W9 before the set is deleted. */
   onAskDelete: () => void
+  /** The row's menu (chunk 62): the panel's SET TYPE row opens the type picker through it, and a type picked for a numberless warmup waits in it for SAVE (152). */
+  menu?: RowMenu
 }
 
 const MONO = 'var(--font-mono)'
+const WARMUP = { kind: 'warmup' } as const
 
-export default function SetRowWarmup({ row, planned, log, unit, display, restElapsed, onLog, onUpdate, onDelete, onAskDelete }: SetRowWarmupProps) {
+export default function SetRowWarmup({ row, planned, log, unit, display, restElapsed, onLog, onUpdate, onDelete, onAskDelete, menu }: SetRowWarmupProps) {
   const defaults = rowDefaults(planned, unit)
   const [weight, setWeight] = useState(defaults.weight)
   const [reps, setReps] = useState(defaults.reps)
@@ -67,13 +72,26 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
             log={log}
             resolvedUnit={unit}
             isWarmup
-            typeText="Warmup"
-            // Weight and reps only: updateSetLog never touches the other columns for a warmup edit.
+            typeText={typeRowText(menu?.heldType ?? WARMUP)}
+            onSetType={menu === undefined ? undefined : menu.openSetType}
+            numbersRequired={menu?.heldType != null}
+            // Weight and reps only: updateSetLog never touches the other columns for a warmup edit. With a type picked for it (152: a warmup logged
+            // with neither, made a working set) SAVE writes the type and both numbers in one request, and the panel stays open when that is refused.
             onSave={(changes) => {
+              if (menu !== undefined && menu.heldType != null) {
+                menu
+                  .saveHeldType({ weight: changes.weight as number, reps: changes.reps as number })
+                  .then(() => setIsEditing(false))
+                  .catch(() => {})
+                return
+              }
               onUpdate({ weight: changes.weight, reps: changes.reps })
               setIsEditing(false)
             }}
-            onCancel={() => setIsEditing(false)}
+            onCancel={() => {
+              menu?.clearHeldType()
+              setIsEditing(false)
+            }}
             onDelete={onAskDelete}
           />
         </div>
