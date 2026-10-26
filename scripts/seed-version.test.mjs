@@ -33,10 +33,10 @@ test('nothing else in the seed is named seed_version', () => {
   assert.equal(seed.match(/\bseed_version\b/g)?.length, 1);
 });
 
-test('the version reads "overload seed <date> chunk <id>", a string a person can compare at a glance', () => {
+test('the version reads "overload seed <date> chunk <id>" (or "seed-fix <decision>" for a seed-only fix), a string a person can compare at a glance', () => {
   const version = /^select '([^']+)' as seed_version;$/.exec(last)?.[1] ?? '';
-  const m = /^overload seed (\d{4})-(\d{2})-(\d{2}) chunk (\d+[a-z]?)$/.exec(version);
-  assert.ok(m, `"${version}" has the shape overload seed YYYY-MM-DD chunk N`);
+  const m = /^overload seed (\d{4})-(\d{2})-(\d{2}) (?:chunk|seed-fix) (\d+[a-z]?)$/.exec(version);
+  assert.ok(m, `"${version}" has the shape overload seed YYYY-MM-DD chunk N (or seed-fix N)`);
   const date = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
   assert.equal(date.toISOString().slice(0, 10), `${m[1]}-${m[2]}-${m[3]}`, 'a real calendar date');
 });

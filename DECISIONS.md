@@ -1,19 +1,22 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-22, chunk 58b's review (merged).*
-- *Chunk 58b is merged (#201, `9e26b7d`): the workout's header (WEEK 2 · TUESDAY, DELOAD, CYCLE · SLOT, the clock, N OF M SETS), the offline strip, the rows' SYNC and ONLY ON THIS PHONE · RETRY, the couldn't-sync strip, each card's LAST = … line and the last-time sheet (W16, W17). Its display choices are 217; the W1 row caption it didn't build is 218.*
-- *Your answers of 2026-10-22 are recorded: 213 (a) and 214 (a), each with a SPEC line and its TASKS chunk amended (67, 68); 215 and 216 are on your review-pass list. The re-seed of 2026-10-22 (version line confirmed, 046 pasted) is in CONTEXT.*
-- *The build stops after 58b (your rule of 2026-10-22): nothing more until your go after the Monday 05:00 reset.*
+*Rewritten at every boundary. Last: 2026-10-26, seed fix 219's review (merged).*
+- *Your answer to 219 (2026-10-26) is recorded. The diagnosis came out SEED-ONLY, and the seed fix is merged (#204, `508d5dd`). The new seed's version line is `overload seed 2026-10-26 seed-fix 219`.*
+- *Chunk 59 is built. Its review waits for your re-seed, so that its week 3 staging step can run.*
 
 What blocks, in order:
-1. **Your go**, after Monday's 05:00 reset: the build (59 next) waits for it.
-2. **219** (below): the re-seed of 2026-10-22 left the test account's weeks 2 and 3 with no planned numbers; 59's staging step, then 60–64's and the release checklist's rows on week 2's numbers, wait for a seed fix and your re-seed.
-3. **121** (a to-do, below): the release's migrations PR waits for it.
+1. **219** (below), in this order:
+   - (i) In the staging SQL editor, run the two read-only SELECTs in 219's entry, BEFORE you re-seed: the second one reads the current weeks 2–3, and a re-seed replaces them. Paste both outputs.
+   - (ii) Re-seed from staging's `supabase/seed.sql`. The result pane must read `overload seed 2026-10-26 seed-fix 219`. If it reads `seed.sql stopped and rolled everything back: …` instead, nothing changed: paste that text.
+   - (iii) Paste 046 after the seed, then send "re-seeded".
+
+   59's review (its week 3 staging step) and 60–64's and the release checklist's rows that use week 2's numbers wait for (iii). If the first SELECT's md5 is anything other than `4cbfc38536791187ca06f4ace251573c`, staging's `v2_plan_week` differs from the repo's 045. That is a migration problem and blocks the release.
+2. **121** (a to-do, below): the release's migrations PR waits for it.
 Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk:
-- **219** — every planned set of the test account's weeks 2 and 3 has no weight since the re-seed of 2026-10-22, the first with 045 live (68 of 68 in each), so the seed's week-2 logs read 50 kg (bench 50 × 5 where the smoke expects 80 × 5: the smoke is 50/51). Recommended: (a), a small seed-fix chunk before 59 (why the seed's week 2–3 copy lands nothing under 045; the version line bumped; proven on a replay with 045 and by the smoke), then your re-seed and 046 pasted. Blocks: 59's staging step (59 itself can be built).
+- **219** — answered (a) on 2026-10-26. The seed fix is merged (#204): the cause was the seed only. 045's number-less copy is the intended 1.2 rule, and 046 writes no planned set. Still to do, from you: (i) the two read-only SELECTs, BEFORE the re-seed; (ii) the re-seed; (iii) 046 pasted, then "re-seeded". Blocks: 59's review (its week 3 staging step). If the function md5 differs, it blocks the release.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
 - **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
@@ -609,7 +612,38 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (a) A small seed-fix chunk before 59's review: find why the seed's week 2–3 copy (`supabase/seed.sql`, the `for wk in 2..3` update) lands nothing under 045, fix it, bump the version line, prove it on a replay with 045 applied before the seed and by the smoke; then your re-seed, with 046 pasted after it.
 - (b) Keep the seed and change the expectations (the smoke's check and TASKS' Staging lines) to the numbers it now writes.
 - (c) Leave it: each reviewer notes the difference and checks what it can.
-**Answer:**
+**Answer:** (Adam, 2026-10-26) "219: yes to (a), with diagnosis first. The small chunk first establishes whether week 2–3 weights are missing because of the seed only, or because 045/046 changes how planned weights are copied for real data. If it's seed-only: fix the seed, bump the seed version, light review. If it touches app or migration behaviour: stop, report it to me as DATA with a recommendation, and treat it as blocking the release. Order: run it after 59's builder finishes and before 59's review, so 59's review can run its week 3 staging step. Tell me when the new seed is merged; I'll re-seed, paste 046, and send "re-seeded"."
+**Result (seed fix 219, 2026-10-26; #204, `508d5dd`):** the verdict is **SEED-ONLY**.
+- The number-less weeks are the intended rule. 045 plans a week-dependent week from the week before with structure and no weight, RIR, rep target or AMRAP (SPEC [1.2] "What the auto-copy takes (2b)": "Weight, reps (week-dependent) and RIR are never auto-copied: they come with COPY"; TASKS 53). A week that is already planned keeps every row.
+- 046 writes only `v2_program_exercises` (its two UPDATEs; its other writes are to its own temp tables), so it writes no planned set. No real user's planned weights change.
+- The cause: the seed's own copy matched a planned set to its source by `program_set_id`, a link the planning function writes. A planning function that leaves the link out reproduces 219 exactly, on the replay: the old seed gives 39/0/0 and the smoke reads 50/51.
+- The fix: the seed now copies by structure (exercise row, set number, stage, warmup flag). It checks each copy and stops with everything rolled back when a copy fails. Version line: `overload seed 2026-10-26 seed-fix 219`.
+- The review re-ran it on local replays:
+  - Staging's order (000–046, then the seed, then 046 pasted) and chunk 53's order (000–044, seed, 045, 046) give identical canonical dumps (1076 lines). Weeks 2–3 hold 39 sets, 39 weights and 38 rep targets each.
+  - The old seed's world equals the new seed's world.
+  - With the link-dropping function, the new seed still gives 39/39/38.
+  - Builder breaks U01, U09, R07 and K02 were each caught.
+- **Not established:** why staging's re-seed of 2026-10-22 put nothing on weeks 2–3. No order reproduced it locally, and nobody here may read staging. Two read-only SELECTs, run BEFORE the re-seed (the second reads the current weeks 2–3, which a re-seed replaces), settle it:
+
+```sql
+-- healthy (the repo's 045, on the replay): 4cbfc38536791187ca06f4ace251573c | 4fd860804f9b9c4d07061065a7a45bb7 | 18581
+select md5(pg_get_functiondef('public.v2_plan_week(uuid,integer)'::regprocedure)), md5(prosrc), length(prosrc)
+from pg_proc where oid = 'public.v2_plan_week(uuid,integer)'::regprocedure;
+-- on the replay: weeks 2 and 3 each 39 sets, 39 with a weight, 39 matchable (week 1: 39, 39, 0)
+select wp.week_number, count(*) as sets, count(ws.target_weight) as with_weight,
+       count(*) filter (where exists (select 1 from v2_week_plan_sets s1 join v2_week_plans p1 on p1.id = s1.week_plan_id
+                                       where p1.mesocycle_id = wp.mesocycle_id and p1.workout_day_id = wp.workout_day_id
+                                         and p1.week_number = wp.week_number - 1 and s1.program_set_id = ws.program_set_id)) as matchable
+from v2_week_plan_sets ws join v2_week_plans wp on wp.id = ws.week_plan_id join v2_mesocycles m on m.id = wp.mesocycle_id
+where m.name = 'STG Upper/Lower run' and m.user_id = (select id from auth.users where email = 'staging-test@example.com')
+group by wp.week_number order by 1;
+```
+How to read them:
+- A first md5 other than `4cbfc385…` means staging's function drifted from the repo's 045. That is a migration problem, it blocks the release, and 219 becomes DATA.
+- A `matchable` below 39 on weeks 2–3 means staging's links differ. The new seed no longer depends on them.
+- The "68" in the Evidence below counts all of the account's runs: 39 (Upper/Lower) + 14 (Full Body) + 15 (PPL). Scope a staging reading to the run.
+
+219 stays open until the SELECT outputs and "re-seeded" arrive.
 **Evidence:** read as `staging-test@example.com` on 2026-10-22 after #201's deploy (`<scratchpad>/build/rv58b-bench.mjs`, read only): week 1 has numbers where the seed sets them; weeks 2 and 3 have 68 planned sets each, none with a weight (56 with no `rep_min`), every one with its `program_set_id`. The seed logs `coalesce(head.target_weight, 50)`, so bench week 2 reads 50 × 8, 82.5 × 7 (set 2's numbers are the seed's own), 50 × 5, week 3's in-progress Upper A 50 × 8 throughout, and the workout's upcoming rows read "—". The smoke was 51/51 on the re-seed of 2026-10-20 (about 21:53 UTC, before #183's deploy made 045 live) through 58a's fix-forward review. Chunk 53's rule (the seed copies its own numbers, its canonical dump equal on 044 and on 045 + 046) was proven on a replay; on staging the copy didn't land. The cause isn't settled here (a light review, and no SQL access to staging): the copy's join (`sequence_position is not distinct from`, the program-set match) and the order in which the seed plans and copies under 045 are where to look.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
