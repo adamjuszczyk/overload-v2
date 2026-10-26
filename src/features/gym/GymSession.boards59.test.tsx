@@ -8,7 +8,8 @@ import { render, cleanup, fireEvent, act, screen, within } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { captureRender } from '../../testing/captureRender'
-import type { ExerciseSwap } from './sessionService'
+import { referenceSessionOf } from './cardHarness.testutil'
+import type { ExerciseSwap, ReferenceSession } from './sessionService'
 import type { Exercise, ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog } from '../../types'
 
 afterEach(() => cleanup())
@@ -49,6 +50,7 @@ const weekPlan: WeekPlan = {
 
 let session: Session
 let sessionSwaps: ExerciseSwap[] = []
+let references = new Map<string, ReferenceSession[]>()
 const logOf = (over: Partial<SetLog> & { id: string }): SetLog => ({
   userId: 'user-1', sessionId: 'session-1', exerciseId: 'ex-lat', weekPlanSetId: null, setNumber: 1, weight: 55, reps: 9, rir: 2, note: null,
   isDropset: false, parentSetId: null, stageIndex: 0, isWarmup: false, setSeconds: null, enteredUnit: null, isSkipped: false,
@@ -102,7 +104,7 @@ vi.mock('./useSession', () => ({
   useLastSessionLogs: () => ({ data: [], isLoading: false }),
   useUpdateSetLog: () => ({ mutate: vi.fn() }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
-  useExerciseReferenceSessions: () => ({ data: new Map(), isLoading: false, isError: false, isFromCache: false, retry: vi.fn() }),
+  useExerciseReferenceSessions: () => ({ data: references, isLoading: false, isError: false, isFromCache: false, retry: vi.fn() }),
   useSessionSwaps: () => ({ data: sessionSwaps }),
   useRecordExerciseSwap: () => ({
     mutateAsync: async (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise; movedSets: ExerciseSwap['movedSets'] }) => {
@@ -146,6 +148,7 @@ beforeEach(() => {
     ],
   }
   sessionSwaps = []
+  references = new Map()
   useSettingsStore.setState({ ...DEFAULT_SETTINGS })
 })
 
@@ -200,6 +203,14 @@ describe('W11 and W14 — the swap and the add, at the workout screen\'s call si
 
 describe('W5 — swapped and added exercises', () => {
   it('Lat Pulldown keeps its two logged sets and no + ADD SET; Machine Pulldown, swapped from it, has set 03 (the dropset with its drop) and + ADD SET; Straight-Arm Pulldown, added today, has 01', async () => {
+    // Each card's "last time" is its own exercise's (board W5): the swapped card reads the new exercise's session, not the one it left.
+    const lastTime = (id: string, exerciseId: string, date: string, sets: Array<[number, number]>) =>
+      referenceSessionOf(id, date, sets.map(([weight, reps], i) => logOf({ id: `${id}-${i + 1}`, sessionId: id, exerciseId, setNumber: i + 1, weight, reps, rir: 2, loggedAt: `${date}T18:00:00Z` })))
+    references = new Map([
+      ['ex-lat', [lastTime('r-lat', 'ex-lat', '2026-10-06', [[55, 9], [55, 8]])]],
+      ['ex-machine', [lastTime('r-machine', 'ex-machine', '2026-09-22', [[45, 12], [47.5, 11], [50, 10]])]],
+      ['ex-straight', [lastTime('r-straight', 'ex-straight', '2026-09-08', [[25, 12]])]],
+    ])
     const { container, rerender } = render(jsx())
     await settle()
     await press(screen.getByLabelText('Exercise options'))
@@ -227,7 +238,15 @@ describe('W5 — swapped and added exercises', () => {
     expect((within(machine).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('8–10')
     expect(straight.textContent).toContain('BACK · ADDED TODAY')
     expect(Array.from(straight.querySelectorAll('[data-row-key]')).map((el) => el.querySelector('span')?.textContent)).toEqual(['01'])
-    captureRender('w5', container)
+    const lastLine = (card: HTMLElement) => card.querySelector('[data-last-line]')?.textContent
+    expect([lastLine(lat), lastLine(machine), lastLine(straight)]).toEqual(['LAST = LAST WEEK, TUE', 'LAST = 21 DAYS AGO', 'LAST = ABOUT 1 MONTH AGO'])
+    expect(machine.textContent).toContain('50 × 10 @ 2') // the moved set 03's own LAST line, from the new exercise's session
+    expect(straight.textContent).toContain('25 × 12 @ 2')
+    // Board W5 draws the cards alone: the pinned rest bar (sticky at the bottom, so a full-page shot of a screen taller than 844 px draws
+    // it over the third card's header) is left out of the capture.
+    const cardsOnly = container.cloneNode(true) as HTMLElement
+    cardsOnly.querySelector('[data-rest-bar]')?.remove()
+    captureRender('w5', cardsOnly)
   })
 })
 

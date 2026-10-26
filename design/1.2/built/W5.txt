@@ -5,7 +5,7 @@ IN PROGRESS
 2 OF 5 SETS
 Lat Pulldown
 BACK
-FIRST TIME
+LAST = LAST WEEK, TUE
 01
 55 kg × 9 @ RIR 2
 mark as dropset
@@ -14,25 +14,28 @@ mark as dropset
 mark as dropset
 Machine Pulldown
 BACK · SWAPPED FROM LAT PULLDOWN
-FIRST TIME
+LAST = 21 DAYS AGO
 DROPSET · 1 DROP
 03
 kg
 ×
 RIR
 LOG
+
+LAST 50 × 10 @ 2
+
 ↳
 40 kg @ RIR 0
 AFTER SET 03
 ADD SET
 Straight-Arm Pulldown
 BACK · ADDED TODAY
-FIRST TIME
+LAST = ABOUT 1 MONTH AGO
 01
 —
+
+LAST 25 × 12 @ 2
+
 ADD SET
 ADD EXERCISE
 FINISH SESSION
-REST
-0:00
-/ 2:00
