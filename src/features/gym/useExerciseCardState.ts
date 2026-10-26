@@ -420,7 +420,7 @@ export function useExerciseCardState({
   // ─── UNLOG (chunk 63; board W2b; SPEC [1.2] "Unlog (18c)", G46 (a), G47; DECISIONS 147 (b), 151, 161, 174, 184 (b), 227) ───────────────────────────────────────
   // `unlogEffects` (46r) says everything an unlog does; this sends it. No confirm, and it never starts the rest timer or touches the session's row (Defaults 6).
   //   1. the draft (the log's numbers and, for an added set, its type, place and time) is held by the screen at once, so the row that comes back reads it in its first draw,
-  //      and is written to the phone (`session_set_drafts`); it is never sent anywhere;
+  //      and is written to the phone (`sessionDrafts.ts`'s Dexie table); it is never sent anywhere;
   //   2. the change row the rules ask for (a `retyped` row, so the type the set was logged with survives), held on the screen from before the first request: the table can
   //      refuse it, so it goes before anything destructive (RULES: a change of several requests sends the one that can be refused first);
   //   3. the logs, a set's skipped drops from the last and then the set (`useDeleteSetLog`: online the request and, once it has gone through, the queued rows that name the log leave

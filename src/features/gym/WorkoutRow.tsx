@@ -31,6 +31,10 @@ import { lastLineText, stageChipText, stageLock } from './workoutRowView'
 
 const MONO = 'var(--font-mono)'
 
+// A LOG nobody awaits (the row's own): a refusal is shown by the mutation's own rollback; chunk 63 only makes it a logged error instead of an unhandled rejection, since a LOG that
+// fails now also puts a set's draft back (`useExerciseCardState`'s `withDraft`).
+const logFailed = (err: unknown) => console.error('[workout] LOG failed', err)
+
 interface WorkoutRowProps {
   state: ExerciseCardState
   row: ResolvedRow
@@ -182,7 +186,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
         display={warmupDisplay === 'tick' ? 'tick' : 'rows'}
         restElapsed={state.currentRestElapsed}
         draft={state.draftOf(row)}
-        onLog={(params) => guard(() => void state.logWarmup(row, params))}
+        onLog={(params) => guard(() => void state.logWarmup(row, params).catch(logFailed))}
         onUpdate={(changes) => log && state.onUpdateSet(log.id, changes)}
         onDelete={() => {
           if (log) state.onDeleteSet(log.id).catch((err) => console.error('Failed to delete warmup', err))
@@ -232,7 +236,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
       menu={menu}
       draft={state.draftOf(row)}
       beforeLog={guard}
-      onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
+      onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext)).catch(logFailed)}
     />
   )
 }
