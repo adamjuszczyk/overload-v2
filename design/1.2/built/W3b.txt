@@ -2,7 +2,6 @@ SKIPPED SET AND ITS DROP
 
 01
 55 kg × 8 @ RIR 1
-mark as dropset
 02
 SKIPPED
 ↳
@@ -12,7 +11,6 @@ ADDED SET · LOADING LAST TIME
 
 01
 52.5 kg × 10 @ RIR 1
-mark as dropset
 02
 kg
 ×
@@ -27,7 +25,6 @@ ADDED SETS · NO PLAN BEHIND THEM
 
 01
 52.5 kg × 10 @ RIR 1
-mark as dropset
 02
 kg
 ×

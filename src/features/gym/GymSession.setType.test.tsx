@@ -69,8 +69,6 @@ const logOf = (over: Partial<SetLog> & { id: string }): SetLog => ({
   isDropset: false, parentSetId: null, stageIndex: 0, isWarmup: false, setSeconds: null, enteredUnit: null, isSkipped: false,
   loggedAt: '2026-01-06T09:20:00Z', restSeconds: null, formRating: null, stageKind: null, addedPlace: null, ...over,
 })
-const NOW = '2026-01-06T09:00:00Z'
-const deleted = (id: string, weekPlanSetId: string): SessionSetChangeRecord => ({ id, userId: 'u1', sessionId: 'session-1', createdAt: NOW, updatedAt: NOW, kind: 'deleted', weekPlanSetId })
 
 const peLat = pe('xe-lat', 'ex-lat', 'Lat Pulldown', 'back', 0)
 const peEz = pe('xe-ez', 'ex-ez', 'EZ Bar Curl', 'biceps', 1)
@@ -152,11 +150,6 @@ const press = (el: Element) =>
     fireEvent.click(el)
     for (let i = 0; i < 20; i++) await Promise.resolve()
   })
-const latLabels = (container: HTMLElement) =>
-  Array.from(container.querySelectorAll('[data-row-key]'))
-    .filter((el) => (el.getAttribute('data-row-key') ?? '').startsWith('set:lat'))
-    .map((el) => el.querySelector('span')?.textContent)
-
 const pickType = (name: string) => press(within(screen.getByRole('dialog')).getByText(name))
 const openPicker = (container: HTMLElement, key: string, from: 'sheet' | 'pen') => {
   if (from === 'sheet') {

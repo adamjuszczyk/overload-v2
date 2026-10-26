@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, fireEvent, screen, within, act } from '@testing-library/react'
 import type { SessionSetChange, SetLog } from '../../types'
-import { headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates } from './cardHarness.testutil'
+import { exerciseOf, headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates } from './cardHarness.testutil'
+import { captureRender } from '../../testing/captureRender'
 import { spyWriters } from './setWriters.testutil'
 import type { LogRequest } from './useExerciseCardState'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
@@ -234,6 +235,61 @@ describe('an added set that is not logged: its type is the card\'s own state, an
     expect(rowLabels(container)).toEqual(['W', '01']) // (the card draws its warmups first)
     expect(writers.writeChanges).not.toHaveBeenCalled()
     expect(order).toEqual([]) // the added set was after the logged one: no number moves
+  })
+})
+
+describe('what the screen draws while a change is on its way: the rows are held from the first request until they are in the session (a read between two requests never draws a half-written type)', () => {
+  const deferred = () => {
+    let resolve: () => void = () => {}
+    const promise = new Promise<void>((r) => (resolve = r))
+    return { promise, resolve }
+  }
+  const flush = () =>
+    act(async () => {
+      for (let i = 0; i < 16; i++) await Promise.resolve()
+    })
+
+  it('Dropset on a logged set: the log is patched (the screen\'s copy has its kind) and the rows are not written yet, and the drop is already drawn', async () => {
+    const { writers } = recorder()
+    const rows = deferred()
+    writers.writeChanges.mockImplementation(() => rows.promise)
+    const { container, setLogs, setChanges } = renderCard({ plannedSets: [plannedSet(1), plannedSet(2)], logs: [headLogOf(1), headLogOf(2)], props: { writers } })
+    writers.patchLog.mockImplementation(async () => setLogs([headLogOf(1), headLogOf(2, { stageKind: 'dropset' })]))
+    openFromPanel(container, 'set:set-2')
+    fireEvent.click(within(dialog()).getByText('Dropset'))
+    await flush()
+    expect(writers.patchLog).toHaveBeenCalledTimes(1)
+    expect(rowLabels(container)).toEqual(['01', '02', '↳']) // held: without it the set reads as Normal until its rows land
+    rows.resolve()
+    await flush()
+    setChanges([held(retyped(2, staged(1)), 'chg-1'), held({ kind: 'pending_stages', setLogId: 'log-2', stageKind: 'dropset', stageCount: 1 }, 'chg-2')])
+    expect(rowLabels(container)).toEqual(['01', '02', '↳'])
+  })
+
+  it('LOG of a set added as a dropset: its drop is drawn from the LOG on, while its `pending_stages` row is still on its way', async () => {
+    const { writers } = recorder()
+    const queued = deferred()
+    writers.queueChanges.mockImplementation(() => queued.promise)
+    let id = ''
+    const onLog = vi.fn(async (params: LogRequest) => {
+      id = params.id as string
+      return logOf({ id })
+    })
+    const { container, setLogs } = renderCard({ plannedSets: [], props: { writers, onLog } })
+    fireEvent.click(screen.getByText('ADD SET'))
+    const key = container.querySelector('[data-row-key]')!.getAttribute('data-row-key')!
+    openFromSheet(container, key)
+    await pick('Dropset')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.change(within(rowOf(container, key)).getByLabelText('Weight'), { target: { value: '50' } })
+    fireEvent.change(within(rowOf(container, key)).getByLabelText('Reps'), { target: { value: '9' } })
+    fireEvent.click(within(rowOf(container, key)).getByText('LOG'))
+    await flush()
+    expect(writers.queueChanges).toHaveBeenCalledTimes(1)
+    setLogs([logOf({ id, stageKind: 'dropset', setNumber: 1, addedPlace: 1 })]) // the screen's optimistic copy of the new log
+    expect(rowLabels(container)).toEqual(['01', '↳']) // held: without it the logged head reads as a normal set
+    queued.resolve()
+    await flush()
   })
 })
 
@@ -485,7 +541,7 @@ describe('a warmup logged with no weight or reps made a working set (DECISIONS 1
 
   it('a weight typed in lbs is stored in kg', async () => {
     const { order, writers } = recorder()
-    const { container } = renderCard({ plannedSets: plan(), logs: [numberless()], props: { writers, programExercise: { ...(await import('./cardHarness.testutil')).exerciseOf({ weightUnit: 'lbs' }) } } })
+    const { container } = renderCard({ plannedSets: plan(), logs: [numberless()], props: { writers, programExercise: exerciseOf({ weightUnit: 'lbs' }) } })
     openFromPanel(container, 'set:set-1')
     await pick('Normal')
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -514,5 +570,43 @@ describe('a warmup logged with no weight or reps made a working set (DECISIONS 1
     openFromPanel(container, 'set:set-1')
     await pick('Normal')
     expect(order[0]).toBe(`log log-1 ${JSON.stringify({ isWarmup: false, stageKind: null })}`)
+  })
+})
+
+// The boards' pictures (`CAPTURE_RENDER=1 npx vitest run src/features/gym/ExerciseCard.setType.test.tsx` writes the two fixtures for `npm run shot`: W7a as the workout
+// opens it, and the question 19c asks, which no board draws). They are written after the assertions, so a sheet that lost a part fails here and leaves the committed
+// fixture alone.
+describe('the pictures: W7a as the workout opens it, and the question 19c asks', () => {
+  const lat = () => {
+    const base = exerciseOf()
+    return exerciseOf({ exercise: { ...base.exercise!, name: 'Lat Pulldown' } })
+  }
+
+  it('W7a: the ⋯ of set 03, a planned dropset with one drop, → SET TYPE: "What is this set?", the six types, Dropset picked with DROPS 1, and the note', () => {
+    const planned = [plannedSet(1), plannedSet(2), plannedSet(3, { stageKind: 'dropset' }), plannedDrop(3, 1)]
+    const { container } = renderCard({ plannedSets: planned, logs: [headLogOf(1), headLogOf(2)], props: { programExercise: lat() } })
+    openFromSheet(container, 'set:set-3')
+    const sheet = dialog()
+    const text = sheet.textContent ?? ''
+    const order = ['Lat Pulldown · SET 03 · THIS WORKOUT', 'What is this set?', 'Normal', 'Warmup', 'Dropset', 'DROPS', 'Rest-pause', 'Myo-reps', 'Cluster', "Changes this workout only. Next week's plan stays as it is; the change shows up in REVIEW when you plan it."]
+    const at = order.map((word) => text.indexOf(word))
+    expect(at.every((i) => i >= 0)).toBe(true)
+    expect([...at].sort((a, b) => a - b)).toEqual(at)
+    expect(within(sheet).getByText('Dropset').closest('button')!.getAttribute('aria-pressed')).toBe('true')
+    captureRender('w7a-workout', document.body)
+  })
+
+  it('the question: a logged dropset with its drop logged, Normal picked: "Delete the 1 logged drop?" over W9\'s note, CANCEL and DELETE DROP', async () => {
+    const planned = [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1)]
+    const { container } = renderCard({ plannedSets: planned, logs: [headLogOf(1, { stageKind: 'dropset' }), dropLog(1, 1)], props: { programExercise: lat() } })
+    openFromPanel(container, 'set:set-1')
+    await pick('Normal')
+    const ask = alertDialog()
+    expect(ask.textContent).toContain('LAT PULLDOWN · SET 01')
+    expect(within(ask).getByText('Delete the 1 logged drop?')).toBeTruthy()
+    expect(within(ask).getByText("Only today's session changes; the plan stays the same.")).toBeTruthy()
+    expect(within(ask).getByText('CANCEL')).toBeTruthy()
+    expect(within(ask).getByText('DELETE DROP')).toBeTruthy()
+    captureRender('w7a-confirm', document.body)
   })
 })

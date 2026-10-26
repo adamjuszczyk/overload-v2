@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { applySetTypeChange, type TypedNumbers } from './workoutRules'
+import { applySetTypeChange, type ChangeWrite, type NumberPatch, type TypedNumbers } from './workoutRules'
 import { RequiresConnectionError, fromPickerType, runTypeChange, toPickerType, typeConfirm, type TypeChangeDeps } from './setTypeChange'
 import { addedLog, card, dropLog, headLog, held, orderOf, pending, retyped, rowKeyed, staged, viewOf } from './workoutRules.testutil'
 import type { SessionSetChangeType, SetLog } from '../../types'
@@ -27,8 +27,8 @@ function run(
     writers: {
       online: o.online ?? true,
       patchLog: vi.fn(async (id, changes) => step('log', `${id} ${JSON.stringify(changes)}`)),
-      writeChanges: vi.fn(async (writes) => step('changes', writes.map((w) => `${w.change.kind}${w.id === null ? '' : `#${w.id}`}`).join(','))),
-      patchNumbers: vi.fn(async (patches) => step('numbers', patches.map((p) => `${p.id}=${p.setNumber}`).join(','))),
+      writeChanges: vi.fn(async (writes: readonly ChangeWrite[]) => step('changes', writes.map((w) => `${w.change.kind}${w.id === null ? '' : `#${w.id}`}`).join(','))),
+      patchNumbers: vi.fn(async (patches: readonly NumberPatch[]) => step('numbers', patches.map((p) => `${p.id}=${p.setNumber}`).join(','))),
     },
     deleteLog: vi.fn(async (log) => step('delete', `${log.id} under ${log.parentSetId}`)),
     keepAddedType: vi.fn((type) => void calls.push(`keep ${JSON.stringify(type)}`)),
