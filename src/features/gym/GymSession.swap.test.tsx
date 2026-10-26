@@ -532,7 +532,8 @@ describe('the moved sets are logged as added sets of the new exercise, each with
     await settle()
     await typeAndLog(container, '52.5', '8') // the moved dropset's head, the current set on the new card
     rerender(jsx())
-    const head = calls.filter((c) => c.what === 'log').at(-1)!.payload
+    const loggedCalls = calls.filter((c) => c.what === 'log')
+    const head = loggedCalls[loggedCalls.length - 1].payload
     expect(head).toMatchObject({ exerciseId: 'ex-2', weekPlanSetId: null, stageKind: 'dropset', addedPlace: 1 })
     expect(queuedChanges).toHaveLength(1)
     expect(queuedChanges[0]).toMatchObject({ kind: 'pending_stages', set_log_id: head.id, stage_kind: 'dropset', stage_count: 2, week_plan_set_id: null })
