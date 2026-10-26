@@ -6,21 +6,22 @@
 // Chunk 61 (boards W7, W8, W9, W2b): an open row's ⋯ is the set options sheet and a logged row's pen is the edit panel; both reach what the card owns
 // (CUES, and DELETE's W9 question) through `RowMenu`, built here. W9 itself is the card's (`CardDeleteConfirm`), not the row's, because its row is out
 // of the order as soon as its delete starts.
+// Chunk 62 (boards W7a, W7, W2b): the SET TYPE row of the ⋯ and of the edit panel opens the type picker, which this row mounts outside its own frames as it does
+// the cues sheet (`WorkoutSetTypeSheet`), and the old ADD STAGE and "mark as dropset" buttons after a logged head are gone: a drop is a type the set is given.
 import { Fragment, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
-import type { SetLog } from '../../types'
+import type { SessionSetChangeType, SetLog } from '../../types'
 import { cuesSummary } from '../../components/pickers/pickerLogic'
 import { errorReason } from '../../components/exercisePickerLogic'
-import { resolveStageKind } from '../../lib/plannerVocabulary.js'
 import { useSettingsStore } from '../settings/settingsStore'
+import { useToastStore } from '../notifications/toastStore'
 import type { SupersetChainInput } from './restChain'
 import type { ExerciseCardState } from './useExerciseCardState'
-import type { ResolvedRow } from './workoutRules'
-import { canAddStageTo } from './setGroupLogic'
+import { sameType, type ResolvedRow, type TypedNumbers } from './workoutRules'
 import { resolveStageCarryWeightKg } from './stageCarryLogic'
 import LogOrderPrompt, { type LogOrderQuestion } from './LogOrderPrompt'
 import DeleteSetConfirm from './DeleteSetConfirm'
 import SetCuesSheet from './SetCuesSheet'
+import WorkoutSetTypeSheet from './WorkoutSetTypeSheet'
 import { typeRowText } from './setOptionsView'
 import SetRowCurrent, { type RowMenu } from './SetRowCurrent'
 import SetRowLogged from './SetRowLogged'
@@ -54,10 +55,31 @@ export default function WorkoutRow(props: WorkoutRowProps) {
   // sheet's events never bubble through a row), and W9's confirm, which the card owns (`CardDeleteConfirm`).
   const [cuesOpen, setCuesOpen] = useState(false)
   const cues = state.cuesOf(row)
+  // Chunk 62: SET TYPE. A warmup logged with no weight or reps asks for both in the panel before its type changes (DECISIONS 152 (a)): the picker then only
+  // hands back what was picked (`heldType`), and SAVE writes it with the numbers in one request.
+  const showToast = useToastStore((s) => s.show)
+  const [typeOpen, setTypeOpen] = useState(false)
+  const [heldType, setHeldType] = useState<SessionSetChangeType | null>(null)
+  const holdsPick = row.state === 'logged' && row.type?.kind === 'warmup' && state.needsNumbers(row, { kind: 'normal' })
+  async function saveHeldType(numbers: TypedNumbers): Promise<void> {
+    if (heldType === null) return
+    try {
+      await state.changeSetType(row, heldType, { numbers })
+      setHeldType(null)
+    } catch (err) {
+      console.error('[workout] set type change failed', err)
+      showToast(`Couldn't change the set type. ${errorReason(err, typeof navigator !== 'undefined' && navigator.onLine === false)}`)
+      throw err
+    }
+  }
   const menu: RowMenu = {
     cuesText: cues === null ? null : cuesSummary(cues.planned.tags ?? []),
     openCues: () => setCuesOpen(true),
     askDelete: () => state.askDelete(row),
+    openSetType: () => setTypeOpen(true),
+    heldType,
+    clearHeldType: () => setHeldType(null),
+    saveHeldType,
   }
   return (
     <>
@@ -71,6 +93,15 @@ export default function WorkoutRow(props: WorkoutRowProps) {
             asking.log()
           }}
           onCancel={() => setAsking(null)}
+        />
+      )}
+      {typeOpen && row.type !== null && (
+        <WorkoutSetTypeSheet
+          row={row}
+          state={state}
+          value={holdsPick ? (heldType ?? row.type) : row.type}
+          {...(holdsPick ? { onHold: (pick: SessionSetChangeType) => setHeldType(sameType(pick, row.type!) ? null : pick) } : {})}
+          onClose={() => setTypeOpen(false)}
         />
       )}
       {cuesOpen && cues !== null && (
@@ -148,6 +179,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
           if (log) state.onDeleteSet(log.id).catch((err) => console.error('Failed to delete warmup', err))
         }}
         onAskDelete={menu.askDelete}
+        menu={menu}
       />
     )
   }
@@ -161,6 +193,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
         log={log}
         resolvedUnit={unit}
         typeText={isStage ? null : typeRowText(row.type)}
+        menu={menu}
         onUpdate={(changes) => state.onUpdateSet(log.id, changes)}
         onDelete={menu.askDelete}
       />
@@ -198,8 +231,8 @@ const stageLogsOf = (logs: readonly SetLog[], head: SetLog): SetLog[] =>
   logs.filter((log) => log.parentSetId === head.id).sort((a, b) => a.stageIndex - b.stageIndex)
 
 /**
- * The card's rows in order, each through `WorkoutRow`, with a staged head's chip above its row while stages are still to come (board W3: "DROPSET · 2 DROPS") and,
- * after the last row of a logged head's group, today's ADD STAGE / "mark as dropset" (chunk 62 removes them with the set type picker).
+ * The card's rows in order, each through `WorkoutRow`, with a staged head's chip above its row while stages are still to come (board W3: "DROPSET · 2 DROPS").
+ * A drop is part of the set's type now (chunk 62): no button after a logged head adds one.
  */
 export function CardRows({
   state,
@@ -217,10 +250,7 @@ export function CardRows({
 }) {
   return (
     <>
-      {rows.map((row, i) => {
-        const next = rows[i + 1]
-        const endsGroup = row.kind !== 'warmup' && (next === undefined || next.kind !== 'stage' || next.headKey !== (row.kind === 'stage' ? row.headKey : row.key))
-        const head = row.kind === 'stage' ? rows.find((r) => r.key === row.headKey) : row
+      {rows.map((row) => {
         // The chip says what is coming ("DROPSET · 2 DROPS"); once every stage under the head is logged or skipped the logged stage
         // rows carry their own kind marker (boards W3: no chip above a finished group).
         const stagesPending = row.kind === 'working' && rows.some((r) => r.kind === 'stage' && r.headKey === row.key && r.state === 'unlogged')
@@ -237,49 +267,9 @@ export function CardRows({
               </span>
             )}
             <WorkoutRow state={rowState} row={row} current={current} supersetContext={supersetContextOf?.(row)} />
-            {endsGroup && head !== undefined && <AddStage state={rowState} head={head} rows={rows} supersetContext={supersetContextOf?.(head)} />}
           </Fragment>
         )
       })}
     </>
-  )
-}
-
-// ADD STAGE and "mark as dropset" (SPEC "Set types and staged sets": they stay until chunk 62's picker replaces them): a drop nobody
-// planned, under a logged head, logged with the head as its parent. With a planned drop still open there is a row for it instead.
-function AddStage({ state, head, rows, supersetContext }: { state: ExerciseCardState; head: ResolvedRow; rows: readonly ResolvedRow[]; supersetContext?: SupersetChainInput }) {
-  const [adding, setAdding] = useState(false)
-  const headLog = head.kind === 'working' && head.state === 'logged' ? state.logOf(head) : null
-  if (headLog === null || !canAddStageTo(headLog)) return null
-  if (rows.some((r) => r.kind === 'stage' && r.headKey === head.key && r.state === 'unlogged')) return null
-  const stageLogs = stageLogsOf(state.logs, headLog)
-  const stageKind = resolveStageKind(headLog.stageKind ?? head.stageKind ?? null)
-  const synthetic: ResolvedRow = { ...head, key: `${head.key}:adhoc`, kind: 'stage', state: 'unlogged', logId: null, headKey: head.key, stageNumber: stageLogs.length + 1, stageKind, type: null }
-  if (adding) {
-    return (
-      <SetRowCurrent
-        key={synthetic.key}
-        row={synthetic}
-        planned={null}
-        resolvedUnit={state.resolvedWeightUnit}
-        lastLine=""
-        carryWeightKg={resolveStageCarryWeightKg(stageKind, { head: headLog, stages: stageLogs })}
-        restElapsed={state.currentRestElapsed}
-        onLog={(params) => {
-          void state.logAdHocStage(head, params, supersetContext)
-          setAdding(false)
-        }}
-      />
-    )
-  }
-  return stageLogs.length === 0 ? (
-    <button type="button" onClick={() => setAdding(true)} className="flex items-center text-xs font-medium" style={{ minHeight: 36, marginLeft: 36, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>
-      mark as dropset
-    </button>
-  ) : (
-    <button type="button" onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs font-bold tracking-widest" style={{ minHeight: 36, marginLeft: 36, color: 'var(--text-muted)', fontFamily: MONO }}>
-      <Plus size={11} />
-      ADD STAGE
-    </button>
   )
 }

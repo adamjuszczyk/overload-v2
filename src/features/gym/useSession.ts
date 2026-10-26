@@ -1131,6 +1131,8 @@ type SetLogChanges = {
   formRating?: FormRating | null
   // Chunk 61: a logged head whose last drop was deleted loses its stage kind (`deleteEffects`' `headPatch`); `SetLog.stageKind` is the cache's copy.
   stageKind?: StageKind | null
+  // Chunk 62: a set's type changed on its log (`applySetTypeChange`'s `headPatch`): the warmup flag beside the stage kind.
+  isWarmup?: boolean
 }
 
 export function useUpdateSetLog(sessionId: string) {

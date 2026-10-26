@@ -52,6 +52,7 @@ let swapAnswer: 'ok' | { reject: unknown } = 'ok'
 const calls: Array<{ what: 'swap' | 'skip' | 'log'; payload: Record<string, unknown> }> = []
 const pickers: Array<Record<string, unknown>> = []
 const queued: unknown[] = []
+const queuedChanges: Array<Record<string, unknown>> = [] // the `v2_session_set_changes` rows LOG queued (chunk 62: a staged added set's `pending_stages` row)
 const updates: unknown[] = [] // what the screen asked `useUpdateSetLog` to change (a stored number, a weight)
 
 const logOf = (over: Partial<SetLog> & { id: string }): SetLog => ({
@@ -75,6 +76,24 @@ vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }), useSupersetBlockRests: () => ({ data: [] }), useWarmupRoutineItems: () => ({ data: [] }),
 }))
 vi.mock('../planner/usePlanner', () => ({ useProgramSets: () => ({ data: [] }) }))
+// Chunk 62: what LOG queues for a staged added set. The stand-in does what the real `queueSetChanges` does to the session (the row, as the table would hold it,
+// is in the session from then on) and keeps the row, so a "reload" below is a screen drawn from the session as the server would give it back.
+vi.mock('./useSessionSetChanges', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./useSessionSetChanges')>()
+  const service = await import('./sessionSetChangesService')
+  return {
+    ...real,
+    queueSetChanges: async ({ sessionId, userId, writes }: { sessionId: string; userId: string; writes: Array<Parameters<typeof service.changeRow>[0]> }) => {
+      for (const write of writes) {
+        const at = '2026-01-05T10:20:00Z'
+        const row = service.changeRow(write, { userId, sessionId, now: at })
+        queuedChanges.push(row)
+        const record = service.toSessionSetChangeRecord({ created_at: at, ...row } as never)
+        if (record !== null) session = real.withChangeRecords(session, [record])!
+      }
+    },
+  }
+})
 vi.mock('../offline/useSyncQueue', () => ({
   queueSetLogPatch: async (l: unknown, setNumber: number) => {
     queued.push({ l, setNumber })
@@ -185,6 +204,7 @@ beforeEach(() => {
   calls.length = 0
   pickers.length = 0
   queued.length = 0
+  queuedChanges.length = 0
   updates.length = 0
   useRestTimerStore.setState({ startedAt: null, isVisible: true, anchorId: null, targetSeconds: null })
   useSettingsStore.setState({ ...DEFAULT_SETTINGS, targetRestSeconds: 90 })
@@ -487,10 +507,14 @@ describe('the moved sets are logged as added sets of the new exercise, each with
     rerender(jsx())
     // a dropset's head runs no rest before its drop: the drop's stage context comes from the moved set's own type (it has no planned set)
     expect(useRestTimerStore.getState().startedAt).toBeNull()
-    // the drop is current now (the head's change row has no writer before chunk 62: the card keeps it on this phone)
+    // the drop is current now: the head's `pending_stages` row is written with its log (chunk 62), keyed by the new log, with its kind and its one drop
     const dropRow = container.querySelector('[data-current-set]') as HTMLElement
     expect(dropRow.getAttribute('data-row-key')).toContain(':stage:1')
+    const headLogId = calls.filter((c) => c.what === 'log')[1].payload.id
+    expect(queuedChanges).toHaveLength(1)
+    expect(queuedChanges[0]).toMatchObject({ kind: 'pending_stages', set_log_id: headLogId, week_plan_set_id: null, is_warmup: false, stage_kind: 'dropset', stage_count: 1, user_id: 'user-1', session_id: 'session-1' })
     await typeAndLog(container, '40', '12')
+    expect(queuedChanges).toHaveLength(1) // its drop writes no row
     const logs = calls.filter((c) => c.what === 'log').map((c) => c.payload)
     expect(logs).toHaveLength(3)
     expect(logs[0]).toMatchObject({ exerciseId: 'ex-2', weekPlanSetId: null, setNumber: 2, addedPlace: 1, stageKind: null, parentSetId: null })
@@ -498,6 +522,35 @@ describe('the moved sets are logged as added sets of the new exercise, each with
     expect(logs[1]).toMatchObject({ exerciseId: 'ex-2', weekPlanSetId: null, setNumber: 3, addedPlace: 2, stageKind: 'dropset', parentSetId: null })
     expect(logs[2]).toMatchObject({ exerciseId: 'ex-2', weekPlanSetId: null, setNumber: 3, parentSetId: logs[1].id, stageIndex: 1, isDropset: true })
     expect('addedPlace' in logs[2]).toBe(false) // a drop carries no place (DECISIONS 177)
+  })
+
+  it('a planned dropset with two drops, moved by a swap and its head logged on the new card, keeps both drops after a reload: its `pending_stages` row says so (chunk 62; break: no row written, the set reads as Normal and its drops are gone)', async () => {
+    current = plan([planSet('set-1', 1), planSet('set-2', 2, { stageKind: 'dropset' }), planSet('set-2-d1', 2, { isDropset: true, parentWeekPlanSetId: 'set-2', stageIndex: 1 }), planSet('set-2-d2', 2, { isDropset: true, parentWeekPlanSetId: 'set-2', stageIndex: 2 })])
+    const { container, rerender } = render(jsx())
+    await swapCard(container)
+    rerender(jsx())
+    await settle()
+    await typeAndLog(container, '52.5', '8') // the moved dropset's head, the current set on the new card
+    rerender(jsx())
+    const loggedCalls = calls.filter((c) => c.what === 'log')
+    const head = loggedCalls[loggedCalls.length - 1].payload
+    expect(head).toMatchObject({ exerciseId: 'ex-2', weekPlanSetId: null, stageKind: 'dropset', addedPlace: 1 })
+    expect(queuedChanges).toHaveLength(1)
+    expect(queuedChanges[0]).toMatchObject({ kind: 'pending_stages', set_log_id: head.id, stage_kind: 'dropset', stage_count: 2, week_plan_set_id: null })
+    const stageRows = (c: HTMLElement) => Array.from(c.querySelectorAll('[data-row-key]')).map((el) => el.getAttribute('data-row-key')!).filter((key) => key.includes(':stage:'))
+    expect(stageRows(container)).toHaveLength(2)
+    // a reload: a screen drawn from the session as the server gives it back (the swap's row with its record, the head's log, the change row)
+    cleanup()
+    const reloaded = render(jsx())
+    await settle()
+    expect(stageRows(reloaded.container)).toHaveLength(2)
+    expect(labels(cards(reloaded.container)[1] as HTMLElement)).toEqual(['02', '↳', '↳'])
+    // the control the break stands for: the same session without the row draws a normal set
+    cleanup()
+    session = { ...session, setChanges: [] }
+    const without = render(jsx())
+    await settle()
+    expect(stageRows(without.container)).toHaveLength(0)
   })
 
   it('a moved warmup is logged as a warmup that names itself and carries its place (break: the log leaves its place out and is drawn a second time)', async () => {

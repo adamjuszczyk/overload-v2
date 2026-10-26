@@ -3,6 +3,7 @@
 // app's own `queryClient`, as `patchSetNumbers` is: nothing here mounts a hook, so a screen that never deletes a set pays nothing for it.
 import { queryClient } from '../../lib/queryClient'
 import { db } from '../../lib/db'
+import { flushSyncQueue } from '../offline/useSyncQueue'
 import type { Session, SessionSetChangeRecord } from '../../types'
 import { SESSION_SET_CHANGES_TABLE, changeRow, toSessionSetChangeRecord, upsertSetChange, type DbSessionSetChange } from './sessionSetChangesService'
 import type { ChangeWrite, HeldChange } from './workoutRules'
@@ -36,7 +37,7 @@ export async function queueSetChange(row: Record<string, unknown>, createdAt: st
 }
 
 /**
- * Writes the changes `deleteEffects` (or, from 62, `applySetTypeChange`) returns, in their order, one row each: online as an awaited
+ * Writes the changes `deleteEffects` and `applySetTypeChange` (chunk 62) return, in their order, one row each: online as an awaited
  * upsert (the first refusal stops the rest and is thrown), offline as a queued upsert (G47). Each row is in the session's cache as soon as
  * it is written or queued, so the screen shows it without waiting for a read; online the session is read again once they are all sent.
  */
@@ -58,13 +59,44 @@ export async function writeSetChanges({
     const row = changeRow(write, { userId, sessionId, now: at })
     if (online) await upsertSetChange(row)
     else await queueSetChange(row, at)
-    const record = toSessionSetChangeRecord({ created_at: at, ...row } as unknown as DbSessionSetChange)
-    if (record !== null) {
-      // A read of the session that left before this row was written would bring back the session without it: it is stopped first, as
-      // `useUpdateSetLog` stops it before its own optimistic write.
-      await queryClient.cancelQueries({ queryKey: ['v2_session', sessionId] })
-      queryClient.setQueryData(['v2_session', sessionId], (old: Session | undefined) => withChangeRecords(old, [record]))
-    }
+    await holdInCache(sessionId, row, at)
   }
   if (online && writes.length > 0) void queryClient.invalidateQueries({ queryKey: ['v2_session', sessionId] })
+}
+
+/** The written row, in the session's cache from now on. A read of the session that left before the row was written would bring the session back
+ *  without it: it is stopped first, as `useUpdateSetLog` stops it before its own optimistic write. */
+async function holdInCache(sessionId: string, row: Record<string, unknown>, at: string): Promise<void> {
+  const record = toSessionSetChangeRecord({ created_at: at, ...row } as unknown as DbSessionSetChange)
+  if (record === null) return
+  await queryClient.cancelQueries({ queryKey: ['v2_session', sessionId] })
+  queryClient.setQueryData(['v2_session', sessionId], (old: Session | undefined) => withChangeRecords(old, [record]))
+}
+
+/**
+ * Chunk 62 (SPEC 19; DECISIONS 161; TASKS 62: "online and through the queue"): the same rows as `writeSetChanges`, always as queued upserts, then the queue is
+ * sent when the phone is online. It is the `pending_stages` row of a set added in the session (or moved by a swap) and logged as a staged head: LOG
+ * does not wait for its answer and has nowhere to show a refusal, so the row goes where a failure is retried (five passes, then the "couldn't sync" notice)
+ * instead of being lost, and it follows the log's own upsert in the queue. The rows are in the session's cache as soon as they are queued.
+ */
+export async function queueSetChanges({
+  sessionId,
+  userId,
+  writes,
+  flush,
+  now = () => new Date().toISOString(),
+}: {
+  sessionId: string
+  userId: string
+  writes: readonly ChangeWrite[]
+  flush: boolean
+  now?: () => string
+}): Promise<void> {
+  for (const write of writes) {
+    const at = now()
+    const row = changeRow(write, { userId, sessionId, now: at })
+    await queueSetChange(row, at)
+    await holdInCache(sessionId, row, at)
+  }
+  if (flush && writes.length > 0) await flushSyncQueue()
 }

@@ -2,7 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { CAPTION_STYLE, hairline } from '../../components/pickers/pickerControls'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import { resolveEditedWeightKg, toDisplayWeight } from '../../lib/weightUnit'
+import { resolveEditedWeightKg, toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
 import type { FormRating, SetLog, WeightUnit } from '../../types'
 import { FORM_SCALE } from './ratingScales'
 import { RowLabel, boxStyle } from './setRowParts'
@@ -14,8 +14,12 @@ import { RowLabel, boxStyle } from './setRowParts'
 // `{ weight, reps }`), never a note, and an unchanged weight typed again keeps the stored kg (`resolveEditedWeightKg`: 9 kg shows as 19.8 lbs).
 //
 // Editing a logged set needs a connection (G47: "the edit panel's SAVE ... stay online-only"): offline SAVE is off and the panel says "Requires a
-// connection"; nothing is sent. DELETE asks the caller, which asks W9 before it deletes. The SET TYPE row is chunk 62's and UNLOG chunk 63's: the
-// panel draws them as the board does and they do nothing (disabled) until the caller passes `onSetType` / `onUnlog`.
+// connection"; nothing is sent. DELETE asks the caller, which asks W9 before it deletes. UNLOG is chunk 63's: the panel draws it as the board does and
+// it does nothing (disabled) until the caller passes `onUnlog`.
+// Chunk 62 (SPEC 19, G47: "A set type change on a logged set ... need[s] a connection"): the SET TYPE row opens the type picker through `onSetType` and, like
+// SAVE, is off with no connection (the panel says "Requires a connection" once, under the buttons). A warmup logged with no weight or reps that is made a
+// working set asks for both here first (DECISIONS 152 (a)): the caller holds the picked type (`typeText` shows it) and passes `numbersRequired`, so SAVE
+// says "Enter weight and reps." and sends nothing until both are typed, then hands them over (`onSave`) to be written with the type in one request.
 //
 // Display choices no board settles, provisional under D31: the disabled SET TYPE and UNLOG; the message for reps or RIR that isn't a whole number
 // ("Enter valid reps." / "Enter a valid RIR."); a working set's empty weight or reps ("Enter weight and reps.": the table refuses a working set
@@ -40,6 +44,8 @@ export interface SetEditPanelProps {
   /** SET TYPE's value ("Normal", "Warmup"); null where the row isn't offered (a drop has no type of its own). */
   typeText: string | null
   onSetType?: () => void
+  /** A warmup waiting for the numbers its new type needs (152): SAVE asks for weight and reps as it does for a working set, the box layout stays a warmup's. */
+  numbersRequired?: boolean
   onUnlog?: () => void
   /** SAVE: the patch, in the shape `updateSetLog` takes (a warmup's has no `rir` and no `formRating`). */
   onSave: (changes: SetEditChanges | Pick<SetEditChanges, 'weight' | 'reps'>) => void
@@ -74,7 +80,7 @@ const BUTTON_STYLE: CSSProperties = {
   cursor: 'pointer',
 }
 
-export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeText, onSetType, onUnlog, onSave, onCancel, onDelete }: SetEditPanelProps) {
+export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeText, onSetType, numbersRequired = false, onUnlog, onSave, onCancel, onDelete }: SetEditPanelProps) {
   const online = useOnlineStatus()
   // The unit this set was logged in (v3 §2.4); a log from before that column reads the exercise's own.
   const unit = log.enteredUnit ?? resolvedUnit
@@ -93,11 +99,12 @@ export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeT
     if (weightText !== '' && !WEIGHT_TEXT.test(weightText)) return setError({ field: 'weight', text: 'Enter a valid weight.' })
     if (repsText !== '' && !WHOLE_NUMBER.test(repsText)) return setError({ field: 'reps', text: 'Enter valid reps.' })
     if (!isWarmup && rirText !== '' && !WHOLE_NUMBER.test(rirText)) return setError({ field: 'rir', text: 'Enter a valid RIR.' })
-    // The table refuses a working set that has no weight or no reps (035's check); a warmup may have neither.
-    if (!isWarmup && (weightText === '' || repsText === '')) return setError({ field: 'numbers', text: 'Enter weight and reps.' })
+    // The table refuses a working set that has no weight or no reps (035's check); a warmup may have neither, unless it is about to become one (152).
+    if ((!isWarmup || numbersRequired) && (weightText === '' || repsText === '')) return setError({ field: 'numbers', text: 'Enter weight and reps.' })
     const typed = weightText === '' ? null : parseFloat(weightText.replace(',', '.'))
-    // Round-trip drift guard (v3 §2.4): an unchanged displayed value returns the original stored kg exactly.
-    const kg = typed === null || log.weight === null ? typed : resolveEditedWeightKg(log.weight, unit, typed)
+    // Round-trip drift guard (v3 §2.4): an unchanged displayed value returns the original stored kg exactly. A weight typed where the log had none is
+    // in the set's unit and is stored in kg (it was stored as typed, in any unit, before chunk 62 wrote numbers for a numberless warmup).
+    const kg = typed === null ? typed : log.weight === null ? toStorageWeight(typed, unit) : resolveEditedWeightKg(log.weight, unit, typed)
     const repsValue = repsText === '' ? null : parseInt(repsText, 10)
     setError(null)
     if (isWarmup) onSave({ weight: kg, reps: repsValue })
@@ -200,8 +207,8 @@ export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeT
         <button
           type="button"
           onClick={onSetType}
-          disabled={onSetType === undefined}
-          aria-disabled={onSetType === undefined || undefined}
+          disabled={onSetType === undefined || !online}
+          aria-disabled={onSetType === undefined || !online || undefined}
           style={{
             boxSizing: 'border-box',
             width: '100%',
@@ -214,8 +221,8 @@ export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeT
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
-            opacity: onSetType === undefined ? 0.5 : 1,
-            cursor: onSetType === undefined ? 'default' : 'pointer',
+            opacity: onSetType === undefined || !online ? 0.5 : 1,
+            cursor: onSetType === undefined || !online ? 'default' : 'pointer',
           }}
         >
           <span style={CAPTION_STYLE}>SET TYPE</span>

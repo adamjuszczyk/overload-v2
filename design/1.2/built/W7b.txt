@@ -8,10 +8,8 @@ BACK
 FIRST TIME
 01
 55 kg × 9 @ RIR 2
-mark as dropset
 02
 55 kg × 8 @ RIR 1
-mark as dropset
 DROPSET · 1 DROP
 03
 kg
@@ -36,10 +34,8 @@ ROUND 1
 
 A1
 60 kg × 12 @ RIR 2
-mark as dropset
 B1
 15 kg × 18 @ RIR 1
-mark as dropset
 
 ROUND 2
 

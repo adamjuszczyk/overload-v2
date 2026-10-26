@@ -13,9 +13,9 @@ import { FORM_SCALE } from './ratingScales'
 //
 // It writes nothing. FORM and the unit are the row's own state until LOG (the row sends them with the set, as it always did): the sheet shows
 // them and says when they change. A row is drawn only when the caller offers it: no CUES row for a set with no planned set (DECISIONS 165 (a),
-// and none for a drop); no SKIP on a drop (today's rule); none of FORM, the unit or SKIP on a skipped set. The SET TYPE row is chunk 62's to wire
-// (`onSetType`): until it is passed the row is drawn as the board draws it and does nothing (a disabled row), so 62 passes its handler and
-// nothing else here changes.
+// and none for a drop); no SKIP on a drop (today's rule); none of FORM, the unit or SKIP on a skipped set. The SET TYPE row opens the type picker through
+// `onSetType` (chunk 62: the row, `WorkoutRow` and the card write it); a caller that passes none gets the row drawn as the board draws it, doing nothing
+// (a disabled row).
 //
 // Display choices no board settles, provisional under D31: the SET TYPE row without its handler is drawn dimmed and disabled; the eyebrow of a
 // drop in a superset and of a warmup; a skipped set's sheet; the FORM chip is pressed again to clear it, as `RatingChips` does everywhere.
@@ -25,7 +25,7 @@ export interface SetOptionsSheetProps {
   eyebrow: string
   /** The SET TYPE row's value ("Dropset · 1 drop"); null where the row isn't offered (a drop, a skipped set). */
   typeText: string | null
-  /** Left out, the SET TYPE row is drawn and does nothing (chunk 62 passes it). */
+  /** Opens the type picker (chunk 62). Left out, the SET TYPE row is drawn and does nothing. */
   onSetType?: () => void
   /** The CUES row's value (the set's cues joined, "" for none); null where the row isn't offered. */
   cuesText: string | null
@@ -36,7 +36,7 @@ export interface SetOptionsSheetProps {
   unit: { resolved: WeightUnit; active: WeightUnit; onChange: (unit: WeightUnit | null) => void } | null
   /** SKIP THIS SET; null where it isn't offered (a drop, a skipped set). */
   onSkip: (() => void) | null
-  /** DELETE SET; null for a row nobody can delete (the drop ADD STAGE draws until chunk 62 removes it). */
+  /** DELETE SET; null for a row with no way to delete it (a caller that gives the row no menu). */
   onDelete: (() => void) | null
   onClose: () => void
 }
