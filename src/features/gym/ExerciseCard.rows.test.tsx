@@ -66,6 +66,34 @@ describe('row states (SPEC [1.2] "Row states", boards W1, W2)', () => {
     expect(upcoming.hasAttribute('data-current-set')).toBe(false)
   })
 
+  it('the current row alone is styled as current: the accent frame and number, the filled LOG; an upcoming row has no frame, a muted number and an outlined LOG (board W1)', () => {
+    const { container } = renderCard({ plannedSets: plan(), logs: logged() })
+    const style = (el: Element | null) => el?.getAttribute('style') ?? ''
+    const frame = (row: HTMLElement) => row.firstElementChild
+    const upcoming = rowOf(container, 'set:set-4')
+    const currentRow = current(container)
+    expect(style(frame(currentRow))).toContain('background-color: var(--accent-muted)')
+    expect(style(frame(currentRow))).toContain('border-color: var(--accent)')
+    expect(style(frame(upcoming))).toContain('background-color: transparent')
+    expect(style(frame(upcoming))).toContain('border-color: transparent')
+    expect(style(within(currentRow).getByText('03'))).toContain('color: var(--accent)')
+    expect(style(within(upcoming).getByText('04'))).toContain('color: var(--text-muted)')
+    expect(style(within(currentRow).getByText('LOG'))).toContain('background-color: var(--accent)')
+    expect(style(within(upcoming).getByText('LOG'))).toContain('background-color: var(--surface)')
+    expect(style(within(upcoming).getByText('LOG'))).toContain('box-shadow: inset 0 0 0 1px var(--border-strong)')
+    expect(style(within(currentRow).getByText('LOG'))).not.toContain('box-shadow')
+  })
+
+  it('a cue is spelled out under the current row and only marked CUE under any other open row (board W1)', () => {
+    const planned = [1, 2, 3].map((n) => plannedSet(n, { targetWeight: 55, repMin: 8, repMax: 8, tags: n === 1 ? ['push here'] : n === 2 ? ['squeeze'] : [] }))
+    const { container } = renderCard({ plannedSets: planned })
+    expect(rowStates(container)).toEqual(['current', 'upcoming', 'upcoming'])
+    expect(rowOf(container, 'set:set-1').textContent).toContain('PUSH HERE')
+    expect(rowOf(container, 'set:set-2').textContent).toContain('CUE')
+    expect(rowOf(container, 'set:set-2').textContent).not.toContain('SQUEEZE')
+    expect(rowOf(container, 'set:set-3').textContent).not.toContain('CUE') // a set with no cue has no mark
+  })
+
   it('a logged row reads "55 kg × 9 @ RIR 2" with a pen and a tick', () => {
     const { container } = renderCard({ plannedSets: plan(), logs: logged() })
     const first = rowOf(container, 'set:set-1')

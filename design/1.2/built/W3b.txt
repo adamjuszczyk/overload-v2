@@ -37,5 +37,8 @@ LOG
 LAST 50 × 9 @ 1
 
 03
-—
+kg
+×
+RIR
+LOG
 + ADD SET

@@ -297,6 +297,28 @@ describe('the current set follows the log, in zigzag order through a superset', 
     expect(writes.map((w) => w.weekPlanSetId)).toEqual(['cab-1', 'face-1', 'cab-2', 'face-2'])
   })
 
+  it('what was typed into B1 before it became the current set is still in its boxes when it is, and logs as typed', async () => {
+    const supersetPlan = planOf(
+      [peRow, peFace],
+      [
+        set('cab-1', 'xe-row', 1, { targetWeight: 60, repMin: 12, repMax: 12 }),
+        set('face-1', 'xe-face', 1, { targetWeight: 15, repMin: 15, repMax: 20 }),
+      ],
+    )
+    const { container, refresh } = open(supersetPlan, [])
+    typeInto(rowOf(container, 'set:face-1'), 'Reps', '17')
+    typeInto(rowOf(container, 'set:face-1'), 'Weight', '16.5')
+    await press(logButton(rowOf(container, 'set:cab-1')))
+    await refresh()
+    const b1 = rowOf(container, 'set:face-1')
+    expect(currentKey(container)).toBe('set:face-1')
+    expect((within(b1).getByLabelText('Reps') as HTMLInputElement).value).toBe('17')
+    expect((within(b1).getByLabelText('Weight') as HTMLInputElement).value).toBe('16.5')
+    await press(logButton(b1))
+    expect(dialog()).toBeNull()
+    expect(writes[1]).toMatchObject({ weekPlanSetId: 'face-1', setNumber: 1, weight: 16.5, reps: 17 })
+  })
+
   it('while A1 is current, LOG on B1 asks, and after A1 is logged B1 is the current row and logs at once', async () => {
     const supersetPlan = planOf(
       [peRow, peFace],

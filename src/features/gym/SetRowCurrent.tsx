@@ -294,12 +294,10 @@ export default function SetRowCurrent({
             height: 44,
             padding: '0 8px',
             minWidth: 56,
-            // Board W1: LOG is filled on the current row and outlined on any other (the same 1 px border on both, so the buttons are one size).
+            // Board W1: LOG is filled on the current row and outlined on any other (an inset line, so the two are one size).
             backgroundColor: isCurrent ? 'var(--accent)' : 'var(--surface)',
             color: isCurrent ? 'var(--on-accent)' : 'var(--text-primary)',
-            borderWidth: 1,
-            borderStyle: 'solid',
-            borderColor: isCurrent ? 'var(--accent)' : 'var(--border-strong)',
+            ...(isCurrent ? {} : { boxShadow: 'inset 0 0 0 1px var(--border-strong)' }),
             fontFamily: MONO,
             fontSize: 12,
             letterSpacing: '0.1em',
