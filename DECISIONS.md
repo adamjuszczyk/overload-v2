@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 67's review (merged, #210).*
-- *Chunk 67 (the stepped planner's step 3 on the pickers) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's (RC13). One new entry, which doesn't block: 223 (its display choices, accepted as built). Tests owed: none.*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 68's review (merged, #212).*
+- *Chunk 68 (the stepped planner's steps 1–2, confirms and states) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's (RC18). One new entry, which doesn't block: 224 (its display choices, accepted as built). Tests owed: two (below).*
 
 What blocks, in order:
 1. **121** (a to-do, below): the release's migrations PR waits for it.
@@ -11,6 +11,7 @@ Nothing else blocks a chunk or the release.
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **224** — chunk 68's display choices (D31), (a)–(k): the first workout open and one card at a time (a), one exercise open with the arrows on the open member (b), a held day dimmed but tappable (c), START off until the runs are read (d), a failed add's line over the screen (e), subgroup names in sentence case (f), warmup items unnumbered (h); the boards' "Check your connection" lines follow SPEC Errors (15). Recommended: accept all, as built. Blocks: nothing.
 - **223** — chunk 67's display choices (D31), (a)–(l): one workout open at a time (a), exercises start closed (b), "NO EXERCISES YET" (d), a row numbered by its rank with a warmup counted (e), ALL's eyebrow "SET 01" (f), the 132 px REST AFTER column (g), the staged chip in the accent on `--accent-muted` (k), taps on the type picker ignored while a change is read back (l). Recommended: accept all, as built. Blocks: nothing.
 - **222** — on a card that starts with an open warmup, the warmup row keeps 58a's accent W and filled LOG while working set 01 has the current set's accent frame (G54), so two rows read as primary; board W2b draws the warmup in the frame. Recommended: (b), draw an open warmup like any other open row (one condition in `SetRowWarmup.tsx`). Blocks: nothing (display).
 - **221** — chunk 60's display choices (D31), (a)–(i): "SET 04" naming outside a superset, the other open rows as W1 draws them (outlined LOG, compact CUE), the question asked after the row checks its numbers, START SET on the current row only, CANCEL keeping the typed numbers, every open row's ⋮ with SKIP THIS SET before 61 (SPEC C9), a drop out of order asking with 46r's words. Recommended: accept all, as built. Blocks: nothing.
@@ -75,6 +76,8 @@ To-dos:
 
 - **60** (#208): LOG on an unlocked drop that isn't the current set asks first, at the screen (`beforeLog={guard}` on every `SetRowCurrent` in `src/features/gym/WorkoutRow.tsx`, a drop row's included): with the lock on and a drop of an earlier set open, LOG on a later set's drop or a drop out of order opens the question with 46r's words ("Log set 03 drop 1 before set 02?") and writes nothing until it is confirmed. The break it must catch is the review's R1, `beforeLog={isStage ? undefined : guard}`, which passed all 13 tests of `GymSession.logLock.test.tsx`. Behaviour verified right by the code (one `guard` for every open row) and by 46r's own `lockDecision` tests of a drop (`workoutRules.current.test.ts`).
 - **67** (#210): none. The review re-ran 28 of the builder's 49 breaks and 3 of its own (M3, the DROPS stepper's − removing the lowest stages; M4, Normal on a warmup keeping the flag; M5, REST BETWEEN never written): all caught.
+- **68** (#212): the add sheet writes to the workout whose card opened it. `AddExerciseSheet` in `src/features/planner/StepExercises.tsx` builds `useAddProgramExercise(workoutDay.id)`, and the hook's argument is the row's `workout_day_id`. Every StepExercises test mocks the hook and ignores its argument. The break it must catch is the review's R1, `useAddProgramExercise(workoutDay.programId)`, which passed all 97 tests of `StepExercises.test.tsx`, `StepExercises.sequence.test.tsx` and `PlannerPage.boards.test.tsx`. The test records the argument (RULES, 54b's mock rule) and presses + ADD EXERCISE on the second of two unlike workouts. Behaviour verified right by reading the code: the sheet gets the card's own `workoutDay`.
+- **68** (#212): a subgroup that inherits its group's mark shows no mark of its own, and tapping that mark writes it (FOCUS on a subgroup with "INHERITED: FOCUS" writes `{ tagType: 'muscle_subgroup', mark: 'focus' }`, never `null`). `MarkSegment`'s `value` is `sub.ownMark` in `src/features/planner/StepPriorities.tsx`. The break it must catch is the review's R4, `value={sub.effectiveMark}`: the tap would then read as turning the mark off and write `null`. It passed all 16 tests of `StepPriorities.test.tsx`. Behaviour verified right by reading the code (as on staging before the chunk).
 
 ## Format for all new entries
 
@@ -678,6 +681,30 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - Picking Normal on a plain set that still holds a stale `stage_kind` or `stage_rest_seconds` writes nothing. Picking Warmup clears those columns first.
   - Picking Dropset on a plain set writes `stage_kind: 'dropset'`, where the old ADD STAGE left it null.
   - REST BETWEEN is written by the ordered executor, `updateProgramSetStageRest` inside `applyProgramSetTypeOps`, so a pick and a rest change share one in-flight guard.
+
+### 224 Chunk 68's display choices on the stepped planner's steps 1–2, its confirms and states (provisional, D31; accepted as built)
+**Ask:** chunk 68's choices where SPEC, TASKS and boards PP1–PP2f and PP4–PP6 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each one is display, or follows a line of TASKS 68 or SPEC that is already there. None changes what is written. Every write is the hook and the arguments it was before the chunk. START goes through chunk 65's start sheet (214 (a)). The writes are break-proven (the review re-ran 40 of the builder's writer breaks, all caught).
+**Blocks:** nothing.
+**Options:** (a)–(k) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** taken from the builder's report (`<scratchpad>/build/chunk-68-builder-1.md`, section 3) and from the review's reading of the code and of the PP5 and PR8 dumps (#212).
+- (a) The first workout is open to begin with, and one card is open at a time. A workout just added opens. This is the same choice as 223 (a) for step 3, except that PP2 draws a collapse control on the open card, so step 2 has one.
+- (b) One exercise is open at a time. Its move arrows are on whichever member is open, and the write moves the whole superset as before (the old row showed the arrows on a superset's first member only). A block's SUPERSET REST is in the open member's panel (it was one row after the block's last member).
+- (c) A day another workout holds is drawn dimmed, as the board draws it, and stays tappable. The write is unchanged: it takes the day from the other workout.
+- (d) START is off while the runs have not been read, and says nothing. The sheet must know whether a program is running before START PROGRAM can be tapped (214: it never ends one silently). The sheet's list is the saved programs (`usePrograms` filtered to `kind = 'saved'`).
+- (e) A failed add of an exercise is a line over the screen with the real reason ("Couldn't add <name>."), because PP2d draws none.
+- (f) Subgroup names are in sentence case, as PP1 draws them (the app's labels are capitals; group names stay in capitals).
+- (g) Text on the muted accent is `--accent`, because no darker "accent text" token exists. This covers the chosen FOCUS / DON'T CARE, a set REST or TEMPO, and the G14 button.
+- (h) Warmup items lose their "01" numbers (the board draws none).
+- (i) A mark that did not save keeps its error line until the next tap (it was a toast).
+- (j) The slot sheet's eyebrow is the added slot's number for Add and the changed slot's number for Change.
+- (k) A shut exercise row shows only REST, REST AFTER and TEMPO (the board's marks). A unit the exercise sets shows only inside the open row.
+- Boards against SPEC (SPEC wins, as TASKS says, and SPEC already says so: no SPEC change):
+  - PP5's "Couldn't load priorities" draws "Check your connection and try again.". PP5b and PP4b draw "Failed to fetch — you may be offline". Built as SPEC Errors (15) requires: the message the server or the client actually returned, and "You may be offline." only when the phone is offline and there is no message.
+  - PP2f draws a warmup item being edited while the add field is open, and the two can't both happen: a tap from one to the other settles the first. It is drawn as two pictures, PP2f-edit and PP2f-add.
+  - PP4 draws the danger confirm as a pale-red button. The shared `ConfirmDialog` draws it solid, as 189 and 192 accepted for PR6 and PR15.
+- Layout the tests don't pin: the content area's padding is 20 px on step 1 and 16 px on the other steps (the builder's X9 survived; display only, so no test is owed).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
