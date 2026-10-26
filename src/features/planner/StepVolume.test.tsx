@@ -3,8 +3,8 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import type { Program, ProgramExercise, WorkoutDay } from '../../types'
 import { queryClient } from '../../lib/queryClient'
-import { createFakeProgramSetsDb, fakeProgramSet, fakeProgramStage, type FakeProgramSetRow } from './fakeProgramSetsDb.testutil'
-import { FOUND, exercise, makeDay, makeExercise, makeProgram, renderStep, settled } from './stepVolume.testutil'
+import { createFakeProgramSetsDb, type FakeProgramSetRow } from './fakeProgramSetsDb.testutil'
+import { DIPS, FLY, FOUND, INC, LAT, exercise, makeProgram, open, renderStep, settled, textOf, world, worldWorkouts } from './stepVolume.testutil'
 
 // Chunk 67 (TASKS-1.2 "The stepped planner's step 3 on the shared pickers"; SPEC Stepped program planner [1.2]; boards PP3, PP3b, PP6's two volume
 // states). What step 3 DRAWS: the PLANNING segment and its line, a card per workout (the first open, the others closed with their weekday), the
@@ -39,52 +39,17 @@ beforeEach(() => {
   loading = { days: false, exercises: false }
 })
 
-const INC = 'pe-incline'
-const DIPS = 'pe-dips'
-const FLY = 'pe-fly'
-const LAT = 'pe-lat'
-const ROW = 'pe-row'
-
-// Push 1: Incline Dumbbell Press (01 a warmup at 12, 02 and 03 at 8–12, 04 at 8–12 with a rest after of 3 minutes and one drop), Dips (no sets),
-// Pec Deck Fly (three sets, all 10–12), Lateral Raise (four sets with no target). Pull 1: Barbell Row (three sets). Legs: no exercises. Every exercise's
-// sets are at positions 1, 2, 3 ..., so a count or a row read from the wrong exercise shows.
-function world(): FakeProgramSetRow[] {
-  return [
-    fakeProgramSet('inc1', INC, 1, { is_warmup: true, rep_min: 12, rep_max: 12 }),
-    fakeProgramSet('inc2', INC, 2, { rep_min: 8, rep_max: 12 }),
-    fakeProgramSet('inc3', INC, 3, { rep_min: 8, rep_max: 12 }),
-    fakeProgramSet('inc4', INC, 4, { rep_min: 8, rep_max: 12, rest_seconds: 180, stage_kind: 'dropset' }),
-    fakeProgramStage('inc4s1', INC, 'inc4', 4, 1),
-    fakeProgramSet('fly1', FLY, 1, { rep_min: 10, rep_max: 12 }),
-    fakeProgramSet('fly2', FLY, 2, { rep_min: 10, rep_max: 12 }),
-    fakeProgramSet('fly3', FLY, 3, { rep_min: 10, rep_max: 12 }),
-    fakeProgramSet('lat1', LAT, 1),
-    fakeProgramSet('lat2', LAT, 2),
-    fakeProgramSet('lat3', LAT, 3),
-    fakeProgramSet('lat4', LAT, 4),
-    fakeProgramSet('row1', ROW, 1, { rep_min: 6, rep_max: 8 }),
-    fakeProgramSet('row2', ROW, 2, { rep_min: 6, rep_max: 8 }),
-    fakeProgramSet('row3', ROW, 3, { rep_min: 6, rep_max: 8 }),
-  ]
-}
-
 function setup(sets: FakeProgramSetRow[] = world()) {
   db = createFakeProgramSetsDb({ sets })
-  workoutDays = [makeDay('wd-1', 'Push 1', 0), makeDay('wd-2', 'Pull 1', 1), makeDay('wd-3', 'Legs', 2)]
-  exercisesByDay = {
-    'wd-1': [makeExercise(INC, 'wd-1', 'Incline Dumbbell Press', 0), makeExercise(DIPS, 'wd-1', 'Dips', 1), makeExercise(FLY, 'wd-1', 'Pec Deck Fly', 2), makeExercise(LAT, 'wd-1', 'Lateral Raise', 3)],
-    'wd-2': [makeExercise(ROW, 'wd-2', 'Barbell Row', 0)],
-    'wd-3': [],
-  }
+  const w = worldWorkouts()
+  workoutDays = w.workoutDays
+  exercisesByDay = w.exercisesByDay
 }
 
 function arrange(program: Program = makeProgram(), props: Partial<{ volumeReadOnly: boolean; canChangePlanningType: boolean }> = {}, sets?: FakeProgramSetRow[]) {
   setup(sets)
   return renderStep(StepVolume, { program, ...props })
 }
-
-const open = (name: string) => fireEvent.click(screen.getByRole('button', { name: `Show set targets for ${name}` }))
-const textOf = (el: HTMLElement) => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
 describe('step 3 — the planning segment (boards PP3, PP3b)', () => {
   it('week-dependent: the segment says so and the line reads "Only week 1 is planned here; later weeks copy forward."', async () => {

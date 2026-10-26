@@ -120,6 +120,8 @@ export function createFakeProgramSetsDb(initial: { sets: FakeProgramSetRow[]; we
     writes,
     /** Asked before each write to v2_program_sets; a message refuses it (nothing is applied). */
     refuse: null as ((write: FakeWrite) => string | null) | null,
+    /** While a test holds one, a read waits for it: the sets are read again only once the test lets it go (release it in a `finally`). */
+    gate: null as Promise<void> | null,
     /** The sets of one exercise as stored (heads and stages), in position order, then stage order. */
     rowsOf(programExerciseId: string) {
       return state.sets
@@ -253,11 +255,16 @@ export function createFakeProgramSetsDb(initial: { sets: FakeProgramSetRow[]; we
     chain.delete = () => (writes.push({ table, method: 'delete', args: [], eq: q.eq, in: q.in }), (q.op = 'delete'), chain)
     chain.single = () => Promise.resolve(run(true))
     chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
-      try {
-        return Promise.resolve(run(false)).then(resolve, reject)
-      } catch (e) {
-        return Promise.reject(e).then(resolve, reject)
+      const go = () => {
+        try {
+          return Promise.resolve(run(false))
+        } catch (e) {
+          return Promise.reject(e)
+        }
       }
+      // A read waits for `db.gate` when a test holds one (the moments between a write's answer and the sets being read again).
+      const result = q.op === 'read' && db.gate ? db.gate.then(go) : go()
+      return result.then(resolve, reject)
     }
     return chain
   }
