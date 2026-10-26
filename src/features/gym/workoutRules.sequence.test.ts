@@ -443,9 +443,9 @@ function check(s: Session, label: string, stale: ReadonlySet<string>): void {
   const current = currentSet(s.order(), s.server.logs, s.server.held())
   expect(current, `${label}: the current set is the first open row that is no warmup`).toEqual(rows.find((r) => r.kind !== 'warmup' && r.state === 'unlogged') ?? null)
   for (const r of rows) if (r.kind === 'warmup') expect(lockDecision({ logInOrder: true, current, tapped: r }), `${label}: LOG on ${r.key}`).toBe('log')
-  // the finish warning lists the open planned sets with the numbers their rows show
+  // the finish warning lists the open planned sets with the numbers their rows show; since 201 (a) (chunk 64) a set a swap moved from a planned set is one (the walk's own record of the swap says which)
   const warning = finishWarning(s.order(), s.server.logs, s.server.held())
-  const openPlanned = rows.filter((r) => r.kind === 'working' && r.state === 'unlogged' && r.weekPlanSetId !== null)
+  const openPlanned = rows.filter((r) => r.kind === 'working' && r.state === 'unlogged' && (r.weekPlanSetId !== null || s.movedFromPlan(r)))
   expect(warning?.count ?? 0, `${label}: the finish warning`).toBe(openPlanned.length)
 }
 
