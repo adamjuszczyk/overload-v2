@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 60's review (merged, #208).*
-- *Chunk 60 (the log lock) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's RC29. Two new entries, neither blocks: 221 (its display choices, accepted as built) and 222 (the warmup row's accent).*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 67's review (merged, #210).*
+- *Chunk 67 (the stepped planner's step 3 on the pickers) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's (RC13). One new entry, which doesn't block: 223 (its display choices, accepted as built). Tests owed: none.*
 
 What blocks, in order:
 1. **121** (a to-do, below): the release's migrations PR waits for it.
@@ -11,6 +11,7 @@ Nothing else blocks a chunk or the release.
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **223** — chunk 67's display choices (D31), (a)–(l): one workout open at a time (a), exercises start closed (b), "NO EXERCISES YET" (d), a row numbered by its rank with a warmup counted (e), ALL's eyebrow "SET 01" (f), the 132 px REST AFTER column (g), the staged chip in the accent on `--accent-muted` (k), taps on the type picker ignored while a change is read back (l). Recommended: accept all, as built. Blocks: nothing.
 - **222** — on a card that starts with an open warmup, the warmup row keeps 58a's accent W and filled LOG while working set 01 has the current set's accent frame (G54), so two rows read as primary; board W2b draws the warmup in the frame. Recommended: (b), draw an open warmup like any other open row (one condition in `SetRowWarmup.tsx`). Blocks: nothing (display).
 - **221** — chunk 60's display choices (D31), (a)–(i): "SET 04" naming outside a superset, the other open rows as W1 draws them (outlined LOG, compact CUE), the question asked after the row checks its numbers, START SET on the current row only, CANCEL keeping the typed numbers, every open row's ⋮ with SKIP THIS SET before 61 (SPEC C9), a drop out of order asking with 46r's words. Recommended: accept all, as built. Blocks: nothing.
 - **220** — chunk 59's display choices (D31), (a)–(k): the skip line's words beyond W10's one case (a superset member's sets named 01, 02, 03 beside rows A1–A3), SKIP N SETS counting drops, the swap line's plural and empty case, the skip row's inline confirm, the card's SWAPPED FROM and ADDED TODAY on its muscle line, the pickers' words and exclusions, the real reason under "Couldn't swap.". Recommended: accept all, as built. Blocks: nothing.
@@ -73,6 +74,7 @@ To-dos:
 - **59** (#206): a moved dropset's drops show the targets of their own planned drops on the swap's card (`targetsOf`'s stage branch, `src/features/gym/useExerciseCardState.ts`). The break it must catch is the review's M1, that branch returning nothing, which passed all 27 tests of `GymSession.swap.test.tsx` and `GymSession.boards59.test.tsx`. Behaviour verified right: the committed W5 picture draws the moved drop "40 kg @ RIR 0" under AFTER SET 03, and on staging the dip card's drops read the pushdown's (22.5 kg × 8–10 @ RIR 0, 17.5 kg × 6–8 @ RIR 0). In the same run, plan the W5 fixture's drop as board W5 draws it, 40 kg × AMRAP (`set-3-drop` in `GymSession.boards59.test.tsx` has no `isAmrap`, so the picture reads "40 kg @ RIR 0"), and re-capture `w5.html` and the pictures that share its session (W5, W10, W11, W14).
 
 - **60** (#208): LOG on an unlocked drop that isn't the current set asks first, at the screen (`beforeLog={guard}` on every `SetRowCurrent` in `src/features/gym/WorkoutRow.tsx`, a drop row's included): with the lock on and a drop of an earlier set open, LOG on a later set's drop or a drop out of order opens the question with 46r's words ("Log set 03 drop 1 before set 02?") and writes nothing until it is confirmed. The break it must catch is the review's R1, `beforeLog={isStage ? undefined : guard}`, which passed all 13 tests of `GymSession.logLock.test.tsx`. Behaviour verified right by the code (one `guard` for every open row) and by 46r's own `lockDecision` tests of a drop (`workoutRules.current.test.ts`).
+- **67** (#210): none. The review re-ran 28 of the builder's 49 breaks and 3 of its own (M3, the DROPS stepper's − removing the lowest stages; M4, Normal on a warmup keeping the flag; M5, REST BETWEEN never written): all caught.
 
 ## Format for all new entries
 
@@ -650,6 +652,32 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) as built: the warmup keeps 58a's accent W and filled LOG, so two rows read as primary; (b) an open warmup is styled as a non-current open row; (c) the warmup just before the current set in its card keeps the accent, as board W2b ("WARMUPS AS ROWS") draws the first unlogged warmup in the accent frame.
 **Answer:**
 **Evidence:** board W2b draws the first unlogged warmup in the accent frame and working set 01 plain; SPEC Current set and G54 say a warmup never takes part, so 60 gives the accent frame and `data-current-set` to working set 01 (SPEC decides behaviour). `SetRowWarmup` (58a) is untouched. Board W1 draws the curl's warmup LOG outlined when it isn't the next row, which fits (b) or (c). The builder's report, 3(a), third point.
+
+### 223 Chunk 67's display choices on the stepped planner's step 3 (provisional, D31; accepted as built)
+**Ask:** chunk 67's choices where SPEC, TASKS and boards PP3, PP3b, PP3c, PP3d and PP6 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each is display, or follows a line of TASKS 67 or SPEC that is already there. None changes what is counted or written: the writes are the existing `plannerService` functions in the order the table allows, and they are break-proven.
+**Blocks:** nothing.
+**Options:** (a)–(l) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** taken from the builder's report (`<scratchpad>/build/chunk-67-builder-1.md`, section 3) and from the review's reading of the code and of the PP3, PP3b and PP6 dumps against the boards (#210).
+- (a) One workout is open at a time, the first by default. Tapping a closed card opens it and closes the other. The open card has no collapse control (PP3 draws none).
+- (b) Exercises start closed. An exercise with no sets has no chevron (PP3: Dips).
+- (c) The whole closed card is the tap target. The board draws only the chevron as the button.
+- (d) A workout with no exercises opens to "NO EXERCISES YET". No board draws this, and the old step drew nothing for it.
+- (e) A row's number is its rank among all of the exercise's heads, a warmup included (PP3's "01 12 WARMUP"; Plan numbers a warmup W). The picker's eyebrow uses the same number. After REMOVE THIS SET the rows that follow read one lower, and their stored positions keep the gap (213 (a)).
+- (f) ALL's picker eyebrow reads "SET 01", as CHANGE THE PROGRAM's does. No board draws it.
+- (g) The REST AFTER column is 132 px wide where the board has 150, so a warmup's chip fits beside its target at 375 px.
+- (h) A stage row has no rest stepper, because the board draws none.
+- (i) REST AFTER's + is disabled at ten minutes. The old stepper wrote 600 again.
+- (j) Accessible labels: "Set 01: type", "Set 04 type: dropset, 1 drop", "Rep target for set 01", "Rep target for the dropset stage" (with " 2" and so on when there are several stages), "Rest after set 01", "Less / More rest after set 01", "Show / Hide set targets for X", "Show editor for X", "Fewer / More sets for X".
+- (k) The staged chip and a changed REST AFTER draw their text in `var(--accent)` on `--accent-muted`. The board's darker accent-text token doesn't exist in the app. Text on a solid accent is still `--on-accent`.
+- (l) Taps on the set type picker while a change is still being read back are ignored, not queued. The picker shows what the database holds.
+- Readings held against SPEC and TASKS (none is a gap):
+  - A warmup row offers all six types, because TASKS 67 has a staged kind on a warmup write `is_warmup: false` first. Plan's warmup row (G55) offers only Normal and Warmup.
+  - The DROPS stepper's − removes the stage with the highest index, as Plan's does (54a).
+  - Picking Normal on a plain set that still holds a stale `stage_kind` or `stage_rest_seconds` writes nothing. Picking Warmup clears those columns first.
+  - Picking Dropset on a plain set writes `stage_kind: 'dropset'`, where the old ADD STAGE left it null.
+  - REST BETWEEN is written by the ordered executor, `updateProgramSetStageRest` inside `applyProgramSetTypeOps`, so a pick and a rest change share one in-flight guard.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
