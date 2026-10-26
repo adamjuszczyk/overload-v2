@@ -51,6 +51,19 @@ describe('the panel the pen opens (board W2b)', () => {
     captureRender('w2b-edit', container) // after the assertions: a panel that lost a part fails above and leaves the committed fixture alone
   })
 
+  it('UNLOG is enabled on a set that can be unlogged, and disabled with a later drop logged, with the words under the buttons (chunk 63; SPEC 18c; board W2b)', () => {
+    const { container } = renderCard({ plannedSets: [plannedSet(1), plannedSet(2)], logs: logged() })
+    expect(button(open(container, 'set:set-2'), 'UNLOG').disabled).toBe(false)
+    cleanup()
+    const head = headLogOf(1, { stageKind: 'dropset' })
+    const drop = logOf({ id: 'd1-1', parentSetId: 'log-1', stageIndex: 1, setNumber: 1, isDropset: true, weekPlanSetId: 'set-1-drop-1', weight: 50, reps: 10 })
+    const staged = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1)], logs: [head, drop] })
+    const panel = open(staged.container, 'set:set-1')
+    expect(button(panel, 'UNLOG').disabled).toBe(true)
+    expect(within(panel).getByRole('status').textContent).toBe('Log its drops first')
+    captureRender('w2b-unlog-off', staged.container) // after the assertions
+  })
+
   it('a set logged in lbs: the weight is shown in lbs and the box says lbs', () => {
     const lbs = headLogOf(2, { weight: toStorageWeight(120, 'lbs'), reps: 10, rir: 1, formRating: 'controlled', enteredUnit: 'lbs' })
     const { container } = renderCard({ plannedSets: [plannedSet(1), plannedSet(2)], logs: [headLogOf(1), lbs] })
