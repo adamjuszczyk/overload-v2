@@ -5,7 +5,8 @@
 // session, because the rules number a set over its slot, and the current set is the first unlogged one over every card.
 // Nothing here writes to the server: `useSetNumberCorrections.ts` writes the corrected numbers, the cards write the logs.
 import { useRef, useState } from 'react'
-import type { ProgramExercise, SetLog, WeekPlanSet } from '../../types'
+import type { ProgramExercise, SessionSetChange, SetLog, WeekPlanSet } from '../../types'
+import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   addRound,
   currentSet,
@@ -19,6 +20,7 @@ import {
   type OrderSuperset,
   type ResolvedRow,
   type SessionOrder,
+  type SwapRecord,
 } from './workoutRules'
 
 /** One card of the workout as GymSession draws it. `key` is the card's identity, the same on every phone and after a reload. */
@@ -27,6 +29,8 @@ export interface WorkoutCard {
   programExercise: ProgramExercise
   /** The week plan's sets of this card's exercise (heads, drops and warmups); none on a card the plan doesn't have. */
   plannedSets: readonly WeekPlanSet[]
+  /** A card a swap for today made (chunk 59): the record of the sets the swap moved to it, read from the swap's row (46r's `SwapRecord`). */
+  swappedFrom?: SwapRecord
 }
 
 export interface WorkoutRows {
@@ -44,6 +48,19 @@ export interface WorkoutRows {
   track: <T>(write: Promise<T>) => Promise<T>
   /** An added set's log is `logId` from now on (LOG and SKIP): the card's list names it, so the log is never drawn a second time. */
   linkLog: (cardKey: string, localId: string, logId: string) => void
+  /**
+   * A swap for today's moved sets (chunk 59): the entries `movedSetEntries` made for the card the swap makes, listed under that card's key.
+   * Listed before the swap is saved, they are drawn only once the card exists (the swap's row in the cache), so a swap that isn't saved
+   * shows nothing; `removeEntries` takes them back then.
+   */
+  addEntries: (cardKey: string, entries: readonly AddedSet[]) => void
+  removeEntries: (cardKey: string) => void
+  /**
+   * A staged added set (a moved dropset) that was just logged keeps its drops on this phone: the change row that would say how many
+   * (`pending_stages`) has no writer before chunk 62, and without it the set reads as Normal once logged and its open drops vanish.
+   * Phone-local, like the card's list; gone with a reload.
+   */
+  holdStages: (logId: string, stageKind: StageKind, stageCount: number) => void
 }
 
 const NORMAL = Object.freeze({ kind: 'normal' as const })
@@ -52,15 +69,19 @@ export function useWorkoutRows({
   cards,
   blocks,
   logs,
+  initialAdded = {},
 }: {
   cards: readonly WorkoutCard[]
   blocks: readonly OrderSuperset[]
   logs: readonly SetLog[]
+  /** The card lists as they stand when the screen mounts (none on the workout screen today: the list starts empty; chunk 63 restores it from Dexie). */
+  initialAdded?: Record<string, readonly AddedSet[]>
 }): WorkoutRows {
   // The list is the card's own state (G46): it is read by the rules at every render, and by `addSet` at the moment of the tap,
   // through a ref, so two taps in one instant give two places.
-  const [added, setAdded] = useState<Record<string, readonly AddedSet[]>>({})
+  const [added, setAdded] = useState<Record<string, readonly AddedSet[]>>(initialAdded)
   const addedRef = useRef(added)
+  const [held, setHeld] = useState<readonly SessionSetChange[]>([])
   const [busy, setBusy] = useState(0)
   const track = <T,>(write: Promise<T>): Promise<T> => {
     setBusy((n) => n + 1)
@@ -76,14 +97,15 @@ export function useWorkoutRows({
           name: card.programExercise.exercise?.name ?? card.programExercise.exerciseId,
           plannedSets: card.plannedSets,
           added: list[card.key] ?? [],
+          ...(card.swappedFrom !== undefined ? { swappedFrom: card.swappedFrom } : {}),
         }),
       ),
       blocks,
     )
 
   const order = build(added)
-  const rows = resolveRows(order, logs)
-  const current = currentSet(order, logs)
+  const rows = resolveRows(order, logs, held)
+  const current = currentSet(order, logs, held)
 
   function commit(next: Record<string, readonly AddedSet[]>) {
     addedRef.current = next
@@ -101,7 +123,7 @@ export function useWorkoutRows({
 
   function addRoundTo(blockId: string): Array<{ cardKey: string; entry: AddedSet }> {
     const latest = build(addedRef.current)
-    const made = addRound(latest, resolveRows(latest, logs), blockId, logs).map(({ exerciseKey, place }) => ({
+    const made = addRound(latest, resolveRows(latest, logs, held), blockId, logs).map(({ exerciseKey, place }) => ({
       cardKey: exerciseKey,
       entry: { localId: crypto.randomUUID(), logId: null, type: NORMAL, place } satisfies AddedSet,
     }))
@@ -117,5 +139,19 @@ export function useWorkoutRows({
     commit({ ...addedRef.current, [cardKey]: list.map((entry) => (entry.localId === localId ? { ...entry, logId } : entry)) })
   }
 
-  return { order, rows, current, corrections: numberCorrections(order, logs), busy, track, addSet, addRoundTo, linkLog }
+  function addEntries(cardKey: string, entries: readonly AddedSet[]) {
+    if (entries.length === 0) return
+    commit({ ...addedRef.current, [cardKey]: [...(addedRef.current[cardKey] ?? []), ...entries] })
+  }
+
+  function removeEntries(cardKey: string) {
+    const { [cardKey]: _gone, ...rest } = addedRef.current
+    commit(rest)
+  }
+
+  function holdStages(logId: string, stageKind: StageKind, stageCount: number) {
+    setHeld((list) => [...list.filter((change) => change.kind !== 'pending_stages' || change.setLogId !== logId), { kind: 'pending_stages', setLogId: logId, stageKind, stageCount }])
+  }
+
+  return { order, rows, current, corrections: numberCorrections(order, logs, held), busy, track, addSet, addRoundTo, linkLog, addEntries, removeEntries, holdStages }
 }

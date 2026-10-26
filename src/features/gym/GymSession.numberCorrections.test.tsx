@@ -51,7 +51,6 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: { current: null }, direction: null, scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }), useSupersetBlockRests: () => ({ data: [] }), useWarmupRoutineItems: () => ({ data: [] }),
@@ -283,7 +282,14 @@ describe('GymSession — a swap with no record (DECISIONS 198 (a))', () => {
     expect(container.textContent).toContain('Incline Press')
     expect(labels(container)).toEqual(['01', '02', '01', '02']) // the replacement counts from 1, not from the original's 3
     expect(queued).toEqual([])
-    // neither card of the slot offers a second swap (025's unique index refuses one)
-    expect(screen.queryAllByLabelText('Swap exercise for this session')).toHaveLength(0)
+    // neither card of the slot offers a second swap (025's unique index refuses one): "Swap for today" is in neither card's ⋯
+    const options = screen.getAllByLabelText('Exercise options')
+    expect(options).toHaveLength(2)
+    for (const button of options) {
+      fireEvent.click(button)
+      expect(screen.getByText('Exercise history')).toBeTruthy() // the sheet is open
+      expect(screen.queryByText('Swap for today')).toBeNull()
+      fireEvent.click(screen.getByLabelText('Close'))
+    }
   })
 })

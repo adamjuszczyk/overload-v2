@@ -33,6 +33,7 @@ import {
   type ExerciseSwap,
 } from './sessionService'
 import { groupSetLogs } from './setGroupLogic'
+import type { SwapRecord } from './workoutRules'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -879,37 +880,22 @@ export function useStartMovedSession() {
   })
 }
 
-// Records the structural link between a swapped-out slot and its
-// replacement (migration 025). Online-only, same "no offline sync_queue"
-// tier as useUpdateSessionNote/useUpdateSetLog — a plain optimistic update
-// with rollback on error, not full offline support; swapping mid-session is
-// a rare, interactive action, not one this app makes available offline
-// elsewhere either (SwapExerciseSheet.tsx's own exercise picker has no
-// offline branch).
+// Records the structural link between a swapped-out slot and its replacement (migration 025) with the record of which sets moved
+// (migration 047, chunk 59). The swap's row is the first write of a swap (DECISIONS 200 (a), Adam 2026-10-20: "the swap row is saved
+// before any set is skipped"), and it is online only: `networkMode: 'always'`, so offline the request fails at once with the real reason
+// and nothing is written, where the default would hold the mutation until the phone is back. Nothing is shown before the server has it
+// (no optimistic row): a swap that isn't saved leaves every set as it was, and the row put into the cache is the one the server answered.
 export function useRecordExerciseSwap(sessionId: string) {
   const { user } = useAuth()
   const qk = ['v2_sessionSwaps', sessionId] as const
 
   return useMutation({
-    mutationFn: (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) =>
+    networkMode: 'always',
+    mutationFn: (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise; movedSets: SwapRecord }) =>
       recordExerciseSwap({ userId: user!.id, sessionId, ...params }),
-    onMutate: async (params) => {
-      await queryClient.cancelQueries({ queryKey: qk })
-      const prev = queryClient.getQueryData<ExerciseSwap[]>(qk)
-      const optimistic: ExerciseSwap = {
-        id: crypto.randomUUID(),
-        sessionId,
-        programExerciseId: params.programExerciseId,
-        originalExerciseId: params.originalExercise.id,
-        originalExerciseName: params.originalExercise.name,
-        replacementExerciseId: params.replacementExercise.id,
-        replacementExerciseName: params.replacementExercise.name,
-        createdAt: new Date().toISOString(),
-      }
-      queryClient.setQueryData(qk, (old: ExerciseSwap[] | undefined) => [...(old ?? []), optimistic])
-      return { prev }
+    onSuccess: (swap) => {
+      queryClient.setQueryData(qk, (old: ExerciseSwap[] | undefined) => [...(old ?? []).filter((s) => s.id !== swap.id), swap])
     },
-    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
   })
 }

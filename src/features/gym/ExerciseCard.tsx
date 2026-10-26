@@ -1,14 +1,17 @@
 import { Plus } from 'lucide-react'
 import WorkoutExerciseHeader from './WorkoutExerciseHeader'
-import SwapExerciseSheet from './SwapExerciseSheet'
 import { CardRows } from './WorkoutRow'
+import { cardOptions, SwapPickerSheet } from './cardOptions'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 
 // Chunk 58a — a plain exercise's card: its header and reference, then its rows as the session's rules draw them (`useWorkoutRows`:
-// warmups, working sets with their drops, the sets added in the session), + ADD SET, and today's skip-the-rest and swap (chunk 59
-// moves them to the exercise ⋯). Every computation and writer is in useExerciseCardState.ts, which SupersetBlock.tsx calls too.
+// warmups, working sets with their drops, the sets added in the session) and + ADD SET. Chunk 59 (boards W5, W10, W11): the swap and the
+// skip of the rest of the exercise moved into the header's ⋯ (`ExerciseOptionsSheet`, with Add a set and the exercise's history), and
+// the swap's picker is the shared one (`SwapPickerSheet`). The card a swap moved sets from has no + ADD SET (W5). Every computation and
+// writer is in useExerciseCardState.ts, which SupersetBlock.tsx calls too.
 export default function ExerciseCard(props: ExerciseCardProps) {
   const {
+    cardKey,
     programExercise,
     workout,
     referenceSessions,
@@ -19,18 +22,20 @@ export default function ExerciseCard(props: ExerciseCardProps) {
     onRetryReference,
     today,
     swappedFrom,
-    slotSwapped,
+    addedToday,
+    excludeExerciseIds = [],
   } = props
   const state = useExerciseCardState(props)
 
   return (
     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
-      {/* The name, the "LAST = …" line and the history icon; the line and the icon open the last-time sheet (chunk 58b). The plan's targets are
-          in the rows (PlanTargetsPanel is gone). */}
+      {/* The name, the "LAST = …" line and the history icon; the line and the icon open the last-time sheet (chunk 58b), the ⋯ the exercise's
+          options (chunk 59). The plan's targets are in the rows (PlanTargetsPanel is gone). */}
       <WorkoutExerciseHeader
         programExercise={programExercise}
-        onSwapClick={swappedFrom || slotSwapped ? undefined : () => state.setShowSwapSheet(true)}
+        options={cardOptions(state, cardKey, programExercise)}
         swappedFromName={swappedFrom?.exerciseName}
+        addedToday={addedToday}
         today={today}
         scheduleType={referenceScheduleType ?? 'weekday'}
         sessions={referenceSessions}
@@ -44,58 +49,19 @@ export default function ExerciseCard(props: ExerciseCardProps) {
       <div className="px-3 py-3 space-y-1.5">
         <CardRows state={state} rows={state.cardRows} current={workout.current} />
 
-        <button
-          onClick={state.handleAddSet}
-          className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
-          style={{ minHeight: 44, border: '1px dashed var(--border)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-        >
-          <Plus size={12} />
-          ADD SET
-        </button>
-
-        {/* Skip whole exercise — planned sets only, see handleSkipExercise */}
-        {state.hasUnfinishedPlannedWork &&
-          (state.showSkipConfirm ? (
-            <div className="flex gap-2">
-              <button
-                onClick={() => state.setShowSkipConfirm(false)}
-                disabled={state.isSkippingExercise}
-                className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
-                style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={state.handleConfirmSkip}
-                disabled={state.isSkippingExercise}
-                className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
-                style={{ backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)', color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
-              >
-                CONFIRM SKIP
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => state.setShowSkipConfirm(true)}
-              disabled={state.isSkippingExercise}
-              className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
-              style={{ minHeight: 44, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', opacity: state.isSkippingExercise ? 0.6 : 1 }}
-            >
-              {state.isSkippingExercise ? 'SKIPPING…' : 'SKIP REST OF EXERCISE'}
-            </button>
-          ))}
+        {state.canAddSet && (
+          <button
+            onClick={state.handleAddSet}
+            className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
+            style={{ minHeight: 44, border: '1px dashed var(--border)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
+          >
+            <Plus size={12} />
+            ADD SET
+          </button>
+        )}
       </div>
 
-      {state.showSwapSheet && (
-        <SwapExerciseSheet
-          currentExerciseId={programExercise.exerciseId}
-          currentExerciseName={programExercise.exercise?.name ?? 'this exercise'}
-          muscleGroup={programExercise.exercise?.muscleGroup ?? 'other'}
-          remainingSetCount={state.remainingPlannedCount}
-          onConfirm={state.handleConfirmSwap}
-          onClose={() => state.setShowSwapSheet(false)}
-        />
-      )}
+      {state.showSwapSheet && <SwapPickerSheet state={state} programExercise={programExercise} excludeExerciseIds={excludeExerciseIds} />}
     </div>
   )
 }

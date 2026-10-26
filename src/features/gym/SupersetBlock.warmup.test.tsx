@@ -17,7 +17,6 @@ afterEach(() => {
 })
 
 vi.mock('./useSession', () => ({ useLastSessionLogs: () => ({ data: [], isLoading: false }) }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 
 function makeExercise(id: string, name: string): ProgramExercise {
   return {
@@ -61,7 +60,7 @@ function Harness({ ms, onLog }: { ms: SupersetMember[]; onLog: (params: LogReque
       <SupersetBlock
         blockId="block-1" letter="A" members={ms} workout={workout} logs={logs} sessionId="session-1" referenceLoading={false}
         referenceMesocycleId={null} referenceIsError={false} referenceIsFromCache={false} onRetryReference={() => {}} today="2026-01-05"
-        onLog={onLog} onUpdateSet={() => {}} onDeleteSet={async () => {}} onSwap={() => {}}
+        onLog={onLog} onUpdateSet={() => {}} onDeleteSet={async () => {}} onSwap={async () => {}}
       />
     </MemoryRouter>
   )

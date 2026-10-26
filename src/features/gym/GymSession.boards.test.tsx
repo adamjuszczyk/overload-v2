@@ -89,7 +89,6 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: () => {}, direction: 'down', scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('./WarmupRoutineChecklist', () => ({ default: () => null }))
 vi.mock('../offline/SyncFailedNotice', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
@@ -178,7 +177,7 @@ function Frame({ caption, plannedSets, logs, lastLogs = [], lastLogsLoading = fa
     cardKey: programExercise.id, programExercise, plannedSets, workout, logs,
     referenceSessions: lastLogs.length > 0 ? [referenceSessionOf('prev', '2025-12-31', lastLogs)] : [], referenceLoading: lastLogsLoading,
     referenceMesocycleId: null, referenceIsError: false, referenceIsFromCache: false, onRetryReference: () => {}, today: '2026-01-05',
-    onLog: () => Promise.resolve({} as SetLog), onUpdateSet: () => {}, onDeleteSet: async () => {}, onSwap: () => {},
+    onLog: () => Promise.resolve({} as SetLog), onUpdateSet: () => {}, onDeleteSet: async () => {}, onSwap: async () => {},
   })
   return (
     <section data-frame={caption} style={{ margin: '0 16px 18px' }}>

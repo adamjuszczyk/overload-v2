@@ -151,7 +151,6 @@ vi.mock('./useScrollToCurrentSet', () => ({
 vi.mock('./RestTimer', () => ({ default: () => null }))
 vi.mock('./SessionComplete', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 // Empty, same as GymSession.superset.test.tsx's own precedent — the swap's
 // replacement then resolves through resolveReplacementExercise's stub
 // fallback (built from the swap row's own denormalised name/id), not a
