@@ -47,17 +47,51 @@ describe('row states (SPEC [1.2] "Row states", boards W1, W2)', () => {
   const plan = () => [1, 2, 3, 4].map((n) => plannedSet(n, { targetWeight: 55, repMin: 8, repMax: 10, targetRir: 1, targetRirMax: 2 }))
   const logged = () => [headLogOf(1, { weight: 55, reps: 9, rir: 2 }), headLogOf(2, { weight: 55, reps: 8, rir: 1 })]
 
-  it('with sets 1–2 logged, 03 is the current row with its boxes and LOG, and 04 is upcoming with its targets only', () => {
+  it('with sets 1–2 logged, 03 is the current row and 04 is upcoming; both have their boxes and LOG, the logged rows have none (chunk 60: every row can be typed into)', () => {
     const { container } = renderCard({ plannedSets: plan(), logs: logged() })
     expect(rowLabels(container)).toEqual(['01', '02', '03', '04'])
     expect(rowStates(container)).toEqual(['logged', 'logged', 'current', 'upcoming'])
-    // inputs and LOG exist on the current row alone (absence on the others)
-    expect(container.querySelectorAll('input')).toHaveLength(3)
+    // boxes and LOG on every open row (SPEC 18a, board W1: the upcoming row 04 shows the plan's numbers in them), none on a logged row
+    expect(container.querySelectorAll('input')).toHaveLength(6)
     expect(within(current(container)).getByText('LOG')).toBeTruthy()
     const upcoming = rowOf(container, 'set:set-4')
-    expect(upcoming.querySelector('input')).toBeNull()
-    expect(within(upcoming).queryByText('LOG')).toBeNull()
-    expect(upcoming.textContent).toContain('55 kg × 8–10 @ RIR 1–2')
+    expect(upcoming.querySelectorAll('input')).toHaveLength(3)
+    expect(within(upcoming).getByText('LOG')).toBeTruthy()
+    expect((within(upcoming).getByLabelText('Weight') as HTMLInputElement).value).toBe('55')
+    expect((within(upcoming).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('8–10')
+    expect((within(upcoming).getByLabelText('RIR') as HTMLInputElement).placeholder).toBe('1–2')
+    for (const key of ['set:set-1', 'set:set-2']) expect(rowOf(container, key).querySelector('input')).toBeNull()
+    // the jump target and the accent frame are the current row's alone
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect(upcoming.hasAttribute('data-current-set')).toBe(false)
+  })
+
+  it('the current row alone is styled as current: the accent frame and number, the filled LOG; an upcoming row has no frame, a muted number and an outlined LOG (board W1)', () => {
+    const { container } = renderCard({ plannedSets: plan(), logs: logged() })
+    const style = (el: Element | null) => el?.getAttribute('style') ?? ''
+    const frame = (row: HTMLElement) => row.firstElementChild
+    const upcoming = rowOf(container, 'set:set-4')
+    const currentRow = current(container)
+    expect(style(frame(currentRow))).toContain('background-color: var(--accent-muted)')
+    expect(style(frame(currentRow))).toContain('border-color: var(--accent)')
+    expect(style(frame(upcoming))).toContain('background-color: transparent')
+    expect(style(frame(upcoming))).toContain('border-color: transparent')
+    expect(style(within(currentRow).getByText('03'))).toContain('color: var(--accent)')
+    expect(style(within(upcoming).getByText('04'))).toContain('color: var(--text-muted)')
+    expect(style(within(currentRow).getByText('LOG'))).toContain('background-color: var(--accent)')
+    expect(style(within(upcoming).getByText('LOG'))).toContain('background-color: var(--surface)')
+    expect(style(within(upcoming).getByText('LOG'))).toContain('box-shadow: inset 0 0 0 1px var(--border-strong)')
+    expect(style(within(currentRow).getByText('LOG'))).not.toContain('box-shadow')
+  })
+
+  it('a cue is spelled out under the current row and only marked CUE under any other open row (board W1)', () => {
+    const planned = [1, 2, 3].map((n) => plannedSet(n, { targetWeight: 55, repMin: 8, repMax: 8, tags: n === 1 ? ['push here'] : n === 2 ? ['squeeze'] : [] }))
+    const { container } = renderCard({ plannedSets: planned })
+    expect(rowStates(container)).toEqual(['current', 'upcoming', 'upcoming'])
+    expect(rowOf(container, 'set:set-1').textContent).toContain('PUSH HERE')
+    expect(rowOf(container, 'set:set-2').textContent).toContain('CUE')
+    expect(rowOf(container, 'set:set-2').textContent).not.toContain('SQUEEZE')
+    expect(rowOf(container, 'set:set-3').textContent).not.toContain('CUE') // a set with no cue has no mark
   })
 
   it('a logged row reads "55 kg × 9 @ RIR 2" with a pen and a tick', () => {
@@ -232,6 +266,22 @@ describe('the logging-time unit override and MEASURE SET TIME (today\'s, kept in
     typeInto(current(container), 'RIR', '2')
     await pressLog(current(container))
     expect(calls[0]).toMatchObject({ weight: 50, reps: 7, rir: 2 })
+  })
+
+  it('with MEASURE SET TIME on, START SET belongs to the current row alone: another open row (chunk 60) has its RIR box and a LOG that writes no set time', async () => {
+    // the lock is off here so that LOG on the second row writes at once; the set timer is one for the screen, so only the current row starts it
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, measureSetTime: true, logInOrder: false })
+    const { calls, onLog } = spy()
+    const { container } = renderCard({ plannedSets: [1, 2].map((n) => plannedSet(n, { targetWeight: 50, repMin: 8, repMax: 8 })), props: { onLog } })
+    const second = rowOf(container, 'set:set-2')
+    expect(second.hasAttribute('data-current-set')).toBe(false)
+    expect(within(current(container)).getByText('START SET')).toBeTruthy()
+    expect(within(second).queryByText('START SET')).toBeNull()
+    expect(within(second).getByLabelText('RIR')).toBeTruthy()
+    await pressLog(second)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-2', setNumber: 2, weight: 50, reps: 8, setSeconds: null })
+    expect(useSetTimerStore.getState().startedAt).toBeNull() // nothing started the screen's set timer
   })
 
   it('⋮ keeps FORM and SKIP THIS SET reachable until chunk 61\'s sheet: SKIP writes a skipped set under the number the row shows', async () => {

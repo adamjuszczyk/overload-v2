@@ -50,12 +50,18 @@ mark as dropset
 ROUND 2
 
 A2
-60 kg × 10–12 @ RIR 1–2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 11 @ 2
 
 B2
-17.5 kg × 15–20 @ RIR 1
+kg
+×
+RIR
+LOG
 
 CUE
 
@@ -64,7 +70,10 @@ LAST 15 × 17 @ 1
 ROUND 3
 
 A3
-60 kg × 10–12 @ RIR 1–2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 10 @ 2
 
@@ -78,12 +87,18 @@ kg
 ×
 LOG
 01
-30 kg × 8 @ RIR 1
+kg
+×
+RIR
+LOG
 
 LAST 30 × 8 @ 1
 
 02
-30 kg × AMRAP @ RIR 0
+kg
+×
+RIR
+LOG
 
 CUE
 

@@ -15,13 +15,19 @@ LOG
 LAST 15 × 18 @ 1
 
 02
-55 kg × 8 @ RIR 1
+kg
+×
+RIR
+LOG
 
 LAST 15 × 17 @ 1
 
 DROPSET · 1 DROP
 03
-52.5 kg × 10 @ RIR 1
+kg
+×
+RIR
+LOG
 ↳
 40 kg × AMRAP @ RIR 0
 AFTER SET 03
@@ -30,12 +36,18 @@ Seated Cable Row
 BACK
 LAST = LAST WEEK, TUE
 01
-60 kg × 10–12 @ RIR 2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 11 @ 2
 
 02
-60 kg × 10–12 @ RIR 2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 10 @ 2
 
