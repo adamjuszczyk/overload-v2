@@ -1,0 +1,49 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+Push 1
+MON
+Pull 1
+MON
+TUE
+WED
+THU
+FRI
+SAT
+SUN
+01
+Lat Pulldown
+REST AFTER 3min 0s
+02
+Seated Cable Row
+REST 1min 30s
+TEMPO 3-1-1-0
+03
+Face Pull
+REST 1min 0s
+04
+EZ Bar Curl
++
+ADD EXERCISE
+WARMUP ROUTINE
+5 min easy bike
+Band pull-aparts
++
+ADD ITEM
+Delete “Pull 1”?
+This removes the workout and every exercise in it. This can't be undone.
+CANCEL
+DELETE
+Push 2
+THU
+Pull 2
+FRI
+Legs
+SAT
++
+ADD WORKOUT
+SAVE
+START

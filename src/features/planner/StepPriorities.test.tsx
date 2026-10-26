@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags'
 import { PRIORITY_TREE } from '../../lib/priorityTags'
 
@@ -10,19 +10,22 @@ import { PRIORITY_TREE } from '../../lib/priorityTags'
 // mocking precedent and the same 375px proof as PrioritiesEditor.test.tsx.
 
 const mutateMock = vi.fn()
-const showToastMock = vi.fn()
 let programPrioritiesCallArg: string | null = null
+// What the read answers (chunk 68: boards PP1, PP5 and PP5b draw its loading, its failure and a mark that didn't save).
+const read: { rows: Array<{ tagType: string; tagValue: string; mark: string; updatedAt: string }>; isLoading: boolean; isError: boolean; error: unknown } = {
+  rows: [],
+  isLoading: false,
+  isError: false,
+  error: undefined,
+}
+let setMarkPending = false
 
 vi.mock('../plan/useProgramPriorities', () => ({
   useProgramPriorities: (programId: string | null) => {
     programPrioritiesCallArg = programId
-    return { data: [], isLoading: false, isError: false }
+    return { data: read.rows, isLoading: read.isLoading, isError: read.isError, error: read.error }
   },
-  useSetPriorityMark: () => ({ mutate: mutateMock, isPending: false }),
-}))
-
-vi.mock('../notifications/toastStore', () => ({
-  useToastStore: (selector: (s: { show: typeof showToastMock }) => unknown) => selector({ show: showToastMock }),
+  useSetPriorityMark: () => ({ mutate: mutateMock, isPending: setMarkPending }),
 }))
 
 const { default: StepPriorities } = await import('./StepPriorities')
@@ -30,8 +33,12 @@ const { default: StepPriorities } = await import('./StepPriorities')
 afterEach(() => {
   cleanup()
   mutateMock.mockReset()
-  showToastMock.mockReset()
   programPrioritiesCallArg = null
+  read.rows = []
+  read.isLoading = false
+  read.isError = false
+  read.error = undefined
+  setMarkPending = false
 })
 
 beforeEach(() => {
@@ -68,8 +75,10 @@ describe('StepPriorities — parameterised by this step\'s own programId (not th
   it('expanding a group reveals its own subgroups', () => {
     render(<StepPriorities programId="prog-1" />)
     fireEvent.click(screen.getByText(MUSCLE_GROUP_LABELS.chest))
+    // as PP1 words them: "Upper chest", where the app's own label is the capitals
     for (const subgroup of PRIORITY_TREE.chest) {
-      expect(screen.getByText(MUSCLE_SUBGROUP_LABELS[subgroup])).toBeTruthy()
+      const label = MUSCLE_SUBGROUP_LABELS[subgroup]
+      expect(screen.getByText(label.charAt(0) + label.slice(1).toLowerCase())).toBeTruthy()
     }
   })
 
@@ -94,5 +103,126 @@ describe('StepPriorities — parameterised by this step\'s own programId (not th
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+// ─── Chunk 68 (boards PP1, PP5, PP5b): every write as it was, drawn as the boards draw it ───────────────────────────────────────────────────
+
+const row = (tagType: 'muscle_group' | 'muscle_subgroup', tagValue: string, mark: 'focus' | 'dont_care') => ({ tagType, tagValue, mark, updatedAt: '2026-10-01T00:00:00Z' })
+const marks = (name: string) => within(screen.getByRole('group', { name }))
+
+describe('StepPriorities — the writes (W: the same hook, the same arguments)', () => {
+  it('a group\'s FOCUS and DON\'T CARE write that group\'s mark; the mark that is on, tapped, writes null (left normal)', () => {
+    read.rows = [row('muscle_group', 'back', 'focus')]
+    render(<StepPriorities programId="prog-1" />)
+
+    fireEvent.click(marks('Priority for CHEST').getByText("DON'T CARE"))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_group', tagValue: 'chest', mark: 'dont_care' }, expect.anything())
+    fireEvent.click(marks('Priority for CHEST').getByText('FOCUS'))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_group', tagValue: 'chest', mark: 'focus' }, expect.anything())
+    fireEvent.click(marks('Priority for BACK').getByText('FOCUS'))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_group', tagValue: 'back', mark: null }, expect.anything())
+    expect(mutateMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('a subgroup writes its own tag as a muscle_subgroup', () => {
+    render(<StepPriorities programId="prog-1" />)
+    fireEvent.click(screen.getByLabelText('Expand CHEST'))
+
+    fireEvent.click(marks('Priority for Lower chest').getByText("DON'T CARE"))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_subgroup', tagValue: 'lower_chest', mark: 'dont_care' }, expect.anything())
+    fireEvent.click(marks('Priority for Upper chest').getByText('FOCUS'))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_subgroup', tagValue: 'upper_chest', mark: 'focus' }, expect.anything())
+  })
+
+  it('the marks are off while one is being written (a second tap in that time is not sent)', () => {
+    setMarkPending = true
+    render(<StepPriorities programId="prog-1" />)
+    expect((marks('Priority for CHEST').getByText('FOCUS') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(marks('Priority for CHEST').getByText('FOCUS'))
+    expect(mutateMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('StepPriorities — PP1\'s rows', () => {
+  it('the mark that is on is pressed; the summary names the exception; a subgroup with no mark of its own says what it takes from its group', () => {
+    read.rows = [row('muscle_group', 'chest', 'focus'), row('muscle_subgroup', 'lower_chest', 'dont_care')]
+    render(<StepPriorities programId="prog-1" />)
+
+    expect(marks('Priority for CHEST').getByText('FOCUS').getAttribute('aria-pressed')).toBe('true')
+    expect(marks('Priority for CHEST').getByText("DON'T CARE").getAttribute('aria-pressed')).toBe('false')
+    expect(marks('Priority for BACK').getByText('FOCUS').getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText(/^chest without lower chest$/i)).toBeTruthy()
+    expect(screen.queryByText(/^INHERITED/)).toBeNull() // shut: no subgroup rows yet
+
+    fireEvent.click(screen.getByLabelText('Expand CHEST'))
+    expect(screen.getAllByText('INHERITED: FOCUS')).toHaveLength(2) // Upper chest and Mid chest
+    expect(screen.queryByText("INHERITED: DON'T CARE")).toBeNull() // Lower chest has a mark of its own: it inherits nothing
+    expect(marks('Priority for Lower chest').getByText("DON'T CARE").getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('a marked group none of whose subgroups differs has no summary line (the plain name says it all)', () => {
+    read.rows = [row('muscle_group', 'chest', 'focus')]
+    render(<StepPriorities programId="prog-1" />)
+    expect(screen.getAllByText(/^chest$/i)).toHaveLength(1) // the name, and no "chest" under it
+    expect(screen.queryByText(/without/i)).toBeNull()
+  })
+
+  it('a group with no mark has no summary; the chevron names what it will do and says whether the group is unfolded', () => {
+    read.rows = [row('muscle_subgroup', 'lower_chest', 'dont_care')]
+    render(<StepPriorities programId="prog-1" />)
+    expect(screen.queryByText(/without/i)).toBeNull()
+    const toggle = screen.getByLabelText('Expand CHEST')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(screen.getByLabelText('Collapse CHEST').getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByLabelText('Collapse CHEST'))
+    expect(screen.queryByText('Lower chest')).toBeNull()
+  })
+})
+
+describe('StepPriorities — a failure says why (PP5, PP5b; SPEC Errors (15))', () => {
+  it('a mark that did not save: "Couldn\'t update priorities." with the server\'s own message over the list, until the next tap', () => {
+    mutateMock.mockImplementation((_vars: unknown, options: { onError: (error: unknown) => void }) => options.onError({ message: 'permission denied for table v2_program_priorities' }))
+    render(<StepPriorities programId="prog-1" />)
+
+    fireEvent.click(marks('Priority for BICEPS').getByText('FOCUS'))
+    expect(screen.getByText("Couldn't update priorities.")).toBeTruthy()
+    expect(screen.getByText('permission denied for table v2_program_priorities')).toBeTruthy()
+
+    mutateMock.mockImplementation(() => {})
+    fireEvent.click(marks('Priority for BICEPS').getByText('FOCUS'))
+    expect(screen.queryByText("Couldn't update priorities.")).toBeNull()
+  })
+
+  it('an error with no message says "Something went wrong.", and "You may be offline." only when the phone is', () => {
+    mutateMock.mockImplementation((_vars: unknown, options: { onError: (error: unknown) => void }) => options.onError({}))
+    render(<StepPriorities programId="prog-1" />)
+    fireEvent.click(marks('Priority for BICEPS').getByText('FOCUS'))
+    expect(screen.getByText('Something went wrong.')).toBeTruthy()
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    try {
+      fireEvent.click(marks('Priority for BICEPS').getByText('FOCUS'))
+      expect(screen.getByText('You may be offline.')).toBeTruthy()
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
+    }
+  })
+
+  it('a read that fails says "Couldn\'t load priorities" and the real reason; one still out is a spinner', () => {
+    read.isError = true
+    read.error = { message: 'JWT expired' }
+    const { unmount } = render(<StepPriorities programId="prog-1" />)
+    expect(screen.getByText("Couldn't load priorities")).toBeTruthy()
+    expect(screen.getByText('JWT expired')).toBeTruthy()
+    expect(screen.queryByText('Check your connection and try again.')).toBeNull()
+    unmount()
+
+    read.isError = false
+    read.isLoading = true
+    render(<StepPriorities programId="prog-1" />)
+    expect(screen.getByLabelText('Loading priorities')).toBeTruthy()
+    expect(screen.queryByText('CHEST')).toBeNull()
   })
 })

@@ -63,8 +63,6 @@ vi.mock('../settings/settingsStore', () => ({
   useSettingsStore: (selector: (s: { weightUnit: string }) => unknown) => selector({ weightUnit: 'kg' }),
 }))
 
-vi.mock('../programs/ExercisePicker', () => ({ default: () => null }))
-
 const { default: StepExercises } = await import('./StepExercises')
 
 afterEach(() => {
@@ -175,12 +173,11 @@ describe('StepExercises — SequenceEditor (chunk 25)', () => {
     render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
 
     fireEvent.click(sequenceRegion().getByText('ADD SLOT'))
-    expect(sequenceRegion().getByText('ADD SLOT', { selector: 'p' })).toBeTruthy() // sheet title
-    // Two "A" buttons now exist inside the region: the existing row and the
-    // picker's own option — the picker renders AFTER the existing row in
-    // DOM order, so the last one is the picker's.
-    const options = sequenceRegion().getAllByText('A')
-    fireEvent.click(options[options.length - 1])
+    // PP2c: the slot sheet (a BottomSheet, so drawn in the page's body and no longer inside the region): the next slot's number over "Add slot".
+    const sheet = within(screen.getByRole('dialog'))
+    expect(sheet.getByText('Add slot')).toBeTruthy()
+    expect(sheet.getByText('SEQUENCE · SLOT 02')).toBeTruthy()
+    fireEvent.click(sheet.getByText('A'))
 
     expect(addSequenceItemMutateAsyncMock).toHaveBeenCalledWith({ position: 1, workoutDayId: 'wd-1' })
   })
@@ -190,21 +187,27 @@ describe('StepExercises — SequenceEditor (chunk 25)', () => {
     render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
 
     fireEvent.click(sequenceRegion().getByText('ADD SLOT'))
-    fireEvent.click(sequenceRegion().getByText('REST DAY'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('REST DAY'))
 
     expect(addSequenceItemMutateAsyncMock).toHaveBeenCalledWith({ position: 0, workoutDayId: null })
   })
 
-  it('tapping an existing slot opens CHANGE SLOT; picking a different workout calls useUpdateSequenceItemWorkout with that slot id', () => {
+  it('tapping an existing slot opens "Change slot" (its own number over it); picking a different workout calls useUpdateSequenceItemWorkout with that slot id', () => {
     workoutDays = [day({ id: 'wd-1', name: 'A' }), day({ id: 'wd-2', name: 'B' })]
-    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' })]
+    sequenceItems = [
+      seqItem({ id: 'si-0', position: 0, workoutDayId: null }),
+      seqItem({ id: 'si-1', position: 1, workoutDayId: 'wd-1' }),
+    ]
     render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
 
     fireEvent.click(sequenceRegion().getByText('A')) // the existing row's own label
-    expect(sequenceRegion().getByText('CHANGE SLOT')).toBeTruthy()
-    fireEvent.click(sequenceRegion().getByText('B'))
+    const sheet = within(screen.getByRole('dialog'))
+    expect(sheet.getByText('Change slot')).toBeTruthy()
+    expect(sheet.getByText('SEQUENCE · SLOT 02')).toBeTruthy()
+    fireEvent.click(sheet.getByText('B'))
 
     expect(updateSequenceItemMutateMock).toHaveBeenCalledWith({ id: 'si-1', workoutDayId: 'wd-2' })
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('reorder: moving the second slot up swaps its position with the first, dense positions, via useReorderSequenceItems', () => {
@@ -238,17 +241,30 @@ describe('StepExercises — SequenceEditor (chunk 25)', () => {
     expect((downButtons[downButtons.length - 1] as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('remove: the delete icon opens a confirm sheet; confirming calls useRemoveSequenceItem with the slot id', () => {
-    workoutDays = [day({ id: 'wd-1', name: 'A' })]
-    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' })]
+  it('remove: the delete icon opens a confirm (PP4); confirming calls useRemoveSequenceItem with the id of the slot it was pressed on (the second of two)', () => {
+    workoutDays = [day({ id: 'wd-1', name: 'A' }), day({ id: 'wd-2', name: 'B' })]
+    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' }), seqItem({ id: 'si-2', position: 1, workoutDayId: 'wd-2' })]
     render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
 
     const deleteButtons = sequenceRegion().getAllByRole('button').filter((b) => b.querySelector('svg.lucide-trash2'))
-    fireEvent.click(deleteButtons[0])
+    fireEvent.click(deleteButtons[1])
     expect(sequenceRegion().getByText('Remove this slot?')).toBeTruthy()
+    expect(sequenceRegion().getByText("“B”. This can't be undone.")).toBeTruthy()
     fireEvent.click(sequenceRegion().getByText('REMOVE'))
 
-    expect(removeSequenceItemMutateMock).toHaveBeenCalledWith('si-1')
+    expect(removeSequenceItemMutateMock).toHaveBeenCalledWith('si-2')
+  })
+
+  it('the slot rows are named as PP2b names them, and a slot that is a rest day is the words REST DAY', () => {
+    workoutDays = [day({ id: 'wd-1', name: 'A' })]
+    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' }), seqItem({ id: 'si-2', position: 1, workoutDayId: null })]
+    render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
+    expect(sequenceRegion().getByLabelText('Change slot 01: A')).toBeTruthy()
+    expect(sequenceRegion().getByLabelText('Change slot 02: REST DAY')).toBeTruthy()
+    expect(sequenceRegion().getAllByLabelText('Move slot up')).toHaveLength(2)
+    expect(sequenceRegion().getAllByLabelText('Remove slot')).toHaveLength(2)
+    expect(sequenceRegion().getByText('01')).toBeTruthy()
+    expect(sequenceRegion().getByText('02')).toBeTruthy()
   })
 
   it('CANCEL on the remove sheet writes nothing', () => {

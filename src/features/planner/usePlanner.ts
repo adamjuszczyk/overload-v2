@@ -2,23 +2,22 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import type { ProgramSet, WeeklySchedule, DayOfWeek, WorkoutDay } from '../../types'
-import type { RepTarget, StageKind } from '../../lib/plannerVocabulary.js'
+import type { RepTarget } from '../../lib/plannerVocabulary.js'
 import { updateSchedule } from '../programs/programService'
 import {
   fetchProgramSets,
   setExerciseSetCount,
   updateProgramSetRepTarget,
   setRepTargetForAllSets,
-  updateProgramSetIsWarmup,
-  updateProgramSetStageKind,
   updateProgramSetRest,
   updateProgramSetStageRest,
-  addProgramSetStage,
   removeProgramSet,
+  applyProgramSetTypeOps,
   assignWorkoutWeekday,
   splitSharedWeekdayWorkouts,
   type SharedWeekdayGroup,
 } from './plannerService'
+import type { ProgramSetTypeOp } from './programSetRows'
 
 // Chunk 11 — TanStack hooks over plannerService.ts, following
 // useProgramPriorities.ts's own shape (hoisted key function, `enabled`
@@ -52,8 +51,15 @@ export function useProgramSets(programExerciseIds: readonly string[]) {
 // write touched; invalidating the whole prefix instead (TanStack Query's
 // default prefix match) just refetches every currently-mounted sets query,
 // cheap at this scale (a handful of exercises per workout).
+//
+// Chunk 67: it returns the invalidation, so a mutation that returns it from
+// onSuccess / onSettled stays pending until the sets have been read again. The
+// screen's guards read `isPending` (the SETS stepper's buttons, the set type
+// picker's taps): without it a second tap in the moments between the write's
+// answer and the refetch's would work its change out from the rows as they were
+// (a + then another + wrote one position twice).
 function invalidateProgramSets() {
-  queryClient.invalidateQueries({ queryKey: [SETS_KEY_PREFIX] })
+  return queryClient.invalidateQueries({ queryKey: [SETS_KEY_PREFIX] })
 }
 
 export function useSetExerciseSetCount() {
@@ -81,28 +87,6 @@ export function useUpdateSetRepTarget() {
   })
 }
 
-// Chunk 15 — StepVolume.tsx's WARMUP toggle, head-only (same posture as
-// useUpdateProgramSetStageKind below).
-export function useUpdateProgramSetIsWarmup() {
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({ id, isWarmup }: { id: string; isWarmup: boolean }) => updateProgramSetIsWarmup(id, isWarmup),
-    onSuccess: invalidateProgramSets,
-  })
-}
-
-// Chunk 14 — StepVolume.tsx's STAGE KIND chip row (same affordance
-// PlanPage.tsx's own week-plan chips use, one layer up — SPEC "Staged
-// sets").
-export function useUpdateProgramSetStageKind() {
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({ id, stageKind }: { id: string; stageKind: StageKind | null }) =>
-      updateProgramSetStageKind(id, stageKind),
-    onSuccess: invalidateProgramSets,
-  })
-}
-
 // Chunk 16 (SPEC "Rest") — StepVolume.tsx's per-set REST stepper, any row
 // (head or stage). Design field: never gated by volumeReadOnly — see that
 // file's own header comment.
@@ -126,30 +110,26 @@ export function useUpdateProgramSetStageRest() {
   })
 }
 
-// StepVolume.tsx's own ADD STAGE — parentId given directly, same posture
-// as useAddStage (PlanPage.tsx's week-plan equivalent, useWeekPlan.ts).
-export function useAddProgramSetStage() {
+// Chunk 67 — a set type picked on the stepped planner's set type picker: the
+// list of writes `programSetTypeChange` works out (programSetRows.ts), applied
+// in order by `applyProgramSetTypeOps`, each after the one before is answered.
+// The sets are read again whatever the outcome (a refused write stops the rest,
+// and the picker then shows what the database holds).
+export function useChangeProgramSetType() {
   const { user } = useAuth()
   return useMutation({
     networkMode: 'always',
-    mutationFn: ({
-      programExerciseId,
-      parentId,
-      position,
-      stageIndex,
-    }: {
-      programExerciseId: string
-      parentId: string
-      position: number
-      stageIndex: number
-    }) => addProgramSetStage(user!.id, programExerciseId, parentId, position, stageIndex),
-    onSuccess: invalidateProgramSets,
+    mutationFn: ({ ops }: { ops: ProgramSetTypeOp[] }) => applyProgramSetTypeOps(user!.id, ops),
+    onSettled: invalidateProgramSets,
   })
 }
 
-// One row at a time — StepVolume.tsx's per-stage remove button. (The SETS
-// stepper's own bulk head-shrink path, useSetExerciseSetCount above, stays
-// its own thing — this is only ever a single stage id.)
+// One row at a time: the set type picker's REMOVE THIS SET (chunk 67; a head,
+// whose stages the cascade takes with it) calls it with the head's id. It was
+// the stage's own remove button's until that icon went (a stage's removal is
+// now the picker's stepper, through `useChangeProgramSetType`). The SETS
+// stepper's own bulk head-shrink path, useSetExerciseSetCount above, stays its
+// own thing.
 export function useRemoveProgramSetStage() {
   return useMutation({
     networkMode: 'always',

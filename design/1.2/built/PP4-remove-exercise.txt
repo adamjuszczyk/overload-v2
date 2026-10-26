@@ -1,0 +1,63 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+Push 1
+MON
+Pull 1
+MON
+TUE
+WED
+THU
+FRI
+SAT
+SUN
+01
+Lat Pulldown
+BACK
+UNIT
+INHERIT (KG)
+KG
+LBS
+REST
+−
+GLOBAL
++
+REST AFTER
+−
+3min 0s
++
+TEMPO
+—
+02
+Seated Cable Row
+REST 1min 30s
+TEMPO 3-1-1-0
+03
+Face Pull
+REST 1min 0s
+04
+EZ Bar Curl
++
+ADD EXERCISE
+WARMUP ROUTINE
+5 min easy bike
+Band pull-aparts
++
+ADD ITEM
+Remove “Lat Pulldown”?
+This also removes its planned sets here. This can't be undone.
+CANCEL
+REMOVE
+Push 2
+THU
+Pull 2
+FRI
+Legs
+SAT
++
+ADD WORKOUT
+SAVE
+START

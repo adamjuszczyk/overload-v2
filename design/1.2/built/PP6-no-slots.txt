@@ -1,0 +1,18 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+NO SLOTS YET
++
+ADD SLOT
+
+NO WORKOUTS YET
+
++
+ADD WORKOUT
+SAVE
+START
+
+Schedule at least one workout to start
