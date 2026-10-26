@@ -10,7 +10,7 @@ import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
 import { deleteEffects, lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
-import { NeedsConnectionError, runDelete, type SessionWriters } from './setDelete'
+import { runDelete, type SessionWriters } from './setDelete'
 import { deleteConfirm, loggedNumbersText, plannedNumbersText } from './setOptionsView'
 import { canMove, planSkipRest, planSwap, type SkipItem } from './exerciseOptions'
 
@@ -369,10 +369,9 @@ export function useExerciseCardState({
   //     left naming a log that is gone would be drawn as an open set. A drop deleted on its own changes no entry: a drop can only be deleted
   //     once its head is logged, and a logged head's drops are its `pending_stages` row's (the written row, held at once like the others).
   //   - `workout.track` holds the screen's own number corrections back until the whole delete, its renumber included, is done.
-  // Rejects with the reason when something wasn't written (the confirm says so); a delete that needs a connection and has none writes nothing.
+  // Rejects with the reason when something wasn't written (the confirm says so). Every delete works offline (G47): what it writes is queued.
   async function handleDeleteRow(row: ResolvedRow): Promise<void> {
     const effects = deleteEffects(row, { rows: workout.rows, logs, changes: workout.changes })
-    if (effects.headPatch !== null && !writers.online) throw new NeedsConnectionError()
     const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
     if (row.kind !== 'stage' && row.added && row.localId !== null) workout.removeAdded(cardKey, row.localId)
     try {

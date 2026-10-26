@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { NeedsConnectionError, runDelete, type DeleteDeps } from './setDelete'
+import { runDelete, type DeleteDeps } from './setDelete'
 import type { DeleteEffects } from './workoutRules'
 
 // Chunk 61 — `runDelete`, the order a delete is sent in (TASKS-1.2 61: "the stages then the head ... then the renumber patches"; setDelete.ts's header): the
@@ -19,7 +19,7 @@ type Step = 'delete drop' | 'delete head' | 'stage kind' | 'change rows' | 'numb
 const STEPS: Step[] = ['delete drop', 'delete head', 'stage kind', 'change rows', 'numbers']
 
 /** Every writer is a gate: it records that it started, and settles when the test says so. */
-function gated(online = true) {
+function gated() {
   const started: Step[] = []
   const gates = new Map<Step, { open: () => void; fail: (err: Error) => void }>()
   const gate = (step: Step) =>
@@ -30,7 +30,6 @@ function gated(online = true) {
   const deps: DeleteDeps = {
     deleteLog: (log) => gate(log.id === 'drop' ? 'delete drop' : 'delete head'),
     writers: {
-      online,
       writeChanges: () => gate('change rows'),
       patchNumbers: () => gate('numbers'),
       clearStageKind: () => gate('stage kind'),
@@ -82,26 +81,22 @@ describe('runDelete', () => {
     expect(started).toEqual(['delete drop', 'delete head'])
   })
 
-  it('a delete that needs a connection and has none writes nothing at all and says so; with nothing to patch it is sent like any other offline', async () => {
-    const offline = gated(false)
-    await expect(runDelete(effects(), offline.deps)).rejects.toBeInstanceOf(NeedsConnectionError)
-    await expect(runDelete(effects(), offline.deps)).rejects.toThrow('Requires a connection')
-    expect(offline.started).toEqual([])
-    const sendable = gated(false)
-    const run = runDelete(effects({ headPatch: null }), sendable.deps)
-    for (const step of ['delete drop', 'delete head', 'change rows', 'numbers'] as const) {
-      await sendable.tick()
-      sendable.gates.get(step)!.open()
+  it('a delete that clears the head\'s stage kind asks nothing about the connection: it is sent whole, in order (chunk 61\'s review 1, F1: the writers queue it offline)', async () => {
+    const { deps, started, gates, tick } = gated()
+    const run = runDelete(effects(), deps)
+    for (const step of STEPS) {
+      await tick()
+      gates.get(step)!.open()
     }
     await run
-    expect(sendable.started).toEqual(['delete drop', 'delete head', 'change rows', 'numbers'])
+    expect(started).toEqual(STEPS)
   })
 
   it('hands each log to the delete with its id and its head, the drops first (the queue names a drop\'s head)', async () => {
     const deleteLog = vi.fn(async (_log: { id: string; parentSetId: string | null }) => {})
     await runDelete(effects({ changes: [], renumber: [], headPatch: null }), {
       deleteLog,
-      writers: { online: true, writeChanges: async () => {}, patchNumbers: async () => {}, clearStageKind: async () => {} },
+      writers: { writeChanges: async () => {}, patchNumbers: async () => {}, clearStageKind: async () => {} },
     })
     expect(deleteLog.mock.calls.map(([log]) => [log.id, log.parentSetId])).toEqual([['drop', 'head'], ['head', null]])
   })

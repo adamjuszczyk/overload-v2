@@ -11,6 +11,7 @@ import {
   addRound,
   currentSet,
   finishWarning,
+  holdsAutoFinish,
   nextAddedPlace,
   numberCorrections,
   resolveRows,
@@ -42,9 +43,16 @@ export interface WorkoutRows {
   current: ResolvedRow | null
   /**
    * What the rows say is left (46r's `finishWarning`: the planned working sets still unlogged, a deleted one not among them), or null when nothing
-   * is. The finish screen's warning (chunk 64) and the auto-finish (chunk 61, DECISIONS 166 (a)) read the same view.
+   * is. The finish screen's warning reads this (chunk 64).
    */
   finish: FinishWarning | null
+  /**
+   * Auto-finish's question (chunk 61, DECISIONS 166 (a)): nothing is left to log. The finish warning is empty AND no open row is a drop of a
+   * planned set or a planned warmup (`holdsAutoFinish`); the warning alone lists the planned working sets only, so an open planned drop or an
+   * open planned warmup would let the session complete by itself (61's review 1, F2). The warning stays in it: 64 adds a swap's moved planned
+   * sets to the warning (DECISIONS 201 (a)) and auto-finish follows.
+   */
+  nothingLeft: boolean
   /** The number patches the rows call for (DECISIONS 178, 185 (c)): logged sets whose stored number is not the row's. */
   corrections: NumberPatch[]
   /** + ADD SET: a new open set on the card, with its place (DECISIONS 174); its entry. */
@@ -137,6 +145,7 @@ export function useWorkoutRows({
 
   const order = build(added)
   const rows = resolveRows(order, logs, allChanges)
+  const finish = finishWarning(order, logs, allChanges)
   const current = currentSet(order, logs, allChanges)
 
   function commit(next: Record<string, readonly AddedSet[]>) {
@@ -200,7 +209,8 @@ export function useWorkoutRows({
     order,
     rows,
     current,
-    finish: finishWarning(order, logs, allChanges),
+    finish,
+    nothingLeft: finish === null && !rows.some(holdsAutoFinish),
     corrections: numberCorrections(order, logs, allChanges),
     busy,
     track,

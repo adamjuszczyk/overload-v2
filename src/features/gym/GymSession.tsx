@@ -38,6 +38,7 @@ import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkout
 import { patchSetNumbers, useSetNumberCorrections } from './useSetNumberCorrections'
 import { changesOf, writeSetChanges } from './useSessionSetChanges'
 import type { SessionWriters } from './setDelete'
+import { clearStageKind } from './clearStageKind'
 import { formatClock, jumpLabelText } from './workoutRowView'
 import WorkoutHeader, { OfflineStrip } from './WorkoutHeader'
 import { headerEyebrow, setsLabel, setsProgress } from './workoutHeaderLogic'
@@ -320,9 +321,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     logs: allCurrentLogs,
     busy: workout.busy,
   })
-  // DECISIONS 166 (a): auto-finish waits for what the workout's rows say is left, the same view as the finish warning, so a planned set deleted
-  // during the workout no longer keeps the session from finishing.
-  useAutoFinishSession(session, weekPlan, workout.finish === null)
+  // DECISIONS 166 (a): auto-finish waits for what the workout's rows say is left: the finish warning's planned working sets AND the open drops of
+  // planned sets and open planned warmups it leaves out (`nothingLeft`, 61's review 1, F2), so a planned set deleted during the workout no
+  // longer keeps the session from finishing, and an open planned drop or warmup still does.
+  useAutoFinishSession(session, weekPlan, workout.nothingLeft)
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } = useScrollToCurrentSet()
 
@@ -376,7 +378,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     online: isOnline,
     writeChanges: (writes) => writeSetChanges({ sessionId, userId: user!.id, writes, online: isOnline }),
     patchNumbers: (patches) => patchSetNumbers({ sessionId, patches, logs: allCurrentLogs, flush: isOnline }),
-    clearStageKind: (logId) => updateSetLog.mutateAsync({ id: logId, changes: { stageKind: null } }),
+    clearStageKind: (logId) =>
+      clearStageKind({ sessionId, logId, online: isOnline, update: (id) => updateSetLog.mutateAsync({ id, changes: { stageKind: null } }) }),
   }
   // Swap exercise for this session only (SPEC v1.1 "Part C"), chunk 59: the swap's row is saved FIRST, with the record of which sets moved
   // (migration 047; DECISIONS 200 (a): "the swap row is saved before any set is skipped"), and it fails with the real reason when it can't

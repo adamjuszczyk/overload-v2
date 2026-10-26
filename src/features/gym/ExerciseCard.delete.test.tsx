@@ -328,15 +328,19 @@ describe('a drop on its own (board W8; DECISIONS 147 (a))', () => {
     ])
   })
 
-  it('offline, a delete that has to patch the head\'s stage kind writes nothing at all and says "Requires a connection" (the queue\'s patch is a set number only)', async () => {
+  it('offline, the same delete is made as online: the drop\'s log, the head\'s stage kind and the `retyped` Normal row, in that order, and W9 does not ask for a connection (G47; 61\'s review 1, F1)', async () => {
     const { order, deleted, writers, onDeleteSet } = recorder({ online: false })
     const { container } = renderCard({ plannedSets: dropsetPlan(1), logs: [headLogOf(1, { stageKind: 'dropset' }), dropLog(1, 1)], props: { onDeleteSet, writers } })
     askFromPanel(container, 'set:set-1:stage:1')
     await press(within(dialog()).getByText('DELETE SET'))
-    expect(order).toEqual([])
-    expect(deleted).toEqual([])
-    expect(within(dialog()).getByText('Requires a connection')).toBeTruthy()
-    expect(rowLabels(container)).toEqual(['01', '↳']) // still there
+    expect(deleted).toEqual(['d1'])
+    expect(order).toEqual([
+      'delete d1',
+      'kind log-1',
+      `changes ${JSON.stringify([{ change: { kind: 'retyped', weekPlanSetId: 'set-1', type: { kind: 'normal' } }, id: null }])}`,
+    ])
+    expect(screen.queryByRole('alertdialog')).toBeNull() // W9 closed: the delete is done
+    expect(screen.queryByText('Requires a connection')).toBeNull()
   })
 
   it('offline, a drop that leaves other drops needs no stage-kind patch and is written', async () => {

@@ -21,6 +21,7 @@ const hooks = vi.hoisted(() => ({
   updateAsync: vi.fn(),
   writeChanges: vi.fn(),
   queuePatch: vi.fn(),
+  queueKindClear: vi.fn(),
   flush: vi.fn(),
   updateSet: vi.fn(),
   allPlans: [] as unknown[],
@@ -36,11 +37,12 @@ afterEach(() => {
 beforeEach(() => {
   scheduleType = 'weekday'
   hooks.online = true
-  for (const fn of [hooks.deleteLog, hooks.updateMutate, hooks.updateAsync, hooks.writeChanges, hooks.queuePatch, hooks.flush, hooks.updateSet]) fn.mockReset()
+  for (const fn of [hooks.deleteLog, hooks.updateMutate, hooks.updateAsync, hooks.writeChanges, hooks.queuePatch, hooks.queueKindClear, hooks.flush, hooks.updateSet]) fn.mockReset()
   hooks.deleteLog.mockResolvedValue(undefined)
   hooks.updateAsync.mockResolvedValue(undefined)
   hooks.writeChanges.mockResolvedValue(undefined)
   hooks.queuePatch.mockResolvedValue(true)
+  hooks.queueKindClear.mockResolvedValue(undefined)
   hooks.flush.mockResolvedValue(undefined)
   hooks.updateSet.mockResolvedValue(undefined)
   hooks.allPlans = []
@@ -116,7 +118,7 @@ vi.mock('./useSession', () => ({
   useSessionSwaps: () => ({ data: [] }),
   useRecordExerciseSwap: () => ({ mutate: vi.fn() }),
 }))
-vi.mock('../offline/useSyncQueue', () => ({ queueSetLogPatch: hooks.queuePatch, flushSyncQueue: hooks.flush }))
+vi.mock('../offline/useSyncQueue', () => ({ queueSetLogPatch: hooks.queuePatch, queueSetLogStageKindClear: hooks.queueKindClear, flushSyncQueue: hooks.flush }))
 vi.mock('./useSessionSetChanges', async (original) => ({ ...(await original<typeof import('./useSessionSetChanges')>()), writeSetChanges: hooks.writeChanges }))
 vi.mock('../plan/weekPlanService', () => ({ updateSet: hooks.updateSet }))
 vi.mock('../plan/useWeekPlan', () => ({ useAllWeekPlans: () => ({ data: hooks.allPlans }) }))
@@ -244,18 +246,34 @@ describe('DELETE, as the screen sends it (online)', () => {
     expect(hooks.updateAsync.mock.calls).toEqual([[{ id: 'l-lat-3', changes: { stageKind: null } }]])
     expect(hooks.writeChanges).toHaveBeenCalledWith(expect.objectContaining({ writes: [{ change: { kind: 'retyped', weekPlanSetId: 'lat-3', type: { kind: 'normal' } }, id: null }] }))
     expect(hooks.updateSet).not.toHaveBeenCalled()
+    expect(hooks.queueKindClear).not.toHaveBeenCalled() // online it is the request, not a queue item
   })
 
-  it('offline that same delete writes nothing: no log, no row, no head patch', async () => {
+  // Chunk 61's review 1, F1 (G47: delete set works offline): the last drop of a logged head, offline. The log delete is queued by `useDeleteSetLog` (the screen
+  // calls it either way), the head's stage kind is ONE queue item of 58a's patch (`{ id, stage_kind: null }`, `queueSetLogStageKindClear`) and never
+  // `useUpdateSetLog` (TanStack pauses that mutation offline and the confirm would sit on DELETING…), the `retyped` Normal row is a queued upsert.
+  it('offline the same delete is made, not refused: the drop\'s log, then the head\'s stage kind as a queued patch (never `useUpdateSetLog`), then the `retyped` Normal row queued; W9 closes without asking for a connection', async () => {
     hooks.online = false
     const { container } = open(logs())
     fireEvent.click(within(rowOf(container, 'set:lat-3:stage:1')).getByLabelText('Edit set'))
     fireEvent.click(within(rowOf(container, 'set:lat-3:stage:1')).getByText('DELETE'))
     await press(within(screen.getByRole('alertdialog')).getByText('DELETE SET'))
-    expect(hooks.deleteLog).not.toHaveBeenCalled()
+    expect(hooks.deleteLog.mock.calls).toEqual([[{ id: 'l-lat-3-d1', parentSetId: 'l-lat-3' }]])
+    expect(hooks.queueKindClear.mock.calls).toEqual([[{ id: 'l-lat-3', sessionId: 'session-1' }]])
     expect(hooks.updateAsync).not.toHaveBeenCalled()
-    expect(hooks.writeChanges).not.toHaveBeenCalled()
-    expect(within(screen.getByRole('alertdialog')).getByText('Requires a connection')).toBeTruthy()
+    expect(hooks.writeChanges).toHaveBeenCalledTimes(1)
+    expect(hooks.writeChanges).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      userId: 'u1',
+      online: false,
+      writes: [{ change: { kind: 'retyped', weekPlanSetId: 'lat-3', type: { kind: 'normal' } }, id: null }],
+    })
+    const at = (fn: { mock: { invocationCallOrder: number[] } }) => fn.mock.invocationCallOrder[0]
+    expect(at(hooks.deleteLog)).toBeLessThan(at(hooks.queueKindClear))
+    expect(at(hooks.queueKindClear)).toBeLessThan(at(hooks.writeChanges))
+    expect(hooks.flush).not.toHaveBeenCalled() // offline: nothing is sent
+    // W9 is gone: a delete that had been refused for want of a connection would still be on it, saying so (the edit panel\'s own SAVE note is not W9\'s)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })
 

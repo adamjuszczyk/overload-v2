@@ -104,7 +104,8 @@ interface SyncQueueItem {
   id?: number // auto-increment
   table: string
   // Chunk 58a (DECISIONS 197): `patch` changes one column of one log, `update({ set_number }).eq('id', id)`; its payload is
-  // `{ id, set_number }` and nothing else. A whole-row upsert of the log would bring back a log another phone deleted and
+  // `{ id, set_number }` and nothing else. Chunk 61's review 1 adds one more shape, `{ id, stage_kind: null }` (a head whose last drop
+  // was deleted is a normal set), and no other. A whole-row upsert of the log would bring back a log another phone deleted and
   // write this phone's cached weight and reps over another phone's edit (`useSyncQueue.patch.test.ts` runs both).
   operation: 'upsert' | 'delete' | 'patch'
   payload: unknown
