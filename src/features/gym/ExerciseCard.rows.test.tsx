@@ -240,6 +240,22 @@ describe('the logging-time unit override and MEASURE SET TIME (today\'s, kept in
     expect(calls[0]).toMatchObject({ weight: 50, reps: 7, rir: 2 })
   })
 
+  it('with MEASURE SET TIME on, START SET belongs to the current row alone: another open row (chunk 60) has its RIR box and a LOG that writes no set time', async () => {
+    // the lock is off here so that LOG on the second row writes at once; the set timer is one for the screen, so only the current row starts it
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, measureSetTime: true, logInOrder: false })
+    const { calls, onLog } = spy()
+    const { container } = renderCard({ plannedSets: [1, 2].map((n) => plannedSet(n, { targetWeight: 50, repMin: 8, repMax: 8 })), props: { onLog } })
+    const second = rowOf(container, 'set:set-2')
+    expect(second.hasAttribute('data-current-set')).toBe(false)
+    expect(within(current(container)).getByText('START SET')).toBeTruthy()
+    expect(within(second).queryByText('START SET')).toBeNull()
+    expect(within(second).getByLabelText('RIR')).toBeTruthy()
+    await pressLog(second)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-2', setNumber: 2, weight: 50, reps: 8, setSeconds: null })
+    expect(useSetTimerStore.getState().startedAt).toBeNull() // nothing started the screen's set timer
+  })
+
   it('⋮ keeps FORM and SKIP THIS SET reachable until chunk 61\'s sheet: SKIP writes a skipped set under the number the row shows', async () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'rest_pause' })], props: { onLog } })

@@ -25,7 +25,7 @@ const MONO = 'var(--font-mono)'
 interface WorkoutRowProps {
   state: ExerciseCardState
   row: ResolvedRow
-  /** The session's current set (`currentSet()`): the one row of the screen that has inputs. */
+  /** The session's current set (`currentSet()`): the one row of the screen that is styled as current (every open row has inputs since chunk 60). */
   current: ResolvedRow | null
   /** A superset cell's round context for the rest chain (chunk 16); absent outside a block. */
   supersetContext?: SupersetChainInput
