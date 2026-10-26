@@ -48,9 +48,9 @@ const SHARED_COMPONENTS: Record<string, string[]> = {
   'components/ExercisePickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/CuesSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
   'components/pickers/TargetPickerSheet.tsx': ['features/programs/ChangeProgramPage.tsx'],
-  // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows, the STAGE KIND rows in the planner's volume step (Plan's
-  // went with its STAGE KIND chips: a set's kind is the set type picker's since chunk 54a)
-  'features/gym/RatingChips.tsx': ['features/planner/PlannerPage.tsx', 'features/gym/GymSession.tsx'],
+  // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows (the STAGE KIND rows of Plan went with its chips: a set's kind is
+  // the set type picker's since chunk 54a, and the planner's volume step's went the same way in chunk 67, which left the workout as its one user)
+  'features/gym/RatingChips.tsx': ['features/gym/GymSession.tsx'],
   // the planner's FOCUS / DON'T CARE marks, kept in Plan's folder
   'features/plan/MarkSelector.tsx': ['features/planner/PlannerPage.tsx'],
   // the planner's field editors, which CHANGE THE PROGRAM loads too (Plan's structure rows loaded them until chunk 54a)

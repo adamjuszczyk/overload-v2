@@ -1,0 +1,12 @@
+PLANNING
+STABLE
+WEEK-DEPENDENT
+Only week 1 is planned here; later weeks copy forward.
+Pull 1
+TUE
+Push 2
+THU
+Pull 2
+FRI
+Legs
+SAT
