@@ -1,0 +1,109 @@
+{
+  "plain": {
+    "session": {
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    },
+    "steps": {},
+    "payload": {
+      "id": "session-1",
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    }
+  },
+  "typed": {
+    "session": {
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    },
+    "steps": {
+      "note": "  Grip went on the last curl set.  ",
+      "energy": [
+        "HIGH"
+      ],
+      "pump": [
+        "GOOD"
+      ]
+    },
+    "payload": {
+      "id": "session-1",
+      "note": "Grip went on the last curl set.",
+      "energyRating": "high",
+      "pumpRating": "good"
+    }
+  },
+  "cleared": {
+    "session": {
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    },
+    "steps": {
+      "energy": [
+        "NORMAL",
+        "NORMAL"
+      ],
+      "pump": [
+        "SOME"
+      ]
+    },
+    "payload": {
+      "id": "session-1",
+      "note": null,
+      "energyRating": null,
+      "pumpRating": "some"
+    }
+  },
+  "blankNote": {
+    "session": {
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    },
+    "steps": {
+      "note": "   "
+    },
+    "payload": {
+      "id": "session-1",
+      "note": null,
+      "energyRating": null,
+      "pumpRating": null
+    }
+  },
+  "reopened": {
+    "session": {
+      "note": "Grip went on the last curl set.",
+      "energyRating": "high",
+      "pumpRating": "good"
+    },
+    "steps": {},
+    "payload": {
+      "id": "session-1",
+      "note": "Grip went on the last curl set.",
+      "energyRating": "high",
+      "pumpRating": "good"
+    }
+  },
+  "reopenedChanged": {
+    "session": {
+      "note": "Grip went on the last curl set.",
+      "energyRating": "high",
+      "pumpRating": "good"
+    },
+    "steps": {
+      "energy": [
+        "LOW"
+      ],
+      "note": "Grip held."
+    },
+    "payload": {
+      "id": "session-1",
+      "note": "Grip held.",
+      "energyRating": "low",
+      "pumpRating": "good"
+    }
+  }
+}

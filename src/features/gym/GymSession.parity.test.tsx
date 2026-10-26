@@ -4,7 +4,7 @@
 // same rests and finishes the same way as before the chunk. `__fixtures__/plain-session-log-payload.json` is the frozen "before": it was
 // captured by driving the PRE-chunk workout screen (staging at 30a7c42) through this very fixture — each LOG with weight and reps typed
 // (an untouched row takes the plan's targets since DECISIONS 162 (a), where the old screen took last time's), the `logSet` payload, the
-// rest timer's state after it (the resolved target), and FINISH SESSION → COMPLETE SESSION's patch. Nothing here reads the markup.
+// rest timer's state after it (the resolved target), and FINISH SESSION → COMPLETE's patch. Nothing here reads the markup.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -173,10 +173,10 @@ describe('GymSession — behaviour parity with the pre-58a screen on the plain-s
     expect(FROZEN.steps[2].rest.targetSeconds).toBe(useSettingsStore.getState().targetRestSeconds)
   })
 
-  it('FINISH SESSION then COMPLETE SESSION writes the session patch it wrote before', async () => {
+  it('FINISH SESSION then COMPLETE writes the session patch it wrote before', async () => {
     const { container } = render(jsx())
     fireEvent.click(Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'FINISH SESSION')!)
-    const complete = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'COMPLETE SESSION')
+    const complete = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'COMPLETE')
     expect(complete).toBeTruthy()
     await act(async () => {
       fireEvent.click(complete!)

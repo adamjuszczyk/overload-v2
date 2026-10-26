@@ -218,7 +218,8 @@
 //   session's status (Defaults 6). It renumbers nothing: the set is open again at its number, as the type it was, and no
 //   other set moves (DECISIONS 151, 161); logging it again stores that number (and, for an added set, that place).
 // - `finishWarning`: the unlogged planned sets, by exercise and number (board W18); deleted sets are not
-//   in the order, skipped ones are settled.
+//   in the order, skipped ones are settled. A set a swap for today moved is listed too when the swap's record
+//   names a planned set for it (DECISIONS 201 (a), chunk 64), under the new card's name and the number its row shows.
 //
 // ─── How the screens call it (58a to 64) ──────────────────────────────────────────────────────────
 //   const order = sessionOrder(cards, blocks)              // the cards as drawn: plan, swaps, added exercises, each card's added
@@ -1777,12 +1778,28 @@ function joinNumbers(numbers: number[]): string {
 }
 
 /**
+ * DECISIONS 201 (a) (Adam, 2026-10-20: "198, 200, 201: build as recommended"): a set a swap for today moved is an added set of the new card (179), so its row has no
+ * planned set, yet the plan is still behind it when the swap's record names a planned set for it (`from.weekPlanSetId`). One moved from an added set
+ * (`from.addedPlace`) and one added to the card by hand have no plan behind them. The record is the swap's own row (`OrderExercise.swappedFrom`), so this reads the
+ * same after a reload and on another phone; the moved set is found in it by the place it took (179), which no other set of its exercise holds.
+ */
+function movedFromPlan(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerciseKey' | 'added' | 'addedPlace'>): boolean {
+  if (!row.added || row.addedPlace === null) return false
+  const moved = cards.find((card) => card.key === row.exerciseKey)?.swappedFrom?.moved
+  return moved?.some((m) => m.place === row.addedPlace && 'weekPlanSetId' in m.from) ?? false
+}
+
+/**
  * SPEC 11 / C6: the planned sets still unlogged when the session is finished, or null when there are none.
  * A planned set is a working set the plan has (not an added one, not a warmup, not a drop); a deleted one is
- * not in the order and a skipped one is settled.
+ * not in the order and a skipped one is settled. A set a swap moved from a planned set is one too (201 (a): `movedFromPlan`),
+ * listed under the new card's name with the number its row shows ("Machine Pulldown 03"); auto-finish waits for the same view.
  */
 export function finishWarning(order: SessionOrder, logs: readonly LoggedSet[], changes: readonly SessionSetChange[] = []): FinishWarning | null {
-  const open = resolveRows(order, logs, changes).filter((row) => row.kind === 'working' && row.state === 'unlogged' && row.weekPlanSetId !== null)
+  const cards = cardsOf(order)
+  const open = resolveRows(order, logs, changes).filter(
+    (row) => row.kind === 'working' && row.state === 'unlogged' && (row.weekPlanSetId !== null || movedFromPlan(cards, row)),
+  )
   if (open.length === 0) return null
   const groups: FinishWarning['groups'] = []
   for (const row of open) {

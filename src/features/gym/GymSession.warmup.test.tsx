@@ -90,7 +90,7 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: { current: null }, direction: null, scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./RestTimer', () => ({ default: () => null }))
-vi.mock('./SessionComplete', () => ({ default: () => null }))
+vi.mock('./FinishScreen', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({

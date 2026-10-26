@@ -294,7 +294,7 @@ export async function completeSession(
   id: string,
   note: string | null,
   // Optional, additive params, not a signature rewrite (TASKS.md §2.4) — two
-  // call sites: SessionComplete.tsx passes them; useAutoFinishSession.ts
+  // call sites: FinishScreen.tsx passes them; useAutoFinishSession.ts
   // deliberately doesn't (an automatically finished session has no UI moment
   // to collect a rating, so both stay null — the correct "not rated" state,
   // not a gap).

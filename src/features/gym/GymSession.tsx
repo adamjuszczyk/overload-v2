@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, FormRating, Exercise, ProgramSet } from '../../types'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
@@ -29,11 +29,12 @@ import WarmupRoutineChecklist from './WarmupRoutineChecklist'
 import ExercisePickerSheet from '../../components/ExercisePickerSheet'
 import { ErrorLine } from './cardOptions'
 import RestBar from './RestBar'
-import SessionComplete from './SessionComplete'
+import FinishScreen from './FinishScreen'
 import WorkoutSidebarSheet from './WorkoutSidebarSheet'
 import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
+import { readScrollTop, scrollToRowKey, writeScrollTop } from './scrollArea'
 import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkoutRows'
 import { dexieDraftStore } from './sessionDrafts'
 import { patchSetNumbers, useSetNumberCorrections } from './useSetNumberCorrections'
@@ -332,6 +333,37 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } = useScrollToCurrentSet()
 
+  // FINISH SESSION swaps the workout for the finish screen (chunk 64: the cards unmount, this component and its hooks stay). The scroller goes to the top for the
+  // new screen, and the two ways back leave it where SPEC 11 says: BACK TO SESSION "closes it where it was", GO BACK scrolls to the first unlogged planned set.
+  const scrollBack = useRef<{ rowKey: string | null; top: number } | null>(null)
+  function openFinish() {
+    scrollBack.current = { rowKey: null, top: readScrollTop() }
+    setShowComplete(true)
+  }
+  function closeFinish(rowKey: string | null) {
+    scrollBack.current = { rowKey, top: scrollBack.current?.top ?? 0 }
+    setShowComplete(false)
+  }
+  useEffect(() => {
+    if (showComplete) {
+      writeScrollTop(0)
+      return
+    }
+    const back = scrollBack.current
+    if (back === null) return
+    scrollBack.current = null
+    if (back.rowKey === null || !scrollToRowKey(back.rowKey)) writeScrollTop(back.top)
+  }, [showComplete])
+
+  // The workout header's first line, which the finish screen opens with too, the clock after it (board W18: "WEEK 2 · TUESDAY · 52:40").
+  const headerParts = {
+    scheduleType,
+    weekNumber,
+    isDeload: weekPlan?.isDeload === true,
+    date: session ? effectiveDate(session) : null,
+    slot: weekPlan ? (weekPlan.sequencePosition ?? 0) + 1 : null,
+  }
+
   // Session-first, batched once for every exercise in this workout day (v3 §2.3) — not one query per exercise card. Swap replacements
   // (recorded and legacy) are included too, so a real prior occurrence of one still resolves a real reference.
   const {
@@ -358,7 +390,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   ]
 
   if (showComplete) {
-    return <SessionComplete sessionId={sessionId} onBack={() => setShowComplete(false)} />
+    return (
+      <FinishScreen
+        sessionId={sessionId}
+        eyebrow={`${headerEyebrow(headerParts)} · ${formatClock(duration)}`}
+        workoutName={workoutDay.name}
+        warning={workout.finish}
+        onBack={() => closeFinish(null)}
+        onGoBack={(rowKey) => closeFinish(rowKey)}
+      />
+    )
   }
 
   // Shared by every card below, template and extra alike — same mutations, same session, only which exercise differs. mutateAsync
@@ -447,13 +488,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
           name, the clock and "N OF M SETS"; under it the offline strip (W6) while the phone has no network, and the strip for the writes
           that couldn't sync (W4). "Notes for the coach" has no meaning without a coach: the one new coachGate.ts call site this initiative adds. */}
       <WorkoutHeader
-        eyebrow={headerEyebrow({
-          scheduleType,
-          weekNumber,
-          isDeload: weekPlan?.isDeload === true,
-          date: session ? effectiveDate(session) : null,
-          slot: weekPlan ? (weekPlan.sequencePosition ?? 0) + 1 : null,
-        })}
+        eyebrow={headerEyebrow(headerParts)}
         name={workoutDay.name}
         clock={formatClock(duration)}
         progress={setsLabel(setsProgress(workout.rows))}
@@ -554,7 +589,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
       {/* Finish session */}
       <div className="px-4 mt-6 mb-4">
         <button
-          onClick={() => setShowComplete(true)}
+          onClick={openFinish}
           className="w-full py-4 rounded-xl font-black tracking-widest text-sm"
           style={{ border: '2px solid var(--border-strong)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
         >
