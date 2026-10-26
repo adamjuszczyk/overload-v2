@@ -132,7 +132,7 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }))
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
-const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogPatch, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')
+const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogPatch, queueSetLogStageKindClear, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')
 const { useOfflineStore } = await import('./offlineStore')
 
 const stamp = (n: number) => `2026-10-21T08:00:${String(n).padStart(2, '0')}Z`
@@ -143,6 +143,9 @@ function enqueue(item: Omit<QueueItem, 'id' | 'createdAt'>) {
 const upsertLog = (tag: string, row: Record<string, unknown>) => enqueue({ table: 'v2_set_logs', operation: 'upsert', payload: { id: 'l1', session_id: 's1', tag, ...row } })
 const patchLog = (id: string, setNumber: number, extra: Partial<QueueItem> = {}) =>
   enqueue({ table: 'v2_set_logs', operation: 'patch', payload: { id, set_number: setNumber }, sessionId: 's1', ...extra })
+// Chunk 61's review 1 (F1): the patch item's second shape, a head whose last drop was deleted loses its stage kind.
+const patchKind = (id: string, extra: Partial<QueueItem> = {}) =>
+  enqueue({ table: 'v2_set_logs', operation: 'patch', payload: { id, stage_kind: null }, sessionId: 's1', ...extra })
 
 beforeEach(() => {
   queue = []
@@ -371,5 +374,138 @@ describe('queueSetLogPatch', () => {
     await expect(queueSetLogPatch({ id: 'l1', sessionId: 's1' }, 4)).rejects.toThrow('QuotaExceededError')
     expect(queue).toEqual([])
     expect(deviceLogs.get('l1')).toEqual({ id: 'l1', setNumber: 5 })
+  })
+})
+
+// ─── Chunk 61's review 1, F1 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// SPEC G47: delete set "work[s] offline and sync[s] later through the sync queue"; DECISIONS 147 (a): deleting a set's last drop makes it a normal set, so
+// a logged head's log loses its stage kind. DECISIONS 197's condition ("a patch queue item only if a whole-row save could overwrite something it
+// shouldn't") holds for `stage_kind` exactly as for `set_number`, so the patch item takes one more shape: `{ id, stage_kind: null }`, only that
+// column and only null, sent as `update({ stage_kind: null }).eq('id', id)`. The ordering rules for it (held behind the drops' writes) are
+// `useSyncQueue.order.test.ts`; the delete as the screen runs it, on the real producers, is `useSyncQueue.setDelete.test.tsx`.
+describe('the patch item\'s second shape: a head loses its stage kind (61\'s review 1, F1)', () => {
+  const head = { id: 'h1', session_id: 's1', exercise_id: 'e1', set_number: 3, weight: 80, reps: 8, rir: 2, stage_kind: 'dropset' }
+
+  it('is one request, `update({ stage_kind: null }).eq(\'id\', id)`, and writes no other column: the head keeps its weight, reps and number', async () => {
+    server = new Map([['v2_set_logs:h1', { ...head }]])
+    patchKind('h1')
+    await flushSyncQueue()
+    expect(updateCalls).toEqual([{ patch: { stage_kind: null }, column: 'id', value: 'h1' }])
+    expect(server.get('v2_set_logs:h1')).toEqual({ ...head, stage_kind: null })
+    expect(queue).toEqual([])
+  })
+
+  it('is not a whole-row save (DECISIONS 197\'s condition): a whole-row save of the head brings back a head another phone deleted and writes this phone\'s weight over another phone\'s edit; the patch does neither', async () => {
+    // this phone cached the head at weight 80 with its kind cleared; the other phone has since edited it to 85
+    server = new Map([['v2_set_logs:h1', { ...head, weight: 85 }]])
+    upsertLog('whole-row', { ...head, id: 'h1', stage_kind: null })
+    await flushSyncQueue()
+    expect(server.get('v2_set_logs:h1')).toMatchObject({ stage_kind: null, weight: 80 }) // the other phone's 85 is gone
+
+    // the other phone deleted the head meanwhile
+    server = new Map()
+    queue = []
+    upsertLog('whole-row', { ...head, id: 'h1', stage_kind: null })
+    await flushSyncQueue()
+    expect(server.has('v2_set_logs:h1')).toBe(true) // the head the user deleted is back
+
+    server = new Map([['v2_set_logs:h1', { ...head, weight: 85 }]])
+    queue = []
+    patchKind('h1')
+    await flushSyncQueue()
+    expect(server.get('v2_set_logs:h1')).toMatchObject({ stage_kind: null, weight: 85, reps: 8, rir: 2, set_number: 3 })
+
+    server = new Map()
+    queue = []
+    patchKind('h1')
+    await flushSyncQueue()
+    expect(server.has('v2_set_logs:h1')).toBe(false) // a head another phone deleted matches no row: no error, and nothing is brought back
+    expect(queue).toEqual([])
+  })
+
+  it.each([
+    ['another column beside the kind', { id: 'h1', stage_kind: null, weight: 1 }],
+    ['the number beside the kind', { id: 'h1', stage_kind: null, set_number: 3 }],
+    ['a kind that is not null', { id: 'h1', stage_kind: 'dropset' }],
+    ['a kind that is undefined', { id: 'h1', stage_kind: undefined }],
+    ['another column alone', { id: 'h1', weight: 1 }],
+    ['no column at all', { id: 'h1' }],
+    ['no id', { stage_kind: null }],
+    ['a whole row', { ...head, stage_kind: null }],
+  ])('refuses a patch that carries %s, and sends nothing', async (_what, payload) => {
+    server = new Map([['v2_set_logs:h1', { ...head }]])
+    enqueue({ table: 'v2_set_logs', operation: 'patch', payload: payload as Record<string, unknown>, sessionId: 's1' })
+    await flushSyncQueue()
+    expect(requests).toEqual([])
+    expect(updateCalls).toEqual([])
+    expect(server.get('v2_set_logs:h1')).toEqual(head)
+    expect(queue[0].attempts).toBe(1) // a failed attempt, kept
+  })
+
+  it('replays after the earlier write to its own log, in order: the head\'s upsert, then the kind; also when the upsert fails in the pass that would send it (a patch sent first would match no row and the upsert would then leave the kind)', async () => {
+    upsertLog('created', { id: 'h1', stage_kind: 'dropset', weight: 80 })
+    patchKind('h1')
+    failures.set('created', 1)
+    await flushSyncQueue() // the upsert fails; the patch must not go ahead of it
+    expect(requests).toEqual([])
+    expect(queue.map((q) => q.operation)).toEqual(['upsert', 'patch'])
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert created', 'patch v2_set_logs:h1'])
+    expect(server.get('v2_set_logs:h1')).toMatchObject({ stage_kind: null, weight: 80 })
+  })
+
+  it('a head logged offline, cleared and deleted before the phone reached the server: the three go in order, the server ends without it and nothing is left failing', async () => {
+    upsertLog('created', { id: 'h1', stage_kind: 'dropset', weight: 80 })
+    patchKind('h1')
+    enqueue({ table: 'v2_set_logs', operation: 'delete', payload: { id: 'h1' }, sessionId: 's1' })
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert created', 'patch v2_set_logs:h1', 'delete v2_set_logs:h1'])
+    expect(server.has('v2_set_logs:h1')).toBe(false)
+    expect(queue).toEqual([])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+  })
+
+  it('a failed kind patch stays queued, is counted and sent again; after MAX_SYNC_ATTEMPTS it is reported to its session and a retry sends it', async () => {
+    server = new Map([['v2_set_logs:h1', { ...head }]])
+    patchKind('h1')
+    failures.set('patch:h1', MAX_SYNC_ATTEMPTS)
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
+    expect(queue[0]).toMatchObject({ attempts: MAX_SYNC_ATTEMPTS, gaveUp: true })
+    expect(useOfflineStore.getState().syncFailures).toEqual([{ queueId: queue[0].id, table: 'v2_set_logs', recordId: 'h1', sessionId: 's1' }])
+    await retrySyncFailures()
+    expect(queue).toEqual([])
+    expect(server.get('v2_set_logs:h1')?.stage_kind).toBeNull()
+  })
+
+  it('the finish waits for it: hasQueuedWritesFor names the session while the kind patch is queued, and no other session', async () => {
+    patchKind('h1')
+    expect(await hasQueuedWritesFor('s1')).toBe(true)
+    expect(await hasQueuedWritesFor('s2')).toBe(false)
+  })
+})
+
+describe('queueSetLogStageKindClear (61\'s review 1, F1)', () => {
+  it('queues the item with the session beside it, the payload `{ id, stage_kind: null }` and nothing else, and changes the device\'s own copy of the log', async () => {
+    deviceLogs = new Map([['h1', { id: 'h1', stageKind: 'dropset', weight: 80 }]])
+    await queueSetLogStageKindClear({ id: 'h1', sessionId: 's1' })
+    expect(queue.map(({ table, operation, payload, sessionId, parentSetId }) => ({ table, operation, payload, sessionId, parentSetId }))).toEqual([
+      { table: 'v2_set_logs', operation: 'patch', payload: { id: 'h1', stage_kind: null }, sessionId: 's1', parentSetId: undefined },
+    ])
+    expect(deviceLogs.get('h1')).toEqual({ id: 'h1', stageKind: null, weight: 80 })
+  })
+
+  it('queues first: a queue that can\'t take the item leaves the device\'s copy alone (never a kind cleared with its patch lost)', async () => {
+    deviceLogs = new Map([['h1', { id: 'h1', stageKind: 'dropset' }]])
+    writesUntilFailure.set('queue.add', 0)
+    await expect(queueSetLogStageKindClear({ id: 'h1', sessionId: 's1' })).rejects.toThrow('QuotaExceededError')
+    expect(queue).toEqual([])
+    expect(deviceLogs.get('h1')).toEqual({ id: 'h1', stageKind: 'dropset' })
+  })
+
+  it('does not disturb the number patch\'s own once-only rule: a number patch queued after a kind patch is queued, and the same number again is not', async () => {
+    await queueSetLogStageKindClear({ id: 'h1', sessionId: 's1' })
+    expect(await queueSetLogPatch({ id: 'h1', sessionId: 's1' }, 2)).toBe(true)
+    expect(await queueSetLogPatch({ id: 'h1', sessionId: 's1' }, 2)).toBe(false)
+    expect(queue.map((q) => q.payload)).toEqual([{ id: 'h1', stage_kind: null }, { id: 'h1', set_number: 2 }])
   })
 })

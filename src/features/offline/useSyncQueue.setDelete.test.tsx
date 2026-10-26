@@ -11,7 +11,7 @@ import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
-import { card, dropLog, headLog, orderOf, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
+import { addedLog, brief, card, dropLog, headLog, held, orderOf, pending, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
   id: number
@@ -34,6 +34,8 @@ const world = vi.hoisted(() => ({
   tables: new Set<string>(),
   failing: new Map<string, number>(),
   deviceLogDeletes: [] as string[],
+  // Chunk 61's review 1 (F1): heads whose stage kind was cleared while a drop log still stood under them (DECISIONS 147 (a): a head with no drop is a normal set).
+  normalHeadWithDrop: [] as string[],
 }))
 const queue = () => world.queue as QueueItem[]
 
@@ -104,9 +106,13 @@ vi.mock('../../lib/supabase', () => ({
       update: (patch: Record<string, unknown>) => ({
         eq: async (column: string, id: string) => {
           if (column !== 'id') throw new Error(`a queued patch filters on id only, not ${column}`)
+          if (fails(`patch ${table}:${id}`)) return { error: { message: 'Failed to fetch' } }
           world.requests.push(`patch ${table}:${id} ${JSON.stringify(patch)}`)
           const row = world.server.get(`${table}:${id}`)
-          if (row) world.server.set(`${table}:${id}`, { ...row, ...patch })
+          if (row) {
+            world.server.set(`${table}:${id}`, { ...row, ...patch })
+            if (patch.stage_kind === null && [...world.server.values()].some((other) => other.parent_set_id === id)) world.normalHeadWithDrop.push(id)
+          }
           return { error: null }
         },
       }),
@@ -132,6 +138,11 @@ const { writeSetChanges } = await import('../gym/useSessionSetChanges')
 const { patchSetNumbers } = await import('../gym/useSetNumberCorrections')
 const { runDelete } = await import('../gym/setDelete')
 const { deleteEffects } = await import('../gym/workoutRules')
+const { clearStageKind } = await import('../gym/clearStageKind')
+const { updateSetLog } = await import('../gym/sessionService')
+const { changesOf } = await import('../gym/useSessionSetChanges')
+const { queueSetLogDelete } = await import('./useSyncQueue')
+const { useOfflineStore } = await import('./offlineStore')
 
 const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 
@@ -143,13 +154,13 @@ const drop2 = () => dropLog(head2(), 1)
 const head3 = () => headLog('bench', 3)
 const ALL_LOGS = () => [head1(), head2(), drop2(), head3()]
 
-const toServerRow = (log: SetLog): Record<string, unknown> => ({ id: log.id, session_id: 's1', exercise_id: log.exerciseId, week_plan_set_id: log.weekPlanSetId, set_number: log.setNumber, parent_set_id: log.parentSetId, stage_index: log.stageIndex })
+const toServerRow = (log: SetLog): Record<string, unknown> => ({ id: log.id, session_id: 's1', exercise_id: log.exerciseId, week_plan_set_id: log.weekPlanSetId, set_number: log.setNumber, parent_set_id: log.parentSetId, stage_index: log.stageIndex, stage_kind: log.stageKind })
 const putOnServer = (logs: SetLog[]) => logs.forEach((log) => world.server.set(`v2_set_logs:${log.id}`, toServerRow(log)))
 const serverKeys = (table: string) => [...world.server.keys()].filter((k) => k.startsWith(`${table}:`)).map((k) => k.slice(table.length + 1)).sort()
 const describeItem = (q: QueueItem) =>
   q.operation === 'upsert' ? `upsert ${q.table}${q.table === 'v2_session_set_changes' ? ` ${q.payload.kind} ${(q.payload.week_plan_set_id ?? q.payload.set_log_id) as string}` : `:${q.payload.id as string}`}`
   : q.operation === 'delete' ? `delete ${q.table}:${q.payload.id as string}${q.parentSetId ? ` under ${q.parentSetId}` : ''} (session ${q.sessionId})`
-  : `patch ${q.table}:${q.payload.id as string} ${JSON.stringify({ set_number: q.payload.set_number })}`
+  : `patch ${q.table}:${q.payload.id as string} ${JSON.stringify(Object.fromEntries(Object.entries(q.payload).filter(([key]) => key !== 'id')))}`
 const inQueueOrder = () => [...queue()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id).map(describeItem)
 
 /** DELETE of bench 02, as the screen runs it, through the real producers. */
@@ -162,7 +173,6 @@ async function deleteBench02(logs: SetLog[]) {
     await runDelete(effects, {
       deleteLog: (log) => result.current.mutateAsync({ id: log.id, parentSetId: log.parentSetId }),
       writers: {
-        online: world.online,
         writeChanges: (writes) => writeSetChanges({ sessionId: 's1', userId: 'u1', writes, online: world.online }),
         patchNumbers: (patches) => patchSetNumbers({ sessionId: 's1', patches, logs, flush: world.online }),
         clearStageKind: async () => {
@@ -183,6 +193,7 @@ beforeEach(() => {
   world.tables = new Set()
   world.failing = new Map()
   world.deviceLogDeletes = []
+  world.normalHeadWithDrop = []
   queryClient.clear()
 })
 
@@ -250,7 +261,6 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
           throw new Error('an open set has no log to delete')
         },
         writers: {
-          online: false,
           writeChanges: (writes) => writeSetChanges({ sessionId: 's1', userId: 'u1', writes, online: false }),
           patchNumbers: async () => {
             throw new Error('no logged set follows it')
@@ -308,6 +318,216 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
     expect(sent).toEqual(['upsert v2_set_logs:log.bench.2', 'delete v2_set_logs:log.bench.2'])
     expect(serverKeys('v2_set_logs')).toEqual(['log.bench.1', 'log.bench.3'])
     expect(queue()).toEqual([])
+  })
+})
+
+// ─── Chunk 61's review 1, F1: the last drop of a logged head, offline ──────────────────────────────────────────────────────────────────
+// SPEC G47: "logging, delete set and unlog work offline and sync later through the sync queue"; DECISIONS 147 (a): deleting a set's last drop makes it a
+// normal set, so a logged head's log loses its stage kind (and a planned head gets its `retyped` Normal row). Attempt 1 refused this delete offline with
+// "Requires a connection" (the queue's patch item carried a set number only); the review's probe P1 was that refusal. Now the head's kind is 58a's patch
+// item with its second shape, `{ id, stage_kind: null }`, queued after the drop's `delete` and sent after the drops' writes. The producers are the real ones
+// (`useDeleteSetLog`, `clearStageKind`, `writeSetChanges`, `patchSetNumbers`) driven by the real `runDelete` over the real `deleteEffects`, the replay is
+// the real `flushSyncQueue`, and the fake models the drops-first foreign key, the head's cascade, 042's checks and the one state the order must never leave
+// (`normalHeadWithDrop`: a head with no kind while a drop log stands under it).
+describe('DELETE of the last drop of a logged head, offline (G47; 61\'s review 1, F1)', () => {
+  const dropKey = 'set:bench.2:stage:1'
+  /** DELETE of a row of the cards as the screen runs it, through the real producers (the head's stage kind through `clearStageKind`, as GymSession gives it). */
+  async function deleteRow(cards: ReturnType<typeof card>[], logs: SetLog[], key: string, changes: ReturnType<typeof held>[] = []) {
+    const view = viewOf(orderOf(cards), logs, changes)
+    const effects = deleteEffects(rowKeyed(view, key), view)
+    const { result } = renderHook(() => useDeleteSetLog('s1'), { wrapper })
+    queryClient.setQueryData(['v2_session', 's1'], { id: 's1', setLogs: logs, setChanges: [] } as unknown as Session)
+    await act(async () => {
+      await runDelete(effects, {
+        deleteLog: (log) => result.current.mutateAsync({ id: log.id, parentSetId: log.parentSetId }),
+        writers: {
+          writeChanges: (writes) => writeSetChanges({ sessionId: 's1', userId: 'u1', writes, online: world.online }),
+          patchNumbers: (patches) => patchSetNumbers({ sessionId: 's1', patches, logs, flush: world.online }),
+          clearStageKind: (logId) => clearStageKind({ sessionId: 's1', logId, online: world.online, update: (id) => updateSetLog(id, { stageKind: null }) }),
+        },
+      })
+    })
+    return effects
+  }
+  const normalised = () => world.requests.map((r) => r.replace(/upsert v2_session_set_changes:[0-9a-f-]{36}/, 'upsert v2_session_set_changes:<id>'))
+  /** The screen's own copy of the session, and the rows it draws from it. */
+  const screenRows = (cards: ReturnType<typeof card>[]) => {
+    const cached = queryClient.getQueryData(['v2_session', 's1']) as Session
+    return { cached, rows: viewOf(orderOf(cards), (cached.setLogs ?? []) as SetLog[], [...changesOf(cached)]).rows }
+  }
+
+  it('is made, not refused: it queues the drop\'s delete (naming its head), the head\'s stage kind as a patch, then the `retyped` Normal row as an upsert, in that order, and sends nothing', async () => {
+    putOnServer(ALL_LOGS())
+    await expect(deleteRow([BENCH()], ALL_LOGS(), dropKey)).resolves.toBeDefined() // attempt 1 threw `NeedsConnectionError` here, with the queue empty
+    expect(world.requests).toEqual([])
+    expect(inQueueOrder()).toEqual([
+      'delete v2_set_logs:log.bench.2.d1 under log.bench.2 (session s1)',
+      'patch v2_set_logs:log.bench.2 {"stage_kind":null}',
+      'upsert v2_session_set_changes retyped bench.2',
+    ])
+    expect(queue().find((q) => q.operation === 'patch')).toMatchObject({ table: 'v2_set_logs', payload: { id: 'log.bench.2', stage_kind: null }, sessionId: 's1' })
+    expect(queue().find((q) => q.operation === 'upsert')?.payload).toMatchObject({ kind: 'retyped', week_plan_set_id: 'bench.2', is_warmup: false, stage_kind: null, stage_count: 0 })
+    expect(world.deviceLogDeletes).toEqual(['log.bench.2.d1'])
+    expect(await hasQueuedWritesFor('s1')).toBe(true) // a finish waits for it
+  })
+
+  it('the screen then draws a normal set 02 and no drop, and a reload that still reads the server (nothing sent yet) draws the drop again (the control)', async () => {
+    putOnServer(ALL_LOGS())
+    await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+    const { cached, rows } = screenRows([BENCH()])
+    expect(cached.setLogs?.map((l) => l.id)).toEqual(['log.bench.1', 'log.bench.2', 'log.bench.3'])
+    expect(cached.setLogs?.find((l) => l.id === 'log.bench.2')?.stageKind).toBeNull()
+    expect(rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 03✓'])
+    expect(rows.find((r) => r.key === 'set:bench.2')?.type).toEqual({ kind: 'normal' })
+    // the control: what the server still holds (the drop, the head's kind, no change row) draws the dropset with its drop
+    const server = [head1(), head2(), drop2(), head3()]
+    expect(viewOf(orderOf([BENCH()]), server).rows.map(brief)).toEqual(['bench 01✓', 'bench 02✓', 'bench 02.1✓', 'bench 03✓'])
+  })
+
+  it('on reconnect the queue sends exactly those, in that order: the server ends with a normal head, no drop, the `retyped` Normal row, and was never a normal head with a drop under it', async () => {
+    putOnServer(ALL_LOGS())
+    await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+    world.online = true
+    await flushSyncQueue()
+    expect(normalised()).toEqual([
+      'delete v2_set_logs:log.bench.2.d1',
+      'patch v2_set_logs:log.bench.2 {"stage_kind":null}',
+      'upsert v2_session_set_changes:<id>',
+    ])
+    expect(serverKeys('v2_set_logs')).toEqual(['log.bench.1', 'log.bench.2', 'log.bench.3'])
+    expect(world.server.get('v2_set_logs:log.bench.2')).toMatchObject({ stage_kind: null, set_number: 2 })
+    const rows = [...world.server].filter(([key]) => key.startsWith('v2_session_set_changes:')).map(([, row]) => row)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind: 'retyped', week_plan_set_id: 'bench.2', set_log_id: null, session_id: 's1', user_id: 'u1', is_warmup: false, stage_kind: null, stage_count: 0 })
+    expect(world.normalHeadWithDrop).toEqual([])
+    expect(queue()).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
+    expect([...world.tables].sort()).toEqual(['v2_session_set_changes', 'v2_set_logs']) // the plan is untouched
+  })
+
+  it('online, the same delete is the same three requests in the same order (the control: the request the queue sends is the one online sends), and nothing is queued', async () => {
+    putOnServer(ALL_LOGS())
+    world.online = true
+    await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+    expect(normalised()).toEqual([
+      'delete v2_set_logs:log.bench.2.d1',
+      'patch v2_set_logs:log.bench.2 {"stage_kind":null}',
+      'upsert v2_session_set_changes:<id>',
+    ])
+    expect(world.server.get('v2_set_logs:log.bench.2')).toMatchObject({ stage_kind: null })
+    expect(world.normalHeadWithDrop).toEqual([])
+    expect(queue()).toEqual([])
+  })
+
+  it('the drop\'s delete failing in the pass that would send the patch holds the patch behind it (the change row, another record, still goes); the retry sends the delete, then the patch', async () => {
+    putOnServer(ALL_LOGS())
+    await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+    world.online = true
+    world.failing.set('delete v2_set_logs:log.bench.2.d1', 1)
+    await flushSyncQueue()
+    expect(normalised()).toEqual(['upsert v2_session_set_changes:<id>'])
+    expect(world.server.get('v2_set_logs:log.bench.2')).toMatchObject({ stage_kind: 'dropset' })
+    expect(serverKeys('v2_set_logs')).toContain('log.bench.2.d1')
+    expect(world.normalHeadWithDrop).toEqual([])
+    expect(queue().map((q) => q.operation)).toEqual(['delete', 'patch'])
+    await flushSyncQueue()
+    expect(normalised()).toEqual(['upsert v2_session_set_changes:<id>', 'delete v2_set_logs:log.bench.2.d1', 'patch v2_set_logs:log.bench.2 {"stage_kind":null}'])
+    expect(serverKeys('v2_set_logs')).toEqual(['log.bench.1', 'log.bench.2', 'log.bench.3'])
+    expect(world.normalHeadWithDrop).toEqual([])
+    expect(queue()).toEqual([])
+  })
+
+  describe('the head and its drop were logged offline too (their upserts are in the queue, never sent)', () => {
+    const queueOfflineLogs = () => {
+      putOnServer([head1(), head3()])
+      for (const log of [head2(), drop2()]) {
+        queue().push({ id: world.nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { ...toServerRow(log), user_id: 'u1' }, createdAt: `2026-10-12T18:00:0${world.nextId}Z` })
+      }
+    }
+
+    it('the drop\'s pair cancels and the head\'s patch goes after the head\'s upsert: the server ends with a normal head and never held the drop', async () => {
+      queueOfflineLogs()
+      await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+      world.online = true
+      await flushSyncQueue()
+      expect(normalised()).toEqual(['upsert v2_set_logs:log.bench.2', 'patch v2_set_logs:log.bench.2 {"stage_kind":null}', 'upsert v2_session_set_changes:<id>'])
+      expect(world.server.get('v2_set_logs:log.bench.2')).toMatchObject({ stage_kind: null })
+      expect(serverKeys('v2_set_logs')).toEqual(['log.bench.1', 'log.bench.2', 'log.bench.3'])
+      expect(world.normalHeadWithDrop).toEqual([])
+      expect(queue()).toEqual([])
+    })
+
+    it('the head\'s upsert failing in the pass that would send the patch holds the patch (a patch first would match no row, and the upsert would then leave the head a dropset with no drop)', async () => {
+      queueOfflineLogs()
+      await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+      world.online = true
+      world.failing.set('upsert v2_set_logs:log.bench.2', 1)
+      await flushSyncQueue()
+      expect(normalised()).toEqual(['upsert v2_session_set_changes:<id>'])
+      await flushSyncQueue()
+      expect(normalised()).toEqual(['upsert v2_session_set_changes:<id>', 'upsert v2_set_logs:log.bench.2', 'patch v2_set_logs:log.bench.2 {"stage_kind":null}'])
+      expect(world.server.get('v2_set_logs:log.bench.2')).toMatchObject({ stage_kind: null })
+      expect(queue()).toEqual([])
+    })
+
+    it('and when the head is deleted too before the phone reached the server, its upsert, patch and delete all go in order and nothing is left failing', async () => {
+      queueOfflineLogs()
+      await deleteRow([BENCH()], ALL_LOGS(), dropKey)
+      await queueSetLogDelete({ id: head2().id, sessionId: 's1' })
+      world.online = true
+      await flushSyncQueue()
+      expect(normalised()).toEqual([
+        'upsert v2_set_logs:log.bench.2',
+        'patch v2_set_logs:log.bench.2 {"stage_kind":null}',
+        'upsert v2_session_set_changes:<id>',
+        'delete v2_set_logs:log.bench.2',
+      ])
+      expect(serverKeys('v2_set_logs')).toEqual(['log.bench.1', 'log.bench.3'])
+      expect(queue()).toEqual([])
+      expect(useOfflineStore.getState().syncFailures).toEqual([])
+    })
+  })
+
+  describe('a set added in the session (no planned set behind it)', () => {
+    // An added dropset: its log, one logged drop, and the `pending_stages` row that counts the drop. There is no `retyped` row for an added set (DECISIONS 141).
+    const addedHead = () => addedLog('bench', 1, { stageKind: 'dropset', number: 1 })
+    const ADDED = () => [card('bench', '', { added: [addedHead()] })]
+    const addedLogs = () => [addedHead(), dropLog(addedHead(), 1)]
+    const pendingRow = () => ({ id: 'c1', user_id: 'u1', session_id: 's1', kind: 'pending_stages', week_plan_set_id: null, set_log_id: addedHead().id, is_warmup: false, stage_kind: 'dropset', stage_count: 1 })
+    const key = 'added:bench:a1:stage:1'
+
+    it('offline the head\'s patch alone makes it normal: the drop\'s delete and the patch are queued, no change row; its `pending_stages` row stays as it was; the drop does not come back on the screen', async () => {
+      putOnServer(addedLogs())
+      world.server.set('v2_session_set_changes:c1', pendingRow())
+      await deleteRow(ADDED(), addedLogs(), key, [held(pending(addedHead(), 'dropset', 1), 'c1')])
+      expect(inQueueOrder()).toEqual([
+        'delete v2_set_logs:log.bench.added1.d1 under log.bench.added1 (session s1)',
+        'patch v2_set_logs:log.bench.added1 {"stage_kind":null}',
+      ])
+      expect(world.requests).toEqual([])
+      // the screen: the head is a normal set, its drop is gone (the cache holds the pending row it always held)
+      const cached = queryClient.getQueryData(['v2_session', 's1']) as Session
+      expect(cached.setLogs?.map((l) => [l.id, l.stageKind])).toEqual([['log.bench.added1', null]])
+      expect(viewOf(orderOf(ADDED()), (cached.setLogs ?? []) as SetLog[], [held(pending(addedHead(), 'dropset', 1), 'c1')]).rows.map(brief)).toEqual(['bench 01✓'])
+    })
+
+    it('on reconnect the server ends with a normal head, no drop and the same `pending_stages` row, and a reload of it draws the head alone (the drop does not come back)', async () => {
+      putOnServer(addedLogs())
+      world.server.set('v2_session_set_changes:c1', pendingRow())
+      await deleteRow(ADDED(), addedLogs(), key, [held(pending(addedHead(), 'dropset', 1), 'c1')])
+      world.online = true
+      await flushSyncQueue()
+      expect(world.requests).toEqual(['delete v2_set_logs:log.bench.added1.d1', 'patch v2_set_logs:log.bench.added1 {"stage_kind":null}'])
+      expect(world.server.get('v2_set_logs:log.bench.added1')).toMatchObject({ stage_kind: null })
+      expect(serverKeys('v2_set_logs')).toEqual(['log.bench.added1'])
+      expect(world.server.get('v2_session_set_changes:c1')).toEqual(pendingRow())
+      expect(serverKeys('v2_session_set_changes')).toEqual(['c1'])
+      // the reload fixture: the server's rows read back (the head's kind is what the log holds), with the row it still keeps
+      const reloaded = { ...addedHead(), stageKind: null }
+      expect(viewOf(orderOf([card('bench', '', { added: [reloaded] })]), [reloaded], [held(pending(addedHead(), 'dropset', 1), 'c1')]).rows.map(brief)).toEqual(['bench 01✓'])
+      expect(world.normalHeadWithDrop).toEqual([])
+      expect(queue()).toEqual([])
+    })
   })
 })
 
