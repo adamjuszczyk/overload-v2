@@ -1016,8 +1016,11 @@ optional:
 ### Logging mechanics [P2; parts pulled into 1.2]
 
 - [1.2] **Row states:** logged → compact read-only line with a tick and a pen;
-  current → every field, plus LOG; upcoming → targets only (W1, W2). Pulled from
-  [P2].
+  current → every field, plus LOG, in the accent frame; upcoming → the same
+  fields and LOG, which can be typed into (Log lock (18a): "every row can be
+  typed into"), with no frame and an outlined LOG (W1, W2). Pulled from [P2].
+  (Wording fixed 2026-10-26, chunk 60's review: "upcoming → targets only" was
+  stale against the Log lock rule and board W1.)
 - [1.2] **What a row shows (C3, C4):** the reps box shows the plan's rep target
   (number, range or AMRAP); the weight box is empty when the plan has none;
   planned RIR is a dim placeholder (a range shows as "1–2"); RIR is on every
