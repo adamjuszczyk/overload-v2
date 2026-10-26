@@ -209,6 +209,22 @@ describe('SET TYPE and UNLOG are drawn as the board draws them and wait for chun
     expect(onSetType).toHaveBeenCalledTimes(1)
   })
 
+  it('a warmup saves its weight and reps and nothing else: the call holds those two keys, no rir and no form', () => {
+    const onSave = vi.fn()
+    render(<SetEditPanel {...props} isWarmup log={{ ...props.log, weight: 20, reps: 12, rir: null }} onSave={onSave} />)
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(Object.keys(onSave.mock.calls[0][0] as object).sort()).toEqual(['reps', 'weight'])
+    expect(onSave.mock.calls[0][0]).toEqual({ weight: 20, reps: 12 })
+  })
+
+  it('a working set saves the four keys of the inline edit it replaced (weight, reps, rir, form)', () => {
+    const onSave = vi.fn()
+    render(<SetEditPanel {...props} onSave={onSave} />)
+    fireEvent.click(screen.getByText('SAVE'))
+    expect(Object.keys(onSave.mock.calls[0][0] as object).sort()).toEqual(['formRating', 'reps', 'rir', 'weight'])
+  })
+
   it('DELETE asks (onDelete) and sends nothing itself', () => {
     const onDelete = vi.fn()
     const onSave = vi.fn()

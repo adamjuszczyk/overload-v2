@@ -226,6 +226,20 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
     expect([...world.tables].sort()).toEqual(['v2_session_set_changes', 'v2_set_logs'])
   })
 
+  it('online, the same delete is the same four requests in the same order, nothing is left in the queue, and only the logs and the change table are reached', async () => {
+    putOnServer(ALL_LOGS())
+    world.online = true
+    await deleteBench02(ALL_LOGS())
+    expect(world.requests.map((r) => r.replace(/upsert v2_session_set_changes:[0-9a-f-]{36}/, 'upsert v2_session_set_changes:<id>'))).toEqual([
+      'delete v2_set_logs:log.bench.2.d1',
+      'delete v2_set_logs:log.bench.2',
+      'upsert v2_session_set_changes:<id>',
+      'patch v2_set_logs:log.bench.3 {"set_number":2}',
+    ])
+    expect(queue()).toEqual([])
+    expect([...world.tables].sort()).toEqual(['v2_session_set_changes', 'v2_set_logs'])
+  })
+
   it('an unlogged planned set deleted offline is one queued upsert, no log item and no patch; on reconnect it is the only request, to the change table', async () => {
     const view = viewOf(orderOf([BENCH()]), [head1()])
     const effects = deleteEffects(rowKeyed(view, 'set:bench.3'), view)

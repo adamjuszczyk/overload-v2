@@ -52,7 +52,8 @@ describe('auto-finish (166 (a))', () => {
   })
 
   it('does not read the logs for the plan\'s sets: a planned set with no log (deleted) does not hold it back, and one more log would not hurry it', () => {
-    const view = renderHook(({ left }: { left: boolean }) => useAutoFinishSession(sessionWith([log('a', 1)]), plan, left), { initialProps: { left: false } })
+    const session = sessionWith([log('a', 1)]) // one object throughout: only what the rows say changes, so the hook must notice that on its own
+    const view = renderHook(({ left }: { left: boolean }) => useAutoFinishSession(session, plan, left), { initialProps: { left: false } })
     wait(30)
     expect(complete.mutate).not.toHaveBeenCalled()
     view.rerender({ left: true })

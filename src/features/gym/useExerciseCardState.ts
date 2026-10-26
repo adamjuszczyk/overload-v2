@@ -366,20 +366,15 @@ export function useExerciseCardState({
   //   - The change rows are held (`workout.holdChanges`) from before the first request until they are in the session's cache, so a planned set
   //     whose log has gone and whose change row has not landed yet is never drawn as an open row.
   //   - A set added in the session leaves the card's list, logged or not, before its logs go (DECISIONS 170: "DELETE: the entry goes"): an entry
-  //     left naming a log that is gone would be drawn as an open set. A drop deleted on its own gives its set the type it has afterwards, as the
-  //     card keeps it (161).
+  //     left naming a log that is gone would be drawn as an open set. A drop deleted on its own changes no entry: a drop can only be deleted
+  //     once its head is logged, and a logged head's drops are its `pending_stages` row's (the written row, held at once like the others).
   //   - `workout.track` holds the screen's own number corrections back until the whole delete, its renumber included, is done.
   // Rejects with the reason when something wasn't written (the confirm says so); a delete that needs a connection and has none writes nothing.
   async function handleDeleteRow(row: ResolvedRow): Promise<void> {
     const effects = deleteEffects(row, { rows: workout.rows, logs, changes: workout.changes })
     if (effects.headPatch !== null && !writers.online) throw new NeedsConnectionError()
-    const head = headOf(row)
     const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
-    if (row.kind !== 'stage') {
-      if (row.added && row.localId !== null) workout.removeAdded(cardKey, row.localId)
-    } else if (effects.type !== null && head !== undefined && head.added && head.localId !== null) {
-      workout.setAddedType(cardKey, head.localId, effects.type)
-    }
+    if (row.kind !== 'stage' && row.added && row.localId !== null) workout.removeAdded(cardKey, row.localId)
     try {
       await workout.track(runDelete(effects, { deleteLog: (log) => onDeleteSet(log.id), writers }))
     } finally {

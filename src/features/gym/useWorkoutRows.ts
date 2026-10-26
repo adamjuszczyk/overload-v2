@@ -5,7 +5,7 @@
 // session, because the rules number a set over its slot, and the current set is the first unlogged one over every card.
 // Nothing here writes to the server: `useSetNumberCorrections.ts` writes the corrected numbers, the cards write the logs.
 import { useRef, useState } from 'react'
-import type { ProgramExercise, SessionSetChange, SessionSetChangeType, SetLog, WeekPlanSet } from '../../types'
+import type { ProgramExercise, SessionSetChange, SetLog, WeekPlanSet } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary'
 import {
   addRound,
@@ -68,8 +68,6 @@ export interface WorkoutRows {
   holdChanges: (changes: readonly SessionSetChange[]) => () => void
   /** A set added in the session is deleted (DECISIONS 170: "DELETE: the entry goes"): its entry leaves the card's list, logged or not. */
   removeAdded: (cardKey: string, localId: string) => void
-  /** A set added in the session has another type (a drop deleted on its own, 62's SET TYPE): the card's own state for it (DECISIONS 161). */
-  setAddedType: (cardKey: string, localId: string, type: SessionSetChangeType) => void
   /** An added set's log is `logId` from now on (LOG and SKIP): the card's list names it, so the log is never drawn a second time. */
   linkLog: (cardKey: string, localId: string, logId: string) => void
   /**
@@ -198,12 +196,6 @@ export function useWorkoutRows({
     commit({ ...addedRef.current, [cardKey]: list.filter((entry) => entry.localId !== localId) })
   }
 
-  function setAddedType(cardKey: string, localId: string, type: SessionSetChangeType) {
-    const list = addedRef.current[cardKey]
-    if (list === undefined || !list.some((entry) => entry.localId === localId)) return
-    commit({ ...addedRef.current, [cardKey]: list.map((entry) => (entry.localId === localId ? { ...entry, type } : entry)) })
-  }
-
   return {
     order,
     rows,
@@ -220,7 +212,6 @@ export function useWorkoutRows({
     addEntries,
     removeEntries,
     removeAdded,
-    setAddedType,
     holdStages,
   }
 }

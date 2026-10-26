@@ -12,6 +12,7 @@ import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { queryClient } from '../../lib/queryClient'
+import { useToastStore } from '../notifications/toastStore'
 
 const hooks = vi.hoisted(() => ({
   online: true,
@@ -29,6 +30,7 @@ afterEach(() => {
   cleanup()
   useRestTimerStore.getState().stop()
   useSetTimerStore.getState().stop()
+  useToastStore.getState().clear()
   queryClient.clear()
 })
 beforeEach(() => {
@@ -137,8 +139,6 @@ function open(sessionLogs: SetLog[] = logs(), setChanges?: SessionSetChangeRecor
   return { ...view, refresh: () => act(async () => view.rerender(jsx())) }
 }
 const rowOf = (container: HTMLElement, key: string) => container.querySelector(`[data-row-key="${key}"]`) as HTMLElement
-const labels = (container: HTMLElement, card: string) =>
-  Array.from(container.querySelectorAll(`[data-row-key^="set:${card}"], [data-row-key^="added:"]`)).map((el) => el.querySelector('span')?.textContent)
 const press = (el: Element) =>
   act(async () => {
     fireEvent.click(el)
@@ -322,7 +322,9 @@ describe('CUES (board W7 → 8): the planned set\'s tags in this week\'s plan, t
     expect(tagsOf(['v2_weekPlans', 'm1', 2], 'lat-4')).toBeUndefined()
     expect(tagsOf(['v2_allWeekPlans', 'm1'], 'lat-4')).toBeUndefined()
     expect(invalidate.mock.calls.map(([filter]) => (filter as { queryKey: unknown[] }).queryKey)).toEqual([['v2_weekPlans', 'm1'], ['v2_allWeekPlans', 'm1']])
+    expect(useToastStore.getState().message).toBe("Couldn't save the cue. permission denied")
     cleanup()
+    useToastStore.getState().clear()
     // accepted: both hold the new tags before the write is answered
     let answer!: () => void
     hooks.updateSet.mockImplementationOnce(() => new Promise<void>((resolve) => void (answer = resolve)))

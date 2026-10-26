@@ -338,6 +338,20 @@ describe('sets added in the session (DECISIONS 170, 174): the card\'s list, the 
   const entry = (localId: string, place: number, logId: string | null = null): AddedSet => ({ localId, logId, type: { kind: 'normal' }, place })
   const addedLog = (id: string, place: number, over: Partial<SetLog> = {}): SetLog => logOf({ id, weekPlanSetId: null, setNumber: 1 + place, addedPlace: place, ...over })
 
+  it('a drop deleted under an added dropset writes the head\'s `pending_stages` row alone, replacing the held row by its id: an added set never gets a `retyped` row (DECISIONS 141)', async () => {
+    const { order, writers, onDeleteSet } = recorder()
+    const head = addedLog('log-a', 1, { stageKind: 'dropset' })
+    const drop = logOf({ id: 'da1', weekPlanSetId: null, parentSetId: 'log-a', stageIndex: 1, setNumber: 2, isDropset: true, addedPlace: null })
+    const pending = (stageCount: number) => held({ kind: 'pending_stages', setLogId: 'log-a', stageKind: 'dropset', stageCount }, 'chg-p')
+    const { container, setChanges } = renderCard({ plannedSets: [plannedSet(1)], logs: [headLogOf(1), head, drop], changes: [pending(2)], initialAdded: [entry('a1', 1, 'log-a')], props: { onDeleteSet, writers } })
+    expect(rowLabels(container)).toEqual(['01', '02', '↳', '↳'])
+    askFromSheet(container, 'added:pe-1:a1:stage:2')
+    await press(within(dialog()).getByText('DELETE SET'))
+    expect(order).toEqual([`changes ${JSON.stringify([{ change: { kind: 'pending_stages', setLogId: 'log-a', stageKind: 'dropset', stageCount: 1 }, id: 'chg-p' }])}`])
+    setChanges([pending(1)]) // the session's answer
+    expect(rowLabels(container)).toEqual(['01', '02', '↳'])
+  })
+
   it('an open added set is deleted in the card alone: no log delete, no change row, no renumber', async () => {
     const { order, writers, onDeleteSet } = recorder()
     const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [headLogOf(1)], initialAdded: [entry('a1', 1)], props: { onDeleteSet, writers } })

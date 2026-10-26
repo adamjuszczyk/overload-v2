@@ -112,7 +112,7 @@ describe('the row a change is written as', () => {
 })
 
 describe('the session\'s rows in its cache', () => {
-  const record = (change: SessionSetChangeRecord extends infer R ? Omit<R, never> : never): SessionSetChangeRecord => change as SessionSetChangeRecord
+  const record = (change: SessionSetChangeRecord): SessionSetChangeRecord => change
   const base = { userId: 'u1', sessionId: 's1', createdAt: NOW, updatedAt: NOW }
   const session = (setChanges?: SessionSetChangeRecord[]): Session => ({ id: 's1', setChanges }) as unknown as Session
 
@@ -125,6 +125,17 @@ describe('the session\'s rows in its cache', () => {
       record({ ...base, id: 'd', kind: 'pending_stages', setLogId: 'log-1', stageKind: 'dropset', stageCount: 1 }),
     ])
     expect(next?.setChanges?.map((c) => [c.id, c.kind])).toEqual([['b', 'deleted'], ['a', 'deleted'], ['d', 'pending_stages']])
+  })
+
+  it('each key replaces on its own: another id for the same planned set (042: one row per planned set, `plan_set_uk`) and the same id for other keys (a row is its id first)', () => {
+    const stored = record({ ...base, id: 'a', kind: 'retyped', weekPlanSetId: 'wps-1', type: { kind: 'warmup' } })
+    const byPlannedSet = withChangeRecords(session([stored]), [record({ ...base, id: 'z', kind: 'deleted', weekPlanSetId: 'wps-1' })])
+    expect(byPlannedSet?.setChanges?.map((c) => [c.id, c.kind])).toEqual([['z', 'deleted']])
+    const byId = withChangeRecords(session([stored]), [record({ ...base, id: 'a', kind: 'deleted', weekPlanSetId: 'wps-9' })])
+    expect(byId?.setChanges?.map((c) => [c.id, c.kind])).toEqual([['a', 'deleted']])
+    // the control: a row for another planned set is left alone
+    const other = withChangeRecords(session([stored]), [record({ ...base, id: 'y', kind: 'deleted', weekPlanSetId: 'wps-2' })])
+    expect(other?.setChanges?.map((c) => c.id)).toEqual(['a', 'y'])
   })
 
   it('nothing happens to a session that is not in the cache, and a session with no rows yet gets them', () => {
