@@ -1050,6 +1050,19 @@ describe('flushSyncQueue — a log’s never-sent pair cancels with the change r
     )
   })
 
+  it('wherever they sit in the queue: a row queued after the log’s delete leaves with the pair too, and the next log’s write goes', async () => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueue('v2_set_logs', { id: 'l2', session_id: 's1', weight: 60, tag: 'log2' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['upsert log2'])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+  })
+
   it.each([
     ['it failed in an earlier pass', { attempts: 2 }],
     ['its send started', { sendStarted: true }],

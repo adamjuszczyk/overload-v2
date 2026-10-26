@@ -214,7 +214,8 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
     if (list[at].table === 'v2_set_logs' && deleted) gone.add(deleted)
   }
   if (cancelled.size === 0) return items
-  // The rows that name one of those logs, whatever their own markers say (a row can't have reached a server that never held its log): only those.
+  // The rows that name one of those logs, whatever their own markers say (a row can't have reached a server that never held its log) and wherever they sit in
+  // the queue (a log's id is used once, so a row after the delete names the same log): only those.
   const rows = items.filter((item) => {
     const named = namedLogIdOf(item)
     return named !== null && gone.has(named)
