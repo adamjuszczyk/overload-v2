@@ -69,6 +69,19 @@ describe('offline', () => {
     expect(queryClient.getQueryData(KEY)).toBeUndefined()
   })
 
+  it('changes the screen\'s copy only after the reads in flight have been stopped (a cancelled read reverts the query once it settles, which would take a write made before it away)', async () => {
+    seed()
+    let stopped!: () => void
+    const cancel = vi.spyOn(queryClient, 'cancelQueries').mockReturnValue(new Promise<void>((resolve) => (stopped = resolve)))
+    const pending = clearStageKind({ sessionId: 's1', logId: 'h1', online: false, update: async () => undefined })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(kinds()).toEqual([['h1', 'dropset'], ['h2', 'dropset'], ['d1', null]])
+    stopped()
+    await pending
+    expect(kinds()).toEqual([['h1', null], ['h2', 'dropset'], ['d1', null]])
+    cancel.mockRestore()
+  })
+
   it('stops a read of the session that left before the item was queued, as `useUpdateSetLog` does before its own write', async () => {
     seed()
     const cancel = vi.spyOn(queryClient, 'cancelQueries')
