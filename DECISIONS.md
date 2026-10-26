@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 61's review 1 (failed, not merged).*
-- *Chunk 61's first attempt (the set ⋯ sheet, the edit panel, delete a set) failed review 1 on two behaviour findings, the offline delete of a logged head's last drop and what auto-finish waits for (166 (a)); it goes back to a builder. Nothing in it needs you, and no entry is new. Chunk 68, merged before it, is unchanged here: 224 (accepted as built), two tests owed.*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 61's review 2 (merged, #215).*
+- *Chunk 61 (the set ⋯ sheet, the edit panel, delete a set) is merged on its second attempt, which fixed review 1's two findings. Two new entries, neither blocking: 225 (its display choices and one reading, accepted as built) and 226 (a to-do: staging's in-progress session has one open planned set left; a re-seed before 62's review). Tests owed: none.*
 
 What blocks, in order:
 1. **121** (a to-do, below): the release's migrations PR waits for it.
@@ -11,6 +11,7 @@ Nothing else blocks a chunk or the release.
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **225** — chunk 61's display choices (D31), (a)–(h), and one reading (i): SET TYPE and UNLOG grey until 62 and 63 (a), W9's pending and failure states (c), the eyebrows of a superset member, a warmup and a drop (e), a skipped row's ⋯ with DELETE SET alone where W2 and W3b draw none (h), and two phones deleting one planned set: the second is refused with the reason, 042's design (i). Recommended: accept all, as built. Blocks: nothing.
 - **224** — chunk 68's display choices (D31), (a)–(k): the first workout open and one card at a time (a), one exercise open with the arrows on the open member (b), a held day dimmed but tappable (c), START off until the runs are read (d), a failed add's line over the screen (e), subgroup names in sentence case (f), warmup items unnumbered (h); the boards' "Check your connection" lines follow SPEC Errors (15). Recommended: accept all, as built. Blocks: nothing.
 - **223** — chunk 67's display choices (D31), (a)–(l): one workout open at a time (a), exercises start closed (b), "NO EXERCISES YET" (d), a row numbered by its rank with a warmup counted (e), ALL's eyebrow "SET 01" (f), the 132 px REST AFTER column (g), the staged chip in the accent on `--accent-muted` (k), taps on the type picker ignored while a change is read back (l). Recommended: accept all, as built. Blocks: nothing.
 - **222** — on a card that starts with an open warmup, the warmup row keeps 58a's accent W and filled LOG while working set 01 has the current set's accent frame (G54), so two rows read as primary; board W2b draws the warmup in the frame. Recommended: (b), draw an open warmup like any other open row (one condition in `SetRowWarmup.tsx`). Blocks: nothing (display).
@@ -35,6 +36,7 @@ Decisions (none blocks; for Adam's review pass after the release checklist):
 
 To-dos:
 - **121** — Before the release: prove production's migration history. The command (given to you on 2026-10-21): in your `overload-v2-switch` worktree, on an up-to-date master, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked`. Expected: `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only. Paste the output; 121 stays open until then. Blocks: the release's migrations PR.
+- **226** — re-seed staging before chunk 62's review: the test account's in-progress session has one open planned set left after 61's staging steps, and no logged staged head. Recommended: re-seed (reviewers don't). When: before 62's review. Blocks: nothing now; 62's staging list may run short.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
 
@@ -78,6 +80,7 @@ To-dos:
 - **67** (#210): none. The review re-ran 28 of the builder's 49 breaks and 3 of its own (M3, the DROPS stepper's − removing the lowest stages; M4, Normal on a warmup keeping the flag; M5, REST BETWEEN never written): all caught.
 - **68** (#212): the add sheet writes to the workout whose card opened it. `AddExerciseSheet` in `src/features/planner/StepExercises.tsx` builds `useAddProgramExercise(workoutDay.id)`, and the hook's argument is the row's `workout_day_id`. Every StepExercises test mocks the hook and ignores its argument. The break it must catch is the review's R1, `useAddProgramExercise(workoutDay.programId)`, which passed all 97 tests of `StepExercises.test.tsx`, `StepExercises.sequence.test.tsx` and `PlannerPage.boards.test.tsx`. The test records the argument (RULES, 54b's mock rule) and presses + ADD EXERCISE on the second of two unlike workouts. Behaviour verified right by reading the code: the sheet gets the card's own `workoutDay`.
 - **68** (#212): a subgroup that inherits its group's mark shows no mark of its own, and tapping that mark writes it (FOCUS on a subgroup with "INHERITED: FOCUS" writes `{ tagType: 'muscle_subgroup', mark: 'focus' }`, never `null`). `MarkSegment`'s `value` is `sub.ownMark` in `src/features/planner/StepPriorities.tsx`. The break it must catch is the review's R4, `value={sub.effectiveMark}`: the tap would then read as turning the mark off and write `null`. It passed all 16 tests of `StepPriorities.test.tsx`. Behaviour verified right by reading the code (as on staging before the chunk).
+- **61** (#215): none. Review 2 re-ran the builder's 44 breaks and 8 of its own (the head's kind patch after the change rows, the notice leaving a held kind patch out, a hold by one drop only, a patch counted as never sent, a payload naming the session, the flush sending the whole payload, the online clear writing a second column): all caught.
 
 ## Format for all new entries
 
@@ -705,6 +708,30 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - PP2f draws a warmup item being edited while the add field is open, and the two can't both happen: a tap from one to the other settles the first. It is drawn as two pictures, PP2f-edit and PP2f-add.
   - PP4 draws the danger confirm as a pale-red button. The shared `ConfirmDialog` draws it solid, as 189 and 192 accepted for PR6 and PR15.
 - Layout the tests don't pin: the content area's padding is 20 px on step 1 and 16 px on the other steps (the builder's X9 survived; display only, so no test is owed).
+
+### 225 Chunk 61's display choices on the set ⋯ sheet, the edit panel and W9, and one reading (provisional, D31; accepted as built)
+**Ask:** chunk 61's choices where SPEC, TASKS and boards W7, W8, W9 and W2b give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each is display, or follows a line of TASKS 61 or SPEC that is already there, and none changes what is written. The writes are break-proven: review 2 re-ran the builder's 44 breaks and 8 of its own, all caught, and ran the offline delete of a logged head's last drop in real Chromium against staging.
+**Blocks:** nothing.
+**Options:** (a)–(i) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builders' reports (`<scratchpad>/build/chunk-61-builder-1.md`, section 3; attempt 2's: "none new") and the reviews (`chunk-61-review-1.md`, questions (2) and Q3; review 2's staging steps) (#215).
+- (a) SET TYPE (in the ⋯ and the panel) and UNLOG (in the panel) are drawn grey and do nothing until 62 and 63 wire them; the boards draw them live.
+- (b) A refused cue write shows the toast "Couldn't save the cue." with the reason. Plan puts the cues back without a word.
+- (c) While a delete is out, W9 reads DELETING…, both buttons are off, and the scrim and Escape do nothing. A failed delete keeps W9 open with "Couldn't delete the set." and the real reason.
+- (d) W9's words for a drop ("Delete set 01 drop 2? 62.5 kg × 8."), a superset member ("Delete B2? 25.4 lbs × 12–15."), a warmup, and a skipped set (it has no numbers to say).
+- (e) The eyebrow of a superset member ("DUMBBELL LATERAL RAISE · B2"), a warmup ("… · WARMUP") and a drop ("BARBELL BENCH PRESS · SET 01 · DROP 2").
+- (f) "Requires a connection" under SAVE offline (G47: SAVE is online only). Since attempt 2 no delete says it.
+- (g) The app's own accent and `--error` in the built pictures, as in every earlier chunk.
+- (h) A skipped row has a ⋯ with DELETE SET alone, though W2 and W3b draw no control on a skipped row. TASKS 61 asks for it ("a skipped row's ⋯ gets DELETE too", closing F4's "can't delete a skipped set"), and SPEC 18b makes a skipped set deletable. The fixtures' diff against staging changes only the skipped rows (review 1).
+- (i) A reading, not display: two phones delete the same unlogged planned set. The second phone's change row is refused (`23505`: one row per planned set per session), W9 says "Couldn't delete the set." with the reason, and the set stays on that phone. This is 042's design (review 1, Q3).
+
+### 226 Re-seed staging before chunk 62's review (to-do)
+**Ask:** after chunk 61's staging steps, the test account's in-progress session has one open planned set left (the lateral raise's B2) and no logged staged head. Re-seed staging before 62's review?
+**Recommendation:** yes, re-seed (yours: reviewers don't re-seed). 62 retypes open planned sets and 63 unlogs logged ones, so with one open planned set 62's staging list may run short. A smoke that logs that last set also ends the session by itself after the auto-finish threshold (166 (a)), so until then the smoke logs a set added with + ADD SET (CONTEXT, Staging's data). — **When:** before chunk 62's review.
+**Blocks:** nothing now.
+**Answer:**
+**Evidence:** 61's staging list deleted two open planned sets (one online, one offline) and a logged one, and its smoke logged a set added with + ADD SET, so one open planned set stays. The session's only planned dropset was skipped in 59's review, so no screen in 61's tree can make a logged staged head there, and the offline last-drop check ran on a fixture written by API in the seed's week-2 shape and taken out after (#215).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
