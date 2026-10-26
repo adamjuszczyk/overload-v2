@@ -32,7 +32,12 @@ const press = (el: Element) =>
   })
 const addedKeys = (c: HTMLElement) => Array.from(c.querySelectorAll('[data-row-key^="added:"]')).map((el) => el.getAttribute('data-row-key')!)
 const boxes = (c: HTMLElement, key: string) => (['Weight', 'Reps', 'RIR'] as const).map((label) => (within(rowOf(c, key)).getByLabelText(label) as HTMLInputElement).value)
-const greyBoxes = (c: HTMLElement, key: string) => (['Weight', 'Reps', 'RIR'] as const).map((label) => within(rowOf(c, key)).getByLabelText(label).getAttribute('data-draft') === 'true')
+// a box holding the draft's number is marked and drawn in the muted colour; a typed one is neither (SPEC [P2]: pre-fill "visibly different from typed values")
+const greyBoxes = (c: HTMLElement, key: string) =>
+  (['Weight', 'Reps', 'RIR'] as const).map((label) => {
+    const el = within(rowOf(c, key)).getByLabelText(label) as HTMLInputElement
+    return el.getAttribute('data-draft') === 'true' && el.style.color === 'var(--text-muted)'
+  })
 const type = (c: HTMLElement, key: string, label: 'Weight' | 'Reps' | 'RIR', value: string) => fireEvent.change(within(rowOf(c, key)).getByLabelText(label), { target: { value } })
 const held = (change: SessionSetChange, id: string): HeldChange => ({ ...change, id })
 const dropLog = (n: number, index: number, over: Partial<SetLog> = {}): SetLog =>
@@ -119,6 +124,7 @@ describe('UNLOG on a logged set: the log goes, the numbers stay on the phone as 
     // typing in a box makes that box a typed value; the others stay suggestions
     type(container, 'set:set-3', 'Reps', '9')
     expect(greyBoxes(container, 'set:set-3')).toEqual([true, false, true])
+    expect((within(rowOf(container, 'set:set-3')).getByLabelText('Reps') as HTMLInputElement).style.color).toBe('var(--text-primary)')
   })
 
   it('LOG again inserts a new log with the draft\'s numbers at the same number and clears the draft; it patches nothing (break: patch the old id, or keep the draft)', async () => {
@@ -138,12 +144,11 @@ describe('UNLOG on a logged set: the log goes, the numbers stay on the phone as 
     expect(world.log.filter((l) => l.startsWith('delete'))).toEqual(['delete session-1|p:set-3'])
   })
 
-  it('a LOG that fails puts the draft back: its numbers are not lost', async () => {
+  it('a LOG that fails puts the draft back: the row that returns after the rollback shows its numbers again (break: the draft not restored)', async () => {
     const world = newDraftWorld()
     const r = recorder()
-    const failing = vi.fn(async () => {
-      throw new Error('refused')
-    })
+    let refuse!: () => void
+    const failing = vi.fn(() => new Promise<SetLog>((_, reject) => (refuse = () => reject(new Error('refused')))))
     const { container, setLogs } = renderCard({ plannedSets: plan(), logs: logs(), store: fakeDraftStore(world), props: { onDeleteSet: r.onDeleteSet, onLog: failing, writers: r.writers } })
     await settle()
     await press(unlogButtonOf(container, 'set:set-3'))
@@ -151,9 +156,18 @@ describe('UNLOG on a logged set: the log goes, the numbers stay on the phone as 
     await settle()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     await press(within(rowOf(container, 'set:set-3')).getByText('LOG'))
-    expect(failing).toHaveBeenCalled()
+    setLogs(logs()) // the optimistic log: while the request is out the row is a logged row
+    await settle()
+    expect(rowStates(container)).toEqual(['logged', 'logged', 'logged'])
+    await act(async () => {
+      refuse()
+      for (let i = 0; i < 6; i++) await wait()
+    })
+    setLogs(logs().slice(0, 2)) // the rollback: the row is open again, a new instance
+    await settle()
     expect(world.drafts.size).toBe(1)
     expect(boxes(container, 'set:set-3')).toEqual(['80', '8', '2'])
+    expect(greyBoxes(container, 'set:set-3')).toEqual([true, true, true])
   })
 
   it('01-03 logged, unlog 02 and log it again: the stored numbers are 1, 2, 3 and no other log\'s number is patched (DECISIONS 151; break: the next number after the logged ones -> 3)', async () => {
@@ -197,6 +211,29 @@ describe('UNLOG on a logged set: the log goes, the numbers stay on the phone as 
     expect(onDeleteSet).toHaveBeenCalled()
     expect(world.drafts.size).toBe(0)
     expect(rowStates(container)).toEqual(['logged', 'logged', 'logged'])
+  })
+})
+
+describe('a logged warmup (rows mode) can be unlogged too: its weight and reps come back as the draft (board W2b "EDITING A WARMUP")', () => {
+  it('UNLOG in the warmup\'s panel deletes its log and keeps weight and reps; the open warmup row shows them grey and LOG writes a warmup with them (break: the panel\'s UNLOG not wired; break: the boxes not filled)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
+    const world = newDraftWorld()
+    const r = recorder()
+    const plan = [plannedSet(1, { isWarmup: true }), plannedSet(2)]
+    const warm = () => headLogOf(1, { isWarmup: true, weight: 40, reps: 5 })
+    const { container, setLogs } = renderCard({ plannedSets: plan, logs: [warm()], store: fakeDraftStore(world), props: { onDeleteSet: r.onDeleteSet, onLog: r.onLog, writers: r.writers } })
+    await settle()
+    await press(unlogButtonOf(container, 'set:set-1'))
+    expect(r.deleted).toEqual(['log-1'])
+    expect([...world.drafts.values()].map((d) => [d.id, d.values])).toEqual([['session-1|p:set-1', { weight: 40, reps: 5, rir: null, formRating: null, enteredUnit: null }]])
+    setLogs([])
+    await settle()
+    const w = within(rowOf(container, 'set:set-1'))
+    expect([(w.getByLabelText('Weight') as HTMLInputElement).value, (w.getByLabelText('Reps') as HTMLInputElement).value]).toEqual(['40', '5'])
+    expect(w.getByLabelText('Weight').style.color).toBe('var(--text-muted)')
+    await press(w.getByText('LOG'))
+    expect(r.requests[0]).toMatchObject({ weekPlanSetId: 'set-1', isWarmup: true, weight: 40, reps: 5 })
+    expect(world.drafts.size).toBe(0)
   })
 })
 
@@ -415,6 +452,24 @@ describe('a set added in the session: its draft, its place and its type come bac
     await settle()
     await press(within(rowOf(again.container, a.key)).getByText('LOG'))
     expect(r.requests[r.requests.length - 1]).toMatchObject({ addedPlace: 1, setNumber: 2, weight: 50, reps: 10 })
+  })
+
+  it('an added set that only its log names (a reopened session) is taken into the list when it is unlogged, so its row keeps its key across the new log (46r header; break: not taken in)', async () => {
+    const world = newDraftWorld()
+    const r = recorder()
+    const b = logOf({ id: 'log-b', weekPlanSetId: null, setNumber: 2, weight: 40, reps: 8, addedPlace: 1, loggedAt: '2026-01-05T10:05:00Z' })
+    const { container, setLogs } = renderCard({ plannedSets: PLAN(), logs: [headLogOf(1), b], store: fakeDraftStore(world), props: { onDeleteSet: r.onDeleteSet, onLog: r.onLog, writers: r.writers } })
+    await settle()
+    expect(addedKeys(container)).toEqual(['added:pe-1:log-b'])
+    await press(unlogButtonOf(container, 'added:pe-1:log-b'))
+    setLogs([headLogOf(1)])
+    await settle()
+    expect(addedKeys(container)).toEqual(['added:pe-1:log-b'])
+    await press(within(rowOf(container, 'added:pe-1:log-b')).getByText('LOG'))
+    expect(r.requests[0]).toMatchObject({ addedPlace: 1 })
+    setLogs([headLogOf(1), addedLogOf(r.requests[0])])
+    await settle()
+    expect(addedKeys(container)).toEqual(['added:pe-1:log-b']) // the set is still the one the list names, under its first id, not the new log's
   })
 
   it('a set added before 1.2 (no place) is unlogged: nothing else moves, its draft keeps the log\'s time, and the re-log names no time of its own, so it is drawn after the other old sets (DECISIONS 184 (b); break: the draft\'s earlier time written back)', async () => {
