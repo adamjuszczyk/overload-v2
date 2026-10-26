@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 68's review (merged, #212).*
-- *Chunk 68 (the stepped planner's steps 1–2, confirms and states) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's (RC18). One new entry, which doesn't block: 224 (its display choices, accepted as built). Tests owed: two (below).*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 61's review 1 (failed, not merged).*
+- *Chunk 61's first attempt (the set ⋯ sheet, the edit panel, delete a set) failed review 1 on two behaviour findings, the offline delete of a logged head's last drop and what auto-finish waits for (166 (a)); it goes back to a builder. Nothing in it needs you, and no entry is new. Chunk 68, merged before it, is unchanged here: 224 (accepted as built), two tests owed.*
 
 What blocks, in order:
 1. **121** (a to-do, below): the release's migrations PR waits for it.

@@ -28731,3 +28731,18 @@ From DECISIONS.md:
 From TASKS-1.2.md:
 
 | RC18 | The stepped planner still refuses a run's copy (PP5) | test | |
+
+## 2026-10-26 chunk 61 review 1 — failed, not merged (two behaviour findings: the offline delete of a logged head's last drop, and what auto-finish waits for under 166 (a)); no new DECISIONS entry; one check that lied and five rules; TASKS 61 amended; moved out of CONTEXT.md, DECISIONS.md and TASKS-1.2.md (replaced by newer lines there), word for word
+
+From CONTEXT.md:
+
+- **The build after 60:** 61 is next, then 62–64 in order, each on 58a's rows (61 is being built; 68 merged while it ran); day mode applies ("Where chunks go"). Until 63 keeps the card's list in Dexie, a set a swap moved lives on that phone only while it is open, as a set added with + ADD SET does: after a reload neither card draws it, and the card it left draws no row for it (TASKS 63). Until 62 writes `pending_stages`, a moved dropset logged on the swap's card keeps its open drops on that phone only (TASKS 62). 58a–64 ship together, so no release has either.
+
+From DECISIONS.md:
+
+*Rewritten at every boundary. Last: 2026-10-26, chunk 68's review (merged, #212).*
+- *Chunk 68 (the stepped planner's steps 1–2, confirms and states) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's (RC18). One new entry, which doesn't block: 224 (its display choices, accepted as built). Tests owed: two (below).*
+
+From TASKS-1.2.md:
+
+- **Auto-finish (Adam, 2026-10-16; DECISIONS 166 (a)):** `useAutoFinishSession` waits for what the workout's rows say is left, the same view as the finish warning (`finishWarning(order, logs, changes)` null), instead of a log on every planned set id, so a planned set deleted during the workout no longer keeps the session from finishing. Its threshold and grace window are unchanged.
