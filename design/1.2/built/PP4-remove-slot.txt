@@ -1,0 +1,29 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+01
+Pull 1
++
+ADD SLOT
+Remove this slot?
+“Pull 1”. This can't be undone.
+CANCEL
+REMOVE
+Push 1
++
+ADD AN EXERCISE
+WARMUP ROUTINE
+NO WARMUP ITEMS YET
++
+ADD ITEM
+Pull 1
+Push 2
+Pull 2
+Legs
++
+ADD WORKOUT
+SAVE
+START
