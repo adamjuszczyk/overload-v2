@@ -31,6 +31,7 @@ const world = vi.hoisted(() => ({
   nextId: 1,
   server: new Map<string, Record<string, unknown>>(),
   requests: [] as string[],
+  tables: new Set<string>(),
   failing: new Map<string, number>(),
   deviceLogDeletes: [] as string[],
 }))
@@ -82,7 +83,9 @@ const fails = (tag: string): boolean => {
 }
 vi.mock('../../lib/supabase', () => ({
   supabase: {
-    from: (table: string) => ({
+    from: (table: string) => {
+      world.tables.add(table)
+      return {
       upsert: async (row: Record<string, unknown>) => {
         const tag = `upsert ${table}:${row.id}`
         if (fails(tag)) return { error: { message: 'Failed to fetch' } }
@@ -117,7 +120,8 @@ vi.mock('../../lib/supabase', () => ({
           return { error: null }
         },
       }),
-    }),
+      }
+    },
   },
 }))
 
@@ -176,6 +180,7 @@ beforeEach(() => {
   world.nextId = 1
   world.server = new Map()
   world.requests = []
+  world.tables = new Set()
   world.failing = new Map()
   world.deviceLogDeletes = []
   queryClient.clear()
@@ -216,6 +221,39 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
     const rows = [...world.server].filter(([key]) => key.startsWith('v2_session_set_changes:')).map(([, row]) => row)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ kind: 'deleted', week_plan_set_id: 'bench.2', set_log_id: null, session_id: 's1', user_id: 'u1', is_warmup: false, stage_kind: null, stage_count: 0 })
+    expect(queue()).toEqual([])
+    // the plan is untouched: the tables the delete reached are the session's own, never `v2_week_plan_sets` (TASKS 61: absence of any plan write except CUES)
+    expect([...world.tables].sort()).toEqual(['v2_session_set_changes', 'v2_set_logs'])
+  })
+
+  it('an unlogged planned set deleted offline is one queued upsert, no log item and no patch; on reconnect it is the only request, to the change table', async () => {
+    const view = viewOf(orderOf([BENCH()]), [head1()])
+    const effects = deleteEffects(rowKeyed(view, 'set:bench.3'), view)
+    expect(effects.deleteOrder).toEqual([])
+    await act(async () => {
+      await runDelete(effects, {
+        deleteLog: async () => {
+          throw new Error('an open set has no log to delete')
+        },
+        writers: {
+          online: false,
+          writeChanges: (writes) => writeSetChanges({ sessionId: 's1', userId: 'u1', writes, online: false }),
+          patchNumbers: async () => {
+            throw new Error('no logged set follows it')
+          },
+          clearStageKind: async () => {
+            throw new Error('not in this delete')
+          },
+        },
+      })
+    })
+    expect(inQueueOrder()).toEqual(['upsert v2_session_set_changes deleted bench.3'])
+    expect(world.requests).toEqual([])
+    world.online = true
+    await flushSyncQueue()
+    expect(world.requests).toHaveLength(1)
+    expect(world.requests[0]).toMatch(/^upsert v2_session_set_changes:/)
+    expect([...world.tables]).toEqual(['v2_session_set_changes'])
     expect(queue()).toEqual([])
   })
 

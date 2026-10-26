@@ -4,6 +4,7 @@ import { cleanup, fireEvent, screen, within, act } from '@testing-library/react'
 import type { SessionSetChange, SetLog } from '../../types'
 import { headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates } from './cardHarness.testutil'
 import { spyWriters } from './setWriters.testutil'
+import type { LogRequest } from './useExerciseCardState'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import type { AddedSet, ChangeWrite, HeldChange } from './workoutRules'
 
@@ -216,6 +217,34 @@ describe('an open planned set: its ⋯ DELETE SET writes the `deleted` change ro
       for (const write of call[0] as ChangeWrite[]) expect(['deleted', 'retyped', 'pending_stages']).toContain(write.change.kind)
     }
     expect(Object.keys(writers).sort()).toEqual(['clearStageKind', 'isCycle', 'mesocycleId', 'online', 'patchNumbers', 'weekNumber', 'writeChanges'])
+  })
+})
+
+describe('SKIP THIS SET writes the skip and no change row (RULES: only a delete turns a `retyped` row into `deleted`)', () => {
+  const retyped = () => held({ kind: 'retyped', weekPlanSetId: 'set-2', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 } }, 'chg-7')
+  const plan = () => [plannedSet(1), plannedSet(2), plannedSet(3)]
+
+  it('a set the session retyped is skipped: its log is written, the change row is not touched, no number is patched and nothing is deleted', async () => {
+    const { writers, onDeleteSet } = recorder()
+    const onLog = vi.fn(async (params: LogRequest) => logOf({ id: 'skip-1', ...(params as unknown as Partial<SetLog>) }))
+    const { container } = renderCard({ plannedSets: plan(), logs: [headLogOf(1)], changes: [retyped()], props: { onDeleteSet, writers, onLog } })
+    expect(container.textContent).toContain('DROPSET · 2 DROPS')
+    fireEvent.click(within(rowOf(container, 'set:set-2')).getByLabelText('Set options'))
+    await press(within(screen.getByRole('dialog')).getByText('SKIP THIS SET'))
+    expect(onLog).toHaveBeenCalledTimes(1)
+    expect(onLog.mock.calls[0][0]).toMatchObject({ isSkipped: true, weekPlanSetId: 'set-2' })
+    expect(writers.writeChanges).not.toHaveBeenCalled()
+    expect(writers.patchNumbers).not.toHaveBeenCalled()
+    expect(writers.clearStageKind).not.toHaveBeenCalled()
+    expect(onDeleteSet).not.toHaveBeenCalled()
+  })
+
+  it('the control: DELETE SET on that same set does write its change row (a `deleted` replacing the `retyped` by id), so the absence above is not a card that writes nothing', async () => {
+    const { writers, onDeleteSet } = recorder()
+    const { container } = renderCard({ plannedSets: plan(), logs: [headLogOf(1)], changes: [retyped()], props: { onDeleteSet, writers } })
+    askFromSheet(container, 'set:set-2')
+    await press(within(dialog()).getByText('DELETE SET'))
+    expect(writers.writeChanges).toHaveBeenCalledWith([{ change: { kind: 'deleted', weekPlanSetId: 'set-2' }, id: 'chg-7' }])
   })
 })
 
