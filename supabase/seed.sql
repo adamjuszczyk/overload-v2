@@ -112,10 +112,11 @@
 -- set from the week before (the same planned set's weight, RIR, rep targets and
 -- AMRAP; the same planned set is the same exercise row, set number, stage and
 -- warmup flag), so the world is the same whichever version of v2_plan_week the
--- database has. Each copy is checked right after it (DECISIONS 219: on staging a
--- copy that landed on no row went unseen and the logs took their 50 kg
--- fallback): a planned set that found no source set, or differs from it, stops
--- the seed with an error that names the counts, and nothing is seeded.
+-- database has. Each copy is checked right after it (DECISIONS 219: on staging
+-- weeks 2 and 3 came out without their numbers, nothing said so, and the logs
+-- took their 50 kg fallback): a planned set that found no source set, or differs
+-- from it, stops the seed with an error that names the counts, and nothing is
+-- seeded.
 
 -- ── Privileges a new branch lacks ───────────────────────────────────────────
 -- Supabase creates a branch "without default privileges on the public
@@ -496,10 +497,11 @@ begin
       and ws.stage_index = src.stage_index and ws.is_warmup = src.is_warmup;
   end loop;
   -- The copy is checked, in a loop of its own so that it cannot share a mistake with the copy
-  -- (DECISIONS 219: on staging a copy that landed on no row went unseen, and the logs below took
-  -- their 50 kg fallback). Every planned set of weeks 2 and 3 must have found its source set a
-  -- week earlier and equal it in the five columns, and the source week must hold weights (else
-  -- "equal" could mean "both empty"). If not, the seed stops and rolls everything back.
+  -- (DECISIONS 219: on staging weeks 2 and 3 came out without their numbers, nothing said so, and
+  -- the logs below took their 50 kg fallback). Every planned set of weeks 2 and 3 must have found
+  -- its source set a week earlier and equal it in the five columns, and the source week must hold
+  -- weights and rep targets (else "equal" could mean "both empty"). If not, the seed stops and
+  -- rolls everything back.
   for wk in 2..3 loop
     select count(*), count(src.id),
            count(*) filter (where src.id is not null and (ws.target_weight is distinct from src.target_weight
