@@ -42,7 +42,6 @@ vi.mock('./useScrollToCurrentSet', () => ({
 vi.mock('./RestTimer', () => ({ default: () => null }))
 vi.mock('./SessionComplete', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }),

@@ -30,7 +30,8 @@ interface WorkoutRowProps {
 export default function WorkoutRow({ state, row, current, supersetContext }: WorkoutRowProps) {
   const warmupDisplay = useSettingsStore((s) => s.warmupDisplay)
   const unit = state.resolvedWeightUnit
-  const planned = state.plannedOf(row)
+  // What the row shows is the targets of its plan's set: a set a swap moved here shows the ones it had on the card it left (chunk 59).
+  const planned = state.targetsOf(row)
   const log = state.logOf(row)
   const isStage = row.kind === 'stage'
 

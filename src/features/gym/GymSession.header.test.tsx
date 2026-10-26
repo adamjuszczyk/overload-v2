@@ -29,7 +29,6 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: () => {}, direction: 'down', scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }), useSupersetBlockRests: () => ({ data: [] }), useWarmupRoutineItems: () => ({ data: [] }),

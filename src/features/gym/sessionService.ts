@@ -13,6 +13,8 @@ import type {
 } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
+import { parseSwapRecord } from './exerciseSwapLogic'
+import type { SwapRecord } from './workoutRules'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -1014,6 +1016,10 @@ export interface ExerciseSwap {
   replacementExerciseId: string | null
   replacementExerciseName: string
   createdAt: string
+  // Chunk 59 (migration 047; DECISIONS 183, 46r's Q5): the record of which sets the swap moved, stored with the swap's own row and never
+  // inferred from the logs. Absent or null on every swap before 047 (and on a row whose column holds anything but the record's shape):
+  // the swap is then drawn as 58a draws it, two cards with no set moved (DECISIONS 198).
+  movedSets?: SwapRecord | null
 }
 
 type DbExerciseSwap = {
@@ -1025,6 +1031,7 @@ type DbExerciseSwap = {
   replacement_exercise_id: string | null
   replacement_exercise_name: string
   created_at: string
+  moved_sets?: unknown
 }
 
 function toExerciseSwap(row: DbExerciseSwap): ExerciseSwap {
@@ -1037,6 +1044,7 @@ function toExerciseSwap(row: DbExerciseSwap): ExerciseSwap {
     replacementExerciseId: row.replacement_exercise_id,
     replacementExerciseName: row.replacement_exercise_name,
     createdAt: row.created_at,
+    movedSets: parseSwapRecord(row.moved_sets),
   }
 }
 
@@ -1049,6 +1057,9 @@ export async function recordExerciseSwap(params: {
   programExerciseId: string
   originalExercise: Exercise
   replacementExercise: Exercise
+  // Chunk 59 (migration 047): the record of which sets moved, written with the row and never inferred from the logs (Q5). Required:
+  // a swap saved without it would be drawn as one that moved nothing.
+  movedSets: SwapRecord
 }): Promise<ExerciseSwap> {
   const { data, error } = await supabase
     .from('v2_session_exercise_swaps')
@@ -1060,6 +1071,7 @@ export async function recordExerciseSwap(params: {
       original_exercise_name: params.originalExercise.name,
       replacement_exercise_id: params.replacementExercise.id,
       replacement_exercise_name: params.replacementExercise.name,
+      moved_sets: params.movedSets,
     })
     .select('*')
     .single()

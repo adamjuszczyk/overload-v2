@@ -1,0 +1,10 @@
+{
+  "table": "v2_session_exercise_swaps",
+  "user_id": "user-1",
+  "session_id": "session-1",
+  "program_exercise_id": "pe-1",
+  "original_exercise_id": "ex-1",
+  "original_exercise_name": "Bench Press",
+  "replacement_exercise_id": "ex-2",
+  "replacement_exercise_name": "Incline Press"
+}
