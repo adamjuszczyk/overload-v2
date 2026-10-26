@@ -150,13 +150,14 @@ describe('SupersetBlock — rounds (SPEC "Supersets", board W1)', () => {
     expect(calls[0]).toMatchObject({ exerciseId: 'ex-pe-a', setNumber: 1, weight: 100, reps: 8 })
   })
 
-  it('B1 is typable only once A1 is logged: the current set zigzags into the next member', () => {
+  it('every open row has its boxes (chunk 60), and the current set zigzags into the next member once A1 is logged', () => {
     const { container, setLogs } = renderBlock(members())
-    expect(within(container).getAllByLabelText('Weight')).toHaveLength(1)
+    expect(within(container).getAllByLabelText('Weight')).toHaveLength(7) // A1 B1 A2 B2 A3 B3 A4, all open
+    expect(labelOf(container.querySelector('[data-current-set]') as HTMLElement)).toBe('A1')
     setLogs([makeSetLog({ id: 'a1', weekPlanSetId: 'pe-a-set-1', weight: 100, reps: 8 })])
-    const current = container.querySelector('[data-current-set]') as HTMLElement
-    expect(labelOf(current)).toBe('B1')
-    expect(within(container).getAllByLabelText('Weight')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect(labelOf(container.querySelector('[data-current-set]') as HTMLElement)).toBe('B1')
+    expect(within(container).getAllByLabelText('Weight')).toHaveLength(6) // A1 is logged and has no boxes any more
   })
 })
 

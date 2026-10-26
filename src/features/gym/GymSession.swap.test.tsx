@@ -401,8 +401,10 @@ describe('after the swap: the cards of W5', () => {
     const rows = Array.from(cards(container)[1].querySelectorAll('[data-row-key]')) as HTMLElement[]
     expect(rows.map((row) => row.querySelector('span')?.textContent)).toEqual(['02', '03'])
     expect((within(rows[0]).getByLabelText('Weight') as HTMLInputElement).value).toBe('52.5') // the current row: its own weight in the box
-    expect(rows[1].textContent).toContain('60 kg × 6–8 @ RIR 2') // the one after it: its own targets, not the first set's
-    expect(rows[1].textContent).not.toContain('52.5')
+    // the one after it has its boxes too (chunk 60), and they hold its own targets, not the first set's
+    expect((within(rows[1]).getByLabelText('Weight') as HTMLInputElement).value).toBe('60')
+    expect((within(rows[1]).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('6–8')
+    expect((within(rows[1]).getByLabelText('RIR') as HTMLInputElement).placeholder).toBe('2')
   })
 
   it('the card the sets left offers no second swap, no + ADD SET and no "Add a set"; the new card offers no swap but keeps + ADD SET, Add a set and the skip (DECISIONS 199 (a), TASKS 59)', async () => {

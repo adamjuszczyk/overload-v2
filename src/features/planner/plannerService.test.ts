@@ -44,6 +44,7 @@ const {
   updateProgramSetStageKind,
   addProgramSetStage,
   removeProgramSet,
+  applyProgramSetTypeOps,
   summarizeRepTargets,
   splitSharedWeekdayWorkouts,
 } = await import('./plannerService')
@@ -363,6 +364,41 @@ describe('setExerciseSetCount — reconciles head rows to exactly `count`', () =
     ])
   })
 
+  // Chunk 67 — DECISIONS 213 (a) (Adam, 2026-10-22: "+ always adds after the highest position"). REMOVE THIS SET leaves its position empty, so
+  // positions are no longer 1..count and a new row can't take `count + 1`: with 1 and 3 left, `count + 1` is 3, a position a set already holds.
+  it('213: after a set was removed from the middle (positions 1 and 3) + writes position 4, never the count + 1 (3, a position that is taken)', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    const existing = [programSet({ id: 'a', position: 1, repMin: 8, repMax: 12 }), programSet({ id: 'c', position: 3, repMin: 6, repMax: 8 })]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 3)
+
+    expect(chain.insert).toHaveBeenCalledWith([
+      { user_id: 'user-1', program_exercise_id: 'pe-1', position: 4, is_warmup: false, rep_min: 6, rep_max: 8, is_amrap: false },
+    ])
+  })
+
+  it('213: growing by several after a gap numbers each new row one past the highest position, one after the other', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    const existing = [programSet({ id: 'a', position: 1 }), programSet({ id: 'b', position: 2 }), programSet({ id: 'd', position: 4 })]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 5)
+
+    const rows = (chain.insert as ReturnType<typeof vi.fn>).mock.calls[0][0] as { position: number }[]
+    expect(rows.map((r) => r.position)).toEqual([5, 6])
+  })
+
+  it('213: shrinking after a gap still removes the highest positions (the trailing rows), not the highest numbers of a count', async () => {
+    const chain = makeChain({ data: null, error: null })
+    fromMock.mockReturnValue(chain)
+    const existing = [programSet({ id: 'a', position: 1 }), programSet({ id: 'c', position: 3 }), programSet({ id: 'd', position: 4 })]
+
+    await setExerciseSetCount('user-1', 'pe-1', existing, 2)
+
+    expect(chain.in).toHaveBeenCalledWith('id', ['d'])
+  })
+
   it('equal count: no insert, no delete (a true no-op — reviewer note 1\'s own guarantee)', async () => {
     const existing = [programSet({ id: 'a', position: 1 })]
 
@@ -533,6 +569,80 @@ describe('removeProgramSet — one row at a time (the SETS stepper\'s own bulk s
     expect(fromMock).toHaveBeenCalledWith('v2_program_sets')
     expect(chain.delete).toHaveBeenCalled()
     expect(chain.eq).toHaveBeenCalledWith('id', 'stage-1')
+  })
+})
+
+// ─── applyProgramSetTypeOps (chunk 67 — a set type picked on the stepped planner's picker) ───
+
+describe('applyProgramSetTypeOps — each write after the one before is answered, the first refusal stops the rest', () => {
+  // A chain whose answer the test holds: the write has been asked for, and has not been answered yet.
+  function heldChain() {
+    let answer: (v: { data: unknown; error: unknown }) => void = () => undefined
+    const pending = new Promise<{ data: unknown; error: unknown }>((resolve) => (answer = resolve))
+    const chain = makeChain({ data: null, error: null })
+    chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => pending.then(resolve, reject)
+    return { chain, answer }
+  }
+
+  it('names each write as the function it already was: a delete by id, { stage_kind }, { stage_rest_seconds }, { is_warmup } and a stage insert', async () => {
+    const chains = Array.from({ length: 5 }, () => makeChain({ data: { id: 'new' }, error: null }))
+    chains.forEach((chain) => fromMock.mockReturnValueOnce(chain))
+
+    await applyProgramSetTypeOps('user-1', [
+      { kind: 'removeStage', id: 's2' },
+      { kind: 'stageKind', id: 'h', stageKind: null },
+      { kind: 'stageRest', id: 'h', stageRestSeconds: null },
+      { kind: 'isWarmup', id: 'h', isWarmup: true },
+      { kind: 'addStage', programExerciseId: 'pe-1', parentId: 'h', position: 4, stageIndex: 3 },
+    ])
+
+    expect(fromMock.mock.calls.map((c) => c[0])).toEqual(Array(5).fill('v2_program_sets'))
+    expect(chains[0].delete).toHaveBeenCalled()
+    expect(chains[0].eq).toHaveBeenCalledWith('id', 's2')
+    expect(chains[1].update).toHaveBeenCalledWith({ stage_kind: null })
+    expect(chains[1].eq).toHaveBeenCalledWith('id', 'h')
+    expect(chains[2].update).toHaveBeenCalledWith({ stage_rest_seconds: null })
+    expect(chains[3].update).toHaveBeenCalledWith({ is_warmup: true })
+    expect(chains[4].insert).toHaveBeenCalledWith({ user_id: 'user-1', program_exercise_id: 'pe-1', position: 4, is_warmup: false, parent_program_set_id: 'h', stage_index: 3 })
+  })
+
+  it('does not ask for the next write until the one before has been answered', async () => {
+    const first = heldChain()
+    const second = makeChain({ data: null, error: null })
+    fromMock.mockReturnValueOnce(first.chain).mockReturnValueOnce(second)
+
+    const done = applyProgramSetTypeOps('user-1', [
+      { kind: 'removeStage', id: 's1' },
+      { kind: 'isWarmup', id: 'h', isWarmup: true },
+    ])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(fromMock).toHaveBeenCalledTimes(1)
+    first.answer({ data: null, error: null })
+    await done
+    expect(fromMock).toHaveBeenCalledTimes(2)
+    expect(second.update).toHaveBeenCalledWith({ is_warmup: true })
+  })
+
+  it('a refused write rejects with its error and the writes after it are never asked for', async () => {
+    const refused = new Error('refused')
+    fromMock
+      .mockReturnValueOnce(makeChain({ data: null, error: null }))
+      .mockReturnValueOnce(makeChain({ data: null, error: refused }))
+      .mockReturnValue(makeChain({ data: null, error: null }))
+
+    await expect(
+      applyProgramSetTypeOps('user-1', [
+        { kind: 'removeStage', id: 's2' },
+        { kind: 'removeStage', id: 's1' },
+        { kind: 'isWarmup', id: 'h', isWarmup: true },
+      ]),
+    ).rejects.toBe(refused)
+    expect(fromMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('no writes, no requests', async () => {
+    await applyProgramSetTypeOps('user-1', [])
+    expect(fromMock).not.toHaveBeenCalled()
   })
 })
 

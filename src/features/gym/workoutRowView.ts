@@ -38,7 +38,7 @@ export function rowDefaults(planned: Targets | null, unit: WeightUnit): { weight
   }
 }
 
-/** An upcoming row, targets only: "52.5 kg × 8–10 @ RIR 1–2" (parts the plan doesn't give are left out). */
+/** A row that shows targets only, a locked drop since chunk 60 (every other open row has its boxes): "52.5 kg × 8–10 @ RIR 1–2" (parts the plan doesn't give are left out). */
 export function targetsText(planned: Targets | null, unit: WeightUnit): string {
   if (planned == null) return ''
   const parts: string[] = []

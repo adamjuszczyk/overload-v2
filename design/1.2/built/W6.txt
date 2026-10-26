@@ -28,12 +28,18 @@ Seated Cable Row
 BACK
 LAST = LAST WEEK, TUE
 01
-60 kg × 10–12 @ RIR 2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 11 @ 2
 
 02
-60 kg × 10–12 @ RIR 2
+kg
+×
+RIR
+LOG
 
 LAST 60 × 10 @ 2
 
