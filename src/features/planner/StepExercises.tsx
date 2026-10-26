@@ -666,9 +666,11 @@ function OpenExercise({
 }
 
 // The link between two rows (PP2): a small box in the rail, on the rule between them. Linked: the accent, and the rail runs through both numbers.
+// Its 44 px target reaches 22 px into the row below, whose rail is positioned too and comes later: without a z-index the lower half of the
+// link is that rail's, and a tap there goes nowhere (found in Chromium; jsdom lays nothing out).
 function LinkGap({ above, below, linked, disabled, onToggle }: { above: string; below: string; linked: boolean; disabled: boolean; onToggle: () => void }) {
   return (
-    <div style={{ position: 'relative', height: 1, marginLeft: 52, background: 'var(--border-subtle)' }}>
+    <div style={{ position: 'relative', zIndex: 1, height: 1, marginLeft: 52, background: 'var(--border-subtle)' }}>
       <button
         type="button"
         aria-pressed={linked}

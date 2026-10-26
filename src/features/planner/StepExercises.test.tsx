@@ -342,6 +342,16 @@ describe('StepExercises — superset grouping (chunk 13, never gated by volumeRe
     expect(toggleLinkMutateMock).toHaveBeenCalledWith([{ ids: ['pe-2', 'pe-3'], blockId: null, needsNewBlock: true }])
   })
 
+  it('the link sits above the rows it overlaps (z-index 1 on its rule): its 44 px target reaches into the next row, whose positioned rail would take the lower half of a tap (found in Chromium, where jsdom sees no layout)', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, exercise: { ...exercise().exercise!, name: 'Bench Press' } }),
+      exercise({ id: 'pe-2', position: 1, exercise: { ...exercise().exercise!, name: 'Incline Press' } }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+    expect(screen.getByLabelText('Link Bench Press and Incline Press as superset').parentElement!.style.zIndex).toBe('1')
+  })
+
   it('already-linked exercises show their link pressed; tapping it plans clearing both', () => {
     workoutDays = [day({ id: 'wd-1' })]
     exercisesByDay['wd-1'] = [
