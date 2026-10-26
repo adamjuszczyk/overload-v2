@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Plus, Trash2, ChevronUp, ChevronDown, X, Link2 } from 'lucide-react'
+import type { CSSProperties } from 'react'
+import { Trash2, ChevronUp, ChevronDown, Link2 } from 'lucide-react'
 import type { WeightUnit, WarmupRoutineItem } from '../../types'
 import { queryClient } from '../../lib/queryClient'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import { hairline } from '../../components/pickers/pickerControls'
 import {
   useWarmupRoutineItems,
   useAddWarmupItem,
@@ -13,42 +16,37 @@ import { moveWarmupItem } from '../programs/warmupRoutineService'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE } from '../plan/planMenu'
 import { formatRestTime } from '../../lib/formatRestTime'
 import { normaliseTempo } from '../../lib/plannerVocabulary.js'
+import { CAPTION, IconButton, MONO, ruleAbove } from './plannerChrome'
 
-// The design-field editors of the planner's step 2 (StepExercises.tsx) and of
-// Plan's STRUCTURE view: a rest stepper, the tempo field, the weight-unit
-// chips, the superset link toggle and a block's round rests, the warmup
-// routine, and the two small helpers they share (IconBtn, Sheet).
+// The design-field editors of the planner's step 2 (StepExercises.tsx): a rest stepper, the tempo field, the weight-unit chips, a block's round
+// rests, the warmup routine, and the superset link toggle CHANGE THE PROGRAM's cards also use.
 //
-// Chunk 30 (TASKS-1.1 "Rest, tempo, grouping, the routine and units in the
-// Structure view (run-wide)") moved them here from StepExercises.tsx, nothing
-// else: each is the same markup, state and callback it was in that file, so
-// the planner renders and behaves exactly as before. (Plan's program tab, which
-// used them too, is gone since chunk 33.) Plan's week panel (the STRUCTURE view)
-// is the second user; it passes the same
-// mutations the planner does (useUpdateProgramExerciseRest and the rest, all in
-// usePrograms.ts / usePlanner.ts), because these fields are run-wide: every
-// edit goes to the exercise's own program-exercise row, whichever view makes it.
+// Chunk 30 (TASKS-1.1 "Rest, tempo, grouping, the routine and units in the Structure view (run-wide)") moved them here from StepExercises.tsx so
+// Plan's STRUCTURE view could show the same editors; that view is gone (Plan's program tab went in chunk 33, its structure rows in chunk 54a), and
+// the planner and CHANGE THE PROGRAM (the link toggle alone) are the users left. Chunk 68 draws the planner's editors as boards PP2, PP2e and PP2f do:
+// 44 px controls on a two-column row (the label, then the control), the unit as one segmented box, a field that is set in the muted accent, a
+// tempo that is refused with its message under the box, the warmup items as rows with the three arrows at their right. Every field keeps its
+// props and what it calls back with; the writes are the callers' and are unchanged.
 //
-// What the second user adds is optional, and a caller that passes none of it
-// gets the planner's markup byte for byte:
-//   - RestStepper.ariaLabel: names the − and + buttons ("Less rest", "More
-//     rest" for ariaLabel "rest"), so a screen can tell several steppers apart;
-//   - SupersetLinkToggle.suffix / BlockRestEditor.everyWeek: an "EVERY WEEK"
-//     label beside the control (SPEC Supersets [P1.1]);
-//   - UnitChips.style: the planner's row pads it; the ⋯ menu doesn't;
-//   - WarmupRoutineEditor variant 'menu' / readOnly: the routine's rows with a
-//     ⋯ (standing UI rule: reorder and remove live behind a ⋯, an unset routine
-//     shows no placeholder) and a read-only list for a past week.
+// What the second user added stays optional, and a caller that passes none of it gets the planner's markup:
+//   - RestStepper.ariaLabel: names the − and + buttons ("Less rest", "More rest" for ariaLabel "rest"), so a screen can tell several steppers apart;
+//   - SupersetLinkToggle.suffix / BlockRestEditor.everyWeek: an "EVERY WEEK" label beside the control (SPEC Supersets [P1.1]);
+//   - UnitChips.style: the root's own style;
+//   - WarmupRoutineEditor variant 'menu' / readOnly: the routine's rows with a ⋯ (standing UI rule) and a read-only list.
 
-// ─── Rest stepper (chunk 16) — same +/- stepper shape as PlanPage.tsx's own
-// RirStepper (this build's existing rest/RIR pattern), seconds instead of
-// RIR: 15s per tap, tapping "−" at the floor clears back to null ("no
-// override" — the caller's own defaultText says what that falls through
-// to), tapping "+" from null starts at 15s. Capped at 600s (10 min) — generous
-// enough for any real rest, so the stepper target that caps RirStepper's own
-// range stays meaningful here rather than open-ended.
+const LABEL: CSSProperties = { ...MONO, fontSize: 10, letterSpacing: '0.12em', color: 'var(--text-muted)' }
+
+// The two-column row the boards draw (PP2): the label in a 92 px column, the control in the rest.
+const FIELD_ROW: CSSProperties = { display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr)', alignItems: 'center' }
+
+// ─── Rest stepper (chunk 16) — same +/- stepper shape as PlanPage.tsx's own RirStepper (this build's existing rest/RIR pattern), seconds
+// instead of RIR: 15s per tap, tapping "−" at the floor clears back to null ("no override" — the caller's own defaultText says what that falls
+// through to), tapping "+" from null starts at 15s. Capped at 600s (10 min) — generous enough for any real rest, so the stepper target that caps
+// RirStepper's own range stays meaningful here rather than open-ended. A value that is set is drawn in the muted accent (PP2's REST).
 const REST_STEP_SECONDS = 15
 const REST_MAX_SECONDS = 600
+
+const STEP_BUTTON: CSSProperties = { height: '100%', padding: 0, borderWidth: 0, background: 'transparent', fontSize: 16, lineHeight: 1 }
 
 export function RestStepper({
   label,
@@ -63,35 +61,38 @@ export function RestStepper({
   disabled: boolean
   onChange: (v: number | null) => void
   defaultText: string
-  // Chunk 30 — optional; names the two buttons for a screen that shows several
-  // steppers at once. Left out, the buttons carry no aria-label (the planner).
+  // Chunk 30 — optional; names the two buttons for a screen that shows several steppers at once.
   ariaLabel?: string
 }) {
+  const set = value !== null
+  const lessOff = disabled || value === null
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
-        {label}
-      </span>
-      <div style={{ display: 'inline-flex', alignItems: 'center', height: 26, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 6, flexShrink: 0 }}>
+    <div style={FIELD_ROW}>
+      <span style={LABEL}>{label}</span>
+      <div
+        style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) 44px', height: 44, boxSizing: 'border-box', alignItems: 'center', borderRadius: 8, ...hairline(set ? 'var(--accent)' : 'var(--border)'), background: set ? 'var(--accent-muted)' : 'var(--surface)' }}
+      >
         <button
-          disabled={disabled || value === null}
+          type="button"
+          disabled={lessOff}
           aria-label={ariaLabel ? `Less ${ariaLabel}` : undefined}
           onClick={() => {
             if (value === null) return
             onChange(value - REST_STEP_SECONDS <= 0 ? null : value - REST_STEP_SECONDS)
           }}
-          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: (disabled || value === null) ? 'var(--text-dim)' : 'var(--text-muted)', cursor: (disabled || value === null) ? 'default' : 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ ...STEP_BUTTON, color: lessOff ? 'var(--text-dim)' : 'var(--text-secondary)', cursor: lessOff ? 'default' : 'pointer' }}
         >
           −
         </button>
-        <span style={{ minWidth: 48, textAlign: 'center', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: value === null ? 'var(--text-dim)' : 'var(--text-primary)' }}>
+        <span style={{ ...MONO, textAlign: 'center', fontSize: set ? 13 : 11, fontWeight: set ? 700 : 600, letterSpacing: set ? 0 : '0.06em', color: set ? 'var(--accent)' : 'var(--text-muted)', overflowWrap: 'anywhere' }}>
           {value === null ? defaultText : formatRestTime(value)}
         </span>
         <button
+          type="button"
           disabled={disabled}
           aria-label={ariaLabel ? `More ${ariaLabel}` : undefined}
           onClick={() => onChange(Math.min((value ?? 0) + REST_STEP_SECONDS, REST_MAX_SECONDS))}
-          style={{ width: 22, height: 26, background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ ...STEP_BUTTON, color: disabled ? 'var(--text-dim)' : 'var(--text-secondary)', cursor: disabled ? 'default' : 'pointer' }}
         >
           +
         </button>
@@ -101,19 +102,11 @@ export function RestStepper({
 }
 
 // ─── Tempo (chunk 17 — SPEC.md "Tempo") ─────────────────────────────────────
-// Same tap-to-edit text-input pattern StepVolume.tsx's SetTargetRow/
-// ExerciseTargetRow already use for their own parsed free-text design field
-// (rep target), inside the same labelled-box shape RestStepper uses just
-// above (so the three sit as one row of controls) — reviewer's note: "the
-// same row and the same existing input/stepper pattern." Validated by
-// plannerVocabulary.ts's normaliseTempo (chunk 2) — the one parser for this
-// format anywhere in the app; an invalid entry shows an inline error (same
-// "input border turns --error, a message appears below" pattern
-// ExerciseForm.tsx's own name field already uses — the one existing inline-
-// validation precedent in this codebase) and writes nothing, never closing
-// the editor so the message stays visible until fixed. Clearing the field
-// (blank, trimmed) writes null, same "no override" meaning REST/REST AFTER
-// give an empty stepper.
+// Same tap-to-edit text-input pattern StepVolume.tsx's rep boxes use for their own parsed free-text design field, inside the same labelled row
+// RestStepper uses just above (so the three sit as one column of controls). Validated by plannerVocabulary.ts's normaliseTempo (chunk 2) — the one
+// parser for this format anywhere in the app; an invalid entry turns the box's outline red and says why under it (PP2e: "Use 4 fields, e.g. 3-1-1-0
+// (X allowed)") and writes nothing, never closing the editor so the message stays visible until fixed. Clearing the field (blank, trimmed) writes
+// null, the same "no override" meaning REST/REST AFTER give an empty stepper. A tempo that is set is drawn in the muted accent (PP2e: TEMPO · SAVED).
 export function TempoEditor({
   value,
   disabled,
@@ -149,8 +142,7 @@ export function TempoEditor({
     }
     const normalised = normaliseTempo(trimmed)
     if (normalised === null) {
-      // Refused — stays in edit mode with the raw input still showing, the
-      // message right below it; nothing is written (reviewer's note).
+      // Refused — stays in edit mode with the raw input still showing, the message right below it; nothing is written (reviewer's note).
       setError('Use 4 fields, e.g. 3-1-1-0 (X allowed)')
       return
     }
@@ -159,13 +151,12 @@ export function TempoEditor({
     if (normalised !== value) onChange(normalised)
   }
 
+  const set = value !== null
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', flexShrink: 0 }}>
-        TEMPO
-      </span>
+    <div style={FIELD_ROW}>
+      <span style={LABEL}>TEMPO</span>
       {editing ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <input
             ref={inputRef}
             value={text}
@@ -174,27 +165,19 @@ export function TempoEditor({
             onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
             placeholder="3-1-1-0"
             aria-label="Tempo"
-            style={{ width: 96, height: 26, background: 'var(--surface)', border: `1px solid ${error ? 'var(--error)' : 'var(--accent)'}`, borderRadius: 6, padding: '0 8px', fontSize: 11, fontFamily: 'var(--font-display)', fontWeight: 800, color: 'var(--text-primary)', boxSizing: 'border-box', outline: 'none' }}
+            style={{ ...MONO, width: '100%', height: 44, boxSizing: 'border-box', borderRadius: 8, borderWidth: 2, borderStyle: 'solid', borderColor: error ? 'var(--error)' : 'var(--accent)', background: 'var(--surface)', padding: '0 12px', fontSize: 16, color: 'var(--text-primary)', outline: 'none' }}
           />
-          {error && (
-            <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--error)', letterSpacing: '0.5px' }}>
-              {error}
-            </span>
-          )}
+          {error && <span style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--error)' }}>{error}</span>}
         </div>
       ) : (
         <button
+          type="button"
           onClick={startEditing}
           disabled={disabled}
-          style={{ height: 26, padding: '0 8px', background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: disabled ? 'default' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 11, color: value === null ? 'var(--text-dim)' : 'var(--text-primary)' }}
+          style={{ ...MONO, height: 44, boxSizing: 'border-box', borderRadius: 8, ...hairline(set ? 'var(--accent)' : 'var(--border)'), background: set ? 'var(--accent-muted)' : 'var(--surface)', padding: '0 14px', textAlign: 'left', fontSize: 13, fontWeight: set ? 700 : 600, color: set ? 'var(--accent)' : 'var(--text-dim)', cursor: disabled ? 'default' : 'pointer' }}
         >
-          {/* '—' (not "NONE" — RestStepper's own REST AFTER already uses
-              that exact text for a different, rest-specific meaning right
-              in this same row; reusing it here would make the two
-              ambiguous to anything querying by text, this file's own
-              tests included) — same "nothing set" placeholder ExerciseRow's own
-              exercise name fallback and StepVolume.tsx's SetTargetRow both
-              already use. */}
+          {/* '—' (not "NONE" — RestStepper's own REST AFTER already uses that exact text for a different, rest-specific meaning in this same column;
+              reusing it here would make the two ambiguous to anything querying by text, this file's own tests included). */}
           {value ?? '—'}
         </button>
       )}
@@ -203,9 +186,7 @@ export function TempoEditor({
 }
 
 // ─── Weight unit (existing field, v3 §2.4 / TASKS.md §4 item 28) ───────────
-// INHERIT / KG / LBS. The chips only — the caller brings the "UNIT" label and
-// the row around them (StepExercises' ExerciseRow, or Plan's exercise ⋯).
-// `style` lets the planner's row pad the chips as it always has.
+// INHERIT / KG / LBS, one segmented box (PP2); the caller brings the "UNIT" label and the row around it. `style` is the root's own.
 export function UnitChips({
   value,
   globalUnit,
@@ -217,36 +198,43 @@ export function UnitChips({
   globalUnit: WeightUnit
   disabled: boolean
   onChange: (unit: WeightUnit | null) => void
-  style?: React.CSSProperties
+  style?: CSSProperties
 }) {
+  const options = [
+    { value: null, label: `INHERIT (${globalUnit.toUpperCase()})` },
+    { value: 'kg' as const, label: 'KG' },
+    { value: 'lbs' as const, label: 'LBS' },
+  ]
   return (
-    <div style={{ display: 'flex', gap: 4, ...style }}>
-      {(
-        [
-          { value: null, label: `INHERIT (${globalUnit.toUpperCase()})` },
-          { value: 'kg' as const, label: 'KG' },
-          { value: 'lbs' as const, label: 'LBS' },
-        ]
-      ).map((opt) => {
+    <div
+      role="group"
+      aria-label="Unit"
+      style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr 1fr', height: 44, boxSizing: 'border-box', borderRadius: 8, ...hairline('var(--border)'), background: 'var(--surface)', overflow: 'hidden', ...style }}
+    >
+      {options.map((opt, i) => {
         const active = value === opt.value
         return (
           <button
             key={opt.label}
+            type="button"
+            aria-pressed={active}
             onClick={() => onChange(opt.value)}
             disabled={disabled}
             style={{
-              height: 24,
-              padding: '0 8px',
-              flexShrink: 0,
+              ...MONO,
+              padding: 0,
+              borderTopWidth: 0,
+              borderRightWidth: 0,
+              borderBottomWidth: 0,
+              borderLeftWidth: i === 0 ? 0 : 1,
+              borderStyle: 'solid',
+              borderColor: 'transparent',
+              borderLeftColor: 'var(--border-subtle)',
               background: active ? 'var(--accent-muted)' : 'var(--surface)',
-              border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
-              borderRadius: 6,
+              color: active ? 'var(--accent)' : 'var(--text-secondary)',
+              fontSize: 10,
+              letterSpacing: i === 0 ? '0.04em' : '0.1em',
               cursor: disabled ? 'default' : 'pointer',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 8,
-              fontWeight: 700,
-              letterSpacing: '1px',
-              color: active ? 'var(--accent)' : 'var(--text-muted)',
             }}
           >
             {opt.label}
@@ -258,9 +246,9 @@ export function UnitChips({
 }
 
 // ─── Superset block rest (chunk 16 — SPEC.md "Rest"/"Supersets") ──────────
-// Once per linked unit, right after its last member — "within round"/"after
-// round", both overridable, both null by SPEC default (no timer within a
-// round; the chain of the exercise that ends a round).
+// "SUPERSET REST" under a member's own fields (PP2): "within round" / "after round", both overridable, both null by SPEC default (no timer within a
+// round; the chain of the exercise that ends a round). The one block's two fields are the same whichever of its members is open. The steppers are
+// named as the board names them ("Less rest within round").
 export function BlockRestEditor({
   blockId,
   rest,
@@ -270,26 +258,22 @@ export function BlockRestEditor({
   blockId: string
   rest: { restWithinRoundSeconds: number | null; restAfterRoundSeconds: number | null } | null
   onChange: (changes: { restWithinRoundSeconds?: number | null; restAfterRoundSeconds?: number | null }) => void
-  // Chunk 30 — Plan's STRUCTURE view labels every run-wide control "EVERY WEEK"
-  // (SPEC Rest [P1.1]). The planner leaves this off and renders as before.
+  // Chunk 30 — a screen that labels every run-wide control "EVERY WEEK" (SPEC Rest [P1.1]). The planner leaves this off.
   everyWeek?: boolean
 }) {
   return (
-    <div
-      key={`block-rest-${blockId}`}
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '2px 4px 6px' }}
-    >
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', flexShrink: 0 }}>
-        SUPERSET
+    <div key={`block-rest-${blockId}`} style={{ marginTop: 8, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8, ...ruleAbove() }}>
+      <span style={{ ...MONO, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, letterSpacing: '0.2em', color: 'var(--accent)' }}>
+        SUPERSET REST
+        {everyWeek && <EveryWeekLabel />}
       </span>
-      {everyWeek && <EveryWeekLabel />}
       <RestStepper
         label="WITHIN ROUND"
         value={rest?.restWithinRoundSeconds ?? null}
         disabled={false}
         onChange={(v) => onChange({ restWithinRoundSeconds: v })}
         defaultText="NO TIMER"
-        ariaLabel={everyWeek ? 'rest within round' : undefined}
+        ariaLabel="rest within round"
       />
       <RestStepper
         label="AFTER ROUND"
@@ -297,18 +281,14 @@ export function BlockRestEditor({
         disabled={false}
         onChange={(v) => onChange({ restAfterRoundSeconds: v })}
         defaultText="PER EXERCISE"
-        ariaLabel={everyWeek ? 'rest after round' : undefined}
+        ariaLabel="rest after round"
       />
     </div>
   )
 }
 
-// The "EVERY WEEK" label (SPEC Programs and runs / Rest / Tempo / Supersets /
-// Warmup routine [P1.1]): rest, tempo, superset grouping and the warmup routine
-// are run-wide, so each control for them says so. Plan's STRUCTURE view puts
-// one on each; the weight unit is not run-wide in that sense and carries none.
-// The "· SUPERSET" marker in Plan's exercise header is the existing
-// accent-coloured mono label this one is drawn like.
+// The "EVERY WEEK" label (SPEC Programs and runs / Rest / Tempo / Supersets / Warmup routine [P1.1]): rest, tempo, superset grouping and the warmup
+// routine are run-wide, so a screen that shows them beside week-by-week fields says so.
 export function EveryWeekLabel() {
   return (
     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, letterSpacing: '1px', color: 'var(--accent)', flexShrink: 0 }}>
@@ -318,16 +298,11 @@ export function EveryWeekLabel() {
 }
 
 // ─── Warmup routine checklist (chunk 18 — SPEC.md "Warmup routine") ───────
-// One per workout. The planner's step 2 shows it below the exercise list
-// (variant 'rows', as it always has); Plan's STRUCTURE view shows it at the top
-// (variant 'menu', chunk 30). Never gated by volumeReadOnly — no such prop at
+// One per workout. The planner's step 2 shows it below the exercise list (variant 'rows', as it always has: PP2, PP2f, PP6); variant 'menu'
+// (chunk 30) is the same editor under the standing UI rule: each item is its text (tap to edit) and a ⋯ holding MOVE UP / MOVE DOWN / REMOVE
+// instead of the three arrows the planner's rows carry; an empty routine shows its ADD ITEM and no "NO WARMUP ITEMS YET"; and `readOnly` (a past
+// week) is just the list. The caller of that variant brings the header and the card around it. Never gated by volumeReadOnly — no such prop at
 // all, same posture RestStepper/TempoEditor already take above.
-//
-// Variant 'menu' is the same editor under the standing UI rule: each item is
-// its text (tap to edit) and a ⋯ holding MOVE UP / MOVE DOWN / REMOVE, instead
-// of the three icons the planner's rows carry; an empty routine shows its ADD
-// ITEM and no "NO WARMUP ITEMS YET"; and `readOnly` (a past week) is just the
-// list. The caller of that variant brings the header and the card around it.
 export function WarmupRoutineEditor({
   workoutDayId,
   variant = 'rows',
@@ -347,10 +322,8 @@ export function WarmupRoutineEditor({
   const [newText, setNewText] = useState('')
   const [confirmRemove, setConfirmRemove] = useState<{ id: string; body: string } | null>(null)
 
-  // Same "write the optimistic order into this query's cache, then fire the
-  // mutation" shape WorkoutEditor's own moveExercise takes for
-  // reorderProgramExercises above — moveWarmupItem mirrors moveUnit's own
-  // "same reference back = no-op" convention, so a boundary tap is a no-op.
+  // Same "write the optimistic order into this query's cache, then fire the mutation" shape WorkoutCard's own moveExercise takes for
+  // reorderProgramExercises — moveWarmupItem mirrors moveUnit's own "same reference back = no-op" convention, so a boundary tap is a no-op.
   function moveItem(index: number, direction: 'up' | 'down') {
     const next = moveWarmupItem(items, index, direction)
     if (next === items) return
@@ -374,18 +347,16 @@ export function WarmupRoutineEditor({
     <>
       {isLoading && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 12 }}>
-          <div className="animate-spin" style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)' }} />
+          <div role="status" aria-label="Loading the warmup routine" className="animate-spin" style={{ width: 14, height: 14, borderRadius: '50%', boxSizing: 'border-box', borderWidth: 2, borderStyle: 'solid', borderTopColor: 'var(--accent)', borderRightColor: 'var(--border-strong)', borderBottomColor: 'var(--border-strong)', borderLeftColor: 'var(--border-strong)' }} />
         </div>
       )}
 
       {!menu && !isLoading && items.length === 0 && !showAdd && (
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-dim)', marginBottom: 8 }}>
-          NO WARMUP ITEMS YET
-        </p>
+        <span style={{ ...CAPTION, letterSpacing: '0.12em', padding: '8px 0' }}>NO WARMUP ITEMS YET</span>
       )}
 
       {!isLoading && items.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: readOnly ? 0 : 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: menu ? 6 : 0, marginBottom: readOnly ? 0 : 8 }}>
           {items.map((item, index) =>
             menu ? (
               <WarmupItemMenuRow
@@ -404,7 +375,6 @@ export function WarmupRoutineEditor({
               <WarmupItemRow
                 key={item.id}
                 item={item}
-                index={index}
                 canMoveUp={index > 0}
                 canMoveDown={index < items.length - 1}
                 onMoveUp={() => moveItem(index, 'up')}
@@ -418,7 +388,7 @@ export function WarmupRoutineEditor({
       )}
 
       {!readOnly && (showAdd ? (
-        <form onSubmit={handleAdd} style={{ display: 'flex', gap: 6 }}>
+        <form onSubmit={handleAdd} style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
             value={newText}
@@ -427,50 +397,37 @@ export function WarmupRoutineEditor({
             placeholder="e.g. 5 min easy bike"
             autoFocus
             aria-label="New warmup item"
-            style={{ flex: 1, height: 36, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 8, padding: '0 10px', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+            style={{ flex: 1, minWidth: 0, height: 44, boxSizing: 'border-box', borderRadius: 10, ...hairline('var(--border-strong)'), background: 'var(--surface)', padding: '0 14px', fontSize: 16, color: 'var(--text-primary)', outline: 'none' }}
           />
           <button
             type="submit"
             disabled={addItem.isPending}
-            style={{ height: 36, padding: '0 14px', flexShrink: 0, background: 'var(--accent)', border: 'none', borderRadius: 8, cursor: addItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: 'var(--on-accent)' }}
+            style={{ ...MONO, flex: '0 0 auto', height: 44, padding: '0 18px', borderRadius: 10, borderWidth: 0, background: 'var(--accent)', color: 'var(--on-accent)', fontWeight: 700, fontSize: 11, letterSpacing: '0.2em', cursor: addItem.isPending ? 'default' : 'pointer' }}
           >
             ADD
           </button>
         </form>
       ) : (
         <button
+          type="button"
           onClick={() => { setNewText(''); setShowAdd(true) }}
-          style={{ width: '100%', height: 36, background: 'transparent', border: '1px dashed var(--border-strong)', borderRadius: 8, color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: 'var(--font-sans)', fontWeight: 700, fontSize: 11 }}
+          style={{ ...MONO, width: '100%', height: 44, boxSizing: 'border-box', borderRadius: 10, borderWidth: 1, borderStyle: 'dashed', borderColor: 'var(--border-strong)', background: 'transparent', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 10, letterSpacing: '0.2em', cursor: 'pointer' }}
         >
-          <Plus size={12} style={{ color: 'var(--accent)' }} />
+          <span aria-hidden="true">+</span>
           ADD ITEM
         </button>
       ))}
 
       {confirmRemove && (
-        <Sheet onClose={() => setConfirmRemove(null)}>
-          <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
-            Remove this item?
-          </p>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
-            "{confirmRemove.body}" — this cannot be undone.
-          </p>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={() => setConfirmRemove(null)}
-              style={{ flex: 1, height: 50, background: 'var(--surface)', border: '1px solid var(--border-strong)', borderRadius: 10, cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: 'var(--text-secondary)' }}
-            >
-              CANCEL
-            </button>
-            <button
-              onClick={() => { removeItem.mutate(confirmRemove.id); setConfirmRemove(null) }}
-              disabled={removeItem.isPending}
-              style={{ flex: 1, height: 50, background: 'rgba(248, 113, 113, 0.15)', border: 'none', borderRadius: 10, cursor: removeItem.isPending ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 13, letterSpacing: '1.5px', color: 'var(--error)' }}
-            >
-              {removeItem.isPending ? '…' : 'REMOVE'}
-            </button>
-          </div>
-        </Sheet>
+        <ConfirmDialog
+          title="Remove this item?"
+          body={`“${confirmRemove.body}”. This can't be undone.`}
+          confirmLabel="REMOVE"
+          danger
+          isPending={removeItem.isPending}
+          onConfirm={() => { removeItem.mutate(confirmRemove.id); setConfirmRemove(null) }}
+          onCancel={() => setConfirmRemove(null)}
+        />
       )}
     </>
   )
@@ -478,25 +435,18 @@ export function WarmupRoutineEditor({
   if (menu) return <div>{body}</div>
 
   return (
-    <div style={{ padding: '0 16px 16px' }}>
-      <div style={{ height: 1, background: 'var(--border-subtle)', marginBottom: 12 }} />
-      <p style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: 'var(--text-muted)', marginBottom: 8 }}>
-        WARMUP ROUTINE
-      </p>
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={CAPTION}>WARMUP ROUTINE</span>
       {body}
     </div>
   )
 }
 
-// One item row — tap-to-edit text (same pattern TempoEditor above uses),
-// plus the same up/down/delete IconBtn cluster ExerciseRow's own structure
-// row uses. A blank commit is refused — the editor just closes, re-showing
-// item.body (the last saved value), same "trimmed falsy => no write, no
-// forced revert needed since nothing local held the stale text" posture
-// WorkoutEditor's own saveName already takes for a workout's own name.
+// One item row — tap-to-edit text (same pattern TempoEditor above uses), plus the arrows and the trash PP2 draws at its right. A blank commit is
+// refused — the editor just closes, re-showing item.body (the last saved value), same "trimmed falsy => no write, no forced revert needed since
+// nothing local held the stale text" posture WorkoutCard's own saveName already takes for a workout's own name.
 function WarmupItemRow({
   item,
-  index,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -505,7 +455,6 @@ function WarmupItemRow({
   onDelete,
 }: {
   item: WarmupRoutineItem
-  index: number
   canMoveUp: boolean
   canMoveDown: boolean
   onMoveUp: () => void
@@ -533,10 +482,7 @@ function WarmupItemRow({
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: 11, color: 'var(--text-dim)', flexShrink: 0, minWidth: 16 }}>
-        {String(index + 1).padStart(2, '0')}
-      </span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: -10 }}>
       {editing ? (
         <input
           ref={inputRef}
@@ -545,29 +491,33 @@ function WarmupItemRow({
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
           aria-label="Warmup item text"
-          style={{ flex: 1, height: 32, background: 'var(--surface)', border: '1px solid var(--accent)', borderRadius: 7, padding: '0 8px', fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', boxSizing: 'border-box' }}
+          style={{ flex: 1, minWidth: 0, height: 44, boxSizing: 'border-box', borderRadius: 10, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--accent)', background: 'var(--surface)', padding: '0 12px', fontSize: 16, color: 'var(--text-primary)', outline: 'none' }}
         />
       ) : (
         <button
+          type="button"
+          aria-label={`Edit ${item.body}`}
           onClick={startEditing}
-          style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', padding: '6px 0', fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          style={{ flex: 1, minWidth: 0, height: 44, padding: 0, borderWidth: 0, background: 'transparent', display: 'flex', alignItems: 'center', textAlign: 'left', fontSize: 15, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
         >
           {item.body}
         </button>
       )}
-      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-        <IconBtn onClick={onMoveUp} disabled={!canMoveUp}><ChevronUp size={13} /></IconBtn>
-        <IconBtn onClick={onMoveDown} disabled={!canMoveDown}><ChevronDown size={13} /></IconBtn>
-        <IconBtn onClick={onDelete}><Trash2 size={12} /></IconBtn>
-      </div>
+      <IconButton label={`Move ${item.body} up`} onClick={onMoveUp} disabled={!canMoveUp}>
+        <ChevronUp size={16} strokeWidth={2.2} />
+      </IconButton>
+      <IconButton label={`Move ${item.body} down`} onClick={onMoveDown} disabled={!canMoveDown}>
+        <ChevronDown size={16} strokeWidth={2.2} />
+      </IconButton>
+      <IconButton label={`Remove ${item.body}`} onClick={onDelete}>
+        <Trash2 size={16} />
+      </IconButton>
     </div>
   )
 }
 
-// The 'menu' variant's item row (chunk 30, standing UI rule): the same
-// tap-to-edit text and the same blank-refused commit as WarmupItemRow above,
-// with MOVE UP / MOVE DOWN / REMOVE behind a ⋯ on the row. A past week's
-// routine is read-only: the text, no ⋯.
+// The 'menu' variant's item row (chunk 30, standing UI rule): the same tap-to-edit text and the same blank-refused commit as WarmupItemRow above,
+// with MOVE UP / MOVE DOWN / REMOVE behind a ⋯ on the row. A past week's routine is read-only: the text, no ⋯.
 function WarmupItemMenuRow({
   item,
   index,
@@ -667,32 +617,11 @@ function WarmupItemMenuRow({
   )
 }
 
-export function IconBtn({
-  onClick,
-  disabled = false,
-  children,
-}: {
-  onClick: () => void
-  disabled?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', color: disabled ? 'var(--text-dim)' : 'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', borderRadius: 6, flexShrink: 0 }}
-    >
-      {children}
-    </button>
-  )
-}
-
 // ─── Superset grouping editor — one toggle per gap between adjacent rows
 // (chunk 13, SPEC.md "Supersets") ───────────────────────────────────────────
-// Deliberately between every pair of rows, not just at a unit's own edges:
-// "any number of exercises" (SPEC) falls out of being able to link/unlink
-// at any point, including splitting an existing 3+ member block part way
-// through (supersetGroups.ts's planLinkToggle).
+// Deliberately between every pair of rows, not just at a unit's own edges: "any number of exercises" (SPEC) falls out of being able to link/unlink at
+// any point, including splitting an existing 3+ member block part way through (supersetGroups.ts's planLinkToggle). CHANGE THE PROGRAM's cards draw
+// this one (UNLINK between a superset's members); the planner's own is the board's icon in the rail (StepExercises.tsx's LinkGap).
 export function SupersetLinkToggle({
   linked,
   disabled,
@@ -702,8 +631,7 @@ export function SupersetLinkToggle({
   linked: boolean
   disabled: boolean
   onToggle: () => void
-  // Chunk 30 — Plan's STRUCTURE view puts its "EVERY WEEK" label here. Left
-  // out (the planner), the button is exactly the label it always was.
+  // Chunk 30 — a screen's "EVERY WEEK" label goes here. Left out, the button is exactly the label it always was.
   suffix?: React.ReactNode
 }) {
   return (
@@ -733,31 +661,5 @@ export function SupersetLinkToggle({
       {linked ? 'SUPERSET — TAP TO UNLINK' : 'LINK AS SUPERSET'}
       {suffix}
     </button>
-  )
-}
-
-// ─── Small local bottom sheet — same shape every programs/plan page already
-// repeats its own copy of (ProgramPage.tsx's own BottomSheet is the closest
-// precedent); not shared, following this codebase's existing convention of
-// each file carrying its own small presentational helpers.
-export function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(6,6,7,0.88)', zIndex: 50, display: 'flex', alignItems: 'flex-end' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div style={{ background: 'var(--surface-raised)', borderRadius: '20px 20px 0 0', width: '100%', padding: '24px 20px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', border: '1px solid var(--border)', borderBottom: 'none', maxHeight: '85dvh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -8 }}>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--border-strong)', borderRadius: 7, color: 'var(--text-secondary)', cursor: 'pointer' }}
-          >
-            <X size={13} />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
   )
 }

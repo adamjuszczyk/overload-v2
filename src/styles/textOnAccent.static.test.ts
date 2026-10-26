@@ -51,8 +51,6 @@ const SHARED_COMPONENTS: Record<string, string[]> = {
   // the chip row: ENERGY, PUMP and FORM in the workout's finish step and set rows, the STAGE KIND rows in the planner's volume step (Plan's
   // went with its STAGE KIND chips: a set's kind is the set type picker's since chunk 54a)
   'features/gym/RatingChips.tsx': ['features/planner/PlannerPage.tsx', 'features/gym/GymSession.tsx'],
-  // the planner's FOCUS / DON'T CARE marks, kept in Plan's folder
-  'features/plan/MarkSelector.tsx': ['features/planner/PlannerPage.tsx'],
   // the planner's field editors, which CHANGE THE PROGRAM loads too (Plan's structure rows loaded them until chunk 54a)
   'features/planner/designFieldEditors.tsx': ['features/programs/ChangeProgramPage.tsx', 'features/planner/PlannerPage.tsx'],
 }
@@ -95,6 +93,7 @@ const NOTHING_TO_READ: Record<string, number> = {
   'features/gym/RestDayScreen.tsx': 1, // the week's dots
   'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
+  'features/planner/StepExercises.tsx': 1, // the rail's line that joins a superset's rows
   'features/programs/FinishedProgramPage.tsx': 2, // a week tile's dot (a changed week) and the legend's dot
   'features/programs/RadioDot.tsx': 1, // the picked option's dot in the PROGRAMS tab's two sheets
   'features/progress/MesoProgress.tsx': 1, // the legend's square
