@@ -52,6 +52,7 @@ let swapAnswer: 'ok' | { reject: unknown } = 'ok'
 const calls: Array<{ what: 'swap' | 'skip' | 'log'; payload: Record<string, unknown> }> = []
 const pickers: Array<Record<string, unknown>> = []
 const queued: unknown[] = []
+const updates: unknown[] = [] // what the screen asked `useUpdateSetLog` to change (a stored number, a weight)
 
 const logOf = (over: Partial<SetLog> & { id: string }): SetLog => ({
   userId: 'user-1', sessionId: 'session-1', exerciseId: 'ex-1', weekPlanSetId: null, setNumber: 1, weight: 60, reps: 8, rir: null, note: null,
@@ -91,6 +92,7 @@ vi.mock('../../components/ExercisePickerSheet', () => ({
       <div role="dialog" aria-label={`PICKER ${String(props.title)}`}>
         <p data-testid="picker-eyebrow">{String(props.eyebrow)}</p>
         <div data-testid="picker-note">{note ? note(null) : null}</div>
+        <div data-testid="picker-note-picked">{note ? note(nextPick) : null}</div>
         <button onClick={() => (props.onPick as (e: Exercise | null) => void)(nextPick)}>{String(props.confirmLabel)}</button>
         <button onClick={() => (props.onClose as () => void)()}>close picker</button>
       </div>
@@ -122,7 +124,7 @@ vi.mock('./useSession', () => ({
     },
   }),
   useLastSessionLogs: () => ({ data: [], isLoading: false }),
-  useUpdateSetLog: () => ({ mutate: vi.fn() }),
+  useUpdateSetLog: () => ({ mutate: (args: unknown) => void updates.push(args) }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
   useExerciseReferenceSessions: () => ({ data: new Map(), isLoading: false, isError: false, isFromCache: false, retry: vi.fn() }),
   useSessionSwaps: () => ({ data: sessionSwaps }),
@@ -183,6 +185,7 @@ beforeEach(() => {
   calls.length = 0
   pickers.length = 0
   queued.length = 0
+  updates.length = 0
   useRestTimerStore.setState({ startedAt: null, isVisible: true, anchorId: null, targetSeconds: null })
   useSettingsStore.setState({ ...DEFAULT_SETTINGS, targetRestSeconds: 90 })
 })
@@ -199,6 +202,7 @@ describe('Swap for today writes what it wrote before, with the record, row first
   it('the skips of the planned working sets are the pre-chunk ones, byte for byte, and the swap row carries the record beside the arguments it had', async () => {
     const { container } = render(jsx())
     await swapCard(container)
+    expect(screen.queryByLabelText('PICKER Swap for what?')).toBeNull() // saved: the picker closes (a refused swap keeps it, below)
     expect(calls.filter((c) => c.what === 'skip').map((c) => c.payload)).toEqual(BEFORE.skips)
     const swap = calls.find((c) => c.what === 'swap')!.payload
     expect(swap).toEqual({
@@ -300,6 +304,28 @@ describe('the picker is the shared one, with the words of boards W11 and W14', (
     cleanup()
   })
 
+  it('swap: the line over the button counts the sets that move, the open ones: not a drop (it goes with its set), not the drop of a set already logged (break: every open item counts)', () => {
+    const lineAfterAPick = () => {
+      const { container } = render(jsx())
+      fireEvent.click(optionsOf(cards(container)[0]))
+      fireEvent.click(screen.getByText('Swap for today'))
+      const text = screen.getByTestId('picker-note-picked').textContent
+      cleanup()
+      return text
+    }
+    const drop = planSet('set-1-drop', 1, { isDropset: true, parentWeekPlanSetId: 'set-1', stageIndex: 1, targetRir: 0 })
+    const loggedDropsetHead = logOf({ id: 'fx-1', weekPlanSetId: 'set-1', setNumber: 1, stageKind: 'dropset' })
+    // set 02 and the dropset 03 with its drop: two sets move
+    expect(lineAfterAPick()).toBe("The 2 sets left move to Incline Press. Next week's plan stays the same.")
+    // the dropset 01 is logged and its drop is open: the drop is skipped and moves nowhere, set 02 is the one set that moves
+    current = plan([planSet('set-1', 1, { stageKind: 'dropset' }), drop, planSet('set-2', 2)])
+    session = { ...session, setLogs: [loggedDropsetHead] }
+    expect(lineAfterAPick()).toBe("The set left moves to Incline Press. Next week's plan stays the same.")
+    // only that drop is open: nothing moves, and the line says so
+    current = plan([planSet('set-1', 1, { stageKind: 'dropset' }), drop])
+    expect(lineAfterAPick()).toBe("No set is left to move. Incline Press takes the place of this exercise today. Next week's plan stays the same.")
+  })
+
   it('add: PUSH DAY · TODAY, "Add an exercise", ADD EXERCISE with W14\'s line, the exercises already in the workout left out', () => {
     render(jsx())
     fireEvent.click(screen.getByText('ADD EXERCISE'))
@@ -366,6 +392,19 @@ describe('after the swap: the cards of W5', () => {
     expect((within(row).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('8–10')
   })
 
+  it('each moved set shows the targets of its own planned set: two sets, two sets of targets (break: the first one\'s for every row)', async () => {
+    current = plan([planSet('set-1', 1), planSet('set-2', 2, { targetWeight: 52.5, repMin: 8, repMax: 10, targetRir: 1 }), planSet('set-3', 3, { targetWeight: 60, repMin: 6, repMax: 8, targetRir: 2 })])
+    const { container, rerender } = render(jsx())
+    await swapCard(container)
+    rerender(jsx())
+    await settle()
+    const rows = Array.from(cards(container)[1].querySelectorAll('[data-row-key]')) as HTMLElement[]
+    expect(rows.map((row) => row.querySelector('span')?.textContent)).toEqual(['02', '03'])
+    expect((within(rows[0]).getByLabelText('Weight') as HTMLInputElement).value).toBe('52.5') // the current row: its own weight in the box
+    expect(rows[1].textContent).toContain('60 kg × 6–8 @ RIR 2') // the one after it: its own targets, not the first set's
+    expect(rows[1].textContent).not.toContain('52.5')
+  })
+
   it('the card the sets left offers no second swap, no + ADD SET and no "Add a set"; the new card offers no swap but keeps + ADD SET, Add a set and the skip (DECISIONS 199 (a), TASKS 59)', async () => {
     const { container, rerender } = render(jsx())
     expect(within(cards(container)[0]).getByText('ADD SET')).toBeTruthy() // before the swap
@@ -398,6 +437,7 @@ describe('after the swap: the cards of W5', () => {
     expect(rowsOf(cards(container)[0])).toEqual(['01', '03']) // the gap where 02 stood shows
     expect(rowsOf(cards(container)[1])).toEqual(['03', '04'])
     expect(queued).toEqual([]) // no patch of a stored number
+    expect(updates).toEqual([]) // and no edit of any log
     expect(session.setLogs!.filter((l) => !l.isSkipped).map((l) => [l.id, l.setNumber])).toEqual([['fx-1', 1], ['fx-3', 3]])
   })
 })
@@ -418,8 +458,11 @@ describe('the moved sets are logged as added sets of the new exercise, each with
     calls.length = 0
     await typeAndLog(container, '50', '10')
     rerender(jsx())
+    expect(useRestTimerStore.getState().startedAt).not.toBeNull() // the plain set's rest runs
     await typeAndLog(container, '52.5', '8')
     rerender(jsx())
+    // a dropset's head runs no rest before its drop: the drop's stage context comes from the moved set's own type (it has no planned set)
+    expect(useRestTimerStore.getState().startedAt).toBeNull()
     // the drop is current now (the head's change row has no writer before chunk 62: the card keeps it on this phone)
     const dropRow = container.querySelector('[data-current-set]') as HTMLElement
     expect(dropRow.getAttribute('data-row-key')).toContain(':stage:1')

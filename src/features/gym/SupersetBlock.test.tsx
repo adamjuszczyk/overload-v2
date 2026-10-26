@@ -203,6 +203,7 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
     fireEvent.click(screen.getByText('CONFIRM PICK'))
     await vi.waitFor(() => expect(swapCalls).toHaveLength(1))
     expect(swapCalls[0]).toMatchObject({ exercise: REPLACEMENT, programExercise: { id: 'pe-b', exerciseId: 'ex-pe-b' }, record: { fromKey: 'pe-b' } })
+    await vi.waitFor(() => expect(screen.queryByText('SWAP SHEET FOR ex-pe-b')).toBeNull()) // saved: the member's picker closes
   })
 
   it('skip: skipping one member marks only ITS remaining planned sets, each with the number its row shows', async () => {
@@ -231,6 +232,10 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
     fireEvent.click(screen.getByText('Add a set'))
     const round4 = [...container.querySelectorAll('p')].find((p) => p.textContent === 'ROUND 4')!.parentElement!
     expect(rowLabels(round4 as HTMLElement)).toEqual(['A4', 'B4'])
+    // that member's sets only: A has the four it had (no round 5, and no fifth set of A), B has its fourth
+    expect([...container.querySelectorAll('p')].some((p) => p.textContent === 'ROUND 5')).toBe(false)
+    expect(rowLabels(container).filter((l) => l?.startsWith('A'))).toEqual(['A1', 'A2', 'A3', 'A4'])
+    expect(rowLabels(container).filter((l) => l?.startsWith('B'))).toEqual(['B1', 'B2', 'B3', 'B4'])
   })
 })
 

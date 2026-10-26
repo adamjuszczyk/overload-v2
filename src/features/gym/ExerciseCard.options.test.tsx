@@ -72,6 +72,7 @@ describe('the ⋯ of a card: the rows it offers, and where (DECISIONS 199 (a): a
   const STATES: Array<[string, Record<string, unknown>, { swap: boolean; skip: boolean; addSet: boolean; addSetButton: boolean }]> = [
     ['a card of a planned slot no swap touched', {}, { swap: true, skip: true, addSet: true, addSetButton: true }],
     ['the card a swap made (SWAPPED FROM)', { swappedFrom: { exerciseName: 'Lat Pulldown' }, slotSwapped: true }, { swap: false, skip: true, addSet: true, addSetButton: true }],
+    ['a card that says it was swapped from something, whatever the slot says (SWAPPED FROM never sits over a swap)', { swappedFrom: { exerciseName: 'Lat Pulldown' } }, { swap: false, skip: true, addSet: true, addSetButton: true }],
     ['the card of a swapped slot (a swap row with no record, 198 (a))', { slotSwapped: true }, { swap: false, skip: true, addSet: true, addSetButton: true }],
     ['an exercise added today (ADDED TODAY)', { addedToday: true }, { swap: false, skip: true, addSet: true, addSetButton: true }],
     ['the card the sets of a swap left (its row has a record)', { slotSwapped: true, setsMoved: true }, { swap: false, skip: true, addSet: false, addSetButton: false }],
@@ -239,6 +240,7 @@ describe('the skip of a set a swap moved is read back by the rules that draw it 
       fireEvent.click(screen.getByText('PICK'))
       for (let i = 0; i < 8; i++) await Promise.resolve()
     })
+    expect(screen.queryByText('PICK')).toBeNull() // the swap is saved: the picker closes (a refused swap keeps it, GymSession.swap.test.tsx)
     return { calls, saved: saved! }
   }
 
