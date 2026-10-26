@@ -1,0 +1,31 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+01
+Push 1
+02
+Pull 1
+03
+Legs
+04
+REST DAY
+05
+Push 2
+06
+Pull 2
+07
+REST DAY
++
+ADD SLOT
+Push 1
+Pull 1
+Push 2
+Pull 2
+Legs
++
+ADD WORKOUT
+SAVE
+START

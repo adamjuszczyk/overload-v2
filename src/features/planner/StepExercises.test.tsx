@@ -329,6 +329,19 @@ describe('StepExercises — superset grouping (chunk 13, never gated by volumeRe
     ])
   })
 
+  it('W: the link between the SECOND and THIRD of three exercises plans that pair, not the first', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, exercise: { ...exercise().exercise!, name: 'Bench Press' } }),
+      exercise({ id: 'pe-2', position: 1, exercise: { ...exercise().exercise!, name: 'Incline Press' } }),
+      exercise({ id: 'pe-3', position: 2, exercise: { ...exercise().exercise!, name: 'Dips' } }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    fireEvent.click(screen.getByLabelText('Link Incline Press and Dips as superset'))
+    expect(toggleLinkMutateMock).toHaveBeenCalledWith([{ ids: ['pe-2', 'pe-3'], blockId: null, needsNewBlock: true }])
+  })
+
   it('already-linked exercises show their link pressed; tapping it plans clearing both', () => {
     workoutDays = [day({ id: 'wd-1' })]
     exercisesByDay['wd-1'] = [
@@ -747,6 +760,26 @@ describe('StepExercises — workout cards (PP2, PP6)', () => {
     fireEvent.click(screen.getByLabelText('Rename Push 1'))
     await act(async () => { fireEvent.blur(screen.getByLabelText('Workout name')) })
     expect(updateNameMutateAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('W: the second workout renames and deletes itself (its own id), and its weekday chips write its own id', async () => {
+    workoutDays = [day({ id: 'wd-1', name: 'Push 1' }), day({ id: 'wd-2', name: 'Pull 1', position: 1 })]
+    const schedule = { ...NO_DAYS, monday: 'wd-1' }
+    updateNameMutateAsyncMock.mockResolvedValue(undefined)
+    render(<StepExercises program={program({ schedule })} volumeReadOnly={false} />)
+    fireEvent.click(screen.getByLabelText('Show editor for Pull 1'))
+
+    fireEvent.click(screen.getByLabelText('Rename Pull 1'))
+    fireEvent.change(screen.getByLabelText('Workout name'), { target: { value: 'Pull A' } })
+    await act(async () => { fireEvent.blur(screen.getByLabelText('Workout name')) })
+    expect(updateNameMutateAsyncMock).toHaveBeenCalledWith({ id: 'wd-2', name: 'Pull A' })
+
+    fireEvent.click(within(screen.getByRole('group', { name: 'Weekday' })).getByText('WED'))
+    expect(assignWeekdayMutateMock).toHaveBeenCalledWith({ schedule, workoutDayId: 'wd-2', dow: 'wednesday' })
+
+    fireEvent.click(screen.getByLabelText('Delete Pull 1'))
+    fireEvent.click(screen.getByText('DELETE'))
+    expect(deleteDayMutateMock).toHaveBeenCalledWith({ id: 'wd-2', schedule })
   })
 
   it('read-only: the name does not rename and there is no trash', () => {

@@ -789,7 +789,7 @@ function SequenceEditor({ programId, workoutDays }: { programId: string; workout
       {confirmRemove && (
         <ConfirmDialog
           title="Remove this slot?"
-          body={`“${confirmRemove.label}”. This can't be undone.`}
+          body={<span style={{ overflowWrap: 'anywhere' }}>{`“${confirmRemove.label}”. This can't be undone.`}</span>}
           confirmLabel="REMOVE"
           danger
           isPending={removeItem.isPending}

@@ -421,7 +421,7 @@ export function WarmupRoutineEditor({
       {confirmRemove && (
         <ConfirmDialog
           title="Remove this item?"
-          body={`“${confirmRemove.body}”. This can't be undone.`}
+          body={<span style={{ overflowWrap: 'anywhere' }}>{`“${confirmRemove.body}”. This can't be undone.`}</span>}
           confirmLabel="REMOVE"
           danger
           isPending={removeItem.isPending}

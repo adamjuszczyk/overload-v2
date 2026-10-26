@@ -241,17 +241,30 @@ describe('StepExercises — SequenceEditor (chunk 25)', () => {
     expect((downButtons[downButtons.length - 1] as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('remove: the delete icon opens a confirm sheet; confirming calls useRemoveSequenceItem with the slot id', () => {
-    workoutDays = [day({ id: 'wd-1', name: 'A' })]
-    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' })]
+  it('remove: the delete icon opens a confirm (PP4); confirming calls useRemoveSequenceItem with the id of the slot it was pressed on (the second of two)', () => {
+    workoutDays = [day({ id: 'wd-1', name: 'A' }), day({ id: 'wd-2', name: 'B' })]
+    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' }), seqItem({ id: 'si-2', position: 1, workoutDayId: 'wd-2' })]
     render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
 
     const deleteButtons = sequenceRegion().getAllByRole('button').filter((b) => b.querySelector('svg.lucide-trash2'))
-    fireEvent.click(deleteButtons[0])
+    fireEvent.click(deleteButtons[1])
     expect(sequenceRegion().getByText('Remove this slot?')).toBeTruthy()
+    expect(sequenceRegion().getByText("“B”. This can't be undone.")).toBeTruthy()
     fireEvent.click(sequenceRegion().getByText('REMOVE'))
 
-    expect(removeSequenceItemMutateMock).toHaveBeenCalledWith('si-1')
+    expect(removeSequenceItemMutateMock).toHaveBeenCalledWith('si-2')
+  })
+
+  it('the slot rows are named as PP2b names them, and a slot that is a rest day is the words REST DAY', () => {
+    workoutDays = [day({ id: 'wd-1', name: 'A' })]
+    sequenceItems = [seqItem({ id: 'si-1', position: 0, workoutDayId: 'wd-1' }), seqItem({ id: 'si-2', position: 1, workoutDayId: null })]
+    render(<StepExercises program={program({ scheduleType: 'sequence' })} volumeReadOnly={false} />)
+    expect(sequenceRegion().getByLabelText('Change slot 01: A')).toBeTruthy()
+    expect(sequenceRegion().getByLabelText('Change slot 02: REST DAY')).toBeTruthy()
+    expect(sequenceRegion().getAllByLabelText('Move slot up')).toHaveLength(2)
+    expect(sequenceRegion().getAllByLabelText('Remove slot')).toHaveLength(2)
+    expect(sequenceRegion().getByText('01')).toBeTruthy()
+    expect(sequenceRegion().getByText('02')).toBeTruthy()
   })
 
   it('CANCEL on the remove sheet writes nothing', () => {
