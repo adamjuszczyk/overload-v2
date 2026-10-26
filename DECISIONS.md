@@ -1,8 +1,8 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 59's review (merged, #206).*
-- *219 is closed: your two SELECTs show no drift in `v2_plan_week`, your re-seed of 2026-10-26 gave weeks 2–3 their numbers, and `staging-smoke.mjs` reads 51/51. Chunk 59 is merged and migration 047 is live on staging.*
+*Rewritten at every boundary. Last: 2026-10-26, chunk 60's review (merged, #208).*
+- *Chunk 60 (the log lock) is merged; light under the 1.2 cost rule, so its staging steps are the release checklist's RC29. Two new entries, neither blocks: 221 (its display choices, accepted as built) and 222 (the warmup row's accent).*
 
 What blocks, in order:
 1. **121** (a to-do, below): the release's migrations PR waits for it.
@@ -11,6 +11,8 @@ Nothing else blocks a chunk or the release.
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **222** — on a card that starts with an open warmup, the warmup row keeps 58a's accent W and filled LOG while working set 01 has the current set's accent frame (G54), so two rows read as primary; board W2b draws the warmup in the frame. Recommended: (b), draw an open warmup like any other open row (one condition in `SetRowWarmup.tsx`). Blocks: nothing (display).
+- **221** — chunk 60's display choices (D31), (a)–(i): "SET 04" naming outside a superset, the other open rows as W1 draws them (outlined LOG, compact CUE), the question asked after the row checks its numbers, START SET on the current row only, CANCEL keeping the typed numbers, every open row's ⋮ with SKIP THIS SET before 61 (SPEC C9), a drop out of order asking with 46r's words. Recommended: accept all, as built. Blocks: nothing.
 - **220** — chunk 59's display choices (D31), (a)–(k): the skip line's words beyond W10's one case (a superset member's sets named 01, 02, 03 beside rows A1–A3), SKIP N SETS counting drops, the swap line's plural and empty case, the skip row's inline confirm, the card's SWAPPED FROM and ADDED TODAY on its muscle line, the pickers' words and exclusions, the real reason under "Couldn't swap.". Recommended: accept all, as built. Blocks: nothing.
 - **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
 - **217** — chunk 58b's display choices (D31), (a)–(m), including N OF M SETS counted over the rows the screen draws (a), the weekday of a moved session's new day (b), the failed row keeping its pen (e) and the history icon opening the sheet, with FULL HISTORY one tap further (h). Recommended: accept all, as built. Blocks: nothing.
@@ -69,6 +71,8 @@ To-dos:
 - **56** (#194): the same for a race past that read, a `23505` on `v2_week_review_decisions_item_uk`: the item goes, with no error. The break it must catch is the review's M13, the refresh after the conflict dropped, which passed the same 42 tests. Same probe, P3 (the request meets the race and the row lands).
 - 58a's W1 fixture test (#199) is done in 58b (#201): `GymSession.boards.test.tsx` feeds `useExerciseReferenceSessions` and asserts W1's LAST lines; the review's break O1 (the rows draw no LAST line) fails 5 tests. 58b owes none.
 - **59** (#206): a moved dropset's drops show the targets of their own planned drops on the swap's card (`targetsOf`'s stage branch, `src/features/gym/useExerciseCardState.ts`). The break it must catch is the review's M1, that branch returning nothing, which passed all 27 tests of `GymSession.swap.test.tsx` and `GymSession.boards59.test.tsx`. Behaviour verified right: the committed W5 picture draws the moved drop "40 kg @ RIR 0" under AFTER SET 03, and on staging the dip card's drops read the pushdown's (22.5 kg × 8–10 @ RIR 0, 17.5 kg × 6–8 @ RIR 0). In the same run, plan the W5 fixture's drop as board W5 draws it, 40 kg × AMRAP (`set-3-drop` in `GymSession.boards59.test.tsx` has no `isAmrap`, so the picture reads "40 kg @ RIR 0"), and re-capture `w5.html` and the pictures that share its session (W5, W10, W11, W14).
+
+- **60** (#208): LOG on an unlocked drop that isn't the current set asks first, at the screen (`beforeLog={guard}` on every `SetRowCurrent` in `src/features/gym/WorkoutRow.tsx`, a drop row's included): with the lock on and a drop of an earlier set open, LOG on a later set's drop or a drop out of order opens the question with 46r's words ("Log set 03 drop 1 before set 02?") and writes nothing until it is confirmed. The break it must catch is the review's R1, `beforeLog={isStage ? undefined : guard}`, which passed all 13 tests of `GymSession.logLock.test.tsx`. Behaviour verified right by the code (one `guard` for every open row) and by 46r's own `lockDecision` tests of a drop (`workoutRules.current.test.ts`).
 
 ## Format for all new entries
 
@@ -621,6 +625,31 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (i) A card for an exercise added in the workout reads ADDED TODAY, also when its logs bring it back after a reload, and so does a pre-025 swap's replacement drawn as an extra card.
 - (j) A set added to the swap's card after the swap (+ ADD SET there) shows no targets; the moved sets show the ones they had (164).
 - (k) After a swap, the card the sets left keeps its header and LAST line with an empty body when nothing on it was logged (staging: Cable Triceps Pushdown).
+
+### 221 Chunk 60's display choices on the log lock and the open rows (provisional, D31; accepted as built)
+**Ask:** chunk 60's choices where SPEC, TASKS and boards W1 and W7b give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. Each is display or follows a SPEC line already there; none changes what is counted or written (a LOG, confirmed or not, stores the row's number, 151/170, break-proven).
+**Blocks:** nothing.
+**Options:** (a)–(i) below, each accepted or changed by letter.
+**Answer:**
+**Evidence:** from the builder's report (`<scratchpad>/build/chunk-60-builder-1.md`, section 3) and the review's reading of the code, the dumps and the W7b picture against the board (#208, `2fd23fa`).
+- (a) A row that isn't in a superset is named "SET 04" in the sheet's eyebrow and on its button ("LAT PULLDOWN · SET 04", "LOG SET 04"), as 46r's `rowLabel` names it in the title ("Log set 04 before set 02?").
+- (b) The line under the sheet's title keeps the sheet frame's 16 px rhythm (the board pulls it up 4 px).
+- (c) The other open rows are drawn as board W1 draws them: the current row's boxes with no frame, a muted number, LOG outlined by an inset 1 px line (the same size as the filled one), and the cue as its compact CUE mark only.
+- (d) The question is asked after the row has checked its numbers: a LOG missing reps shows the row's own "Enter weight and reps, or skip the set from ⋮." first and no question.
+- (e) START SET (measure set time) is on the current row only (one set timer per screen); another open row logs with no set time.
+- (f) The question is the row's own sheet: CANCEL, ×, a tap on the scrim and Escape leave the typed numbers and a running set timer as they were.
+- (g) Every open row now has 58a's ⋮ with FORM and SKIP THIS SET (kept until 61), so SKIP THIS SET is reachable on any open row before 61, as SPEC C9 has the set's ⋯ "for upcoming and current sets"; a skip is not asked about (the lock is about LOG) and stores the row's number.
+- (h) LOG on an unlocked drop that isn't the current set asks with 46r's words ("Log set 03 drop 1 before set 02?"); no board draws it (its screen test is owed: Tests owed, 60).
+- (i) ADD STAGE and "mark as dropset" (an ad-hoc stage under a logged head) are not asked about, as today, until 62 replaces them with the set type picker.
+
+### 222 An unlogged warmup row keeps 58a's accent (filled LOG, accent W) beside the current set's accent frame (chunk 60)
+**Ask:** on a card that starts with an open warmup, should the warmup row still look primary (58a's accent W and filled LOG) while the accent frame sits on working set 01, the current set?
+**Recommendation:** (b): draw an open warmup like any other open row (muted W, outlined LOG), so the screen has one primary row, the current set (G54: a warmup never takes part in the current set). One condition in `SetRowWarmup.tsx`; for your display pass, not now.
+**Blocks:** nothing (display; which row is current and what LOG does are right and tested).
+**Options:** (a) as built: the warmup keeps 58a's accent W and filled LOG, so two rows read as primary; (b) an open warmup is styled as a non-current open row; (c) the warmup just before the current set in its card keeps the accent, as board W2b ("WARMUPS AS ROWS") draws the first unlogged warmup in the accent frame.
+**Answer:**
+**Evidence:** board W2b draws the first unlogged warmup in the accent frame and working set 01 plain; SPEC Current set and G54 say a warmup never takes part, so 60 gives the accent frame and `data-current-set` to working set 01 (SPEC decides behaviour). `SetRowWarmup` (58a) is untouched. Board W1 draws the curl's warmup LOG outlined when it isn't the next row, which fits (b) or (c). The builder's report, 3(a), third point.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
