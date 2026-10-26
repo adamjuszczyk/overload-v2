@@ -6,7 +6,7 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
-import { flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete } from '../offline/useSyncQueue'
+import { dropQueuedWritesNamingLog, flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
@@ -1161,7 +1161,9 @@ export function useUpdateSetLog(sessionId: string) {
 // Delete one set log (the workout's DELETE, chunk 61; a warmup's untick until 63). Online it is the request it always was; offline (G47,
 // chunk 57's `delete` item) it is queued, a stage log naming its head: the queue replays in the order of the calls and a head's delete
 // waits for its stages', so the caller deletes stages first and the head last (`deleteEffects`' order). The screen's own copy of the log
-// goes at once either way; offline the session is not read again (the read could not be answered), as after a LOG.
+// goes at once either way; offline the session is not read again (the read could not be answered), as after a LOG. Online, once the request has gone through,
+// the change rows still queued for that log leave the queue (DECISIONS 227 (iii): the server's cascade took theirs, and a queued upsert of one is refused
+// for ever); a failure of that cleanup is logged and never fails a delete that has been done.
 export function useDeleteSetLog(sessionId: string) {
   const qk = ['v2_session', sessionId] as const
   const isOnline = useOnlineStatus()
@@ -1176,8 +1178,11 @@ export function useDeleteSetLog(sessionId: string) {
     // 'always' makes it attempt the request regardless of connectivity, so
     // a real offline attempt fails fast with a normal network error instead.
     networkMode: 'always',
-    mutationFn: ({ id, parentSetId = null }: { id: string; parentSetId?: string | null }) =>
-      isOnline ? deleteSetLog(id) : queueSetLogDelete({ id, sessionId, parentSetId }),
+    mutationFn: async ({ id, parentSetId = null }: { id: string; parentSetId?: string | null }) => {
+      if (!isOnline) return queueSetLogDelete({ id, sessionId, parentSetId })
+      await deleteSetLog(id)
+      await dropQueuedWritesNamingLog(id).catch((err) => console.error('[sync] could not drop the queued rows of a deleted log', err))
+    },
     onMutate: async ({ id }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
