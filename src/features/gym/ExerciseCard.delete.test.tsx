@@ -202,6 +202,22 @@ describe('an open planned set: its ⋯ DELETE SET writes the `deleted` change ro
     expect(order).toEqual([`changes ${JSON.stringify([{ change: { kind: 'deleted', weekPlanSetId: 'set-2' }, id: 'chg-7' }])}`])
   })
 
+  it('a set the session already retyped, deleted while the write is out: the row is gone at once (the written row wins over the stored one), and a refused write brings it back as it was', async () => {
+    let fail!: (err: Error) => void
+    const { writers, onDeleteSet } = recorder()
+    writers.writeChanges.mockImplementation(() => new Promise<void>((_resolve, reject) => void (fail = reject)))
+    const retyped = held({ kind: 'retyped', weekPlanSetId: 'set-2', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 } }, 'chg-7')
+    const { container } = renderCard({ plannedSets: plan(), logs: [headLogOf(1)], changes: [retyped], props: { onDeleteSet, writers } })
+    expect(rowLabels(container)).toEqual(['01', '02', '↳', '↳', '03'])
+    askFromSheet(container, 'set:set-2')
+    await press(within(dialog()).getByText('DELETE SET'))
+    expect(rowLabels(container)).toEqual(['01', '02']) // the set and its two drops are out, 03 is 02: no error from two rows for one planned set
+    await act(async () => fail(new Error('permission denied')))
+    await settle()
+    expect(rowLabels(container)).toEqual(['01', '02', '↳', '↳', '03']) // as it was: a dropset with two drops
+    expect(within(dialog()).getByText('permission denied')).toBeTruthy()
+  })
+
   it('a planned dropset deleted open says its drops go with it (W9\'s head variant)', async () => {
     const { container } = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'dropset', targetWeight: 52.5, repMin: 8, repMax: 10 }), plannedDrop(1, 1), plannedDrop(1, 2)] })
     askFromSheet(container, 'set:set-1')

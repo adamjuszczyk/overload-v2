@@ -242,6 +242,25 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
   })
 })
 
+describe('SupersetBlock — DELETE SET (chunk 61, board W7b\'s member names)', () => {
+  it('a member\'s open set: its ⋯ asks W9 in the block, naming the member and the round, and DELETE SET writes that planned set\'s `deleted` change row', async () => {
+    const writers = spyWriters()
+    const { container } = renderBlock(members(), { writers })
+    const second = container.querySelectorAll('[data-row-key]')[1] as HTMLElement // B1: the second row of the zigzag
+    expect(second.getAttribute('data-row-key')).toBe('set:pe-b-set-1')
+    fireEvent.click(within(second).getByLabelText('Set options'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('DELETE SET'))
+    const confirm = screen.getByRole('alertdialog')
+    expect(confirm.textContent).toContain('BARBELL ROW · B1')
+    expect(writers.writeChanges).not.toHaveBeenCalled() // asked first
+    await act(async () => {
+      fireEvent.click(within(confirm).getByText('DELETE SET'))
+      for (let i = 0; i < 16; i++) await Promise.resolve()
+    })
+    expect(writers.writeChanges).toHaveBeenCalledWith([{ change: { kind: 'deleted', weekPlanSetId: 'pe-b-set-1' }, id: null }])
+  })
+})
+
 describe('SupersetBlock — + ADD ROUND (SPEC Defaults 9, board W1)', () => {
   it('adds one set to every member: A 4 and B 3 sets become 5 and 4', () => {
     const { container } = renderBlock(members())

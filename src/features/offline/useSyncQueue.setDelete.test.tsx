@@ -126,7 +126,7 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 const { queryClient } = await import('../../lib/queryClient')
-const { flushSyncQueue, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')
+const { flushSyncQueue, MAX_SYNC_ATTEMPTS, hasQueuedWritesFor } = await import('./useSyncQueue')
 const { useDeleteSetLog } = await import('../gym/useSession')
 const { writeSetChanges } = await import('../gym/useSessionSetChanges')
 const { patchSetNumbers } = await import('../gym/useSetNumberCorrections')
@@ -263,8 +263,10 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
     })
     expect(inQueueOrder()).toEqual(['upsert v2_session_set_changes deleted bench.3'])
     expect(world.requests).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(true) // a finish waits for it: the server doesn't have the session's deleted set yet
     world.online = true
     await flushSyncQueue()
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
     expect(world.requests).toHaveLength(1)
     expect(world.requests[0]).toMatch(/^upsert v2_session_set_changes:/)
     expect([...world.tables]).toEqual(['v2_session_set_changes'])

@@ -47,10 +47,16 @@ describe('the dialog', () => {
   })
 
   it('while the delete is out both buttons are off and the button says DELETING…; a refused delete leaves the dialog with its headline and the real reason', () => {
-    const { rerender } = render(<DeleteSetConfirm {...props} pending />)
+    const onCancel = vi.fn()
+    const { rerender } = render(<DeleteSetConfirm {...props} onCancel={onCancel} />)
+    rerender(<DeleteSetConfirm {...props} onCancel={onCancel} pending />) // the press of DELETE SET: the dialog was open before the delete started
     const dialog = screen.getByRole('alertdialog')
     expect((within(dialog).getByText('CANCEL') as HTMLButtonElement).disabled).toBe(true)
     expect((within(dialog).getByText('DELETING…') as HTMLButtonElement).disabled).toBe(true)
+    // nor does the scrim or Escape close it while the delete is out: a dialog closed then would hide a failure
+    fireEvent.click(dialog.parentElement as HTMLElement)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onCancel).not.toHaveBeenCalled()
     rerender(<DeleteSetConfirm {...props} error={{ headline: "Couldn't delete the set.", reason: 'Failed to fetch' }} />)
     expect(within(screen.getByRole('alertdialog')).getByRole('alert').textContent).toBe("Couldn't delete the set.Failed to fetch")
     expect((within(screen.getByRole('alertdialog')).getByText('DELETE SET') as HTMLButtonElement).disabled).toBe(false)

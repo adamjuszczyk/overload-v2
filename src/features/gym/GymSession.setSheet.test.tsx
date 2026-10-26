@@ -182,6 +182,7 @@ describe('DELETE, as the screen sends it (online)', () => {
     expect(hooks.deleteLog.mock.calls).toEqual([[{ id: 'l-lat-2', parentSetId: null }]])
     expect(hooks.writeChanges).toHaveBeenCalledTimes(1)
     expect(hooks.writeChanges).toHaveBeenCalledWith({ sessionId: 'session-1', userId: 'u1', online: true, writes: [{ change: { kind: 'deleted', weekPlanSetId: 'lat-2' }, id: null }] })
+    expect(hooks.updateSet).not.toHaveBeenCalled() // the plan's rows are Plan's: the only write to them from the workout is CUES
   })
 
   it('a logged head with its drop: the drop is deleted first and names its head (the queue needs it), then the head', async () => {
@@ -242,6 +243,7 @@ describe('DELETE, as the screen sends it (online)', () => {
     expect(hooks.deleteLog.mock.calls).toEqual([[{ id: 'l-lat-3-d1', parentSetId: 'l-lat-3' }]])
     expect(hooks.updateAsync.mock.calls).toEqual([[{ id: 'l-lat-3', changes: { stageKind: null } }]])
     expect(hooks.writeChanges).toHaveBeenCalledWith(expect.objectContaining({ writes: [{ change: { kind: 'retyped', weekPlanSetId: 'lat-3', type: { kind: 'normal' } }, id: null }] }))
+    expect(hooks.updateSet).not.toHaveBeenCalled()
   })
 
   it('offline that same delete writes nothing: no log, no row, no head patch', async () => {

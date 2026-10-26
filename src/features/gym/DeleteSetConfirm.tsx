@@ -8,7 +8,8 @@ import { hairline } from '../../components/pickers/pickerControls'
 //
 // It writes nothing: `onConfirm` is the delete, which the caller runs; while it runs (`pending`) both buttons are off and the button says
 // DELETING…, and a delete that fails leaves the dialog open with the real reason under the text (`error`: SPEC Errors (15)). CANCEL, the scrim
-// and Escape ask `onCancel`. Focus goes to CANCEL when it opens, the safe answer, and back to what had it when it closes.
+// and Escape ask `onCancel`, none of them while the delete is out (a dialog closed then would hide a failure). Focus goes to CANCEL when it
+// opens, the safe answer, and back to what had it when it closes.
 //
 // Display choices no board settles, provisional under D31: the pending and failed states, the focus rule.
 
@@ -77,19 +78,19 @@ export default function DeleteSetConfirm({ eyebrow, title, body, pending = false
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (event.key !== 'Escape' || event.defaultPrevented || pending) return
       event.preventDefault()
       onCancel()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onCancel])
+  }, [onCancel, pending])
 
   return createPortal(
     <div
       style={SCRIM_STYLE}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onCancel()
+        if (event.target === event.currentTarget && !pending) onCancel()
       }}
     >
       <div role="alertdialog" aria-modal="true" aria-labelledby={titleId} style={CARD_STYLE}>
