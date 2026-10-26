@@ -81,9 +81,16 @@ async function withFinishDerivedFromServer(payload: Record<string, unknown>) {
 // deletes the stages first, and a stage still waiting to be created must
 // exist before its head goes). A patch that clears a head's stage kind (chunk
 // 61's review 1, F1) is held the same way: behind the writes to its own log and
-// to its drops'. Writes to any other record still go.
+// to its drops'. A change row that names a log (a `pending_stages` row's
+// `set_log_id`: 042's foreign key, ON DELETE CASCADE; DECISIONS 227) hangs under
+// that log as a stage hangs under its head: the row is held behind the writes to
+// its log, and the log's delete behind the writes to its rows, so a delete is
+// never sent ahead of a row still to be created (the row would then be refused
+// for ever, `23503`, naming a log that is gone). Writes to any other record still go.
+const SESSION_SET_CHANGES_TABLE = 'v2_session_set_changes'
+
 function payloadOf(item: SyncQueueItem) {
-  return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null }
+  return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null; set_log_id?: string | null }
 }
 
 function recordKey(item: SyncQueueItem): string | null {
@@ -99,34 +106,53 @@ function headIdOf(item: SyncQueueItem): string | null {
   return (item.operation === 'delete' || item.operation === 'patch' ? item.parentSetId : payloadOf(item).parent_set_id) ?? null
 }
 
-// A head's record key -> the record keys of its stage logs with a write in the queue.
-function stageKeysByHead(items: SyncQueueItem[]): Map<string, string[]> {
-  const stages = new Map<string, string[]>()
-  for (const item of items) {
-    const head = headIdOf(item)
-    const own = recordKey(item)
-    if (!head || !own) continue
-    const list = stages.get(`v2_set_logs:${head}`)
-    if (list) list.push(own)
-    else stages.set(`v2_set_logs:${head}`, [own])
-  }
-  return stages
+// The log a queued upsert of a change row names (a `pending_stages` row's `set_log_id`; DECISIONS 227), else null: any other write, and a row that names a
+// planned set instead (`deleted`, `retyped`).
+function namedLogIdOf(item: SyncQueueItem): string | null {
+  if (item.table !== SESSION_SET_CHANGES_TABLE || item.operation !== 'upsert') return null
+  return payloadOf(item).set_log_id ?? null
 }
 
-function dependencyKeys(item: SyncQueueItem, stages: Map<string, string[]>): string[] {
+// What hangs under a log, by the log's record key, as the record keys of the queued writes: its stage logs, and the change rows that name it.
+interface Hanging {
+  stages: Map<string, string[]>
+  rows: Map<string, string[]>
+}
+
+function hangingUnderLogs(items: SyncQueueItem[]): Hanging {
+  const hanging: Hanging = { stages: new Map(), rows: new Map() }
+  const add = (under: Map<string, string[]>, log: string | null, own: string | null) => {
+    if (!log || !own) return
+    const list = under.get(`v2_set_logs:${log}`)
+    if (list) list.push(own)
+    else under.set(`v2_set_logs:${log}`, [own])
+  }
+  for (const item of items) {
+    const own = recordKey(item)
+    add(hanging.stages, headIdOf(item), own)
+    add(hanging.rows, namedLogIdOf(item), own)
+  }
+  return hanging
+}
+
+function dependencyKeys(item: SyncQueueItem, hanging: Hanging): string[] {
   const p = payloadOf(item)
   const keys: string[] = []
   const own = recordKey(item)
   if (own) keys.push(own)
   if (item.operation === 'delete') {
-    if (own) keys.push(...(stages.get(own) ?? []))
+    // A log's delete waits for its stages' writes and for its change rows' (227): the rows are created while the log is still there.
+    if (own) keys.push(...(hanging.stages.get(own) ?? []), ...(hanging.rows.get(own) ?? []))
     return keys
   }
   // A head losing its stage kind (its last drop was deleted, 147 (a)) waits for its drops' writes as its delete would: sent ahead of a
   // drop's delete that failed in the pass, it would leave the server a normal head with a drop log under it until the retry.
-  if (item.operation === 'patch' && own && 'stage_kind' in p) keys.push(...(stages.get(own) ?? []))
+  if (item.operation === 'patch' && own && 'stage_kind' in p) keys.push(...(hanging.stages.get(own) ?? []))
   if (p.session_id) keys.push(`v2_sessions:${p.session_id}`)
   if (item.table === 'v2_set_logs' && p.parent_set_id) keys.push(`v2_set_logs:${p.parent_set_id}`)
+  // A change row waits for the writes to the log it names (227): sent while the log is still to be created, it is refused `23503`.
+  const named = namedLogIdOf(item)
+  if (named) keys.push(`v2_set_logs:${named}`)
   return keys
 }
 
@@ -140,10 +166,10 @@ function sessionIdOf(item: SyncQueueItem): string | null {
 // up, and every write held behind one. `items` in queue (createdAt) order.
 function failuresOf(items: SyncQueueItem[]): SyncFailure[] {
   const held = new Set<string>()
-  const stages = stageKeysByHead(items)
+  const hanging = hangingUnderLogs(items)
   const failures: SyncFailure[] = []
   for (const item of items) {
-    if (!item.gaveUp && !dependencyKeys(item, stages).some((k) => held.has(k))) continue
+    if (!item.gaveUp && !dependencyKeys(item, hanging).some((k) => held.has(k))) continue
     const own = recordKey(item)
     if (own) held.add(own)
     failures.push({ queueId: item.id!, table: item.table, recordId: payloadOf(item).id ?? null, sessionId: sessionIdOf(item) })
@@ -163,7 +189,9 @@ function neverSent(item: SyncQueueItem): boolean {
 // one at a time, so no upsert of the pair is in flight). Only the writes
 // before a record's first delete count, and only when every one of them is a
 // never-sent upsert; a write that may already be on the server keeps its
-// delete, which is sent after it. Returns the items left to send.
+// delete, which is sent after it. The change rows that name such a log leave with
+// the pair (DECISIONS 227): the server cannot hold a row that names a log it never
+// held, and the row would be refused `23503` for ever. Returns the items left to send.
 async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem[]> {
   const byRecord = new Map<string, SyncQueueItem[]>()
   for (const item of items) {
@@ -174,25 +202,35 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
     else byRecord.set(key, [item])
   }
   const cancelled = new Set<number>()
+  // The logs whose pair is cancelled: the server will never hold them.
+  const gone = new Set<string>()
   for (const list of byRecord.values()) {
     const at = list.findIndex((item) => item.operation === 'delete')
     if (at < 1) continue
     const before = list.slice(0, at)
     if (!before.every(neverSent)) continue
     for (const item of [...before, list[at]]) cancelled.add(item.id!)
+    const deleted = payloadOf(list[at]).id
+    if (list[at].table === 'v2_set_logs' && deleted) gone.add(deleted)
   }
   if (cancelled.size === 0) return items
+  // The rows that name one of those logs, whatever their own markers say (a row can't have reached a server that never held its log) and wherever they sit in
+  // the queue (a log's id is used once, so a row after the delete names the same log): only those.
+  const rows = items.filter((item) => {
+    const named = namedLogIdOf(item)
+    return named !== null && gone.has(named)
+  })
   const { removePending } = useOfflineStore.getState()
-  // In queue order, so the delete goes last: if a removal fails midway, what
-  // is left is a delete of a row that was never created, which is harmless,
-  // and never an upsert whose delete is gone.
-  for (const item of items) {
-    if (!cancelled.has(item.id!)) continue
+  // The rows first, then the pair in queue order, so the delete goes last: if a removal fails midway, what is left is a delete of a row that was never
+  // created, which is harmless, or the pair again (cancelled by the next pass, with any row left); never an upsert whose delete is gone, and never a
+  // row whose log's upsert is gone (the next pass could not tell that it names a log that will never be sent).
+  for (const item of [...rows, ...items.filter((item) => cancelled.has(item.id!))]) {
     await db.sync_queue.delete(item.id!)
     const id = payloadOf(item).id
     if (id) removePending(id)
   }
-  return items.filter((item) => !cancelled.has(item.id!))
+  const leaving = new Set([...cancelled, ...rows.map((item) => item.id!)])
+  return items.filter((item) => !leaving.has(item.id!))
 }
 
 // A queued patch is one of two shapes and nothing else is ever sent for it: `{ id, set_number }` (chunk 58a, DECISIONS 197) or
@@ -211,13 +249,13 @@ function patchOf(payload: unknown): { id: string; changes: { set_number: number 
 async function flushOnce() {
   const { removePending } = useOfflineStore.getState()
   const items = await dropNeverSentPairs(await db.sync_queue.orderBy('createdAt').toArray())
-  const stages = stageKeysByHead(items)
+  const hanging = hangingUnderLogs(items)
   // Record keys with an earlier write still unsent in this pass.
   const held = new Set<string>()
   for (const item of items) {
     const payload = item.payload as { id?: string }
     const own = recordKey(item)
-    if (item.gaveUp || dependencyKeys(item, stages).some((k) => held.has(k))) {
+    if (item.gaveUp || dependencyKeys(item, hanging).some((k) => held.has(k))) {
       if (own) held.add(own)
       continue
     }
@@ -389,6 +427,25 @@ export async function queueSetLogStageKindClear(log: { id: string; sessionId: st
     sessionId: log.sessionId,
   })
   await db.set_logs.update(log.id, { stageKind: null })
+}
+
+// DECISIONS 227 (iii). An online delete of a log (`useDeleteSetLog`'s direct request) has gone through. The server's foreign keys took everything that named the
+// log with it (042: a change row's `set_log_id`, ON DELETE CASCADE; 010: a stage log's `parent_set_id`, ON DELETE CASCADE), and a queued upsert of one of those would
+// be refused `23503` for ever: they leave the queue, and only they, the upserts of change rows whose `set_log_id` is this log's and the upserts of stage logs whose
+// `parent_set_id` is this log's (1.1 has the defect in this second shape: a stage logged offline under a head that is then deleted online). Every other queued write
+// stays, however it is related (another log's rows or stages, the session's other rows, the log's own writes, a stage's queued delete or patch, which match no row and
+// are never refused, a finish). Called after the request has been answered, never before: a delete that fails leaves the writes, and the log, in place. A write that had
+// given up was on the "couldn't sync" notice, which is made again from what is left. Returns how many writes left.
+export async function dropQueuedWritesNamingLog(logId: string): Promise<number> {
+  const named = (await db.sync_queue.toArray()).filter((item) => namedLogIdOf(item) === logId || (item.operation === 'upsert' && headIdOf(item) === logId))
+  const { removePending } = useOfflineStore.getState()
+  for (const item of named) {
+    await db.sync_queue.delete(item.id!)
+    const id = payloadOf(item).id
+    if (id) removePending(id)
+  }
+  if (named.length > 0) useOfflineStore.getState().setSyncFailures(failuresOf(await db.sync_queue.orderBy('createdAt').toArray()))
+  return named.length
 }
 
 async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {

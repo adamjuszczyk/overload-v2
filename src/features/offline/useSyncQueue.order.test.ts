@@ -51,6 +51,8 @@ let sent: string[] = []
 // Every request that reached the server, in order: `upsert <tag>` or
 // `delete <table>:<id>`.
 let requests: string[] = []
+// The upserts, by tag, the server refused on a foreign key: a stage whose head it doesn't hold, a change row whose log it doesn't hold (DECISIONS 227).
+let refused: string[] = []
 // Whether the queue said `sendStarted` for an upsert at the moment its request
 // arrived, by tag.
 let startedWhenSent = new Map<string, boolean>()
@@ -135,7 +137,14 @@ vi.mock('../../lib/supabase', () => ({
         // The foreign key: a stage's head must already be there.
         const head = payload.parent_set_id as string | undefined
         if (head && !server.has(`${table}:${head}`)) {
+          refused.push(tag)
           return { error: { message: 'violates foreign key constraint', code: '23503' } }
+        }
+        // 042: a change row's `set_log_id` references v2_set_logs(id) ON DELETE CASCADE, so a row that names a log the server doesn't hold is refused.
+        const named = payload.set_log_id as string | undefined
+        if (table === 'v2_session_set_changes' && named && !server.has(`v2_set_logs:${named}`)) {
+          refused.push(tag)
+          return { error: { message: 'v2_session_set_changes_set_log_id_fkey', code: '23503' } }
         }
         sent.push(tag)
         requests.push(`upsert ${tag}`)
@@ -184,6 +193,12 @@ vi.mock('../../lib/supabase', () => ({
           for (const [key, row] of [...server]) {
             if (key.startsWith(`${table}:`) && row.parent_set_id === value) server.delete(key)
           }
+          // 042: a log takes the change rows that name it with it.
+          if (table === 'v2_set_logs') {
+            for (const [key, row] of [...server]) {
+              if (key.startsWith('v2_session_set_changes:') && row.set_log_id === value) server.delete(key)
+            }
+          }
           return { error: null }
         },
       }),
@@ -193,7 +208,7 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }))
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
-const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogDelete, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')
+const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogDelete, dropQueuedWritesNamingLog, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')
 const { useOfflineStore } = await import('./offlineStore')
 
 const stamp = (n: number) => `2026-10-11T08:00:${String(n).padStart(2, '0')}Z`
@@ -211,6 +226,9 @@ function enqueuePatch(table: string, payload: Record<string, unknown>, extra: Pa
   const n = nextId++
   queue.push({ id: n, table, operation: 'patch', payload, createdAt: stamp(n), ...extra })
 }
+// A queued upsert of a `pending_stages` change row, as `queueSetChange` queues it: it names its session and the log (`set_log_id`).
+const enqueueRow = (rowId: string, logId: string, tag: string, extra: Partial<QueueItem> = {}, session = 's1') =>
+  enqueue('v2_session_set_changes', { id: rowId, session_id: session, kind: 'pending_stages', set_log_id: logId, tag }, extra)
 const setEdit = (tag: string, weight: number, extra: Record<string, unknown> = {}) =>
   enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight, tag, ...extra })
 
@@ -232,6 +250,7 @@ beforeEach(() => {
   failures = new Map()
   sent = []
   requests = []
+  refused = []
   startedWhenSent = new Map()
   queueWhenSent = new Map()
   deviceLogs = new Set()
@@ -984,5 +1003,296 @@ describe('flushSyncQueue — a delete queued while its upsert is in flight (G47)
     expect(requests).toEqual(['upsert log', 'upsert log', 'delete v2_set_logs:l1'])
     expect(server.has('v2_set_logs:l1')).toBe(false) // no ghost row
     expect(queue).toEqual([])
+  })
+})
+
+// DECISIONS 227 (queue-fix-227). A change row that names a log (`pending_stages`: `set_log_id`, 042's foreign key, ON DELETE CASCADE) hangs under that log as a stage hangs
+// under its head. The fake above refuses a row whose log it doesn't hold (`refused`) and cascades a log's delete to the rows that name it, so an order or a cancel that
+// would leave a row refused for ever on the real server fails here. Three rules: (i) a log's never-sent pair cancels with the rows that name it; (ii) a log's delete waits
+// behind the writes to its rows, and a row behind the writes to its log; (iii) an online delete of a log drops the rows still queued for it. And the other half of each,
+// which Adam made the condition of the fix ("never drop or block a user's other queued writes"): every test that cancels, holds or drops one log's rows has another log's,
+// another session's and the session's own writes in the same queue and says they went.
+describe('flushSyncQueue — a log’s never-sent pair cancels with the change rows that name it (227 (i))', () => {
+  it('the log, its row and its delete leave the queue: nothing is sent, nothing is refused, no notice', async () => {
+    useOfflineStore.getState().addPending('l1')
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual([])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+    expect(server.size).toBe(0)
+    expect(useOfflineStore.getState().pendingIds.has('l1')).toBe(false)
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+  })
+
+  it('only the rows that name that log: another log’s row, another session’s log and row, a `retyped` row and the session’s finish go in the same pass', async () => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueue('v2_set_logs', { id: 'l2', session_id: 's1', weight: 60, tag: 'log2' })
+    enqueueRow('r2', 'l2', 'row2')
+    enqueue('v2_set_logs', { id: 'l3', session_id: 's2', weight: 40, tag: 'log3' })
+    enqueueRow('r3', 'l3', 'row3', {}, 's2')
+    enqueue('v2_session_set_changes', { id: 'r4', session_id: 's1', kind: 'retyped', week_plan_set_id: 'p1', set_log_id: null, tag: 'retyped' })
+    enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['upsert log2', 'upsert row2', 'upsert log3', 'upsert row3', 'upsert retyped', 'upsert finish'])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+    expect([...server.keys()].sort()).toEqual(
+      ['v2_session_set_changes:r2', 'v2_session_set_changes:r3', 'v2_session_set_changes:r4', 'v2_sessions:s1', 'v2_set_logs:l2', 'v2_set_logs:l3'],
+    )
+  })
+
+  it('wherever they sit in the queue: a row queued after the log’s delete leaves with the pair too, and the next log’s write goes', async () => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueue('v2_set_logs', { id: 'l2', session_id: 's1', weight: 60, tag: 'log2' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['upsert log2'])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it.each([
+    ['it failed in an earlier pass', { attempts: 2 }],
+    ['its send started', { sendStarted: true }],
+  ])('a row that was tried (%s) still leaves with the log it names: the server never held the log, so it never held the row', async (_why, marker) => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueRow('r1', 'l1', 'row1', marker)
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual([])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('a log that may be on the server (it failed once) keeps its row and its delete: sent in order, and the cascade takes the row', async () => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }, { attempts: 1 })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['upsert log1', 'upsert row1', 'delete v2_set_logs:l1'])
+    expect(refused).toEqual([])
+    expect(server.size).toBe(0)
+    expect(queue).toEqual([])
+  })
+
+  // The three queue rows go one at a time. A pass that dies between them (the database fails, the page is killed) must leave what the next pass can still cancel or
+  // send harmlessly: never the row alone with its log's upsert gone (the next pass would send it, refused for ever), and never the log's upsert without its delete.
+  it.each([
+    [0, ['upsert v2_set_logs', 'upsert v2_session_set_changes', 'delete v2_set_logs']],
+    [1, ['upsert v2_set_logs', 'delete v2_set_logs']],
+    [2, ['delete v2_set_logs']],
+  ])('a pass that dies after removing %i of a cancelled log’s three items leaves no row refused for ever', async (removed, left) => {
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    writesUntilFailure.set('queue.delete', removed) // the database fails on the next removal after `removed` of them
+
+    await flushSyncQueue().catch(() => {}) // the pass dies half way, before anything is sent
+    expect(requests).toEqual([])
+    expect(queue.map((q) => `${q.operation} ${q.table}`)).toEqual(left)
+
+    await flushSyncQueue() // the next pass
+
+    expect(refused).toEqual([])
+    expect(server.size).toBe(0)
+    expect(queue).toEqual([])
+  })
+})
+
+describe('flushSyncQueue — a log’s delete waits behind the change rows that name it, and a row behind its log (227 (ii))', () => {
+  beforeEach(() => {
+    // The log is on the server already.
+    server.set('v2_set_logs:l1', { id: 'l1' })
+  })
+
+  it('the delete waits behind the row: the row fails in the pass that would send the delete; the next pass sends the row, then the delete', async () => {
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    failures.set('row1', 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual([]) // the delete did not go ahead of the row
+    expect(queue).toHaveLength(2)
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert row1', 'delete v2_set_logs:l1'])
+    expect(refused).toEqual([])
+    expect(server.size).toBe(0) // the delete took the row
+    expect(queue).toEqual([])
+  })
+
+  it('but not behind the failed row of another log: its own delete, its own row, another session’s log and the finish go in the same pass', async () => {
+    server.set('v2_set_logs:l2', { id: 'l2' })
+    server.set('v2_set_logs:l9', { id: 'l9' })
+    enqueueRow('r9', 'l9', 'row9')
+    enqueueDelete('v2_set_logs', 'l9', { sessionId: 's1' })
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    enqueueRow('r2', 'l2', 'row2')
+    enqueue('v2_set_logs', { id: 'l4', session_id: 's2', weight: 50, tag: 'log4' })
+    enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
+    failures.set('row9', 1)
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['delete v2_set_logs:l1', 'upsert row2', 'upsert log4', 'upsert finish'])
+    expect(queue.map((q) => q.payload.id)).toEqual(['r9', 'l9']) // the failed row, and the one delete that waits for it
+  })
+
+  it('a head’s stage-kind patch is not held behind a failed row that names it: only a delete waits for rows', async () => {
+    enqueueRow('r1', 'l1', 'row1')
+    enqueuePatch('v2_set_logs', { id: 'l1', stage_kind: null }, { sessionId: 's1' })
+    failures.set('row1', 1)
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['patch v2_set_logs:l1 {"stage_kind":null}'])
+    expect(queue.map((q) => q.payload.id)).toEqual(['r1'])
+  })
+
+  it('a row waits behind its log’s upsert: held, not tried, while that upsert fails; then the log, then the row. Another log’s pair goes through', async () => {
+    server.delete('v2_set_logs:l1')
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }, { attempts: 1 })
+    enqueueRow('r1', 'l1', 'row1')
+    enqueue('v2_set_logs', { id: 'l2', session_id: 's1', weight: 60, tag: 'log2' })
+    enqueueRow('r2', 'l2', 'row2')
+    failures.set('log1', 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert log2', 'upsert row2'])
+    expect(queueWhenSent.has('row1')).toBe(false) // never tried, so never refused
+    expect(refused).toEqual([])
+    expect(queue.find((q) => q.payload.id === 'r1')?.attempts).toBeUndefined()
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert log2', 'upsert row2', 'upsert log1', 'upsert row1'])
+    expect(refused).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('and is reported with a log upsert that gave up, both under their session; retry sends them in order', async () => {
+    server.delete('v2_set_logs:l1')
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' })
+    enqueueRow('r1', 'l1', 'row1')
+    failures.set('log1', MAX_SYNC_ATTEMPTS)
+
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
+
+    expect(requests).toEqual([])
+    expect(refused).toEqual([])
+    expect(useOfflineStore.getState().syncFailures.map((f) => [f.recordId, f.sessionId])).toEqual([['l1', 's1'], ['r1', 's1']])
+
+    await retrySyncFailures()
+
+    expect(requests).toEqual(['upsert log1', 'upsert row1'])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('and a delete is reported with a row that gave up, both under their session; retry sends the row, then the delete', async () => {
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    failures.set('row1', MAX_SYNC_ATTEMPTS)
+
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
+
+    expect(requests).toEqual([])
+    expect(useOfflineStore.getState().syncFailures.map((f) => [f.recordId, f.sessionId])).toEqual([['r1', 's1'], ['l1', 's1']])
+
+    await retrySyncFailures()
+
+    expect(requests).toEqual(['upsert row1', 'delete v2_set_logs:l1'])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(queue).toEqual([])
+  })
+})
+
+describe('dropQueuedWritesNamingLog — an online delete of a log drops the change rows still queued for it (227 (iii))', () => {
+  it('drops the upserts of the rows that name the log, and nothing else', async () => {
+    useOfflineStore.getState().addPending('r1')
+    enqueueRow('r1', 'l1', 'row1', { attempts: 1 })
+    enqueueRow('r1', 'l1', 'row1b') // a second queued write of the same row
+    enqueueRow('r2', 'l2', 'row2') // another log of the same session
+    enqueueRow('r3', 'l3', 'row3', {}, 's2') // another session
+    enqueue('v2_session_set_changes', { id: 'r4', session_id: 's1', kind: 'retyped', week_plan_set_id: 'p1', set_log_id: null, tag: 'retyped' })
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }) // the log's own upsert is not a row that names it
+    enqueue('v2_set_logs', { id: 'l5', session_id: 's1', parent_set_id: 'l1', weight: 80, tag: 'stage' }) // a stage under it is dropped too (1.1's shape)
+    enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
+
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(3)
+
+    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'row3', 'retyped', 'log1', 'finish'])
+    expect(useOfflineStore.getState().pendingIds.has('r1')).toBe(false)
+  })
+
+  it('and the upserts of the stage logs under that log (1.1’s shape of the defect), not those of another head, not the log’s own upsert, not a stage’s queued delete or patch', async () => {
+    enqueue('v2_set_logs', { id: 'st1', session_id: 's1', parent_set_id: 'l1', tag: 'stage1' })
+    enqueue('v2_set_logs', { id: 'st2', session_id: 's1', parent_set_id: 'l1', tag: 'stage2' }, { attempts: 1 })
+    enqueue('v2_set_logs', { id: 'st9', session_id: 's1', parent_set_id: 'l9', tag: 'stage9' })
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', tag: 'log1' })
+    enqueueDelete('v2_set_logs', 'st3', { sessionId: 's1', parentSetId: 'l1' })
+    enqueuePatch('v2_set_logs', { id: 'st4', set_number: 3 }, { sessionId: 's1', parentSetId: 'l1' })
+
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(2)
+
+    expect(queue.map((q) => q.payload.tag ?? q.payload.id)).toEqual(['stage9', 'log1', 'st3', 'st4'])
+  })
+
+  it('a delete or a patch of a log, queued, is not a row that names it', async () => {
+    enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
+    enqueuePatch('v2_set_logs', { id: 'l1', set_number: 2 }, { sessionId: 's1' })
+    enqueueRow('r1', 'l1', 'row1')
+
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(1)
+
+    expect(queue.map((q) => q.operation)).toEqual(['delete', 'patch'])
+  })
+
+  it('names nothing: the queue is left as it was', async () => {
+    enqueueRow('r2', 'l2', 'row2')
+    enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
+
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(0)
+
+    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'finish'])
+  })
+
+  it('the “couldn’t sync” notice is made again from what is left: a row that had given up is gone from it, another log’s stays', async () => {
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueRow('r2', 'l2', 'row2')
+    failures.set('row1', MAX_SYNC_ATTEMPTS)
+    failures.set('row2', MAX_SYNC_ATTEMPTS)
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
+    expect(useOfflineStore.getState().syncFailures.map((f) => f.recordId)).toEqual(['r1', 'r2'])
+
+    await dropQueuedWritesNamingLog('l1')
+
+    expect(useOfflineStore.getState().syncFailures.map((f) => f.recordId)).toEqual(['r2'])
+    expect(useOfflineStore.getState().failedIds.has('r1')).toBe(false)
+  })
+
+  it('a write to the queue that fails is thrown (the caller decides what a failed cleanup means), after the rows it had removed are gone', async () => {
+    enqueueRow('r1', 'l1', 'row1')
+    enqueueRow('r1', 'l1', 'row1b')
+    writesUntilFailure.set('queue.delete', 1)
+
+    await expect(dropQueuedWritesNamingLog('l1')).rejects.toThrow('UnknownError')
+
+    expect(queue.map((q) => q.payload.tag)).toEqual(['row1b'])
   })
 })
