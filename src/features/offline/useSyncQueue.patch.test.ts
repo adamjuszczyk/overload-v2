@@ -429,8 +429,12 @@ describe('the patch item\'s second shape: a head loses its stage kind (61\'s rev
     ['a kind that is not null', { id: 'h1', stage_kind: 'dropset' }],
     ['a kind that is undefined', { id: 'h1', stage_kind: undefined }],
     ['another column alone', { id: 'h1', weight: 1 }],
+    ['a number that is not a number', { id: 'h1', set_number: '3' }],
+    ['a number that is undefined', { id: 'h1', set_number: undefined }],
     ['no column at all', { id: 'h1' }],
     ['no id', { stage_kind: null }],
+    ['an id that is not a string, beside the kind', { id: 7, stage_kind: null }],
+    ['an id that is not a string, beside a number', { id: null, set_number: 3 }],
     ['a whole row', { ...head, stage_kind: null }],
   ])('refuses a patch that carries %s, and sends nothing', async (_what, payload) => {
     server = new Map([['v2_set_logs:h1', { ...head }]])
