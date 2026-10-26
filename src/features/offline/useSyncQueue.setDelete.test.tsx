@@ -8,7 +8,7 @@
 // the order is also run with an earlier write failing.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
 import { card, dropLog, headLog, orderOf, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
@@ -310,43 +310,43 @@ describe('DELETE of a logged set with a logged drop, offline (G47)', () => {
 })
 
 describe('the change row, against the table\'s own refusals', () => {
-  const sessionRow = (over: Record<string, unknown>) => ({ id: 'row-1', user_id: 'u1', session_id: 's1', kind: 'deleted', week_plan_set_id: 'bench.2', set_log_id: null, is_warmup: false, stage_kind: null, stage_count: 0, ...over })
+  const sessionRow = (over: Record<string, unknown>) => ({ id: 'chg-1', user_id: 'u1', session_id: 's1', kind: 'deleted', week_plan_set_id: 'bench.2', set_log_id: null, is_warmup: false, stage_kind: null, stage_count: 0, ...over })
 
   it('the stand-in can refuse (the control): a `deleted` row that holds a stage kind is refused (23514), and a second row for one planned set under another id (23505)', async () => {
     const { upsertSetChange } = await import('../gym/sessionSetChangesService')
     await expect(upsertSetChange(sessionRow({ stage_kind: 'dropset', stage_count: 1 }))).rejects.toMatchObject({ code: '23514', message: 'v2_session_set_changes_deleted_check' })
     await upsertSetChange(sessionRow({ kind: 'retyped', is_warmup: true }))
-    await expect(upsertSetChange(sessionRow({ id: 'row-2' }))).rejects.toMatchObject({ code: '23505', message: 'v2_session_set_changes_plan_set_uk' })
+    await expect(upsertSetChange(sessionRow({ id: 'chg-2' }))).rejects.toMatchObject({ code: '23505', message: 'v2_session_set_changes_plan_set_uk' })
   })
 
   it('a planned set the session already retyped: the `deleted` write carries the held row\'s id and is ONE accepted write that clears its type', async () => {
     const { upsertSetChange } = await import('../gym/sessionSetChangesService')
-    await upsertSetChange(sessionRow({ id: 'row-7', kind: 'retyped', stage_kind: 'dropset', stage_count: 2 }))
+    await upsertSetChange(sessionRow({ id: 'chg-7', kind: 'retyped', stage_kind: 'dropset', stage_count: 2 }))
     putOnServer(ALL_LOGS())
-    const view = viewOf(orderOf([BENCH()]), ALL_LOGS(), [{ kind: 'retyped', weekPlanSetId: 'bench.2', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 }, id: 'row-7' }])
+    const view = viewOf(orderOf([BENCH()]), ALL_LOGS(), [{ kind: 'retyped', weekPlanSetId: 'bench.2', type: { kind: 'staged', stageKind: 'dropset', stageCount: 2 }, id: 'chg-7' }])
     const effects = deleteEffects(rowKeyed(view, 'set:bench.2'), view)
-    expect(effects.changes).toEqual([{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: 'row-7' }])
+    expect(effects.changes).toEqual([{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: 'chg-7' }])
     await writeSetChanges({ sessionId: 's1', userId: 'u1', writes: effects.changes, online: true })
-    expect(world.server.get('v2_session_set_changes:row-7')).toMatchObject({ kind: 'deleted', is_warmup: false, stage_kind: null, stage_count: 0 })
-    expect(serverKeys('v2_session_set_changes')).toEqual(['row-7']) // replaced, not added
+    expect(world.server.get('v2_session_set_changes:chg-7')).toMatchObject({ kind: 'deleted', is_warmup: false, stage_kind: null, stage_count: 0 })
+    expect(serverKeys('v2_session_set_changes')).toEqual(['chg-7']) // replaced, not added
   })
 
   it('offline, the same replacement is a queued upsert that carries the held row\'s id and is accepted on reconnect; a new id would be refused', async () => {
     const { upsertSetChange } = await import('../gym/sessionSetChangesService')
-    await upsertSetChange(sessionRow({ id: 'row-7', kind: 'retyped', is_warmup: true }))
-    await writeSetChanges({ sessionId: 's1', userId: 'u1', writes: [{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: 'row-7' }], online: false })
-    expect(queue()[0].payload).toMatchObject({ id: 'row-7', kind: 'deleted', is_warmup: false })
+    await upsertSetChange(sessionRow({ id: 'chg-7', kind: 'retyped', is_warmup: true }))
+    await writeSetChanges({ sessionId: 's1', userId: 'u1', writes: [{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: 'chg-7' }], online: false })
+    expect(queue()[0].payload).toMatchObject({ id: 'chg-7', kind: 'deleted', is_warmup: false })
     world.online = true
     await flushSyncQueue()
-    expect(world.server.get('v2_session_set_changes:row-7')).toMatchObject({ kind: 'deleted', is_warmup: false })
+    expect(world.server.get('v2_session_set_changes:chg-7')).toMatchObject({ kind: 'deleted', is_warmup: false })
     expect(queue()).toEqual([])
     // the break: the same write with a row of its own is refused again and again, and ends as a write that stopped retrying
-    world.server = new Map([['v2_session_set_changes:row-7', sessionRow({ id: 'row-7', kind: 'retyped', is_warmup: true })]])
+    world.server = new Map([['v2_session_set_changes:chg-7', sessionRow({ id: 'chg-7', kind: 'retyped', is_warmup: true })]])
     await writeSetChanges({ sessionId: 's1', userId: 'u1', writes: [{ change: { kind: 'deleted', weekPlanSetId: 'bench.2' }, id: null }], online: false })
     for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
     expect(queue()).toHaveLength(1)
     expect(queue()[0]).toMatchObject({ gaveUp: true })
-    expect(serverKeys('v2_session_set_changes')).toEqual(['row-7'])
+    expect(serverKeys('v2_session_set_changes')).toEqual(['chg-7'])
   })
 })
 
@@ -361,6 +361,32 @@ describe('`useDeleteSetLog`', () => {
     expect(world.requests).toEqual(['delete v2_set_logs:log.bench.3'])
     expect(queue()).toEqual([])
     expect(invalidate).toHaveBeenCalled()
+    invalidate.mockRestore()
+  })
+
+  it('offline it settles even when TanStack itself thinks the phone is offline (`networkMode: always`: a paused mutation would never answer, and the delete would hang)', async () => {
+    onlineManager.setOnline(false)
+    try {
+      queryClient.setQueryData(['v2_session', 's1'], { id: 's1', setLogs: ALL_LOGS() } as unknown as Session)
+      const { result } = renderHook(() => useDeleteSetLog('s1'), { wrapper })
+      await act(async () => void (await result.current.mutateAsync({ id: 'log.bench.3', parentSetId: null })))
+      expect(queue()).toHaveLength(1)
+    } finally {
+      onlineManager.setOnline(true)
+    }
+  }, 3000)
+
+  it('a delete the server refuses rejects with the reason and puts the log back in the screen\'s copy of the session', async () => {
+    world.online = true
+    putOnServer(ALL_LOGS())
+    world.failing.set('delete v2_set_logs:log.bench.3', 1)
+    queryClient.setQueryData(['v2_session', 's1'], { id: 's1', setLogs: ALL_LOGS() } as unknown as Session)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined)
+    const { result } = renderHook(() => useDeleteSetLog('s1'), { wrapper })
+    await act(async () => {
+      await expect(result.current.mutateAsync({ id: 'log.bench.3', parentSetId: null })).rejects.toMatchObject({ message: 'Failed to fetch' })
+    })
+    expect((queryClient.getQueryData(['v2_session', 's1']) as Session).setLogs?.map((l) => l.id)).toContain('log.bench.3')
     invalidate.mockRestore()
   })
 

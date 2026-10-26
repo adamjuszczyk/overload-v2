@@ -170,7 +170,7 @@ describe('FORM and the unit in the sheet are the row\'s own state until LOG', ()
     expect(calls[0].formRating).toBe('extra_controlled')
   })
 
-  it('an exercise in lbs offers "Log this set in kg" and says "This exercise is in lbs."; the switch is on after it is pressed (W8\'s second frame)', () => {
+  it('an exercise in lbs offers "Log this set in kg" and says "This exercise is in lbs."; the switch is on after it is pressed', () => {
     const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [], props: { programExercise: exerciseOf({ weightUnit: 'lbs' }) } })
     openMore(container, 'set:set-1')
     const frame = sheet()
@@ -179,7 +179,19 @@ describe('FORM and the unit in the sheet are the row\'s own state until LOG', ()
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(toggle)
     expect(within(frame).getByRole('switch', { name: 'Log this set in kg' }).getAttribute('aria-checked')).toBe('true')
-    captureRender('w8-lbs', document.body)
+  })
+
+  it('an exercise in kg: "Log this set in lbs" over "This exercise is in kg."; pressed, the switch is on and the words stay (board W8\'s second frame)', () => {
+    const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [], props: { programExercise: exerciseOf() } })
+    openMore(container, 'set:set-1')
+    const frame = sheet()
+    expect(within(frame).getByText('This exercise is in kg.')).toBeTruthy()
+    const toggle = within(frame).getByRole('switch', { name: 'Log this set in lbs' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(toggle)
+    expect(within(frame).getByRole('switch', { name: 'Log this set in lbs' }).getAttribute('aria-checked')).toBe('true')
+    expect(within(frame).getByText('This exercise is in kg.')).toBeTruthy()
+    captureRender('w8-lbs', document.body) // after the assertions
   })
 })
 

@@ -323,7 +323,8 @@ export async function hasQueuedWritesFor(sessionId: string): Promise<boolean> {
 // sees it; the queue comes first, so a failure in between leaves a stale copy,
 // never a delete that was lost. The caller removes the log from the screen's
 // cache; a log that was never sent leaves the queue with its upsert on the
-// next pass (`dropNeverSentPairs`). Nothing calls this before chunks 61 and 63.
+// next pass (`dropNeverSentPairs`). Chunk 61's DELETE calls this offline (through `useDeleteSetLog`, the drops first and the head last);
+// chunk 63's unlog will.
 export async function queueSetLogDelete(log: { id: string; sessionId: string; parentSetId?: string | null }): Promise<void> {
   await db.sync_queue.add({
     table: 'v2_set_logs',

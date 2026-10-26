@@ -34,6 +34,7 @@ afterEach(() => {
   queryClient.clear()
 })
 beforeEach(() => {
+  scheduleType = 'weekday'
   hooks.online = true
   for (const fn of [hooks.deleteLog, hooks.updateMutate, hooks.updateAsync, hooks.writeChanges, hooks.queuePatch, hooks.flush, hooks.updateSet]) fn.mockReset()
   hooks.deleteLog.mockResolvedValue(undefined)
@@ -123,9 +124,10 @@ vi.mock('../plan/useWeekPlan', () => ({ useAllWeekPlans: () => ({ data: hooks.al
 const { default: GymSession } = await import('./GymSession')
 
 let weekPlan: WeekPlan = plan()
+let scheduleType: 'weekday' | 'sequence' = 'weekday'
 const jsx = () => (
   <MemoryRouter>
-    <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={weekPlan} weekNumber={2} today="2026-01-06" />
+    <GymSession sessionId="session-1" workoutDay={workoutDay} weekPlan={weekPlan} weekNumber={2} today="2026-01-06" scheduleType={scheduleType} />
   </MemoryRouter>
 )
 function open(sessionLogs: SetLog[] = logs(), setChanges?: SessionSetChangeRecord[], status: Session['status'] = 'in_progress') {
@@ -276,6 +278,20 @@ describe('CUES (board W7 → 8): the planned set\'s tags in this week\'s plan, t
     expect(hooks.updateAsync).not.toHaveBeenCalled() // the log is not written
     expect(hooks.updateMutate).not.toHaveBeenCalled()
     expect(hooks.writeChanges).not.toHaveBeenCalled() // and no change row: a cue is the plan's, never the session's
+  })
+
+  it('the sheet names the period as the run does: WEEK 2 on a weekday run, CYCLE 2 on a sequence run', () => {
+    hooks.allPlans = [plan(), week3()]
+    const weekday = open()
+    openCues(weekday.container, 'set:lat-4')
+    expect(sheets()[1].textContent).toContain('SET 04 · WEEK 2')
+    expect(sheets()[1].textContent).not.toContain('CYCLE')
+    cleanup()
+    scheduleType = 'sequence'
+    const sequence = open()
+    openCues(sequence.container, 'set:lat-4')
+    expect(sheets()[1].textContent).toContain('SET 04 · CYCLE 2')
+    expect(sheets()[1].textContent).not.toContain('WEEK 2')
   })
 
   it('shows the set\'s own cue ticked in the row ("Push here") and writes only the difference: untick it and the tags go to null', async () => {

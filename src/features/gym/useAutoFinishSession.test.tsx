@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, cleanup } from '@testing-library/react'
 import type { Session, WeekPlan } from '../../types'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
+import { useToastStore } from '../notifications/toastStore'
 
 // Chunk 61 — auto-finish waits for what the workout's rows say is left (DECISIONS 166 (a), Adam 2026-10-16; SPEC "Finishing": "Auto-finish waits for what the
 // workout's rows say is left (the same view as the finish warning)"). The hook is told whether nothing is left (`nothingLeft`, the screen's `finishWarning`
@@ -75,6 +76,22 @@ describe('auto-finish (166 (a))', () => {
     renderHook(() => useAutoFinishSession(sessionWith([]), plan, true))
     wait(120)
     expect(complete.mutate).not.toHaveBeenCalled()
+  })
+
+  it('tells the person when it finished the session, and tries again at the next check when the finish failed', () => {
+    useToastStore.getState().clear()
+    complete.mutate.mockImplementationOnce((_vars: unknown, options: { onError: () => void }) => options.onError()) // the first finish fails
+    complete.mutate.mockImplementationOnce((_vars: unknown, options: { onSuccess: () => void }) => options.onSuccess()) // the second succeeds
+    renderHook(() => useAutoFinishSession(sessionWith([log('a', 1), log('c', 2)]), plan, true))
+    wait(10) // the check that ends the grace window finishes it, and the finish fails
+    expect(complete.mutate).toHaveBeenCalledTimes(1)
+    expect(useToastStore.getState().message).toBeNull()
+    wait(0.5) // the next 30 s check: the failure cleared what stops a second try
+    expect(complete.mutate).toHaveBeenCalledTimes(2)
+    expect(useToastStore.getState().message).toBe('Session completed automatically')
+    wait(30)
+    expect(complete.mutate).toHaveBeenCalledTimes(2) // finished: not again
+    useToastStore.getState().clear()
   })
 
   it('does nothing with the setting off, on a session that is not in progress, or on a plan with no sets', () => {

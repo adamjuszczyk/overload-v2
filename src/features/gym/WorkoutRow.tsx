@@ -3,6 +3,9 @@
 // Chunk 60 (SPEC [1.2] "Log lock (18a)", G54; board W1): every open row has its boxes and LOG, and `currentSet()` only says which of them is
 // styled as the current one. LOG on any row goes through the log lock (`useExerciseCardState`'s `lockFor`, 46r's `lockDecision`): it logs at once,
 // or the row's `LogOrderPrompt` asks first, and confirming runs the row's own LOG (the unchanged write path).
+// Chunk 61 (boards W7, W8, W9, W2b): an open row's ⋯ is the set options sheet and a logged row's pen is the edit panel; both reach what the card owns
+// (CUES, and DELETE's W9 question) through `RowMenu`, built here. W9 itself is the card's (`CardDeleteConfirm`), not the row's, because its row is out
+// of the order as soon as its delete starts.
 import { Fragment, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { SetLog } from '../../types'

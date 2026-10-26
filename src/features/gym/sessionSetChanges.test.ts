@@ -11,6 +11,8 @@ const calls = vi.hoisted(() => ({
   selects: [] as string[],
   fail: null as null | { after: number; message: string },
   session: null as unknown,
+  addGate: null as null | Promise<void>,
+  addStarts: 0,
 }))
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -27,7 +29,17 @@ vi.mock('../../lib/supabase', () => ({
     }),
   },
 }))
-vi.mock('../../lib/db', () => ({ db: { sync_queue: { add: async (item: Record<string, unknown>) => void calls.queue.push(item) } } }))
+vi.mock('../../lib/db', () => ({
+  db: {
+    sync_queue: {
+      add: async (item: Record<string, unknown>) => {
+        calls.addStarts += 1
+        if (calls.addGate !== null) await calls.addGate
+        calls.queue.push(item)
+      },
+    },
+  },
+}))
 
 const { changeRow, toSessionSetChangeRecord, toSessionSetChangeRecords } = await import('./sessionSetChangesService')
 const { changesOf, withChangeRecords, writeSetChanges } = await import('./useSessionSetChanges')
@@ -44,6 +56,8 @@ beforeEach(() => {
   calls.selects = []
   calls.fail = null
   calls.session = null
+  calls.addGate = null
+  calls.addStarts = 0
   queryClient.clear()
 })
 
@@ -65,8 +79,8 @@ describe('the row a change is written as', () => {
   })
 
   it('a write that replaces a `retyped` row carries that row\'s id and names every type column: ONE write turns it into `deleted` and clears the type', () => {
-    const row = changeRow(del('wps-1', 'row-9'), ctx, () => 'never-used')
-    expect(row).toMatchObject({ id: 'row-9', kind: 'deleted', is_warmup: false, stage_kind: null, stage_count: 0, set_log_id: null })
+    const row = changeRow(del('wps-1', 'chg-9'), ctx, () => 'never-used')
+    expect(row).toMatchObject({ id: 'chg-9', kind: 'deleted', is_warmup: false, stage_kind: null, stage_count: 0, set_log_id: null })
     expect('created_at' in row).toBe(false) // an existing row keeps its own
     for (const column of ['is_warmup', 'stage_kind', 'stage_count']) expect(column in row).toBe(true) // each named, so each is written
   })
@@ -85,8 +99,8 @@ describe('the row a change is written as', () => {
   })
 
   it('`pending_stages`: keyed by the log, with no planned set (042\'s `keys_check`), and its kind and total count', () => {
-    expect(changeRow({ change: { kind: 'pending_stages', setLogId: 'log-1', stageKind: 'dropset', stageCount: 1 }, id: 'row-2' }, ctx, () => 'x')).toMatchObject({
-      id: 'row-2', kind: 'pending_stages', set_log_id: 'log-1', week_plan_set_id: null, is_warmup: false, stage_kind: 'dropset', stage_count: 1,
+    expect(changeRow({ change: { kind: 'pending_stages', setLogId: 'log-1', stageKind: 'dropset', stageCount: 1 }, id: 'chg-2' }, ctx, () => 'x')).toMatchObject({
+      id: 'chg-2', kind: 'pending_stages', set_log_id: 'log-1', week_plan_set_id: null, is_warmup: false, stage_kind: 'dropset', stage_count: 1,
     })
   })
 
@@ -192,14 +206,54 @@ describe('writeSetChanges', () => {
   it('offline: each row is a queued upsert of the same row, sent to nothing, in the order given, with the session in its payload; the cache holds it and the session is not read again', async () => {
     seed()
     const invalidate = spyInvalidate()
-    await writeSetChanges({ sessionId: 's1', userId: 'u1', online: false, now: clock, writes: [del('wps-1', 'row-9'), del('wps-2')] })
+    await writeSetChanges({ sessionId: 's1', userId: 'u1', online: false, now: clock, writes: [del('wps-1', 'chg-9'), del('wps-2')] })
     expect(calls.upserts).toEqual([]) // offline nothing is sent
     expect(calls.queue).toHaveLength(2)
-    expect(calls.queue[0]).toMatchObject({ table: 'v2_session_set_changes', operation: 'upsert', createdAt: NOW, payload: { id: 'row-9', kind: 'deleted', week_plan_set_id: 'wps-1', session_id: 's1', user_id: 'u1' } })
+    expect(calls.queue[0]).toMatchObject({ table: 'v2_session_set_changes', operation: 'upsert', createdAt: NOW, payload: { id: 'chg-9', kind: 'deleted', week_plan_set_id: 'wps-1', session_id: 's1', user_id: 'u1' } })
     expect(calls.queue[1]).toMatchObject({ payload: { kind: 'deleted', week_plan_set_id: 'wps-2' } })
     expect((calls.queue[1].payload as { id: string }).id).toMatch(/^[0-9a-f-]{36}$/)
-    expect(cached().map((c) => c.id)[0]).toBe('row-9')
+    expect(cached().map((c) => c.id)[0]).toBe('chg-9')
     expect(invalidate).not.toHaveBeenCalled()
+    invalidate.mockRestore()
+  })
+
+  const later = () => new Promise<void>((resolve) => setTimeout(resolve, 20))
+
+  it('offline, a row is in the queue before the next row starts and before the cache holds it; the call resolves only when the last is queued', async () => {
+    seed()
+    let release!: () => void
+    calls.addGate = new Promise<void>((resolve) => (release = resolve))
+    let done = false
+    const pending = writeSetChanges({ sessionId: 's1', userId: 'u1', online: false, now: clock, writes: [del('wps-1'), del('wps-2')] }).then(() => void (done = true))
+    await later()
+    expect(calls.addStarts).toBe(1) // the second row has not started: the first is not queued yet
+    expect(cached()).toEqual([]) // and the screen is not shown a row that is not queued
+    expect(done).toBe(false)
+    release()
+    await pending
+    expect(calls.queue).toHaveLength(2)
+    expect(cached()).toHaveLength(2)
+  })
+
+  it('the row goes into the cache only after the reads in flight have been stopped', async () => {
+    seed()
+    let stopped!: () => void
+    const cancel = vi.spyOn(queryClient, 'cancelQueries').mockReturnValue(new Promise<void>((resolve) => (stopped = resolve)))
+    const pending = writeSetChanges({ sessionId: 's1', userId: 'u1', online: false, now: clock, writes: [del('wps-1')] })
+    await later()
+    expect(cached()).toEqual([])
+    stopped()
+    await pending
+    expect(cached()).toHaveLength(1)
+    cancel.mockRestore()
+  })
+
+  it('no rows, no read: online with nothing to write the session is not read again', async () => {
+    seed()
+    const invalidate = spyInvalidate()
+    await writeSetChanges({ sessionId: 's1', userId: 'u1', online: true, now: clock, writes: [] })
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(calls.upserts).toEqual([])
     invalidate.mockRestore()
   })
 

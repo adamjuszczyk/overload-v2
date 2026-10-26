@@ -402,13 +402,13 @@ describe('the warmup row: its edit panel\'s DELETE asks W9 and deletes the warmu
   it('a logged planned warmup (rows): pen, DELETE, DELETE SET writes the log delete and the `deleted` row, and the warmups after it renumber', async () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
     const { order, writers, onDeleteSet } = recorder()
-    const plan = [plannedSet(1, { id: 'w-1', isWarmup: true }), plannedSet(2, { id: 'w-2', isWarmup: true }), plannedSet(3)]
-    const logs = [logOf({ id: 'lw-1', weekPlanSetId: 'w-1', isWarmup: true, setNumber: 1 }), logOf({ id: 'lw-2', weekPlanSetId: 'w-2', isWarmup: true, setNumber: 2 })]
+    const plan = [plannedSet(1, { id: 'wup-1', isWarmup: true }), plannedSet(2, { id: 'wup-2', isWarmup: true }), plannedSet(3)]
+    const logs = [logOf({ id: 'lw-1', weekPlanSetId: 'wup-1', isWarmup: true, setNumber: 1 }), logOf({ id: 'lw-2', weekPlanSetId: 'wup-2', isWarmup: true, setNumber: 2 })]
     const { container } = renderCard({ plannedSets: plan, logs, props: { onDeleteSet, writers } })
-    fireEvent.click(within(rowOf(container, 'set:w-1')).getByLabelText('Edit set'))
-    fireEvent.click(within(rowOf(container, 'set:w-1')).getByText('DELETE'))
+    fireEvent.click(within(rowOf(container, 'set:wup-1')).getByLabelText('Edit set'))
+    fireEvent.click(within(rowOf(container, 'set:wup-1')).getByText('DELETE'))
     expect(within(dialog()).getByText('Delete warmup?')).toBeTruthy()
     await press(within(dialog()).getByText('DELETE SET'))
-    expect(order).toEqual(['delete lw-1', `changes ${JSON.stringify([{ change: { kind: 'deleted', weekPlanSetId: 'w-1' }, id: null }])}`, `numbers ${JSON.stringify([{ id: 'lw-2', setNumber: 1 }])}`])
+    expect(order).toEqual(['delete lw-1', `changes ${JSON.stringify([{ change: { kind: 'deleted', weekPlanSetId: 'wup-1' }, id: null }])}`, `numbers ${JSON.stringify([{ id: 'lw-2', setNumber: 1 }])}`])
   })
 })

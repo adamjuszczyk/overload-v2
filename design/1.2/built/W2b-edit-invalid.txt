@@ -1,0 +1,24 @@
+Bench Press
+CHEST
+FIRST TIME
+01
+kg
+×
+RIR
+Enter a valid weight.
+FORM
+RUSHED
+NORMAL
+CONTROLLED
+EXTRA CONTROLLED
+SET TYPE
+Normal
+UNLOG
+DELETE
+CANCEL
+SAVE
+mark as dropset
+02
+60 kg × 8
+mark as dropset
+ADD SET
