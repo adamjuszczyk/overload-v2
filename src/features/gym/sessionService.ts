@@ -650,9 +650,12 @@ export async function updateSetLog(
     rir?: number | null
     setNumber?: number
     formRating?: FormRating | null
-    // Chunk 61 (DECISIONS 147 (a)): the last drop of a logged set deleted makes it a normal set, so its log loses its stage kind. Chunk 62
-    // extends this with the log's warmup flag and the rest of what a type change patches.
+    // Chunk 61 (DECISIONS 147 (a)): the last drop of a logged set deleted makes it a normal set, so its log loses its stage kind.
+    // Chunk 62 (SPEC 19): a set's type changed on its log is these two columns, in one patch, with the weight and reps when a warmup logged
+    // with neither is made a working set (DECISIONS 152: the table refuses the type alone, 035's `v2_set_logs_check`, 23514). A head's
+    // `stage_index` is always 0 and a drop's never changes, so no change of type patches it.
     stageKind?: StageKind | null
+    isWarmup?: boolean
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
@@ -665,6 +668,7 @@ export async function updateSetLog(
   // inconsistently for no reason (TASKS.md §4 item 4).
   if ('formRating' in changes) patch.form_rating = changes.formRating
   if ('stageKind' in changes) patch.stage_kind = changes.stageKind
+  if ('isWarmup' in changes) patch.is_warmup = changes.isWarmup
 
   const { error } = await supabase.from('v2_set_logs').update(patch).eq('id', id)
   if (error) throw error

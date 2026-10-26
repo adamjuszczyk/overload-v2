@@ -61,13 +61,15 @@ describe('an open planned set\'s ⋯ (board W7)', () => {
     captureRender('w7', document.body) // after the assertions: a sheet that lost a row fails above and leaves the committed fixture alone
   })
 
-  it('the SET TYPE row shows the set\'s type now and does nothing until chunk 62 wires it (a disabled row)', () => {
+  it('the SET TYPE row shows the set\'s type now and, on the card, opens the workout\'s type picker (chunk 62); the ⋯ sheet gives way to it', () => {
     const { container } = renderCard({ plannedSets: w7Plan(), logs: w7Logs(), props: { programExercise: lat() } })
     openMore(container, 'set:set-3')
     const row = within(sheet()).getByText('SET TYPE').closest('button') as HTMLButtonElement
-    expect(row.disabled).toBe(true)
+    expect(row.disabled).toBe(false)
+    expect(within(sheet()).getByText('Dropset · 1 drop')).toBeTruthy()
     fireEvent.click(row)
-    expect(screen.getByRole('dialog')).toBeTruthy() // it did not close, open or write anything
+    expect(screen.queryByText('Set options')).toBeNull()
+    expect(screen.getByText('What is this set?')).toBeTruthy()
   })
 
   it('a set with no cue says nothing in its CUES row (the standing UI rule: an unset feature shows nothing)', () => {

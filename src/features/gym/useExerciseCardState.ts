@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet } from '../../types'
+import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet, SessionSetChange, SessionSetChangeType } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession } from './sessionService'
 import { useRestTimerStore } from './restTimerStore'
@@ -8,9 +8,20 @@ import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { headsOnly } from './setGroupLogic'
 import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
-import { deleteEffects, lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
+import {
+  applySetTypeChange,
+  deleteEffects,
+  lockDecision,
+  typeChangeNeedsNumbers,
+  type AddedSet,
+  type LockDecision,
+  type ResolvedRow,
+  type SwapRecord,
+  type TypedNumbers,
+} from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
 import { runDelete, type SessionWriters } from './setDelete'
+import { runTypeChange, typeConfirm, type TypeConfirm } from './setTypeChange'
 import { deleteConfirm, loggedNumbersText, plannedNumbersText } from './setOptionsView'
 import { canMove, planSkipRest, planSwap, type SkipItem } from './exerciseOptions'
 
@@ -74,7 +85,7 @@ export interface ExerciseCardProps {
   onLog: (params: LogRequest) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
-  /** Chunk 61: what a delete writes besides the logs (its change rows, the renumber, a head's stage kind), and the run and week CUES writes to. */
+  /** Chunks 61 and 62: what a delete or a type change writes besides the logs (its change rows, the renumber, a head's stage kind and type), and the run and week CUES writes to. */
   writers: SessionWriters
   /**
    * Chunk 59: the swap for today, saved: the swap's row with its record (DECISIONS 200: online, before any set is skipped), then the
@@ -272,25 +283,38 @@ export function useExerciseCardState({
     // An added set names its log before the request goes out (DECISIONS 174: its list entry carries the log's id), and its log
     // carries its place. A planned set's payload names neither, so it is what it was before this chunk.
     const logId = row.added && row.localId !== null ? crypto.randomUUID() : null
-    if (logId !== null && row.localId !== null) {
-      workout.linkLog(cardKey, row.localId, logId)
-      // A dropset a swap moved here keeps its drops on this phone once its head is logged (no change row yet: chunk 62's).
-      if (row.type?.kind === 'staged' && !params.isSkipped) workout.holdStages(logId, row.type.stageKind, row.type.stageCount)
-    }
+    if (logId !== null && row.localId !== null) workout.linkLog(cardKey, row.localId, logId)
+    // Chunk 62 (SPEC 19; DECISIONS 161; 46r: "when it is logged, the caller writes its `pending_stages` row (the set's total drops) together with the log"):
+    // a set added in the session, or moved here by a swap, that is a staged head has no planned set to say how many drops it has, so its log is
+    // followed by the row that does, keyed by the new log (a skipped head's drops are dead and have none). The row is drawn from this tap on (held), so
+    // the head is never drawn as a normal set while the row is on its way, and it goes through the queue (`queueChanges`), after the log's own upsert.
+    const pending: SessionSetChange | null =
+      logId !== null && row.type?.kind === 'staged' && !params.isSkipped
+        ? { kind: 'pending_stages', setLogId: logId, stageKind: row.type.stageKind, stageCount: row.type.stageCount }
+        : null
+    const release = pending !== null ? workout.holdChanges([pending]) : null
     const { weekPlanSetId: _plannedId, setNumber: _number, ...rest } = params
-    return onLog({
-      ...rest,
-      exerciseId: programExercise.exerciseId,
-      weekPlanSetId: planned?.id ?? null,
-      setNumber: row.number,
-      // A non-null setSeconds means the row's Start Set flow already froze the honest rest value at the moment Start Set was tapped.
-      restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
-      parentSetId: null,
-      stageIndex: 0,
-      // "As planned" (TASKS.md "Logging"): the row's own planned set; an added set has none, and keeps the kind of the type it was moved with.
-      stageKind: row.added ? (row.stageKind ?? null) : (planned?.stageKind ?? null),
-      ...(logId !== null ? { id: logId, addedPlace: row.addedPlace } : {}),
-    })
+    try {
+      const log = await onLog({
+        ...rest,
+        exerciseId: programExercise.exerciseId,
+        weekPlanSetId: planned?.id ?? null,
+        setNumber: row.number,
+        // A non-null setSeconds means the row's Start Set flow already froze the honest rest value at the moment Start Set was tapped.
+        restSeconds: params.setSeconds != null ? params.restSeconds : restElapsed,
+        parentSetId: null,
+        stageIndex: 0,
+        // "As planned" (TASKS.md "Logging"): the row's own planned set; an added set has none, and keeps the kind of the type it was given. A planned
+        // set whose type was changed in the workout (a `retyped` change) is logged as the type it has now, not the plan's (SPEC Objects stored:
+        // "set kind and stage kind as done"; chunk 62), and null on a switch to Normal (RULES: REVIEW reads the log's kind as the type as done).
+        stageKind: row.added || row.retyped ? (row.stageKind ?? null) : (planned?.stageKind ?? null),
+        ...(logId !== null ? { id: logId, addedPlace: row.addedPlace } : {}),
+      })
+      if (pending !== null) await writers.queueChanges([{ change: pending, id: null }])
+      return log
+    } finally {
+      release?.()
+    }
   }
 
   // LOG or SKIP of a drop: it belongs to its head's log (parentSetId), carries no place (DECISIONS 177) and shows its head's number.
@@ -300,14 +324,6 @@ export function useExerciseCardState({
     if (head === undefined || headLog === null) throw new RangeError(`the drop ${row.key} has no logged head`)
     const stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0) + 1
     return writeStage(head, headLog, stageIndex, plannedOf(row), row.number, params, supersetContext)
-  }
-
-  // ADD STAGE / "mark as dropset" (stay until chunk 62): a drop nobody planned, under a logged head.
-  async function logAdHocStage(headRow: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
-    const headLog = logOf(headRow)
-    if (headLog === null) throw new RangeError(`the set ${headRow.key} is not logged`)
-    const stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0) + 1
-    return writeStage(headRow, headLog, stageIndex, null, headRow.number, params, supersetContext)
   }
 
   async function writeStage(
@@ -386,6 +402,49 @@ export function useExerciseCardState({
     const log = logOf(row)
     const numbers = log !== null ? loggedNumbersText(log, resolvedWeightUnit) : plannedNumbersText(targetsOf(row), resolvedWeightUnit)
     setConfirmDelete({ row, ...deleteConfirm(row, numbers) })
+  }
+
+  // ─── SET TYPE (chunk 62; boards W7a, W7, W2b; SPEC [1.2] "Set type during a workout (19)") ──────────────────────────────────────
+  // `applySetTypeChange` (46r) says everything a pick calls for; `runTypeChange` (setTypeChange.ts) sends it in its order. What the card adds:
+  //   - 19c: a pick that would delete logged drops is not written until it is asked again with `confirmed`; the answer says what to ask ('confirm').
+  //   - the change rows are held (`workout.holdChanges`) from before the first request until they are in the session's cache, so a read of the session
+  //     between two requests never draws a half-written type (the log patched and its `pending_stages` row not there yet);
+  //   - `workout.track` holds the screen's own number corrections back until the whole change, its renumber included, is done;
+  //   - an added set that isn't logged keeps its type in the card's list (`workout.setAddedType`), nothing is sent for it.
+  // Rejects with the reason when something wasn't written (the picker says so). A change on a logged set needs a connection (G47); one on an upcoming set
+  // works offline (168 (a)): the `retyped` row and the renumber are queued.
+  /** True when `pick` would make a warmup logged with no weight or reps a working set: the panel asks for both first (DECISIONS 152). */
+  const needsNumbers = (row: ResolvedRow, pick: SessionSetChangeType): boolean =>
+    typeChangeNeedsNumbers({ row, pick, session: { rows: workout.rows, logs, changes: workout.changes } })
+
+  async function changeSetType(
+    row: ResolvedRow,
+    pick: SessionSetChangeType,
+    options: { confirmed?: boolean; numbers?: TypedNumbers } = {},
+  ): Promise<{ kind: 'done' } | { kind: 'confirm'; confirm: TypeConfirm }> {
+    const effects = applySetTypeChange({
+      row,
+      pick,
+      session: { rows: workout.rows, logs, changes: workout.changes },
+      ...(options.numbers === undefined ? {} : { numbers: options.numbers }),
+    })
+    if (!effects.changed) return { kind: 'done' }
+    if (effects.needsConfirm && options.confirmed !== true) return { kind: 'confirm', confirm: typeConfirm(row, effects.confirmCount) }
+    const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
+    try {
+      await workout.track(
+        runTypeChange(row, effects, {
+          writers,
+          deleteLog: (log) => onDeleteSet(log.id),
+          keepAddedType: (type) => {
+            if (row.localId !== null) workout.setAddedType(cardKey, row.localId, type)
+          },
+        }),
+      )
+    } finally {
+      release?.()
+    }
+    return { kind: 'done' }
   }
 
   /** The CUES row of a set's ⋯ and the sheet it opens (board W7 → 8): only a planned working set has one (DECISIONS 165 (a): none for a set with no planned set). */
@@ -528,12 +587,13 @@ export function useExerciseCardState({
     lockFor,
     logHead,
     logStage,
-    logAdHocStage,
     logWarmup,
     handleDeleteRow,
     confirmDelete,
     askDelete,
     closeDeleteConfirm: () => setConfirmDelete(null),
+    changeSetType,
+    needsNumbers,
     cuesOf,
     writers,
     handleConfirmSkip,

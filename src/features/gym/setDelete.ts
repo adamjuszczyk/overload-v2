@@ -17,6 +17,7 @@
 // `{ id, stage_kind: null }` (chunk 61's review 1, F1; `clearStageKind.ts`), queued after the drop's `delete` item and sent after the drops' writes:
 // never a whole-row save of the log, which would bring back a log another phone deleted and write this phone's weight and reps over another's edit
 // (DECISIONS 197).
+import type { StageKind } from '../../lib/plannerVocabulary'
 import type { ChangeWrite, DeleteEffects, LoggedSet, NumberPatch } from './workoutRules'
 
 /** What the workout screen hands every card for writing what a set's change calls for, and the run and week CUES writes to. */
@@ -26,12 +27,22 @@ export interface SessionWriters {
   /** A sequence run's week is a cycle (the cues sheet's eyebrow says CYCLE). */
   isCycle: boolean
   online: boolean
-  /** The change rows of one delete (or, from 62, one type change): in order, online or queued. */
+  /** The change rows of one delete or one type change: in order, online or queued. */
   writeChanges: (writes: readonly ChangeWrite[]) => Promise<void>
   /** The renumber: 58a's `patchSetNumbers`, each patch queued behind the earlier writes to its log. */
   patchNumbers: (patches: readonly NumberPatch[]) => Promise<void>
   /** A logged head loses its stage kind (147 (a)): online the request, offline a `patch` queue item (`clearStageKind.ts`). */
   clearStageKind: (logId: string) => Promise<void>
+  /**
+   * Chunk 62: a logged set's type, as ONE request on its log (`is_warmup`, `stage_kind`, and the weight and reps of a numberless warmup made a working
+   * set), awaited and refused with the server's reason. Online only (G47): `useUpdateSetLog`'s `mutateAsync`, which pauses offline, is never asked offline.
+   */
+  patchLog: (logId: string, changes: { isWarmup: boolean; stageKind: StageKind | null; weight?: number; reps?: number }) => Promise<void>
+  /**
+   * Chunk 62: rows that are written once and not waited for, such as the `pending_stages` row of a staged added set that LOG has just written: always a
+   * queued upsert (the log's own upsert is ahead of it in the queue), sent at once when the phone is online.
+   */
+  queueChanges: (writes: readonly ChangeWrite[]) => Promise<void>
 }
 
 export interface DeleteDeps {

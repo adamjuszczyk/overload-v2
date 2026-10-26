@@ -10,6 +10,7 @@ import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
 import { toStorageWeight } from '../../lib/weightUnit'
+import { held } from './workoutRules.testutil'
 
 // Chunk 58a — the rows of one exercise card, as the session's rules draw them and as LOG, SKIP, ADD SET and the edit write them
 // (TASKS-1.2 58a "Verification": row states, LOG of an untouched row, added place, drop and stage logs; boards W1–W3b). The card is
@@ -409,9 +410,14 @@ describe('sets added in the session carry their place on LOG (DECISIONS 174, 177
 
   it('a drop logged under an added set carries no place (DECISIONS 177: only an added set\'s own log does)', async () => {
     const { calls, onLog } = spy()
-    const head = logOf({ id: 'added-head', setNumber: 1, addedPlace: 1, weight: 50, reps: 9 })
-    const { container } = renderCard({ plannedSets: [], logs: [head], props: { onLog } })
-    fireEvent.click(screen.getByText('mark as dropset'))
+    // (a dropset added to the session and logged: its one drop is open under it, as its `pending_stages` row says; chunk 62)
+    const head = logOf({ id: 'added-head', setNumber: 1, addedPlace: 1, weight: 50, reps: 9, stageKind: 'dropset' })
+    const { container } = renderCard({
+      plannedSets: [],
+      logs: [head],
+      changes: [held({ kind: 'pending_stages', setLogId: 'added-head', stageKind: 'dropset', stageCount: 1 }, 'chg-1')],
+      props: { onLog },
+    })
     typeInto(current(container), 'Weight', '40')
     typeInto(current(container), 'Reps', '8')
     await pressLog(current(container))
@@ -464,29 +470,21 @@ describe('staged sets (chunks 3 and 14: planned drops render from the start, loc
   })
 })
 
-describe('ADD STAGE and "mark as dropset" stay until chunk 62\'s picker replaces them (SPEC "Set types")', () => {
-  it('a logged set with no drop planned or logged offers the low-emphasis "mark as dropset"; tapping it opens a drop row whose LOG writes the drop', async () => {
-    const { calls, onLog } = spy()
-    const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [headLogOf(1, { id: 'h' })], props: { onLog } })
+// Chunk 62 (SPEC [1.2] "Set type during a workout (19)": "ADD STAGE, \"Mark as dropset\" and \"+ DROP OR STAGE\" are removed"): a drop is a type the set is given
+// (the set's ⋯, or the edit panel of a logged one), so no button after a logged head adds one. The scan of the source is workoutScreen.static.test.ts's.
+describe('ADD STAGE and "mark as dropset" are gone (chunk 62)', () => {
+  it('a logged set with no drop planned or logged offers neither', () => {
+    renderCard({ plannedSets: [plannedSet(1)], logs: [headLogOf(1, { id: 'h' })] })
     expect(screen.queryByText('ADD STAGE')).toBeNull()
-    fireEvent.click(screen.getByText('mark as dropset'))
-    typeInto(current(container), 'Weight', '40')
-    typeInto(current(container), 'Reps', '8')
-    await pressLog(current(container))
-    expect(calls[0]).toMatchObject({ parentSetId: 'h', stageIndex: 1, isDropset: true, weekPlanSetId: null })
+    expect(screen.queryByText('mark as dropset')).toBeNull()
   })
 
-  it('with one unplanned drop already logged it is the bold ADD STAGE, and the next drop is stageIndex 2', async () => {
-    const { calls, onLog } = spy()
+  it('a logged set with an unplanned drop already logged offers neither', () => {
     const head = headLogOf(1, { id: 'h' })
     const drop = logOf({ id: 'd1', parentSetId: 'h', stageIndex: 1, setNumber: 1, isDropset: true })
-    const { container } = renderCard({ plannedSets: [plannedSet(1)], logs: [head, drop], props: { onLog } })
+    renderCard({ plannedSets: [plannedSet(1)], logs: [head, drop] })
+    expect(screen.queryByText('ADD STAGE')).toBeNull()
     expect(screen.queryByText('mark as dropset')).toBeNull()
-    fireEvent.click(screen.getByText('ADD STAGE'))
-    typeInto(current(container), 'Weight', '30')
-    typeInto(current(container), 'Reps', '8')
-    await pressLog(current(container))
-    expect(calls[0]).toMatchObject({ parentSetId: 'h', stageIndex: 2 })
   })
 
   it('a skipped set offers no stage at all', () => {

@@ -7,6 +7,8 @@ export type SpyWriters = SessionWriters & {
   writeChanges: ReturnType<typeof vi.fn>
   patchNumbers: ReturnType<typeof vi.fn>
   clearStageKind: ReturnType<typeof vi.fn>
+  patchLog: ReturnType<typeof vi.fn>
+  queueChanges: ReturnType<typeof vi.fn>
 }
 
 export function spyWriters(over: Partial<SessionWriters> = {}): SpyWriters {
@@ -18,6 +20,8 @@ export function spyWriters(over: Partial<SessionWriters> = {}): SpyWriters {
     writeChanges: vi.fn(async () => {}),
     patchNumbers: vi.fn(async () => {}),
     clearStageKind: vi.fn(async () => {}),
+    patchLog: vi.fn(async () => {}),
+    queueChanges: vi.fn(async () => {}),
     ...over,
   } as SpyWriters
 }

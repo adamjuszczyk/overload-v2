@@ -232,7 +232,10 @@ describe('an open planned set: its ⋯ DELETE SET writes the `deleted` change ro
     for (const call of writers.writeChanges.mock.calls) {
       for (const write of call[0] as ChangeWrite[]) expect(['deleted', 'retyped', 'pending_stages']).toContain(write.change.kind)
     }
-    expect(Object.keys(writers).sort()).toEqual(['clearStageKind', 'isCycle', 'mesocycleId', 'online', 'patchNumbers', 'weekNumber', 'writeChanges'])
+    expect(Object.keys(writers).sort()).toEqual(['clearStageKind', 'isCycle', 'mesocycleId', 'online', 'patchLog', 'patchNumbers', 'queueChanges', 'weekNumber', 'writeChanges'])
+    // a delete writes no log patch of its own and queues no pending row (chunk 62's writers)
+    expect(writers.patchLog).not.toHaveBeenCalled()
+    expect(writers.queueChanges).not.toHaveBeenCalled()
   })
 })
 
