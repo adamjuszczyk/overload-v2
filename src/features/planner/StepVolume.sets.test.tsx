@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { act, cleanup, fireEvent, screen } from '@testing-library/react'
 import type { Program, ProgramExercise, WorkoutDay } from '../../types'
 import { queryClient } from '../../lib/queryClient'
-import { createFakeProgramSetsDb, type FakeProgramSetRow, type FakeWeekSetRow } from './fakeProgramSetsDb.testutil'
+import { createFakeProgramSetsDb, fakeProgramSet, type FakeProgramSetRow, type FakeWeekSetRow } from './fakeProgramSetsDb.testutil'
 import { DIPS, FLY, FOUND, INC, LAT, exercise, makeProgram, open, renderStep, repSheet, settled, textOf, typeSheet, world, worldWorkouts } from './stepVolume.testutil'
 
 // Chunk 67 (TASKS-1.2 "The stepped planner's step 3 on the shared pickers"): the writers of step 3 that are not a set's type, END TO END. It mocks
@@ -268,6 +268,13 @@ describe("a set's rep box opens the rep target picker for that set", () => {
     fireEvent.click(repSheet().getByRole('button', { name: 'SET 10–12 REPS' }))
     await settled()
     expect(db.requests()).toEqual([])
+
+    // ticked, on a target all three heads hold: nothing to write
+    fireEvent.click(exercise(FLY).getByRole('button', { name: 'Rep target for set 02' }))
+    expect(repSheet().getByRole('checkbox', { name: 'Use for all 3 sets of Pec Deck Fly' }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(repSheet().getByRole('button', { name: 'SET 10–12 REPS' }))
+    await settled()
+    expect(db.requests()).toEqual([])
   })
 
   it("a stage's rep box writes that stage only: the picker offers no \"Use for all\" and the head and the other sets keep their targets", async () => {
@@ -285,6 +292,57 @@ describe("a set's rep box opens the rep target picker for that set", () => {
     expect(db.row('inc4')).toMatchObject({ rep_min: 8, rep_max: 12 })
     expect(db.rowsOf(INC).filter((r) => r.parent_program_set_id === null).map((r) => [r.rep_min, r.rep_max])).toEqual([[12, 12], [8, 12], [8, 12], [8, 12]])
     expect(textOf(exercise(INC).getByRole('button', { name: 'Rep target for the dropset stage' }))).toBe('8–10')
+
+    // the same target again is nothing to write
+    click('Rep target for the dropset stage')
+    fireEvent.click(repSheet().getByRole('button', { name: 'SET 8–10 REPS' }))
+    await settled()
+    expect(db.requests()).toHaveLength(1)
+  })
+})
+
+// A rep picker or the ALL picker is open on sets that are then removed on another phone: it closes, and it does not come back when sets are added again.
+describe('a picker whose sets have gone closes, and stays closed', () => {
+  it('ALL opened on Pec Deck Fly, the exercise\'s sets removed elsewhere and read again: no picker; sets added again later: still none', async () => {
+    await arrange()
+    open('Pec Deck Fly')
+    click("Set every set's rep target for Pec Deck Fly")
+    expect(screen.getByRole('dialog', { name: 'Rep target' })).toBeTruthy()
+
+    db.state.sets = db.state.sets.filter((s) => s.program_exercise_id !== FLY)
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['v2_programSets'] })
+    })
+    await vi.waitFor(() => expect(stepper('Pec Deck Fly')).toBe('−0+'), FOUND)
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    db.state.sets.push(fakeProgramSet('fly9', FLY, 1, { rep_min: 10, rep_max: 12 }))
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ['v2_programSets'] })
+    })
+    await vi.waitFor(() => expect(stepper('Pec Deck Fly')).toBe('−1+'), FOUND)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('REMOVE THIS SET asked while a type change is still out asks for nothing: the set stays and the picker stays open', async () => {
+    await arrange()
+    open('Pec Deck Fly')
+    click('Set 02: type')
+    let release: () => void = () => undefined
+    db.gate = new Promise<void>((resolve) => (release = resolve))
+    try {
+      fireEvent.click(typeSheet().getByRole('button', { name: /^Dropset/ }))
+      await vi.waitFor(() => expect(db.requests()).toHaveLength(2), FOUND)
+      fireEvent.click(typeSheet().getByRole('button', { name: 'REMOVE THIS SET' }))
+      expect(db.requests()).toHaveLength(2)
+      expect(screen.getByRole('dialog', { name: 'What is this set?' })).toBeTruthy()
+    } finally {
+      db.gate = null
+      await act(async () => release())
+    }
+    await settled()
+    expect(db.row('fly2')).toBeDefined()
+    expect(db.requests().map((r) => r[0])).toEqual(['update', 'insert'])
   })
 })
 

@@ -35,10 +35,16 @@ export function makeExercise(id: string, workoutDayId: string, name: string, pos
 export const FOUND = { timeout: 5000 }
 
 /** The step inside the app's own query client (its hooks invalidate that singleton). */
-export function renderStep(Step: ComponentType<{ program: Program; volumeReadOnly: boolean; canChangePlanningType: boolean }>, props: Partial<{ program: Program; volumeReadOnly: boolean; canChangePlanningType: boolean }> = {}) {
+export function renderStep(
+  Step: ComponentType<{ program: Program; volumeReadOnly: boolean; canChangePlanningType: boolean }>,
+  props: Partial<{ program: Program; volumeReadOnly: boolean; canChangePlanningType: boolean }> = {},
+  options: { frame?: boolean } = {},
+) {
+  const step = <Step program={props.program ?? makeProgram()} volumeReadOnly={props.volumeReadOnly ?? false} canChangePlanningType={props.canChangePlanningType ?? true} />
   return render(
     <QueryClientProvider client={queryClient}>
-      <Step program={props.program ?? makeProgram()} volumeReadOnly={props.volumeReadOnly ?? false} canChangePlanningType={props.canChangePlanningType ?? true} />
+      {/* `captureRender` writes innerHTML, so the host's padding (PlannerPage's content area: 16px 20px 24px) is framed in the capture */}
+      {options.frame ? <div style={{ padding: '16px 20px 24px' }}>{step}</div> : step}
     </QueryClientProvider>,
   )
 }

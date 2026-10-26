@@ -423,7 +423,7 @@ function ExerciseSetsEditor({
             >
               {allText(heads)}
             </button>
-            <span style={{ ...CAPTION, flex: '0 1 150px', minWidth: 112, textAlign: 'center' }}>REST AFTER</span>
+            <span style={{ ...CAPTION, flex: '0 1 132px', minWidth: 112, textAlign: 'center' }}>REST AFTER</span>
           </div>
           {rows.map((row) => (
             <SetRowView key={row.head.id} row={row} readOnly={volumeReadOnly} onType={() => onType(row)} onReps={(stage) => onReps(row, stage)} onRest={(restSeconds) => onRest(row.head.id, restSeconds)} />
@@ -532,7 +532,7 @@ function RestAfterStepper({ label, seconds, onChange }: { label: string; seconds
     <div
       role="group"
       aria-label={`Rest after set ${label}`}
-      style={{ ...BOX, flex: '0 1 150px', minWidth: 112, display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 36px', alignItems: 'center', ...hairline(own ? 'var(--accent)' : 'var(--border)'), background: own ? 'var(--accent-muted)' : 'var(--surface)' }}
+      style={{ ...BOX, flex: '0 1 132px', minWidth: 112, display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 36px', alignItems: 'center', ...hairline(own ? 'var(--accent)' : 'var(--border)'), background: own ? 'var(--accent-muted)' : 'var(--surface)' }}
     >
       <button
         type="button"

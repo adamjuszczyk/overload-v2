@@ -126,6 +126,14 @@ describe('step 3 — a card per workout, the first open (board PP3)', () => {
     expect(screen.queryByRole('button', { name: 'Show editor for Pull 1' })).toBeNull()
   })
 
+  it('a workout that several weekdays share (G14) names every one of them, in week order', async () => {
+    arrange(makeProgram({ schedule: { monday: 'wd-1', tuesday: null, wednesday: 'wd-2', thursday: null, friday: 'wd-2', saturday: null, sunday: null } }))
+    await screen.findByText('Incline Dumbbell Press', {}, FOUND)
+    expect(textOf(screen.getByRole('button', { name: 'Show editor for Pull 1' }))).toBe('Pull 1WED · FRI')
+    // a workout on no weekday names none
+    expect(textOf(screen.getByRole('button', { name: 'Show editor for Legs' }))).toBe('Legs')
+  })
+
   it('a sequence program has no weekday to name: its closed cards say none', async () => {
     arrange(makeProgram({ scheduleType: 'sequence', schedule: { monday: 'wd-1', tuesday: null, wednesday: 'wd-2', thursday: null, friday: null, saturday: null, sunday: null } }))
     await screen.findByText('Incline Dumbbell Press', {}, FOUND)
