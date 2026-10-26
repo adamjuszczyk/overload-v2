@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Plus } from 'lucide-react'
 import type { ProgramExercise, WorkoutDay, WeekPlan, WeekPlanSet, SetLog, FormRating, Exercise, ProgramSet } from '../../types'
 import type { ReferenceSession, ExerciseSwap } from './sessionService'
@@ -35,6 +35,7 @@ import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
 import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkoutRows'
+import { dexieDraftStore } from './sessionDrafts'
 import { patchSetNumbers, useSetNumberCorrections } from './useSetNumberCorrections'
 import { changesOf, queueSetChanges, writeSetChanges } from './useSessionSetChanges'
 import type { SessionWriters } from './setDelete'
@@ -312,11 +313,14 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const cardByKey = new Map(cards.map((card) => [card.key, card]))
 
   // The session's change rows (chunk 61) are read with it: a planned set deleted in the session is a row here, and is out of the order.
-  const workout = useWorkoutRows({ cards, blocks, logs: allCurrentLogs, changes: changesOf(session) })
-  // DECISIONS 178, 185 (c), 197: the screen writes the corrected numbers of an in-progress session's logged sets, and only there.
+  // Chunk 63 (G46 (a)): the card's list of the sets added in the session and the drafts of the sets that were unlogged are kept on the phone and read back here after a reload.
+  const draftStore = useMemo(() => dexieDraftStore(sessionId), [sessionId])
+  const workout = useWorkoutRows({ cards, blocks, logs: allCurrentLogs, changes: changesOf(session), store: draftStore, persist: session?.status === 'in_progress' })
+  // DECISIONS 178, 185 (c), 197: the screen writes the corrected numbers of an in-progress session's logged sets, and only there. Not before the phone's own list has been read:
+  // an open added set only that list names would otherwise be missing from the picture the corrections are worked out from.
   useSetNumberCorrections({
     sessionId,
-    enabled: session?.status === 'in_progress',
+    enabled: session?.status === 'in_progress' && workout.hydrated,
     corrections: workout.corrections,
     logs: allCurrentLogs,
     busy: workout.busy,

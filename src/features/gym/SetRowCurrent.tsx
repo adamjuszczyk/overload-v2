@@ -14,12 +14,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import type { FormRating, SessionSetChangeType, WeekPlanSet, WeightUnit } from '../../types'
-import type { ResolvedRow, TypedNumbers } from './workoutRules'
+import type { ResolvedRow, SetDraft, TypedNumbers } from './workoutRules'
 import type { LogParams } from './useExerciseCardState'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
-import { toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
+import { resolveEditedWeightKg, toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
 import SetOptionsSheet from './SetOptionsSheet'
 import { CueLine, LastLine, RowLabel, boxStyle } from './setRowParts'
 import { optionsEyebrow, typeRowText } from './setOptionsView'
@@ -45,6 +45,12 @@ export interface RowMenu {
   heldType: SessionSetChangeType | null
   clearHeldType: () => void
   saveHeldType: (numbers: TypedNumbers) => Promise<void>
+  /**
+   * UNLOG (chunk 63): the edit panel's button. `unlog` sends it; `unlogNote` is the words under a disabled button ("Log its drops first"), null when the set can be unlogged.
+   * Left out, the panel's UNLOG is drawn disabled and says nothing.
+   */
+  unlog?: () => void
+  unlogNote?: string | null
 }
 
 interface SetRowCurrentProps {
@@ -69,6 +75,11 @@ interface SetRowCurrentProps {
   /** The ⋯ sheet's reach (chunk 61). Left out, the sheet offers no CUES, its SET TYPE row does nothing and its DELETE is not offered. */
   menu?: RowMenu
   /**
+   * The numbers this phone kept when the set was unlogged (chunk 63; G46): they fill the boxes, as grey suggestions that LOG accepts as they are, until a box is typed in
+   * (SPEC [P2] pre-fill: "visibly different from typed values"; D31). The unit the set was logged in comes back with them.
+   */
+  draft?: SetDraft | null
+  /**
    * The log lock (chunk 60): called when LOG is pressed and the boxes are good, with what LOG would do. The caller logs at once or asks first and
    * calls `proceed` when the answer is yes; until then nothing was logged and nothing in the row was reset (a running set timer included).
    * Left out, LOG logs at once.
@@ -77,6 +88,20 @@ interface SetRowCurrentProps {
 }
 
 const MONO = 'var(--font-mono)'
+
+// Chunk 63: the boxes holding a draft's numbers are drawn in the muted text colour until typed in.
+const NO_GREY = { weight: false, reps: false, rir: false }
+const GREY_TEXT = { color: 'var(--text-muted)' }
+const greyOf = (text: { weight: string; reps: string; rir: string }) => ({ weight: text.weight !== '', reps: text.reps !== '', rir: text.rir !== '' })
+/** A draft's numbers as the boxes hold them: the weight in the unit the set was logged in. */
+function draftTexts(draft: SetDraft | null, resolvedUnit: WeightUnit): { weight: string; reps: string; rir: string } {
+  if (draft === null) return { weight: '', reps: '', rir: '' }
+  return {
+    weight: draft.weight != null ? String(toDisplayWeight(draft.weight, draft.enteredUnit ?? resolvedUnit)) : '',
+    reps: draft.reps != null ? String(draft.reps) : '',
+    rir: draft.rir != null ? String(draft.rir) : '',
+  }
+}
 
 export default function SetRowCurrent({
   row,
@@ -92,6 +117,7 @@ export default function SetRowCurrent({
   isCurrent = true,
   menu,
   beforeLog,
+  draft = null,
 }: SetRowCurrentProps) {
   const isStage = row.kind === 'stage'
   const measureSetTime = useSettingsStore((s) => s.measureSetTime)
@@ -99,26 +125,43 @@ export default function SetRowCurrent({
 
   // The rarely-used logging-time unit override (SPEC §8.1): flips this one set between the exercise's unit and the other, without
   // changing the exercise's configured default. null = no override.
-  const [unitOverride, setUnitOverride] = useState<WeightUnit | null>(null)
+  const [unitOverride, setUnitOverride] = useState<WeightUnit | null>(draft?.enteredUnit ?? null)
   const activeUnit = unitOverride ?? resolvedUnit
   const otherUnit: WeightUnit = resolvedUnit === 'kg' ? 'lbs' : 'kg'
 
   const defaults = rowDefaults(planned, activeUnit)
   const carried = carryWeightKg != null ? String(toDisplayWeight(carryWeightKg, activeUnit)) : null
-  const [weight, setWeight] = useState(carried ?? defaults.weight)
-  const [reps, setReps] = useState(defaults.reps)
-  const [rir, setRir] = useState('')
-  const [formRating, setFormRating] = useState<FormRating | null>(null)
+  // A draft (chunk 63) is the set's own numbers as it was logged, in the unit it was logged in: they win over the plan's targets and a carried weight.
+  const draftText = draftTexts(draft, resolvedUnit)
+  const draftAppliedRef = useRef(draft !== null)
+  const [weight, setWeight] = useState(draft !== null ? draftText.weight : (carried ?? defaults.weight))
+  const [reps, setReps] = useState(draft !== null ? draftText.reps : defaults.reps)
+  const [rir, setRir] = useState(draft !== null ? draftText.rir : '')
+  const [formRating, setFormRating] = useState<FormRating | null>(draft?.formRating ?? null)
+  // The boxes still holding the draft's numbers: drawn grey until the box is typed in.
+  const [grey, setGrey] = useState(() => (draft !== null ? greyOf(draftText) : NO_GREY))
   const [showMore, setShowMore] = useState(false)
   const [logError, setLogError] = useState('')
   // Typed text is never overwritten by the plan arriving or the unit flipping.
   const userEditedRef = useRef(false)
   useEffect(() => {
-    if (userEditedRef.current) return
+    if (userEditedRef.current || draftAppliedRef.current) return
     setWeight(carried ?? defaults.weight)
     setReps(defaults.reps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carried, defaults.weight, defaults.reps])
+  // The phone's drafts arrive after the first draw on a reload (the screen does not wait for IndexedDB): a draft that comes now fills boxes nobody has typed in.
+  useEffect(() => {
+    if (draft === null || draftAppliedRef.current || userEditedRef.current) return
+    draftAppliedRef.current = true
+    const text = draftTexts(draft, resolvedUnit)
+    setUnitOverride(draft.enteredUnit ?? null)
+    setWeight(text.weight)
+    setReps(text.reps)
+    setRir(text.rir)
+    setFormRating(draft.formRating)
+    setGrey(greyOf(text))
+  }, [draft, resolvedUnit])
 
   // Start Set flow (v3 §2.2): measureSetTime on. The rest timer stops at START SET (true rest ends there, not at LOG), so the rest
   // value is frozen then.
@@ -176,7 +219,8 @@ export default function SetRowCurrent({
       onLog({
         weekPlanSetId: planned?.id ?? null,
         setNumber: row.number,
-        weight: toStorageWeight(wEntered, activeUnit),
+        // A weight left as the draft showed it goes back as the exact kg it was (9 kg shows as 19.8 lbs, and 19.8 lbs is 8.98 kg: unlog then log is an exact undo, SPEC 18c).
+        weight: draft?.weight != null ? resolveEditedWeightKg(draft.weight, activeUnit, wEntered) : toStorageWeight(wEntered, activeUnit),
         reps: r,
         rir: rirVal !== null && Number.isNaN(rirVal) ? null : rirVal,
         isDropset: isStage,
@@ -216,16 +260,17 @@ export default function SetRowCurrent({
   const preStart = isCurrent && measureSetTime && !isTiming
   const hidden = isTiming && !editWhileTiming
   const invalid = logError !== ''
-  const edited = (setter: (value: string) => void) => (e: { target: { value: string } }) => {
+  const edited = (field: keyof typeof NO_GREY, setter: (value: string) => void) => (e: { target: { value: string } }) => {
     userEditedRef.current = true
     setter(e.target.value)
+    setGrey((g) => (g[field] ? { ...g, [field]: false } : g))
     if (logError) setLogError('')
   }
   const tags = planned?.tags ?? null
   const clock = formatClock(setElapsed)
 
   return (
-    <div className="space-y-1" data-current-set={isCurrent ? 'true' : undefined} data-row-state={isCurrent ? undefined : 'upcoming'} data-row-key={row.key}>
+    <div className="space-y-1" data-current-set={isCurrent ? 'true' : undefined} data-row-state={isCurrent ? undefined : 'upcoming'} data-row-key={row.key} data-draft={draft !== null ? 'true' : undefined}>
       <div
         className="flex items-center"
         style={{
@@ -258,9 +303,10 @@ export default function SetRowCurrent({
                 inputMode="decimal"
                 aria-label="Weight"
                 value={weight}
-                onChange={edited(setWeight)}
+                onChange={edited('weight', setWeight)}
+                data-draft={grey.weight ? 'true' : undefined}
                 className="w-full"
-                style={boxStyle({ paddingLeft: 6, paddingRight: activeUnit === 'lbs' ? 26 : 20, fontSize: 16, borderColor: invalid && weight.trim() === '' ? 'var(--error)' : 'var(--border)' })}
+                style={boxStyle({ paddingLeft: 6, paddingRight: activeUnit === 'lbs' ? 26 : 20, fontSize: 16, borderColor: invalid && weight.trim() === '' ? 'var(--error)' : 'var(--border)', ...(grey.weight ? GREY_TEXT : {}) })}
               />
               {/* The unit label is the logging-time override (SPEC §8.1): tapping it flips this one set between the two units. */}
               <button
@@ -287,9 +333,10 @@ export default function SetRowCurrent({
               aria-label="Reps"
               placeholder={defaults.repsHint}
               value={reps}
-              onChange={edited(setReps)}
+              onChange={edited('reps', setReps)}
+              data-draft={grey.reps ? 'true' : undefined}
               // 52 px holds "8–10"; the five-character hints ("10–12", "AMRAP") need a little more.
-              style={boxStyle({ width: defaults.repsHint.length >= 5 ? 56 : 52, flexShrink: 0, fontSize: 16, borderColor: invalid && reps.trim() === '' ? 'var(--error)' : 'var(--border)' })}
+              style={boxStyle({ width: defaults.repsHint.length >= 5 ? 56 : 52, flexShrink: 0, fontSize: 16, borderColor: invalid && reps.trim() === '' ? 'var(--error)' : 'var(--border)', ...(grey.reps ? GREY_TEXT : {}) })}
             />
             {!preStart && (
               <label className="flex flex-col items-center justify-center flex-shrink-0" style={boxStyle({ width: 46, paddingTop: 3 })}>
@@ -300,9 +347,10 @@ export default function SetRowCurrent({
                   aria-label="RIR"
                   placeholder={defaults.rirHint || '—'}
                   value={rir}
-                  onChange={edited(setRir)}
+                  onChange={edited('rir', setRir)}
+                  data-draft={grey.rir ? 'true' : undefined}
                   className="w-full"
-                  style={{ background: 'transparent', border: 'none', textAlign: 'center', fontFamily: MONO, fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', height: 22, padding: 0 }}
+                  style={{ background: 'transparent', border: 'none', textAlign: 'center', fontFamily: MONO, fontWeight: 700, fontSize: 16, color: grey.rir ? 'var(--text-muted)' : 'var(--text-primary)', height: 22, padding: 0 }}
                 />
               </label>
             )}

@@ -10,9 +10,11 @@ import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
 import {
   applySetTypeChange,
+  canUnlog,
   deleteEffects,
   lockDecision,
   typeChangeNeedsNumbers,
+  unlogEffects,
   type AddedSet,
   type LockDecision,
   type ResolvedRow,
@@ -270,8 +272,23 @@ export function useExerciseCardState({
   const lockFor = (row: ResolvedRow): LockDecision => lockDecision({ logInOrder, current: workout.current, tapped: row })
 
   // ─── Writers ─────────────────────────────────────────────────────────────────────────────────────
+  // Chunk 63 (G46, SPEC 18c): LOG or SKIP of a row that holds a draft (a set that was unlogged) writes a new log and clears the draft. The draft leaves the screen's copy before the
+  // log is written, so the new log is never drawn beside it; it leaves the phone once the write went through, and comes back if the write failed (its numbers are not lost).
+  async function withDraft<T>(row: ResolvedRow, write: () => Promise<T>): Promise<T> {
+    const held = workout.releaseDraft(row)
+    try {
+      const result = await write()
+      await held.forget()
+      return result
+    } catch (err) {
+      held.restore()
+      throw err
+    }
+  }
+
   // LOG or SKIP of a head (a planned working set, or an added one): the number is the row's.
-  async function logHead(row: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
+  const logHead = (row: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> => withDraft(row, () => writeHead(row, params, supersetContext))
+  async function writeHead(row: ResolvedRow, params: LogParams, supersetContext?: SupersetChainInput): Promise<SetLog> {
     const planned = plannedOf(row)
     const restElapsed = currentRestElapsed()
     applyRestChain({
@@ -323,7 +340,7 @@ export function useExerciseCardState({
     const headLog = head ? logOf(head) : null
     if (head === undefined || headLog === null) throw new RangeError(`the drop ${row.key} has no logged head`)
     const stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0) + 1
-    return writeStage(head, headLog, stageIndex, plannedOf(row), row.number, params, supersetContext)
+    return withDraft(row, () => writeStage(head, headLog, stageIndex, plannedOf(row), row.number, params, supersetContext))
   }
 
   async function writeStage(
@@ -358,7 +375,8 @@ export function useExerciseCardState({
 
   // A warmup's LOG (SPEC "Warmup sets"): level 1 of the chain only (never "the exercise's last set", never staged, never in a round).
   // Chunk 59: a warmup a swap moved here is an added set like any other, so its log names itself and carries its place.
-  async function logWarmup(row: ResolvedRow, params: LogParams): Promise<SetLog> {
+  const logWarmup = (row: ResolvedRow, params: LogParams): Promise<SetLog> => withDraft(row, () => writeWarmup(row, params))
+  async function writeWarmup(row: ResolvedRow, params: LogParams): Promise<SetLog> {
     const planned = plannedOf(row)
     applyRestChain({ setOverrideSeconds: setOverrideFor(planned), isLastSetOfExercise: false, stage: null, superset: null })
     const logId = row.added && row.localId !== null ? crypto.randomUUID() : null
@@ -391,9 +409,58 @@ export function useExerciseCardState({
     const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
     if (row.kind !== 'stage' && row.added && row.localId !== null) workout.removeAdded(cardKey, row.localId)
     try {
-      await workout.track(runDelete(effects, { deleteLog: (log) => onDeleteSet(log.id), writers }))
+      // Chunk 63: a deleted set takes its draft with it (and its drops' drafts). 46r draws a draft that no listed set has as a set of its own, so a draft left behind would
+      // bring the deleted set back after a reload; a deleted drop's later drafts move down one with their drops.
+      await workout.track(Promise.all([workout.dropDraftsOf(row), runDelete(effects, { deleteLog: (log) => onDeleteSet(log.id), writers })]))
     } finally {
       release?.()
+    }
+  }
+
+  // ─── UNLOG (chunk 63; board W2b; SPEC [1.2] "Unlog (18c)", G46 (a), G47; DECISIONS 147 (b), 151, 161, 174, 184 (b), 227) ───────────────────────────────────────
+  // `unlogEffects` (46r) says everything an unlog does; this sends it. No confirm, and it never starts the rest timer or touches the session's row (Defaults 6).
+  //   1. the draft (the log's numbers and, for an added set, its type, place and time) is held by the screen at once, so the row that comes back reads it in its first draw,
+  //      and is written to the phone (`session_set_drafts`); it is never sent anywhere;
+  //   2. the change row the rules ask for (a `retyped` row, so the type the set was logged with survives), held on the screen from before the first request: the table can
+  //      refuse it, so it goes before anything destructive (RULES: a change of several requests sends the one that can be refused first);
+  //   3. the logs, a set's skipped drops from the last and then the set (`useDeleteSetLog`: online the request and, once it has gone through, the queued rows that name the log leave
+  //      the queue; offline a queue `delete` item, one per log, stages first: queue-fix 227, so a log sent earlier waits behind its row and a never-sent one cancels with it);
+  //   4. an added set's entry in the card's list names no log any more.
+  // A set added in the session that the card's list does not name (a reload, a reopened session) is taken into the list first, with its own id, so it keeps its key across the new
+  // log (46r's header); one logged before 1.2 has no place and is not (its draft is drawn in its place by the log's time, DECISIONS 184 (b)). If a request is refused the draft is
+  // let go again: the set is still logged. `workout.track` holds the screen's own number corrections back until it is done.
+  const unlogging = useRef(false)
+  /** Whether the edit panel's UNLOG is offered: a logged set whose later drops are not logged (SPEC 18c; DECISIONS 147 (b)). */
+  const canUnlogRow = (row: ResolvedRow): boolean => row.state === 'logged' && canUnlog(row, { logs })
+
+  async function handleUnlogRow(row: ResolvedRow): Promise<void> {
+    if (unlogging.current) return
+    unlogging.current = true
+    try {
+      const effects = unlogEffects(row, { rows: workout.rows, logs, changes: workout.changes })
+      const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
+      try {
+        await workout.track(
+          (async () => {
+            if (row.kind !== 'stage' && row.added && row.localId !== null && row.addedPlace !== null && row.type !== null) {
+              workout.takeIn(cardKey, { localId: row.localId, logId: row.logId, type: row.type, place: row.addedPlace })
+            }
+            await workout.keepDraft(effects.draft)
+            try {
+              if (effects.changes.length > 0) await writers.writeChanges(effects.changes)
+              for (const log of effects.deleteOrder) await onDeleteSet(log.id)
+            } catch (err) {
+              await workout.discardDraft(effects.draft.key)
+              throw err
+            }
+            if (row.kind !== 'stage' && row.added && row.localId !== null) workout.unlinkLog(cardKey, row.localId)
+          })(),
+        )
+      } finally {
+        release?.()
+      }
+    } finally {
+      unlogging.current = false
     }
   }
 
@@ -476,7 +543,8 @@ export function useExerciseCardState({
     formRating: null,
     stageKind: planned?.stageKind ?? null,
   })
-  async function skipWarmup(row: ResolvedRow): Promise<SetLog> {
+  const skipWarmup = (row: ResolvedRow): Promise<SetLog> => withDraft(row, () => writeSkippedWarmup(row))
+  async function writeSkippedWarmup(row: ResolvedRow): Promise<SetLog> {
     const planned = plannedOf(row)
     const logId = row.added && row.localId !== null ? crypto.randomUUID() : null
     if (logId !== null && row.localId !== null) workout.linkLog(cardKey, row.localId, logId)
@@ -500,8 +568,9 @@ export function useExerciseCardState({
       let stageIndex = logs.filter((log) => log.parentSetId === headLog.id).reduce((max, log) => Math.max(max, log.stageIndex), 0)
       for (const drop of drops) {
         stageIndex += 1
-        // A drop of a planned head: its own planned stage, a stage_kind of null (the DB's own check), skipped.
-        await writeStage(head, headLog, stageIndex, plannedOf(drop), drop.number, { ...skipParams(plannedOf(drop)), isDropset: true, stageKind: null })
+        // A drop of a planned head: its own planned stage, a stage_kind of null (the DB's own check), skipped. A draft the drop holds goes with the skip (chunk 63).
+        const index = stageIndex
+        await withDraft(drop, () => writeStage(head, headLog, index, plannedOf(drop), drop.number, { ...skipParams(plannedOf(drop)), isDropset: true, stageKind: null }))
       }
     }
   }
@@ -589,6 +658,10 @@ export function useExerciseCardState({
     logStage,
     logWarmup,
     handleDeleteRow,
+    handleUnlogRow,
+    canUnlogRow,
+    /** The numbers an unlogged row keeps on this phone (G46), or null. */
+    draftOf: (row: ResolvedRow) => workout.draftOf(row),
     confirmDelete,
     askDelete,
     closeDeleteConfirm: () => setConfirmDelete(null),

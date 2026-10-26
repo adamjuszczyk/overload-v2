@@ -3,6 +3,7 @@
 // Chunk 61 (board W2b; SPEC [1.2] "A logged row shows a pen next to its tick (18d). Tapping the row opens its edit panel"): the pen opens
 // `SetEditPanel` in place of the row, which replaces 1.1's inline edit; the writes are today's: `onUpdate` is `updateSetLog`'s patch, and
 // DELETE asks W9 (`onDelete`, the row's own confirm) before it deletes anything. Chunk 62: the panel's SET TYPE row opens the type picker (`menu.openSetType`).
+// Chunk 63: UNLOG (`menu.unlog`) closes the panel and sends the unlog; with a later drop logged it is disabled and says why (`menu.unlogNote`).
 import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import type { FormRating, SetLog, WeightUnit } from '../../types'
@@ -41,6 +42,15 @@ export default function SetRowLogged({ row, log, resolvedUnit, typeText, menu, o
           isWarmup={false}
           typeText={typeText}
           onSetType={menu === undefined ? undefined : menu.openSetType}
+          onUnlog={
+            menu?.unlog === undefined
+              ? undefined
+              : () => {
+                  setIsEditing(false)
+                  menu.unlog?.()
+                }
+          }
+          unlogNote={menu?.unlogNote ?? null}
           onSave={(changes) => {
             onUpdate(changes)
             setIsEditing(false)

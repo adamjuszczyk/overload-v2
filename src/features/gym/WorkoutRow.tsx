@@ -22,7 +22,7 @@ import LogOrderPrompt, { type LogOrderQuestion } from './LogOrderPrompt'
 import DeleteSetConfirm from './DeleteSetConfirm'
 import SetCuesSheet from './SetCuesSheet'
 import WorkoutSetTypeSheet from './WorkoutSetTypeSheet'
-import { typeRowText } from './setOptionsView'
+import { UNLOG_BLOCKED_NOTE, typeRowText } from './setOptionsView'
 import SetRowCurrent, { type RowMenu } from './SetRowCurrent'
 import SetRowLogged from './SetRowLogged'
 import SetRowWarmup from './SetRowWarmup'
@@ -80,6 +80,14 @@ export default function WorkoutRow(props: WorkoutRowProps) {
     heldType,
     clearHeldType: () => setHeldType(null),
     saveHeldType,
+    // Chunk 63: UNLOG (SPEC 18c: no confirm, works offline). A refused request says why, as a type change does; the set is then still logged.
+    unlog: () => {
+      state.handleUnlogRow(row).catch((err) => {
+        console.error('[workout] unlog failed', err)
+        showToast(`Couldn't unlog the set. ${errorReason(err, typeof navigator !== 'undefined' && navigator.onLine === false)}`)
+      })
+    },
+    unlogNote: row.state !== 'logged' || state.canUnlogRow(row) ? null : UNLOG_BLOCKED_NOTE,
   }
   return (
     <>
@@ -173,6 +181,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
         unit={unit}
         display={warmupDisplay === 'tick' ? 'tick' : 'rows'}
         restElapsed={state.currentRestElapsed}
+        draft={state.draftOf(row)}
         onLog={(params) => guard(() => void state.logWarmup(row, params))}
         onUpdate={(changes) => log && state.onUpdateSet(log.id, changes)}
         onDelete={() => {
@@ -221,6 +230,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
       restElapsed={state.currentRestElapsed}
       isCurrent={isCurrent}
       menu={menu}
+      draft={state.draftOf(row)}
       beforeLog={guard}
       onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
     />

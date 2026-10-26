@@ -35,6 +35,7 @@ import {
 import { groupSetLogs } from './setGroupLogic'
 import type { SwapRecord } from './workoutRules'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
+import { clearSessionDrafts } from './sessionDrafts'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -593,6 +594,8 @@ export function useCompleteSession() {
       return completeSession(id, note, energyRating, pumpRating)
     },
     onSuccess: ({ status }, { id }) => {
+      // Chunk 63 (G46): the session's end clears what this phone kept for its unlogged sets and its added sets (finished here, or queued to finish).
+      void clearSessionDrafts(id)
       queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
         old ? { ...old, status } : old,
       )

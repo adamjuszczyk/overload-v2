@@ -136,6 +136,27 @@ interface SyncQueueItem {
   parentSetId?: string
 }
 
+// Chunk 63 (G46 (a), TASKS-1.2 63): what the workout keeps on this phone for sets that are not logged. `session_set_drafts`: the numbers of a set
+// that was unlogged (a draft per set, or per drop of a set), kept until the set is logged again, deleted, or the session ends; never sent to
+// Supabase and never in the sync queue (a static test greps for it). `session_added_sets`: the card's list of the sets added in the session
+// (`OrderExercise.added`), one row per session, so every added set keeps its place and its type across a reload. Both are typed by
+// `features/gym/sessionDrafts.ts`; the key and the values are plain structured-clone objects. Plain tables, no index but the session.
+interface StoredSetDraftRow {
+  /** The session and the set (or the drop of a set): `sessionDrafts.ts` makes it, and never from a set's position (a number moves; a set's own id does not). */
+  id: string
+  sessionId: string
+  /** The draft's union key as `unlogEffects` answered it (a planned set, an added set, or either with a drop number). */
+  key: unknown
+  /** The numbers, and for an added set its type, place and the log's time. */
+  values: unknown
+}
+
+interface StoredAddedSetsRow {
+  sessionId: string
+  /** Card key -> the sets added to that card, as `useWorkoutRows` keeps them. */
+  lists: unknown
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 class OverloadV2DB extends Dexie {
@@ -145,6 +166,8 @@ class OverloadV2DB extends Dexie {
   sessions!: Table<CachedSession, string>
   set_logs!: Table<CachedSetLog, string>
   sync_queue!: Table<SyncQueueItem, number>
+  session_set_drafts!: Table<StoredSetDraftRow, string>
+  session_added_sets!: Table<StoredAddedSetsRow, string>
 
   constructor() {
     super('overload-v2')
@@ -165,6 +188,11 @@ class OverloadV2DB extends Dexie {
     this.version(2).stores({
       set_logs: 'id, sessionId, exerciseId, loggedAt, parentSetId',
     })
+    // Chunk 63 (G46 (a)): the unlog's drafts and the workout card's list of added sets. New tables only; nothing already stored is touched.
+    this.version(3).stores({
+      session_set_drafts: 'id, sessionId',
+      session_added_sets: 'sessionId',
+    })
   }
 }
 
@@ -176,4 +204,6 @@ export type {
   CachedSession,
   CachedSetLog,
   SyncQueueItem,
+  StoredSetDraftRow,
+  StoredAddedSetsRow,
 }
